@@ -1,0 +1,44 @@
+[tool.poetry]
+name = "snowdesk-data-pipeline"
+version = "0.1.0"
+description = "Django data pipeline with HTMX frontend"
+authors = ["Hugo Rodger-Brown"]
+readme = "CLAUDE.md"
+packages = []
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.12"
+Django = "^5.2"
+django-htmx = "^1.21.0"
+python-decouple = "^3.8"
+requests = "^2.32.3"
+psycopg = {extras = ["binary"], version = "^3.2.4"}
+
+[tool.poetry.group.dev.dependencies]
+black = "^25.1.0"
+ruff = "^0.9.10"
+isort = "^5.13.2"
+pre-commit = "^4.2.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+known_django = ["django", "django_htmx"]
+known_first_party = ["config", "pipeline"]
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "DJANGO", "FIRSTPARTY", "LOCALFOLDER"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]  # line length handled by black

@@ -1,0 +1,40 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environments
+.env
+.venv/
+venv/
+env/
+supabase/
+node_modules/
+
+# Poetry
+poetry.toml
+
+# Django
+db.sqlite3
+*.log
+logs/*.log
+staticfiles/
+mediafiles/
+
+# Keep the logs directory
+!logs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
