@@ -17,6 +17,8 @@ query methods live on the queryset and are accessible via both
 Keep business logic out of models — put it in pipeline/services/ instead.
 """
 
+from __future__ import annotations
+
 import logging
 import uuid
 
@@ -245,13 +247,11 @@ class Bulletin(BaseModel):
     next_update = models.DateTimeField(null=True, blank=True)
     lang = models.CharField(max_length=8, default="en")
     unscheduled = models.BooleanField(default=False)
-    regions: models.ManyToManyField["Region", "RegionBulletin"] = (
-        models.ManyToManyField(
-            Region,
-            through="RegionBulletin",
-            related_name="bulletins",
-            blank=True,
-        )
+    regions: models.ManyToManyField[Region, RegionBulletin] = models.ManyToManyField(
+        Region,
+        through="RegionBulletin",
+        related_name="bulletins",
+        blank=True,
     )
     pipeline_run = models.ForeignKey(
         PipelineRun,
