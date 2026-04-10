@@ -128,3 +128,4 @@ classes in templates. Only add custom CSS there for things Tailwind cannot expre
 corresponding test_{module_name}.py that contains the tests.
 - All new code must have covering tests
 - Always run tests after code changes and ensure 100% pass rate and 90% coverage.
+- Use tox to run local CI and tests
