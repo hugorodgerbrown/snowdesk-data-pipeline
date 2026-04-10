@@ -62,7 +62,9 @@ class Command(BaseCommand):
         )
         logger.info(
             "fetch_data started for %s (force=%s, dry_run=%s)",
-            target_date, force, dry_run,
+            target_date,
+            force,
+            dry_run,
         )
 
         try:

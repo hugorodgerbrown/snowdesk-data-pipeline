@@ -26,6 +26,9 @@ pytest-django = "^4.12.0"
 factory-boy = "^3.3.3"
 types-requests = "^2.33.0.20260408"
 pytest-cov = "^7.1.0"
+tox = "^4.52.1"
+tox-gh-actions = "^3.5.0"
+mypy = "^1.20.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -38,7 +41,7 @@ target-version = ["py312"]
 [tool.isort]
 profile = "black"
 known_django = ["django", "django_htmx"]
-known_first_party = ["config", "pipeline"]
+known_first_party = ["config", "pipeline", "tests"]
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "DJANGO", "FIRSTPARTY", "LOCALFOLDER"]
 
 [tool.mypy]
@@ -47,6 +50,10 @@ python_version = "3.12"
 strict = false
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["decouple", "decouple.*"]
+ignore_missing_imports = true
 
 [tool.django-stubs]
 django_settings_module = "config.settings.development"
@@ -75,5 +82,7 @@ line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+select = ["E", "F", "W", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]  # line length handled by black
+# Note: "I" (isort) is excluded — isort is run separately with a custom
+# DJANGO section that ruff's isort implementation does not support.

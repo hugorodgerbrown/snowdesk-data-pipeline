@@ -59,13 +59,16 @@ class TestBackfillDataCommand:
     def test_success_output(self, mock_run: MagicMock, capsys):
         """Successful run prints created/updated counts and day span."""
         mock_run.return_value = _make_successful_run(
-            records_created=15, records_updated=3,
+            records_created=15,
+            records_updated=3,
         )
 
         call_command(
             "backfill_data",
-            "--start-date", "2025-03-01",
-            "--end-date", "2025-03-31",
+            "--start-date",
+            "2025-03-01",
+            "--end-date",
+            "2025-03-31",
         )
 
         output = capsys.readouterr().out
@@ -80,8 +83,10 @@ class TestBackfillDataCommand:
 
         call_command(
             "backfill_data",
-            "--start-date", "2025-01-01",
-            "--end-date", "2025-01-31",
+            "--start-date",
+            "2025-01-01",
+            "--end-date",
+            "2025-01-31",
         )
 
         _, kwargs = mock_run.call_args
@@ -95,8 +100,10 @@ class TestBackfillDataCommand:
 
         call_command(
             "backfill_data",
-            "--start-date", "2025-03-01",
-            "--end-date", "2025-03-01",
+            "--start-date",
+            "2025-03-01",
+            "--end-date",
+            "2025-03-01",
             "--force",
         )
 
@@ -110,8 +117,10 @@ class TestBackfillDataCommand:
 
         call_command(
             "backfill_data",
-            "--start-date", "2025-03-01",
-            "--end-date", "2025-03-01",
+            "--start-date",
+            "2025-03-01",
+            "--end-date",
+            "2025-03-01",
             "--dry-run",
         )
 
@@ -125,8 +134,10 @@ class TestBackfillDataCommand:
 
         call_command(
             "backfill_data",
-            "--start-date", "2025-03-01",
-            "--end-date", "2025-03-01",
+            "--start-date",
+            "2025-03-01",
+            "--end-date",
+            "2025-03-01",
             "--dry-run",
         )
 
@@ -140,8 +151,10 @@ class TestBackfillDataCommand:
 
         call_command(
             "backfill_data",
-            "--start-date", "2025-03-01",
-            "--end-date", "2025-03-01",
+            "--start-date",
+            "2025-03-01",
+            "--end-date",
+            "2025-03-01",
         )
 
         _, kwargs = mock_run.call_args
@@ -152,8 +165,10 @@ class TestBackfillDataCommand:
         with pytest.raises(CommandError, match="on or after"):
             call_command(
                 "backfill_data",
-                "--start-date", "2025-03-31",
-                "--end-date", "2025-03-01",
+                "--start-date",
+                "2025-03-31",
+                "--end-date",
+                "2025-03-01",
             )
 
     @patch("pipeline.management.commands.backfill_data.run_pipeline")
@@ -164,8 +179,10 @@ class TestBackfillDataCommand:
         with pytest.raises(CommandError, match="rate limited"):
             call_command(
                 "backfill_data",
-                "--start-date", "2025-03-01",
-                "--end-date", "2025-03-31",
+                "--start-date",
+                "2025-03-01",
+                "--end-date",
+                "2025-03-31",
             )
 
     @patch("pipeline.management.commands.backfill_data.run_pipeline")
@@ -176,8 +193,10 @@ class TestBackfillDataCommand:
         with pytest.raises(CommandError, match="disk full"):
             call_command(
                 "backfill_data",
-                "--start-date", "2025-03-01",
-                "--end-date", "2025-03-01",
+                "--start-date",
+                "2025-03-01",
+                "--end-date",
+                "2025-03-01",
             )
 
     @patch("pipeline.management.commands.backfill_data.run_pipeline")
@@ -187,8 +206,10 @@ class TestBackfillDataCommand:
 
         call_command(
             "backfill_data",
-            "--start-date", "2025-06-15",
-            "--end-date", "2025-06-15",
+            "--start-date",
+            "2025-06-15",
+            "--end-date",
+            "2025-06-15",
         )
 
         output = capsys.readouterr().out

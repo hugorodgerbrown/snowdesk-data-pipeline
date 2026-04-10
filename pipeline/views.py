@@ -38,10 +38,10 @@ def require_htmx(view_func):
 
     def wrapper(request: HttpRequest, *args, **kwargs) -> HttpResponse:
         """Check the request is an HTMX request before delegating."""
-        if not request.htmx:
+        if not request.htmx:  # type: ignore[attr-defined]
             logger.warning("Non-HTMX request to partial view %s", request.path)
             return HttpResponse("HTMX requests only.", status=400)
-        return view_func(request, *args, **kwargs)
+        return view_func(request, *args, **kwargs)  # type: ignore[no-any-return]
 
     wrapper.__name__ = view_func.__name__
     wrapper.__doc__ = view_func.__doc__

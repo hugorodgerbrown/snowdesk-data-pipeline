@@ -59,7 +59,8 @@ class TestFetchDataCommand:
     def test_success_output(self, mock_run: MagicMock, capsys):
         """Successful run prints created/updated counts."""
         mock_run.return_value = _make_successful_run(
-            records_created=5, records_updated=2,
+            records_created=5,
+            records_updated=2,
         )
 
         call_command("fetch_data", "--date", "2025-03-15")

@@ -49,12 +49,12 @@ class TestHtmlToMarkdown:
     def test_br_tag(self):
         """br tag produces a single newline."""
         result = html_to_markdown("Line one<br>Line two")
-        assert "Line one\nLine two" == result
+        assert result == "Line one\nLine two"
 
     def test_self_closing_br(self):
         """Self-closing br tag produces a single newline."""
         result = html_to_markdown("Line one<br/>Line two")
-        assert "Line one\nLine two" == result
+        assert result == "Line one\nLine two"
 
     def test_bold_strong(self):
         """strong tag wraps text in **."""

@@ -21,7 +21,7 @@ DATABASES = {
 }
 
 # Show all SQL queries in the console during development
-LOGGING["loggers"]["django.db.backends"] = {  # noqa: F405
+LOGGING["loggers"]["django.db.backends"] = {  # type: ignore[index]  # noqa: F405
     "handlers": ["console"],
     "level": "DEBUG",
     "propagate": False,

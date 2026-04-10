@@ -50,7 +50,9 @@ def fetch_bulletin_page(lang: str, limit: int, offset: int) -> list[dict[str, An
         ValueError: If the response body cannot be parsed as JSON.
     """
     url = f"{SLF_API_BASE_URL}/{lang}/json"
-    logger.debug("Fetching SLF bulletins: lang=%s limit=%d offset=%d", lang, limit, offset)
+    logger.debug(
+        "Fetching SLF bulletins: lang=%s limit=%d offset=%d", lang, limit, offset
+    )
 
     response = requests.get(
         url,
@@ -86,7 +88,7 @@ def _normalise_response(data: Any) -> list[dict[str, Any]]:
         return data
 
     if isinstance(data, dict) and "bulletins" in data:
-        return data["bulletins"]
+        return data["bulletins"]  # type: ignore[no-any-return]
 
     return []
 
@@ -185,7 +187,10 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
     action = "Created" if created else "Updated"
     logger.debug(
         "%s bulletin %s (issued %s, %d regions)",
-        action, bulletin_id, defaults["issued_at"], len(raw_regions),
+        action,
+        bulletin_id,
+        defaults["issued_at"],
+        len(raw_regions),
     )
     return created
 
@@ -230,7 +235,11 @@ def run_pipeline(
     try:
         logger.info(
             "Pipeline run %s: range %s–%s force=%s dry_run=%s",
-            run.pk, start, end, force, dry_run,
+            run.pk,
+            start,
+            end,
+            force,
+            dry_run,
         )
 
         done = False
@@ -288,7 +297,11 @@ def run_pipeline(
 
     logger.info(
         "Pipeline run %s finished: %d pages, %d created, %d updated, %d skipped",
-        run.pk, pages_fetched, total_created, total_updated, total_skipped,
+        run.pk,
+        pages_fetched,
+        total_created,
+        total_updated,
+        total_skipped,
     )
 
     if dry_run:

@@ -73,7 +73,11 @@ class Command(BaseCommand):
         )
         logger.info(
             "backfill_data started: %s to %s, %d day(s), force=%s, dry_run=%s",
-            start, end, days, force, dry_run,
+            start,
+            end,
+            days,
+            force,
+            dry_run,
         )
 
         try:
@@ -102,5 +106,8 @@ class Command(BaseCommand):
             )
         logger.info(
             "backfill_data finished: run=%s status=%s created=%s updated=%s",
-            run.pk, run.status, run.records_created, run.records_updated,
+            run.pk,
+            run.status,
+            run.records_created,
+            run.records_updated,
         )

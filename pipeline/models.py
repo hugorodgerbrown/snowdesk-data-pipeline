@@ -245,11 +245,13 @@ class Bulletin(BaseModel):
     next_update = models.DateTimeField(null=True, blank=True)
     lang = models.CharField(max_length=8, default="en")
     unscheduled = models.BooleanField(default=False)
-    regions = models.ManyToManyField(
-        Region,
-        through="RegionBulletin",
-        related_name="bulletins",
-        blank=True,
+    regions: models.ManyToManyField["Region", "RegionBulletin"] = (
+        models.ManyToManyField(
+            Region,
+            through="RegionBulletin",
+            related_name="bulletins",
+            blank=True,
+        )
     )
     pipeline_run = models.ForeignKey(
         PipelineRun,
