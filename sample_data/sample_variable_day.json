@@ -1,0 +1,90 @@
+{
+  "type": "Feature",
+  "geometry": null,
+  "properties": {
+    "bulletinID": "27f53363-ab17-4e1d-9367-24d68633b03d",
+    "lang": "en",
+    "validTime": {
+      "startTime": "2026-04-08T15:00:00Z",
+      "endTime": "2026-04-09T15:00:00Z"
+    },
+    "nextUpdate": "2026-04-09T15:00:00Z",
+    "unscheduled": false,
+    "regions": [
+      { "regionID": "CH-1213", "name": "Hohgant" },
+      { "regionID": "CH-2133", "name": "Stoos" },
+      { "regionID": "CH-3111", "name": "Glarus Nord" },
+      { "regionID": "CH-2132", "name": "Ybrig" },
+      { "regionID": "CH-2124", "name": "Gersau" },
+      { "regionID": "CH-1111", "name": "Waadtl\u00e4nder Voralpen" },
+      { "regionID": "CH-2111", "name": "Pilatus" },
+      { "regionID": "CH-2121", "name": "Glaubenberg" },
+      { "regionID": "CH-1221", "name": "Niedersimmental" },
+      { "regionID": "CH-1121", "name": "Jaun" }
+    ],
+    "dangerRatings": [
+      { "mainValue": "low", "validTimePeriod": "all_day" },
+      { "mainValue": "considerable", "validTimePeriod": "later" }
+    ],
+    "avalancheProblems": [
+      {
+        "problemType": "no_distinct_avalanche_problem",
+        "comment": "Dry avalanches are unlikely to occcur. The surface of the snowpack will freeze to form a strong crust only at high altitudes.",
+        "dangerRatingValue": "low",
+        "validTimePeriod": "all_day",
+        "elevation": { "lowerBound": "1800" },
+        "aspects": ["N", "NE", "NW"],
+        "customData": {
+          "CH": {
+            "coreZoneText": "Danger level \"low\" (1) in northwest to north to northeast facing aspects above 1800m."
+          }
+        }
+      },
+      {
+        "problemType": "wet_snow",
+        "comment": "As the day progresses as a consequence of warming during the day and solar radiation there will be a significant increase in the danger of wet and gliding avalanches. This applies in particular on steep sunny slopes above approximately 2000 m, as well as on steep north facing slopes above approximately 1600 m. Natural avalanches are to be expected. Wet avalanches can additionally in some places be released by people. Avalanches can reach large size. <br/> Backcountry tours should be started early and concluded timely.",
+        "dangerRatingValue": "considerable",
+        "validTimePeriod": "later"
+      },
+      {
+        "problemType": "gliding_snow",
+        "comment": "As the day progresses as a consequence of warming during the day and solar radiation there will be a significant increase in the danger of wet and gliding avalanches. This applies in particular on steep sunny slopes above approximately 2000 m, as well as on steep north facing slopes above approximately 1600 m. Natural avalanches are to be expected. Wet avalanches can additionally in some places be released by people. Avalanches can reach large size. <br/> Backcountry tours should be started early and concluded timely.",
+        "dangerRatingValue": "considerable",
+        "validTimePeriod": "later"
+      }
+    ],
+    "customData": {
+      "CH": {
+        "aggregation": [
+          {
+            "category": "dry",
+            "validTimePeriod": "all_day",
+            "problemTypes": ["no_distinct_avalanche_problem"],
+            "title": "Dry avalanches, whole day"
+          },
+          {
+            "category": "wet",
+            "validTimePeriod": "later",
+            "problemTypes": ["wet_snow", "gliding_snow"],
+            "title": "Wet-snow and gliding avalanches, as the day progresses"
+          }
+        ]
+      }
+    },
+    "publicationTime": "2026-04-08T15:00:00Z",
+    "weatherForecast": {
+      "comment": "<h1>Weather forecast to Thursday</h1><p>After a clear night, it will be sunny. With a zero-degree level at 3000 m, it will remain mild.</p><h2 contenteditable=\"false\">Fresh snow</h2><p>-</p><h2>Temperature</h2><p>At midday at 2000 m, between +7 \u00b0C in the north and +9 \u00b0C in the south</p><h2>Wind</h2><p>Increasingly moderate from the northwest in the afternoon</p>"
+    },
+    "weatherReview": {
+      "comment": "<h1>Weather review for Wednesday</h1><p>After a clear night, it was sunny and very mild with a zero-degree level at 3500 m.</p><h2 contenteditable=\"false\">Fresh snow</h2><p>-</p><h2 contenteditable=\"false\">Temperature</h2><p>At midday at 2000 m, around +10 \u00b0C</p><h2 contenteditable=\"false\">Wind</h2><p>Overnight sometimes moderate from the north, light during the day</p>"
+    },
+    "snowpackStructure": {
+      "comment": "<h1>Snowpack</h1><p>The old snowpack contains various weak layers. In particular on wind-sheltered shady slopes, surface hoar is in some cases covered by snow. Deeper in the snowpack there are faceted layers, which in isolated cases are still prone to triggering, especially on seldom-used slopes with little snow cover. As daytime temperatures rise and the surface starts to moisten in some places, the likelihood of even dry avalanches being triggered is increasing during the course of each day.</p><p>In addition, wet snow avalanches are to be expected in all regions as the day progresses. Isolated wet slab avalanches may also be triggered by human activity. Especially north of a line from the Rhone to the Rhine, isolated gliding avalanches are still to be expected. These are also usually triggered during the course of the day.</p>"
+    },
+    "tendency": [
+      {
+        "comment": "<h1>Outlook</h1><h2>Friday</h2><p>During the night into Friday it will be partly cloudy in the south, while elsewhere it will be quite clear. During the day it will be quite sunny in the west and south, but no longer quite as warm as on the previous days. In the northeast it will be heavily overcast and a few snowflakes will fall above approximately 2000 m. The northwesterly wind will be strong in places at high altitude.</p><p>The danger of dry avalanches will continue to decrease. The danger of wet and gliding avalanches will increase in the west and in the south as the day progresses. In the northeast the danger will be mainly confined to lower-lying north-facing slopes, but will be present from the early morning onwards.</p><h2>Saturday</h2><p>After a partly clear night, it will be sunny and mild on Saturday. The zero-degree level will increase back up to 3000 m, and the wind will be light.</p><p>The danger of dry avalanches will continue to decrease. Due to the somewhat reduced nocturnal radiation, the danger of wet and gliding avalanches will increase rapidly as the day progresses.</p>"
+      }
+    ]
+  }
+}
