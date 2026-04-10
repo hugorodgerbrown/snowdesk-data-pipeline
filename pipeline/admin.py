@@ -7,13 +7,20 @@ and bulletins without needing direct database access.
 """
 
 import json
+import logging
+from datetime import date
 
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.http import HttpRequest, HttpResponseRedirect
+from django.urls import URLPattern, path, reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 from .models import Bulletin, PipelineRun, Region, RegionBulletin
+from .services.data_fetcher import run_pipeline
 from .utils import html_to_markdown
+
+logger = logging.getLogger(__name__)
 
 
 @admin.register(PipelineRun)
@@ -97,6 +104,62 @@ class BulletinAdmin(admin.ModelAdmin):
     ]
     inlines = [RegionBulletinInline]
     exclude = ["raw_data", "pipeline_run"]
+
+    BACKFILL_START = date(2025, 12, 1)
+
+    def get_urls(self) -> list[URLPattern]:
+        """Add a custom URL for triggering the season backfill."""
+        custom_urls = [
+            path(
+                "backfill/",
+                self.admin_site.admin_view(self.backfill_view),
+                name="pipeline_bulletin_backfill",
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def backfill_view(self, request: HttpRequest) -> HttpResponseRedirect:
+        """
+        Handle the backfill button POST.
+
+        Runs the data pipeline from BACKFILL_START to today and redirects
+        back to the changelist with a success or error message.
+        """
+        if request.method != "POST":
+            self.message_user(request, "Invalid request method.", messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:pipeline_bulletin_changelist"))
+
+        start = self.BACKFILL_START
+        end = date.today()
+
+        logger.info("Admin backfill triggered: %s to %s", start, end)
+        try:
+            run = run_pipeline(
+                start=start,
+                end=end,
+                triggered_by="admin backfill",
+                dry_run=False,
+                force=False,
+            )
+        except Exception:
+            logger.exception("Admin backfill failed")
+            self.message_user(request, "Backfill failed — check logs.", messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:pipeline_bulletin_changelist"))
+
+        if run.status == PipelineRun.Status.FAILED:
+            self.message_user(
+                request,
+                f"Backfill run #{run.pk} failed: {run.error_message}",
+                messages.ERROR,
+            )
+        else:
+            self.message_user(
+                request,
+                f"Backfill complete — {run.records_created} created, "
+                f"{run.records_updated} updated.",
+                messages.SUCCESS,
+            )
+        return HttpResponseRedirect(reverse("admin:pipeline_bulletin_changelist"))
 
     def _get_properties(self, obj: Bulletin) -> dict:
         """
