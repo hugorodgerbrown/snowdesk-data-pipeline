@@ -7,7 +7,7 @@
 set -o errexit
 
 pip install poetry
-poetry install --no-interaction --no-root
+poetry install --no-interaction --no-root --only main
 
 python manage.py collectstatic --no-input
 python manage.py migrate

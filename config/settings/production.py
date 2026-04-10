@@ -11,6 +11,21 @@ from .base import *  # noqa: F401, F403
 
 DEBUG = False
 
+# ---------------------------------------------------------------------------
+# WhiteNoise — serve static files without a dedicated web server
+# ---------------------------------------------------------------------------
+
+MIDDLEWARE.insert(  # noqa: F405 — MIDDLEWARE imported via wildcard from base
+    MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,  # noqa: F405
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+)
+
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
 ALLOWED_HOSTS = config("ALLOWED_HOSTS").split(",")
 
 # ---------------------------------------------------------------------------
