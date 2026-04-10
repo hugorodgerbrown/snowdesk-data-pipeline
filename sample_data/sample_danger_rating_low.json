@@ -1,0 +1,70 @@
+{
+  "type": "Feature",
+  "geometry": null,
+  "properties": {
+    "lang": "en",
+    "regions": [
+      { "name": "östliche Berner Voralpen", "regionID": "CH-1212" },
+      { "name": "Toggenburg", "regionID": "CH-3221" },
+      { "name": "Val de Travers", "regionID": "CH-8114" },
+      { "name": "Appenzeller Alpen", "regionID": "CH-3211" },
+      { "name": "Moutier - Tavannes", "regionID": "CH-8214" },
+      { "name": "Thal", "regionID": "CH-8215" },
+      { "name": "La Chaux-de-Fonds - Le Locle", "regionID": "CH-8221" },
+      { "name": "Rothenthurm", "regionID": "CH-2131" },
+      { "name": "Delémont - Bellelay", "regionID": "CH-8224" },
+      { "name": "westliche Berner Voralpen", "regionID": "CH-1211" },
+      { "name": "Franches-Montagnes", "regionID": "CH-8222" },
+      { "name": "Schwarzenberg", "regionID": "CH-2112" }
+    ],
+    "tendency": [
+      {
+        "comment": "<h1>Outlook to Tuesday</h1><p>In the north, it will be quite sunny in the mountains on Monday and Tuesday. It will be very cloudy on the southern flank of the Alps on both days. On Monday, precipitation will set in here as the day progresses and will continue until Tuesday afternoon. Above 1200 m, 10 to 20 cm of snow will fall on the Main Alpine Ridge and south of there. Up to 30 cm is possible from the Lukmanier Pass to the Bernina Pass. There will be moderate southwesterly winds at times on Monday. On Tuesday, there will be moderate to strong southwesterly winds in the regions exposed to the foehn wind in the north and generally at high altitudes.</p><p>The avalanche danger will continue to decrease slowly on Monday, but only very slowly in the inneralpine regions and in the south due to the weak old snowpack. With fresh snowfall and wind, the avalanche danger will increase again somewhat on Tuesday on the Main Alpine Ridge and south of there, otherwise it will remain largely unchanged. Naturally triggered avalanches and avalanches triggered by human activity are expected in areas with new fallen snow. Caution and restraint are still required, especially in these regions.</p>"
+      }
+    ],
+    "validTime": {
+      "endTime": "2026-02-01T16:00:00Z",
+      "startTime": "2026-02-01T07:00:00Z"
+    },
+    "bulletinID": "bea3a0e1-3891-4d2e-add7-d3d74f8a7125",
+    "customData": {
+      "CH": {
+        "aggregation": [
+          {
+            "category": "dry",
+            "problemTypes": ["no_distinct_avalanche_problem"],
+            "validTimePeriod": "all_day"
+          }
+        ]
+      }
+    },
+    "nextUpdate": "2026-02-01T16:00:00Z",
+    "unscheduled": false,
+    "dangerRatings": [{ "mainValue": "low", "validTimePeriod": "all_day" }],
+    "weatherReview": {
+      "comment": "<h1>Weather review for Saturday</h1><p>Conditions were sunny in the mountains. High clouds gathered in the west in the afternoon.</p><h2>Fresh snow</h2><p>-</p><h2>Temperature</h2><p>At midday at 2000 m, around -4 °C</p><h2>Wind</h2><p>Mostly light from the south to southwest</p>"
+    },
+    "publicationTime": "2026-02-01T07:00:00Z",
+    "weatherForecast": {
+      "comment": "<h1>Weather forecast to Sunday</h1><p>It will be quite sunny in the mountains.</p><h2 contenteditable=\"false\">Fresh snow</h2><p>-</p><h2 contenteditable=\"false\">Temperature</h2><p>At midday at 2000 m, around -4 °C</p><h2>Wind</h2><p>Winds will be mostly light from variable directions.</p>"
+    },
+    "avalancheProblems": [
+      {
+        "aspects": ["N", "NE", "E", "SE", "W", "NW"],
+        "comment": "Individual avalanche prone locations are to be found in extremely steep terrain. Restraint should be exercised because avalanches can sweep people along and give rise to falls.",
+        "elevation": { "lowerBound": "1400" },
+        "customData": {
+          "CH": {
+            "coreZoneText": "Danger level \"low\" (1) in west to northeast to southeast facing aspects above 1400m."
+          }
+        },
+        "problemType": "no_distinct_avalanche_problem",
+        "validTimePeriod": "all_day",
+        "dangerRatingValue": "low"
+      }
+    ],
+    "snowpackStructure": {
+      "comment": "<h1>Snowpack</h1><p>Last week's fresh and drifted snow is lying on a weak snowpack on the Main Alpine Ridge and south of there and also in the Engadine. In these regions, medium-sized and even large avalanches can still be triggered very easily by people  in many places in the old snowpack. Remote triggering is to be expected. Avalanches may also be triggered deeper in the snowpack in southern Valais and in the inneralpine regions of Grisons, especially on northern and eastern slopes. Here, too, some avalanches can become large.</p><p>The snowpack structure is somewhat more favourable on the northern flank of the Alps and in northern Valais, but there are also weak layers deeper in the snowpack in these regions. These may still be triggered in some places, especially where there is little snow and at transitions from a deep to shallow snowpack.</p>"
+    }
+  }
+}

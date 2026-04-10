@@ -1,0 +1,98 @@
+{
+  "type": "Feature",
+  "geometry": null,
+  "properties": {
+    "lang": "en",
+    "regions": [
+      { "name": "Gadmertal", "regionID": "CH-1246" },
+      { "name": "nördliches Urseren", "regionID": "CH-2223" },
+      { "name": "Guttannen", "regionID": "CH-1245" },
+      { "name": "Schächental", "regionID": "CH-2211" },
+      { "name": "Bisistal", "regionID": "CH-2134" },
+      { "name": "Glarus Süd-Sernftal", "regionID": "CH-3113" },
+      { "name": "Engelberg", "regionID": "CH-2122" },
+      { "name": "Flims", "regionID": "CH-5124" },
+      { "name": "Melchtal", "regionID": "CH-2123" },
+      { "name": "Meiental", "regionID": "CH-2221" },
+      { "name": "Hasliberg - Rosenlaui", "regionID": "CH-1244" },
+      { "name": "Grimselpass", "regionID": "CH-1247" },
+      { "name": "Schreckhorn", "regionID": "CH-1243" },
+      { "name": "Glarus Süd-Grosstal", "regionID": "CH-3112" },
+      { "name": "Maderanertal", "regionID": "CH-2222" },
+      { "name": "nördliches Tujetsch", "regionID": "CH-5211" },
+      { "name": "nördliches Obergoms", "regionID": "CH-4243" },
+      { "name": "Glarus Mitte", "regionID": "CH-3114" },
+      { "name": "Uri Rot Stock", "regionID": "CH-2212" }
+    ],
+    "tendency": [
+      {
+        "comment": "<h1>Outlook</h1><h2>Wednesday</h2><p>In the north there will be broken cloud cover with showers. The snowfall level will be between 400 m and 700 m. On the northern flank of the Alps, a further 10 to 20 cm will fall, with 5 to 10 cm falling in the Jura and northern and central Grisons. It will be mostly sunny in Valais and the south. Overnight to Wednesday, the wind will still be moderate to strong from the northeast but ease off during the course of the day. In the Jura, there will be moderate to strong Bise winds as the day progresses.</p><p>The danger of dry avalanches will decrease and naturally triggered dry avalanches will be highly unlikely. However, the situation will remain critical for snow sports outside marked and open pistes. As a result of the solar radiation, moist loose snow avalanches are to be expected from the fresh snow. South of the Main Alpine Ridge, the avalanche danger will not change significantly.</p><h2>Thursday</h2><p>After a mostly clear night, conditions will be sunny in the mountains with patches of cloud. The zero-degree level will rise to around 1600 m in the north and 2200 m in the south, and the wind will be light to moderate from the north-east.</p><p>The danger of dry avalanches will decrease. During the course of the day, moist loose snow avalanches from the loose snow and increasingly also gliding avalanches are to be expected.</p>"
+      }
+    ],
+    "validTime": {
+      "endTime": "2026-03-31T15:00:00Z",
+      "startTime": "2026-03-30T15:00:00Z"
+    },
+    "bulletinID": "ff61dff7-d6fe-4c97-89bb-c74de63e0d6b",
+    "customData": {
+      "CH": {
+        "aggregation": [
+          {
+            "category": "dry",
+            "problemTypes": ["new_snow", "persistent_weak_layers"],
+            "validTimePeriod": "all_day"
+          }
+        ]
+      }
+    },
+    "nextUpdate": "2026-03-31T06:00:00Z",
+    "unscheduled": false,
+    "dangerRatings": [
+      {
+        "mainValue": "high",
+        "customData": { "CH": { "subdivision": "minus" } },
+        "validTimePeriod": "all_day"
+      }
+    ],
+    "weatherReview": {
+      "comment": "<h1>Weather review for Monday</h1><p>Except in the far south, it was mostly heavily overcast and light snowfall began in the early morning, intensifying during the course of the day. The snowfall level was between 500 and 900 m. It was sunny in central and southern Ticino.</p><h2 contenteditable=\"false\">Fresh snow</h2><ul><li>Northern flank of the Alps from the eastern part of the Bernese Alps to the Alpstein region, northern Grisons: 10 to 20 cm</li><li>Elsewhere a few centimetres, dry in central and southern Ticino</li></ul><h2 contenteditable=\"false\">Temperature</h2><p>At midday at 2000 m, between -3 °C in the west and south and -6 °C in the east.</p><h2 contenteditable=\"false\">Wind</h2><ul><li>During the night into Monday, moderate northerly winds at high altitudes</li><li>Wind shifted from a westerly to northwesterly during the day and was moderate to strong; in the afternoon, it was strong to storm force at high altitudes</li></ul>"
+    },
+    "publicationTime": "2026-03-30T15:00:00Z",
+    "weatherForecast": {
+      "comment": "<h1>Weather forecast to Tuesday</h1><p>In the north, it will be mostly very cloudy, and snow will fall down to low altitudes. In the areas of orographic lift on the northern flank of the Alps, the snowfall will be persistent and heavy until the late morning, becoming increasingly showery as the day progresses. Conditions will be mostly sunny south of the Main Alpine Ridge.</p><h2 contenteditable=\"false\">Fresh snow</h2><ul><li>Northern flank of the Alps from Wildstrubel to the Glarus Alps excluding the Prealps: 40 to 60 cm</li><li>Remaining areas on the northern flank of the Alps, Lower Valais, northern Upper Valais, southern Obergoms, southern Urseren, northern and central Grisons, northern Engadine: 20 to 30 cm, locally up to 40 cm</li><li>Remaining southern Upper Valais, northern Ticino 10 to 20 cm</li><li>Further south a few centimetres or dry</li></ul><h2>Temperature</h2><p>At midday at 2000 m, around -8 °C in the north and -5 °C in the south</p><h2 contenteditable=\"false\">Wind</h2><ul><li>Moderate to strong, becoming a strong to storm force northerly on the alpine ridgelines</li><li>Moderate to strong foehn wind in the south</li></ul>"
+    },
+    "avalancheProblems": [
+      {
+        "aspects": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+        "comment": "During the night as a consequence of new snow and stormy weather there will be a rapid increase in the avalanche danger to level 4 (high). Natural avalanches are to be expected. Avalanches can release deeper layers of the snowpack and reach very large size in isolated cases. This applies in particular on steep north and east facing slopes. Exposed parts of transportation routes are endangered in some cases. <br/> Winter sport participants can release avalanches very easily, including dangerously large ones. The snow sport conditions outside marked and open pistes are very critical.",
+        "elevation": { "lowerBound": "2000" },
+        "customData": {
+          "CH": {
+            "subdivision": "minus",
+            "coreZoneText": "Danger level \"high\" (4-) in all aspects above 2000m."
+          }
+        },
+        "problemType": "new_snow",
+        "validTimePeriod": "all_day",
+        "dangerRatingValue": "high"
+      },
+      {
+        "aspects": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+        "comment": "During the night as a consequence of new snow and stormy weather there will be a rapid increase in the avalanche danger to level 4 (high). Natural avalanches are to be expected. Avalanches can release deeper layers of the snowpack and reach very large size in isolated cases. This applies in particular on steep north and east facing slopes. Exposed parts of transportation routes are endangered in some cases. <br/> Winter sport participants can release avalanches very easily, including dangerously large ones. The snow sport conditions outside marked and open pistes are very critical.",
+        "elevation": { "lowerBound": "2000" },
+        "customData": {
+          "CH": {
+            "subdivision": "minus",
+            "coreZoneText": "Danger level \"high\" (4-) in all aspects above 2000m."
+          }
+        },
+        "problemType": "persistent_weak_layers",
+        "validTimePeriod": "all_day",
+        "dangerRatingValue": "high"
+      }
+    ],
+    "snowpackStructure": {
+      "comment": "<h1 contenteditable=\"false\">Snowpack</h1><p>The snowfall in the north will intensify overnight to Tuesday. The strong to storm force northerly wind will transport the new snow and in some places also the loose old snow. Snowdrift accumulations will be widespread, with large ones forming in the north. In places that are protected from the wind, the new snow will be deposited on the still loose snow from the weekend.</p><p>In the upper part of the old snowpack, there are some faceted weak layers and some snow-covered surface hoar, particularly on shady slopes. At the weekend, avalanches were triggered in these weak layers by winter sports participants. These weak layers are still prone to triggering. In the inneralpine regions of Valais and particularly Grisons, weak layers deeper in the snowpack are still prone to triggering in places and it is also possible for isolated avalanches to be triggered in near-ground weak layers.</p>"
+    }
+  }
+}

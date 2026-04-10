@@ -1,0 +1,119 @@
+{
+  "type": "Feature",
+  "geometry": null,
+  "properties": {
+    "lang": "en",
+    "regions": [
+      { "name": "Münstertal", "regionID": "CH-7231" },
+      { "name": "Corvatsch", "regionID": "CH-7111" },
+      { "name": "Val Sumvitg", "regionID": "CH-5215" },
+      { "name": "Zermatt", "regionID": "CH-4222" },
+      { "name": "Sur Tasna", "regionID": "CH-7123" },
+      { "name": "Saas Fee", "regionID": "CH-4223" },
+      { "name": "Riederalp", "regionID": "CH-4214" },
+      { "name": "östliche Silvretta", "regionID": "CH-7122" },
+      { "name": "Val Suot", "regionID": "CH-7124" },
+      { "name": "nördliches Prättigau", "regionID": "CH-5111" },
+      { "name": "Mattmark", "regionID": "CH-4225" },
+      { "name": "westliche Silvretta", "regionID": "CH-5113" },
+      { "name": "Rheinwald", "regionID": "CH-5223" },
+      { "name": "Val d'Anniviers", "regionID": "CH-4124" },
+      { "name": "Samnaun", "regionID": "CH-7121" },
+      { "name": "Davos", "regionID": "CH-5123" },
+      { "name": "Bivio", "regionID": "CH-5234" },
+      { "name": "Val S-charl", "regionID": "CH-7126" },
+      { "name": "obere Leventina", "regionID": "CH-6112" },
+      { "name": "südliches Obergoms", "regionID": "CH-4244" },
+      { "name": "nördliches Simplon Gebiet", "regionID": "CH-4231" },
+      { "name": "südliches Prättigau", "regionID": "CH-5112" },
+      { "name": "Reckingen", "regionID": "CH-4241" },
+      { "name": "Avers", "regionID": "CH-5233" },
+      { "name": "Schams", "regionID": "CH-5222" },
+      { "name": "Savognin", "regionID": "CH-5232" },
+      { "name": "Monte Rosa", "regionID": "CH-4224" },
+      { "name": "Leuk", "regionID": "CH-4215" },
+      { "name": "Martigny-Verbier", "regionID": "CH-4115" },
+      { "name": "Mountet", "regionID": "CH-4125" },
+      { "name": "Haut Val de Bagnes", "regionID": "CH-4116" },
+      { "name": "unteres Puschlav", "regionID": "CH-7222" },
+      { "name": "Binntal", "regionID": "CH-4242" },
+      { "name": "Bergell", "regionID": "CH-7211" },
+      { "name": "Zervreila", "regionID": "CH-5216" },
+      { "name": "untere Vispertäler", "regionID": "CH-4221" },
+      { "name": "Schanfigg", "regionID": "CH-5122" },
+      { "name": "Domleschg - Lenzerheide", "regionID": "CH-5221" },
+      { "name": "südliches Simplon Gebiet", "regionID": "CH-4232" },
+      { "name": "Bedrettotal", "regionID": "CH-6111" },
+      { "name": "Bernina", "regionID": "CH-7112" },
+      { "name": "Val d'Entremont-Val Ferret", "regionID": "CH-4113" },
+      { "name": "Val dal Spöl", "regionID": "CH-7125" },
+      { "name": "Zuoz", "regionID": "CH-7113" },
+      { "name": "Val Chamuera", "regionID": "CH-7115" },
+      { "name": "Val d'Hérens", "regionID": "CH-4122" },
+      { "name": "Obersaxen - Safiental", "regionID": "CH-5214" },
+      { "name": "Albulatal", "regionID": "CH-5231" },
+      { "name": "Génépi", "regionID": "CH-4112" },
+      { "name": "Arolla", "regionID": "CH-4123" },
+      { "name": "St. Moritz", "regionID": "CH-7114" },
+      { "name": "oberes Puschlav", "regionID": "CH-7221" },
+      { "name": "südliches Tujetsch", "regionID": "CH-5212" },
+      { "name": "Turtmanntal", "regionID": "CH-4212" }
+    ],
+    "tendency": [
+      {
+        "comment": "<h1>Outlook</h1><p>On Tuesday and Wednesday there will be low stratus cloud in the north with only occasional sunny spells due to the broken, higher altitude cloud cover. Most of the sunshine will be in the east with a slight tendency towards foehn winds. Conditions will be mainly cloudy on both days on the southern flank of the Alps. A few centimetres of snow may fall above approximately 1400 m on Wednesday. There will be a light to moderate southerly wind on both days.</p><p>Avalanche risk will continue to fall. Avalanches, possibly large, may still be triggered in the old snowpack, especially on steep shady slopes at high altitudes. Gliding avalanches are still possible in regions with deep snow in the west and north.</p>"
+      }
+    ],
+    "validTime": {
+      "endTime": "2025-12-01T16:00:00Z",
+      "startTime": "2025-11-30T16:00:00Z"
+    },
+    "bulletinID": "69d0fc53-3148-4558-b66a-394fd58b9e53",
+    "customData": {
+      "CH": {
+        "aggregation": [
+          {
+            "category": "dry",
+            "problemTypes": ["persistent_weak_layers"],
+            "validTimePeriod": "all_day"
+          }
+        ]
+      }
+    },
+    "nextUpdate": "2025-12-01T16:00:00Z",
+    "unscheduled": false,
+    "dangerRatings": [
+      {
+        "mainValue": "moderate",
+        "customData": { "CH": { "subdivision": "plus" } },
+        "validTimePeriod": "all_day"
+      }
+    ],
+    "weatherReview": {
+      "comment": "<h1>Weather review for Sunday</h1><p>Conditions were cloudy but mostly dry on Sunday</p><h2 contenteditable=\"false\">Fresh snow</h2><p>-</p><h2>Temperature</h2><p>At midday at 2000 m in the east around +1°C</p><h2>Wind</h2><p>Winds were mostly light and occasionally moderate from the south.</p>"
+    },
+    "publicationTime": "2025-11-30T15:53:05.336661275Z",
+    "weatherForecast": {
+      "comment": "<h1>Weather forecast to Monday</h1><p>There will be little snowfall overnight to Monday, except in the very south. The snowfall level will drop from 1500 m to 800 m. Some clouds will remain along the Prealps and in the east during the day. Conditions will be sunny in the west and generally at high altitude. Clouds will gather in the south as the day progresses.</p><h2 contenteditable=\"false\">Fresh snow</h2><p>From Sunday afternoon to Monday morning above approximately 1600 m:</p><ul><li>northern flank of the Alps: 5 to 10 cm</li><li>other regions less or dry</li></ul><h2 contenteditable=\"false\">Temperature</h2><p>At midday at 2000 m, around -2°C</p><h2>Wind</h2><p>Mostly light from southerly directions</p>"
+    },
+    "avalancheProblems": [
+      {
+        "aspects": ["N", "NE", "E", "SE", "SW", "W", "NW"],
+        "comment": "Weak layers in the old snowpack represent the main danger. Avalanches can be triggered in the weakly bonded old snow. Mostly they are medium-sized. Caution is to be exercised in particular on steep shady slopes above approximately 2400 m. Isolated whumpfing sounds can indicate the danger. <br/> In addition the wind slabs of the last few days are prone to triggering in some cases still. They will be covered with new snow and therefore difficult to recognise. <br/> Defensive route selection is important.",
+        "elevation": { "lowerBound": "2200" },
+        "customData": {
+          "CH": {
+            "subdivision": "plus",
+            "coreZoneText": "Danger level \"moderate\" (2+) in southwest to north to southeast facing aspects above 2200m."
+          }
+        },
+        "problemType": "persistent_weak_layers",
+        "validTimePeriod": "all_day",
+        "dangerRatingValue": "moderate"
+      }
+    ],
+    "snowpackStructure": {
+      "comment": "<h1>Snowpack</h1><p>Snow depths are above average in the west and north, where there is a widespread 150 to 200% of the usual amount of snow. In other regions, there is a widespread 50 to 100%, of the usual amount of snow and less than 50% on the southern flank of the Alps.</p><p>Especially on shady slopes above approximately 2400 m and generally in the high Alpine regions, there are faceted, long-lasting weak layers deep in the old snowpack. In many places in western and northern regions with heavy snow, these layers are overlaid with deep fresh snow and so can no longer be easily triggered by winter sport participants. However, any avalanches that are triggered in these deep layers can still become large, as has been clear from the avalanches in recent days. In regions with little fresh snow, avalanches can more easily be triggered in deep layers of old snow and will usually be of medium size.</p><p>Small to medium gliding avalanches are still to be expected in the west and north.</p>"
+    }
+  }
+}

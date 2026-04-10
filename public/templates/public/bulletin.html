@@ -1,4 +1,6 @@
 {% extends "public/base.html" %}
+{% load static %}
+{% load hazard_icons %}
 
 {% block title %}{{ region_name }} — Snowdesk{% endblock %}
 
@@ -10,7 +12,8 @@
 
     {% if bulletin %}
     <p class="label masthead__issued">
-        Issued {{ bulletin.issued_at|date:"D j M Y, H:i" }} UTC
+        {% if is_today %}Today{% else %}{{ page_date|date:"D j M Y" }}{% endif %}
+        &mdash; issued {{ bulletin.issued_at|date:"H:i" }} UTC
     </p>
     {% endif %}
 
@@ -19,17 +22,17 @@
 
     {% if bulletin %}
     <nav class="masthead__nav" aria-label="Bulletin navigation">
-        {% if prev_bulletin %}
-        <a href="?id={{ prev_bulletin.bulletin_id }}">
-            &larr; {{ prev_bulletin.issued_at|date:"j M, H:i" }}
+        {% if prev_date %}
+        <a href="?date={{ prev_date|date:"Y-m-d" }}">
+            &larr; {{ prev_date|date:"D j M" }}
         </a>
         {% endif %}
-        {% if prev_bulletin and next_bulletin %}
+        {% if prev_date and next_date %}
         <span class="masthead__nav-sep">/</span>
         {% endif %}
-        {% if next_bulletin %}
-        <a href="?id={{ next_bulletin.bulletin_id }}">
-            {{ next_bulletin.issued_at|date:"j M, H:i" }} &rarr;
+        {% if next_date %}
+        <a href="?date={{ next_date|date:"Y-m-d" }}">
+            {{ next_date|date:"D j M" }} &rarr;
         </a>
         {% endif %}
     </nav>
@@ -44,6 +47,22 @@
 </div>
 
 {% else %}
+
+{# ── Hazard icons ────────────────────────────────────────────────────── #}
+{% if key_hazards %}
+<div class="hazard-icons">
+    {% for hazard in key_hazards %}
+    {% with icon_path=hazard.problem_type|hazard_icon %}
+    {% if icon_path %}
+    <img class="hazard-icons__icon"
+         src="{% static icon_path %}"
+         alt="{{ hazard.description }}"
+         title="{{ hazard.description }}">
+    {% endif %}
+    {% endwith %}
+    {% endfor %}
+</div>
+{% endif %}
 
 {# ── Verdict banner ──────────────────────────────────────────────────── #}
 {% if overall_verdict %}
@@ -107,58 +126,25 @@
     <p class="label card__label">Key Hazards</p>
     <ul>
         {% for hazard in key_hazards %}
-        <li>{{ hazard }}</li>
+        <li>{{ hazard.description }}</li>
         {% endfor %}
     </ul>
 </div>
 {% endif %}
 
-{# ── Weather ──────────────────────────────────────────────────────────── #}
-{% if weather %}
-<div class="weather-section">
-    <p class="label card__label">Weather</p>
+{# ── Weather review ───────────────────────────────────────────────────── #}
+{% if weather_review %}
+<div class="card weather-review">
+    <p class="label card__label">Weather Review</p>
+    <div class="card__markdown">{{ weather_review }}</div>
+</div>
+{% endif %}
 
-    {% if weather.summit_temp or weather.mid_temp or weather.resort_temp or weather.freezing_level %}
-    <div class="weather-grid weather-grid--temps">
-        <div class="weather-cell">
-            <p class="label weather-cell__label">Summit</p>
-            <p class="weather-cell__value">{{ weather.summit_temp|default:"—" }}</p>
-        </div>
-        <div class="weather-cell">
-            <p class="label weather-cell__label">Mid-mountain</p>
-            <p class="weather-cell__value">{{ weather.mid_temp|default:"—" }}</p>
-        </div>
-        <div class="weather-cell">
-            <p class="label weather-cell__label">Resort</p>
-            <p class="weather-cell__value">{{ weather.resort_temp|default:"—" }}</p>
-        </div>
-        <div class="weather-cell">
-            <p class="label weather-cell__label">Freezing level</p>
-            <p class="weather-cell__value">{{ weather.freezing_level|default:"—" }}</p>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if weather.wind or weather.visibility or weather.new_snow_24h or weather.base_depth %}
-    <div class="weather-grid weather-grid--details">
-        <div class="weather-cell">
-            <p class="label weather-cell__label">Wind</p>
-            <p class="weather-cell__value">{{ weather.wind|default:"—" }}</p>
-        </div>
-        <div class="weather-cell">
-            <p class="label weather-cell__label">Visibility</p>
-            <p class="weather-cell__value">{{ weather.visibility|default:"—" }}</p>
-        </div>
-        <div class="weather-cell">
-            <p class="label weather-cell__label">New snow (24 h)</p>
-            <p class="weather-cell__value">{{ weather.new_snow_24h|default:"—" }}</p>
-        </div>
-        <div class="weather-cell">
-            <p class="label weather-cell__label">Base depth</p>
-            <p class="weather-cell__value">{{ weather.base_depth|default:"—" }}</p>
-        </div>
-    </div>
-    {% endif %}
+{# ── Weather forecast ────────────────────────────────────────────────── #}
+{% if weather_forecast %}
+<div class="card weather-forecast">
+    <p class="label card__label">Weather Forecast</p>
+    <div class="card__markdown">{{ weather_forecast }}</div>
 </div>
 {% endif %}
 

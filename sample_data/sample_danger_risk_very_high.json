@@ -1,0 +1,88 @@
+{
+  "type": "Feature",
+  "geometry": null,
+  "properties": {
+    "lang": "en",
+    "regions": [
+      { "name": "Montana", "regionID": "CH-4121" },
+      { "name": "Conthey-Fully", "regionID": "CH-4114" },
+      { "name": "Leuk", "regionID": "CH-4215" },
+      { "name": "Konkordia Gebiet", "regionID": "CH-4213" },
+      { "name": "Leukerbad - Lötschental", "regionID": "CH-4211" },
+      { "name": "Riederalp", "regionID": "CH-4214" },
+      { "name": "Emosson", "regionID": "CH-4111" },
+      { "name": "Génépi", "regionID": "CH-4112" },
+      { "name": "Val d'Entremont-Val Ferret", "regionID": "CH-4113" }
+    ],
+    "tendency": [
+      {
+        "comment": "<h1>Outlook to Thursday</h1><p>On Wednesday, 10 to 20 cm of snow will fall in the north and west, less elsewhere. There will be sunny spells in the far south. The snowfall level will rise to around 1400 m. Thursday will be mostly cloudy. Some snow will fall above around 1000 m, mainly in the west and southern Grisons. Amounts of precipitation for Thursday are still uncertain. There will be moderate to strong westerly winds on both days.</p><p>As the snowfall subsides on Tuesday evening, the number of naturally triggered avalanches will decrease. However, the avalanche situation will remain critical on Wednesday. Isolated naturally triggered avalanches are still possible and may be very large especially in the north and in Valais. Exposed transportation routes may be at risk. Avalanche danger will decrease slightly in many places on Thursday. However, the weak snowpack structure means that this decrease will be particularly slow in southern Valais, Ticino and Grisons. Conditions for touring and off-piste skiing remain critical in many places.</p>"
+      }
+    ],
+    "validTime": {
+      "endTime": "2026-02-17T16:00:00Z",
+      "startTime": "2026-02-17T07:00:00Z"
+    },
+    "bulletinID": "7a68a5bc-ae3a-4c6f-a75e-524ec57339f2",
+    "customData": {
+      "CH": {
+        "aggregation": [
+          {
+            "category": "dry",
+            "problemTypes": ["new_snow", "persistent_weak_layers"],
+            "validTimePeriod": "all_day"
+          }
+        ]
+      }
+    },
+    "nextUpdate": "2026-02-17T16:00:00Z",
+    "unscheduled": false,
+    "dangerRatings": [
+      {
+        "mainValue": "very_high",
+        "customData": { "CH": { "subdivision": "minus" } },
+        "validTimePeriod": "all_day"
+      }
+    ],
+    "weatherReview": {
+      "comment": "<h1>Weather review for Monday</h1><p>There was widespread snowfall, with persistent snowfall in the north, Valais and Val Bedretto. Only in the far south did conditions remain mostly dry. The snowfall level rose to around 1500 m during the night in the north and west and was around 1000 m during the day.</p><h2>Fresh snow</h2><p>From Sunday evening to Monday afternoon above approximately 1800 m:</p><ul><li>northern Alpine ridge from the Chablais to the Glarus Alps, extreme west of Lower Valais, central Valais, Goms, Val Bedretto: 40 to 60 cm</li><li>rest of the northern flank of the Alps, rest of northern Grisons, Lower Engadine north of the Inn, rest of Valais, rest of northern Ticino: 20 to 40 cm</li><li>elsewhere, a widespread 10 to 20 cm, less in the far south</li></ul><h2>Temperature</h2><p>At midday at 2000 m, around -4 °C</p><h2>Wind</h2><p>Strong in the north and Valais, moderate in Grisons and Ticino from westerly directions</p>"
+    },
+    "publicationTime": "2026-02-17T07:00:00Z",
+    "weatherForecast": {
+      "comment": "<h1>Weather forecast to Tuesday</h1><p>Widespread snowfall down to low altitudes, mostly on the northern Alpine ridge, in Valais and northern Grisons. The showery nature of the precipitation means that snow volumes will be distributed unevenly. Conditions will be very sunny in the far south.</p><h2 contenteditable=\"false\">Fresh snow</h2><p>From Monday afternoon to Tuesday afternoon above approximately 1800 m:</p><ul><li>northern Alpine ridge, northern Grisons, Lower Engadine north of the Inn and Valais excluding areas on the main Alpine ridge from the Saas Valley to southern Goms: 40 to 60 cm</li><li>western Jura, rest of the northern flank of the Alps, main Alpine ridge from the Saas Valley to southern Goms, Val Bedretto, central Grisons, rest of the Engadine: 20 to 40 cm</li><li>elsewhere less or dry</li></ul><h2 contenteditable=\"false\">Temperature</h2><p>At midday at 2000 m -7 °C in the north and -5 °C in the south</p><h2>Wind</h2><p>Strong to storm-force northwesterly</p>"
+    },
+    "avalancheProblems": [
+      {
+        "aspects": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+        "comment": "More snow than expected fell during the night. Large quantities of fresh snow and the wind-drifted snow are very prone to triggering. Avalanches can release deeper layers of the snowpack. Numerous very large natural avalanches are to be expected. Extremely large natural avalanches are possible. Avalanches can reach low altitudes in particular in the typical avalanche paths. Exposed transportation routes and exposed settlements are endangered. <br/> It is inadvisable to engage in backcountry touring and other off-piste activities outside marked and open pistes.",
+        "elevation": { "lowerBound": "1800" },
+        "customData": {
+          "CH": {
+            "subdivision": "minus",
+            "coreZoneText": "Danger level \"very high\" (5-) in all aspects above 1800m."
+          }
+        },
+        "problemType": "new_snow",
+        "validTimePeriod": "all_day",
+        "dangerRatingValue": "very_high"
+      },
+      {
+        "aspects": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+        "comment": "More snow than expected fell during the night. Large quantities of fresh snow and the wind-drifted snow are very prone to triggering. Avalanches can release deeper layers of the snowpack. Numerous very large natural avalanches are to be expected. Extremely large natural avalanches are possible. Avalanches can reach low altitudes in particular in the typical avalanche paths. Exposed transportation routes and exposed settlements are endangered. <br/> It is inadvisable to engage in backcountry touring and other off-piste activities outside marked and open pistes.",
+        "elevation": { "lowerBound": "1800" },
+        "customData": {
+          "CH": {
+            "subdivision": "minus",
+            "coreZoneText": "Danger level \"very high\" (5-) in all aspects above 1800m."
+          }
+        },
+        "problemType": "persistent_weak_layers",
+        "validTimePeriod": "all_day",
+        "dangerRatingValue": "very_high"
+      }
+    ],
+    "snowpackStructure": {
+      "comment": "<h1>Snowpack</h1><p>Ongoing snowfall and sometimes storm-force westerly to northwesterly winds mean that extensive snowdrift accumulations are continuing to grow. The large amount of fresh and drifted snow is prone to triggering. Numerous naturally triggered avalanches are to be expected. These can extend down to deeper layers of the snowpack and become very large, especially on the northern Alpine ridge, in Valais, in the Gotthard region, in northern Grisons and in the Lower Engadine north of the Inn. Isolated extremely large avalanches are also possible, especially in western and northern Valais.</p><p>In other parts of northern and central Ticino and Grisons, layers of fresh and drifted snow are lying on an unstable old snowpack with pronounced weak layers. Naturally triggered avalanches, mostly medium and large in size, are to be expected here too. Avalanches can very easily be triggered by human activity, even from a relatively large distance.</p>"
+    }
+  }
+}
