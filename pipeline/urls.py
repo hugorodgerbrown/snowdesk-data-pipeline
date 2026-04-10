@@ -16,6 +16,6 @@ urlpatterns = [
     # Full-page views
     path("", views.dashboard, name="dashboard"),
     # HTMX partial views
-    path("partials/records/", views.records_partial, name="records-partial"),
+    path("partials/bulletins/", views.bulletins_partial, name="bulletins-partial"),
     path("partials/runs/", views.runs_partial, name="runs-partial"),
 ]

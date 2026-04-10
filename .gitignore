@@ -29,6 +29,10 @@ mediafiles/
 # Keep the logs directory
 !logs/.gitkeep
 
+# Coverage
+htmlcov/
+.coverage
+
 # IDE
 .vscode/
 .idea/

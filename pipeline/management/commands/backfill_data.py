@@ -1,11 +1,13 @@
 """
 pipeline/management/commands/backfill_data.py — Management command: backfill_data.
 
-Backfills historical data for a given date range. Processes dates in order
-and reports progress. Supports --dry-run for safe pre-flight checks.
+Backfills historical SLF bulletins for a given date range. Pages through
+the CAAML API in reverse chronological order and stops once it passes the
+start date boundary. Supports --force and --dry-run.
 
 Usage:
     python manage.py backfill_data --start-date 2024-01-01 --end-date 2024-12-31
+    python manage.py backfill_data --start-date 2024-01-01 --end-date 2024-12-31 --force
     python manage.py backfill_data --start-date 2024-01-01 --end-date 2024-12-31 --dry-run
 """
 
@@ -20,9 +22,9 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    """Backfill data for a specified date range."""
+    """Backfill SLF bulletins for a specified date range."""
 
-    help = "Backfill data for a date range and store it in the database."
+    help = "Backfill SLF bulletins for a date range and store them."
 
     def add_arguments(self, parser):
         """Register command-line arguments."""
@@ -41,6 +43,11 @@ class Command(BaseCommand):
             help="Last date to backfill (inclusive).",
         )
         parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Upsert existing bulletins instead of skipping them.",
+        )
+        parser.add_argument(
             "--dry-run",
             action="store_true",
             help="Fetch data but do not write anything to the database.",
@@ -50,6 +57,7 @@ class Command(BaseCommand):
         """Execute the command."""
         start: date = options["start_date"]
         end: date = options["end_date"]
+        force: bool = options["force"]
         dry_run: bool = options["dry_run"]
 
         if end < start:
@@ -59,15 +67,13 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.MIGRATE_HEADING(
                 f"Backfilling {days} day(s) from {start} to {end}"
+                + (" [FORCE]" if force else "")
                 + (" [DRY RUN]" if dry_run else "")
             )
         )
         logger.info(
-            "backfill_data started: %s to %s, %d day(s), dry_run=%s",
-            start,
-            end,
-            days,
-            dry_run,
+            "backfill_data started: %s to %s, %d day(s), force=%s, dry_run=%s",
+            start, end, days, force, dry_run,
         )
 
         try:
@@ -76,6 +82,7 @@ class Command(BaseCommand):
                 end=end,
                 triggered_by="backfill_data command",
                 dry_run=dry_run,
+                force=force,
             )
         except Exception as exc:
             raise CommandError(f"Pipeline failed: {exc}") from exc
@@ -95,8 +102,5 @@ class Command(BaseCommand):
             )
         logger.info(
             "backfill_data finished: run=%s status=%s created=%s updated=%s",
-            run.pk,
-            run.status,
-            run.records_created,
-            run.records_updated,
+            run.pk, run.status, run.records_created, run.records_updated,
         )

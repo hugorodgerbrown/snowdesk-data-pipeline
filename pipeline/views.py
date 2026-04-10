@@ -16,7 +16,7 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
-from .models import DataRecord, PipelineRun
+from .models import Bulletin, PipelineRun
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ def require_htmx(view_func):
         Wrapped view that returns 400 for non-HTMX requests.
     """
 
-    def wrapper(request: HttpRequest, *args, **kwargs):
+    def wrapper(request: HttpRequest, *args, **kwargs) -> HttpResponse:
         """Check the request is an HTMX request before delegating."""
         if not request.htmx:
             logger.warning("Non-HTMX request to partial view %s", request.path)
@@ -53,8 +53,8 @@ def dashboard(request: HttpRequest) -> HttpResponse:
     """
     Render the main dashboard page.
 
-    Displays recent pipeline runs and the latest data records. The page
-    uses HTMX to auto-refresh the data table without a full reload.
+    Displays recent pipeline runs and the latest bulletins. The page
+    uses HTMX to auto-refresh the tables without a full reload.
 
     Args:
         request: The incoming HTTP request.
@@ -63,11 +63,11 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         Rendered dashboard HTML response.
     """
     recent_runs = PipelineRun.objects.order_by("-started_at")[:10]
-    latest_records = DataRecord.objects.order_by("-date", "external_id")[:50]
+    latest_bulletins = Bulletin.objects.order_by("-issued_at")[:50]
 
     context = {
         "recent_runs": recent_runs,
-        "latest_records": latest_records,
+        "latest_bulletins": latest_bulletins,
         "today": date.today(),
     }
     logger.debug("Rendering dashboard for %s", request.user)
@@ -76,31 +76,32 @@ def dashboard(request: HttpRequest) -> HttpResponse:
 
 @require_GET
 @require_htmx
-def records_partial(request: HttpRequest) -> HttpResponse:
+def bulletins_partial(request: HttpRequest) -> HttpResponse:
     """
-    Return an HTMX fragment containing the data records table.
+    Return an HTMX fragment containing the bulletins table.
 
     Accepts an optional `date` query parameter (YYYY-MM-DD) to filter
-    records. Called by HTMX to refresh the table without a full page load.
+    bulletins by issued_at date. Called by HTMX to refresh the table
+    without a full page load.
 
     Args:
         request: The incoming HTTP GET request (must be HTMX).
 
     Returns:
-        Rendered HTML fragment for the records table.
+        Rendered HTML fragment for the bulletins table.
     """
     date_filter = request.GET.get("date")
-    records_qs = DataRecord.objects.order_by("-date", "external_id")
+    bulletins_qs = Bulletin.objects.order_by("-issued_at")
 
     if date_filter:
         try:
             filter_date = date.fromisoformat(date_filter)
-            records_qs = records_qs.filter(date=filter_date)
+            bulletins_qs = bulletins_qs.filter(issued_at__date=filter_date)
         except ValueError:
             logger.warning("Invalid date filter: %s", date_filter)
 
-    context = {"records": records_qs[:100]}
-    return render(request, "pipeline/partials/records_table.html", context)
+    context = {"bulletins": bulletins_qs[:100]}
+    return render(request, "pipeline/partials/bulletins_table.html", context)
 
 
 @require_GET

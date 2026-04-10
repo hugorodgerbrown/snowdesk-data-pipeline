@@ -1,13 +1,14 @@
 """
 pipeline/management/commands/fetch_data.py — Management command: fetch_data.
 
-Fetches data for today (or a specified date) from the external data source
-and persists it to the database. Intended to be run on a schedule (e.g. via
-cron or a task scheduler).
+Fetches SLF bulletins for today (or a specified date) from the CAAML API
+and persists them to the database. Intended to be run on a schedule (e.g.
+via cron or a task scheduler).
 
 Usage:
     python manage.py fetch_data
     python manage.py fetch_data --date 2024-06-15
+    python manage.py fetch_data --force
     python manage.py fetch_data --dry-run
 """
 
@@ -22,9 +23,9 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    """Fetch data for a single date and persist it to the database."""
+    """Fetch SLF bulletins for a single date and persist to the database."""
 
-    help = "Fetch data for a single date (default: today) and store it in the database."
+    help = "Fetch SLF bulletins for a single date (default: today) and store them."
 
     def add_arguments(self, parser):
         """Register command-line arguments."""
@@ -33,7 +34,12 @@ class Command(BaseCommand):
             type=date.fromisoformat,
             default=date.today(),
             metavar="YYYY-MM-DD",
-            help="Date to fetch data for (default: today).",
+            help="Date to fetch bulletins for (default: today).",
+        )
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Upsert existing bulletins instead of skipping them.",
         )
         parser.add_argument(
             "--dry-run",
@@ -44,15 +50,20 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         """Execute the command."""
         target_date: date = options["date"]
+        force: bool = options["force"]
         dry_run: bool = options["dry_run"]
 
         self.stdout.write(
             self.style.MIGRATE_HEADING(
-                f"Fetching data for {target_date}"
+                f"Fetching bulletins for {target_date}"
+                + (" [FORCE]" if force else "")
                 + (" [DRY RUN]" if dry_run else "")
             )
         )
-        logger.info("fetch_data started for %s (dry_run=%s)", target_date, dry_run)
+        logger.info(
+            "fetch_data started for %s (force=%s, dry_run=%s)",
+            target_date, force, dry_run,
+        )
 
         try:
             run = run_pipeline(
@@ -60,6 +71,7 @@ class Command(BaseCommand):
                 end=target_date,
                 triggered_by="fetch_data command",
                 dry_run=dry_run,
+                force=force,
             )
         except Exception as exc:
             raise CommandError(f"Pipeline failed: {exc}") from exc

@@ -20,6 +20,12 @@ black = "^25.1.0"
 ruff = "^0.9.10"
 isort = "^5.13.2"
 pre-commit = "^4.2.0"
+django-stubs = "^6.0.2"
+pytest = "^9.0.3"
+pytest-django = "^4.12.0"
+factory-boy = "^3.3.3"
+types-requests = "^2.33.0.20260408"
+pytest-cov = "^7.1.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -34,6 +40,35 @@ profile = "black"
 known_django = ["django", "django_htmx"]
 known_first_party = ["config", "pipeline"]
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "DJANGO", "FIRSTPARTY", "LOCALFOLDER"]
+
+[tool.mypy]
+plugins = ["mypy_django_plugin.main"]
+python_version = "3.12"
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings.development"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.development"
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "--cov=pipeline --cov-report=term-missing --cov-report=html"
+
+[tool.coverage.run]
+source = ["pipeline"]
+omit = ["pipeline/migrations/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 0
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+]
 
 [tool.ruff]
 line-length = 88
