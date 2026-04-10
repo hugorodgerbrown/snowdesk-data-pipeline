@@ -1,8 +1,8 @@
 """
 config/urls.py — Root URL configuration.
 
-Mounts the Django admin and delegates all application routing to the
-pipeline app's own urls.py.
+Mounts the Django admin, the internal pipeline dashboard under /dashboard/,
+and the public-facing bulletin site at the root.
 """
 
 from django.contrib import admin
@@ -10,5 +10,6 @@ from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("", include("pipeline.urls")),
+    path("dashboard/", include("pipeline.urls")),
+    path("", include("public.urls")),
 ]

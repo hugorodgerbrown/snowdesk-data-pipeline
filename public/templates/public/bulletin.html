@@ -1,0 +1,178 @@
+{% extends "public/base.html" %}
+
+{% block title %}{{ region_name }} — Snowdesk{% endblock %}
+
+{% block content %}
+
+{# ── Masthead ─────────────────────────────────────────────────────────── #}
+<header class="masthead">
+    <div class="wordmark">Snowdesk</div>
+
+    {% if bulletin %}
+    <p class="label masthead__issued">
+        Issued {{ bulletin.issued_at|date:"D j M Y, H:i" }} UTC
+    </p>
+    {% endif %}
+
+    <h1 class="masthead__region">{{ region_name }}</h1>
+    <p class="masthead__tagline">Avalanche bulletin &amp; snow conditions</p>
+
+    {% if bulletin %}
+    <nav class="masthead__nav" aria-label="Bulletin navigation">
+        {% if prev_bulletin %}
+        <a href="?id={{ prev_bulletin.bulletin_id }}">
+            &larr; {{ prev_bulletin.issued_at|date:"j M, H:i" }}
+        </a>
+        {% endif %}
+        {% if prev_bulletin and next_bulletin %}
+        <span class="masthead__nav-sep">/</span>
+        {% endif %}
+        {% if next_bulletin %}
+        <a href="?id={{ next_bulletin.bulletin_id }}">
+            {{ next_bulletin.issued_at|date:"j M, H:i" }} &rarr;
+        </a>
+        {% endif %}
+    </nav>
+    {% endif %}
+</header>
+
+{% if not bulletin %}
+{# ── Empty state ──────────────────────────────────────────────────────── #}
+<div class="empty">
+    <h2 class="empty__heading">No bulletins available</h2>
+    <p class="empty__body">There are no recent bulletins for this region.</p>
+</div>
+
+{% else %}
+
+{# ── Verdict banner ──────────────────────────────────────────────────── #}
+{% if overall_verdict %}
+<div class="card verdict verdict--{{ verdict_colour }}">
+    <div class="verdict__header">
+        {% if danger_level %}
+        <span class="verdict__level">{{ danger_level }}</span>
+        {% endif %}
+        <span class="verdict__value">{{ overall_verdict }}</span>
+    </div>
+    {% if summary %}
+    <p class="verdict__summary">{{ summary }}</p>
+    {% endif %}
+</div>
+{% endif %}
+
+{# ── Outlook ──────────────────────────────────────────────────────────── #}
+{% if outlook %}
+<div class="card outlook">
+    <p class="label card__label">Outlook &mdash; next 24 h+</p>
+    <p>{{ outlook }}</p>
+</div>
+{% endif %}
+
+{# ── Activity ratings ────────────────────────────────────────────────── #}
+{% if on_piste or off_piste or ski_touring %}
+<div class="activities">
+    {% if on_piste %}
+    <div class="activity">
+        <p class="label activity__name">On Piste</p>
+        <p class="activity__rating">{{ on_piste.rating }}</p>
+        {% if on_piste.notes %}
+        <p class="activity__notes">{{ on_piste.notes }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if off_piste %}
+    <div class="activity">
+        <p class="label activity__name">Off Piste</p>
+        <p class="activity__rating">{{ off_piste.rating }}</p>
+        {% if off_piste.notes %}
+        <p class="activity__notes">{{ off_piste.notes }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if ski_touring %}
+    <div class="activity">
+        <p class="label activity__name">Ski Touring</p>
+        <p class="activity__rating">{{ ski_touring.rating }}</p>
+        {% if ski_touring.notes %}
+        <p class="activity__notes">{{ ski_touring.notes }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{# ── Key hazards ──────────────────────────────────────────────────────── #}
+{% if key_hazards %}
+<div class="card hazards">
+    <p class="label card__label">Key Hazards</p>
+    <ul>
+        {% for hazard in key_hazards %}
+        <li>{{ hazard }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{# ── Weather ──────────────────────────────────────────────────────────── #}
+{% if weather %}
+<div class="weather-section">
+    <p class="label card__label">Weather</p>
+
+    {% if weather.summit_temp or weather.mid_temp or weather.resort_temp or weather.freezing_level %}
+    <div class="weather-grid weather-grid--temps">
+        <div class="weather-cell">
+            <p class="label weather-cell__label">Summit</p>
+            <p class="weather-cell__value">{{ weather.summit_temp|default:"—" }}</p>
+        </div>
+        <div class="weather-cell">
+            <p class="label weather-cell__label">Mid-mountain</p>
+            <p class="weather-cell__value">{{ weather.mid_temp|default:"—" }}</p>
+        </div>
+        <div class="weather-cell">
+            <p class="label weather-cell__label">Resort</p>
+            <p class="weather-cell__value">{{ weather.resort_temp|default:"—" }}</p>
+        </div>
+        <div class="weather-cell">
+            <p class="label weather-cell__label">Freezing level</p>
+            <p class="weather-cell__value">{{ weather.freezing_level|default:"—" }}</p>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if weather.wind or weather.visibility or weather.new_snow_24h or weather.base_depth %}
+    <div class="weather-grid weather-grid--details">
+        <div class="weather-cell">
+            <p class="label weather-cell__label">Wind</p>
+            <p class="weather-cell__value">{{ weather.wind|default:"—" }}</p>
+        </div>
+        <div class="weather-cell">
+            <p class="label weather-cell__label">Visibility</p>
+            <p class="weather-cell__value">{{ weather.visibility|default:"—" }}</p>
+        </div>
+        <div class="weather-cell">
+            <p class="label weather-cell__label">New snow (24 h)</p>
+            <p class="weather-cell__value">{{ weather.new_snow_24h|default:"—" }}</p>
+        </div>
+        <div class="weather-cell">
+            <p class="label weather-cell__label">Base depth</p>
+            <p class="weather-cell__value">{{ weather.base_depth|default:"—" }}</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{# ── Related regions ──────────────────────────────────────────────────── #}
+{% if related_regions %}
+<div class="related">
+    <p class="label card__label">Related regions</p>
+    <ul class="related__list">
+        {% for rel in related_regions %}
+        <li><a href="{% url 'public:zone_redirect' zone=rel.slug %}">{{ rel.name }}</a></li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{% endif %}{# end bulletin check #}
+{% endblock %}

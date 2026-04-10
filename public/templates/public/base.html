@@ -1,0 +1,41 @@
+{% comment %}
+public/templates/public/base.html — Base layout for the public bulletin site.
+
+Loads Google Fonts (Playfair Display, DM Sans, DM Mono), the design-system
+stylesheet, and renders the mountain silhouette SVG background. All public
+pages extend this template.
+{% endcomment %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Snowdesk{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/public.css' %}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<!-- Mountain silhouette — fixed to bottom of viewport -->
+<div class="mountain-bg" aria-hidden="true">
+    <svg viewBox="0 0 1440 220" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M0,220 L0,180 L80,140 L160,160 L240,100 L320,130 L400,70 L480,110 L540,50 L600,90 L680,35 L760,80 L820,55 L900,95 L960,40 L1040,75 L1100,25 L1160,65 L1240,45 L1300,85 L1360,60 L1440,100 L1440,220 Z" fill="#2d4a3e"/>
+    </svg>
+</div>
+
+<main class="page">
+    {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+    &copy; {{ year }} Snowdesk &middot; Data sourced from
+    <a href="https://www.slf.ch" target="_blank" rel="noopener">SLF</a>
+</footer>
+
+{% block extra_js %}{% endblock %}
+</body>
+</html>
