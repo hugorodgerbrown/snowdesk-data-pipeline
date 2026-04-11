@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Any
 
 from django.db import models
 from django.utils import timezone
@@ -214,7 +215,7 @@ class Region(BaseModel):
         """Return a human-readable representation."""
         return f"{self.region_id} — {self.name}"
 
-    def save(self, *args, **kwargs) -> None:
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Auto-generate slug from region_id if not set."""
         if not self.slug:
             self.slug = slugify(self.region_id)

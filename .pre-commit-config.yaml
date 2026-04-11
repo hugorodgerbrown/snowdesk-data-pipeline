@@ -14,15 +14,17 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
 
-  # python static type checking
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+  # Python static type checking. Runs as a local hook so mypy executes
+  # inside the project's poetry venv, where django-stubs and every
+  # runtime dependency is already installed. This avoids mirroring the
+  # full dependency graph as `additional_dependencies` (django-stubs
+  # boots Django to resolve model field types, which pulls in the
+  # entire app import chain).
+  - repo: local
     hooks:
       - id: mypy
-        args:
-          - --disallow-untyped-defs
-          - --disallow-incomplete-defs
-          - --check-untyped-defs
-          - --no-implicit-optional
-          - --ignore-missing-imports
-          - --follow-imports=silent
+        name: mypy
+        entry: poetry run mypy pipeline/ public/
+        language: system
+        types: [python]
+        pass_filenames: false

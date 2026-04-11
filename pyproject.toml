@@ -3,7 +3,7 @@ name = "snowdesk-data-pipeline"
 version = "0.1.0"
 description = "Django data pipeline with HTMX frontend"
 authors = ["Hugo Rodger-Brown"]
-readme = "CLAUDE.md"
+readme = "README.md"
 packages = []
 package-mode = false
 
@@ -39,12 +39,24 @@ build-backend = "poetry.core.masonry.api"
 plugins = ["mypy_django_plugin.main"]
 python_version = "3.12"
 strict = false
+strict_optional = true
+ignore_missing_imports = true
+follow_imports = "silent"
 warn_return_any = true
 warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
 
 [[tool.mypy.overrides]]
 module = ["decouple", "decouple.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["*.migrations.*", "*.settings.*", "*.tests.*"]
+ignore_errors = true
 
 [tool.django-stubs]
 django_settings_module = "config.settings.development"
@@ -53,11 +65,11 @@ django_settings_module = "config.settings.development"
 DJANGO_SETTINGS_MODULE = "config.settings.development"
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "--cov=pipeline --cov-report=term-missing --cov-report=html"
+addopts = "--cov=pipeline --cov=public --cov-report=term-missing --cov-report=html"
 
 [tool.coverage.run]
-source = ["pipeline"]
-omit = ["pipeline/migrations/*"]
+source = ["pipeline", "public"]
+omit = ["pipeline/migrations/*", "public/migrations/*"]
 
 [tool.coverage.report]
 show_missing = true
@@ -68,4 +80,67 @@ exclude_lines = [
     "if __name__ == .__main__.",
 ]
 
-# Note: ruff configuration lives in .ruff.toml at the repo root.
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "A",   # flake8 builtins
+    "C9",  # mccabe
+    "D",   # pydocstyle
+    "E",   # pycodestyle (errors)
+    "F",   # Pyflakes
+    "I",   # isort
+    "S",   # flake8-bandit
+    "T2",  # flake8-print
+    "W",   # pycodestyle (warnings)
+]
+ignore = [
+    "D203",  # 1 blank line required before class docstring
+    "D212",  # Multi-line docstring summary should start at the first line
+    "D213",  # Multi-line docstring summary should start at the second line
+    "D403",  # First word of the first line should be capitalized
+    "D404",  # First word of the docstring should not be "This"
+    "D405",  # Section name should be properly capitalized
+    "D406",  # Section name should end with a newline
+    "D407",  # Missing dashed underline after section
+    "D410",  # Missing blank line after section
+    "D411",  # Missing blank line before section
+    "D412",  # No blank lines allowed between a section header and its content
+    "D416",  # Section name should end with a colon
+    "D417",  # Missing argument description in the docstring
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["D"]
+"*tests/*" = [
+    "D1",    # Missing docstrings
+    "D205",  # 1 blank line required between summary line and description
+    "D400",  # First line should end with a period
+    "D401",  # First line should be in imperative mood
+    "D415",  # First line should end with a period, question mark, or exclamation point
+    "E501",  # Line too long
+    "E731",  # Do not assign a lambda expression, use a def
+    "S101",  # Use of assert detected
+    "S105",  # Possible hardcoded password
+    "S106",  # Possible hardcoded password
+    "S113",  # Probable use of requests call with timeout set to {value}
+]
+"*/migrations/*" = [
+    "D1",    # Missing docstrings
+    "E501",  # Line too long
+]
+"*/settings.py" = [
+    "F403",  # from {name} import * used; unable to detect undefined names
+    "F405",  # {name} may be undefined, or defined from star imports
+]
+"*/settings/*" = [
+    "F403",  # from {name} import * used; unable to detect undefined names
+    "F405",  # {name} may be undefined, or defined from star imports
+]

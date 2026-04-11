@@ -29,7 +29,7 @@ from __future__ import annotations
 import datetime
 import logging
 import random
-from typing import Any
+from typing import Any, cast
 
 from django.core.cache import cache
 from django.http import HttpRequest, HttpResponse
@@ -81,7 +81,8 @@ _DANGER_MAP: dict[str, dict[str, str]] = {
 
 # Mapping from SLF danger codes to EAWS icons
 _DANGER_PROBLEM_TYPE_ICONS = {
-    "no_distinct_avalanche_problem": "Icon-Avalanche-Problem-No-Distinct-Avalanche-Problem-EAWS",
+    "no_distinct_avalanche_problem": "Icon-Avalanche-Problem-No-Distinct"
+    "-Avalanche-Problem-EAWS",
     "new_snow": "Icon-Avalanche-Problem-New-Snow-Grey-EAWS",
     "persistent_weak_layers": "Icon-Avalanche-Problem-Persistent-Weak-Layer-Grey-EAWS",
     "wind_slab": "Icon-Avalanche-Problem-Wind-Slab-Grey-EAWS",
@@ -100,9 +101,10 @@ def _get_properties(bulletin: Bulletin) -> dict[str, Any]:
 
     Returns:
         The properties dict, or empty dict if absent.
+
     """
     if bulletin.raw_data:
-        return bulletin.raw_data.get("properties", {})
+        return cast("dict[str, Any]", bulletin.raw_data.get("properties", {}))
     return {}
 
 
@@ -115,6 +117,7 @@ def _plain_text(html: str | None) -> str:
 
     Returns:
         Cleaned plain-text string, or empty string.
+
     """
     if not html:
         return ""
@@ -134,6 +137,7 @@ def _extract_danger(props: dict[str, Any]) -> dict[str, str | None]:
 
     Returns:
         Dict with keys: danger_level, overall_verdict, verdict_colour.
+
     """
     ratings = props.get("dangerRatings", [])
     if not ratings:
@@ -169,6 +173,7 @@ def _extract_hazards(props: dict[str, Any]) -> list[dict[str, str]]:
 
     Returns:
         List of dicts with ``problem_type`` and ``description`` keys.
+
     """
     problems = props.get("avalancheProblems", [])
     hazards: list[dict[str, str]] = []
@@ -212,6 +217,7 @@ def _extract_summary(props: dict[str, Any]) -> str:
 
     Returns:
         Plain-text summary, or empty string.
+
     """
     snowpack = props.get("snowpackStructure", {})
     text = _plain_text(snowpack.get("comment") if snowpack else None)
@@ -231,6 +237,7 @@ def _extract_outlook(props: dict[str, Any]) -> str:
 
     Returns:
         Plain-text outlook, or empty string.
+
     """
     tendency = props.get("tendency", [])
     if not tendency:
@@ -255,6 +262,7 @@ def _extract_weather_review(props: dict[str, Any]) -> str:
 
     Returns:
         Markdown-formatted weather review, or empty string.
+
     """
     review = props.get("weatherReview", {})
     if not review:
@@ -274,6 +282,7 @@ def _extract_weather_forecast(props: dict[str, Any]) -> str:
 
     Returns:
         Markdown-formatted weather forecast, or empty string.
+
     """
     forecast = props.get("weatherForecast", {})
     if not forecast:
@@ -302,6 +311,7 @@ def _select_bulletin_for_date(
 
     Returns:
         The best-matching Bulletin, or None if no bulletins exist.
+
     """
     now = timezone.now()
     today = now.date()
@@ -348,6 +358,7 @@ def _get_nav_dates(
 
     Returns:
         A (prev_date, next_date) tuple; either may be None.
+
     """
     today = timezone.now().date()
 
@@ -405,6 +416,7 @@ def _build_bulletin_context(
 
     Returns:
         Template context dict.
+
     """
     props = _get_properties(bulletin)
     danger = _extract_danger(props)
@@ -464,6 +476,7 @@ def _cache_key(zone_slug: str) -> str:
 
     Returns:
         A namespaced cache key string.
+
     """
     return f"public:zone_name:{zone_slug}"
 
@@ -484,6 +497,7 @@ def _get_name_slug(region: Region) -> str:
 
     Returns:
         Slugified region name (e.g. "valais").
+
     """
     name_slug = slugify(region.name)
     cache.set(_cache_key(region.slug), name_slug, timeout=_ZONE_NAME_CACHE_TIMEOUT)
@@ -503,6 +517,7 @@ def home(request: HttpRequest) -> HttpResponse:
 
     Returns:
         A redirect response, or an empty-state HTML response.
+
     """
     latest = Bulletin.objects.order_by("-issued_at").first()
     if not latest:
@@ -534,7 +549,7 @@ def home(request: HttpRequest) -> HttpResponse:
             },
         )
 
-    region = random.choice(list(regions))
+    region = random.choice(list(regions))  # noqa: S311 this isn't crypto
     name_slug = _get_name_slug(region)
     return redirect("public:bulletin", zone=region.slug, name=name_slug)
 
@@ -553,6 +568,7 @@ def zone_redirect(request: HttpRequest, zone: str) -> HttpResponse:
 
     Returns:
         A 302 redirect to the canonical /<zone>/<name>/ URL.
+
     """
     name_slug = cache.get(_cache_key(zone))
     if name_slug is None:
@@ -587,6 +603,7 @@ def bulletin_detail(request: HttpRequest, zone: str, name: str) -> HttpResponse:
 
     Returns:
         The rendered bulletin page.
+
     """
     region = get_object_or_404(Region, slug=zone)
 

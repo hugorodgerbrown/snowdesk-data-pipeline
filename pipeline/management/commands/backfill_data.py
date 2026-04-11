@@ -15,7 +15,9 @@ Usage:
 """
 
 import logging
+from argparse import ArgumentParser
 from datetime import date
+from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -29,7 +31,7 @@ class Command(BaseCommand):
 
     help = "Backfill SLF bulletins for a date range and store them."
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         """Register command-line arguments."""
         parser.add_argument(
             "--start-date",
@@ -56,7 +58,7 @@ class Command(BaseCommand):
             help="Fetch data but do not write anything to the database.",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
         start: date = options["start_date"]
         end: date = options["end_date"]

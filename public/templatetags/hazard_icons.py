@@ -39,5 +39,6 @@ def hazard_icon(problem_type: str) -> str:
 
     Returns:
         The icon path relative to STATIC_URL, or empty string if unknown.
+
     """
     return _ICON_MAP.get(problem_type, "")

@@ -10,7 +10,9 @@ the ORM or service layer, and render a template. No business logic here.
 """
 
 import logging
+from collections.abc import Callable
 from datetime import date
+from typing import Any
 
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
@@ -21,7 +23,10 @@ from .models import Bulletin, PipelineRun
 logger = logging.getLogger(__name__)
 
 
-def require_htmx(view_func):
+_ViewFunc = Callable[..., HttpResponse]
+
+
+def require_htmx(view_func: _ViewFunc) -> _ViewFunc:
     """
     Return 400 Bad Request for non-HTMX requests.
 
@@ -37,12 +42,12 @@ def require_htmx(view_func):
 
     """
 
-    def wrapper(request: HttpRequest, *args, **kwargs) -> HttpResponse:
+    def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         """Check the request is an HTMX request before delegating."""
         if not request.htmx:  # type: ignore[attr-defined]
             logger.warning("Non-HTMX request to partial view %s", request.path)
             return HttpResponse("HTMX requests only.", status=400)
-        return view_func(request, *args, **kwargs)  # type: ignore[no-any-return]
+        return view_func(request, *args, **kwargs)
 
     wrapper.__name__ = view_func.__name__
     wrapper.__doc__ = view_func.__doc__
