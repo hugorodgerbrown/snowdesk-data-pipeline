@@ -52,7 +52,7 @@ class TestBackfillView:
             force=False,
         )
         assert response.status_code == 302
-        assert response.url == reverse("admin:pipeline_bulletin_changelist")
+        assert response["Location"] == reverse("admin:pipeline_bulletin_changelist")
 
     def test_success_message_shown(self, admin_client: Client) -> None:
         """A successful backfill shows a success message."""
@@ -101,4 +101,4 @@ class TestBackfillView:
         client = Client()
         response = client.post(BACKFILL_URL)
         assert response.status_code == 302
-        assert "/login/" in response.url
+        assert "/login/" in response["Location"]

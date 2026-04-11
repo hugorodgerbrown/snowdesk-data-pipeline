@@ -11,7 +11,7 @@ Covers:
 """
 
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -421,7 +421,7 @@ class TestRunPipeline:
     def test_skips_existing_without_force(self, mock_fetch: MagicMock):
         """Without --force, existing bulletins are skipped."""
         # Pre-create the bulletin
-        pre_run = PipelineRunFactory()
+        pre_run = cast(PipelineRun, PipelineRunFactory())
         upsert_bulletin(
             _make_raw_bulletin("existing", "2025-03-15T08:00:00Z"),
             pre_run,
@@ -444,7 +444,7 @@ class TestRunPipeline:
     @patch("pipeline.services.data_fetcher.fetch_bulletin_page")
     def test_updates_existing_with_force(self, mock_fetch: MagicMock):
         """With --force, existing bulletins are upserted."""
-        pre_run = PipelineRunFactory()
+        pre_run = cast(PipelineRun, PipelineRunFactory())
         upsert_bulletin(
             _make_raw_bulletin("existing", "2025-03-15T08:00:00Z"),
             pre_run,

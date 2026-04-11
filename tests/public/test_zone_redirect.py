@@ -54,7 +54,7 @@ class TestZoneRedirect:
         response = client.get(url)
 
         assert response.status_code == 302
-        assert response.url == "/ch-4115/valais/"
+        assert response["Location"] == "/ch-4115/valais/"
 
     def test_preserves_query_params(self, client: Client, region_with_bulletin):
         """Query parameters like ?id=... must survive the redirect."""
@@ -62,9 +62,10 @@ class TestZoneRedirect:
         response = client.get(url, {"id": "bulletin-0001", "extra": "value"})
 
         assert response.status_code == 302
-        assert "id=bulletin-0001" in response.url
-        assert "extra=value" in response.url
-        assert response.url.startswith("/ch-4115/valais/")
+        location = response["Location"]
+        assert "id=bulletin-0001" in location
+        assert "extra=value" in location
+        assert location.startswith("/ch-4115/valais/")
 
     def test_cache_is_populated_on_first_request(
         self, client: Client, region_with_bulletin
@@ -94,7 +95,7 @@ class TestZoneRedirect:
             query_count = len(connection.queries)
 
         assert response.status_code == 302
-        assert response.url == "/ch-4115/valais/"
+        assert response["Location"] == "/ch-4115/valais/"
         assert query_count == 0, (
             f"Expected zero DB queries on cache hit, got {query_count}"
         )
@@ -140,4 +141,4 @@ class TestZoneRedirect:
         response = client.get(url)
 
         assert response.status_code == 302
-        assert response.url == "/ch-5200/haut-val-de-bagnes/"
+        assert response["Location"] == "/ch-5200/haut-val-de-bagnes/"

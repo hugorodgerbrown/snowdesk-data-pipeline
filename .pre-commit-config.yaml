@@ -1,30 +1,32 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.10
+    rev: v0.15.10
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: [--fix]
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-merge-conflict
       - id: debug-statements
 
-  # Python static type checking. Runs as a local hook so mypy executes
-  # inside the project's poetry venv, where django-stubs and every
-  # runtime dependency is already installed. This avoids mirroring the
-  # full dependency graph as `additional_dependencies` (django-stubs
-  # boots Django to resolve model field types, which pulls in the
-  # entire app import chain).
+  # Python static type checking. Runs as a local hook pointing directly
+  # at the in-project venv's mypy binary. Using `.venv/bin/mypy` (rather
+  # than `poetry run mypy`) avoids depending on PATH, so the hook works
+  # identically from the CLI and from GUI git clients like SublimeMerge
+  # that launch git with a minimal environment and don't inherit the
+  # user's shell PATH. django-stubs + all runtime deps are already
+  # installed in the venv by `poetry install`, so no additional setup
+  # is needed.
   - repo: local
     hooks:
       - id: mypy
         name: mypy
-        entry: poetry run mypy pipeline/ public/
+        entry: .venv/bin/mypy pipeline/ public/ tests/ config/
         language: system
         types: [python]
         pass_filenames: false

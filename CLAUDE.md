@@ -56,6 +56,14 @@ poetry update                     # update all dependencies within constraints
 poetry show --outdated            # list packages with newer versions available
 ```
 
+The virtualenv lives at `.venv/` inside the repo — this is **by design**,
+pinned via `poetry.toml` (`virtualenvs.in-project = true`). The pre-commit
+mypy hook in `.pre-commit-config.yaml` invokes `.venv/bin/mypy` by
+repo-relative path so the hook works identically from the CLI and from
+GUI git clients (SublimeMerge, Tower, Fork, etc.) which launch git with
+a minimal environment and don't inherit the user's shell PATH. Don't
+change the venv location without also updating the mypy hook entry.
+
 ## Data source
 
 SLF CAAML bulletin list API (public, no auth required):
@@ -120,6 +128,7 @@ classes in templates. Only add custom CSS there for things Tailwind cannot expre
 - All models to have an explicit `order_by` (`created_at` by default)
 - All models to have a custom queryset
 
+
 ### Testing
 
 - Tests to use pytest
@@ -129,3 +138,4 @@ corresponding test_{module_name}.py that contains the tests.
 - All new code must have covering tests
 - Always run tests after code changes and ensure 100% pass rate and 90% coverage.
 - Use tox to run local CI and tests
+- All datetime objects must have tzinfo

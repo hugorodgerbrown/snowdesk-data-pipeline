@@ -5,6 +5,7 @@ Covers argument parsing, success/failure output, dry-run mode, force flag,
 and error handling when the pipeline fails.
 """
 
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -31,7 +32,7 @@ def _make_successful_run(**overrides) -> PipelineRun:
         records_created=overrides.get("records_created", 3),
         records_updated=overrides.get("records_updated", 0),
     )
-    return run
+    return cast(PipelineRun, run)
 
 
 def _make_failed_run(error_message: str = "API timeout") -> PipelineRun:
@@ -49,7 +50,7 @@ def _make_failed_run(error_message: str = "API timeout") -> PipelineRun:
         status=PipelineRun.Status.FAILED,
         error_message=error_message,
     )
-    return run
+    return cast(PipelineRun, run)
 
 
 @pytest.mark.django_db

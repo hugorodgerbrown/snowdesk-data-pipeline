@@ -55,8 +55,17 @@ module = ["decouple", "decouple.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["*.migrations.*", "*.settings.*", "*.tests.*"]
+module = ["*.migrations.*", "*.settings.*"]
 ignore_errors = true
+
+# Tests follow pytest conventions: test methods return None and don't
+# need explicit annotations. Keep type checking enabled (so real type
+# errors still surface), but allow untyped defs so idiomatic pytest
+# functions don't each need a trailing `-> None`.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
 
 [tool.django-stubs]
 django_settings_module = "config.settings.development"
@@ -65,14 +74,13 @@ django_settings_module = "config.settings.development"
 DJANGO_SETTINGS_MODULE = "config.settings.development"
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "--cov=pipeline --cov=public --cov-report=term-missing --cov-report=html"
+addopts = "--cov=pipeline --cov=public"
 
 [tool.coverage.run]
 source = ["pipeline", "public"]
-omit = ["pipeline/migrations/*", "public/migrations/*"]
+omit = ["pipeline/migrations/*", "public/migrations/*", "config/*", "__init__.py"]
 
 [tool.coverage.report]
-show_missing = true
 fail_under = 0
 exclude_lines = [
     "pragma: no cover",
