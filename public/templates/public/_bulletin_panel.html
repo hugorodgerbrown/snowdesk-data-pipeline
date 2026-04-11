@@ -1,0 +1,105 @@
+{% comment %}
+public/templates/public/_bulletin_panel.html — Compact bulletin card.
+
+Matches the class names used by bulletin_cards_2.html and
+static/css/random_bulletins.css. Expects a ``panel`` dict in the
+template context (see ``public.views._build_panel_context``).
+
+Every text element carries a native ``title`` attribute showing the
+CAAML JSON path it was derived from, so hovering a field reveals its
+provenance. The admin link is only rendered for authenticated staff
+users.
+{% endcomment %}
+{% load static %}
+{% load hazard_icons %}
+
+<div class="card">
+
+    {# ── Danger band ─────────────────────────────────────────────────── #}
+    <div class="danger-band band-{{ panel.danger_css }}">
+        <img class="eaws-icon"
+             src="{% static 'icons/eaws/danger_levels/' %}{{ panel.danger_icon }}"
+             alt="Danger level {{ panel.danger_number }} {{ panel.danger_label }}"
+             title="{{ panel.danger_source }}">
+        <div class="band-meta">
+            <div class="level-label level-{{ panel.danger_css }}"
+                 title="{{ panel.danger_source }}">
+                {{ panel.danger_label }}
+                <span class="level-number">{{ panel.danger_number }}</span>
+            </div>
+            <div class="level-sub level-{{ panel.danger_css }}"
+                 title="{{ panel.danger_source }}">
+                {{ panel.danger_sub }}
+            </div>
+        </div>
+    </div>
+
+    {# ── Body: per-problem blocks, or key-message fallback ───────────── #}
+    <div class="card-body">
+        {% if panel.problems %}
+        <div class="problems-section">
+            <p class="section-eyebrow" title="{{ panel.problems_source }}">
+                Avalanche problem{{ panel.problems|length|pluralize }}
+            </p>
+            {% for p in panel.problems %}
+            <div class="problem-block">
+                <div class="problem-tag"
+                     title="{{ panel.problems_source }} = {{ p.problem_type }}">
+                    {% with icon_file=p.problem_type|hazard_icon %}
+                    {% if icon_file %}
+                    <div class="problem-icon">
+                        <img src="{% static icon_file %}" alt="{{ p.label }}">
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+                    <span class="problem-label">{{ p.label }}</span>
+                    {% if p.time_period_label %}
+                    <span class="problem-period"
+                          title="avalancheProblems[*].validTimePeriod = {{ p.time_period }}">
+                        {{ p.time_period_label }}
+                    </span>
+                    {% endif %}
+                </div>
+                {% if p.elevation %}
+                <p class="problem-elevation"
+                   title="avalancheProblems[*].elevation">
+                    {{ p.elevation }}
+                </p>
+                {% endif %}
+                {% if p.comment and not p.hide_comment %}
+                <p class="problem-comment"
+                   title="avalancheProblems[*].comment">
+                    {{ p.comment }}
+                </p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% elif panel.key_message %}
+        <p class="key-message" title="{{ panel.key_message_source }}">
+            {{ panel.key_message }}
+        </p>
+        {% endif %}
+    </div>
+
+    {# ── Footer: date + area (+ admin link for staff) ────────────────── #}
+    <div class="card-footer">
+        <span class="footer-date" title="{{ panel.footer_date_source }}">
+            {{ panel.footer_date_from|date:"D j M" }} ·
+            {{ panel.footer_date_from|date:"H:i" }}&ndash;{{ panel.footer_date_to|date:"H:i" }}
+        </span>
+        {% if panel.footer_area %}
+        <span class="footer-area" title="{{ panel.footer_area_source }}">
+            {{ panel.footer_area }}
+        </span>
+        {% endif %}
+    </div>
+
+    {% if user.is_authenticated and user.is_staff %}
+    <a class="admin-link"
+       href="{{ panel.admin_url }}"
+       title="Open this bulletin in the Django admin">
+        Open in admin →
+    </a>
+    {% endif %}
+</div>

@@ -1,0 +1,278 @@
+/*
+ * static/css/random_bulletins.css — Standalone stylesheet for the
+ * /random/ "five random bulletins" page.
+ *
+ * Copied verbatim from the bulletin_cards_2.html mockup so that the
+ * rendered page looks identical to the design reference. This file is
+ * intentionally self-contained: it does not share any variables or
+ * selectors with public.css and is only loaded by
+ * public/templates/public/random_bulletins.html.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+:root {
+    --bg: #f2f0ec;
+    --card: #ffffff;
+    --text-primary: #1a1916;
+    --text-secondary: #6b6860;
+    --text-tertiary: #9c9a96;
+    --border: rgba(0, 0, 0, 0.09);
+    --border-strong: rgba(0, 0, 0, 0.16);
+
+    /* EAWS scale — exact hex */
+    --c-low:          #ccff66;
+    --c-moderate:     #ffff00;
+    --c-considerable: #ff9900;
+    --c-high:         #ff0000;
+    --c-very-high:    #ff0000;
+
+    /* Readable tints for backgrounds */
+    --t-low:          #f2ffd9;
+    --t-moderate:     #fffffb;
+    --t-considerable: #fff5e6;
+    --t-high:         #fff0f0;
+    --t-very-high:    #1a0000;
+
+    /* Dark text on tints */
+    --tx-low:          #3a5a00;
+    --tx-moderate:     #4d4500;
+    --tx-considerable: #5c3000;
+    --tx-high:         #6b0000;
+    --tx-very-high:    #ffffff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    padding: 1.5rem 1rem 3rem;
+    min-height: 100vh;
+}
+
+.screen-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 1.25rem;
+    padding-left: 2px;
+    text-align: center;
+}
+
+.cards-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 390px;
+    margin: 0 auto;
+}
+
+/* ── Card shell ── */
+.card {
+    background: var(--card);
+    border-radius: 16px;
+    overflow: hidden;
+    border: 0.5px solid var(--border);
+}
+
+/* ── Danger band: full-width colour strip at top ── */
+.danger-band {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px 11px;
+    border-bottom: 0.5px solid var(--border);
+}
+.band-low          { background: var(--t-low); }
+.band-moderate     { background: #fffde6; }
+.band-considerable { background: var(--t-considerable); }
+.band-high         { background: var(--t-high); }
+.band-very-high    { background: var(--t-very-high); }
+
+.eaws-icon {
+    width: 44px;
+    height: auto;
+    flex-shrink: 0;
+}
+
+.band-meta {
+    flex: 1;
+}
+
+.level-label {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+}
+.level-low          { color: var(--tx-low); }
+.level-moderate     { color: var(--tx-moderate); }
+.level-considerable { color: var(--tx-considerable); }
+.level-high         { color: var(--tx-high); }
+.level-very-high    { color: var(--tx-very-high); }
+
+.level-number {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    margin-left: 4px;
+    opacity: 0.7;
+}
+
+.level-sub {
+    font-size: 12px;
+    margin-top: 1px;
+    opacity: 0.75;
+}
+.level-sub.level-low          { color: var(--tx-low); }
+.level-sub.level-moderate     { color: var(--tx-moderate); }
+.level-sub.level-considerable { color: var(--tx-considerable); }
+.level-sub.level-high         { color: var(--tx-high); }
+.level-sub.level-very-high    { color: var(--tx-very-high); }
+
+/* ── Card body ── */
+.card-body { padding: 12px 14px 14px; }
+
+/* Problems — the hero element for this user */
+.problems-section { margin-bottom: 10px; }
+.section-eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+}
+
+/* One avalanche problem: tag header + comment paragraph. */
+.problem-block {
+    margin-top: 10px;
+}
+.problem-block:first-of-type {
+    margin-top: 0;
+}
+
+.problem-tag {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: #f5f3ef;
+    border: 0.5px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 6px 10px 6px 7px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.problem-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.problem-period {
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.06);
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.problem-icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.problem-icon img { width: 100%; height: 100%; object-fit: cover; }
+
+.problem-elevation {
+    margin-top: 5px;
+    padding: 0 4px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--text-tertiary);
+}
+
+.problem-comment {
+    margin-top: 6px;
+    padding: 0 4px;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+/* Fallback key message (used when a bulletin has no avalanche problems). */
+.key-message {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+.key-message strong {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* Footer: date + area */
+.card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px 10px;
+    border-top: 0.5px solid var(--border);
+    background: #fafaf8;
+    gap: 10px;
+}
+.footer-date {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+.footer-area {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    text-align: right;
+}
+
+/* Admin link — only rendered for authenticated staff users.
+   Appears as a subtle strip below the card footer. */
+.admin-link {
+    display: block;
+    padding: 6px 14px 8px;
+    border-top: 0.5px dashed var(--border);
+    background: #f5f3ef;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    text-decoration: none;
+    text-align: right;
+}
+.admin-link:hover {
+    color: var(--text-primary);
+    background: #eeeae2;
+}
+
+/* Empty state */
+.empty {
+    text-align: center;
+    color: var(--text-tertiary);
+    padding: 3rem 1rem;
+    font-size: 13px;
+}

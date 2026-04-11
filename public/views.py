@@ -1,12 +1,16 @@
 """
 public/views.py — Views for the public-facing bulletin site.
 
-Three views:
-  home            Redirects to a random region from the latest bulletin issue.
-  zone_redirect   Redirects /<zone>/ to /<zone>/<name>/, caching the
-                  zone-slug → name-slug mapping to avoid repeat DB hits.
-  bulletin_detail Renders a single bulletin for a region, with day-based
-                  navigation and data extracted from the CAAML payload.
+Four views:
+  home             Redirects to a random region from the latest bulletin issue.
+  zone_redirect    Redirects /<zone>/ to /<zone>/<name>/, caching the
+                   zone-slug → name-slug mapping to avoid repeat DB hits.
+  bulletin_detail  Renders a single bulletin for a region, with day-based
+                   navigation and data extracted from the CAAML payload.
+  random_bulletins Renders the most recent bulletins for a single region as
+                   compact cards on a list page, one per calendar day, in
+                   reverse chronological order. Accepts an optional ``?b=N``
+                   query parameter to override the number of cards shown.
 
 Each page represents a single day, identified by the bulletin's ``valid_to``
 date.  Two bulletins may cover a day: an evening issue (valid from ~16:00 the
@@ -40,6 +44,7 @@ from django.utils.html import strip_tags
 from django.utils.text import slugify
 
 from pipeline.models import Bulletin, Region, RegionBulletin
+from pipeline.schema import ValidTimePeriod
 from pipeline.utils import html_to_markdown
 
 logger = logging.getLogger(__name__)
@@ -674,3 +679,456 @@ def bulletin_detail(request: HttpRequest, zone: str, name: str) -> HttpResponse:
         related_regions=related_regions,
     )
     return render(request, "public/bulletin.html", context)
+
+
+# ---------------------------------------------------------------------------
+# Random bulletins list
+# ---------------------------------------------------------------------------
+
+# Per-level display metadata used by the compact panel card. Keys match the
+# CAAML ``mainValue`` strings; ``icon`` is the filename inside
+# ``static/icons/eaws/danger_levels/``.
+_DANGER_PANEL_META: dict[str, dict[str, str]] = {
+    "low": {
+        "number": "1",
+        "label": "Low",
+        "sub": "Stable snowpack",
+        "icon": "Dry-Snow-1.svg",
+    },
+    "moderate": {
+        "number": "2",
+        "label": "Moderate",
+        "sub": "Cautious route selection needed",
+        "icon": "Dry-Snow-2.svg",
+    },
+    "considerable": {
+        "number": "3",
+        "label": "Considerable",
+        "sub": "Dangerous off-piste conditions",
+        "icon": "Dry-Snow-3.svg",
+    },
+    "high": {
+        "number": "4",
+        "label": "High",
+        "sub": "Very critical off-piste conditions",
+        "icon": "Dry-Snow-4-5.svg",
+    },
+    "very_high": {
+        "number": "5",
+        "label": "Very high",
+        "sub": "Do not enter avalanche terrain",
+        "icon": "Dry-Snow-4-5.svg",
+    },
+}
+
+# Human labels for the CAAML ``problemType`` enum used on the panel tags.
+_PROBLEM_LABELS: dict[str, str] = {
+    "new_snow": "New snow",
+    "wind_slab": "Wind slab",
+    "persistent_weak_layers": "Persistent weak layers",
+    "wet_snow": "Wet snow",
+    "gliding_snow": "Gliding snow",
+    "cornices": "Cornices",
+    "no_distinct_avalanche_problem": "No distinct problem",
+    "favourable_situation": "Favourable situation",
+}
+
+# Human labels for the CAAML ``validTimePeriod`` enum. Derived from the
+# ``ValidTimePeriod`` TextChoices so the display strings stay in sync with
+# the canonical schema definition.
+_TIME_PERIOD_LABELS: dict[str, str] = dict(ValidTimePeriod.choices)
+
+_DANGER_ORDER: tuple[str, ...] = (
+    "low",
+    "moderate",
+    "considerable",
+    "high",
+    "very_high",
+)
+
+# Maximum number of characters in the panel's key-message blurb. Chosen to
+# comfortably fit ~3 lines at the panel's body font size without wrapping
+# to a fourth line on a 440px-wide card.
+_PANEL_MESSAGE_MAX = 240
+
+# Default number of bulletins to display on the random_bulletins page when
+# no ``?b=N`` query parameter is supplied.
+_DEFAULT_BULLETIN_COUNT = 10
+
+# Safety cap on the ``?b=N`` query parameter to prevent a crafted request
+# from selecting an unbounded number of bulletins.
+_MAX_BULLETIN_COUNT = 50
+
+
+def _highest_danger_key(ratings: list[dict[str, Any]]) -> str:
+    """
+    Return the highest CAAML ``mainValue`` present in ``ratings``.
+
+    Args:
+        ratings: The CAAML ``dangerRatings`` list.
+
+    Returns:
+        One of the keys in :data:`_DANGER_PANEL_META`; defaults to ``"low"``
+        if no recognised values are found.
+
+    """
+    highest = "low"
+    for rating in ratings:
+        value = rating.get("mainValue", "")
+        if value in _DANGER_ORDER and _DANGER_ORDER.index(value) > _DANGER_ORDER.index(
+            highest
+        ):
+            highest = value
+    return highest
+
+
+def _truncate(text: str, limit: int) -> str:
+    """
+    Truncate ``text`` to at most ``limit`` characters on a word boundary.
+
+    Appends an ellipsis if truncation occurred. Returns the input unchanged
+    if it is already within the limit.
+    """
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1].rsplit(" ", 1)[0]
+    return f"{cut}\u2026"
+
+
+def _is_numeric_bound(value: Any) -> bool:
+    """Return True iff ``value`` is a non-empty string of digits."""
+    return value is not None and str(value).isdigit()
+
+
+def _format_bound(value: Any) -> str:
+    """
+    Format a single CAAML elevation bound for display.
+
+    Numeric strings get an ``m`` suffix (e.g. ``"2200"`` → ``"2200m"``).
+    Non-numeric strings such as ``"treeline"`` are emitted as-is. An
+    empty / None input returns an empty string.
+    """
+    if value is None or value == "":
+        return ""
+    text = str(value)
+    return f"{text}m" if text.isdigit() else text
+
+
+def _format_elevation(elevation: dict[str, Any] | None) -> str:
+    """
+    Render a CAAML elevation dict as a short human string.
+
+    Accepts both numeric metre values and the literal ``"treeline"`` (the
+    schema permits either). Examples::
+
+        {"lowerBound": "2200"}                       → "above 2200m"
+        {"upperBound": "2400"}                       → "below 2400m"
+        {"lowerBound": "1800", "upperBound": "2400"} → "1800–2400m"
+        {"lowerBound": "treeline"}                   → "above treeline"
+
+    When both bounds are numeric the ``m`` suffix appears only once on
+    the right-hand side of the range for readability. Mixed
+    numeric/treeline ranges fall back to labelling each end separately.
+    Returns an empty string when no bounds are present.
+    """
+    if not elevation:
+        return ""
+
+    lower_raw = elevation.get("lowerBound")
+    upper_raw = elevation.get("upperBound")
+
+    if _is_numeric_bound(lower_raw) and _is_numeric_bound(upper_raw):
+        return f"{lower_raw}\u2013{upper_raw}m"
+
+    lower = _format_bound(lower_raw)
+    upper = _format_bound(upper_raw)
+
+    if lower and upper:
+        return f"{lower}\u2013{upper}"
+    if lower:
+        return f"above {lower}"
+    if upper:
+        return f"below {upper}"
+    return ""
+
+
+def _problem_signature(
+    entry: dict[str, Any],
+) -> tuple[Any, Any, tuple[str, ...], str, str]:
+    """
+    Return a hashable signature describing a CAAML avalanche problem.
+
+    Two problems with the same signature are considered duplicates for
+    the purposes of hiding redundant comments on the panel: they must
+    match on elevation bounds, aspects (order-independent), time period,
+    and (plain-text) comment. Problem type is deliberately NOT part of
+    the signature — the user-facing rule groups by geographic scope and
+    timing, not by hazard category.
+    """
+    elevation = entry.get("elevation") or {}
+    aspects = tuple(sorted(entry.get("aspects") or []))
+    return (
+        elevation.get("lowerBound"),
+        elevation.get("upperBound"),
+        aspects,
+        entry.get("validTimePeriod") or "",
+        _plain_text(entry.get("comment")),
+    )
+
+
+def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    Build the list of avalanche problems for the panel.
+
+    Each entry carries the problem type, its human label, a plain-text
+    comment (truncated to :data:`_PANEL_MESSAGE_MAX` chars), the
+    human-readable ``validTimePeriod`` label, a formatted elevation
+    string, and a ``hide_comment`` flag. The list is NOT deduplicated —
+    two entries with the same ``problemType`` but different elevation,
+    aspect, period, or comment all render separately.
+
+    When two or more problems share the same signature (elevation +
+    aspects + time period + comment), the ``hide_comment`` flag is set
+    on every occurrence except the last. The template uses this to show
+    a group of identical-scope problems with the shared comment printed
+    only once, under the final header.
+
+    Args:
+        props: The CAAML properties dict.
+
+    Returns:
+        List of problem dicts in CAAML source order with keys:
+        ``problem_type``, ``label``, ``comment``, ``time_period``,
+        ``time_period_label``, ``elevation``, ``hide_comment``.
+
+    """
+    raw_entries = [
+        entry
+        for entry in props.get("avalancheProblems", [])
+        if entry.get("problemType")
+    ]
+
+    problems: list[dict[str, Any]] = []
+    for entry in raw_entries:
+        problem_type = entry["problemType"]
+        label = _PROBLEM_LABELS.get(
+            problem_type, problem_type.replace("_", " ").capitalize()
+        )
+        comment = _truncate(_plain_text(entry.get("comment")), _PANEL_MESSAGE_MAX)
+        time_period = entry.get("validTimePeriod", "") or ""
+        time_period_label = _TIME_PERIOD_LABELS.get(time_period, "")
+        elevation = _format_elevation(entry.get("elevation"))
+        problems.append(
+            {
+                "problem_type": problem_type,
+                "label": label,
+                "comment": comment,
+                "time_period": time_period,
+                "time_period_label": time_period_label,
+                "elevation": elevation,
+                "hide_comment": False,
+            }
+        )
+
+    # Hide the comment on every problem that has an identical-signature
+    # duplicate later in the list. Only the last occurrence in a run of
+    # duplicates keeps its comment visible.
+    signatures = [_problem_signature(e) for e in raw_entries]
+    for i, problem in enumerate(problems):
+        if not problem["comment"]:
+            continue
+        if any(signatures[i] == later for later in signatures[i + 1 :]):
+            problem["hide_comment"] = True
+
+    return problems
+
+
+def _panel_message(props: dict[str, Any]) -> tuple[str, str]:
+    """
+    Return the panel's key-message blurb together with its source path.
+
+    Prefers the first avalanche problem's comment (usually a punchy
+    two-sentence description of the main hazard). Falls back to the snowpack
+    or weather-review summary. The result is plain text, truncated to
+    :data:`_PANEL_MESSAGE_MAX` characters on a word boundary.
+
+    Returns:
+        A tuple ``(text, source)`` where ``source`` is the CAAML JSON path
+        that was used (e.g. ``"avalancheProblems[0].comment"``), or an
+        empty string if no content was available.
+
+    """
+    problems = props.get("avalancheProblems") or []
+    if problems:
+        text = _plain_text(problems[0].get("comment"))
+        if text:
+            return _truncate(text, _PANEL_MESSAGE_MAX), "avalancheProblems[0].comment"
+
+    snowpack = props.get("snowpackStructure") or {}
+    snowpack_text = _plain_text(snowpack.get("comment"))
+    if snowpack_text:
+        return (
+            _truncate(snowpack_text, _PANEL_MESSAGE_MAX),
+            "snowpackStructure.comment",
+        )
+
+    review = props.get("weatherReview") or {}
+    review_text = _plain_text(review.get("comment"))
+    if review_text:
+        return _truncate(review_text, _PANEL_MESSAGE_MAX), "weatherReview.comment"
+
+    return "", ""
+
+
+def _panel_footer_area(props: dict[str, Any], max_regions: int = 3) -> str:
+    """
+    Return a short ``·``-separated list of region names for the panel footer.
+
+    Args:
+        props: The CAAML properties dict.
+        max_regions: Maximum number of region names to include.
+
+    Returns:
+        Joined region names (e.g. ``"Valais · Grisons · Jura"``) or the
+        empty string when no regions are present.
+
+    """
+    regions = props.get("regions") or []
+    names = [r.get("name", "") for r in regions[:max_regions] if r.get("name")]
+    return " · ".join(names)
+
+
+def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
+    """
+    Build the template context for a single compact bulletin panel.
+
+    Extracts the minimum set of display fields from a ``Bulletin``'s CAAML
+    payload: headline danger level, avalanche problems, a short key message,
+    and a footer showing the validity window and region list.
+
+    Each visible field is paired with a ``*_source`` key describing the
+    CAAML JSON path (or Bulletin field) the value was derived from, so the
+    template can surface provenance as a ``title=`` tooltip. An
+    ``admin_url`` key is also populated with the Django admin change URL
+    for the underlying bulletin, which the template gates on
+    ``user.is_staff``.
+
+    Args:
+        bulletin: The Bulletin to summarise.
+
+    Returns:
+        A dict consumed by ``public/_bulletin_panel.html``.
+
+    """
+    props = _get_properties(bulletin)
+    danger_key = _highest_danger_key(props.get("dangerRatings") or [])
+    danger_meta = _DANGER_PANEL_META[danger_key]
+    key_message, key_message_source = _panel_message(props)
+
+    return {
+        "bulletin": bulletin,
+        "danger_key": danger_key,
+        # Hyphenated form for CSS class names (``very_high`` → ``very-high``)
+        # so the template can emit ``band-very-high`` / ``level-very-high``
+        # matching the stylesheet.
+        "danger_css": danger_key.replace("_", "-"),
+        "danger_number": danger_meta["number"],
+        "danger_label": danger_meta["label"],
+        "danger_sub": danger_meta["sub"],
+        "danger_icon": danger_meta["icon"],
+        "danger_source": "dangerRatings[*].mainValue (highest)",
+        "problems": _panel_problems(props),
+        "problems_source": "avalancheProblems[*].problemType",
+        "key_message": key_message,
+        "key_message_source": key_message_source,
+        "footer_date_from": bulletin.valid_from,
+        "footer_date_to": bulletin.valid_to,
+        "footer_date_source": "Bulletin.valid_from / valid_to",
+        "footer_area": _panel_footer_area(props),
+        "footer_area_source": "regions[*].name",
+        "admin_url": reverse("admin:pipeline_bulletin_change", args=[bulletin.pk]),
+    }
+
+
+def _parse_bulletin_count(request: HttpRequest) -> int:
+    """
+    Parse the ``?b=N`` query parameter as a bounded positive integer.
+
+    Returns :data:`_DEFAULT_BULLETIN_COUNT` when the parameter is absent or
+    unparseable, and clamps valid values to the closed interval
+    ``[1, _MAX_BULLETIN_COUNT]``.
+    """
+    raw = request.GET.get("b")
+    if raw is None:
+        return _DEFAULT_BULLETIN_COUNT
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_BULLETIN_COUNT
+    return max(1, min(value, _MAX_BULLETIN_COUNT))
+
+
+def _select_recent_bulletins(region: Region, count: int) -> list[Bulletin]:
+    """
+    Return the ``count`` most recent bulletins for a region, one per day.
+
+    Collapses each calendar day (keyed on ``valid_to``) to a single bulletin
+    using the same morning/evening preference logic as the detail view's
+    :func:`_select_bulletin_for_date`, so the list never shows two cards
+    covering the same day.
+
+    Args:
+        region: The Region to list bulletins for.
+        count: Maximum number of bulletins to return.
+
+    Returns:
+        A list of at most ``count`` Bulletins in reverse chronological order.
+
+    """
+    recent_dates = list(
+        Bulletin.objects.filter(regions=region).dates("valid_to", "day", order="DESC")[
+            :count
+        ]
+    )
+    bulletins: list[Bulletin] = []
+    for day in recent_dates:
+        selected = _select_bulletin_for_date(region, day)
+        if selected is not None:
+            bulletins.append(selected)
+    return bulletins
+
+
+def random_bulletins(request: HttpRequest, region_id: str) -> HttpResponse:
+    """
+    Render the most recent bulletins for a single region as compact panels.
+
+    Lists up to ``?b=N`` (default :data:`_DEFAULT_BULLETIN_COUNT`, max
+    :data:`_MAX_BULLETIN_COUNT`) bulletins for ``region_id``, one per
+    calendar day, in reverse chronological order. The region is looked up
+    case-insensitively against ``Region.region_id`` so both ``CH-4115`` and
+    ``ch-4115`` resolve to the same page.
+
+    Args:
+        request: The incoming HTTP request.
+        region_id: SLF region identifier from the URL (e.g. ``"CH-4115"``).
+
+    Returns:
+        The rendered random_bulletins page, or a 404 if the region is
+        unknown.
+
+    """
+    region = get_object_or_404(Region, region_id__iexact=region_id)
+    count = _parse_bulletin_count(request)
+    bulletins = _select_recent_bulletins(region, count)
+    panels = [_build_panel_context(b) for b in bulletins]
+    return render(
+        request,
+        "public/random_bulletins.html",
+        {
+            "region": region,
+            "region_name": region.name,
+            "count": count,
+            "panels": panels,
+            "year": datetime.date.today().year,
+        },
+    )

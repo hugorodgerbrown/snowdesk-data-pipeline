@@ -11,7 +11,8 @@ from django import template
 
 register = template.Library()
 
-# Mapping from CAAML problemType values to SVG filenames in static/icons/svg/.
+# Mapping from CAAML problemType values to filenames in
+# static/icons/eaws/avalanche_problems/.
 _ICON_MAP: dict[str, str] = {
     "gliding_snow": "Gliding-Snow.svg",
     "new_snow": "New-Snow.svg",
