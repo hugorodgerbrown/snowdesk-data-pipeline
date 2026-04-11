@@ -78,7 +78,9 @@ class BulletinAdmin(admin.ModelAdmin):
         "valid_from",
         "valid_to",
         "lang",
-        "unscheduled",
+        "region_count",
+        "highest_danger_rating",
+        "danger_ratings",
         "updated_at",
     ]
     list_filter = ["lang", "unscheduled", "issued_at"]

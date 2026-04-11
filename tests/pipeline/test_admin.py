@@ -9,13 +9,13 @@ from datetime import date
 from unittest.mock import patch
 
 import pytest
+
 from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
 from pipeline.admin import BulletinAdmin
 from pipeline.models import PipelineRun
-
 from tests.factories import PipelineRunFactory
 
 

@@ -124,15 +124,23 @@ class TestParseDt:
         result = _parse_dt("2025-03-15T08:00:00Z")
         assert result == datetime(2025, 3, 15, 8, 0, 0, tzinfo=UTC)
 
-    def test_offset_timestamp(self):
-        """Parses an ISO-8601 string with a +01:00 offset."""
+    def test_offset_timestamp_is_converted_to_utc(self):
+        """An ISO-8601 string with a +01:00 offset is converted to UTC."""
         result = _parse_dt("2025-03-15T09:00:00+01:00")
-        assert result.hour == 9
+        assert result == datetime(2025, 3, 15, 8, 0, 0, tzinfo=UTC)
+        assert result.tzinfo is UTC
 
-    def test_naive_timestamp(self):
-        """Parses an ISO-8601 string without timezone info."""
+    def test_negative_offset_timestamp_is_converted_to_utc(self):
+        """An ISO-8601 string with a -05:00 offset is converted to UTC."""
+        result = _parse_dt("2025-03-15T03:00:00-05:00")
+        assert result == datetime(2025, 3, 15, 8, 0, 0, tzinfo=UTC)
+        assert result.tzinfo is UTC
+
+    def test_naive_timestamp_is_assumed_utc(self):
+        """A naive ISO-8601 string is assumed to be UTC."""
         result = _parse_dt("2025-03-15T08:00:00")
-        assert result.tzinfo is None
+        assert result == datetime(2025, 3, 15, 8, 0, 0, tzinfo=UTC)
+        assert result.tzinfo is UTC
 
 
 # ---------------------------------------------------------------------------

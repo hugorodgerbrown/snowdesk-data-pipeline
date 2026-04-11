@@ -26,6 +26,8 @@ from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
 
+from pipeline.schema import AvalancheProblem, DangerRating
+
 logger = logging.getLogger(__name__)
 
 
@@ -271,6 +273,39 @@ class Bulletin(BaseModel):
     def __str__(self) -> str:
         """Return a human-readable representation."""
         return f"Bulletin({self.bulletin_id}, {self.issued_at:%Y-%m-%d})"
+
+    @property
+    def _properties(self) -> dict:
+        """Return the inner CAAML properties dict from the GeoJSON envelope."""
+        return self.raw_data.get("properties", {}) if self.raw_data else {}
+
+    def region_count(self) -> int:
+        """Return the number of regions in the bulletin."""
+        return len(self._properties.get("regions", []))
+
+    def get_danger_ratings(self) -> list[DangerRating]:
+        """
+        Return the bulletin's ``dangerRatings`` as a list of DangerRating
+        dataclass instances. Returns an empty list if the field is absent.
+        """
+        return [
+            DangerRating.from_dict(r) for r in self._properties.get("dangerRatings", [])
+        ]
+
+    def get_avalanche_problems(self) -> list[AvalancheProblem]:
+        """
+        Return the bulletin's ``avalancheProblems`` as a list of
+        AvalancheProblem dataclass instances. Returns an empty list if
+        the field is absent.
+        """
+        return [
+            AvalancheProblem.from_dict(p)
+            for p in self._properties.get("avalancheProblems", [])
+        ]
+
+    def highest_danger_rating(self) -> list[str]:
+        """Return the highest rating 1..5"""
+        return [r.main_value for r in self.get_danger_ratings()]
 
 
 # ---------------------------------------------------------------------------

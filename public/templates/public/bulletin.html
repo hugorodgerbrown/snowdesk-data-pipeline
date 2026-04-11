@@ -23,17 +23,23 @@
     {% if bulletin %}
     <nav class="masthead__nav" aria-label="Bulletin navigation">
         {% if prev_date %}
-        <a href="?date={{ prev_date|date:"Y-m-d" }}">
+        <a class="masthead__nav-prev" href="?date={{ prev_date|date:"Y-m-d" }}">
             &larr; {{ prev_date|date:"D j M" }}
         </a>
         {% endif %}
-        {% if prev_date and next_date %}
-        <span class="masthead__nav-sep">/</span>
-        {% endif %}
+
+        <span class="masthead__nav-current">
+            {% if is_today %}Today{% else %}{{ page_date|date:"D j M Y" }}{% endif %}
+        </span>
+
         {% if next_date %}
-        <a href="?date={{ next_date|date:"Y-m-d" }}">
+        <a class="masthead__nav-next" href="?date={{ next_date|date:"Y-m-d" }}">
             {{ next_date|date:"D j M" }} &rarr;
         </a>
+        {% elif next_update_time %}
+        <span class="masthead__nav-next masthead__nav-next--disabled">
+            {{ next_update_time|date:"H:i" }} UTC
+        </span>
         {% endif %}
     </nav>
     {% endif %}

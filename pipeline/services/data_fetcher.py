@@ -95,15 +95,22 @@ def _normalise_response(data: Any) -> list[dict[str, Any]]:
 
 def _parse_dt(value: str) -> datetime:
     """
-    Parse an ISO-8601 datetime string into a timezone-aware datetime.
+    Parse an ISO-8601 datetime string into a UTC-aware datetime.
+
+    Aware inputs (Z-suffixed or with an explicit offset) are converted to
+    UTC. Naive inputs are assumed to be UTC, since the CAAML schema
+    requires timestamps to be expressed in UTC or with timezone info.
 
     Args:
         value: An ISO-8601 formatted datetime string.
 
     Returns:
-        A timezone-aware datetime object.
+        A UTC-aware datetime object.
     """
-    return datetime.fromisoformat(value)
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _get_or_create_region(region_id: str, name: str) -> Region:

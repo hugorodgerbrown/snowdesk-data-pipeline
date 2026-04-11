@@ -6,6 +6,7 @@ that unknown types return an empty string.
 """
 
 import pytest
+
 from django.template import Context, Template
 
 from public.templatetags.hazard_icons import hazard_icon
@@ -46,9 +47,7 @@ class TestHazardIconFilter:
 
     def test_filter_works_in_template(self):
         """The filter can be used inside a Django template."""
-        template = Template(
-            '{% load hazard_icons %}{{ problem_type|hazard_icon }}'
-        )
+        template = Template("{% load hazard_icons %}{{ problem_type|hazard_icon }}")
         context = Context({"problem_type": "wind_slab"})
         rendered = template.render(context)
 

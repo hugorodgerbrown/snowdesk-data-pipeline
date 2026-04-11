@@ -15,6 +15,7 @@ from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
+
 from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse

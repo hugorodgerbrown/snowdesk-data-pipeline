@@ -19,9 +19,7 @@ whitenoise = "^6.12.0"
 gunicorn = "^25.3.0"
 
 [tool.poetry.group.dev.dependencies]
-black = "^25.1.0"
 ruff = "^0.9.10"
-isort = "^5.13.2"
 pre-commit = "^4.2.0"
 django-stubs = "^6.0.2"
 pytest = "^9.0.3"
@@ -36,16 +34,6 @@ mypy = "^1.20.0"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-
-[tool.black]
-line-length = 88
-target-version = ["py312"]
-
-[tool.isort]
-profile = "black"
-known_django = ["django", "django_htmx"]
-known_first_party = ["config", "pipeline", "tests"]
-sections = ["FUTURE", "STDLIB", "THIRDPARTY", "DJANGO", "FIRSTPARTY", "LOCALFOLDER"]
 
 [tool.mypy]
 plugins = ["mypy_django_plugin.main"]
@@ -85,7 +73,19 @@ line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "UP", "B", "C4", "SIM"]
-ignore = ["E501"]  # line length handled by black
-# Note: "I" (isort) is excluded — isort is run separately with a custom
-# DJANGO section that ruff's isort implementation does not support.
+select = ["E", "F", "W", "UP", "B", "C4", "SIM", "I"]
+ignore = ["E501"]  # line length handled by the formatter
+
+[tool.ruff.lint.isort]
+known-first-party = ["config", "pipeline", "public", "tests"]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "django",
+    "first-party",
+    "local-folder",
+]
+
+[tool.ruff.lint.isort.sections]
+django = ["django", "django_htmx"]
