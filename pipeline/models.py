@@ -101,7 +101,9 @@ class PipelineRun(BaseModel):
     triggered_by = models.CharField(
         max_length=64,
         default="unknown",
-        help_text="Who or what triggered this run (e.g. 'scheduler', 'backfill', 'manual').",
+        help_text=(
+            "Who or what triggered this run (e.g. 'scheduler', 'backfill', 'manual')."
+        ),
     )
 
     objects = PipelineRunQuerySet.as_manager()
@@ -130,6 +132,7 @@ class PipelineRun(BaseModel):
         Args:
             records_created: Number of new Bulletin rows created.
             records_updated: Number of existing Bulletin rows updated.
+
         """
         self.status = self.Status.SUCCESS
         self.finished_at = timezone.now()
@@ -156,6 +159,7 @@ class PipelineRun(BaseModel):
 
         Args:
             error: The exception that caused the failure.
+
         """
         self.status = self.Status.FAILED
         self.finished_at = timezone.now()
@@ -285,8 +289,9 @@ class Bulletin(BaseModel):
 
     def get_danger_ratings(self) -> list[DangerRating]:
         """
-        Return the bulletin's ``dangerRatings`` as a list of DangerRating
-        dataclass instances. Returns an empty list if the field is absent.
+        Return the bulletin's ``dangerRatings`` as dataclass instances.
+
+        Returns an empty list if the field is absent from the raw data.
         """
         return [
             DangerRating.from_dict(r) for r in self._properties.get("dangerRatings", [])
@@ -294,9 +299,9 @@ class Bulletin(BaseModel):
 
     def get_avalanche_problems(self) -> list[AvalancheProblem]:
         """
-        Return the bulletin's ``avalancheProblems`` as a list of
-        AvalancheProblem dataclass instances. Returns an empty list if
-        the field is absent.
+        Return the bulletin's ``avalancheProblems`` as dataclass instances.
+
+        Returns an empty list if the field is absent from the raw data.
         """
         return [
             AvalancheProblem.from_dict(p)
@@ -304,7 +309,7 @@ class Bulletin(BaseModel):
         ]
 
     def highest_danger_rating(self) -> list[str]:
-        """Return the highest rating 1..5"""
+        """Return the highest rating 1..5."""
         return [r.main_value for r in self.get_danger_ratings()]
 
 

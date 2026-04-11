@@ -7,6 +7,19 @@ Provides text-processing helpers used across views, admin, and services.
 import re
 from html.parser import HTMLParser
 
+# Simple open-tag → literal-prefix mapping. Tags that require state
+# (headings, lists, list items) are handled as special cases.
+_SIMPLE_OPEN_TAGS: dict[str, str] = {
+    "p": "\n\n",
+    "br": "\n",
+    "strong": "**",
+    "b": "**",
+    "em": "*",
+    "i": "*",
+}
+_HEADING_TAGS: frozenset[str] = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
+_LIST_CONTAINER_TAGS: frozenset[str] = frozenset({"ul", "ol"})
+
 
 class _HTMLToMarkdownParser(HTMLParser):
     """
@@ -25,6 +38,14 @@ class _HTMLToMarkdownParser(HTMLParser):
         self._list_type: list[str] = []
         self._list_counter: list[int] = []
 
+    def _open_list_item(self) -> None:
+        """Emit the prefix for an opening ``<li>`` tag."""
+        if self._list_type and self._list_type[-1] == "ol":
+            self._list_counter[-1] += 1
+            self._output.append(f"\n{self._list_counter[-1]}. ")
+        else:
+            self._output.append("\n- ")
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         """
         Handle an opening HTML tag.
@@ -32,32 +53,20 @@ class _HTMLToMarkdownParser(HTMLParser):
         Args:
             tag: The tag name (lowercase).
             attrs: List of (attribute, value) pairs.
+
         """
         self._current_tag = tag
 
-        if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+        if tag in _SIMPLE_OPEN_TAGS:
+            self._output.append(_SIMPLE_OPEN_TAGS[tag])
+        elif tag in _HEADING_TAGS:
             level = int(tag[1])
             self._output.append(f"\n\n{'#' * level} ")
-        elif tag == "p":
-            self._output.append("\n\n")
-        elif tag == "br":
-            self._output.append("\n")
-        elif tag in ("strong", "b"):
-            self._output.append("**")
-        elif tag in ("em", "i"):
-            self._output.append("*")
-        elif tag == "ul":
-            self._list_type.append("ul")
-            self._list_counter.append(0)
-        elif tag == "ol":
-            self._list_type.append("ol")
+        elif tag in _LIST_CONTAINER_TAGS:
+            self._list_type.append(tag)
             self._list_counter.append(0)
         elif tag == "li":
-            if self._list_type and self._list_type[-1] == "ol":
-                self._list_counter[-1] += 1
-                self._output.append(f"\n{self._list_counter[-1]}. ")
-            else:
-                self._output.append("\n- ")
+            self._open_list_item()
 
     def handle_endtag(self, tag: str) -> None:
         """
@@ -65,6 +74,7 @@ class _HTMLToMarkdownParser(HTMLParser):
 
         Args:
             tag: The tag name (lowercase).
+
         """
         if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
             self._output.append("\n")
@@ -87,6 +97,7 @@ class _HTMLToMarkdownParser(HTMLParser):
 
         Args:
             data: The text content.
+
         """
         self._output.append(data)
 
@@ -96,6 +107,7 @@ class _HTMLToMarkdownParser(HTMLParser):
 
         Returns:
             A string with normalised whitespace and no leading/trailing blanks.
+
         """
         text = "".join(self._output)
         # Collapse runs of 3+ newlines into 2.
@@ -116,6 +128,7 @@ def html_to_markdown(html: str) -> str:
 
     Returns:
         A Markdown-formatted plain-text string.
+
     """
     if not html:
         return ""

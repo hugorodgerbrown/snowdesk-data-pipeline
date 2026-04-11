@@ -172,6 +172,7 @@ class BulletinAdmin(admin.ModelAdmin):
 
         Returns:
             The properties dict, or an empty dict if not present.
+
         """
         return obj.raw_data.get("properties", {}) if obj.raw_data else {}
 
@@ -188,6 +189,7 @@ class BulletinAdmin(admin.ModelAdmin):
 
         Returns:
             An HTML string for the admin detail view.
+
         """
         if not text:
             return "—"
@@ -221,6 +223,7 @@ class BulletinAdmin(admin.ModelAdmin):
 
         Returns:
             Human-readable label (e.g. "Very high").
+
         """
         return value.replace("_", " ").capitalize()
 
@@ -234,6 +237,7 @@ class BulletinAdmin(admin.ModelAdmin):
 
         Returns:
             Human-readable label (e.g. "All day").
+
         """
         return value.replace("_", " ").capitalize()
 
@@ -247,6 +251,7 @@ class BulletinAdmin(admin.ModelAdmin):
 
         Returns:
             A string like "Above 2000m", "Below 2400m", or "All elevations".
+
         """
         if not elevation:
             return "All elevations"

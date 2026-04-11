@@ -6,9 +6,12 @@ the CAAML API in reverse chronological order and stops once it passes the
 start date boundary. Supports --force and --dry-run.
 
 Usage:
-    python manage.py backfill_data --start-date 2024-01-01 --end-date 2024-12-31
-    python manage.py backfill_data --start-date 2024-01-01 --end-date 2024-12-31 --force
-    python manage.py backfill_data --start-date 2024-01-01 --end-date 2024-12-31 --dry-run
+    python manage.py backfill_data \
+        --start-date 2024-01-01 --end-date 2024-12-31
+    python manage.py backfill_data \
+        --start-date 2024-01-01 --end-date 2024-12-31 --force
+    python manage.py backfill_data \
+        --start-date 2024-01-01 --end-date 2024-12-31 --dry-run
 """
 
 import logging

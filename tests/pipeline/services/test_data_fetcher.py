@@ -44,6 +44,7 @@ def _make_raw_bulletin(
 
     Returns:
         A dict matching the shape returned by the SLF CAAML API.
+
     """
     base: dict[str, Any] = {
         "bulletinID": bulletin_id,

@@ -87,8 +87,9 @@ class Elevation:
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> Elevation | None:
         """
-        Build an Elevation from a CAAML elevation dict, or return None
-        if no elevation data is present.
+        Build an Elevation from a CAAML elevation dict.
+
+        Returns None if no elevation data is present.
         """
         if not data:
             return None

@@ -48,6 +48,7 @@ def fetch_bulletin_page(lang: str, limit: int, offset: int) -> list[dict[str, An
     Raises:
         requests.HTTPError: If the API returns a non-2xx status.
         ValueError: If the response body cannot be parsed as JSON.
+
     """
     url = f"{SLF_API_BASE_URL}/{lang}/json"
     logger.debug(
@@ -67,8 +68,7 @@ def fetch_bulletin_page(lang: str, limit: int, offset: int) -> list[dict[str, An
 
 def _normalise_response(data: Any) -> list[dict[str, Any]]:
     """
-    Normalise the three response shapes the SLF API can return into a
-    flat list of bulletin dicts.
+    Normalise the SLF API response into a flat list of bulletin dicts.
 
     The API may return:
       - A flat list of bulletins.
@@ -80,6 +80,7 @@ def _normalise_response(data: Any) -> list[dict[str, Any]]:
 
     Returns:
         A flat list of bulletin dicts.
+
     """
     if isinstance(data, list):
         if len(data) > 0 and isinstance(data[0], dict) and "bulletins" in data[0]:
@@ -106,6 +107,7 @@ def _parse_dt(value: str) -> datetime:
 
     Returns:
         A UTC-aware datetime object.
+
     """
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
@@ -125,6 +127,7 @@ def _get_or_create_region(region_id: str, name: str) -> Region:
 
     Returns:
         The Region instance (created or existing).
+
     """
     region, created = Region.objects.get_or_create(
         region_id=region_id,
@@ -152,6 +155,7 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
 
     Returns:
         True if a new row was created, False if an existing row was updated.
+
     """
     bulletin_id: str = raw["bulletinID"]
     raw_data: dict[str, Any] = {
@@ -202,6 +206,48 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
     return created
 
 
+# Per-bulletin processing outcomes returned by ``_process_bulletin``.
+_OUTCOME_CREATED = "created"
+_OUTCOME_UPDATED = "updated"
+_OUTCOME_SKIPPED_EXISTS = "skipped_exists"
+_OUTCOME_SKIPPED_NEWER = "skipped_newer"
+_OUTCOME_OUT_OF_RANGE = "out_of_range"
+
+
+def _process_bulletin(
+    raw: dict[str, Any],
+    run: PipelineRun,
+    *,
+    range_start: datetime,
+    range_end: datetime,
+    dry_run: bool,
+    force: bool,
+) -> str:
+    """
+    Decide how to handle a single bulletin within the paging loop.
+
+    Returns one of the ``_OUTCOME_*`` constants so the caller can update
+    counters or terminate pagination without owning the decision logic.
+    """
+    issued_at = _parse_dt(raw["publicationTime"])
+
+    if issued_at >= range_end:
+        return _OUTCOME_SKIPPED_NEWER
+    if issued_at < range_start:
+        logger.info("Passed start boundary at %s, stopping", issued_at.isoformat())
+        return _OUTCOME_OUT_OF_RANGE
+
+    if dry_run:
+        logger.info("[dry-run] Would store %s", raw["bulletinID"])
+        return _OUTCOME_CREATED
+
+    if not force and Bulletin.objects.filter(bulletin_id=raw["bulletinID"]).exists():
+        return _OUTCOME_SKIPPED_EXISTS
+
+    created = upsert_bulletin(raw, run)
+    return _OUTCOME_CREATED if created else _OUTCOME_UPDATED
+
+
 def run_pipeline(
     start: date,
     end: date,
@@ -225,6 +271,7 @@ def run_pipeline(
 
     Returns:
         The completed (or failed) PipelineRun instance.
+
     """
     run = PipelineRun.objects.create(triggered_by=triggered_by)
     run.mark_running()
@@ -233,9 +280,12 @@ def run_pipeline(
     range_start = datetime(start.year, start.month, start.day, tzinfo=UTC)
     range_end = datetime(end.year, end.month, end.day, tzinfo=UTC) + _ONE_DAY
 
-    total_created = 0
-    total_updated = 0
-    total_skipped = 0
+    counts: dict[str, int] = {
+        _OUTCOME_CREATED: 0,
+        _OUTCOME_UPDATED: 0,
+        _OUTCOME_SKIPPED_EXISTS: 0,
+        _OUTCOME_SKIPPED_NEWER: 0,
+    }
     offset = 0
     pages_fetched = 0
 
@@ -258,39 +308,18 @@ def run_pipeline(
                 break
 
             for raw in page:
-                issued_at = _parse_dt(raw["publicationTime"])
-
-                # Bulletin is newer than the end date — skip, keep paging.
-                if issued_at >= range_end:
-                    continue
-
-                # Bulletin is older than the start date — we're past the range.
-                if issued_at < range_start:
-                    logger.info(
-                        "Passed start boundary at %s, stopping", issued_at.isoformat()
-                    )
+                outcome = _process_bulletin(
+                    raw,
+                    run,
+                    range_start=range_start,
+                    range_end=range_end,
+                    dry_run=dry_run,
+                    force=force,
+                )
+                if outcome == _OUTCOME_OUT_OF_RANGE:
                     done = True
                     break
-
-                # Bulletin is within range.
-                if dry_run:
-                    logger.info("[dry-run] Would store %s", raw["bulletinID"])
-                    total_created += 1
-                    continue
-
-                if not force:
-                    exists = Bulletin.objects.filter(
-                        bulletin_id=raw["bulletinID"]
-                    ).exists()
-                    if exists:
-                        total_skipped += 1
-                        continue
-
-                created = upsert_bulletin(raw, run)
-                if created:
-                    total_created += 1
-                else:
-                    total_updated += 1
+                counts[outcome] += 1
 
             # Fewer results than requested means last page.
             if len(page) < PAGE_SIZE:
@@ -306,14 +335,14 @@ def run_pipeline(
         "Pipeline run %s finished: %d pages, %d created, %d updated, %d skipped",
         run.pk,
         pages_fetched,
-        total_created,
-        total_updated,
-        total_skipped,
+        counts[_OUTCOME_CREATED],
+        counts[_OUTCOME_UPDATED],
+        counts[_OUTCOME_SKIPPED_EXISTS],
     )
 
     if dry_run:
         run.mark_success(0, 0)
     else:
-        run.mark_success(total_created, total_updated)
+        run.mark_success(counts[_OUTCOME_CREATED], counts[_OUTCOME_UPDATED])
 
     return run

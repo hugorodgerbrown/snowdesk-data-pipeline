@@ -68,24 +68,4 @@ exclude_lines = [
     "if __name__ == .__main__.",
 ]
 
-[tool.ruff]
-line-length = 88
-target-version = "py312"
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "UP", "B", "C4", "SIM", "I"]
-ignore = ["E501"]  # line length handled by the formatter
-
-[tool.ruff.lint.isort]
-known-first-party = ["config", "pipeline", "public", "tests"]
-section-order = [
-    "future",
-    "standard-library",
-    "third-party",
-    "django",
-    "first-party",
-    "local-folder",
-]
-
-[tool.ruff.lint.isort.sections]
-django = ["django", "django_htmx"]
+# Note: ruff configuration lives in .ruff.toml at the repo root.

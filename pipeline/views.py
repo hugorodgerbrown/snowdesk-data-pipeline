@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def require_htmx(view_func):
     """
-    Decorator that returns 400 Bad Request for non-HTMX requests.
+    Return 400 Bad Request for non-HTMX requests.
 
     Partial/fragment views should only be called by HTMX. This decorator
     enforces that, preventing full-page responses from being accidentally
@@ -34,6 +34,7 @@ def require_htmx(view_func):
 
     Returns:
         Wrapped view that returns 400 for non-HTMX requests.
+
     """
 
     def wrapper(request: HttpRequest, *args, **kwargs) -> HttpResponse:
@@ -61,6 +62,7 @@ def dashboard(request: HttpRequest) -> HttpResponse:
 
     Returns:
         Rendered dashboard HTML response.
+
     """
     recent_runs = PipelineRun.objects.order_by("-started_at")[:10]
     latest_bulletins = Bulletin.objects.order_by("-issued_at")[:50]
@@ -89,6 +91,7 @@ def bulletins_partial(request: HttpRequest) -> HttpResponse:
 
     Returns:
         Rendered HTML fragment for the bulletins table.
+
     """
     date_filter = request.GET.get("date")
     bulletins_qs = Bulletin.objects.order_by("-issued_at")
@@ -117,6 +120,7 @@ def runs_partial(request: HttpRequest) -> HttpResponse:
 
     Returns:
         Rendered HTML fragment for the pipeline runs table.
+
     """
     recent_runs = PipelineRun.objects.order_by("-started_at")[:10]
     context = {"recent_runs": recent_runs}

@@ -8,7 +8,6 @@ mode, force flag, and error handling when the pipeline fails.
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
@@ -25,6 +24,7 @@ def _make_successful_run(**overrides) -> PipelineRun:
 
     Returns:
         A persisted PipelineRun marked as successful.
+
     """
     run = PipelineRunFactory(
         status=PipelineRun.Status.SUCCESS,
@@ -43,6 +43,7 @@ def _make_failed_run(error_message: str = "API timeout") -> PipelineRun:
 
     Returns:
         A persisted PipelineRun marked as failed.
+
     """
     run = PipelineRunFactory(
         status=PipelineRun.Status.FAILED,
