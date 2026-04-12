@@ -16,70 +16,150 @@
 
 /* Override the single-column stack from random_bulletins.css. */
 body {
-    padding: 1.5rem clamp(0.5rem, 3vw, 2rem) 3rem;
+  padding: 1.5rem clamp(0.5rem, 3vw, 2rem) 3rem;
 }
 
 /* ── Page header ── */
 
 .page-header {
-    max-width: 1200px;
-    margin: 0 auto 1.5rem;
-    padding: 0 0.25rem;
+  max-width: 1200px;
+  margin: 0 auto 1.5rem;
+  padding: 0 0.25rem;
 }
 
 .page-title {
-    font-family: 'DM Sans', system-ui, sans-serif;
-    font-size: clamp(1.25rem, 3vw, 1.75rem);
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0.15rem 0 0;
-    line-height: 1.15;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0.15rem 0 0;
+  line-height: 1.15;
 }
 
 .page-subtitle {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.06em;
-    color: var(--text-tertiary);
-    margin-top: 0.35rem;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-top: 0.35rem;
 }
 
 /* ── Responsive card grid ── */
 
 .cards-grid {
-    display: grid;
-    gap: 12px;
-    max-width: 1200px;
-    margin: 0 auto;
-    /* Single column by default (mobile-first). */
-    grid-template-columns: 1fr;
+  display: grid;
+  gap: 12px;
+  max-width: 1200px;
+  margin: 0 auto;
+  /* Single column by default (mobile-first). */
+  grid-template-columns: 1fr;
 }
 
 @media (min-width: 600px) {
-    .cards-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
+  .cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (min-width: 960px) {
-    .cards-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
+  .cards-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 /* Cards should stretch to fill their grid cell height so the danger
    band and footer stay anchored top/bottom even when neighbouring cards
    have more content. */
 .cards-grid .card {
-    display: flex;
-    flex-direction: column;
+  display: flex;
+  flex-direction: column;
 }
 
 .cards-grid .card-body {
-    flex: 1;
+  flex: 1;
 }
 
 /* Empty state centred across the full grid. */
 .cards-grid .empty {
-    grid-column: 1 / -1;
+  grid-column: 1 / -1;
+}
+.field-guidance {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.field-guidance-trigger {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  cursor: pointer;
+  list-style: none; /* removes default triangle in most browsers */
+  user-select: none;
+}
+
+/* Firefox */
+.field-guidance-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.field-guidance-trigger::after {
+  content: " ↓";
+}
+
+details[open] .field-guidance-trigger::after {
+  content: " ↑";
+}
+
+details[open] .field-guidance-text {
+  margin-top: 0.6rem;
+  font-size: 0.875rem;
+  color: var(--color-body);
+  line-height: 1.6;
+}
+
+.field-guidance-attribution {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  margin-top: 0.25rem;
+  text-align: right;
+}
+details > summary.problem-tag {
+  cursor: pointer;
+  list-style: none;
+}
+
+details > summary.problem-tag::-webkit-details-marker {
+  display: none;
+}
+
+.field-guidance-indicator {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  transition: transform 0.15s ease;
+}
+
+details[open] .field-guidance-indicator {
+  display: inline-block;
+  transform: rotate(180deg);
+}
+
+details[open] .field-guidance-text {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border-light);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.problem-rose {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.problem-rose svg {
+  display: block;
 }

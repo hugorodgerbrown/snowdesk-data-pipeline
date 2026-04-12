@@ -191,13 +191,20 @@ body {
 }
 
 .problem-icon {
-    width: 24px;
-    height: 24px;
+    width: 36px;
+    height: 36px;
     flex-shrink: 0;
     border-radius: 4px;
     overflow: hidden;
 }
 .problem-icon img { width: 100%; height: 100%; object-fit: cover; }
+
+.problem-rose {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+.problem-rose svg { display: block; }
 
 .problem-elevation {
     margin-top: 5px;
@@ -212,10 +219,39 @@ body {
     margin-top: 6px;
     padding: 0 4px;
     font-size: 12px;
+    /* font-style: italic; */
     line-height: 1.55;
     color: var(--text-secondary);
 }
+.problem-attribution {
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    color: var(--color-muted);
+    /* text-transform: uppercase; */
+    margin-top: 0.25rem;
+    text-align: right;
+}
+.field-guidance {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--color-border-light);
+}
 
+.field-guidance-text {
+    font-size: 0.875rem;
+    color: var(--color-body);
+    line-height: 1.6;
+    margin: 0;
+}
+
+.field-guidance-attribution {
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    color: var(--color-muted);
+    /* text-transform: uppercase; */
+    margin-top: 0.25rem;
+    text-align: right;
+}
 /* Fallback key message (used when a bulletin has no avalanche problems). */
 .key-message {
     font-size: 13px;
@@ -227,26 +263,19 @@ body {
     font-weight: 500;
 }
 
-/* Footer: date + area */
+/* Footer: date */
 .card-footer {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     padding: 8px 14px 10px;
     border-top: 0.5px solid var(--border);
     background: #fafaf8;
-    gap: 10px;
 }
 .footer-date {
     font-family: 'DM Mono', monospace;
     font-size: 11px;
     color: var(--text-tertiary);
     white-space: nowrap;
-}
-.footer-area {
-    font-size: 11px;
-    color: var(--text-tertiary);
-    text-align: right;
 }
 
 /* Admin link — only rendered for authenticated staff users.
