@@ -2,14 +2,17 @@
 public/urls.py — URL routing for the public bulletin site.
 
 URL structure:
-  /                                   Marketing homepage.
-  /random/                            Redirects to a random region's today page.
-  /<region_id>/season/                Full-season test page (up to 100 panels).
-  /<region_id>/                       Redirects to /<region_id>/<slug>/.
-  /<region_id>/<slug>/                Today's bulletin for a region.
-  /<region_id>/<slug>/<date>/         Bulletin for a region on a specific date.
+  /                                            Marketing homepage.
+  /examples/random/                            Redirects to a random bulletin.
+  /examples/category/<danger_level>/           Redirects to a random bulletin
+                                               matching the given danger level.
+  /random/                                     Deprecated → /examples/random/.
+  /<region_id>/season/                         Full-season page (up to 100 panels).
+  /<region_id>/                                Redirects to /<region_id>/<slug>/.
+  /<region_id>/<slug>/                         Today's bulletin for a region.
+  /<region_id>/<slug>/<date>/                  Bulletin for a specific date.
 
-The ``/random/`` and ``/<region_id>/season/`` routes are registered before
+The ``/examples/`` and ``/<region_id>/season/`` routes are registered before
 the generic ``<str:region_id>/<slug:slug>/`` pattern so Django's URL
 resolver matches the literal suffixes first.
 """
@@ -22,6 +25,14 @@ app_name = "public"
 
 urlpatterns = [
     path("", views.home, name="home"),
+    # Examples — sample bulletin links
+    path("examples/random/", views.examples_random, name="examples_random"),
+    path(
+        "examples/category/<str:danger_level>/",
+        views.examples_category,
+        name="examples_category",
+    ),
+    # Deprecated — redirect to /examples/random/
     path("random/", views.random_redirect, name="random"),
     path(
         "<str:region_id>/season/",

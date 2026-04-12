@@ -2,12 +2,14 @@
 public/views.py — Views for the public-facing bulletin site.
 
 URL structure:
-  /                              Marketing homepage.
-  /<region_id>/                  Redirects to /<region_id>/<slug>/.
-  /<region_id>/<slug>/           Today's bulletin for a region (panel cards).
-  /<region_id>/<slug>/<date>/    Bulletin for a region on a specific date.
-  /random/                       Redirects to a random region's today page.
-  /<region_id>/season/           Full-season test page (up to 100 panels).
+  /                                          Marketing homepage.
+  /examples/random/                          Redirects to a random bulletin.
+  /examples/category/<danger_level>/         Random bulletin by danger level.
+  /random/                                   Deprecated → /examples/random/.
+  /<region_id>/                              Redirects to /<region_id>/<slug>/.
+  /<region_id>/<slug>/                       Today's bulletin for a region.
+  /<region_id>/<slug>/<date>/                Bulletin for a specific date.
+  /<region_id>/season/                       Full-season page (up to 100 panels).
 
 Each page represents a single day, identified by the bulletin's ``valid_to``
 date.  Two bulletins may cover a day: an evening issue (valid from ~16:00 the
@@ -34,7 +36,7 @@ import random
 from typing import Any, cast
 
 from django.core.cache import cache
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -525,6 +527,35 @@ def home(request: HttpRequest) -> HttpResponse:
 
 def random_redirect(request: HttpRequest) -> HttpResponse:
     """
+    Redirect ``/random/`` to ``/examples/random/`` (deprecated).
+
+    .. deprecated::
+        Use ``/examples/random/`` instead. This URL will be removed in a
+        future release.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A permanent redirect to ``/examples/random/``.
+
+    """
+    logger.warning("Deprecated URL /random/ accessed — use /examples/random/ instead")
+    return redirect("public:examples_random", permanent=True)
+
+
+# Map URL-safe danger level slugs to CAAML ``mainValue`` strings.
+_DANGER_SLUG_TO_KEY: dict[str, str] = {
+    "low": "low",
+    "moderate": "moderate",
+    "considerable": "considerable",
+    "high": "high",
+    "very-high": "very_high",
+}
+
+
+def examples_random(request: HttpRequest) -> HttpResponse:
+    """
     Redirect to a random region's today page.
 
     Finds the most recent bulletin issue date, picks a random region from
@@ -558,6 +589,64 @@ def random_redirect(request: HttpRequest) -> HttpResponse:
         "public:bulletin",
         region_id=region.region_id,
         slug=name_slug,
+    )
+
+
+def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
+    """
+    Redirect to a random bulletin matching a specific danger level.
+
+    Finds the most recent bulletin whose highest ``mainValue`` matches the
+    requested level, picks a random region from that bulletin, and redirects
+    to the bulletin detail page. Returns 404 if the slug is unrecognised or
+    no matching bulletin exists.
+
+    Args:
+        request: The incoming HTTP request.
+        danger_level: URL slug for the danger level (e.g. ``"considerable"``
+            or ``"very-high"``).
+
+    Returns:
+        A redirect response, or 404 if no matching bulletin is found.
+
+    """
+    danger_key = _DANGER_SLUG_TO_KEY.get(danger_level)
+    if danger_key is None:
+        raise Http404(f"Unknown danger level: {danger_level}")
+
+    # Filter in Python because SQLite does not support JSON __contains.
+    # The candidate pool is small (most recent 200 bulletins) so this is
+    # fast enough for a redirect view.
+    candidates = Bulletin.objects.order_by("-issued_at")[:200]
+    matching = [
+        b
+        for b in candidates
+        if any(
+            r.get("mainValue") == danger_key
+            for r in (b.raw_data or {}).get("properties", {}).get("dangerRatings", [])
+        )
+    ]
+
+    if not matching:
+        raise Http404(f"No bulletins found for danger level: {danger_level}")
+
+    bulletin = random.choice(matching)  # noqa: S311 — not crypto
+    region_bulletin = (
+        RegionBulletin.objects.filter(bulletin=bulletin)
+        .select_related("region")
+        .first()
+    )
+    if not region_bulletin:
+        raise Http404(f"No regions found for bulletin: {bulletin.bulletin_id}")
+
+    region = region_bulletin.region
+    name_slug = _get_name_slug(region)
+    date_str = bulletin.valid_to.strftime("%Y-%m-%d")
+    return redirect(
+        "public:bulletin_date",
+        region_id=region.region_id,
+        slug=name_slug,
+        date_str=date_str,
     )
 
 
@@ -1057,6 +1146,110 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
     return problems
 
 
+# ---------------------------------------------------------------------------
+# Day character
+# ---------------------------------------------------------------------------
+
+# Avalanche problem types that indicate a hard-to-read day (rule 2).
+_HARD_TO_READ_PROBLEMS: frozenset[str] = frozenset(
+    {"persistent_weak_layers", "gliding_snow"}
+)
+
+
+def _elevation_lower_le_2000(elevation: Any) -> bool:
+    """
+    Return True if the elevation's lower bound is at or below 2000m.
+
+    Non-numeric lower bounds (e.g. ``"treeline"``) return False.
+    """
+    if elevation is None or not elevation:
+        return False
+    lower = getattr(elevation, "lower", "") or ""
+    return lower.isdigit() and int(lower) <= 2000
+
+
+def _is_widespread(problems: list[dict[str, Any]]) -> bool:
+    """
+    Return True if the problems indicate widespread exposure (rule 3).
+
+    Checks three conditions: total unique aspects >= 6, any problem with
+    a lower elevation bound <= 2000m, or two or more problems present.
+    """
+    all_aspects: set[str] = set()
+    for p in problems:
+        all_aspects.update(p.get("aspects") or [])
+    has_low_elevation = any(
+        _elevation_lower_le_2000(p.get("elevation")) for p in problems
+    )
+    return len(all_aspects) >= 6 or has_low_elevation or len(problems) >= 2
+
+
+def _is_stable(danger: int, problems: list[dict[str, Any]]) -> bool:
+    """
+    Return True if the day qualifies as stable (rule 5).
+
+    Stable when danger is 1, or danger is 2 with only benign problems.
+    """
+    if danger == 1:
+        return True
+    return danger == 2 and all(
+        p.get("problem_type") == "no_distinct_avalanche_problem" for p in problems
+    )
+
+
+def day_character(panel: dict[str, Any]) -> str:
+    """
+    Classify a bulletin panel into one of five day-character labels.
+
+    Rules are evaluated top-to-bottom; the first match wins. The function
+    is pure — it derives everything from the panel dict produced by
+    :func:`_build_panel_context`.
+
+    Args:
+        panel: A panel context dict with at minimum ``danger_number``
+            (str), ``danger_subdivision`` (str), and ``problems`` (list
+            of dicts with ``problem_type``, ``aspects``, ``elevation``).
+
+    Returns:
+        One of ``"Stable day"``, ``"Manageable day"``,
+        ``"Hard-to-read day"``, ``"Widespread danger"``, or
+        ``"Dangerous conditions"``.
+
+    """
+    danger = int(panel.get("danger_number") or 1)
+    subdivision = panel.get("danger_subdivision", "")
+    problems: list[dict[str, Any]] = panel.get("problems") or []
+
+    # Rule 1 — Dangerous conditions: danger >= 4
+    if danger >= 4:
+        return "Dangerous conditions"
+
+    # Rule 2 — Hard-to-read day: danger >= 2 and any hard-to-read problem
+    if danger >= 2 and any(
+        p.get("problem_type") in _HARD_TO_READ_PROBLEMS for p in problems
+    ):
+        return "Hard-to-read day"
+
+    # Rule 3 — Widespread danger: danger == 3 and broad exposure
+    if danger == 3 and _is_widespread(problems):
+        return "Widespread danger"
+
+    # Rule 3b — Widespread danger: danger == 3 and upper subdivision (3+)
+    if danger == 3 and subdivision == "+":
+        return "Widespread danger"
+
+    # Rule 5 — Stable day
+    if _is_stable(danger, problems):
+        return "Stable day"
+
+    # Rule 4 — Manageable day: danger 2 or 3 with no earlier match
+    if danger in {2, 3}:
+        return "Manageable day"
+
+    # Safe default
+    return "Stable day"
+
+
 def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     """
     Build the template context for a single compact bulletin panel.
@@ -1106,7 +1299,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
 
     snowpack_structure = (props.get("snowpackStructure") or {}).get("comment") or ""
 
-    return {
+    panel: dict[str, Any] = {
         "bulletin": bulletin,
         "danger_key": danger_key,
         # Hyphenated form for CSS class names (``very_high`` → ``very-high``)
@@ -1130,6 +1323,8 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "footer_date_source": "Bulletin.valid_from / valid_to",
         "admin_url": reverse("admin:pipeline_bulletin_change", args=[bulletin.pk]),
     }
+    panel["day_character"] = day_character(panel)
+    return panel
 
 
 def _parse_bulletin_count(request: HttpRequest) -> int:

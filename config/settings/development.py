@@ -13,6 +13,8 @@ DEBUG = True
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
 
+INTERNAL_IPS = ["127.0.0.1"]
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
