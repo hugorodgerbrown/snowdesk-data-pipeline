@@ -771,6 +771,13 @@ _DANGER_ORDER: tuple[str, ...] = (
     "very_high",
 )
 
+# Map CAAML ``customData.CH.subdivision`` strings to display suffixes.
+_SUBDIVISION_SUFFIX: dict[str, str] = {
+    "minus": "-",
+    "neutral": "=",
+    "plus": "+",
+}
+
 # Default number of bulletins to display on the random_bulletins page when
 # no ``?b=N`` query parameter is supplied.
 _DEFAULT_BULLETIN_COUNT = 10
@@ -780,26 +787,34 @@ _DEFAULT_BULLETIN_COUNT = 10
 _MAX_BULLETIN_COUNT = 50
 
 
-def _highest_danger_key(ratings: list[dict[str, Any]]) -> str:
+def _highest_danger_key(ratings: list[dict[str, Any]]) -> tuple[str, str]:
     """
-    Return the highest CAAML ``mainValue`` present in ``ratings``.
+    Return the highest CAAML ``mainValue`` and its subdivision suffix.
+
+    When multiple ratings share the same highest ``mainValue``, the
+    subdivision from the last one encountered is used.
 
     Args:
         ratings: The CAAML ``dangerRatings`` list.
 
     Returns:
-        One of the keys in :data:`_DANGER_PANEL_META`; defaults to ``"low"``
-        if no recognised values are found.
+        A ``(key, subdivision_suffix)`` tuple. *key* is one of the keys in
+        :data:`_DANGER_PANEL_META` (defaults to ``"low"``).
+        *subdivision_suffix* is ``"-"``, ``"="``, ``"+"``, or ``""`` if
+        no subdivision is present.
 
     """
     highest = "low"
+    subdivision = ""
     for rating in ratings:
         value = rating.get("mainValue", "")
-        if value in _DANGER_ORDER and _DANGER_ORDER.index(value) > _DANGER_ORDER.index(
+        if value in _DANGER_ORDER and _DANGER_ORDER.index(value) >= _DANGER_ORDER.index(
             highest
         ):
             highest = value
-    return highest
+            raw = (rating.get("customData") or {}).get("CH", {}).get("subdivision", "")
+            subdivision = _SUBDIVISION_SUFFIX.get(raw, "")
+    return highest, subdivision
 
 
 def _is_numeric_bound(value: Any) -> bool:
@@ -982,7 +997,9 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
 
     """
     props = _get_properties(bulletin)
-    danger_key = _highest_danger_key(props.get("dangerRatings") or [])
+    danger_key, danger_subdivision = _highest_danger_key(
+        props.get("dangerRatings") or []
+    )
     danger_meta = _DANGER_PANEL_META[danger_key]
 
     # Fallback key-message: used by the template when the bulletin has no
@@ -1014,6 +1031,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         # matching the stylesheet.
         "danger_css": danger_key.replace("_", "-"),
         "danger_number": danger_meta["number"],
+        "danger_subdivision": danger_subdivision,
         "danger_label": danger_meta["label"],
         "danger_sub": danger_meta["sub"],
         "danger_icon": danger_meta["icon"],

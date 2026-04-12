@@ -103,8 +103,8 @@ class TestHighestDangerKey:
     """Tests for ``_highest_danger_key``."""
 
     def test_returns_low_for_empty_ratings(self) -> None:
-        """An empty ratings list defaults to ``low``."""
-        assert _highest_danger_key([]) == "low"
+        """An empty ratings list defaults to ``low`` with no subdivision."""
+        assert _highest_danger_key([]) == ("low", "")
 
     def test_returns_highest_when_multiple_ratings(self) -> None:
         """The highest EAWS value across all entries wins."""
@@ -113,17 +113,61 @@ class TestHighestDangerKey:
             {"mainValue": "high"},
             {"mainValue": "low"},
         ]
-        assert _highest_danger_key(ratings) == "high"
+        assert _highest_danger_key(ratings) == ("high", "")
 
     def test_unknown_values_are_ignored(self) -> None:
         """Unrecognised values should not confuse the ordering."""
         ratings = [{"mainValue": "moderate"}, {"mainValue": "definitely_not_valid"}]
-        assert _highest_danger_key(ratings) == "moderate"
+        assert _highest_danger_key(ratings) == ("moderate", "")
 
     def test_very_high_beats_high(self) -> None:
         """``very_high`` outranks ``high``."""
         ratings = [{"mainValue": "high"}, {"mainValue": "very_high"}]
-        assert _highest_danger_key(ratings) == "very_high"
+        assert _highest_danger_key(ratings) == ("very_high", "")
+
+    def test_subdivision_minus(self) -> None:
+        """A ``minus`` subdivision returns the minus sign suffix."""
+        ratings = [
+            {
+                "mainValue": "high",
+                "customData": {"CH": {"subdivision": "minus"}},
+            }
+        ]
+        assert _highest_danger_key(ratings) == ("high", "\u2212")
+
+    def test_subdivision_plus(self) -> None:
+        """A ``plus`` subdivision returns the ``+`` suffix."""
+        ratings = [
+            {
+                "mainValue": "moderate",
+                "customData": {"CH": {"subdivision": "plus"}},
+            }
+        ]
+        assert _highest_danger_key(ratings) == ("moderate", "+")
+
+    def test_subdivision_neutral(self) -> None:
+        """A ``neutral`` subdivision returns the ``=`` suffix."""
+        ratings = [
+            {
+                "mainValue": "considerable",
+                "customData": {"CH": {"subdivision": "neutral"}},
+            }
+        ]
+        assert _highest_danger_key(ratings) == ("considerable", "=")
+
+    def test_subdivision_from_highest_rating(self) -> None:
+        """The subdivision comes from the highest-rated entry."""
+        ratings = [
+            {
+                "mainValue": "moderate",
+                "customData": {"CH": {"subdivision": "plus"}},
+            },
+            {
+                "mainValue": "considerable",
+                "customData": {"CH": {"subdivision": "minus"}},
+            },
+        ]
+        assert _highest_danger_key(ratings) == ("considerable", "\u2212")
 
 
 class TestFormatElevation:
@@ -435,6 +479,7 @@ class TestBuildPanelContext:
         assert ctx["danger_key"] == "low"
         assert ctx["danger_css"] == "low"
         assert ctx["danger_number"] == "1"
+        assert ctx["danger_subdivision"] == ""
         assert ctx["danger_label"] == "Low"
         assert ctx["danger_icon"] == "Dry-Snow-1.svg"
         assert len(ctx["problems"]) == 1
@@ -535,6 +580,21 @@ class TestBuildPanelContext:
         ctx = _build_panel_context(bulletin)
         assert ctx["key_message"] == "<p>Light snow overnight.</p>"
         assert ctx["key_message_source"] == "weatherReview.comment"
+
+    def test_subdivision_included_in_context(self) -> None:
+        """The CH subdivision suffix is passed through to the template."""
+        bulletin = _make_bulletin(
+            dangerRatings=[
+                {
+                    "mainValue": "considerable",
+                    "customData": {"CH": {"subdivision": "plus"}},
+                }
+            ],
+            avalancheProblems=[],
+        )
+        ctx = _build_panel_context(bulletin)
+        assert ctx["danger_number"] == "3"
+        assert ctx["danger_subdivision"] == "+"
 
     def test_key_message_not_truncated_by_view(self) -> None:
         """Full text is passed through — the template truncates instead."""
