@@ -425,19 +425,32 @@ django = "*"
 typing-extensions = "*"
 
 [[package]]
-name = "djhtml"
-version = "3.0.11"
-description = "Django/Jinja template indenter"
+name = "djangofmt"
+version = "0.2.6"
+description = "A fast, HTML aware, Django template formatter, written in Rust."
 optional = false
-python-versions = "*"
+python-versions = ">=3.8"
 groups = ["dev"]
 files = [
-    {file = "djhtml-3.0.11-py3-none-any.whl", hash = "sha256:0013d15d429eb34769aeaf6ea395ad278cf0b8ef35ad19d2cf0c1f214f2843ac"},
-    {file = "djhtml-3.0.11.tar.gz", hash = "sha256:dbaf55684294bda6486a094954e43847a1c0945e521282e008a9aabdac245688"},
+    {file = "djangofmt-0.2.6-py3-none-linux_armv6l.whl", hash = "sha256:5d572799c6712987e2fa2ecc6c799d16f8c7a06a394b325146415ee0fa42f9bf"},
+    {file = "djangofmt-0.2.6-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:4c7c6f111da53a317f37e7f99c19b59216bc91830d0ea2fbe916a5c5f491d1a7"},
+    {file = "djangofmt-0.2.6-py3-none-macosx_11_0_arm64.whl", hash = "sha256:73a49180d996182d7ccb4164c4aedd46937e73adf699806ffd572abbeb2855c9"},
+    {file = "djangofmt-0.2.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1f943ddf2ae23653225886bd5d865fd44b35022db72627a154e2dbb3e7b48d58"},
+    {file = "djangofmt-0.2.6-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:96dbdae419f948f9116723658cf8e9f2a744f1ea9a9767bd8b290cb973037015"},
+    {file = "djangofmt-0.2.6-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:e1ac6c207457ddf5773650474b3d59edf23a9f1c9d6f01c70c955281109f19f4"},
+    {file = "djangofmt-0.2.6-py3-none-manylinux_2_17_ppc64.manylinux2014_ppc64.whl", hash = "sha256:c4a1bdfef3d1396d7b76cf0e8477024160552518e0e02aa0a3096a29c99a1075"},
+    {file = "djangofmt-0.2.6-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:e63108c1fedff5223d2ff7fc72f537ae964c0e2b370094c9041d3b41850a0ec4"},
+    {file = "djangofmt-0.2.6-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:e25a20c6c02003a4286f056b44c4cecece75767a13ca861e662a35e673aeb178"},
+    {file = "djangofmt-0.2.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4eff15fec3f78057f49ba6eeddea523d1dbc62803abd2462483cc67f5da0069f"},
+    {file = "djangofmt-0.2.6-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:fc28126e96dd8faaaec1cb1cd1813cddb90b44202d9dfb49083319e2413473e1"},
+    {file = "djangofmt-0.2.6-py3-none-musllinux_1_2_armv7l.whl", hash = "sha256:355d6bb97378866d4944cf7dad59fead84fb2d0f4381075b833036d1c3a39624"},
+    {file = "djangofmt-0.2.6-py3-none-musllinux_1_2_i686.whl", hash = "sha256:063d8f0e02ce0d2aa2031a4ec5e28796c09abbd8d22de8d70bea729a8f7c0e22"},
+    {file = "djangofmt-0.2.6-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:3a8641f5a0d6d2122b1590e2c1c4e0982b6f4e31d75cab4ffa30eafe83d687a1"},
+    {file = "djangofmt-0.2.6-py3-none-win32.whl", hash = "sha256:d94ae82c11207f2fa229c9cf6732303a3f0253f5ec6b02b0d53fbcab5bd68048"},
+    {file = "djangofmt-0.2.6-py3-none-win_amd64.whl", hash = "sha256:cd03b3e9ef9df8b91e0ca66016662e76f8c2cf0364c1551d691b5d411ee7b7a3"},
+    {file = "djangofmt-0.2.6-py3-none-win_arm64.whl", hash = "sha256:4e691b60447e838ebc780f9962f3437958414ad942b82e31da50dcefd7820e54"},
+    {file = "djangofmt-0.2.6.tar.gz", hash = "sha256:dad79eea494c4e5c605c6c489bd4717a807397402abccf623031a2469e1a5797"},
 ]
-
-[package.extras]
-dev = ["nox", "pre-commit"]
 
 [[package]]
 name = "factory-boy"
@@ -1351,4 +1364,4 @@ brotli = ["brotli"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "8398a1e0764577567a4b5dc1c48b8d69c3f03272ae6ba2c316721cc4cc42826a"
+content-hash = "3c22703cd19c1a678957a3fe9b9ca5c44172fffa4a75328099bd2af941689d6f"

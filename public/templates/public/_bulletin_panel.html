@@ -6,8 +6,7 @@ static/css/random_bulletins.css. Expects a ``panel`` dict in the
 template context (see ``public.views._build_panel_context``).
 The admin link is only rendered for authenticated staff users.
 {% endcomment %}
-{% load static %}
-{% load hazard_icons %}
+{% load card_tags hazard_icons static %}
 <div class="card">
 
     {# ── Danger band ─────────────────────────────────────────────────── #}
@@ -33,35 +32,55 @@ The admin link is only rendered for authenticated staff users.
                 <p class="section-eyebrow">
                     Avalanche problem{{ panel.problems|length|pluralize }}
                 </p>
+
                 {% for p in panel.problems %}
                     <div class="problem-block">
-                        <div class="problem-tag">
-                            {% with icon_file=p.problem_type|hazard_icon %}
-                                {% if icon_file %}
-                                    <div class="problem-icon">
-                                        <img src="{% static icon_file %}" alt="{{ p.label }}">
-                                    </div>
-                                {% endif %}
-                            {% endwith %}
-                            <span class="problem-label">{{ p.label }}</span>
-                            {% if p.time_period_label %}
-                                <span class="problem-period">
-                                    {{ p.time_period_label }}
-                                </span>
+                        {% if p.field_guidance %}
+                            <details>
+                                <summary class="problem-tag">
+                        {% else %}
+                            <div class="problem-tag">
+                        {% endif %}
+                        {% with icon_file=p.problem_type|hazard_icon %}
+                            {% if icon_file %}
+                                <div class="problem-icon">
+                                    <img src="{% static icon_file %}" alt="{{ p.label }}">
+                                </div>
                             {% endif %}
-                        </div>
+                        {% endwith %}
+                        {% if p.aspects %}
+                            <div class="problem-rose">
+                                {{ p.aspects|aspect_rose|safe }}
+                            </div>
+                        {% endif %}
+                        <span class="problem-label">{{ p.label }}</span>
+                        {% if p.time_period_label %}
+                            <span class="problem-period">{{ p.time_period_label }}</span>
+                        {% endif %}
+                        {% if p.field_guidance %}
+                            <span class="field-guidance-indicator">↓</span>
+                        {% endif %}
+                        {% if p.field_guidance %}
+                            </summary>
+                        {% else %}
+                            </div>
+                        {% endif %}
+
                         {% if p.elevation %}
-                            <p class="problem-elevation">
-                                {{ p.elevation }}
-                            </p>
+                            <p class="problem-elevation">{{ p.elevation }}</p>
                         {% endif %}
                         {% if p.comment and not p.hide_comment %}
-                            <p class="problem-comment">
-                                {{ p.comment|truncatechars:2400 }}
-                            </p>
+                            <p class="problem-comment">{{ p.comment|truncatechars:2400 }}</p>
+                            <p class="problem-attribution">SLF assessment</p>
+                        {% endif %}
+                        {% if p.field_guidance %}
+                            <p class="field-guidance-text">{{ p.field_guidance }}</p>
+                            <p class="field-guidance-attribution">SLF Interpretation Guide</p>
+                            </details>
                         {% endif %}
                     </div>
                 {% endfor %}
+
             </div>
         {% elif panel.key_message %}
             <p class="key-message">
@@ -70,17 +89,12 @@ The admin link is only rendered for authenticated staff users.
         {% endif %}
     </div>
 
-    {# ── Footer: date + area (+ admin link for staff) ────────────────── #}
+    {# ── Footer: date (+ admin link for staff) ─────────────────────────── #}
     <div class="card-footer">
         <span class="footer-date">
             {{ panel.footer_date_from|date:"D j M" }} ·
             {{ panel.footer_date_from|date:"H:i" }}
         </span>
-        {% if panel.footer_area %}
-            <span class="footer-area">
-                {{ panel.footer_area }}
-            </span>
-        {% endif %}
     </div>
 
     {% if user.is_authenticated and user.is_staff %}

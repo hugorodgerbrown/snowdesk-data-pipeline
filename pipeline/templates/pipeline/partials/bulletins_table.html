@@ -8,34 +8,36 @@
     bulletins — QuerySet / list of Bulletin instances
 -->
 {% if bulletins %}
-  <div class="overflow-x-auto">
-    <table class="min-w-full text-sm">
-      <thead>
-        <tr class="border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-          <th class="pb-3 pr-4">Bulletin ID</th>
-          <th class="pb-3 pr-4">Issued</th>
-          <th class="pb-3 pr-4">Valid from</th>
-          <th class="pb-3 pr-4">Valid to</th>
-          <th class="pb-3 pr-4">Lang</th>
-          <th class="pb-3 pr-4">Regions</th>
-          <th class="pb-3">Updated</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-100">
-        {% for b in bulletins %}
-          <tr class="hover:bg-gray-50">
-            <td class="py-2.5 pr-4 font-mono text-gray-700">{{ b.bulletin_id }}</td>
-            <td class="py-2.5 pr-4 text-gray-700 tabular-nums">{{ b.issued_at|date:"Y-m-d H:i" }}</td>
-            <td class="py-2.5 pr-4 text-gray-700 tabular-nums">{{ b.valid_from|date:"Y-m-d H:i" }}</td>
-            <td class="py-2.5 pr-4 text-gray-700 tabular-nums">{{ b.valid_to|date:"Y-m-d H:i" }}</td>
-            <td class="py-2.5 pr-4 text-gray-500">{{ b.lang }}</td>
-            <td class="py-2.5 pr-4 text-gray-500 text-xs">{{ b.region_names|join:", "|truncatechars:60 }}</td>
-            <td class="py-2.5 text-gray-500 tabular-nums">{{ b.updated_at|date:"Y-m-d H:i:s" }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead>
+                <tr class="border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th class="pb-3 pr-4">Bulletin ID</th>
+                    <th class="pb-3 pr-4">Issued</th>
+                    <th class="pb-3 pr-4">Valid from</th>
+                    <th class="pb-3 pr-4">Valid to</th>
+                    <th class="pb-3 pr-4">Lang</th>
+                    <th class="pb-3 pr-4">Regions</th>
+                    <th class="pb-3">Updated</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for b in bulletins %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="py-2.5 pr-4 font-mono text-gray-700">{{ b.bulletin_id }}</td>
+                        <td class="py-2.5 pr-4 text-gray-700 tabular-nums">{{ b.issued_at|date:"Y-m-d H:i" }}</td>
+                        <td class="py-2.5 pr-4 text-gray-700 tabular-nums">{{ b.valid_from|date:"Y-m-d H:i" }}</td>
+                        <td class="py-2.5 pr-4 text-gray-700 tabular-nums">{{ b.valid_to|date:"Y-m-d H:i" }}</td>
+                        <td class="py-2.5 pr-4 text-gray-500">{{ b.lang }}</td>
+                        <td class="py-2.5 pr-4 text-gray-500 text-xs">
+                            {{ b.region_names|join:", "|truncatechars:60 }}
+                        </td>
+                        <td class="py-2.5 text-gray-500 tabular-nums">{{ b.updated_at|date:"Y-m-d H:i:s" }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 {% else %}
-  <p class="text-sm text-gray-400 italic py-4">No bulletins found.</p>
+    <p class="text-sm text-gray-400 italic py-4">No bulletins found.</p>
 {% endif %}

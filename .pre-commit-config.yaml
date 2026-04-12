@@ -21,11 +21,12 @@ repos:
   # minimal environment and don't inherit the user's shell PATH.
   - repo: local
     hooks:
-      - id: djhtml
-        name: djhtml
-        entry: .venv/bin/djhtml
+      - id: djangofmt
+        name: djangofmt
+        entry: .venv/bin/djangofmt
         language: system
         types_or: [html]
+        exclude: _bulletin_panel\.html$
 
       - id: mypy
         name: mypy

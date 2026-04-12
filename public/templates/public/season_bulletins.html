@@ -17,7 +17,6 @@ via the shared ``_bulletin_panel.html`` partial.
         <link rel="stylesheet" href="{% static 'css/season_bulletins.css' %}">
     </head>
     <body>
-
         <header class="page-header">
             <p class="screen-label">Panel UI test · {{ season_label }}</p>
             <h1 class="page-title">{{ region_name }}</h1>
@@ -31,6 +30,5 @@ via the shared ``_bulletin_panel.html`` partial.
                 <p class="empty">No bulletins for this region and season.</p>
             {% endfor %}
         </div>
-
     </body>
 </html>

@@ -2,13 +2,16 @@
 {% load i18n %}
 
 {% block object-tools-items %}
-  {{ block.super }}
-  <li>
-    <form action="{% url 'admin:pipeline_bulletin_backfill' %}" method="post"
-          style="display:inline"
-          onsubmit="return confirm('Run backfill from 2025-12-01 to today?');">
-      {% csrf_token %}
-      <button type="submit" class="button">Backfill season</button>
-    </form>
-  </li>
-{% endblock %}
+    {{ block.super }}
+    <li>
+        <form
+            action="{% url 'admin:pipeline_bulletin_backfill' %}"
+            method="post"
+            style="display: inline"
+            onsubmit="return confirm('Run backfill from 2025-12-01 to today?')"
+        >
+            {% csrf_token %}
+            <button type="submit" class="button">Backfill season</button>
+        </form>
+    </li>
+{% endblock object-tools-items %}

@@ -17,7 +17,6 @@ system for this page including typography and background.
         <link rel="stylesheet" href="{% static 'css/random_bulletins.css' %}">
     </head>
     <body>
-
         <p class="screen-label">
             {{ region_name }} · last {{ count }} day{{ count|pluralize }}
         </p>
@@ -29,6 +28,5 @@ system for this page including typography and background.
                 <p class="empty">No bulletins available for this region.</p>
             {% endfor %}
         </div>
-
     </body>
 </html>

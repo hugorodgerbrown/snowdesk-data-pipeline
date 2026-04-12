@@ -1,12 +1,10 @@
 {% extends "public/base.html" %}
-{% load static %}
-{% load hazard_icons %}
+{% load hazard_icons static %}
 
 {% block title %}{{ region_name }} — Snowdesk{% endblock %}
 
 {% block content %}
-
-{# ── Masthead ─────────────────────────────────────────────────────────── #}
+    {# ── Masthead ─────────────────────────────────────────────────────────── #}
     <header class="masthead">
         <div class="wordmark">Snowdesk</div>
 
@@ -23,7 +21,7 @@
         {% if bulletin %}
             <nav class="masthead__nav" aria-label="Bulletin navigation">
                 {% if prev_date %}
-                    <a class="masthead__nav-prev" href="?date={{ prev_date|date:"Y-m-d" }}">
+                    <a class="masthead__nav-prev" href='?date={{ prev_date|date:"Y-m-d" }}'>
                         &larr; {{ prev_date|date:"D j M" }}
                     </a>
                 {% endif %}
@@ -33,7 +31,7 @@
                 </span>
 
                 {% if next_date %}
-                    <a class="masthead__nav-next" href="?date={{ next_date|date:"Y-m-d" }}">
+                    <a class="masthead__nav-next" href='?date={{ next_date|date:"Y-m-d" }}'>
                         {{ next_date|date:"D j M" }} &rarr;
                     </a>
                 {% elif next_update_time %}
@@ -46,31 +44,31 @@
     </header>
 
     {% if not bulletin %}
-{# ── Empty state ──────────────────────────────────────────────────────── #}
+        {# ── Empty state ──────────────────────────────────────────────────────── #}
         <div class="empty">
             <h2 class="empty__heading">No bulletins available</h2>
             <p class="empty__body">There are no recent bulletins for this region.</p>
         </div>
-
     {% else %}
-
-{# ── Hazard icons ────────────────────────────────────────────────────── #}
+        {# ── Hazard icons ────────────────────────────────────────────────────── #}
         {% if key_hazards %}
             <div class="hazard-icons">
                 {% for hazard in key_hazards %}
                     {% with icon_path=hazard.problem_type|hazard_icon %}
                         {% if icon_path %}
-                            <img class="hazard-icons__icon"
-                                 src="{% static icon_path %}"
-                                 alt="{{ hazard.description }}"
-                                 title="{{ hazard.description }}">
+                            <img
+                                class="hazard-icons__icon"
+                                src="{% static icon_path %}"
+                                alt="{{ hazard.description }}"
+                                title="{{ hazard.description }}"
+                            >
                         {% endif %}
                     {% endwith %}
                 {% endfor %}
             </div>
         {% endif %}
 
-{# ── Verdict banner ──────────────────────────────────────────────────── #}
+        {# ── Verdict banner ──────────────────────────────────────────────────── #}
         {% if overall_verdict %}
             <div class="card verdict verdict--{{ verdict_colour }}">
                 <div class="verdict__header">
@@ -85,7 +83,7 @@
             </div>
         {% endif %}
 
-{# ── Outlook ──────────────────────────────────────────────────────────── #}
+        {# ── Outlook ──────────────────────────────────────────────────────────── #}
         {% if outlook %}
             <div class="card outlook">
                 <p class="label card__label">Outlook &mdash; next 24 h+</p>
@@ -93,7 +91,7 @@
             </div>
         {% endif %}
 
-{# ── Activity ratings ────────────────────────────────────────────────── #}
+        {# ── Activity ratings ────────────────────────────────────────────────── #}
         {% if on_piste or off_piste or ski_touring %}
             <div class="activities">
                 {% if on_piste %}
@@ -126,7 +124,7 @@
             </div>
         {% endif %}
 
-{# ── Key hazards ──────────────────────────────────────────────────────── #}
+        {# ── Key hazards ──────────────────────────────────────────────────────── #}
         {% if key_hazards %}
             <div class="card hazards">
                 <p class="label card__label">Key Hazards</p>
@@ -138,7 +136,7 @@
             </div>
         {% endif %}
 
-{# ── Weather review ───────────────────────────────────────────────────── #}
+        {# ── Weather review ───────────────────────────────────────────────────── #}
         {% if weather_review %}
             <div class="card weather-review">
                 <p class="label card__label">Weather Review</p>
@@ -146,7 +144,7 @@
             </div>
         {% endif %}
 
-{# ── Weather forecast ────────────────────────────────────────────────── #}
+        {# ── Weather forecast ────────────────────────────────────────────────── #}
         {% if weather_forecast %}
             <div class="card weather-forecast">
                 <p class="label card__label">Weather Forecast</p>
@@ -154,7 +152,7 @@
             </div>
         {% endif %}
 
-{# ── Related regions ──────────────────────────────────────────────────── #}
+        {# ── Related regions ──────────────────────────────────────────────────── #}
         {% if related_regions %}
             <div class="related">
                 <p class="label card__label">Related regions</p>
@@ -165,6 +163,5 @@
                 </ul>
             </div>
         {% endif %}
-
     {% endif %}{# end bulletin check #}
-{% endblock %}
+{% endblock content %}

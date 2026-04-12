@@ -13,62 +13,75 @@
     - extra_js  : scripts loaded at end of <body>
 -->
 <html lang="en" class="h-full bg-gray-50">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Snowdesk Pipeline{% block title %}{% endblock %}</title>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Snowdesk Pipeline{% block title %}{% endblock %}</title>
 
-  <!-- Tailwind CSS Play CDN — replace with CLI build for production -->
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+        <!-- Tailwind CSS Play CDN — replace with CLI build for production -->
+        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 
-  <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@2.0.4"
+        <!-- HTMX -->
+        <script
+            src="https://unpkg.com/htmx.org@2.0.4"
             integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-            crossorigin="anonymous"></script>
+            crossorigin="anonymous"
+        ></script>
 
-    <style>
-    /* HTMX loading indicator — shown when any HTMX request is in flight */
-      #htmx-indicator { display: none; }
-      #htmx-indicator.htmx-request { display: block; }
-    </style>
+        <style>
+            /* HTMX loading indicator — shown when any HTMX request is in flight */
+            #htmx-indicator {
+                display: none;
+            }
+            #htmx-indicator.htmx-request {
+                display: block;
+            }
+        </style>
 
-    {% block extra_head %}{% endblock %}
-  </head>
-  <body class="h-full">
+        {% block extra_head %}{% endblock %}
+    </head>
+    <body class="h-full">
+        <nav class="bg-slate-900 px-6 py-3">
+            <a
+                class="text-white font-semibold text-lg tracking-tight no-underline"
+                href="{% url 'pipeline:dashboard' %}"
+            >
+                Snowdesk Pipeline
+            </a>
+        </nav>
 
-    <nav class="bg-slate-900 px-6 py-3">
-      <a class="text-white font-semibold text-lg tracking-tight no-underline"
-         href="{% url 'pipeline:dashboard' %}">
-        Snowdesk Pipeline
-      </a>
-    </nav>
+        <!-- HTMX global loading indicator -->
+        <div
+            id="htmx-indicator"
+            class="fixed top-3 right-4 z-50 bg-blue-600 text-white text-xs font-medium px-3 py-1 rounded shadow"
+        >
+            Loading…
+        </div>
 
-  <!-- HTMX global loading indicator -->
-    <div id="htmx-indicator"
-         class="fixed top-3 right-4 z-50 bg-blue-600 text-white text-xs font-medium px-3 py-1 rounded shadow">
-      Loading…
-    </div>
+        <main class="max-w-7xl mx-auto px-6 py-8">
+            {% if messages %}
+                <ul class="mb-6 space-y-2 list-none p-0">
+                    {% for message in messages %}
+                        <li
+                            class="
+                                px-4 py-3 rounded text-sm
+                                {% if message.tags == 'error' %}bg-red-100 text-red-800
+                                {% elif message.tags == 'warning' %}bg-amber-100 text-amber-800
+                                {% elif message.tags == 'success' %}bg-emerald-100 text-emerald-800
+                                {% else %}bg-blue-100 text-blue-800{% endif %}
+                            "
+                        >
+                            {{ message }}
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
 
-    <main class="max-w-7xl mx-auto px-6 py-8">
-      {% if messages %}
-        <ul class="mb-6 space-y-2 list-none p-0">
-          {% for message in messages %}
-            <li class="px-4 py-3 rounded text-sm
-                       {% if message.tags == 'error' %}bg-red-100 text-red-800
-                       {% elif message.tags == 'warning' %}bg-amber-100 text-amber-800
-                       {% elif message.tags == 'success' %}bg-emerald-100 text-emerald-800
-                       {% else %}bg-blue-100 text-blue-800{% endif %}">
-              {{ message }}
-            </li>
-          {% endfor %}
-        </ul>
-      {% endif %}
+            {% block content %}{% endblock %}
+        </main>
 
-      {% block content %}{% endblock %}
-    </main>
-
-    {% load static %}
-    <script src="{% static 'js/main.js' %}"></script>
-    {% block extra_js %}{% endblock %}
-  </body>
+        {% load static %}
+        <script src="{% static 'js/main.js' %}"></script>
+        {% block extra_js %}{% endblock %}
+    </body>
 </html>
