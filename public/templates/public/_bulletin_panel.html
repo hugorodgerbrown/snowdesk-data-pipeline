@@ -87,6 +87,14 @@ The admin link is only rendered for authenticated staff users.
                 {{ panel.key_message|truncatechars:2400 }}
             </p>
         {% endif %}
+
+        {% if panel.snowpack_structure %}
+            <div class="snowpack-section">
+                <p class="section-eyebrow">Snowpack</p>
+                <p class="snowpack-text">{{ panel.snowpack_structure|truncatechars:2400 }}</p>
+                <p class="snowpack-attribution">SLF assessment</p>
+            </div>
+        {% endif %}
     </div>
 
     {# ── Footer: date (+ admin link for staff) ─────────────────────────── #}

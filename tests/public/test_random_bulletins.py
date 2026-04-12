@@ -460,6 +460,25 @@ class TestBuildPanelContext:
         # Admin URL always populated; template gates it on user.is_staff.
         assert ctx["admin_url"] == f"/admin/pipeline/bulletin/{bulletin.pk}/change/"
 
+    def test_snowpack_structure_extracted(self) -> None:
+        """Snowpack structure comment is extracted as plain text."""
+        bulletin = _make_bulletin(
+            dangerRatings=[{"mainValue": "low"}],
+            avalancheProblems=[],
+            snowpackStructure={"comment": "<p>Deep weak layers.</p>"},
+        )
+        ctx = _build_panel_context(bulletin)
+        assert ctx["snowpack_structure"] == "Deep weak layers."
+
+    def test_snowpack_structure_empty_when_absent(self) -> None:
+        """Missing snowpackStructure gives an empty string."""
+        bulletin = _make_bulletin(
+            dangerRatings=[{"mainValue": "low"}],
+            avalancheProblems=[],
+        )
+        ctx = _build_panel_context(bulletin)
+        assert ctx["snowpack_structure"] == ""
+
     def test_bulletin_with_no_raw_data_defaults_to_low(self) -> None:
         """A bulletin with empty raw_data still renders a valid context."""
         bulletin = cast("Bulletin", BulletinFactory(raw_data={}))
@@ -468,6 +487,7 @@ class TestBuildPanelContext:
         assert ctx["problems"] == []
         assert ctx["key_message"] == ""
         assert ctx["key_message_source"] == ""
+        assert ctx["snowpack_structure"] == ""
 
     def test_highest_rating_drives_panel_colour(self) -> None:
         """The panel picks up the highest rating across a bulletin."""

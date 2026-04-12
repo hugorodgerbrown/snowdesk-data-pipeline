@@ -984,6 +984,10 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         if key_message:
             key_message_source = "weatherReview.comment"
 
+    snowpack_structure = _plain_text(
+        (props.get("snowpackStructure") or {}).get("comment")
+    )
+
     return {
         "bulletin": bulletin,
         "danger_key": danger_key,
@@ -1000,6 +1004,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "problems_source": "avalancheProblems[*].problemType",
         "key_message": key_message,
         "key_message_source": key_message_source,
+        "snowpack_structure": snowpack_structure,
         "footer_date_from": bulletin.valid_from,
         "footer_date_to": bulletin.valid_to,
         "footer_date_source": "Bulletin.valid_from / valid_to",
