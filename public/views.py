@@ -1,19 +1,13 @@
 """
 public/views.py — Views for the public-facing bulletin site.
 
-Four views:
-  home             Redirects to a random region from the latest bulletin issue.
-  zone_redirect    Redirects /<zone>/ to /<zone>/<name>/, caching the
-                   zone-slug → name-slug mapping to avoid repeat DB hits.
-  bulletin_detail  Renders a single bulletin for a region, with day-based
-                   navigation and data extracted from the CAAML payload.
-  random_bulletins Renders the most recent bulletins for a single region as
-                   compact cards on a list page, one per calendar day, in
-                   reverse chronological order. Accepts an optional ``?b=N``
-                   query parameter to override the number of cards shown.
-  season_bulletins Full-season test page for a single region. Renders up to
-                   100 bulletin cards in a responsive grid that flows from
-                   multi-column on desktop to single-column on mobile.
+URL structure:
+  /                              Marketing homepage.
+  /<region_id>/                  Redirects to /<region_id>/<slug>/.
+  /<region_id>/<slug>/           Today's bulletin for a region (panel cards).
+  /<region_id>/<slug>/<date>/    Bulletin for a region on a specific date.
+  /random/                       Redirects to a random region's today page.
+  /<region_id>/season/           Full-season test page (up to 100 panels).
 
 Each page represents a single day, identified by the bulletin's ``valid_to``
 date.  Two bulletins may cover a day: an evening issue (valid from ~16:00 the
@@ -516,30 +510,36 @@ def _get_name_slug(region: Region) -> str:
 
 def home(request: HttpRequest) -> HttpResponse:
     """
-    Redirect to a random region's bulletin page.
-
-    Finds the most recent bulletin issue date, picks a random region from
-    that issue, and redirects. Returns a simple empty-state page if there
-    are no bulletins in the database.
+    Render the marketing homepage.
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        A redirect response, or an empty-state HTML response.
+        The rendered homepage.
+
+    """
+    return render(request, "public/home.html")
+
+
+def random_redirect(request: HttpRequest) -> HttpResponse:
+    """
+    Redirect to a random region's today page.
+
+    Finds the most recent bulletin issue date, picks a random region from
+    that issue, and redirects to ``/<region_id>/<slug>/``. Returns the
+    marketing homepage if there are no bulletins in the database.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A redirect response, or the homepage as a fallback.
 
     """
     latest = Bulletin.objects.order_by("-issued_at").first()
     if not latest:
-        return render(
-            request,
-            "public/bulletin.html",
-            {
-                "bulletin": None,
-                "region_name": "Snowdesk",
-                "year": datetime.date.today().year,
-            },
-        )
+        return redirect("public:home")
 
     region_ids = (
         RegionBulletin.objects.filter(bulletin__issued_at__date=latest.issued_at.date())
@@ -549,88 +549,87 @@ def home(request: HttpRequest) -> HttpResponse:
 
     regions = Region.objects.filter(pk__in=region_ids)
     if not regions.exists():
-        return render(
-            request,
-            "public/bulletin.html",
-            {
-                "bulletin": None,
-                "region_name": "Snowdesk",
-                "year": datetime.date.today().year,
-            },
-        )
+        return redirect("public:home")
 
-    region = random.choice(list(regions))  # noqa: S311 this isn't crypto
+    region = random.choice(list(regions))  # noqa: S311 — not crypto
     name_slug = _get_name_slug(region)
-    return redirect("public:bulletin", zone=region.slug, name=name_slug)
+    return redirect(
+        "public:bulletin",
+        region_id=region.region_id,
+        slug=name_slug,
+    )
 
 
-def zone_redirect(request: HttpRequest, zone: str) -> HttpResponse:
+def region_redirect(request: HttpRequest, region_id: str) -> HttpResponse:
     """
-    Redirect a naked zone URL to the full /<zone>/<name>/ URL.
+    Redirect ``/<region_id>/`` to ``/<region_id>/<slug>/``.
 
-    Looks up the region name slug from cache first; only hits the database
-    on a cache miss. Query parameters (e.g. ``?id=...``) are preserved on
-    the redirect.
+    Looks up the region name slug from cache first; only hits the
+    database on a cache miss.
 
     Args:
         request: The incoming HTTP request.
-        zone: The region URL slug (e.g. "ch-4115").
+        region_id: SLF region identifier (e.g. ``"CH-4115"``).
 
     Returns:
-        A 302 redirect to the canonical /<zone>/<name>/ URL.
+        A 302 redirect to the canonical ``/<region_id>/<slug>/`` URL.
 
     """
-    name_slug = cache.get(_cache_key(zone))
-    if name_slug is None:
-        region = get_object_or_404(Region, slug=zone)
-        name_slug = _get_name_slug(region)
-
-    url = reverse("public:bulletin", kwargs={"zone": zone, "name": name_slug})
-    if request.GET:
-        url = f"{url}?{request.GET.urlencode()}"
-    return redirect(url)
+    region = get_object_or_404(Region, region_id__iexact=region_id)
+    name_slug = _get_name_slug(region)
+    return redirect(
+        "public:bulletin",
+        region_id=region.region_id,
+        slug=name_slug,
+    )
 
 
-def bulletin_detail(request: HttpRequest, zone: str, name: str) -> HttpResponse:
+def bulletin_detail(
+    request: HttpRequest,
+    region_id: str,
+    slug: str,
+    date_str: str | None = None,
+) -> HttpResponse:
     """
     Render the bulletin viewer for a given region on a specific day.
 
-    Each page represents a single calendar day.  An optional ``?date=``
-    query parameter (``YYYY-MM-DD``) selects the day; without it the view
-    defaults to the current day.
+    Without ``date_str`` the view shows today's bulletin. With a date
+    segment (``YYYY-MM-DD``) it shows that day's bulletin.
 
     For past days the morning bulletin is shown (the updated daytime
     assessment).  For the current day the bulletin whose validity window
     contains the current time is shown automatically.
 
-    The ``name`` segment is cosmetic (for readable URLs) and is not used
-    for lookup — the region is resolved entirely from ``zone``.
+    The ``slug`` segment is cosmetic (for readable URLs) and is not used
+    for lookup — the region is resolved entirely from ``region_id``.
 
     Args:
         request: The incoming HTTP request.
-        zone: The region URL slug (e.g. "ch-4115").
-        name: Slugified region name (e.g. "valais"); not used for lookup.
+        region_id: SLF region identifier (e.g. ``"CH-4115"``).
+        slug: Slugified region name (e.g. ``"valais"``); cosmetic only.
+        date_str: Optional date string in ``YYYY-MM-DD`` format.
 
     Returns:
         The rendered bulletin page.
 
     """
-    region = get_object_or_404(Region, slug=zone)
+    region = get_object_or_404(Region, region_id__iexact=region_id)
 
-    # Warm the cache so that zone_redirect can serve future requests
-    # without a DB hit.
-    cache.set(_cache_key(zone), slugify(region.name), timeout=_ZONE_NAME_CACHE_TIMEOUT)
+    # Warm the cache for future region_redirect lookups.
+    cache.set(
+        _cache_key(region.slug),
+        slugify(region.name),
+        timeout=_ZONE_NAME_CACHE_TIMEOUT,
+    )
 
     # Determine the target date.
     today = timezone.now().date()
-    date_param = request.GET.get("date")
-    if date_param:
+    target_date = today
+    if date_str:
         try:
-            target_date = datetime.date.fromisoformat(date_param)
+            target_date = datetime.date.fromisoformat(date_str)
         except ValueError:
             target_date = today
-    else:
-        target_date = today
 
     # Select the best bulletin for this region and date.
     selected = _select_bulletin_for_date(region, target_date)
@@ -668,21 +667,41 @@ def bulletin_detail(request: HttpRequest, zone: str, name: str) -> HttpResponse:
     )
     related_regions = [
         {
-            "name": link.region_name_at_time or link.region.name,
-            "slug": link.region.slug,
+            "name": sib.region_name_at_time or sib.region.name,
+            "region_id": sib.region.region_id,
+            "slug": sib.region.slug,
         }
-        for link in sibling_links
+        for sib in sibling_links
     ]
 
-    context = _build_bulletin_context(
-        bulletin=selected,
-        region=region,
-        region_name=region_name,
-        page_date=page_date,
-        prev_date=prev_date,
-        next_date=next_date,
-        related_regions=related_regions,
-    )
+    is_today = page_date == today
+    next_update_time: datetime.datetime | None = None
+    now = timezone.now()
+    if (
+        is_today
+        and next_date is None
+        and selected.next_update
+        and selected.next_update > now
+    ):
+        next_update_time = selected.next_update
+
+    panel = _build_panel_context(selected)
+
+    context = {
+        "region": region,
+        "region_name": region_name,
+        "region_id": region.region_id,
+        "slug": slugify(region.name),
+        "bulletin": selected,
+        "panel": panel,
+        "page_date": page_date,
+        "is_today": is_today,
+        "prev_date": prev_date,
+        "next_date": next_date,
+        "next_update_time": next_update_time,
+        "related_regions": related_regions,
+        "year": today.year,
+    }
     return render(request, "public/bulletin.html", context)
 
 

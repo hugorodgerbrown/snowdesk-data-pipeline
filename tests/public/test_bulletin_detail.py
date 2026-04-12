@@ -206,7 +206,7 @@ class TestBulletinDetailView:
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
                 "public:bulletin",
-                kwargs={"zone": "ch-4115", "name": "valais"},
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
             )
             response = client.get(url)
 
@@ -214,32 +214,40 @@ class TestBulletinDetailView:
         assert response.context["bulletin"].pk == am.pk
         assert response.context["is_today"] is True
 
-    def test_date_param_selects_day(self, client: Client, region):
-        """A ?date= param selects the requested day."""
+    def test_date_segment_selects_day(self, client: Client, region):
+        """A date URL segment selects the requested day."""
         am_14 = _make_am_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
-                "public:bulletin",
-                kwargs={"zone": "ch-4115", "name": "valais"},
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "CH-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-14",
+                },
             )
-            response = client.get(url, {"date": "2026-03-14"})
+            response = client.get(url)
 
         assert response.status_code == 200
         assert response.context["bulletin"].pk == am_14.pk
         assert response.context["is_today"] is False
 
     def test_invalid_date_falls_back_to_today(self, client: Client, region):
-        """An invalid date param falls back to today."""
+        """An invalid date segment falls back to today."""
         am = _make_am_bulletin(region, date(2026, 3, 15))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
-                "public:bulletin",
-                kwargs={"zone": "ch-4115", "name": "valais"},
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "CH-4115",
+                    "slug": "valais",
+                    "date_str": "not-a-date",
+                },
             )
-            response = client.get(url, {"date": "not-a-date"})
+            response = client.get(url)
 
         assert response.status_code == 200
         assert response.context["bulletin"].pk == am.pk
@@ -249,7 +257,7 @@ class TestBulletinDetailView:
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
                 "public:bulletin",
-                kwargs={"zone": "ch-4115", "name": "valais"},
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
             )
             response = client.get(url)
 
@@ -264,49 +272,55 @@ class TestBulletinDetailView:
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             url = reverse(
-                "public:bulletin",
-                kwargs={"zone": "ch-4115", "name": "valais"},
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "CH-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-15",
+                },
             )
-            response = client.get(url, {"date": "2026-03-15"})
+            response = client.get(url)
 
         assert response.context["prev_date"] == date(2026, 3, 14)
         assert response.context["next_date"] == date(2026, 3, 16)
         content = response.content.decode()
-        assert "?date=2026-03-14" in content
-        assert "?date=2026-03-16" in content
+        assert "2026-03-14" in content
+        assert "2026-03-16" in content
 
     def test_current_date_shown_in_nav(self, client: Client, region):
-        """The current page date appears in the nav centre."""
+        """The current page date appears in the nav."""
         _make_am_bulletin(region, date(2026, 3, 15))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
                 "public:bulletin",
-                kwargs={"zone": "ch-4115", "name": "valais"},
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
             )
             response = client.get(url)
 
         content = response.content.decode()
-        assert "masthead__nav-current" in content
         assert "Today" in content
 
     def test_past_date_shown_in_nav(self, client: Client, region):
-        """A past page date appears as a formatted date in the nav centre."""
+        """A past page date appears as a formatted date."""
         _make_am_bulletin(region, date(2026, 3, 14))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
-                "public:bulletin",
-                kwargs={"zone": "ch-4115", "name": "valais"},
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "CH-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-14",
+                },
             )
-            response = client.get(url, {"date": "2026-03-14"})
+            response = client.get(url)
 
         content = response.content.decode()
-        assert "masthead__nav-current" in content
-        assert "14 March 2026" in content or "Sat 14 Mar 2026" in content
+        assert "Sat 14 Mar" in content
 
     def test_next_update_shown_when_today_before_due(self, client: Client, region):
-        """On today, before the next bulletin is due, its time is shown disabled."""
+        """On today, before the next bulletin is due, its time is shown."""
         am = _make_am_bulletin(region, date(2026, 3, 15))
         # next_update is 15:00 UTC on the same day
         from pipeline.models import Bulletin
@@ -318,13 +332,12 @@ class TestBulletinDetailView:
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
                 "public:bulletin",
-                kwargs={"zone": "ch-4115", "name": "valais"},
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
             )
             response = client.get(url)
 
         assert response.context["next_update_time"] is not None
         content = response.content.decode()
-        assert "masthead__nav-next--disabled" in content
         assert "15:00 UTC" in content
 
     def test_no_next_update_after_due_time(self, client: Client, region):
@@ -339,17 +352,17 @@ class TestBulletinDetailView:
         with _freeze("2026-03-15T16:00:00+00:00"):
             url = reverse(
                 "public:bulletin",
-                kwargs={"zone": "ch-4115", "name": "valais"},
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
             )
             response = client.get(url)
 
         assert response.context["next_update_time"] is None
 
-    def test_unknown_zone_returns_404(self, client: Client):
-        """A zone slug that doesn't match any Region should 404."""
+    def test_unknown_region_returns_404(self, client: Client):
+        """A region ID that doesn't match any Region should 404."""
         url = reverse(
             "public:bulletin",
-            kwargs={"zone": "xx-9999", "name": "nowhere"},
+            kwargs={"region_id": "XX-9999", "slug": "nowhere"},
         )
         response = client.get(url)
 

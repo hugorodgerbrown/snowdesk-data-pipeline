@@ -1,167 +1,95 @@
-{% extends "public/base.html" %}
-{% load hazard_icons static %}
+{% comment %}
+public/templates/public/bulletin.html — Single-day bulletin page for a region.
 
-{% block title %}{{ region_name }} — Snowdesk{% endblock %}
-
-{% block content %}
-    {# ── Masthead ─────────────────────────────────────────────────────────── #}
-    <header class="masthead">
-        <div class="wordmark">Snowdesk</div>
-
-        {% if bulletin %}
-            <p class="label masthead__issued">
-                {% if is_today %}Today{% else %}{{ page_date|date:"D j M Y" }}{% endif %}
-                &mdash; issued {{ bulletin.issued_at|date:"H:i" }} UTC
-            </p>
-        {% endif %}
-
-        <h1 class="masthead__region">{{ region_name }}</h1>
-        <p class="masthead__tagline">Avalanche bulletin &amp; snow conditions</p>
-
-        {% if bulletin %}
-            <nav class="masthead__nav" aria-label="Bulletin navigation">
-                {% if prev_date %}
-                    <a class="masthead__nav-prev" href='?date={{ prev_date|date:"Y-m-d" }}'>
-                        &larr; {{ prev_date|date:"D j M" }}
-                    </a>
-                {% endif %}
-
-                <span class="masthead__nav-current">
+Displays the bulletin panel card with a header showing region name,
+date, and prev/next navigation. Uses the shared _bulletin_panel.html
+partial for the card content.
+{% endcomment %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{{ region_name }} — Snowdesk</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    </head>
+    <body class="bg-bg font-sans text-text-1 px-4 py-6 min-h-screen">
+        <div class="max-w-[390px] mx-auto">
+            {# ── Header ──────────────────────────────────────────────────── #}
+            <header class="mb-4">
+                <p class="font-mono text-[10px] tracking-[0.12em] uppercase text-text-3 mb-1 text-center">
                     {% if is_today %}Today{% else %}{{ page_date|date:"D j M Y" }}{% endif %}
-                </span>
-
-                {% if next_date %}
-                    <a class="masthead__nav-next" href='?date={{ next_date|date:"Y-m-d" }}'>
-                        {{ next_date|date:"D j M" }} &rarr;
-                    </a>
-                {% elif next_update_time %}
-                    <span class="masthead__nav-next masthead__nav-next--disabled">
-                        {{ next_update_time|date:"H:i" }} UTC
-                    </span>
-                {% endif %}
-            </nav>
-        {% endif %}
-    </header>
-
-    {% if not bulletin %}
-        {# ── Empty state ──────────────────────────────────────────────────────── #}
-        <div class="empty">
-            <h2 class="empty__heading">No bulletins available</h2>
-            <p class="empty__body">There are no recent bulletins for this region.</p>
-        </div>
-    {% else %}
-        {# ── Hazard icons ────────────────────────────────────────────────────── #}
-        {% if key_hazards %}
-            <div class="hazard-icons">
-                {% for hazard in key_hazards %}
-                    {% with icon_path=hazard.problem_type|hazard_icon %}
-                        {% if icon_path %}
-                            <img
-                                class="hazard-icons__icon"
-                                src="{% static icon_path %}"
-                                alt="{{ hazard.description }}"
-                                title="{{ hazard.description }}"
-                            >
-                        {% endif %}
-                    {% endwith %}
-                {% endfor %}
-            </div>
-        {% endif %}
-
-        {# ── Verdict banner ──────────────────────────────────────────────────── #}
-        {% if overall_verdict %}
-            <div class="card verdict verdict--{{ verdict_colour }}">
-                <div class="verdict__header">
-                    {% if danger_level %}
-                        <span class="verdict__level">{{ danger_level }}</span>
+                    {% if bulletin %}
+                        · issued {{ bulletin.issued_at|date:"H:i" }} UTC
                     {% endif %}
-                    <span class="verdict__value">{{ overall_verdict }}</span>
+                </p>
+                <h1 class="text-xl font-semibold text-center leading-tight">{{ region_name }}</h1>
+            </header>
+
+            {# ── Day navigation ──────────────────────────────────────────── #}
+            {% if bulletin %}
+                <nav class="flex items-center justify-between mb-4 text-sm" aria-label="Bulletin navigation">
+                    {% if prev_date %}
+                        <a
+                            class="text-text-2 hover:text-text-1"
+                            href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
+                        >
+                            ← {{ prev_date|date:"D j M" }}
+                        </a>
+                    {% else %}
+                        <span></span>
+                    {% endif %}
+
+                    <span class="font-mono text-[11px] text-text-3">
+                        {% if is_today %}Today{% else %}{{ page_date|date:"D j M" }}{% endif %}
+                    </span>
+
+                    {% if next_date %}
+                        <a
+                            class="text-text-2 hover:text-text-1"
+                            href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=next_date|date:'Y-m-d' %}"
+                        >
+                            {{ next_date|date:"D j M" }} →
+                        </a>
+                    {% elif next_update_time %}
+                        <span class="font-mono text-[11px] text-text-3">
+                            {{ next_update_time|date:"H:i" }} UTC
+                        </span>
+                    {% else %}
+                        <span></span>
+                    {% endif %}
+                </nav>
+            {% endif %}
+
+            {# ── Bulletin panel ──────────────────────────────────────────── #}
+            {% if bulletin %}
+                {% include "public/_bulletin_panel.html" with panel=panel %}
+            {% else %}
+                <div class="text-center text-text-3 py-12 text-sm">
+                    No bulletins available for this region.
                 </div>
-                {% if summary %}
-                    <p class="verdict__summary">{{ summary }}</p>
-                {% endif %}
-            </div>
-        {% endif %}
+            {% endif %}
 
-        {# ── Outlook ──────────────────────────────────────────────────────────── #}
-        {% if outlook %}
-            <div class="card outlook">
-                <p class="label card__label">Outlook &mdash; next 24 h+</p>
-                <p>{{ outlook }}</p>
-            </div>
-        {% endif %}
-
-        {# ── Activity ratings ────────────────────────────────────────────────── #}
-        {% if on_piste or off_piste or ski_touring %}
-            <div class="activities">
-                {% if on_piste %}
-                    <div class="activity">
-                        <p class="label activity__name">On Piste</p>
-                        <p class="activity__rating">{{ on_piste.rating }}</p>
-                        {% if on_piste.notes %}
-                            <p class="activity__notes">{{ on_piste.notes }}</p>
-                        {% endif %}
+            {# ── Related regions ─────────────────────────────────────────── #}
+            {% if related_regions %}
+                <div class="mt-4">
+                    <p class="font-mono text-[9.5px] tracking-[0.1em] uppercase text-text-3 mb-2">
+                        Related regions
+                    </p>
+                    <div class="flex flex-wrap gap-1.5">
+                        {% for rel in related_regions %}
+                            <a
+                                href="{% url 'public:region_redirect' region_id=rel.region_id %}"
+                                class="text-xs text-text-2 bg-tag border border-border rounded-[4px] px-2 py-1 hover:text-text-1 no-underline"
+                            >
+                                {{ rel.name }}
+                            </a>
+                        {% endfor %}
                     </div>
-                {% endif %}
-                {% if off_piste %}
-                    <div class="activity">
-                        <p class="label activity__name">Off Piste</p>
-                        <p class="activity__rating">{{ off_piste.rating }}</p>
-                        {% if off_piste.notes %}
-                            <p class="activity__notes">{{ off_piste.notes }}</p>
-                        {% endif %}
-                    </div>
-                {% endif %}
-                {% if ski_touring %}
-                    <div class="activity">
-                        <p class="label activity__name">Ski Touring</p>
-                        <p class="activity__rating">{{ ski_touring.rating }}</p>
-                        {% if ski_touring.notes %}
-                            <p class="activity__notes">{{ ski_touring.notes }}</p>
-                        {% endif %}
-                    </div>
-                {% endif %}
-            </div>
-        {% endif %}
-
-        {# ── Key hazards ──────────────────────────────────────────────────────── #}
-        {% if key_hazards %}
-            <div class="card hazards">
-                <p class="label card__label">Key Hazards</p>
-                <ul>
-                    {% for hazard in key_hazards %}
-                        <li>{{ hazard.description }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-        {% endif %}
-
-        {# ── Weather review ───────────────────────────────────────────────────── #}
-        {% if weather_review %}
-            <div class="card weather-review">
-                <p class="label card__label">Weather Review</p>
-                <div class="card__markdown">{{ weather_review }}</div>
-            </div>
-        {% endif %}
-
-        {# ── Weather forecast ────────────────────────────────────────────────── #}
-        {% if weather_forecast %}
-            <div class="card weather-forecast">
-                <p class="label card__label">Weather Forecast</p>
-                <div class="card__markdown">{{ weather_forecast }}</div>
-            </div>
-        {% endif %}
-
-        {# ── Related regions ──────────────────────────────────────────────────── #}
-        {% if related_regions %}
-            <div class="related">
-                <p class="label card__label">Related regions</p>
-                <ul class="related__list">
-                    {% for rel in related_regions %}
-                        <li><a href="{% url 'public:zone_redirect' zone=rel.slug %}">{{ rel.name }}</a></li>
-                    {% endfor %}
-                </ul>
-            </div>
-        {% endif %}
-    {% endif %}{# end bulletin check #}
-{% endblock content %}
+                </div>
+            {% endif %}
+        </div>
+    </body>
+</html>
