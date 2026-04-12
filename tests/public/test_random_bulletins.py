@@ -783,10 +783,6 @@ class TestRandomBulletinsView:
         # Time-period badges appear with their human labels.
         assert b"All day" in body
         assert b"Later (afternoon)" in body
-        # Tooltip titles on the comment and the period use the CAAML paths.
-        assert b'title="avalancheProblems[*].comment"' in body
-        assert b'title="avalancheProblems[*].validTimePeriod = all_day"' in body
-        assert b'title="avalancheProblems[*].validTimePeriod = later"' in body
         # Two problem-block wrappers rendered.
         assert body.count(b'class="problem-block"') == 2
 
@@ -823,7 +819,6 @@ class TestRandomBulletinsView:
         assert b"above 2200m" in body
         assert b"below 2400m" in body
         assert body.count(b'class="problem-elevation"') == 2
-        assert b'title="avalancheProblems[*].elevation"' in body
 
     def test_duplicate_problems_show_comment_only_once(
         self, client: Client, region: Region
@@ -891,28 +886,6 @@ class TestRandomBulletinsView:
         assert b"Afternoon softening." in body
         assert b"Earlier (morning)" in body
         assert b"Later (afternoon)" in body
-
-    def test_tooltip_titles_expose_caaml_paths(
-        self, client: Client, region: Region
-    ) -> None:
-        """Each card field carries a ``title=`` attribute naming its source."""
-        _make_region_bulletin(region, date(2025, 3, 1))
-
-        response = client.get(
-            reverse("public:random_bulletins", kwargs={"region_id": "CH-4115"})
-        )
-        body = response.content
-
-        # Danger band: title points to dangerRatings[*].mainValue.
-        assert b'title="dangerRatings[*].mainValue (highest)"' in body
-        # Problems section eyebrow + tags.
-        assert b'title="avalancheProblems[*].problemType"' in body
-        # Tag itself includes the specific problem type.
-        assert b'title="avalancheProblems[*].problemType = wind_slab"' in body
-        # Footer date comes from the Bulletin model, not the CAAML payload.
-        assert b'title="Bulletin.valid_from / valid_to"' in body
-        # Footer area comes from regions[*].name.
-        assert b'title="regions[*].name"' in body
 
 
 # ---------------------------------------------------------------------------

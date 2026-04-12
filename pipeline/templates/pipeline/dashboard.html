@@ -10,58 +10,58 @@
 {% block title %} — Dashboard{% endblock %}
 
 {% block content %}
-<div class="space-y-8">
+  <div class="space-y-8">
 
   <!-- Pipeline Runs -->
-  <section class="bg-white border border-gray-200 rounded-lg shadow-sm">
-    <div class="px-6 py-4 border-b border-gray-100">
-      <h2 class="text-base font-semibold text-gray-900 m-0">Pipeline Runs</h2>
-      <p class="text-sm text-gray-500 mt-0.5 mb-0">Auto-refreshes every 30 seconds.</p>
-    </div>
-    <div class="p-6">
-      <div id="runs-table"
-           hx-get="{% url 'pipeline:runs-partial' %}"
-           hx-trigger="load, every 30s"
-           hx-swap="innerHTML"
-           hx-indicator="#htmx-indicator">
-        {% include "pipeline/partials/runs_table.html" with recent_runs=recent_runs %}
+    <section class="bg-white border border-gray-200 rounded-lg shadow-sm">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h2 class="text-base font-semibold text-gray-900 m-0">Pipeline Runs</h2>
+        <p class="text-sm text-gray-500 mt-0.5 mb-0">Auto-refreshes every 30 seconds.</p>
       </div>
-    </div>
-  </section>
+      <div class="p-6">
+        <div id="runs-table"
+             hx-get="{% url 'pipeline:runs-partial' %}"
+             hx-trigger="load, every 30s"
+             hx-swap="innerHTML"
+             hx-indicator="#htmx-indicator">
+          {% include "pipeline/partials/runs_table.html" with recent_runs=recent_runs %}
+        </div>
+      </div>
+    </section>
 
   <!-- Bulletins -->
-  <section class="bg-white border border-gray-200 rounded-lg shadow-sm">
-    <div class="px-6 py-4 border-b border-gray-100">
-      <h2 class="text-base font-semibold text-gray-900 m-0">Bulletins</h2>
-    </div>
-    <div class="p-6">
-
-      <form class="flex items-center gap-3 mb-4 flex-wrap"
-            hx-get="{% url 'pipeline:bulletins-partial' %}"
-            hx-target="#bulletins-table"
-            hx-swap="innerHTML"
-            hx-indicator="#htmx-indicator"
-            hx-trigger="submit, change delay:300ms">
-        <label for="date-filter" class="text-sm font-medium text-gray-700">
-          Filter by date
-        </label>
-        <input id="date-filter"
-               type="date"
-               name="date"
-               value="{{ today|date:'Y-m-d' }}"
-               class="text-sm border border-gray-300 rounded px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500">
-        <button type="submit"
-                class="text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded cursor-pointer border-0">
-          Apply
-        </button>
-      </form>
-
-      <div id="bulletins-table">
-        {% include "pipeline/partials/bulletins_table.html" with bulletins=latest_bulletins %}
+    <section class="bg-white border border-gray-200 rounded-lg shadow-sm">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h2 class="text-base font-semibold text-gray-900 m-0">Bulletins</h2>
       </div>
+      <div class="p-6">
 
-    </div>
-  </section>
+        <form class="flex items-center gap-3 mb-4 flex-wrap"
+              hx-get="{% url 'pipeline:bulletins-partial' %}"
+              hx-target="#bulletins-table"
+              hx-swap="innerHTML"
+              hx-indicator="#htmx-indicator"
+              hx-trigger="submit, change delay:300ms">
+          <label for="date-filter" class="text-sm font-medium text-gray-700">
+            Filter by date
+          </label>
+          <input id="date-filter"
+                 type="date"
+                 name="date"
+                 value="{{ today|date:'Y-m-d' }}"
+                 class="text-sm border border-gray-300 rounded px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <button type="submit"
+                  class="text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded cursor-pointer border-0">
+            Apply
+          </button>
+        </form>
 
-</div>
+        <div id="bulletins-table">
+          {% include "pipeline/partials/bulletins_table.html" with bulletins=latest_bulletins %}
+        </div>
+
+      </div>
+    </section>
+
+  </div>
 {% endblock %}

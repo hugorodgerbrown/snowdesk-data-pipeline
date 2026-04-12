@@ -14,16 +14,19 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
 
-  # Python static type checking. Runs as a local hook pointing directly
-  # at the in-project venv's mypy binary. Using `.venv/bin/mypy` (rather
-  # than `poetry run mypy`) avoids depending on PATH, so the hook works
-  # identically from the CLI and from GUI git clients like SublimeMerge
-  # that launch git with a minimal environment and don't inherit the
-  # user's shell PATH. django-stubs + all runtime deps are already
-  # installed in the venv by `poetry install`, so no additional setup
-  # is needed.
+  # Local hooks pointing directly at the in-project venv's binaries.
+  # Using `.venv/bin/<tool>` (rather than `poetry run <tool>`) avoids
+  # depending on PATH, so the hooks work identically from the CLI and
+  # from GUI git clients like SublimeMerge that launch git with a
+  # minimal environment and don't inherit the user's shell PATH.
   - repo: local
     hooks:
+      - id: djhtml
+        name: djhtml
+        entry: .venv/bin/djhtml
+        language: system
+        types_or: [html]
+
       - id: mypy
         name: mypy
         entry: .venv/bin/mypy pipeline/ public/ tests/ config/

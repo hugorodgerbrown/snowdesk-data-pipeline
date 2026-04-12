@@ -425,6 +425,21 @@ django = "*"
 typing-extensions = "*"
 
 [[package]]
+name = "djhtml"
+version = "3.0.11"
+description = "Django/Jinja template indenter"
+optional = false
+python-versions = "*"
+groups = ["dev"]
+files = [
+    {file = "djhtml-3.0.11-py3-none-any.whl", hash = "sha256:0013d15d429eb34769aeaf6ea395ad278cf0b8ef35ad19d2cf0c1f214f2843ac"},
+    {file = "djhtml-3.0.11.tar.gz", hash = "sha256:dbaf55684294bda6486a094954e43847a1c0945e521282e008a9aabdac245688"},
+]
+
+[package.extras]
+dev = ["nox", "pre-commit"]
+
+[[package]]
 name = "factory-boy"
 version = "3.3.3"
 description = "A versatile test fixtures replacement based on thoughtbot's factory_bot for Ruby."
@@ -1336,4 +1351,4 @@ brotli = ["brotli"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "23caa6285516bd2b7165e3dec4e576764b376416324e7c97203c97e9d7a3ac45"
+content-hash = "8398a1e0764577567a4b5dc1c48b8d69c3f03272ae6ba2c316721cc4cc42826a"

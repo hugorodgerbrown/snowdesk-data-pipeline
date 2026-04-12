@@ -10,25 +10,25 @@ system for this page including typography and background.
 {% load static %}
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ region_name }} — Snowdesk</title>
-    <link rel="stylesheet" href="{% static 'css/random_bulletins.css' %}">
-</head>
-<body>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{{ region_name }} — Snowdesk</title>
+        <link rel="stylesheet" href="{% static 'css/random_bulletins.css' %}">
+    </head>
+    <body>
 
-<p class="screen-label">
-    {{ region_name }} · last {{ count }} day{{ count|pluralize }}
-</p>
+        <p class="screen-label">
+            {{ region_name }} · last {{ count }} day{{ count|pluralize }}
+        </p>
 
-<div class="cards-stack">
-    {% for panel in panels %}
-        {% include "public/_bulletin_panel.html" with panel=panel %}
-    {% empty %}
-    <p class="empty">No bulletins available for this region.</p>
-    {% endfor %}
-</div>
+        <div class="cards-stack">
+            {% for panel in panels %}
+                {% include "public/_bulletin_panel.html" with panel=panel %}
+            {% empty %}
+                <p class="empty">No bulletins available for this region.</p>
+            {% endfor %}
+        </div>
 
-</body>
+    </body>
 </html>
