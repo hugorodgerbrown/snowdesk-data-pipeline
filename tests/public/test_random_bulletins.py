@@ -754,7 +754,7 @@ class TestRandomBulletinsView:
         assert "public/_bulletin_panel.html" in templates
         assert b"rounded-[16px]" in response.content
         assert b'data-level="considerable"' in response.content
-        assert b"main.css" in response.content
+        assert b"output.css" in response.content
         assert b"Valais" in response.content
 
     def test_screen_label_pluralises_count(

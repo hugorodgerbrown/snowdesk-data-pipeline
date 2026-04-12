@@ -15,7 +15,9 @@ pipeline/        Core app: models, views, services, management commands
   services/      Pure-function modules for fetching and processing SLF bulletins
   management/    Django management commands (backfill_data, fetch_data)
   templates/     Django templates; partials/ holds HTMX fragment responses
-static/          CSS and JS assets (HTMX loaded via CDN)
+public/          Public-facing bulletin site
+src/             Tailwind CSS source (main.css — not served directly)
+static/          CSS/JS assets (includes compiled output.css)
 logs/            Log files (gitignored except .gitkeep)
 ```
 
@@ -40,7 +42,13 @@ logs/            Log files (gitignored except .gitkeep)
 ```bash
 cp .env.example .env          # fill in values
 poetry install
+npm install
 poetry run python manage.py migrate
+
+# Terminal 1: Tailwind CSS watcher
+npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch
+
+# Terminal 2: Django dev server
 poetry run python manage.py runserver
 ```
 
@@ -95,13 +103,23 @@ poetry run python manage.py backfill_data --start-date 2024-01-01 --end-date 202
 
 ## Frontend
 
-**Tailwind CSS** via the Play CDN (`@tailwindcss/browser@4`) in development.
-For production, compile with the Tailwind CLI:
+**Tailwind CSS v4** compiled via the `@tailwindcss/cli` package.
+
+- Source: `src/css/main.css` — contains `@import "tailwindcss"`, `@theme` design
+  tokens, and component exceptions. Lives outside `static/` so WhiteNoise never
+  tries to post-process it.
+- Output: `static/css/output.css` — gitignored build artifact loaded by templates.
+- All styling uses Tailwind utility classes in templates. Only add custom CSS to
+  `src/css/main.css` for things Tailwind cannot express (generated content,
+  data-attribute selectors, raw HTML resets).
+
 ```bash
-npx @tailwindcss/cli -i ./static/css/main.css -o ./static/css/output.css --minify
+# Development (watch mode)
+npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch
+
+# Production (minified)
+npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 ```
-`static/css/main.css` is intentionally minimal — all styling is done with utility
-classes in templates. Only add custom CSS there for things Tailwind cannot express.
 
 **HTMX** patterns:
 - Full-page views return a complete HTML response.
@@ -112,7 +130,7 @@ classes in templates. Only add custom CSS there for things Tailwind cannot expre
 
 ## Code style
 
-- `black` for formatting, `ruff` for linting, `isort` for imports.
+- `ruff` for linting and formatting (includes import sorting).
 - `pre-commit` hooks enforce these on commit.
 - Do not suppress linting warnings with `# noqa` unless there is a good reason,
   and always leave a comment explaining why.
@@ -124,7 +142,7 @@ classes in templates. Only add custom CSS there for things Tailwind cannot expre
 - All models to have an explicit AdminModel
 - All models to have an explicit `to_string()` method
 - All models to have an explicit test Factory representation
-- All modesl to have test coverage (see Testing section)
+- All models to have test coverage (see Testing section)
 - All models to have an explicit `order_by` (`created_at` by default)
 - All models to have a custom queryset
 

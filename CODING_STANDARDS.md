@@ -24,7 +24,8 @@ public/          Public-facing bulletin site (HTMX-driven)
 tests/           Mirrors the layout of the modules under test
   factories.py   FactoryBoy factories for every model
 sample_data/     Fixture JSON + CAAML schema documentation
-static/          CSS/JS assets
+src/             Tailwind CSS source (main.css — not served directly)
+static/          CSS/JS assets (includes compiled output.css)
 logs/            Runtime log files (gitignored except .gitkeep)
 ```
 
@@ -251,10 +252,20 @@ for the reference shape.
 
 ## 4. Frontend
 
-- **Tailwind CSS** via the Play CDN in development; compile with the
-  Tailwind CLI for production (see [CLAUDE.md](CLAUDE.md)).
-- `static/css/main.css` stays minimal — prefer Tailwind utility classes
-  in templates. Only add custom CSS for things Tailwind cannot express.
+- **Tailwind CSS v4** compiled via the `@tailwindcss/cli` package.
+  - Source file: `src/css/main.css` — contains `@import "tailwindcss"`,
+    `@theme` design tokens, and component exceptions (EAWS tints, prose
+    resets, `<details>` chevrons).
+  - Compiled output: `static/css/output.css` — a gitignored build artifact
+    that templates load. Run the CLI to regenerate:
+    ```bash
+    npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css          # one-off
+    npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch   # dev
+    npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify  # prod
+    ```
+  - Prefer Tailwind utility classes in templates. Only add custom CSS to
+    `main.css` for things Tailwind cannot express (generated content,
+    data-attribute selectors, raw HTML resets).
 - **HTMX**:
   - Full-page views return complete HTML; fragment views return only the
     inner snippet.

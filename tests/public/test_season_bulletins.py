@@ -218,7 +218,7 @@ class TestSeasonBulletinsView:
         templates = [t.name for t in response.templates if t.name]
         assert "public/season_bulletins.html" in templates
         assert "public/_bulletin_panel.html" in templates
-        assert b"main.css" in response.content
+        assert b"output.css" in response.content
         assert b"grid-cols-1" in response.content
         assert b"Valais" in response.content
 

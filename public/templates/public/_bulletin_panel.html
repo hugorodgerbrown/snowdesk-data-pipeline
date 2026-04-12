@@ -103,8 +103,7 @@ The admin link is only rendered for authenticated staff users.
     {# ── Footer: date (+ admin link for staff) ─────────────────────────── #}
     <div class="flex items-center px-3.5 py-2 border-t border-border bg-card-subtle">
         <span class="font-mono text-[11px] text-text-3 whitespace-nowrap">
-            {{ panel.footer_date_from|date:"D j M" }} ·
-            {{ panel.footer_date_from|date:"H:i" }}
+            {{ panel.footer_date_from|date:"D j M H:i" }} – {{ panel.footer_date_to|date:"D j M H:i" }}
         </span>
     </div>
 

@@ -1025,6 +1025,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "snowpack_structure": snowpack_structure,
         "footer_date_from": bulletin.valid_from,
         "footer_date_to": bulletin.valid_to,
+        "footer_next_update": bulletin.next_update,
         "footer_date_source": "Bulletin.valid_from / valid_to",
         "admin_url": reverse("admin:pipeline_bulletin_change", args=[bulletin.pk]),
     }

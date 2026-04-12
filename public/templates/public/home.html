@@ -11,15 +11,17 @@ This will be replaced with a full marketing site before launch.
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Snowdesk — Avalanche bulletins for backcountry skiers</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link rel="stylesheet" href="{% static 'css/main.css' %}">
+        <link rel="stylesheet" href="{% static 'css/output.css' %}">
     </head>
     <body class="bg-bg font-sans text-text-1 min-h-screen flex flex-col items-center justify-center px-4">
         <div class="max-w-lg text-center">
             <h1 class="text-3xl font-semibold tracking-tight mb-4">Snowdesk</h1>
             <p class="text-text-2 text-lg leading-relaxed mb-6">
-                Avalanche bulletins for backcountry skiers. We take the daily SLF avalanche forecast and present it in a
-                clear, mobile-friendly format so you can make better decisions in the mountains.
+                Avalanche bulletins for backcountry skiers.
+            </p>
+            <p class="text-text-2 text-lg leading-relaxed mb-6">
+                We take the daily SLF avalanche forecast and present it in a clear, mobile-friendly format so you can
+                make better decisions in the mountains.
             </p>
             <div class="space-y-3 text-text-2 text-sm">
                 <p>
@@ -40,7 +42,7 @@ This will be replaced with a full marketing site before launch.
                     href="{% url 'public:random' %}"
                     class="inline-block bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
                 >
-                    View a random bulletin →
+                    View a sample bulletin →
                 </a>
             </div>
         </div>
