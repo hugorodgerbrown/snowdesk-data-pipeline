@@ -20,7 +20,12 @@
 
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
 
-@import "tailwindcss";
+/* @import "tailwindcss"; — consumed by the Tailwind CLI at build time.
+   Commented out because in development the Play CDN handles utilities,
+   and WhiteNoise treats bare imports as static file references. Uncomment
+   when switching to the CLI build:
+     npx @tailwindcss/cli -i ./static/css/main.css -o ./static/css/output.css
+*/
 
 /* ———————————————————————————————————————————
    1. DESIGN TOKENS
