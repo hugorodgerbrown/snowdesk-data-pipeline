@@ -1,0 +1,36 @@
+{% comment %}
+public/templates/public/season_bulletins.html — Full-season test page.
+
+Standalone page (does NOT extend public/base.html) displaying up to 100
+bulletin panels in a responsive CSS-grid that collapses from three
+columns on wide screens to a single column on mobile. Intended as a UI
+test harness — the bulletin_cards_2.html mockup palette is inherited
+via the shared ``_bulletin_panel.html`` partial.
+{% endcomment %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ region_name }} — Season test — Snowdesk</title>
+    <link rel="stylesheet" href="{% static 'css/season_bulletins.css' %}">
+</head>
+<body>
+
+<header class="page-header">
+    <p class="screen-label">Panel UI test · {{ season_label }}</p>
+    <h1 class="page-title">{{ region_name }}</h1>
+    <p class="page-subtitle">{{ panel_count }} bulletin{{ panel_count|pluralize }} this season</p>
+</header>
+
+<div class="cards-grid">
+    {% for panel in panels %}
+        {% include "public/_bulletin_panel.html" with panel=panel %}
+    {% empty %}
+    <p class="empty">No bulletins for this region and season.</p>
+    {% endfor %}
+</div>
+
+</body>
+</html>

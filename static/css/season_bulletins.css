@@ -1,0 +1,85 @@
+/*
+ * static/css/season_bulletins.css — Full-season responsive grid test page.
+ *
+ * Imports ``random_bulletins.css`` which provides the card-level styles
+ * (danger band, problem blocks, footer, admin link, etc.) and the base
+ * palette / typography. This file adds only the responsive grid layout
+ * and page-header styles specific to the season view.
+ *
+ * Grid breakpoints:
+ *   ≤  600px  → 1 column  (mobile)
+ *   ≤  960px  → 2 columns (tablet)
+ *   > 960px   → 3 columns (desktop)
+ */
+
+@import url("random_bulletins.css");
+
+/* Override the single-column stack from random_bulletins.css. */
+body {
+    padding: 1.5rem clamp(0.5rem, 3vw, 2rem) 3rem;
+}
+
+/* ── Page header ── */
+
+.page-header {
+    max-width: 1200px;
+    margin: 0 auto 1.5rem;
+    padding: 0 0.25rem;
+}
+
+.page-title {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: clamp(1.25rem, 3vw, 1.75rem);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0.15rem 0 0;
+    line-height: 1.15;
+}
+
+.page-subtitle {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--text-tertiary);
+    margin-top: 0.35rem;
+}
+
+/* ── Responsive card grid ── */
+
+.cards-grid {
+    display: grid;
+    gap: 12px;
+    max-width: 1200px;
+    margin: 0 auto;
+    /* Single column by default (mobile-first). */
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 600px) {
+    .cards-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 960px) {
+    .cards-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Cards should stretch to fill their grid cell height so the danger
+   band and footer stay anchored top/bottom even when neighbouring cards
+   have more content. */
+.cards-grid .card {
+    display: flex;
+    flex-direction: column;
+}
+
+.cards-grid .card-body {
+    flex: 1;
+}
+
+/* Empty state centred across the full grid. */
+.cards-grid .empty {
+    grid-column: 1 / -1;
+}

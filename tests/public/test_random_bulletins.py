@@ -3,9 +3,9 @@ tests/public/test_random_bulletins.py — Tests for the random_bulletins view.
 
 Covers the ``random_bulletins`` view and its private helpers in
 ``public.views``: ``_highest_danger_key``, ``_panel_problems``,
-``_panel_message``, ``_panel_footer_area``, ``_build_panel_context``, and
-``_parse_bulletin_count``. The view now lists the most recent bulletins for
-a single region (one per calendar day, reverse chronological) with an
+``_panel_footer_area``, ``_build_panel_context``, ``_format_elevation``,
+and ``_parse_bulletin_count``. The view now lists the most recent bulletins
+for a single region (one per calendar day, reverse chronological) with an
 optional ``?b=N`` query parameter.
 """
 
@@ -24,7 +24,6 @@ from public.views import (
     _format_elevation,
     _highest_danger_key,
     _panel_footer_area,
-    _panel_message,
     _panel_problems,
     _parse_bulletin_count,
 )
@@ -222,15 +221,14 @@ class TestPanelProblems:
             }
         ]
 
-    def test_comment_is_truncated_on_word_boundary(self) -> None:
-        """Comment text over ~240 chars is cut on a word boundary."""
-        long_comment = "word " * 100
+    def test_comment_is_not_truncated_by_view(self) -> None:
+        """Comment text is passed through in full (template truncates)."""
+        long_comment = "word " * 100  # 500 chars
         props = {
             "avalancheProblems": [{"problemType": "new_snow", "comment": long_comment}]
         }
         result = _panel_problems(props)
-        assert len(result[0]["comment"]) <= 240
-        assert result[0]["comment"].endswith("\u2026")
+        assert result[0]["comment"] == long_comment.strip()
 
     def test_does_not_deduplicate_repeated_problem_types(self) -> None:
         """Two entries with the same problemType both render separately."""
@@ -377,58 +375,6 @@ class TestPanelProblems:
         assert result[1]["hide_comment"] is False
 
 
-class TestPanelMessage:
-    """Tests for ``_panel_message``."""
-
-    def test_prefers_first_problem_comment(self) -> None:
-        """The first avalanche problem's comment is the preferred blurb."""
-        props = {
-            "avalancheProblems": [
-                {"problemType": "new_snow", "comment": "<p>Fresh snow. Be careful.</p>"}
-            ],
-            "snowpackStructure": {"comment": "<p>Deep weak layers.</p>"},
-        }
-        assert _panel_message(props) == (
-            "Fresh snow. Be careful.",
-            "avalancheProblems[0].comment",
-        )
-
-    def test_falls_back_to_snowpack_summary(self) -> None:
-        """With no problem comment, the snowpack comment is used."""
-        props = {
-            "avalancheProblems": [],
-            "snowpackStructure": {"comment": "<p>Deep weak layers.</p>"},
-        }
-        assert _panel_message(props) == (
-            "Deep weak layers.",
-            "snowpackStructure.comment",
-        )
-
-    def test_falls_back_to_weather_review(self) -> None:
-        """With no problem or snowpack comment, weather review is used."""
-        props = {
-            "avalancheProblems": [],
-            "weatherReview": {"comment": "<p>Light snow overnight.</p>"},
-        }
-        assert _panel_message(props) == (
-            "Light snow overnight.",
-            "weatherReview.comment",
-        )
-
-    def test_empty_when_nothing_available(self) -> None:
-        """With no usable text, returns empty strings for both fields."""
-        assert _panel_message({}) == ("", "")
-
-    def test_truncates_long_messages(self) -> None:
-        """Text exceeding ~240 chars is cut on a word boundary with an ellipsis."""
-        long_text = "word " * 100  # 500 chars
-        props = {"avalancheProblems": [{"comment": long_text}]}
-        text, source = _panel_message(props)
-        assert len(text) <= 240
-        assert text.endswith("\u2026")
-        assert source == "avalancheProblems[0].comment"
-
-
 class TestPanelFooterArea:
     """Tests for ``_panel_footer_area``."""
 
@@ -540,6 +486,38 @@ class TestBuildPanelContext:
         ctx = _build_panel_context(bulletin)
         assert ctx["danger_key"] == "very_high"
         assert ctx["danger_css"] == "very-high"
+
+    def test_key_message_falls_back_to_snowpack(self) -> None:
+        """With no problem comment, snowpackStructure is the fallback."""
+        bulletin = _make_bulletin(
+            dangerRatings=[{"mainValue": "low"}],
+            avalancheProblems=[{"problemType": "wet_snow"}],
+            snowpackStructure={"comment": "<p>Deep weak layers.</p>"},
+        )
+        ctx = _build_panel_context(bulletin)
+        assert ctx["key_message"] == "Deep weak layers."
+        assert ctx["key_message_source"] == "snowpackStructure.comment"
+
+    def test_key_message_falls_back_to_weather_review(self) -> None:
+        """With no problem or snowpack comment, weatherReview is used."""
+        bulletin = _make_bulletin(
+            dangerRatings=[{"mainValue": "low"}],
+            avalancheProblems=[],
+            weatherReview={"comment": "<p>Light snow overnight.</p>"},
+        )
+        ctx = _build_panel_context(bulletin)
+        assert ctx["key_message"] == "Light snow overnight."
+        assert ctx["key_message_source"] == "weatherReview.comment"
+
+    def test_key_message_not_truncated_by_view(self) -> None:
+        """Full text is passed through — the template truncates instead."""
+        long_text = "<p>" + "word " * 100 + "</p>"
+        bulletin = _make_bulletin(
+            dangerRatings=[{"mainValue": "low"}],
+            avalancheProblems=[{"problemType": "new_snow", "comment": long_text}],
+        )
+        ctx = _build_panel_context(bulletin)
+        assert len(ctx["key_message"]) > 240
 
 
 # ---------------------------------------------------------------------------
