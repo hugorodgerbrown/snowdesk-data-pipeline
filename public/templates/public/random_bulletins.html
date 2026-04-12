@@ -2,10 +2,8 @@
 public/templates/public/random_bulletins.html — Recent bulletin cards for a
 single region.
 
-Standalone page (does NOT extend public/base.html) because the visual
-design is the self-contained bulletin_cards_2.html mockup. Loads
-``static/css/random_bulletins.css`` which bundles the full design
-system for this page including typography and background.
+Standalone page (does NOT extend public/base.html). Loads the Tailwind
+Play CDN and the design-token stylesheet (static/css/main.css).
 {% endcomment %}
 {% load static %}
 <!DOCTYPE html>
@@ -14,18 +12,19 @@ system for this page including typography and background.
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{{ region_name }} — Snowdesk</title>
-        <link rel="stylesheet" href="{% static 'css/random_bulletins.css' %}">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="stylesheet" href="{% static 'css/main.css' %}">
     </head>
-    <body>
-        <p class="screen-label">
+    <body class="bg-bg font-sans text-text-1 px-4 py-6 min-h-screen">
+        <p class="font-mono text-[10px] tracking-[0.12em] uppercase text-text-3 mb-5 text-center">
             {{ region_name }} · last {{ count }} day{{ count|pluralize }}
         </p>
 
-        <div class="cards-stack">
+        <div class="flex flex-col gap-3 max-w-[390px] mx-auto">
             {% for panel in panels %}
                 {% include "public/_bulletin_panel.html" with panel=panel %}
             {% empty %}
-                <p class="empty">No bulletins available for this region.</p>
+                <p class="text-center text-text-3 py-12 text-sm">No bulletins available for this region.</p>
             {% endfor %}
         </div>
     </body>

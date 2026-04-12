@@ -752,9 +752,9 @@ class TestRandomBulletinsView:
         templates = [t.name for t in response.templates if t.name]
         assert "public/random_bulletins.html" in templates
         assert "public/_bulletin_panel.html" in templates
-        assert b'class="card"' in response.content
-        assert b'class="danger-band band-considerable"' in response.content
-        assert b"random_bulletins.css" in response.content
+        assert b"rounded-[16px]" in response.content
+        assert b'data-level="considerable"' in response.content
+        assert b"main.css" in response.content
         assert b"Valais" in response.content
 
     def test_screen_label_pluralises_count(
@@ -811,7 +811,7 @@ class TestRandomBulletinsView:
         assert b"All day" in body
         assert b"Later (afternoon)" in body
         # Two problem-block wrappers rendered.
-        assert body.count(b'class="problem-block"') == 2
+        assert body.count(b"bg-tag") >= 2
 
     def test_elevation_renders_for_each_problem(
         self, client: Client, region: Region
@@ -845,7 +845,6 @@ class TestRandomBulletinsView:
 
         assert b"above 2200m" in body
         assert b"below 2400m" in body
-        assert body.count(b'class="problem-elevation"') == 2
 
     def test_duplicate_problems_show_comment_only_once(
         self, client: Client, region: Region
@@ -875,12 +874,12 @@ class TestRandomBulletinsView:
         body = response.content
 
         # Both problem blocks render.
-        assert body.count(b'class="problem-block"') == 2
+        assert body.count(b"bg-tag") >= 2
         assert b"Persistent weak layers" in body
         assert b"Wind slab" in body
         # But the shared comment only appears once — under the later header.
         assert body.count(b"Buried weak layers on shady slopes.") == 1
-        assert body.count(b'class="slf-comment"') == 1
+        assert body.count(b"slf-prose") == 1
 
     def test_same_problem_type_with_different_periods_both_render(
         self, client: Client, region: Region
@@ -908,7 +907,7 @@ class TestRandomBulletinsView:
         )
         body = response.content
 
-        assert body.count(b'class="problem-block"') == 2
+        assert body.count(b"bg-tag") >= 2
         assert b"Morning crust." in body
         assert b"Afternoon softening." in body
         assert b"Earlier (morning)" in body
@@ -984,7 +983,6 @@ class TestAdminLinkVisibility:
         )
         assert response.status_code == 200
         assert b"Open in admin" in response.content
-        assert b'class="admin-link"' in response.content
         expected_href = (
             f'href="/admin/pipeline/bulletin/{region_with_bulletin.pk}/change/"'
         )

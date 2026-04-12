@@ -1,64 +1,68 @@
 {% comment %}
 public/templates/public/_bulletin_panel.html — Compact bulletin card.
 
-Matches the class names used by bulletin_cards_2.html and
-static/css/random_bulletins.css. Expects a ``panel`` dict in the
-template context (see ``public.views._build_panel_context``).
+Expects a ``panel`` dict in the template context (see
+``public.views._build_panel_context``). All styling uses Tailwind
+utilities from the design tokens in static/css/main.css. The danger
+band background tint is applied via a data-level attribute matched
+by CSS rules in main.css.
+
 The admin link is only rendered for authenticated staff users.
 {% endcomment %}
 {% load card_tags hazard_icons static %}
-<div class="card">
+<div class="bg-card rounded-[16px] overflow-hidden border border-border">
 
     {# ── Danger band ─────────────────────────────────────────────────── #}
-    <div class="danger-band band-{{ panel.danger_css }}">
-        <img class="eaws-icon"
+    <div class="danger-band flex items-center gap-2.5 px-3.5 py-3 border-b border-border"
+         data-level="{{ panel.danger_key }}">
+        <img class="w-11 shrink-0"
              src="{% static 'icons/eaws/danger_levels/' %}{{ panel.danger_icon }}"
              alt="Danger level {{ panel.danger_number }} {{ panel.danger_label }}">
-        <div class="band-meta">
-            <div class="level-label level-{{ panel.danger_css }}">
+        <div class="flex-1">
+            <div class="text-lg font-semibold leading-tight tracking-tight">
                 {{ panel.danger_label }}
-                <span class="level-number">{{ panel.danger_number }}</span>
+                <span class="font-mono text-[13px] font-medium ml-1 opacity-70">{{ panel.danger_number }}</span>
             </div>
-            <div class="level-sub level-{{ panel.danger_css }}">
+            <div class="text-xs mt-px opacity-75">
                 {{ panel.danger_sub }}
             </div>
         </div>
     </div>
 
     {# ── Body: per-problem blocks, or key-message fallback ───────────── #}
-    <div class="card-body">
+    <div class="px-3.5 pt-3 pb-3.5">
         {% if panel.problems %}
-            <div class="problems-section">
-                <p class="section-eyebrow">
+            <div class="mb-2.5">
+                <p class="font-mono text-[9.5px] tracking-[0.1em] uppercase text-text-3 mb-1.5">
                     Avalanche problem{{ panel.problems|length|pluralize }}
                 </p>
 
                 {% for p in panel.problems %}
-                    <div class="problem-block">
+                    <div class="mt-2.5 first:mt-0">
                         {% if p.field_guidance %}
                             <details>
-                                <summary class="problem-tag">
+                                <summary class="problem-tag flex items-center gap-1.5 bg-tag border border-border-strong rounded-[8px] px-2.5 py-1.5 text-[13px] font-medium text-text-1">
                         {% else %}
-                            <div class="problem-tag">
+                            <div class="flex items-center gap-1.5 bg-tag border border-border-strong rounded-[8px] px-2.5 py-1.5 text-[13px] font-medium text-text-1">
                         {% endif %}
                         {% with icon_file=p.problem_type|hazard_icon %}
                             {% if icon_file %}
-                                <div class="problem-icon">
-                                    <img src="{% static icon_file %}" alt="{{ p.label }}">
+                                <div class="w-9 h-9 shrink-0 rounded overflow-hidden">
+                                    <img class="w-full h-full object-cover" src="{% static icon_file %}" alt="{{ p.label }}">
                                 </div>
                             {% endif %}
                         {% endwith %}
                         {% if p.aspects %}
-                            <div class="problem-rose">
+                            <div class="flex items-center shrink-0">
                                 {{ p.aspects|aspect_rose|safe }}
                             </div>
                         {% endif %}
-                        <span class="problem-label">{{ p.label }}</span>
+                        <span class="flex-1 min-w-0 truncate">{{ p.label }}</span>
                         {% if p.time_period_label %}
-                            <span class="problem-period">{{ p.time_period_label }}</span>
+                            <span class="font-mono text-[9.5px] tracking-[0.08em] uppercase text-text-2 bg-black/[0.06] px-1.5 py-0.5 rounded shrink-0">{{ p.time_period_label }}</span>
                         {% endif %}
                         {% if p.field_guidance %}
-                            <span class="field-guidance-indicator">↓</span>
+                            <span class="ml-auto text-[0.7rem] text-text-3 transition-transform duration-150">↓</span>
                         {% endif %}
                         {% if p.field_guidance %}
                             </summary>
@@ -67,15 +71,15 @@ The admin link is only rendered for authenticated staff users.
                         {% endif %}
 
                         {% if p.elevation %}
-                            <p class="problem-elevation">{{ p.elevation }}</p>
+                            <p class="mt-1 px-1 font-mono text-[10px] tracking-[0.04em] text-text-3">{{ p.elevation }}</p>
                         {% endif %}
                         {% if p.comment and not p.hide_comment %}
-                            <div class="slf-comment">{{ p.comment|safe }}</div>
-                            <p class="slf-comment-attribution">SLF Bulletin</p>
+                            <div class="slf-prose mt-1.5 px-1 text-sm leading-[1.55] text-text-2">{{ p.comment|safe }}</div>
+                            <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">SLF Bulletin</p>
                         {% endif %}
                         {% if p.field_guidance %}
-                            <p class="field-guidance-text">{{ p.field_guidance }}</p>
-                            <p class="field-guidance-attribution">SLF Interpretation Guide</p>
+                            <p class="mt-2.5 text-sm text-text-2 leading-[1.55]">{{ p.field_guidance }}</p>
+                            <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">SLF Interpretation Guide</p>
                             </details>
                         {% endif %}
                     </div>
@@ -83,29 +87,29 @@ The admin link is only rendered for authenticated staff users.
 
             </div>
         {% elif panel.key_message %}
-            <div class="slf-comment">
+            <div class="slf-prose text-sm leading-[1.55] text-text-2">
                 {{ panel.key_message|safe }}
             </div>
         {% endif %}
 
         {% if panel.snowpack_structure %}
-            <div class="snowpack-section">
-                <div class="slf-comment">{{ panel.snowpack_structure|safe }}</div>
-                <p class="slf-comment-attribution">SLF Bulletin</p>
+            <div class="mt-2.5 pt-2.5 border-t border-border">
+                <div class="slf-prose text-sm leading-[1.55] text-text-2">{{ panel.snowpack_structure|safe }}</div>
+                <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">SLF Bulletin</p>
             </div>
         {% endif %}
     </div>
 
     {# ── Footer: date (+ admin link for staff) ─────────────────────────── #}
-    <div class="card-footer">
-        <span class="footer-date">
+    <div class="flex items-center px-3.5 py-2 border-t border-border bg-card-subtle">
+        <span class="font-mono text-[11px] text-text-3 whitespace-nowrap">
             {{ panel.footer_date_from|date:"D j M" }} ·
             {{ panel.footer_date_from|date:"H:i" }}
         </span>
     </div>
 
     {% if user.is_authenticated and user.is_staff %}
-        <a class="admin-link"
+        <a class="block px-3.5 py-1.5 border-t border-dashed border-border bg-tag font-mono text-[10px] tracking-[0.08em] uppercase text-text-2 no-underline text-right hover:text-text-1 hover:bg-[#eeeae2]"
            href="{{ panel.admin_url }}"
            title="Open this bulletin in the Django admin">
             Open in admin →
