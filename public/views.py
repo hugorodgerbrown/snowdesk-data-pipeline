@@ -641,6 +641,7 @@ def bulletin_detail(
             {
                 "bulletin": None,
                 "region_name": region.name,
+                "region_id": region.region_id,
                 "year": datetime.date.today().year,
             },
         )

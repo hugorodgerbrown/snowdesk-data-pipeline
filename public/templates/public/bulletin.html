@@ -72,24 +72,15 @@ partial for the card content.
                 </div>
             {% endif %}
 
-            {# ── Related regions ─────────────────────────────────────────── #}
-            {% if related_regions %}
-                <div class="mt-4">
-                    <p class="font-mono text-[9.5px] tracking-[0.1em] uppercase text-text-3 mb-2">
-                        Related regions
-                    </p>
-                    <div class="flex flex-wrap gap-1.5">
-                        {% for rel in related_regions %}
-                            <a
-                                href="{% url 'public:region_redirect' region_id=rel.region_id %}"
-                                class="text-xs text-text-2 bg-tag border border-border rounded-[4px] px-2 py-1 hover:text-text-1 no-underline"
-                            >
-                                {{ rel.name }}
-                            </a>
-                        {% endfor %}
-                    </div>
-                </div>
-            {% endif %}
+            {# ── Season link ─────────────────────────────────────────────── #}
+            <div class="mt-4 text-center">
+                <a
+                    href="{% url 'public:season_bulletins' region_id=region_id %}"
+                    class="text-sm text-text-2 hover:text-text-1"
+                >
+                    View full season →
+                </a>
+            </div>
         </div>
     </body>
 </html>
