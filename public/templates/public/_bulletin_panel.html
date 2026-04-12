@@ -20,8 +20,7 @@ The admin link is only rendered for authenticated staff users.
              alt="Danger level {{ panel.danger_number }} {{ panel.danger_label }}">
         <div class="flex-1">
             <div class="text-lg font-semibold leading-tight tracking-tight">
-                {{ panel.danger_label }}
-                <span class="font-mono text-[13px] font-medium ml-1 opacity-70">{{ panel.danger_number }}</span>
+                {{ panel.danger_label }} ({{ panel.danger_number }})
             </div>
             <div class="text-xs mt-px opacity-75">
                 {{ panel.danger_sub }}
