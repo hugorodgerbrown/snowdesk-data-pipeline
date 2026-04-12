@@ -27,6 +27,7 @@ context so the template hides them gracefully.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import logging
 import random
@@ -836,9 +837,56 @@ def _format_bound(value: Any) -> str:
     return f"{text}m" if text.isdigit() else text
 
 
-def _format_elevation(elevation: dict[str, Any] | None) -> str:
+ELEVATION_LOWER = "LOWER"
+ELEVATION_UPPER = "UPPER"
+ELEVATION_BOTH = "BOTH"
+
+
+@dataclasses.dataclass(frozen=True)
+class ElevationBounds:
     """
-    Render a CAAML elevation dict as a short human string.
+    Structured elevation bounds for a CAAML avalanche problem.
+
+    Provides dot-access to the raw ``lower`` / ``upper`` bound strings,
+    a pre-formatted ``display`` string for template rendering, and a
+    ``bound_type`` constant (``"LOWER"``, ``"UPPER"``, ``"BOTH"``, or
+    ``""`` when no bounds are present) for icon selection.
+    Boolean-truthy when at least one bound is present.
+    """
+
+    lower: str
+    upper: str
+    display: str
+    bound_type: str
+
+    def __bool__(self) -> bool:  # noqa: D105
+        return bool(self.display)
+
+
+def _elevation_display(lower_raw: Any, upper_raw: Any) -> str:
+    """
+    Render lower/upper CAAML elevation bounds as a short human string.
+
+    Returns an empty string when neither bound produces a formatted value.
+    """
+    if _is_numeric_bound(lower_raw) and _is_numeric_bound(upper_raw):
+        return f"{lower_raw}\u2013{upper_raw}m"
+
+    lower_fmt = _format_bound(lower_raw)
+    upper_fmt = _format_bound(upper_raw)
+
+    if lower_fmt and upper_fmt:
+        return f"{lower_fmt}\u2013{upper_fmt}"
+    if lower_fmt:
+        return f"above {lower_fmt}"
+    if upper_fmt:
+        return f"below {upper_fmt}"
+    return ""
+
+
+def _format_elevation(elevation: dict[str, Any] | None) -> ElevationBounds:
+    """
+    Build an :class:`ElevationBounds` from a CAAML elevation dict.
 
     Accepts both numeric metre values and the literal ``"treeline"`` (the
     schema permits either). Examples::
@@ -851,27 +899,35 @@ def _format_elevation(elevation: dict[str, Any] | None) -> str:
     When both bounds are numeric the ``m`` suffix appears only once on
     the right-hand side of the range for readability. Mixed
     numeric/treeline ranges fall back to labelling each end separately.
-    Returns an empty string when no bounds are present.
+    Returns an empty-display :class:`ElevationBounds` when no bounds
+    are present.
     """
+    empty = ElevationBounds(lower="", upper="", display="", bound_type="")
     if not elevation:
-        return ""
+        return empty
 
     lower_raw = elevation.get("lowerBound")
     upper_raw = elevation.get("upperBound")
 
-    if _is_numeric_bound(lower_raw) and _is_numeric_bound(upper_raw):
-        return f"{lower_raw}\u2013{upper_raw}m"
+    lower_str = str(lower_raw) if lower_raw is not None and lower_raw != "" else ""
+    upper_str = str(upper_raw) if upper_raw is not None and upper_raw != "" else ""
 
-    lower = _format_bound(lower_raw)
-    upper = _format_bound(upper_raw)
+    if lower_str and upper_str:
+        bound_type = ELEVATION_BOTH
+    elif lower_str:
+        bound_type = ELEVATION_LOWER
+    elif upper_str:
+        bound_type = ELEVATION_UPPER
+    else:
+        return empty
 
-    if lower and upper:
-        return f"{lower}\u2013{upper}"
-    if lower:
-        return f"above {lower}"
-    if upper:
-        return f"below {upper}"
-    return ""
+    display = _elevation_display(lower_raw, upper_raw)
+    if not display:
+        return empty
+
+    return ElevationBounds(
+        lower=lower_str, upper=upper_str, display=display, bound_type=bound_type
+    )
 
 
 def _problem_signature(
@@ -898,6 +954,27 @@ def _problem_signature(
     )
 
 
+def _problem_summary(
+    core_zone_text: str,
+    elevation: ElevationBounds,
+    aspects: list[str],
+) -> str:
+    """
+    Build a one-line summary for an avalanche problem detail section.
+
+    Prefers the SLF-authored ``customData.CH.coreZoneText`` when present.
+    Falls back to a generated string such as
+    ``"Affects N, NE aspects above 2200m"``, or
+    ``"Affects all aspects and elevations"`` when neither is available.
+    """
+    if core_zone_text:
+        return core_zone_text
+    if aspects and elevation:
+        aspect_str = ", ".join(aspects)
+        return f"Affects {aspect_str} aspects {elevation.display}"
+    return "Affects all aspects and elevations"
+
+
 def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Build the list of avalanche problems for the panel.
@@ -905,11 +982,12 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
     Each entry carries the problem type, its human label, a plain-text
     comment (full-length — truncation is handled by the template via
     Django's ``truncatechars`` filter), the human-readable
-    ``validTimePeriod`` label, a formatted elevation string, the raw
-    CAAML elevation dict, the list of exposed aspects, and a
-    ``hide_comment`` flag. The list is NOT deduplicated —
-    two entries with the same ``problemType`` but different elevation,
-    aspect, period, or comment all render separately.
+    ``validTimePeriod`` label, an :class:`ElevationBounds` object
+    (with ``lower``, ``upper``, and ``display`` attributes), the list
+    of exposed aspects, and a ``hide_comment`` flag. The list is NOT
+    deduplicated — two entries with the same ``problemType`` but
+    different elevation, aspect, period, or comment all render
+    separately.
 
     When two or more problems share the same signature (elevation +
     aspects + time period + comment), the ``hide_comment`` flag is set
@@ -923,8 +1001,9 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
     Returns:
         List of problem dicts in CAAML source order with keys:
         ``problem_type``, ``label``, ``comment``, ``time_period``,
-        ``time_period_label``, ``elevation``, ``elevation_data``,
-        ``aspects``, ``hide_comment``, ``field_guidance``.
+        ``time_period_label``, ``elevation`` (:class:`ElevationBounds`),
+        ``aspects``, ``core_zone_text``, ``summary``,
+        ``hide_comment``, ``field_guidance``.
 
     """
     raw_entries = [
@@ -942,10 +1021,13 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
         comment = entry.get("comment") or ""
         time_period = entry.get("validTimePeriod", "") or ""
         time_period_label = _TIME_PERIOD_LABELS.get(time_period, "")
-        raw_elevation = entry.get("elevation") or {}
-        elevation = _format_elevation(raw_elevation or None)
+        elevation = _format_elevation(entry.get("elevation") or None)
         aspects: list[str] = entry.get("aspects") or []
         field_guidance = guidance.get(problem_type)
+        core_zone_text = (
+            (entry.get("customData") or {}).get("CH", {}).get("coreZoneText", "")
+        )
+        summary = _problem_summary(core_zone_text, elevation, aspects)
         problems.append(
             {
                 "problem_type": problem_type,
@@ -954,8 +1036,9 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
                 "time_period": time_period,
                 "time_period_label": time_period_label,
                 "elevation": elevation,
-                "elevation_data": raw_elevation,
                 "aspects": aspects,
+                "core_zone_text": core_zone_text,
+                "summary": summary,
                 "hide_comment": False,
                 "field_guidance": field_guidance,
             }

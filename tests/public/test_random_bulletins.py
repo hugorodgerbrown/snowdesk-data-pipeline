@@ -133,7 +133,7 @@ class TestHighestDangerKey:
                 "customData": {"CH": {"subdivision": "minus"}},
             }
         ]
-        assert _highest_danger_key(ratings) == ("high", "\u2212")
+        assert _highest_danger_key(ratings) == ("high", "-")
 
     def test_subdivision_plus(self) -> None:
         """A ``plus`` subdivision returns the ``+`` suffix."""
@@ -167,39 +167,59 @@ class TestHighestDangerKey:
                 "customData": {"CH": {"subdivision": "minus"}},
             },
         ]
-        assert _highest_danger_key(ratings) == ("considerable", "\u2212")
+        assert _highest_danger_key(ratings) == ("considerable", "-")
 
 
 class TestFormatElevation:
     """Tests for ``_format_elevation``."""
 
     def test_none_returns_empty(self) -> None:
-        """``None`` elevation → empty string."""
-        assert _format_elevation(None) == ""
+        """``None`` elevation → falsy ElevationBounds."""
+        result = _format_elevation(None)
+        assert not result
+        assert result.display == ""
+        assert result.bound_type == ""
 
     def test_empty_dict_returns_empty(self) -> None:
-        """Empty dict → empty string."""
-        assert _format_elevation({}) == ""
+        """Empty dict → falsy ElevationBounds."""
+        result = _format_elevation({})
+        assert not result
+        assert result.bound_type == ""
 
     def test_lower_bound_only(self) -> None:
-        """``lowerBound`` only → ``above Xm``."""
-        assert _format_elevation({"lowerBound": "2200"}) == "above 2200m"
+        """``lowerBound`` only → ``above Xm`` with LOWER bound type."""
+        result = _format_elevation({"lowerBound": "2200"})
+        assert result.display == "above 2200m"
+        assert result.lower == "2200"
+        assert result.upper == ""
+        assert result.bound_type == "LOWER"
 
     def test_upper_bound_only(self) -> None:
-        """``upperBound`` only → ``below Xm``."""
-        assert _format_elevation({"upperBound": "2400"}) == "below 2400m"
+        """``upperBound`` only → ``below Xm`` with UPPER bound type."""
+        result = _format_elevation({"upperBound": "2400"})
+        assert result.display == "below 2400m"
+        assert result.lower == ""
+        assert result.upper == "2400"
+        assert result.bound_type == "UPPER"
 
     def test_both_bounds(self) -> None:
-        """Both bounds → ``X\u2013Ym`` (en-dash)."""
-        assert (
-            _format_elevation({"lowerBound": "1800", "upperBound": "2400"})
-            == "1800\u20132400m"
-        )
+        """Both bounds → ``X\u2013Ym`` (en-dash) with BOTH bound type."""
+        result = _format_elevation({"lowerBound": "1800", "upperBound": "2400"})
+        assert result.display == "1800\u20132400m"
+        assert result.lower == "1800"
+        assert result.upper == "2400"
+        assert result.bound_type == "BOTH"
 
     def test_treeline_literal(self) -> None:
         """``treeline`` is emitted as-is, without the ``m`` suffix."""
-        assert _format_elevation({"lowerBound": "treeline"}) == "above treeline"
-        assert _format_elevation({"upperBound": "treeline"}) == "below treeline"
+        result = _format_elevation({"lowerBound": "treeline"})
+        assert result.display == "above treeline"
+        assert result.lower == "treeline"
+        assert result.bound_type == "LOWER"
+        result = _format_elevation({"upperBound": "treeline"})
+        assert result.display == "below treeline"
+        assert result.upper == "treeline"
+        assert result.bound_type == "UPPER"
 
 
 class TestPanelProblems:
@@ -221,11 +241,11 @@ class TestPanelProblems:
         assert len(result) == 2
         assert result[0]["problem_type"] == "new_snow"
         assert result[0]["label"] == "New snow"
-        assert result[0]["elevation_data"] == {}
+        assert not result[0]["elevation"]
         assert result[0]["aspects"] == []
         assert result[1]["problem_type"] == "persistent_weak_layers"
         assert result[1]["label"] == "Persistent weak layers"
-        assert result[1]["elevation_data"] == {}
+        assert not result[1]["elevation"]
         assert result[1]["aspects"] == []
 
     def test_includes_comment_and_time_period_label(self) -> None:
@@ -249,10 +269,34 @@ class TestPanelProblems:
         assert p["comment"] == "<p>Fresh drifts on lee slopes.</p>"
         assert p["time_period"] == "earlier"
         assert p["time_period_label"] == "Earlier (morning)"
-        assert p["elevation"] == "above 2200m"
-        assert p["elevation_data"] == {"lowerBound": "2200"}
+        assert p["elevation"].display == "above 2200m"
+        assert p["elevation"].lower == "2200"
         assert p["aspects"] == ["N", "NE", "E"]
+        assert p["summary"] == "Affects N, NE, E aspects above 2200m"
         assert p["hide_comment"] is False
+
+    def test_summary_uses_core_zone_text_when_present(self) -> None:
+        """``customData.CH.coreZoneText`` is preferred for the summary."""
+        text = 'Danger level "moderate" (2+) in SW to N to SE aspects above 2200m.'
+        props = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wind_slab",
+                    "elevation": {"lowerBound": "2200"},
+                    "aspects": ["N", "NE"],
+                    "customData": {"CH": {"coreZoneText": text}},
+                },
+            ]
+        }
+        result = _panel_problems(props)
+        assert result[0]["core_zone_text"] == text
+        assert result[0]["summary"] == text
+
+    def test_summary_fallback_when_no_aspects_or_elevation(self) -> None:
+        """A problem with no elevation or aspects gets the fallback summary."""
+        props = {"avalancheProblems": [{"problemType": "new_snow"}]}
+        result = _panel_problems(props)
+        assert result[0]["summary"] == "Affects all aspects and elevations"
 
     def test_comment_is_raw_html(self) -> None:
         """Comment HTML is passed through unchanged."""
@@ -315,8 +359,8 @@ class TestPanelProblems:
         result = _panel_problems(props)
         assert result[0]["aspects"] == []
 
-    def test_elevation_data_preserved_from_caaml(self) -> None:
-        """The raw CAAML elevation dict is available alongside the formatted string."""
+    def test_elevation_bounds_accessible(self) -> None:
+        """Elevation bounds are accessible via dot notation."""
         props = {
             "avalancheProblems": [
                 {
@@ -326,17 +370,16 @@ class TestPanelProblems:
             ]
         }
         result = _panel_problems(props)
-        assert result[0]["elevation_data"] == {
-            "lowerBound": "2200",
-            "upperBound": "3000",
-        }
-        assert result[0]["elevation"] == "2200\u20133000m"
+        elev = result[0]["elevation"]
+        assert elev.lower == "2200"
+        assert elev.upper == "3000"
+        assert elev.display == "2200\u20133000m"
 
-    def test_missing_elevation_gives_empty_dict(self) -> None:
-        """A problem with no ``elevation`` key returns an empty dict."""
+    def test_missing_elevation_gives_falsy_bounds(self) -> None:
+        """A problem with no ``elevation`` key returns a falsy ElevationBounds."""
         props = {"avalancheProblems": [{"problemType": "new_snow"}]}
         result = _panel_problems(props)
-        assert result[0]["elevation_data"] == {}
+        assert not result[0]["elevation"]
 
     def test_identical_scope_hides_comment_on_earlier_occurrence(self) -> None:
         """
@@ -489,8 +532,8 @@ class TestBuildPanelContext:
         assert p["comment"] == "<p>No distinct problem to speak of.</p>"
         assert p["time_period"] == "all_day"
         assert p["time_period_label"] == "All day"
-        assert p["elevation"] == "above 2200m"
-        assert p["elevation_data"] == {"lowerBound": "2200"}
+        assert p["elevation"].display == "above 2200m"
+        assert p["elevation"].lower == "2200"
         assert p["aspects"] == []
         assert p["hide_comment"] is False
         assert ctx["key_message"] == "<p>No distinct problem to speak of.</p>"

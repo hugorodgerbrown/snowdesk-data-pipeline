@@ -14,6 +14,8 @@ import math
 from django import template
 from django.utils.safestring import mark_safe
 
+from pipeline.schema import Elevation
+
 register = template.Library()
 
 # Angle of each segment's centre, in degrees.  SVG's coordinate system
@@ -109,5 +111,111 @@ def aspect_rose(aspects: list[str] | None, size: int = 36) -> str:
         f'aria-label="Aspects: {", ".join(sorted(active)) or "none"}" '
         f'role="img">'
         f"{wedges}{centre_dot}"
+        f"</svg>"
+    )
+
+
+@register.filter
+def elevation_icon(elevation: Elevation, size: int = 24) -> str:
+    """
+    Render an inline SVG elevation indicator icon.
+
+    Uses elevation.bound_type (LOWER | UPPER | BOTH) to select variant.
+
+    Usage: {{ p.elevation|elevation_icon|safe }}
+    Custom size: {{ p.elevation|elevation_icon:32|safe }}
+    """
+    if not elevation:
+        return ""
+
+    bound_type = getattr(elevation, "bound_type", None)
+    if not bound_type:
+        return ""
+
+    s = size
+    cx = s / 2  # mountain centre x
+    base_y = s * 0.88  # base of mountain
+    peak_y = s * 0.08  # peak of mountain
+    hw = s * 0.42  # half-width of mountain base
+
+    # Mountain vertices
+    px = cx
+    py = peak_y
+    blx = cx - hw
+    brx = cx + hw
+    by = base_y
+
+    mountain = (
+        f'<polygon points="{px},{py:.2f} {blx:.2f},{by:.2f} {brx:.2f},{by:.2f}" '
+        f'fill="none" stroke="#2C2C2A" stroke-width="1.5" stroke-linejoin="round"/>'
+    )
+
+    # Clip path so shading stays inside mountain triangle
+    clip_id = f"emtn-{bound_type.lower()}-{size}"
+    clip = (
+        f'<clipPath id="{clip_id}">'
+        f'<polygon points="{px},{py:.2f} {blx:.2f},{by:.2f} {brx:.2f},{by:.2f}"/>'
+        f"</clipPath>"
+    )
+
+    shade_opacity = "0.18"
+    stroke = "#2C2C2A"
+    dash = 'stroke-dasharray="2,2"'
+
+    if bound_type == "LOWER":
+        # Shaded zone: above the line to peak
+        line_y = s * 0.62
+        shade = (
+            f'<rect x="{blx:.2f}" y="{py:.2f}" '
+            f'width="{hw * 2:.2f}" height="{line_y - py:.2f}" '
+            f'fill="{stroke}" opacity="{shade_opacity}" clip-path="url(#{clip_id})"/>'
+        )
+        lines = (
+            f'<line x1="{blx:.2f}" y1="{line_y:.2f}" '
+            f'x2="{brx:.2f}" y2="{line_y:.2f}" '
+            f'stroke="{stroke}" stroke-width="1" {dash}/>'
+        )
+        aria = "Elevation: above lower bound"
+
+    elif bound_type == "UPPER":
+        # Shaded zone: below the line to base
+        line_y = s * 0.46
+        shade = (
+            f'<rect x="{blx:.2f}" y="{line_y:.2f}" '
+            f'width="{hw * 2:.2f}" height="{by - line_y:.2f}" '
+            f'fill="{stroke}" opacity="{shade_opacity}" clip-path="url(#{clip_id})"/>'
+        )
+        lines = (
+            f'<line x1="{blx:.2f}" y1="{line_y:.2f}" '
+            f'x2="{brx:.2f}" y2="{line_y:.2f}" '
+            f'stroke="{stroke}" stroke-width="1" {dash}/>'
+        )
+        aria = "Elevation: below upper bound"
+
+    else:  # BOTH
+        # Shaded band between two lines
+        upper_y = s * 0.44
+        lower_y = s * 0.64
+        shade = (
+            f'<rect x="{blx:.2f}" y="{upper_y:.2f}" '
+            f'width="{hw * 2:.2f}" height="{lower_y - upper_y:.2f}" '
+            f'fill="{stroke}" opacity="{shade_opacity}" clip-path="url(#{clip_id})"/>'
+        )
+        lines = (
+            f'<line x1="{blx:.2f}" y1="{upper_y:.2f}" '
+            f'x2="{brx:.2f}" y2="{upper_y:.2f}" '
+            f'stroke="{stroke}" stroke-width="1" {dash}/>'
+            f'<line x1="{blx:.2f}" y1="{lower_y:.2f}" '
+            f'x2="{brx:.2f}" y2="{lower_y:.2f}" '
+            f'stroke="{stroke}" stroke-width="1" {dash}/>'
+        )
+        aria = "Elevation: between bounds"
+
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'width="{s}" height="{s}" viewBox="0 0 {s} {s}" '
+        f'aria-label="{aria}" role="img">'
+        f"<defs>{clip}</defs>"
+        f"{shade}{mountain}{lines}"
         f"</svg>"
     )
