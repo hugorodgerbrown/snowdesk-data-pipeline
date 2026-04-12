@@ -70,8 +70,8 @@ The admin link is only rendered for authenticated staff users.
                             <p class="problem-elevation">{{ p.elevation }}</p>
                         {% endif %}
                         {% if p.comment and not p.hide_comment %}
-                            <p class="problem-comment">{{ p.comment|truncatechars:2400 }}</p>
-                            <p class="problem-attribution">SLF assessment</p>
+                            <div class="slf-comment">{{ p.comment|safe }}</div>
+                            <p class="slf-comment-attribution">SLF Bulletin</p>
                         {% endif %}
                         {% if p.field_guidance %}
                             <p class="field-guidance-text">{{ p.field_guidance }}</p>
@@ -83,16 +83,15 @@ The admin link is only rendered for authenticated staff users.
 
             </div>
         {% elif panel.key_message %}
-            <p class="key-message">
-                {{ panel.key_message|truncatechars:2400 }}
-            </p>
+            <div class="slf-comment">
+                {{ panel.key_message|safe }}
+            </div>
         {% endif %}
 
         {% if panel.snowpack_structure %}
             <div class="snowpack-section">
-                <p class="section-eyebrow">Snowpack</p>
-                <p class="snowpack-text">{{ panel.snowpack_structure|truncatechars:2400 }}</p>
-                <p class="snowpack-attribution">SLF assessment</p>
+                <div class="slf-comment">{{ panel.snowpack_structure|safe }}</div>
+                <p class="slf-comment-attribution">SLF Bulletin</p>
             </div>
         {% endif %}
     </div>

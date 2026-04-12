@@ -86,14 +86,14 @@ body {
 .field-guidance {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--color-border-light);
+  border-top: 1px solid var(--border);
 }
 
 .field-guidance-trigger {
   font-size: 0.7rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--color-muted);
+  color: var(--text-tertiary);
   cursor: pointer;
   list-style: none; /* removes default triangle in most browsers */
   user-select: none;
@@ -114,15 +114,15 @@ details[open] .field-guidance-trigger::after {
 
 details[open] .field-guidance-text {
   margin-top: 0.6rem;
-  font-size: 0.875rem;
-  color: var(--color-body);
-  line-height: 1.6;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.55;
 }
 
 .field-guidance-attribution {
   font-size: 0.7rem;
   letter-spacing: 0.04em;
-  color: var(--color-muted);
+  color: var(--text-tertiary);
   text-transform: uppercase;
   margin-top: 0.25rem;
   text-align: right;
@@ -139,7 +139,7 @@ details > summary.problem-tag::-webkit-details-marker {
 .field-guidance-indicator {
   margin-left: auto;
   font-size: 0.7rem;
-  color: var(--color-muted);
+  color: var(--text-tertiary);
   transition: transform 0.15s ease;
 }
 
@@ -151,9 +151,9 @@ details[open] .field-guidance-indicator {
 details[open] .field-guidance-text {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--color-border-light);
-  font-size: 0.875rem;
-  line-height: 1.6;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+  line-height: 1.55;
 }
 .problem-rose {
   display: flex;

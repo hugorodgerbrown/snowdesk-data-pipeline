@@ -139,7 +139,8 @@ body {
 
 /* Problems — the hero element for this user */
 .problems-section { margin-bottom: 10px; }
-.section-eyebrow {
+.section-eyebrow,
+.slf-comment h1 {
     font-family: 'DM Mono', monospace;
     font-size: 9.5px;
     letter-spacing: 0.1em;
@@ -215,40 +216,57 @@ body {
     color: var(--text-tertiary);
 }
 
-.problem-comment {
+/* Shared raw-HTML comment block — used for problem comments, snowpack
+   structure, key-message fallback, and any other SLF-authored text.
+   Resets the embedded h1/h2/p/ul/li to card-scale typography. */
+.slf-comment {
     margin-top: 6px;
     padding: 0 4px;
-    font-size: 12px;
-    /* font-style: italic; */
+    font-size: 14px;
     line-height: 1.55;
     color: var(--text-secondary);
 }
-.problem-attribution {
+.slf-comment h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 8px 0 2px;
+    line-height: 1.4;
+}
+.slf-comment p {
+    margin: 4px 0;
+}
+.slf-comment ul {
+    margin: 4px 0;
+    padding-left: 1.2em;
+}
+.slf-comment li {
+    margin: 2px 0;
+}
+.slf-comment-attribution {
     font-size: 0.7rem;
     letter-spacing: 0.04em;
-    color: var(--color-muted);
-    /* text-transform: uppercase; */
+    color: var(--text-tertiary);
     margin-top: 0.25rem;
     text-align: right;
 }
 .field-guidance {
     margin-top: 0.75rem;
     padding-top: 0.75rem;
-    border-top: 1px solid var(--color-border-light);
+    border-top: 1px solid var(--border);
 }
 
 .field-guidance-text {
-    font-size: 0.875rem;
-    color: var(--color-body);
-    line-height: 1.6;
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.55;
     margin: 0;
 }
 
 .field-guidance-attribution {
     font-size: 0.7rem;
     letter-spacing: 0.04em;
-    color: var(--color-muted);
-    /* text-transform: uppercase; */
+    color: var(--text-tertiary);
     margin-top: 0.25rem;
     text-align: right;
 }
@@ -257,30 +275,6 @@ body {
     margin-top: 10px;
     padding-top: 10px;
     border-top: 0.5px solid var(--border);
-}
-.snowpack-text {
-    font-size: 12px;
-    line-height: 1.55;
-    color: var(--text-secondary);
-    margin-top: 6px;
-}
-.snowpack-attribution {
-    font-size: 0.7rem;
-    letter-spacing: 0.04em;
-    color: var(--text-tertiary);
-    margin-top: 0.25rem;
-    text-align: right;
-}
-
-/* Fallback key message (used when a bulletin has no avalanche problems). */
-.key-message {
-    font-size: 13px;
-    line-height: 1.55;
-    color: var(--text-secondary);
-}
-.key-message strong {
-    color: var(--text-primary);
-    font-weight: 500;
 }
 
 /* Footer: date */
@@ -323,5 +317,5 @@ body {
     text-align: center;
     color: var(--text-tertiary);
     padding: 3rem 1rem;
-    font-size: 13px;
+    font-size: 14px;
 }

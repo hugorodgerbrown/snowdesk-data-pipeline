@@ -202,7 +202,7 @@ class TestPanelProblems:
         p = result[0]
         assert p["problem_type"] == "wind_slab"
         assert p["label"] == "Wind slab"
-        assert p["comment"] == "Fresh drifts on lee slopes."
+        assert p["comment"] == "<p>Fresh drifts on lee slopes.</p>"
         assert p["time_period"] == "earlier"
         assert p["time_period_label"] == "Earlier (morning)"
         assert p["elevation"] == "above 2200m"
@@ -210,14 +210,14 @@ class TestPanelProblems:
         assert p["aspects"] == ["N", "NE", "E"]
         assert p["hide_comment"] is False
 
-    def test_comment_is_not_truncated_by_view(self) -> None:
-        """Comment text is passed through in full (template truncates)."""
-        long_comment = "word " * 100  # 500 chars
+    def test_comment_is_raw_html(self) -> None:
+        """Comment HTML is passed through unchanged."""
+        html_comment = "<p>Fresh <strong>snow</strong> on lee slopes.</p>"
         props = {
-            "avalancheProblems": [{"problemType": "new_snow", "comment": long_comment}]
+            "avalancheProblems": [{"problemType": "new_snow", "comment": html_comment}]
         }
         result = _panel_problems(props)
-        assert result[0]["comment"] == long_comment.strip()
+        assert result[0]["comment"] == html_comment
 
     def test_does_not_deduplicate_repeated_problem_types(self) -> None:
         """Two entries with the same problemType both render separately."""
@@ -239,8 +239,8 @@ class TestPanelProblems:
         assert len(result) == 2
         assert result[0]["time_period_label"] == "Earlier (morning)"
         assert result[1]["time_period_label"] == "Later (afternoon)"
-        assert result[0]["comment"] == "Morning note."
-        assert result[1]["comment"] == "Afternoon note."
+        assert result[0]["comment"] == "<p>Morning note.</p>"
+        assert result[1]["comment"] == "<p>Afternoon note.</p>"
         # Different periods → signatures differ → both comments shown.
         assert result[0]["hide_comment"] is False
         assert result[1]["hide_comment"] is False
@@ -322,10 +322,10 @@ class TestPanelProblems:
         assert len(result) == 2
         # First (earlier) occurrence has its comment suppressed.
         assert result[0]["hide_comment"] is True
-        assert result[0]["comment"] == "Buried weak layers on shady slopes."
+        assert result[0]["comment"] == "<p>Buried weak layers on shady slopes.</p>"
         # Last occurrence keeps its comment visible.
         assert result[1]["hide_comment"] is False
-        assert result[1]["comment"] == "Buried weak layers on shady slopes."
+        assert result[1]["comment"] == "<p>Buried weak layers on shady slopes.</p>"
 
     def test_three_identical_problems_only_last_shows_comment(self) -> None:
         """In a run of three duplicates only the final one keeps its comment."""
@@ -441,14 +441,14 @@ class TestBuildPanelContext:
         p = ctx["problems"][0]
         assert p["problem_type"] == "no_distinct_avalanche_problem"
         assert p["label"] == "No distinct problem"
-        assert p["comment"] == "No distinct problem to speak of."
+        assert p["comment"] == "<p>No distinct problem to speak of.</p>"
         assert p["time_period"] == "all_day"
         assert p["time_period_label"] == "All day"
         assert p["elevation"] == "above 2200m"
         assert p["elevation_data"] == {"lowerBound": "2200"}
         assert p["aspects"] == []
         assert p["hide_comment"] is False
-        assert ctx["key_message"] == "No distinct problem to speak of."
+        assert ctx["key_message"] == "<p>No distinct problem to speak of.</p>"
         assert ctx["footer_date_from"] == bulletin.valid_from
         assert ctx["footer_date_to"] == bulletin.valid_to
 
@@ -461,14 +461,14 @@ class TestBuildPanelContext:
         assert ctx["admin_url"] == f"/admin/pipeline/bulletin/{bulletin.pk}/change/"
 
     def test_snowpack_structure_extracted(self) -> None:
-        """Snowpack structure comment is extracted as plain text."""
+        """Snowpack structure comment is passed through as raw HTML."""
         bulletin = _make_bulletin(
             dangerRatings=[{"mainValue": "low"}],
             avalancheProblems=[],
             snowpackStructure={"comment": "<p>Deep weak layers.</p>"},
         )
         ctx = _build_panel_context(bulletin)
-        assert ctx["snowpack_structure"] == "Deep weak layers."
+        assert ctx["snowpack_structure"] == "<p>Deep weak layers.</p>"
 
     def test_snowpack_structure_empty_when_absent(self) -> None:
         """Missing snowpackStructure gives an empty string."""
@@ -522,7 +522,7 @@ class TestBuildPanelContext:
             snowpackStructure={"comment": "<p>Deep weak layers.</p>"},
         )
         ctx = _build_panel_context(bulletin)
-        assert ctx["key_message"] == "Deep weak layers."
+        assert ctx["key_message"] == "<p>Deep weak layers.</p>"
         assert ctx["key_message_source"] == "snowpackStructure.comment"
 
     def test_key_message_falls_back_to_weather_review(self) -> None:
@@ -533,7 +533,7 @@ class TestBuildPanelContext:
             weatherReview={"comment": "<p>Light snow overnight.</p>"},
         )
         ctx = _build_panel_context(bulletin)
-        assert ctx["key_message"] == "Light snow overnight."
+        assert ctx["key_message"] == "<p>Light snow overnight.</p>"
         assert ctx["key_message_source"] == "weatherReview.comment"
 
     def test_key_message_not_truncated_by_view(self) -> None:
@@ -880,7 +880,7 @@ class TestRandomBulletinsView:
         assert b"Wind slab" in body
         # But the shared comment only appears once — under the later header.
         assert body.count(b"Buried weak layers on shady slopes.") == 1
-        assert body.count(b'class="problem-comment"') == 1
+        assert body.count(b'class="slf-comment"') == 1
 
     def test_same_problem_type_with_different_periods_both_render(
         self, client: Client, region: Region

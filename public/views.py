@@ -904,7 +904,7 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
         label = _PROBLEM_LABELS.get(
             problem_type, problem_type.replace("_", " ").capitalize()
         )
-        comment = _plain_text(entry.get("comment"))
+        comment = entry.get("comment") or ""
         time_period = entry.get("validTimePeriod", "") or ""
         time_period_label = _TIME_PERIOD_LABELS.get(time_period, "")
         raw_elevation = entry.get("elevation") or {}
@@ -972,21 +972,19 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     key_message_source = ""
     ap = props.get("avalancheProblems") or []
     if ap:
-        key_message = _plain_text(ap[0].get("comment"))
+        key_message = ap[0].get("comment") or ""
         if key_message:
             key_message_source = "avalancheProblems[0].comment"
     if not key_message:
-        key_message = _plain_text((props.get("snowpackStructure") or {}).get("comment"))
+        key_message = (props.get("snowpackStructure") or {}).get("comment") or ""
         if key_message:
             key_message_source = "snowpackStructure.comment"
     if not key_message:
-        key_message = _plain_text((props.get("weatherReview") or {}).get("comment"))
+        key_message = (props.get("weatherReview") or {}).get("comment") or ""
         if key_message:
             key_message_source = "weatherReview.comment"
 
-    snowpack_structure = _plain_text(
-        (props.get("snowpackStructure") or {}).get("comment")
-    )
+    snowpack_structure = (props.get("snowpackStructure") or {}).get("comment") or ""
 
     return {
         "bulletin": bulletin,
