@@ -50,6 +50,8 @@ from pipeline.models import Bulletin, Region, RegionBulletin
 from pipeline.schema import ValidTimePeriod
 from pipeline.utils import html_to_markdown
 
+from .guidance import load_field_guidance
+
 logger = logging.getLogger(__name__)
 
 # Mapping from CAAML danger-level keywords to display metadata.
@@ -868,7 +870,8 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
     Each entry carries the problem type, its human label, a plain-text
     comment (full-length — truncation is handled by the template via
     Django's ``truncatechars`` filter), the human-readable
-    ``validTimePeriod`` label, a formatted elevation string, and a
+    ``validTimePeriod`` label, a formatted elevation string, the raw
+    CAAML elevation dict, the list of exposed aspects, and a
     ``hide_comment`` flag. The list is NOT deduplicated —
     two entries with the same ``problemType`` but different elevation,
     aspect, period, or comment all render separately.
@@ -885,7 +888,8 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
     Returns:
         List of problem dicts in CAAML source order with keys:
         ``problem_type``, ``label``, ``comment``, ``time_period``,
-        ``time_period_label``, ``elevation``, ``hide_comment``.
+        ``time_period_label``, ``elevation``, ``elevation_data``,
+        ``aspects``, ``hide_comment``, ``field_guidance``.
 
     """
     raw_entries = [
@@ -893,7 +897,7 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
         for entry in props.get("avalancheProblems", [])
         if entry.get("problemType")
     ]
-
+    guidance = load_field_guidance()
     problems: list[dict[str, Any]] = []
     for entry in raw_entries:
         problem_type = entry["problemType"]
@@ -903,7 +907,10 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
         comment = _plain_text(entry.get("comment"))
         time_period = entry.get("validTimePeriod", "") or ""
         time_period_label = _TIME_PERIOD_LABELS.get(time_period, "")
-        elevation = _format_elevation(entry.get("elevation"))
+        raw_elevation = entry.get("elevation") or {}
+        elevation = _format_elevation(raw_elevation or None)
+        aspects: list[str] = entry.get("aspects") or []
+        field_guidance = guidance.get(problem_type)
         problems.append(
             {
                 "problem_type": problem_type,
@@ -912,7 +919,10 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
                 "time_period": time_period,
                 "time_period_label": time_period_label,
                 "elevation": elevation,
+                "elevation_data": raw_elevation,
+                "aspects": aspects,
                 "hide_comment": False,
+                "field_guidance": field_guidance,
             }
         )
 
@@ -927,24 +937,6 @@ def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
             problem["hide_comment"] = True
 
     return problems
-
-
-def _panel_footer_area(props: dict[str, Any], max_regions: int = 3) -> str:
-    """
-    Return a short ``·``-separated list of region names for the panel footer.
-
-    Args:
-        props: The CAAML properties dict.
-        max_regions: Maximum number of region names to include.
-
-    Returns:
-        Joined region names (e.g. ``"Valais · Grisons · Jura"``) or the
-        empty string when no regions are present.
-
-    """
-    regions = props.get("regions") or []
-    names = [r.get("name", "") for r in regions[:max_regions] if r.get("name")]
-    return " · ".join(names)
 
 
 def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
@@ -1011,8 +1003,6 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "footer_date_from": bulletin.valid_from,
         "footer_date_to": bulletin.valid_to,
         "footer_date_source": "Bulletin.valid_from / valid_to",
-        "footer_area": _panel_footer_area(props),
-        "footer_area_source": "regions[*].name",
         "admin_url": reverse("admin:pipeline_bulletin_change", args=[bulletin.pk]),
     }
 

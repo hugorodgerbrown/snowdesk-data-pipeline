@@ -1,0 +1,60 @@
+new_snow:
+  text: >
+    Easy to spot - the snow is fresh. Look at recent avalanche activity
+    in similar terrain, and pay attention to how much new snow has
+    fallen in the last three days. Critical loading depends on
+    temperature, wind, and what was on the surface before the storm. SLF
+    advises waiting until the snowpack has had time to bond before
+    committing to steep terrain in fresh snow.
+
+wind_slab:
+  text: >
+    Look for fresh snow deposits on lee slopes, in gullies and bowls,
+    and behind ridgelines and abrupt changes in terrain — these are
+    where the wind has loaded the snow into slabs that are easy to
+    trigger. Recent avalanches, shooting cracks under your weight, and
+    whumpfing sounds are clear confirmations of the problem. The safest
+    move is to avoid wind-loaded terrain entirely. NB wind signs alone
+    don't always mean an avalanche problem exists, and the age of
+    drifted snow is hard to judge.
+
+persistent_weak_layers:
+  text: >
+    Persistent weak layers are very challenging to recognise. Whumpfing
+    sounds and shooting cracks are typical when present, but you can
+    have a serious weak layer with no warning signs at the surface.
+    Knowledge of how the snowpack has evolved is essential. SLF's travel
+    advice is direct: travel conservatively, avoid terrain where the
+    consequences of being caught are large, and treat the history of
+    weather and snow as more important than what you can see today. Read
+    the full bulletin.
+
+wet_snow:
+  text: >
+    Rolling snowballs, deep penetration when you step or ski, and small
+    natural slides are clear signals that the snowpack is losing
+    strength. After a clear, cold night the surface often freezes into a
+    strong supporting crust, and conditions are favourable in the early
+    morning. After a warm, overcast night, the problem may be present
+    from the start of the day. <b>Plan early returns and watch the runout
+    zones below you.</b>
+
+gliding_snow:
+  text: >
+    Almost impossible to predict precisely, even when the warning signs
+    are visible. Glide cracks — gaps that open in the snowpack down to
+    the ground — are often precursors to release, but they don't tell
+    you when. A glide avalanche can release minutes after the cracks
+    appear, or weeks later, or not at all. Some release without any
+    visible warning. Avoid lingering anywhere near glide cracks: above
+    them, alongside them, or below in the runout.
+
+no_distinct_avalanche_problem:
+  text: >
+    SLF uses this label when no single problem dominates the assessment,
+    often on lower-danger days. It doesn't mean conditions are safe: any
+    avalanche type is still possible, and normal caution applies. On
+    stable days this is usually a signal to enjoy the mountains with
+    general awareness; on less-stable days where the assessment is still
+    inconclusive, it's a signal to be cautious specifically because
+    there's no clear pattern to follow.

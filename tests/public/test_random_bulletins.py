@@ -3,7 +3,7 @@ tests/public/test_random_bulletins.py — Tests for the random_bulletins view.
 
 Covers the ``random_bulletins`` view and its private helpers in
 ``public.views``: ``_highest_danger_key``, ``_panel_problems``,
-``_panel_footer_area``, ``_build_panel_context``, ``_format_elevation``,
+``_build_panel_context``, ``_format_elevation``,
 and ``_parse_bulletin_count``. The view now lists the most recent bulletins
 for a single region (one per calendar day, reverse chronological) with an
 optional ``?b=N`` query parameter.
@@ -23,7 +23,6 @@ from public.views import (
     _build_panel_context,
     _format_elevation,
     _highest_danger_key,
-    _panel_footer_area,
     _panel_problems,
     _parse_bulletin_count,
 )
@@ -175,26 +174,15 @@ class TestPanelProblems:
             ]
         }
         result = _panel_problems(props)
-        assert result == [
-            {
-                "problem_type": "new_snow",
-                "label": "New snow",
-                "comment": "",
-                "time_period": "",
-                "time_period_label": "",
-                "elevation": "",
-                "hide_comment": False,
-            },
-            {
-                "problem_type": "persistent_weak_layers",
-                "label": "Persistent weak layers",
-                "comment": "",
-                "time_period": "",
-                "time_period_label": "",
-                "elevation": "",
-                "hide_comment": False,
-            },
-        ]
+        assert len(result) == 2
+        assert result[0]["problem_type"] == "new_snow"
+        assert result[0]["label"] == "New snow"
+        assert result[0]["elevation_data"] == {}
+        assert result[0]["aspects"] == []
+        assert result[1]["problem_type"] == "persistent_weak_layers"
+        assert result[1]["label"] == "Persistent weak layers"
+        assert result[1]["elevation_data"] == {}
+        assert result[1]["aspects"] == []
 
     def test_includes_comment_and_time_period_label(self) -> None:
         """Each problem carries a plain-text comment and period label."""
@@ -205,21 +193,22 @@ class TestPanelProblems:
                     "comment": "<p>Fresh drifts on lee slopes.</p>",
                     "validTimePeriod": "earlier",
                     "elevation": {"lowerBound": "2200"},
+                    "aspects": ["N", "NE", "E"],
                 },
             ]
         }
         result = _panel_problems(props)
-        assert result == [
-            {
-                "problem_type": "wind_slab",
-                "label": "Wind slab",
-                "comment": "Fresh drifts on lee slopes.",
-                "time_period": "earlier",
-                "time_period_label": "Earlier (morning)",
-                "elevation": "above 2200m",
-                "hide_comment": False,
-            }
-        ]
+        assert len(result) == 1
+        p = result[0]
+        assert p["problem_type"] == "wind_slab"
+        assert p["label"] == "Wind slab"
+        assert p["comment"] == "Fresh drifts on lee slopes."
+        assert p["time_period"] == "earlier"
+        assert p["time_period_label"] == "Earlier (morning)"
+        assert p["elevation"] == "above 2200m"
+        assert p["elevation_data"] == {"lowerBound": "2200"}
+        assert p["aspects"] == ["N", "NE", "E"]
+        assert p["hide_comment"] is False
 
     def test_comment_is_not_truncated_by_view(self) -> None:
         """Comment text is passed through in full (template truncates)."""
@@ -262,6 +251,48 @@ class TestPanelProblems:
         result = _panel_problems(props)
         assert result[0]["time_period"] == ""
         assert result[0]["time_period_label"] == ""
+
+    def test_aspects_preserved_from_caaml(self) -> None:
+        """The raw aspects list from CAAML is passed through unchanged."""
+        props = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wind_slab",
+                    "aspects": ["N", "NE", "E", "SE", "SW", "W", "NW"],
+                },
+            ]
+        }
+        result = _panel_problems(props)
+        assert result[0]["aspects"] == ["N", "NE", "E", "SE", "SW", "W", "NW"]
+
+    def test_missing_aspects_gives_empty_list(self) -> None:
+        """A problem with no ``aspects`` key returns an empty list."""
+        props = {"avalancheProblems": [{"problemType": "new_snow"}]}
+        result = _panel_problems(props)
+        assert result[0]["aspects"] == []
+
+    def test_elevation_data_preserved_from_caaml(self) -> None:
+        """The raw CAAML elevation dict is available alongside the formatted string."""
+        props = {
+            "avalancheProblems": [
+                {
+                    "problemType": "persistent_weak_layers",
+                    "elevation": {"lowerBound": "2200", "upperBound": "3000"},
+                },
+            ]
+        }
+        result = _panel_problems(props)
+        assert result[0]["elevation_data"] == {
+            "lowerBound": "2200",
+            "upperBound": "3000",
+        }
+        assert result[0]["elevation"] == "2200\u20133000m"
+
+    def test_missing_elevation_gives_empty_dict(self) -> None:
+        """A problem with no ``elevation`` key returns an empty dict."""
+        props = {"avalancheProblems": [{"problemType": "new_snow"}]}
+        result = _panel_problems(props)
+        assert result[0]["elevation_data"] == {}
 
     def test_identical_scope_hides_comment_on_earlier_occurrence(self) -> None:
         """
@@ -375,26 +406,6 @@ class TestPanelProblems:
         assert result[1]["hide_comment"] is False
 
 
-class TestPanelFooterArea:
-    """Tests for ``_panel_footer_area``."""
-
-    def test_empty_returns_empty_string(self) -> None:
-        """No regions → empty string."""
-        assert _panel_footer_area({}) == ""
-
-    def test_joins_region_names_with_middot(self) -> None:
-        """Up to the first three region names are joined with `` · ``."""
-        props = {
-            "regions": [
-                {"name": "Valais", "regionID": "CH-4115"},
-                {"name": "Grisons", "regionID": "CH-5123"},
-                {"name": "Jura", "regionID": "CH-9999"},
-                {"name": "Extra", "regionID": "CH-8888"},
-            ]
-        }
-        assert _panel_footer_area(props) == "Valais · Grisons · Jura"
-
-
 # ---------------------------------------------------------------------------
 # _build_panel_context
 # ---------------------------------------------------------------------------
@@ -426,19 +437,18 @@ class TestBuildPanelContext:
         assert ctx["danger_number"] == "1"
         assert ctx["danger_label"] == "Low"
         assert ctx["danger_icon"] == "Dry-Snow-1.svg"
-        assert ctx["problems"] == [
-            {
-                "problem_type": "no_distinct_avalanche_problem",
-                "label": "No distinct problem",
-                "comment": "No distinct problem to speak of.",
-                "time_period": "all_day",
-                "time_period_label": "All day",
-                "elevation": "above 2200m",
-                "hide_comment": False,
-            }
-        ]
+        assert len(ctx["problems"]) == 1
+        p = ctx["problems"][0]
+        assert p["problem_type"] == "no_distinct_avalanche_problem"
+        assert p["label"] == "No distinct problem"
+        assert p["comment"] == "No distinct problem to speak of."
+        assert p["time_period"] == "all_day"
+        assert p["time_period_label"] == "All day"
+        assert p["elevation"] == "above 2200m"
+        assert p["elevation_data"] == {"lowerBound": "2200"}
+        assert p["aspects"] == []
+        assert p["hide_comment"] is False
         assert ctx["key_message"] == "No distinct problem to speak of."
-        assert ctx["footer_area"] == "Jura"
         assert ctx["footer_date_from"] == bulletin.valid_from
         assert ctx["footer_date_to"] == bulletin.valid_to
 
@@ -447,8 +457,6 @@ class TestBuildPanelContext:
         assert ctx["problems_source"] == "avalancheProblems[*].problemType"
         assert ctx["key_message_source"] == "avalancheProblems[0].comment"
         assert ctx["footer_date_source"] == "Bulletin.valid_from / valid_to"
-        assert ctx["footer_area_source"] == "regions[*].name"
-
         # Admin URL always populated; template gates it on user.is_staff.
         assert ctx["admin_url"] == f"/admin/pipeline/bulletin/{bulletin.pk}/change/"
 
@@ -460,7 +468,6 @@ class TestBuildPanelContext:
         assert ctx["problems"] == []
         assert ctx["key_message"] == ""
         assert ctx["key_message_source"] == ""
-        assert ctx["footer_area"] == ""
 
     def test_highest_rating_drives_panel_colour(self) -> None:
         """The panel picks up the highest rating across a bulletin."""
