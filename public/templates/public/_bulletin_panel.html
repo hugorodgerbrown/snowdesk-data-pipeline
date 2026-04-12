@@ -30,6 +30,11 @@ The admin link is only rendered for authenticated staff users.
     </div>
 
     {# ── Body: per-problem blocks, or key-message fallback ───────────── #}
+    <div class="flex items-center px-3.5 py-2 border-b border-border bg-card-subtle">
+        <span class="font-mono text-[11px] text-text-2 whitespace-nowrap">
+            {{ panel.footer_date_from|date:"D j M H:i" }} – {{ panel.footer_date_to|date:"D j M H:i" }}
+        </span>
+    </div>
     <div class="px-3.5 pt-3 pb-3.5">
         {% if panel.problems %}
             <div class="mb-2.5">
@@ -100,13 +105,7 @@ The admin link is only rendered for authenticated staff users.
         {% endif %}
     </div>
 
-    {# ── Footer: date (+ admin link for staff) ─────────────────────────── #}
-    <div class="flex items-center px-3.5 py-2 border-t border-border bg-card-subtle">
-        <span class="font-mono text-[11px] text-text-3 whitespace-nowrap">
-            {{ panel.footer_date_from|date:"D j M H:i" }} – {{ panel.footer_date_to|date:"D j M H:i" }}
-        </span>
-    </div>
-
+    {# ── Footer: admin link for staff ─────────────────────────── #}
     {% if user.is_authenticated and user.is_staff %}
         <a class="block px-3.5 py-1.5 border-t border-dashed border-border bg-tag font-mono text-[10px] tracking-[0.08em] uppercase text-text-2 no-underline text-right hover:text-text-1 hover:bg-[#eeeae2]"
            href="{{ panel.admin_url }}"
