@@ -25,15 +25,15 @@
 
 ### Scenario 2: View a random sample bulletin from the homepage
 
-**Goal**: Verify the "View a sample bulletin" link redirects to a real bulletin page.
+**Goal**: Verify the "View a sample bulletin" link shows a random bulletin inline.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/ | Homepage loads |
-| 2 | Click "View a sample bulletin" | Browser redirects to a URL matching `http://localhost:8000/<region_id>/<slug>/` (e.g. `http://localhost:8000/CH-4115/verbier-nendaz-veysonnaz/`) |
+| 2 | Click "View a sample bulletin" | A bulletin page loads at `http://localhost:8000/examples/random/` (URL stays the same, no redirect) |
 | 3 | Verify the bulletin page content | Page shows a region name as heading, a date label ("Today" or a formatted date), and an "issued HH:MM UTC" timestamp |
 | 4 | Check for danger level | A danger level indicator is visible (e.g. "Level 2 -- Moderate") with a coloured badge |
-| 5 | Check for avalanche problems | At least one key hazard is listed (e.g. "Wind slab", "New snow", or "No distinct problem") |
+| 5 | Refresh the page (F5 / Cmd+R) | A different region's bulletin loads (URL remains `http://localhost:8000/examples/random/`) |
 
 ### Scenario 3: Navigate between bulletin dates using prev/next links
 
@@ -239,5 +239,5 @@
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/random/ | Browser permanently redirects (301) to http://localhost:8000/examples/random/, which then redirects to a random bulletin page |
-| 2 | Verify a bulletin loads | A bulletin detail page is displayed with a region name, date, and danger level |
+| 1 | Navigate to http://localhost:8000/random/ | Browser permanently redirects (301) to http://localhost:8000/examples/random/ |
+| 2 | Verify a bulletin loads | A random bulletin renders inline at the `/examples/random/` URL with a region name, date, and danger level |

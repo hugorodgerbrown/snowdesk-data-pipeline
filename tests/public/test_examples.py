@@ -73,15 +73,15 @@ class TestDeprecatedRandomRedirect:
 class TestExamplesRandom:
     """Tests for the ``/examples/random/`` view."""
 
-    def test_redirects_to_bulletin(self, client: Client, region) -> None:
-        """With bulletins available, redirects to a region bulletin page."""
+    def test_renders_bulletin_inline(self, client: Client, region) -> None:
+        """With bulletins available, renders the bulletin page at the same URL."""
         _make_bulletin_with_region(
             region, "moderate", datetime(2025, 3, 15, 8, 0, tzinfo=UTC)
         )
         url = reverse("public:examples_random")
         response = client.get(url)
-        assert response.status_code == 302
-        assert "/CH-4115/" in response["Location"]
+        assert response.status_code == 200
+        assert b"Valais" in response.content
 
     def test_redirects_to_home_when_no_bulletins(self, client: Client) -> None:
         """When no bulletins exist, redirects to the homepage."""

@@ -3,7 +3,7 @@ public/views.py — Views for the public-facing bulletin site.
 
 URL structure:
   /                                          Marketing homepage.
-  /examples/random/                          Redirects to a random bulletin.
+  /examples/random/                          Random bulletin (rendered inline).
   /examples/category/<danger_level>/         Random bulletin by danger level.
   /random/                                   Deprecated → /examples/random/.
   /<region_id>/                              Redirects to /<region_id>/<slug>/.
@@ -556,17 +556,19 @@ _DANGER_SLUG_TO_KEY: dict[str, str] = {
 
 def examples_random(request: HttpRequest) -> HttpResponse:
     """
-    Redirect to a random region's today page.
+    Render a random region's bulletin inline (no redirect).
 
     Finds the most recent bulletin issue date, picks a random region from
-    that issue, and redirects to ``/<region_id>/<slug>/``. Returns the
-    marketing homepage if there are no bulletins in the database.
+    that issue, and renders the bulletin template directly at the current
+    URL. Refreshing the page picks a different region each time.
+
+    Falls back to the marketing homepage if there are no bulletins.
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        A redirect response, or the homepage as a fallback.
+        The rendered bulletin page, or a redirect to the homepage.
 
     """
     latest = Bulletin.objects.order_by("-issued_at").first()
@@ -584,12 +586,75 @@ def examples_random(request: HttpRequest) -> HttpResponse:
         return redirect("public:home")
 
     region = random.choice(list(regions))  # noqa: S311 — not crypto
-    name_slug = _get_name_slug(region)
-    return redirect(
-        "public:bulletin",
-        region_id=region.region_id,
-        slug=name_slug,
+    today = timezone.now().date()
+    selected = _select_bulletin_for_date(region, today)
+
+    if selected is None:
+        return render(
+            request,
+            "public/bulletin.html",
+            {
+                "bulletin": None,
+                "region_name": region.name,
+                "region_id": region.region_id,
+                "year": today.year,
+            },
+        )
+
+    page_date = selected.valid_to.date()
+
+    link = (
+        RegionBulletin.objects.filter(bulletin=selected, region=region)
+        .values_list("region_name_at_time", flat=True)
+        .first()
     )
+    region_name = link or region.name
+
+    prev_date, next_date = _get_nav_dates(region, page_date)
+
+    sibling_links = (
+        RegionBulletin.objects.filter(bulletin=selected)
+        .exclude(region=region)
+        .select_related("region")
+    )
+    related_regions = [
+        {
+            "name": sib.region_name_at_time or sib.region.name,
+            "region_id": sib.region.region_id,
+            "slug": sib.region.slug,
+        }
+        for sib in sibling_links
+    ]
+
+    is_today = page_date == today
+    next_update_time: datetime.datetime | None = None
+    now = timezone.now()
+    if (
+        is_today
+        and next_date is None
+        and selected.next_update
+        and selected.next_update > now
+    ):
+        next_update_time = selected.next_update
+
+    panel = _build_panel_context(selected)
+
+    context = {
+        "region": region,
+        "region_name": region_name,
+        "region_id": region.region_id,
+        "slug": slugify(region.name),
+        "bulletin": selected,
+        "panel": panel,
+        "page_date": page_date,
+        "is_today": is_today,
+        "prev_date": prev_date,
+        "next_date": next_date,
+        "next_update_time": next_update_time,
+        "related_regions": related_regions,
+        "year": today.year,
+    }
+    return render(request, "public/bulletin.html", context)
 
 
 def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
