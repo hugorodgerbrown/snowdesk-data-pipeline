@@ -28,6 +28,18 @@ test harness.
             </p>
         </header>
 
+        {% if debug %}
+            {# ── Subscribe link (DEBUG only) ────────────────────────────────── #}
+            <div class="max-w-[1200px] mx-auto mb-4 px-1">
+                <a
+                    href="{% url 'subscriptions:enter_email' %}"
+                    class="text-xs text-text-3 hover:text-text-2 border border-text-3/20 rounded-[6px] px-3 py-1.5 inline-block"
+                >
+                    Subscribe to alerts
+                </a>
+            </div>
+        {% endif %}
+
         <div class="grid gap-3 max-w-[1200px] mx-auto grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {% for panel in panels %}
                 {% include "public/_bulletin_panel.html" with panel=panel %}

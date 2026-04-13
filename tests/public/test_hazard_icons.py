@@ -32,7 +32,7 @@ class TestHazardIconFilter:
         """Each known problem type maps to an SVG path containing its name."""
         result = hazard_icon(problem_type)
 
-        assert result.startswith("icons/svg/")
+        assert result.startswith("icons/eaws/avalanche_problems/")
         assert result.endswith(".svg")
         assert expected_fragment in result
 

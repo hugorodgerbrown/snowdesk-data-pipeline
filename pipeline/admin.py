@@ -16,7 +16,7 @@ from django.urls import URLPattern, path, reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
-from .models import Bulletin, PipelineRun, Region, RegionBulletin
+from .models import Bulletin, PipelineRun, Region, RegionBulletin, Resort
 from .services.data_fetcher import run_pipeline
 from .utils import html_to_markdown
 
@@ -56,7 +56,18 @@ class RegionAdmin(admin.ModelAdmin):
     list_filter = []
     search_fields = ["region_id", "name"]
     ordering = ["region_id"]
-    readonly_fields = ["id", "slug", "created_at", "updated_at"]
+    readonly_fields = ["id", "slug", "centre", "boundary", "created_at", "updated_at"]
+
+
+@admin.register(Resort)
+class ResortAdmin(admin.ModelAdmin):
+    """Admin view for Resort."""
+
+    list_display = ["name", "name_alt", "region", "canton"]
+    list_filter = ["canton"]
+    search_fields = ["name", "name_alt", "region__region_id"]
+    ordering = ["name"]
+    readonly_fields = ["id", "uuid", "created_at", "updated_at"]
 
 
 class RegionBulletinInline(admin.TabularInline):

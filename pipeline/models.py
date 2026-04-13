@@ -1,11 +1,12 @@
 """
 pipeline/models.py — Database models for the pipeline application.
 
-Defines a BaseModel abstract class and four concrete models:
+Defines a BaseModel abstract class and five concrete models:
   - PipelineRun: records each execution of the data pipeline (scheduled or
     manual), its status, and timing metadata.
   - Region: SLF avalanche warning regions (e.g. "CH-4115"), with an optional
     parent for broader region grouping.
+  - Resort: ski resorts mapped to their SLF avalanche warning region.
   - Bulletin: stores SLF avalanche bulletins fetched from the CAAML API,
     keyed by bulletin_id.
   - RegionBulletin: many-to-many through table linking bulletins to regions.
@@ -181,10 +182,12 @@ class PipelineRun(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class RegionQuerySet(models.QuerySet):
+class RegionQuerySet(models.QuerySet["Region"]):
     """Custom queryset for Region."""
 
-    pass
+    def get_by_natural_key(self, region_id: str) -> Region:
+        """Look up a Region by its region_id for fixture deserialization."""
+        return self.get(region_id=region_id)
 
 
 class Region(BaseModel):
@@ -203,6 +206,23 @@ class Region(BaseModel):
     )
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
+    centre = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            'Geographic centre of the region as {"lon": float, "lat": float}. '
+            "Stored as JSON; uses WGS 84 coordinates."
+        ),
+    )
+    boundary = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Region boundary as a GeoJSON Polygon geometry object "
+            '({"type": "Polygon", "coordinates": [...]}). '
+            "Stored as JSON rather than a PostGIS geometry type."
+        ),
+    )
 
     objects = RegionQuerySet.as_manager()
 
@@ -215,11 +235,64 @@ class Region(BaseModel):
         """Return a human-readable representation."""
         return f"{self.region_id} — {self.name}"
 
+    def natural_key(self) -> tuple[str]:
+        """Return the natural key for serialization (region_id)."""
+        return (self.region_id,)
+
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Auto-generate slug from region_id if not set."""
         if not self.slug:
             self.slug = slugify(self.region_id)
         super().save(*args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Resort
+# ---------------------------------------------------------------------------
+
+
+class ResortQuerySet(models.QuerySet):
+    """Custom queryset for Resort."""
+
+    pass
+
+
+class Resort(BaseModel):
+    """
+    A ski resort linked to an SLF avalanche warning region.
+
+    Static reference data loaded from a fixture; not populated by the
+    data pipeline. Allows users to look up bulletins by well-known resort
+    names (e.g. "Crans-Montana") rather than official region identifiers.
+    """
+
+    name = models.CharField(max_length=255)
+    name_alt = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Alternative or marketing name for the resort.",
+    )
+    region = models.ForeignKey(
+        Region,
+        on_delete=models.CASCADE,
+        related_name="resorts",
+    )
+    canton = models.CharField(
+        max_length=5,
+        help_text="Swiss canton abbreviation, e.g. 'VS', 'GR'.",
+    )
+    notes = models.TextField(blank=True)
+
+    objects = ResortQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return f"{self.name} ({self.region.region_id})"
 
 
 # ---------------------------------------------------------------------------

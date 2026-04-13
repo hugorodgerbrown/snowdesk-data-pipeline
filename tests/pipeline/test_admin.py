@@ -36,7 +36,7 @@ class TestBackfillView:
 
     def test_post_triggers_pipeline_and_redirects(self, admin_client: Client) -> None:
         """A POST to the backfill URL runs the pipeline and redirects."""
-        run = PipelineRunFactory(
+        run = PipelineRunFactory.create(
             status=PipelineRun.Status.SUCCESS,
             records_created=10,
             records_updated=2,
@@ -56,7 +56,7 @@ class TestBackfillView:
 
     def test_success_message_shown(self, admin_client: Client) -> None:
         """A successful backfill shows a success message."""
-        run = PipelineRunFactory(
+        run = PipelineRunFactory.create(
             status=PipelineRun.Status.SUCCESS,
             records_created=5,
             records_updated=1,
@@ -71,7 +71,7 @@ class TestBackfillView:
 
     def test_failed_run_shows_error(self, admin_client: Client) -> None:
         """A failed pipeline run shows an error message."""
-        run = PipelineRunFactory(
+        run = PipelineRunFactory.create(
             status=PipelineRun.Status.FAILED,
             error_message="API timeout",
         )

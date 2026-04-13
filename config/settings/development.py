@@ -13,6 +13,8 @@ DEBUG = True
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
 
+INTERNAL_IPS = ["127.0.0.1"]
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -26,3 +28,10 @@ LOGGING["loggers"]["django.db.backends"] = {  # type: ignore[index]  # noqa: F40
     "level": "DEBUG",
     "propagate": False,
 }
+
+# Mailhog runs locally to handle email capture
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "localhost"
+EMAIL_PORT = 1025
+EMAIL_USE_TLS = False
+EMAIL_USE_SSL = False

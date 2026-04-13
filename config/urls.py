@@ -11,5 +11,6 @@ from django.urls import include, path
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("dashboard/", include("pipeline.urls")),
+    path("subscribe/", include("subscriptions.urls")),
     path("", include("public.urls")),
 ]
