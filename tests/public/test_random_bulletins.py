@@ -12,7 +12,7 @@ optional ``?b=N`` query parameter.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from django.test import Client, RequestFactory
@@ -41,13 +41,10 @@ def _make_bulletin(**properties: Any) -> Bulletin:
     Keyword arguments are inserted into the ``properties`` dict of the
     GeoJSON envelope stored in ``raw_data``.
     """
-    return cast(
-        "Bulletin",
-        BulletinFactory(
-            raw_data=_wrap(properties),
-            valid_from=datetime(2025, 2, 1, 7, 0, tzinfo=UTC),
-            valid_to=datetime(2025, 2, 1, 16, 0, tzinfo=UTC),
-        ),
+    return BulletinFactory.create(
+        raw_data=_wrap(properties),
+        valid_from=datetime(2025, 2, 1, 7, 0, tzinfo=UTC),
+        valid_to=datetime(2025, 2, 1, 16, 0, tzinfo=UTC),
     )
 
 
@@ -71,22 +68,19 @@ def _make_region_bulletin(
         problems = [{"problemType": problem_type}]
     valid_from = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
     valid_to = datetime(day.year, day.month, day.day, 16, 0, tzinfo=UTC)
-    bulletin = cast(
-        "Bulletin",
-        BulletinFactory(
-            raw_data=_wrap(
-                {
-                    "dangerRatings": [{"mainValue": main_value}],
-                    "avalancheProblems": problems,
-                    "regions": [{"name": region.name, "regionID": region.region_id}],
-                }
-            ),
-            issued_at=valid_from - timedelta(minutes=30),
-            valid_from=valid_from,
-            valid_to=valid_to,
+    bulletin = BulletinFactory.create(
+        raw_data=_wrap(
+            {
+                "dangerRatings": [{"mainValue": main_value}],
+                "avalancheProblems": problems,
+                "regions": [{"name": region.name, "regionID": region.region_id}],
+            }
         ),
+        issued_at=valid_from - timedelta(minutes=30),
+        valid_from=valid_from,
+        valid_to=valid_to,
     )
-    RegionBulletinFactory(
+    RegionBulletinFactory.create(
         bulletin=bulletin,
         region=region,
         region_name_at_time=region.name,
@@ -569,7 +563,7 @@ class TestBuildPanelContext:
 
     def test_bulletin_with_no_raw_data_defaults_to_low(self) -> None:
         """A bulletin with empty raw_data still renders a valid context."""
-        bulletin = cast("Bulletin", BulletinFactory(raw_data={}))
+        bulletin = BulletinFactory.create(raw_data={})
         ctx = _build_panel_context(bulletin)
         assert ctx["danger_key"] == "low"
         assert ctx["problems"] == []
@@ -694,10 +688,7 @@ class TestParseBulletinCount:
 @pytest.fixture()
 def region() -> Region:
     """Return a test Region for view tests."""
-    return cast(
-        "Region",
-        RegionFactory(region_id="CH-4115", name="Valais", slug="ch-4115"),
-    )
+    return RegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
 @pytest.mark.django_db
@@ -793,24 +784,19 @@ class TestRandomBulletinsView:
         # Evening issue covering the same day (same valid_to date).
         evening_from = datetime(day.year, day.month, day.day - 1, 16, 0, tzinfo=UTC)
         evening_to = datetime(day.year, day.month, day.day, 16, 0, tzinfo=UTC)
-        evening = cast(
-            "Bulletin",
-            BulletinFactory(
-                raw_data=_wrap(
-                    {
-                        "dangerRatings": [{"mainValue": "moderate"}],
-                        "avalancheProblems": [{"problemType": "wind_slab"}],
-                        "regions": [
-                            {"name": region.name, "regionID": region.region_id}
-                        ],
-                    }
-                ),
-                issued_at=evening_from,
-                valid_from=evening_from,
-                valid_to=evening_to,
+        evening = BulletinFactory.create(
+            raw_data=_wrap(
+                {
+                    "dangerRatings": [{"mainValue": "moderate"}],
+                    "avalancheProblems": [{"problemType": "wind_slab"}],
+                    "regions": [{"name": region.name, "regionID": region.region_id}],
+                }
             ),
+            issued_at=evening_from,
+            valid_from=evening_from,
+            valid_to=evening_to,
         )
-        RegionBulletinFactory(
+        RegionBulletinFactory.create(
             bulletin=evening,
             region=region,
             region_name_at_time=region.name,
@@ -823,10 +809,7 @@ class TestRandomBulletinsView:
 
     def test_filters_to_requested_region(self, client: Client, region: Region) -> None:
         """Bulletins linked to other regions are not shown."""
-        other = cast(
-            "Region",
-            RegionFactory(region_id="CH-9999", name="Other", slug="ch-9999"),
-        )
+        other = RegionFactory.create(region_id="CH-9999", name="Other", slug="ch-9999")
         _make_region_bulletin(region, date(2025, 3, 1))
         _make_region_bulletin(other, date(2025, 3, 1))
         _make_region_bulletin(other, date(2025, 3, 2))

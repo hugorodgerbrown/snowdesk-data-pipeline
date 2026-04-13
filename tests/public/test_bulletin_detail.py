@@ -34,20 +34,20 @@ def _clear_cache():
 @pytest.fixture()
 def region():
     """Return a test Region."""
-    return RegionFactory(region_id="CH-4115", name="Valais", slug="ch-4115")
+    return RegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
 def _make_pm_bulletin(region, day, **kwargs):
     """Create an evening bulletin valid from 15:00 on *day* to 15:00 next day."""
     vf = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
     vt = vf + timedelta(hours=24)
-    bulletin = BulletinFactory(
+    bulletin = BulletinFactory.create(
         issued_at=vf - timedelta(minutes=30),
         valid_from=vf,
         valid_to=vt,
         **kwargs,
     )
-    RegionBulletinFactory(
+    RegionBulletinFactory.create(
         bulletin=bulletin,
         region=region,
         region_name_at_time=region.name,
@@ -59,13 +59,13 @@ def _make_am_bulletin(region, day, **kwargs):
     """Create a morning bulletin valid from 06:00 to 15:00 on *day*."""
     vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
     vt = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
-    bulletin = BulletinFactory(
+    bulletin = BulletinFactory.create(
         issued_at=vf - timedelta(minutes=30),
         valid_from=vf,
         valid_to=vt,
         **kwargs,
     )
-    RegionBulletinFactory(
+    RegionBulletinFactory.create(
         bulletin=bulletin,
         region=region,
         region_name_at_time=region.name,

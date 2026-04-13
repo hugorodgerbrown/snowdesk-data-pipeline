@@ -61,6 +61,7 @@ class MyModel(BaseModel):           # always inherit BaseModel
 - pytest + FactoryBoy; no Django TestCase
 - Tests live in `tests/` mirroring source structure: `tests/pipeline/test_services.py` etc.
 - All datetime objects must have `tzinfo`
+- Always call factories with `.create()` explicitly (e.g. `RegionFactory.create(name="Zermatt")`). Never use direct class instantiation (`RegionFactory(name="Zermatt")`). The `.create()` method is properly generic-typed and returns the model type (e.g. `Region`), whereas the direct call goes through an untyped metaclass and confuses mypy.
 - Target: 100% pass rate, ≥90% coverage
 - Run via `tox` before declaring done
 

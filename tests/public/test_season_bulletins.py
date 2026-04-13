@@ -10,7 +10,7 @@ responsive CSS-grid layout.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -41,22 +41,19 @@ def _make_region_bulletin(
     """
     valid_from = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
     valid_to = datetime(day.year, day.month, day.day, 16, 0, tzinfo=UTC)
-    bulletin = cast(
-        "Bulletin",
-        BulletinFactory(
-            raw_data=_wrap(
-                {
-                    "dangerRatings": [{"mainValue": main_value}],
-                    "avalancheProblems": [{"problemType": "wind_slab"}],
-                    "regions": [{"name": region.name, "regionID": region.region_id}],
-                }
-            ),
-            issued_at=valid_from - timedelta(minutes=30),
-            valid_from=valid_from,
-            valid_to=valid_to,
+    bulletin = BulletinFactory.create(
+        raw_data=_wrap(
+            {
+                "dangerRatings": [{"mainValue": main_value}],
+                "avalancheProblems": [{"problemType": "wind_slab"}],
+                "regions": [{"name": region.name, "regionID": region.region_id}],
+            }
         ),
+        issued_at=valid_from - timedelta(minutes=30),
+        valid_from=valid_from,
+        valid_to=valid_to,
     )
-    RegionBulletinFactory(
+    RegionBulletinFactory.create(
         bulletin=bulletin,
         region=region,
         region_name_at_time=region.name,
@@ -111,10 +108,7 @@ class TestSeasonDateRange:
 @pytest.fixture()
 def region() -> Region:
     """Return a test Region for view tests."""
-    return cast(
-        "Region",
-        RegionFactory(region_id="CH-4115", name="Valais", slug="ch-4115"),
-    )
+    return RegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
 def _freeze(dt_str: str):

@@ -239,33 +239,28 @@ class TestDayCharacterInPanelContext:
     def test_panel_context_contains_day_character(self) -> None:
         """The panel context dict includes the day_character key."""
         from datetime import UTC, datetime
-        from typing import cast
 
-        from pipeline.models import Bulletin
         from public.views import _build_panel_context
         from tests.factories import BulletinFactory
 
         def _wrap(properties: dict) -> dict:
             return {"type": "Feature", "geometry": None, "properties": properties}
 
-        bulletin = cast(
-            Bulletin,
-            BulletinFactory(
-                raw_data=_wrap(
-                    {
-                        "dangerRatings": [{"mainValue": "considerable"}],
-                        "avalancheProblems": [
-                            {
-                                "problemType": "persistent_weak_layers",
-                                "validTimePeriod": "all_day",
-                            }
-                        ],
-                    }
-                ),
-                issued_at=datetime(2025, 3, 15, 8, 0, tzinfo=UTC),
-                valid_from=datetime(2025, 3, 15, 7, 0, tzinfo=UTC),
-                valid_to=datetime(2025, 3, 15, 18, 0, tzinfo=UTC),
+        bulletin = BulletinFactory.create(
+            raw_data=_wrap(
+                {
+                    "dangerRatings": [{"mainValue": "considerable"}],
+                    "avalancheProblems": [
+                        {
+                            "problemType": "persistent_weak_layers",
+                            "validTimePeriod": "all_day",
+                        }
+                    ],
+                }
             ),
+            issued_at=datetime(2025, 3, 15, 8, 0, tzinfo=UTC),
+            valid_from=datetime(2025, 3, 15, 7, 0, tzinfo=UTC),
+            valid_to=datetime(2025, 3, 15, 18, 0, tzinfo=UTC),
         )
         ctx = _build_panel_context(bulletin)
         assert ctx["day_character"] == "Hard-to-read day"

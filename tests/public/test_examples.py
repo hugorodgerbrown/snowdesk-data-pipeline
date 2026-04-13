@@ -33,12 +33,12 @@ def _clear_cache():
 @pytest.fixture()
 def region():
     """Return a Region with a human-readable name."""
-    return RegionFactory(region_id="CH-4115", name="Valais", slug="ch-4115")
+    return RegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
 def _make_bulletin_with_region(region, danger_level: str, issued_at: datetime):
     """Create a bulletin with a specific danger level linked to a region."""
-    bulletin = BulletinFactory(
+    bulletin = BulletinFactory.create(
         raw_data=_wrap(
             {
                 "dangerRatings": [{"mainValue": danger_level}],
@@ -49,7 +49,7 @@ def _make_bulletin_with_region(region, danger_level: str, issued_at: datetime):
         valid_from=issued_at,
         valid_to=issued_at,
     )
-    RegionBulletinFactory(
+    RegionBulletinFactory.create(
         bulletin=bulletin,
         region=region,
         region_name_at_time=region.name,

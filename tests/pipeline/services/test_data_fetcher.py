@@ -11,7 +11,7 @@ Covers:
 """
 
 from datetime import UTC, date, datetime
-from typing import Any, cast
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -187,7 +187,7 @@ class TestUpsertBulletin:
 
     def test_creates_bulletin(self):
         """Creates a new Bulletin and returns True."""
-        run = PipelineRunFactory()
+        run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
         created = upsert_bulletin(raw, run)
 
@@ -202,7 +202,7 @@ class TestUpsertBulletin:
 
     def test_wraps_raw_data_in_geojson_feature(self):
         """Raw data is wrapped in a GeoJSON Feature envelope."""
-        run = PipelineRunFactory()
+        run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
         upsert_bulletin(raw, run)
 
@@ -213,7 +213,7 @@ class TestUpsertBulletin:
 
     def test_creates_regions(self):
         """Creates Region and RegionBulletin records for each region."""
-        run = PipelineRunFactory()
+        run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
         upsert_bulletin(raw, run)
 
@@ -228,7 +228,7 @@ class TestUpsertBulletin:
 
     def test_stores_region_name_at_time(self):
         """RegionBulletin records store the name from the bulletin."""
-        run = PipelineRunFactory()
+        run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
         upsert_bulletin(raw, run)
 
@@ -237,7 +237,7 @@ class TestUpsertBulletin:
 
     def test_update_existing_bulletin(self):
         """Updating an existing bulletin returns False and refreshes data."""
-        run = PipelineRunFactory()
+        run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
         upsert_bulletin(raw, run)
 
@@ -254,7 +254,7 @@ class TestUpsertBulletin:
 
     def test_update_replaces_region_links(self):
         """Updating a bulletin clears and re-creates region links."""
-        run = PipelineRunFactory()
+        run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
         upsert_bulletin(raw, run)
         assert RegionBulletin.objects.count() == 2
@@ -270,7 +270,7 @@ class TestUpsertBulletin:
 
     def test_handles_missing_next_update(self):
         """Bulletin without nextUpdate stores None."""
-        run = PipelineRunFactory()
+        run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
         del raw["nextUpdate"]
         upsert_bulletin(raw, run)
@@ -280,7 +280,7 @@ class TestUpsertBulletin:
 
     def test_handles_empty_regions(self):
         """Bulletin with no regions creates no RegionBulletin rows."""
-        run = PipelineRunFactory()
+        run = PipelineRunFactory.create()
         raw = _make_raw_bulletin(regions=[])
         upsert_bulletin(raw, run)
 
@@ -421,7 +421,7 @@ class TestRunPipeline:
     def test_skips_existing_without_force(self, mock_fetch: MagicMock):
         """Without --force, existing bulletins are skipped."""
         # Pre-create the bulletin
-        pre_run = cast(PipelineRun, PipelineRunFactory())
+        pre_run = PipelineRunFactory.create()
         upsert_bulletin(
             _make_raw_bulletin("existing", "2025-03-15T08:00:00Z"),
             pre_run,
@@ -444,7 +444,7 @@ class TestRunPipeline:
     @patch("pipeline.services.data_fetcher.fetch_bulletin_page")
     def test_updates_existing_with_force(self, mock_fetch: MagicMock):
         """With --force, existing bulletins are upserted."""
-        pre_run = cast(PipelineRun, PipelineRunFactory())
+        pre_run = PipelineRunFactory.create()
         upsert_bulletin(
             _make_raw_bulletin("existing", "2025-03-15T08:00:00Z"),
             pre_run,

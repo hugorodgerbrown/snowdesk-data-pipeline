@@ -27,16 +27,16 @@ def _clear_cache():
 @pytest.fixture()
 def region():
     """Return a Region with a human-readable name."""
-    return RegionFactory(region_id="CH-4115", name="Valais", slug="ch-4115")
+    return RegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
 @pytest.fixture()
 def region_with_bulletin(region):
     """Return a Region that has at least one linked bulletin."""
-    bulletin = BulletinFactory(
+    bulletin = BulletinFactory.create(
         issued_at=datetime(2025, 3, 15, 8, 0, tzinfo=UTC),
     )
-    RegionBulletinFactory(
+    RegionBulletinFactory.create(
         bulletin=bulletin,
         region=region,
         region_name_at_time="Valais",
@@ -90,15 +90,15 @@ class TestRegionRedirect:
 
     def test_multiword_region_name_is_slugified(self, client: Client) -> None:
         """Region names with spaces should be properly slugified."""
-        region = RegionFactory(
+        region = RegionFactory.create(
             region_id="CH-5200",
             name="Haut Val de Bagnes",
             slug="ch-5200",
         )
-        bulletin = BulletinFactory(
+        bulletin = BulletinFactory.create(
             issued_at=datetime(2025, 3, 15, 8, 0, tzinfo=UTC),
         )
-        RegionBulletinFactory(
+        RegionBulletinFactory.create(
             bulletin=bulletin,
             region=region,
             region_name_at_time="Haut Val de Bagnes",
