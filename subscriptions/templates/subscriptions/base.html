@@ -1,0 +1,16 @@
+{% extends "public/base.html" %}
+{% comment %}
+subscriptions/templates/subscriptions/base.html — Base template for subscription pages.
+
+Extends the public site base layout and injects the HTMX library so that
+all subscription pages can use HTMX-powered region search without a separate
+JavaScript bundle.
+{% endcomment %}
+
+{% block extra_js %}
+    <script
+        src="https://unpkg.com/htmx.org@2.0.4"
+        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+        crossorigin="anonymous"
+    ></script>
+{% endblock %}

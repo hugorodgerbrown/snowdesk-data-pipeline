@@ -18,6 +18,7 @@ dj-database-url = "^3.1.2"
 whitenoise = "^6.12.0"
 gunicorn = "^25.3.0"
 pyyaml = "^6.0.3"
+pyjwt = "^2.12.1"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.9.10"
@@ -32,6 +33,7 @@ tox = "^4.52.1"
 tox-gh-actions = "^3.5.0"
 mypy = "^1.20.0"
 djangofmt = "^0.2.6"
+freezegun = "^1.5.5"
 
 [build-system]
 requires = ["poetry-core"]
@@ -76,11 +78,11 @@ django_settings_module = "config.settings.development"
 DJANGO_SETTINGS_MODULE = "config.settings.development"
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "--cov=pipeline --cov=public"
+addopts = "--cov=pipeline --cov=public --cov=subscriptions"
 
 [tool.coverage.run]
-source = ["pipeline", "public"]
-omit = ["pipeline/migrations/*", "public/migrations/*", "config/*", "__init__.py"]
+source = ["pipeline", "public", "subscriptions"]
+omit = ["pipeline/migrations/*", "public/migrations/*", "subscriptions/migrations/*", "config/*", "__init__.py"]
 
 [tool.coverage.report]
 fail_under = 0

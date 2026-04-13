@@ -15,6 +15,9 @@ pipeline/        Core app: models, views, services, management commands
   services/      Pure-function modules for fetching and processing SLF bulletins
   management/    Django management commands (backfill_data, fetch_data)
   templates/     Django templates; partials/ holds HTMX fragment responses
+subscriptions/   Magic-link subscription auth: Subscriber and Subscription models
+  services/      token.py (PyJWT) and email.py (magic-link sending)
+  templates/     Subscription flow pages and email templates
 public/          Public-facing bulletin site
 src/             Tailwind CSS source (main.css — not served directly)
 static/          CSS/JS assets (includes compiled output.css)
@@ -71,6 +74,29 @@ repo-relative path so the hook works identically from the CLI and from
 GUI git clients (SublimeMerge, Tower, Fork, etc.) which launch git with
 a minimal environment and don't inherit the user's shell PATH. Don't
 change the venv location without also updating the mypy hook entry.
+
+## Subscriptions
+
+Users subscribe to bulletin alerts via a magic-link auth flow — no passwords.
+
+1. User submits their email at `/subscribe/` → a JWT magic link is emailed to them.
+2. Clicking the link hits `/subscribe/verify/?token=` — the JWT is validated (15-min expiry).
+3. New subscribers are forwarded to `/subscribe/regions/` to pick their regions.
+4. Returning subscribers are forwarded to `/subscribe/manage/` to update their regions.
+5. Every outbound bulletin email contains a manage-subscription link using the same JWT mechanism.
+
+**Models**: `Subscriber` (email, created/updated timestamps) and `Subscription` (subscriber + region FK).
+
+**Services**:
+- `subscriptions/services/token.py` — JWT generation and validation via PyJWT.
+- `subscriptions/services/email.py` — renders and sends the magic-link email.
+
+**Settings** (all required in `.env`):
+- `MAGIC_LINK_SECRET_KEY` — signing secret for JWTs.
+- `MAGIC_LINK_EXPIRY_SECONDS` — token TTL; defaults to `900` (15 minutes).
+- `MAGIC_LINK_BASE_URL` — base URL prepended to the verify path (e.g. `https://example.com`).
+- `EMAIL_BACKEND` — use `django.core.mail.backends.console.EmailBackend` in development.
+- `DEFAULT_FROM_EMAIL` — sender address for outbound mail.
 
 ## Data source
 
@@ -157,3 +183,6 @@ corresponding test_{module_name}.py that contains the tests.
 - Always run tests after code changes and ensure 100% pass rate and 90% coverage.
 - Use tox to run local CI and tests
 - All datetime objects must have tzinfo
+- Always call factories with `.create()` (e.g. `RegionFactory.create(...)`) — never
+  use direct instantiation (`RegionFactory(...)`). The `.create()` classmethod is
+  properly typed and lets mypy infer the correct model return type.

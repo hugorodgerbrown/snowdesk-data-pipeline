@@ -1,0 +1,9 @@
+Hi,
+
+Click the link below to {{ purpose }} to SnowDesk:
+
+{{ magic_link_url }}
+
+This link expires in {{ expiry_minutes }} minutes. If you did not request this, you can safely ignore this email.
+
+— SnowDesk

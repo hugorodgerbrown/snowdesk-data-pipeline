@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     # Local
     "pipeline",
     "public",
+    "subscriptions",
 ]
 
 MIDDLEWARE = [
@@ -115,6 +116,25 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
+
+# ---------------------------------------------------------------------------
+# Magic-link authentication
+# ---------------------------------------------------------------------------
+
+MAGIC_LINK_SECRET_KEY = config("MAGIC_LINK_SECRET_KEY", default=SECRET_KEY)
+MAGIC_LINK_EXPIRY_SECONDS = config("MAGIC_LINK_EXPIRY_SECONDS", default=900, cast=int)
+MAGIC_LINK_BASE_URL = config("MAGIC_LINK_BASE_URL", default="http://localhost:8000")
+
+# ---------------------------------------------------------------------------
+# Email
+# ---------------------------------------------------------------------------
+
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@snowdesk.ch")
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 
 LOGGING = {
     "version": 1,
