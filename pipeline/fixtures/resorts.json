@@ -1,0 +1,2222 @@
+[
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Verbier",
+      "name_alt": "Les 4 Vallées",
+      "region": [
+        "CH-4115"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 1
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Nendaz",
+      "name_alt": "Les 4 Vallées",
+      "region": [
+        "CH-4115"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 2
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Veysonnaz",
+      "name_alt": "Les 4 Vallées",
+      "region": [
+        "CH-4115"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 3
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Thyon",
+      "name_alt": "Les 4 Vallées",
+      "region": [
+        "CH-4115"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 4
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Champex",
+      "name_alt": "",
+      "region": [
+        "CH-4113"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 5
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "La Fouly",
+      "name_alt": "",
+      "region": [
+        "CH-4113"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 6
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Haut Val de Bagnes",
+      "name_alt": "Mauvoisin",
+      "region": [
+        "CH-4116"
+      ],
+      "canton": "VS",
+      "notes": "upper Bagnes",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 7
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Zermatt",
+      "name_alt": "Matterhorn",
+      "region": [
+        "CH-4222"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 8
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Saas-Fee",
+      "name_alt": "Saas Valley",
+      "region": [
+        "CH-4223"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 9
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Saas-Grund",
+      "name_alt": "Saas Valley",
+      "region": [
+        "CH-4223"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 10
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Saas-Almagell",
+      "name_alt": "Saas Valley",
+      "region": [
+        "CH-4223"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 11
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Crans-Montana",
+      "name_alt": "",
+      "region": [
+        "CH-4215"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 12
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Leukerbad",
+      "name_alt": "",
+      "region": [
+        "CH-4215"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 13
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Grimentz",
+      "name_alt": "Val d'Anniviers",
+      "region": [
+        "CH-4124"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 14
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Zinal",
+      "name_alt": "Val d'Anniviers",
+      "region": [
+        "CH-4124"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 15
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Vercorin",
+      "name_alt": "Val d'Anniviers",
+      "region": [
+        "CH-4124"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 16
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "St-Luc",
+      "name_alt": "Val d'Anniviers",
+      "region": [
+        "CH-4124"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 17
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Chandolin",
+      "name_alt": "Val d'Anniviers",
+      "region": [
+        "CH-4124"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 18
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Arolla",
+      "name_alt": "",
+      "region": [
+        "CH-4123"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 19
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Les Haudères",
+      "name_alt": "Val d'Hérens",
+      "region": [
+        "CH-4122"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 20
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Evolène",
+      "name_alt": "Val d'Hérens",
+      "region": [
+        "CH-4122"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 21
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Riederalp",
+      "name_alt": "Aletsch Arena",
+      "region": [
+        "CH-4214"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 22
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Bettmeralp",
+      "name_alt": "Aletsch Arena",
+      "region": [
+        "CH-4214"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 23
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Fiescheralp",
+      "name_alt": "Aletsch Arena",
+      "region": [
+        "CH-4214"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 24
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Turtmann",
+      "name_alt": "Turtmanntal",
+      "region": [
+        "CH-4212"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 25
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Brig",
+      "name_alt": "Simplon north",
+      "region": [
+        "CH-4231"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 26
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Simplon village",
+      "name_alt": "Simplon south",
+      "region": [
+        "CH-4232"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 27
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Reckingen",
+      "name_alt": "Goms",
+      "region": [
+        "CH-4241"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 28
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Münster",
+      "name_alt": "Goms",
+      "region": [
+        "CH-4241"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 29
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Ulrichen",
+      "name_alt": "Goms",
+      "region": [
+        "CH-4241"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 30
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Obergoms",
+      "name_alt": "Goms upper",
+      "region": [
+        "CH-4244"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 31
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Binntal",
+      "name_alt": "",
+      "region": [
+        "CH-4242"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 32
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Champéry",
+      "name_alt": "Portes du Soleil",
+      "region": [
+        "CH-4111"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 33
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Morgins",
+      "name_alt": "Portes du Soleil",
+      "region": [
+        "CH-4111"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 34
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Torgon",
+      "name_alt": "",
+      "region": [
+        "CH-4111"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 35
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Mountet",
+      "name_alt": "Zinal hut",
+      "region": [
+        "CH-4125"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 36
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Monte Rosa",
+      "name_alt": "Zermatt high",
+      "region": [
+        "CH-4224"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 37
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Mattmark",
+      "name_alt": "Saas high",
+      "region": [
+        "CH-4225"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 38
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Stalden",
+      "name_alt": "untere Vispertäler",
+      "region": [
+        "CH-4221"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 39
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Fully",
+      "name_alt": "Isérables",
+      "region": [
+        "CH-4114"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 40
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Nendaz lower",
+      "name_alt": "Sion area",
+      "region": [
+        "CH-4121"
+      ],
+      "canton": "VS",
+      "notes": "lower Nendaz / Sion",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 41
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Goms",
+      "name_alt": "Münster-Goms",
+      "region": [
+        "CH-4243"
+      ],
+      "canton": "VS",
+      "notes": "Münster / upper Goms",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 42
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Génépy",
+      "name_alt": "",
+      "region": [
+        "CH-4112"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 43
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Val d'Entremont",
+      "name_alt": "Grand-St-Bernard",
+      "region": [
+        "CH-4113"
+      ],
+      "canton": "VS",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 44
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "St. Moritz",
+      "name_alt": "Upper Engadin",
+      "region": [
+        "CH-7114"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 45
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Pontresina",
+      "name_alt": "Upper Engadin",
+      "region": [
+        "CH-7114"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 46
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Sils-Maria",
+      "name_alt": "Upper Engadin",
+      "region": [
+        "CH-7114"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 47
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Silvaplana",
+      "name_alt": "Upper Engadin",
+      "region": [
+        "CH-7114"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 48
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Celerina",
+      "name_alt": "Upper Engadin",
+      "region": [
+        "CH-7114"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 49
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Corvatsch",
+      "name_alt": "Upper Engadin",
+      "region": [
+        "CH-7111"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 50
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Diavolezza",
+      "name_alt": "Upper Engadin",
+      "region": [
+        "CH-7112"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 51
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Bernina Pass",
+      "name_alt": "",
+      "region": [
+        "CH-7112"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 52
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Zuoz",
+      "name_alt": "Lower Engadin",
+      "region": [
+        "CH-7113"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 53
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Zernez",
+      "name_alt": "Lower Engadin",
+      "region": [
+        "CH-7113"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 54
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "La Punt",
+      "name_alt": "Lower Engadin",
+      "region": [
+        "CH-7113"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 55
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Val Chamuera",
+      "name_alt": "Samedan area",
+      "region": [
+        "CH-7115"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 56
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Scuol",
+      "name_alt": "Lower Engadin",
+      "region": [
+        "CH-7123"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 57
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Ftan",
+      "name_alt": "Lower Engadin",
+      "region": [
+        "CH-7123"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 58
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Samnaun",
+      "name_alt": "",
+      "region": [
+        "CH-7121"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 59
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Ischgl (CH side)",
+      "name_alt": "Samnaun",
+      "region": [
+        "CH-7121"
+      ],
+      "canton": "GR",
+      "notes": "Swiss sector of Ischgl",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 60
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "östliche Silvretta",
+      "name_alt": "",
+      "region": [
+        "CH-7122"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 61
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Val dal Spöl",
+      "name_alt": "Swiss Nat. Park",
+      "region": [
+        "CH-7125"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 62
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Val S-charl",
+      "name_alt": "Lower Engadin",
+      "region": [
+        "CH-7126"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 63
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Val Suot",
+      "name_alt": "Scuol area",
+      "region": [
+        "CH-7124"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 64
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Münstertal",
+      "name_alt": "Val Müstair",
+      "region": [
+        "CH-7231"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 65
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Santa Maria VM",
+      "name_alt": "Val Müstair",
+      "region": [
+        "CH-7231"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 66
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Poschiavo",
+      "name_alt": "Valposchiavo",
+      "region": [
+        "CH-7222"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 67
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "oberes Puschlav",
+      "name_alt": "Livigno area",
+      "region": [
+        "CH-7221"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 68
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Bergell",
+      "name_alt": "Val Bregaglia",
+      "region": [
+        "CH-7211"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 69
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Maloja",
+      "name_alt": "Bergell",
+      "region": [
+        "CH-7211"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 70
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Davos",
+      "name_alt": "Davos Klosters",
+      "region": [
+        "CH-5123"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 71
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Klosters",
+      "name_alt": "Davos Klosters",
+      "region": [
+        "CH-5123"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 72
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Parsenn",
+      "name_alt": "Davos Klosters",
+      "region": [
+        "CH-5123"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 73
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Arosa",
+      "name_alt": "Arosa Lenzerheide",
+      "region": [
+        "CH-5122"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 74
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Lenzerheide",
+      "name_alt": "Arosa Lenzerheide",
+      "region": [
+        "CH-5221"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 75
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Churwalden",
+      "name_alt": "",
+      "region": [
+        "CH-5221"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 76
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Küblis",
+      "name_alt": "Prättigau",
+      "region": [
+        "CH-5111"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 77
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Schiers",
+      "name_alt": "Prättigau",
+      "region": [
+        "CH-5111"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 78
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Conters",
+      "name_alt": "südl. Prättigau",
+      "region": [
+        "CH-5112"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 79
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "westl. Silvretta",
+      "name_alt": "Prättigau",
+      "region": [
+        "CH-5113"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 80
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Flims",
+      "name_alt": "Flims Laax",
+      "region": [
+        "CH-5211"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 81
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Laax",
+      "name_alt": "Flims Laax",
+      "region": [
+        "CH-5211"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 82
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Falera",
+      "name_alt": "Flims Laax",
+      "region": [
+        "CH-5211"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 83
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Disentis",
+      "name_alt": "Disentis/Mustér",
+      "region": [
+        "CH-5212"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 84
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Obersaxen",
+      "name_alt": "",
+      "region": [
+        "CH-5214"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 85
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Safiental",
+      "name_alt": "",
+      "region": [
+        "CH-5214"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 86
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Vals",
+      "name_alt": "",
+      "region": [
+        "CH-5215"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 87
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Zervreila",
+      "name_alt": "",
+      "region": [
+        "CH-5216"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 88
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Thusis",
+      "name_alt": "Domleschg",
+      "region": [
+        "CH-5221"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 89
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Schams",
+      "name_alt": "Viamala",
+      "region": [
+        "CH-5222"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 90
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Splügen",
+      "name_alt": "Rheinwald",
+      "region": [
+        "CH-5223"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 91
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Hinterrhein",
+      "name_alt": "Rheinwald",
+      "region": [
+        "CH-5223"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 92
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Bivio",
+      "name_alt": "",
+      "region": [
+        "CH-5234"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 93
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Avers",
+      "name_alt": "Cresta",
+      "region": [
+        "CH-5233"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 94
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Savognin",
+      "name_alt": "Surses",
+      "region": [
+        "CH-5232"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 95
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Bergün",
+      "name_alt": "Albulatal",
+      "region": [
+        "CH-5231"
+      ],
+      "canton": "GR",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 96
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Filisur",
+      "name_alt": "Albulatal",
+      "region": [
+        "CH-5231"
+      ],
+      "canton": "GR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 97
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Arosa east",
+      "name_alt": "Plessur",
+      "region": [
+        "CH-5121"
+      ],
+      "canton": "GR",
+      "notes": "Arosa / Plessur approach",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 98
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Ilanz",
+      "name_alt": "Vorderrhein",
+      "region": [
+        "CH-5124"
+      ],
+      "canton": "GR",
+      "notes": "Ilanz / Lugnez",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 99
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Grindelwald",
+      "name_alt": "Jungfrau Region",
+      "region": [
+        "CH-1221"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 100
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Wengen",
+      "name_alt": "Jungfrau Region",
+      "region": [
+        "CH-1221"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 101
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Mürren",
+      "name_alt": "Jungfrau Region",
+      "region": [
+        "CH-1228"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 102
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Lauterbrunnen",
+      "name_alt": "Jungfrau Region",
+      "region": [
+        "CH-1222"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 103
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Gstaad",
+      "name_alt": "Saanenland",
+      "region": [
+        "CH-1223"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 104
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Saanen",
+      "name_alt": "Saanenland",
+      "region": [
+        "CH-1223"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 105
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Schönried",
+      "name_alt": "Saanenland",
+      "region": [
+        "CH-1223"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 106
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Zweisimmen",
+      "name_alt": "Simmental",
+      "region": [
+        "CH-1225"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 107
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Lenk",
+      "name_alt": "Simmental",
+      "region": [
+        "CH-1225"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 108
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Adelboden",
+      "name_alt": "",
+      "region": [
+        "CH-1224"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 109
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Kandersteg",
+      "name_alt": "Kandertal",
+      "region": [
+        "CH-1224"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 110
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Meiringen",
+      "name_alt": "Haslital",
+      "region": [
+        "CH-1234"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 111
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Hasliberg",
+      "name_alt": "Haslital",
+      "region": [
+        "CH-1234"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 112
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Grimmialp",
+      "name_alt": "Niedersimmental",
+      "region": [
+        "CH-1227"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 113
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Frutigen",
+      "name_alt": "",
+      "region": [
+        "CH-1225"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 114
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Beatenberg",
+      "name_alt": "",
+      "region": [
+        "CH-1212"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 115
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Grimsel",
+      "name_alt": "Haslital high",
+      "region": [
+        "CH-1243"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 116
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Sustenpass",
+      "name_alt": "",
+      "region": [
+        "CH-1243"
+      ],
+      "canton": "BE",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 117
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Lötschental",
+      "name_alt": "",
+      "region": [
+        "CH-1232"
+      ],
+      "canton": "BE/VS",
+      "notes": "straddles cantons",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 118
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Blatten",
+      "name_alt": "Lötschental",
+      "region": [
+        "CH-1232"
+      ],
+      "canton": "VS",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 119
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Leysin",
+      "name_alt": "Alpes Vaudoises",
+      "region": [
+        "CH-1113"
+      ],
+      "canton": "VD",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 120
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Villars-sur-Ollon",
+      "name_alt": "Alpes Vaudoises",
+      "region": [
+        "CH-1113"
+      ],
+      "canton": "VD",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 121
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Gryon",
+      "name_alt": "Alpes Vaudoises",
+      "region": [
+        "CH-1113"
+      ],
+      "canton": "VD",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 122
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Château-d'Oex",
+      "name_alt": "",
+      "region": [
+        "CH-1113"
+      ],
+      "canton": "VD",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 123
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Les Diablerets",
+      "name_alt": "Alpes Vaudoises",
+      "region": [
+        "CH-1114"
+      ],
+      "canton": "VD",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 124
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Glacier 3000",
+      "name_alt": "Alpes Vaudoises",
+      "region": [
+        "CH-1114"
+      ],
+      "canton": "VD",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 125
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Aigle",
+      "name_alt": "",
+      "region": [
+        "CH-1111"
+      ],
+      "canton": "VD",
+      "notes": "lower Chablais",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 126
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Moléson",
+      "name_alt": "Gruyères",
+      "region": [
+        "CH-1121"
+      ],
+      "canton": "FR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 127
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Charmey",
+      "name_alt": "Gruyères",
+      "region": [
+        "CH-1121"
+      ],
+      "canton": "FR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 128
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Jaun",
+      "name_alt": "Jaunbach",
+      "region": [
+        "CH-1122"
+      ],
+      "canton": "FR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 129
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Rochers-de-Naye",
+      "name_alt": "Montreux area",
+      "region": [
+        "CH-1112"
+      ],
+      "canton": "VD",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 130
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Andermatt",
+      "name_alt": "SkiArena",
+      "region": [
+        "CH-2111"
+      ],
+      "canton": "UR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 131
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Realp",
+      "name_alt": "Andermatt area",
+      "region": [
+        "CH-2111"
+      ],
+      "canton": "UR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 132
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Göschenen",
+      "name_alt": "",
+      "region": [
+        "CH-2111"
+      ],
+      "canton": "UR",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 133
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Engelberg",
+      "name_alt": "",
+      "region": [
+        "CH-2121"
+      ],
+      "canton": "OW",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 134
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Melchsee-Frutt",
+      "name_alt": "",
+      "region": [
+        "CH-2122"
+      ],
+      "canton": "OW",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 135
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Elm",
+      "name_alt": "Glarnerland",
+      "region": [
+        "CH-3111"
+      ],
+      "canton": "GL",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 136
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Braunwald",
+      "name_alt": "Glarnerland",
+      "region": [
+        "CH-3111"
+      ],
+      "canton": "GL",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 137
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Klausenpass",
+      "name_alt": "",
+      "region": [
+        "CH-3112"
+      ],
+      "canton": "GL",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 138
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Wildhaus",
+      "name_alt": "Toggenburg",
+      "region": [
+        "CH-3211"
+      ],
+      "canton": "SG",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 139
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Unterwasser",
+      "name_alt": "Toggenburg",
+      "region": [
+        "CH-3211"
+      ],
+      "canton": "SG",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 140
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Flumserberg",
+      "name_alt": "",
+      "region": [
+        "CH-3222"
+      ],
+      "canton": "SG",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 141
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Pizol",
+      "name_alt": "Bad Ragaz",
+      "region": [
+        "CH-3223"
+      ],
+      "canton": "SG",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 142
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Airolo",
+      "name_alt": "Leventina",
+      "region": [
+        "CH-6112"
+      ],
+      "canton": "TI",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 143
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Bedretto",
+      "name_alt": "Valle Bedretto",
+      "region": [
+        "CH-6111"
+      ],
+      "canton": "TI",
+      "notes": "confirmed from bulletin",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 144
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Bosco Gurin",
+      "name_alt": "",
+      "region": [
+        "CH-6121"
+      ],
+      "canton": "TI",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 145
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Blenio",
+      "name_alt": "Lucomagno",
+      "region": [
+        "CH-6113"
+      ],
+      "canton": "TI",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 146
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "Locarno",
+      "name_alt": "Centovalli",
+      "region": [
+        "CH-6131"
+      ],
+      "canton": "TI",
+      "notes": "",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 147
+  },
+  {
+    "model": "pipeline.resort",
+    "fields": {
+      "name": "San Bernardino",
+      "name_alt": "Mesolcina",
+      "region": [
+        "CH-6211"
+      ],
+      "canton": "GR/TI",
+      "notes": "pass area",
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "pk": 148
+  }
+]

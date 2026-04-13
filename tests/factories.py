@@ -4,23 +4,21 @@ tests/factories.py — FactoryBoy factories for all pipeline models.
 Each model has a corresponding factory that produces valid instances with
 sensible defaults. Use these in tests to avoid brittle fixture data.
 
-Note on typing: factory-boy uses a metaclass to intercept ``Factory(...)``
-calls and return a model instance rather than a Factory instance. Mypy
-reads the metaclass's ``__call__`` signature, which is untyped, and
-therefore sees ``Factory(...)`` as returning the Factory subclass itself.
-Neither ``__new__`` overrides nor ``TYPE_CHECKING`` stubs defeat this —
-call sites that pass a factory instance to a typed function must
-``cast`` or use ``typing.cast`` to tell mypy the real type.
+Factories are parameterised with their model type
+(e.g. ``DjangoModelFactory[Region]``) so that mypy infers the correct
+return type when calling ``RegionFactory(...)`` — no casts needed at
+call sites.
 """
 
 from datetime import UTC
 
 import factory
 
-from pipeline.models import Bulletin, PipelineRun, Region, RegionBulletin
+from pipeline.models import Bulletin, PipelineRun, Region, RegionBulletin, Resort
+from subscriptions.models import Subscriber, Subscription
 
 
-class PipelineRunFactory(factory.django.DjangoModelFactory):
+class PipelineRunFactory(factory.django.DjangoModelFactory[PipelineRun]):
     """Factory for PipelineRun instances."""
 
     class Meta:
@@ -32,7 +30,7 @@ class PipelineRunFactory(factory.django.DjangoModelFactory):
     status = PipelineRun.Status.PENDING
 
 
-class RegionFactory(factory.django.DjangoModelFactory):
+class RegionFactory(factory.django.DjangoModelFactory[Region]):
     """Factory for Region instances."""
 
     class Meta:
@@ -43,9 +41,26 @@ class RegionFactory(factory.django.DjangoModelFactory):
     region_id = factory.Sequence(lambda n: f"CH-{1000 + n}")
     name = factory.LazyAttribute(lambda obj: f"Region {obj.region_id}")
     slug = factory.LazyAttribute(lambda obj: obj.region_id.lower().replace("-", "-"))
+    centre = factory.LazyFunction(lambda: {"lon": 7.5, "lat": 46.8})
+    boundary = None
 
 
-class BulletinFactory(factory.django.DjangoModelFactory):
+class ResortFactory(factory.django.DjangoModelFactory[Resort]):
+    """Factory for Resort instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Resort
+
+    name = factory.Sequence(lambda n: f"Resort {n}")
+    name_alt = ""
+    region = factory.SubFactory(RegionFactory)
+    canton = "VS"
+    notes = ""
+
+
+class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
     """Factory for Bulletin instances."""
 
     class Meta:
@@ -63,7 +78,7 @@ class BulletinFactory(factory.django.DjangoModelFactory):
     pipeline_run = factory.SubFactory(PipelineRunFactory)
 
 
-class RegionBulletinFactory(factory.django.DjangoModelFactory):
+class RegionBulletinFactory(factory.django.DjangoModelFactory[RegionBulletin]):
     """Factory for RegionBulletin instances."""
 
     class Meta:
@@ -74,3 +89,28 @@ class RegionBulletinFactory(factory.django.DjangoModelFactory):
     bulletin = factory.SubFactory(BulletinFactory)
     region = factory.SubFactory(RegionFactory)
     region_name_at_time = factory.LazyAttribute(lambda obj: obj.region.name)
+
+
+class SubscriberFactory(factory.django.DjangoModelFactory[Subscriber]):
+    """Factory for Subscriber instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Subscriber
+
+    email = factory.Sequence(lambda n: f"subscriber{n}@example.com")
+    is_active = True
+    last_authenticated_at = None
+
+
+class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):
+    """Factory for Subscription instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Subscription
+
+    subscriber = factory.SubFactory(SubscriberFactory)
+    region = factory.SubFactory(RegionFactory)
