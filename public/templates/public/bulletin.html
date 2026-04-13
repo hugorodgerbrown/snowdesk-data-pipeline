@@ -80,6 +80,18 @@ partial for the card content.
                     View full season →
                 </a>
             </div>
+
+            {% if debug %}
+                {# ── Subscribe link (DEBUG only) ────────────────────────────── #}
+                <div class="mt-3 text-center">
+                    <a
+                        href="{% url 'subscriptions:enter_email' %}"
+                        class="text-xs text-text-3 hover:text-text-2 border border-text-3/20 rounded-[6px] px-3 py-1.5 inline-block"
+                    >
+                        Subscribe to alerts
+                    </a>
+                </div>
+            {% endif %}
         </div>
     </body>
 </html>
