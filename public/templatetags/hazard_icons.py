@@ -2,7 +2,7 @@
 public/templatetags/hazard_icons.py — Template filter for hazard icons.
 
 Maps CAAML avalanche problem types to their EAWS SVG icon paths under
-``static/icons/svg/``.
+``static/icons/eaws/avalanche_problems/``.
 """
 
 from os import path
@@ -40,4 +40,7 @@ def hazard_icon(problem_type: str) -> str:
         The icon path relative to STATIC_URL, or empty string if unknown.
 
     """
-    return path.join("icons/eaws/avalanche_problems/", _ICON_MAP.get(problem_type, ""))
+    filename = _ICON_MAP.get(problem_type, "")
+    if not filename:
+        return ""
+    return path.join("icons/eaws/avalanche_problems/", filename)
