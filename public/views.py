@@ -1223,9 +1223,10 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     """
     Build the template context for a single compact bulletin panel.
 
-    Extracts the minimum set of display fields from a ``Bulletin``'s CAAML
-    payload: headline danger level, avalanche problems, a short key message,
-    and a footer showing the validity window and region list.
+    Reads ``bulletin.render_model`` directly. If ``render_model_version`` is
+    older than ``RENDER_MODEL_VERSION`` the render model is rebuilt on the fly
+    and a warning is logged so operators know which rows need the
+    ``rebuild_render_models`` command run against them.
 
     Each visible field is paired with a ``*_source`` key describing the
     CAAML JSON path (or Bulletin field) the value was derived from, so the

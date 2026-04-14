@@ -39,6 +39,10 @@ logs/            Log files (gitignored except .gitkeep)
   in every module.
 - Management commands live in `pipeline/management/commands/`. Each command has
   `--dry-run` and `--verbosity` support.
+- **No Django signals for side effects** — side effects triggered at save time
+  (e.g. building the render model) are called inline from the relevant service
+  function, not via `post_save` signals. This keeps data flow explicit and
+  testable.
 
 ## Running locally
 
@@ -98,6 +102,26 @@ Users subscribe to bulletin alerts via a magic-link auth flow — no passwords.
 - `EMAIL_BACKEND` — use `django.core.mail.backends.console.EmailBackend` in development.
 - `DEFAULT_FROM_EMAIL` — sender address for outbound mail.
 
+## Render model
+
+Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest time so templates contain no derivation logic.
+
+**Shape**: `{ version, danger, traits[], fallback_key_message, snowpack_structure }`.
+- `danger` — `{ key, number, subdivision }` resolved from `dangerRatings`.
+- `traits[]` — one entry per `customData.CH.aggregation` entry; each has `{ category, time_period, title, geography, problems[], prose, danger_level }`.
+  - `category` is `"dry"` or `"wet"`, sourced directly from SLF's aggregation — not inferred.
+  - `geography.source` is `"problems"` when aspects/elevation are present, or `"prose_only"` when the SLF prose comment is the only geographic description.
+
+**Versioning**: `RENDER_MODEL_VERSION` (an integer constant in `pipeline/services/render_model.py`) is the stored schema version. Bump it and run `rebuild_render_models` whenever the output shape or builder logic changes. `BulletinQuerySet.needs_render_model_rebuild()` returns all rows with a stale version.
+
+**Safety net**: `_build_panel_context` in `public/views.py` detects a stale `render_model_version` at render time, rebuilds on the fly, and logs a warning. This keeps the page functional during a backfill; the warning is the signal to run the rebuild command.
+
+**Day character**: `compute_day_character(render_model)` in `pipeline/services/render_model.py` is a pure function that classifies a render model into one of five labels (`"Stable day"`, `"Manageable day"`, `"Hard-to-read day"`, `"Widespread danger"`, `"Dangerous conditions"`) using the five-rule cascade in `docs/day_character_rules_spec.md`.
+
+**Services**:
+- `pipeline/services/render_model.py` — `build_render_model()`, `compute_day_character()`, `RENDER_MODEL_VERSION`.
+- `pipeline/services/data_fetcher.py` — `upsert_bulletin` calls `build_render_model` inline (never via a signal).
+
 ## Data source
 
 SLF CAAML bulletin list API (public, no auth required):
@@ -125,6 +149,11 @@ poetry run python manage.py backfill_data --start-date 2024-01-01 --end-date 202
 # All commands accept:
 #   --dry-run   fetch but do not write to the database
 #   --force     upsert existing bulletins instead of skipping
+
+# Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION)
+poetry run python manage.py rebuild_render_models
+
+# Flags: --all (every row), --bulletin-id <id> (single row), --dry-run, --batch-size N
 ```
 
 ## Frontend

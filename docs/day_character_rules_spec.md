@@ -2,10 +2,12 @@
 
 ## Overview
 
-Implement a `day_character(panel) -> str` function that takes a rendered
-panel object and returns one of five string labels. This is task 13 in the
-SnowDesk design doc: compute labels for all historical bulletins and verify
-the distribution looks sensible before surfacing them in the UI.
+Implemented as `compute_day_character(render_model) -> str` in
+`pipeline/services/render_model.py`. Takes a render model dict (as produced
+by `build_render_model`) and returns one of five string labels. This was
+task 13 in the SnowDesk design doc: compute labels for all historical
+bulletins and verify the distribution looks sensible before surfacing them
+in the UI.
 
 ## Output labels (exact strings)
 
@@ -27,7 +29,7 @@ danger_rating >= 4
 ### Rule 2 — Hard-to-read day
 ```
 danger_rating >= 2
-AND any problem in panel.problems has problem_type in:
+AND any problem across all render_model.traits[*].problems has problem_type in:
     {"persistent_weak_layers", "gliding_snow"}
 ```
 
@@ -35,9 +37,9 @@ AND any problem in panel.problems has problem_type in:
 ```
 danger_rating == 3
 AND any of:
-    - total unique aspects across all problems >= 6
-    - any problem has elevation lower bound <= 2000
-    - len(panel.problems) >= 2
+    - total unique aspects across all flattened problems >= 6
+    - any problem has elevation.lower <= 2000
+    - total flattened problem count >= 2
 ```
 
 ### Rule 3b — Widespread danger (subdivision)
@@ -68,18 +70,20 @@ OR (danger_rating == 2 AND all problems have problem_type == "no_distinct_avalan
   bottom and return on first match.
 - If no rule matches (should not happen with valid data), return `"Stable day"`
   as the safe default.
-- The function should be pure — no side effects, no database calls. Derive
-  everything from the panel object passed in.
+- The function is pure — no side effects, no database calls. Derive
+  everything from the render model dict passed in.
 - Use type annotations throughout.
 
 ## Calibration task
 
-Once implemented, run against all stored bulletins and print a distribution:
+Run against all stored bulletins and print a distribution:
 
 ```python
 from collections import Counter
+from pipeline.models import Bulletin
+from pipeline.services.render_model import compute_day_character
 
-labels = [day_character(panel) for panel in all_panels]
+labels = [compute_day_character(b.render_model) for b in Bulletin.objects.all()]
 for label, count in Counter(labels).most_common():
     print(f"{label}: {count}")
 ```

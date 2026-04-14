@@ -144,7 +144,19 @@ class Command(BaseCommand):
         return success, new_version
 
     def handle(self, *args: Any, **options: Any) -> None:
-        """Execute the command."""
+        """Execute the rebuild command.
+
+        Default behaviour: rebuilds all Bulletin rows whose
+        ``render_model_version`` is less than ``RENDER_MODEL_VERSION``,
+        processed in batches of ``--batch-size`` (default 500).
+
+        Flags:
+            --all: Rebuild every bulletin regardless of stored version.
+            --bulletin-id: Rebuild a single bulletin by its bulletin_id.
+            --dry-run: Build render models but do not write to the database.
+            --batch-size N: Override the default batch size.
+
+        """
         dry_run: bool = options["dry_run"]
         rebuild_all: bool = options["rebuild_all"]
         bulletin_id_arg: str | None = options["bulletin_id"]
