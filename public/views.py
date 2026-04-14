@@ -45,6 +45,11 @@ from django.utils.text import slugify
 
 from pipeline.models import Bulletin, Region, RegionBulletin
 from pipeline.schema import ValidTimePeriod
+from pipeline.services.render_model import (
+    RENDER_MODEL_VERSION,
+    build_render_model,
+    compute_day_character,
+)
 from pipeline.utils import html_to_markdown
 
 from .guidance import load_field_guidance
@@ -1084,30 +1089,6 @@ def _format_elevation(elevation: dict[str, Any] | None) -> ElevationBounds:
     )
 
 
-def _problem_signature(
-    entry: dict[str, Any],
-) -> tuple[Any, Any, tuple[str, ...], str, str]:
-    """
-    Return a hashable signature describing a CAAML avalanche problem.
-
-    Two problems with the same signature are considered duplicates for
-    the purposes of hiding redundant comments on the panel: they must
-    match on elevation bounds, aspects (order-independent), time period,
-    and (plain-text) comment. Problem type is deliberately NOT part of
-    the signature — the user-facing rule groups by geographic scope and
-    timing, not by hazard category.
-    """
-    elevation = entry.get("elevation") or {}
-    aspects = tuple(sorted(entry.get("aspects") or []))
-    return (
-        elevation.get("lowerBound"),
-        elevation.get("upperBound"),
-        aspects,
-        entry.get("validTimePeriod") or "",
-        _plain_text(entry.get("comment")),
-    )
-
-
 def _problem_summary(
     core_zone_text: str,
     elevation: ElevationBounds,
@@ -1129,190 +1110,113 @@ def _problem_summary(
     return "Affects all aspects and elevations"
 
 
-def _panel_problems(props: dict[str, Any]) -> list[dict[str, Any]]:
+def _enrich_render_model_problem(
+    rm_problem: dict[str, Any],
+    guidance: dict[str, Any],
+    trait_problems: list[dict[str, Any]],
+    problem_index: int,
+) -> dict[str, Any]:
     """
-    Build the list of avalanche problems for the panel.
+    Enrich a render model problem dict with presentation-ready fields.
 
-    Each entry carries the problem type, its human label, a plain-text
-    comment (full-length — truncation is handled by the template via
-    Django's ``truncatechars`` filter), the human-readable
-    ``validTimePeriod`` label, an :class:`ElevationBounds` object
-    (with ``lower``, ``upper``, and ``display`` attributes), the list
-    of exposed aspects, and a ``hide_comment`` flag. The list is NOT
-    deduplicated — two entries with the same ``problemType`` but
-    different elevation, aspect, period, or comment all render
-    separately.
-
-    When two or more problems share the same signature (elevation +
-    aspects + time period + comment), the ``hide_comment`` flag is set
-    on every occurrence except the last. The template uses this to show
-    a group of identical-scope problems with the shared comment printed
-    only once, under the final header.
+    Converts the sparse render model representation (which uses int elevation
+    bounds) into the richer shape the panel template expects, adding
+    ``label``, ``time_period_label``, :class:`ElevationBounds`, ``summary``,
+    ``field_guidance``, and ``hide_comment``.
 
     Args:
-        props: The CAAML properties dict.
+        rm_problem: A problem dict from the render model.
+        guidance: Field guidance dict from :func:`public.guidance.load_field_guidance`.
+        trait_problems: All problems in the same trait (for duplicate detection).
+        problem_index: Index of this problem in ``trait_problems``.
 
     Returns:
-        List of problem dicts in CAAML source order with keys:
-        ``problem_type``, ``label``, ``comment``, ``time_period``,
-        ``time_period_label``, ``elevation`` (:class:`ElevationBounds`),
-        ``aspects``, ``core_zone_text``, ``summary``,
-        ``hide_comment``, ``field_guidance``.
+        The original dict extended with presentation keys.
 
     """
-    raw_entries = [
-        entry
-        for entry in props.get("avalancheProblems", [])
-        if entry.get("problemType")
-    ]
+    problem_type: str = rm_problem.get("problem_type", "")
+    label = _PROBLEM_LABELS.get(
+        problem_type, problem_type.replace("_", " ").capitalize()
+    )
+    time_period: str = rm_problem.get("time_period", "") or ""
+    time_period_label = _TIME_PERIOD_LABELS.get(time_period, "")
+
+    # Convert render model elevation (int|None lower/upper) to ElevationBounds.
+    # The render model stores treeline as a bool flag; convert back to the
+    # CAAML string token so _format_elevation can build the display string.
+    rm_elevation: dict[str, Any] | None = rm_problem.get("elevation")
+    if rm_elevation:
+        lower_raw = rm_elevation.get("lower")
+        upper_raw = rm_elevation.get("upper")
+        is_treeline = rm_elevation.get("treeline", False)
+        # When treeline flag is set and no numeric lower bound, use the token.
+        caaml_lower: Any = lower_raw
+        if is_treeline and lower_raw is None:
+            caaml_lower = "treeline"
+        elevation_bounds = _format_elevation(
+            {"lowerBound": caaml_lower, "upperBound": upper_raw}
+        )
+    else:
+        elevation_bounds = _format_elevation(None)
+
+    aspects: list[str] = rm_problem.get("aspects") or []
+    core_zone_text: str = rm_problem.get("core_zone_text") or ""
+    summary = _problem_summary(core_zone_text, elevation_bounds, aspects)
+    field_guidance = guidance.get(problem_type)
+
+    # Duplicate comment detection within this trait.
+    comment_html = rm_problem.get("comment_html") or ""
+    hide_comment = False
+    if comment_html and len(trait_problems) > 1:
+        plain = _plain_text(comment_html)
+        later_plains = [
+            _plain_text(p.get("comment_html") or "")
+            for p in trait_problems[problem_index + 1 :]
+        ]
+        if plain in later_plains:
+            hide_comment = True
+
+    return {
+        **rm_problem,
+        "label": label,
+        "time_period_label": time_period_label,
+        "elevation": elevation_bounds,
+        "summary": summary,
+        "field_guidance": field_guidance,
+        "hide_comment": hide_comment,
+    }
+
+
+def _enrich_render_model(
+    render_model: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Add presentation-ready fields to the render model's traits and problems.
+
+    Converts raw render model problem dicts (int elevation bounds) into the
+    richer shape the panel template expects, adding labels, ElevationBounds,
+    field_guidance, and hide_comment.
+
+    Args:
+        render_model: A render model dict as produced by
+            :func:`pipeline.services.render_model.build_render_model`.
+
+    Returns:
+        A new render model dict with enriched trait problems.
+
+    """
     guidance = load_field_guidance()
-    problems: list[dict[str, Any]] = []
-    for entry in raw_entries:
-        problem_type = entry["problemType"]
-        label = _PROBLEM_LABELS.get(
-            problem_type, problem_type.replace("_", " ").capitalize()
-        )
-        comment = entry.get("comment") or ""
-        time_period = entry.get("validTimePeriod", "") or ""
-        time_period_label = _TIME_PERIOD_LABELS.get(time_period, "")
-        elevation = _format_elevation(entry.get("elevation") or None)
-        aspects: list[str] = entry.get("aspects") or []
-        field_guidance = guidance.get(problem_type)
-        core_zone_text = (
-            (entry.get("customData") or {}).get("CH", {}).get("coreZoneText", "")
-        )
-        summary = _problem_summary(core_zone_text, elevation, aspects)
-        problems.append(
-            {
-                "problem_type": problem_type,
-                "label": label,
-                "comment": comment,
-                "time_period": time_period,
-                "time_period_label": time_period_label,
-                "elevation": elevation,
-                "aspects": aspects,
-                "core_zone_text": core_zone_text,
-                "summary": summary,
-                "hide_comment": False,
-                "field_guidance": field_guidance,
-            }
-        )
+    enriched_traits: list[dict[str, Any]] = []
 
-    # Hide the comment on every problem that has an identical-signature
-    # duplicate later in the list. Only the last occurrence in a run of
-    # duplicates keeps its comment visible.
-    signatures = [_problem_signature(e) for e in raw_entries]
-    for i, problem in enumerate(problems):
-        if not problem["comment"]:
-            continue
-        if any(signatures[i] == later for later in signatures[i + 1 :]):
-            problem["hide_comment"] = True
+    for trait in render_model.get("traits") or []:
+        raw_problems: list[dict[str, Any]] = trait.get("problems") or []
+        enriched_problems = [
+            _enrich_render_model_problem(p, guidance, raw_problems, i)
+            for i, p in enumerate(raw_problems)
+        ]
+        enriched_traits.append({**trait, "problems": enriched_problems})
 
-    return problems
-
-
-# ---------------------------------------------------------------------------
-# Day character
-# ---------------------------------------------------------------------------
-
-# Avalanche problem types that indicate a hard-to-read day (rule 2).
-_HARD_TO_READ_PROBLEMS: frozenset[str] = frozenset(
-    {"persistent_weak_layers", "gliding_snow"}
-)
-
-
-def _elevation_lower_le_2000(elevation: Any) -> bool:
-    """
-    Return True if the elevation's lower bound is at or below 2000m.
-
-    Non-numeric lower bounds (e.g. ``"treeline"``) return False.
-    """
-    if elevation is None or not elevation:
-        return False
-    lower = getattr(elevation, "lower", "") or ""
-    return lower.isdigit() and int(lower) <= 2000
-
-
-def _is_widespread(problems: list[dict[str, Any]]) -> bool:
-    """
-    Return True if the problems indicate widespread exposure (rule 3).
-
-    Checks three conditions: total unique aspects >= 6, any problem with
-    a lower elevation bound <= 2000m, or two or more problems present.
-    """
-    all_aspects: set[str] = set()
-    for p in problems:
-        all_aspects.update(p.get("aspects") or [])
-    has_low_elevation = any(
-        _elevation_lower_le_2000(p.get("elevation")) for p in problems
-    )
-    return len(all_aspects) >= 6 or has_low_elevation or len(problems) >= 2
-
-
-def _is_stable(danger: int, problems: list[dict[str, Any]]) -> bool:
-    """
-    Return True if the day qualifies as stable (rule 5).
-
-    Stable when danger is 1, or danger is 2 with only benign problems.
-    """
-    if danger == 1:
-        return True
-    return danger == 2 and all(
-        p.get("problem_type") == "no_distinct_avalanche_problem" for p in problems
-    )
-
-
-def day_character(panel: dict[str, Any]) -> str:
-    """
-    Classify a bulletin panel into one of five day-character labels.
-
-    Rules are evaluated top-to-bottom; the first match wins. The function
-    is pure — it derives everything from the panel dict produced by
-    :func:`_build_panel_context`.
-
-    Args:
-        panel: A panel context dict with at minimum ``danger_number``
-            (str), ``danger_subdivision`` (str), and ``problems`` (list
-            of dicts with ``problem_type``, ``aspects``, ``elevation``).
-
-    Returns:
-        One of ``"Stable day"``, ``"Manageable day"``,
-        ``"Hard-to-read day"``, ``"Widespread danger"``, or
-        ``"Dangerous conditions"``.
-
-    """
-    danger = int(panel.get("danger_number") or 1)
-    subdivision = panel.get("danger_subdivision", "")
-    problems: list[dict[str, Any]] = panel.get("problems") or []
-
-    # Rule 1 — Dangerous conditions: danger >= 4
-    if danger >= 4:
-        return "Dangerous conditions"
-
-    # Rule 2 — Hard-to-read day: danger >= 2 and any hard-to-read problem
-    if danger >= 2 and any(
-        p.get("problem_type") in _HARD_TO_READ_PROBLEMS for p in problems
-    ):
-        return "Hard-to-read day"
-
-    # Rule 3 — Widespread danger: danger == 3 and broad exposure
-    if danger == 3 and _is_widespread(problems):
-        return "Widespread danger"
-
-    # Rule 3b — Widespread danger: danger == 3 and upper subdivision (3+)
-    if danger == 3 and subdivision == "+":
-        return "Widespread danger"
-
-    # Rule 5 — Stable day
-    if _is_stable(danger, problems):
-        return "Stable day"
-
-    # Rule 4 — Manageable day: danger 2 or 3 with no earlier match
-    if danger in {2, 3}:
-        return "Manageable day"
-
-    # Safe default
-    return "Stable day"
+    return {**render_model, "traits": enriched_traits}
 
 
 def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
@@ -1364,6 +1268,24 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
 
     snowpack_structure = (props.get("snowpackStructure") or {}).get("comment") or ""
 
+    # Retrieve or build the render model. Bulletins ingested before this
+    # feature was deployed will have render_model_version == 0; build on
+    # the fly so the page renders correctly while a backfill job catches up.
+    raw_render_model = bulletin.render_model
+    if bulletin.render_model_version < RENDER_MODEL_VERSION:
+        logger.warning(
+            "Bulletin %s has stale render_model (stored version=%d, current=%d);"
+            " building on the fly",
+            bulletin.bulletin_id,
+            bulletin.render_model_version,
+            RENDER_MODEL_VERSION,
+        )
+        raw_render_model = build_render_model(props)
+
+    # Enrich the render model with presentation-ready fields (labels,
+    # ElevationBounds, field_guidance, hide_comment per trait).
+    render_model = _enrich_render_model(raw_render_model)
+
     panel: dict[str, Any] = {
         "bulletin": bulletin,
         "danger_key": danger_key,
@@ -1377,8 +1299,6 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "danger_sub": danger_meta["sub"],
         "danger_icon": danger_meta["icon"],
         "danger_source": "dangerRatings[*].mainValue (highest)",
-        "problems": _panel_problems(props),
-        "problems_source": "avalancheProblems[*].problemType",
         "key_message": key_message,
         "key_message_source": key_message_source,
         "snowpack_structure": snowpack_structure,
@@ -1387,8 +1307,9 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "footer_next_update": bulletin.next_update,
         "footer_date_source": "Bulletin.valid_from / valid_to",
         "admin_url": reverse("admin:pipeline_bulletin_change", args=[bulletin.pk]),
+        "render_model": render_model,
     }
-    panel["day_character"] = day_character(panel)
+    panel["day_character"] = compute_day_character(raw_render_model)
     return panel
 
 

@@ -74,6 +74,20 @@ class MyModel(BaseModel):           # always inherit BaseModel
 5. Run `poetry run python -m pytest` (or `tox`) and fix any failures before finishing
 6. Run `poetry run ruff check . --fix` and `poetry run ruff format .` — leave no linting errors
 
+## Handoff gate — MANDATORY before you report back
+
+Before you declare the task done, run these three commands in order and confirm each exits clean. This is a **hard gate** — do not hand off with any of them red.
+
+```bash
+poetry run ruff check .        # must print "All checks passed!"
+poetry run ruff format --check .   # must print "N files already formatted" with zero reformats
+poetry run python -m pytest    # must be all green
+```
+
+If `ruff format --check` reports any file as "Would reformat", run `poetry run ruff format .` and re-run the check. Do NOT hand off with formatting drift — the pre-commit hook will fail and the user has to fix it themselves, which is unacceptable.
+
+State in your output summary that all three gates passed. If any one is red, report the failure explicitly instead of claiming success — a partial result the user can help with is much better than a false "done".
+
 ## What you must not do
 
 - Do not introduce new abstractions unless the architect's plan calls for them
@@ -89,5 +103,8 @@ After implementation, provide a brief summary:
 - Created: [list of new files]
 - Modified: [list of changed files]
 - Tests: [pass/fail count, coverage %]
+- Gates: ruff check ✓ / ruff format --check ✓ / pytest ✓
 - Notes: [anything the reviewer should know]
 ```
+
+If any gate is not ✓, mark it explicitly and do not claim the task is done.

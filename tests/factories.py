@@ -70,6 +70,8 @@ class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
 
     bulletin_id = factory.Sequence(lambda n: f"bulletin-{n:04d}")
     raw_data = factory.LazyFunction(dict)
+    render_model = factory.LazyFunction(lambda: {"version": 0, "traits": []})
+    render_model_version = 0
     issued_at = factory.Faker("date_time_this_year", tzinfo=UTC)
     valid_from = factory.LazyAttribute(lambda obj: obj.issued_at)
     valid_to = factory.LazyAttribute(lambda obj: obj.issued_at)

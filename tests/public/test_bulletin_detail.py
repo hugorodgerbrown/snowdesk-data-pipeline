@@ -367,3 +367,29 @@ class TestBulletinDetailView:
         response = client.get(url)
 
         assert response.status_code == 404
+
+    def test_stale_render_model_triggers_warning_and_rebuilds(
+        self, client: Client, region, caplog
+    ):
+        """A bulletin at a lower render_model_version triggers a warning and rebuilds."""
+        # Create a bulletin whose stored render_model_version is 1.
+        am = _make_am_bulletin(region, date(2026, 3, 15), render_model_version=1)
+        url = reverse(
+            "public:bulletin",
+            kwargs={"region_id": "CH-4115", "slug": "valais"},
+        )
+
+        # Patch RENDER_MODEL_VERSION in the view module to 2 so version 1 appears stale.
+        with patch("public.views.RENDER_MODEL_VERSION", 2):
+            with _freeze("2026-03-15T10:00:00+00:00"):
+                with caplog.at_level("WARNING", logger="public.views"):
+                    response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.context["bulletin"].pk == am.pk
+        assert any(
+            "stale render_model" in record.message
+            and "stored version=1" in record.message
+            and "current=2" in record.message
+            for record in caplog.records
+        )

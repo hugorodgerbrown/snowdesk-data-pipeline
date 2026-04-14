@@ -23,6 +23,7 @@ from typing import Any
 import requests
 
 from pipeline.models import Bulletin, PipelineRun, Region, RegionBulletin
+from pipeline.services.render_model import RENDER_MODEL_VERSION, build_render_model
 
 logger = logging.getLogger(__name__)
 
@@ -167,8 +168,28 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
     next_update_raw: str | None = raw.get("nextUpdate")
     raw_regions: list[dict[str, str]] = raw.get("regions", [])
 
+    # Build render model from the raw properties.
+    try:
+        computed_render_model = build_render_model(raw)
+        computed_render_model_version = RENDER_MODEL_VERSION
+    except Exception as exc:
+        logger.error(
+            "Failed to build render model for bulletin %s: %s",
+            bulletin_id,
+            exc,
+            exc_info=True,
+        )
+        computed_render_model = {
+            "version": 0,
+            "traits": [],
+            "error": str(exc),
+        }
+        computed_render_model_version = 0
+
     defaults: dict[str, Any] = {
         "raw_data": raw_data,
+        "render_model": computed_render_model,
+        "render_model_version": computed_render_model_version,
         "issued_at": _parse_dt(raw["publicationTime"]),
         "valid_from": _parse_dt(raw["validTime"]["startTime"]),
         "valid_to": _parse_dt(raw["validTime"]["endTime"]),

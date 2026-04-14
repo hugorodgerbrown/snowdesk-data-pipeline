@@ -1,0 +1,54 @@
+{
+  "type": "Feature",
+  "geometry": null,
+  "properties": {
+    "bulletinID": "subdivision-3plus-001",
+    "lang": "en",
+    "validTime": {
+      "startTime": "2026-02-05T15:00:00Z",
+      "endTime": "2026-02-06T15:00:00Z"
+    },
+    "nextUpdate": "2026-02-06T15:00:00Z",
+    "unscheduled": false,
+    "regions": [
+      { "regionID": "CH-4115", "name": "Piz Buin" }
+    ],
+    "dangerRatings": [
+      {
+        "mainValue": "considerable",
+        "validTimePeriod": "all_day",
+        "customData": {
+          "CH": {
+            "subdivision": "plus"
+          }
+        }
+      }
+    ],
+    "avalancheProblems": [
+      {
+        "problemType": "wind_slab",
+        "comment": "Danger is considerable and increasing.",
+        "dangerRatingValue": "considerable",
+        "validTimePeriod": "all_day",
+        "aspects": ["N", "NE"],
+        "elevation": { "lowerBound": "2600" }
+      }
+    ],
+    "customData": {
+      "CH": {
+        "aggregation": [
+          {
+            "category": "dry",
+            "validTimePeriod": "all_day",
+            "problemTypes": ["wind_slab"],
+            "title": "Wind slab, whole day"
+          }
+        ]
+      }
+    },
+    "publicationTime": "2026-02-05T15:00:00Z",
+    "snowpackStructure": {
+      "comment": "<p>Wind slab problems are widespread at upper elevations.</p>"
+    }
+  }
+}

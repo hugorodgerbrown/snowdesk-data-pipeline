@@ -1,57 +1,60 @@
 """
-tests/public/test_day_character.py — Tests for the day_character function.
+tests/public/test_day_character.py — Tests for the compute_day_character function.
 
 Covers all five rules in the day-character cascade, including edge cases
 for subdivision, elevation bounds, aspect counts, and the safe default.
+
+Re-pointed to pipeline.services.render_model.compute_day_character which
+supersedes the old public.views.day_character implementation.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from public.views import (
-    ElevationBounds,
-    day_character,
-)
+from pipeline.services.render_model import compute_day_character
 
 
-def _panel(
+def _render_model(
     danger_number: str = "1",
-    danger_subdivision: str = "",
+    danger_subdivision: str | None = None,
     problems: list | None = None,
 ) -> dict:
-    """Build a minimal panel dict for day_character testing."""
+    """Build a minimal render model dict for compute_day_character testing."""
     return {
-        "danger_number": danger_number,
-        "danger_subdivision": danger_subdivision,
-        "problems": problems or [],
+        "danger": {
+            "key": "low",
+            "number": danger_number,
+            "subdivision": danger_subdivision,
+        },
+        "traits": [
+            {
+                "category": "dry",
+                "time_period": "all_day",
+                "problems": problems or [],
+            }
+        ],
     }
 
 
 def _problem(
     problem_type: str = "new_snow",
     aspects: list | None = None,
-    lower: str = "",
-    upper: str = "",
+    lower: int | None = None,
+    upper: int | None = None,
 ) -> dict:
-    """Build a minimal problem dict."""
-    display = ""
-    bound_type = ""
-    if lower and upper:
-        display = f"{lower}\u2013{upper}m"
-        bound_type = "BOTH"
-    elif lower:
-        display = f"above {lower}m"
-        bound_type = "LOWER"
-    elif upper:
-        display = f"below {upper}m"
-        bound_type = "UPPER"
+    """Build a minimal render model problem dict."""
+    elevation: dict | None = None
+    if lower is not None or upper is not None:
+        elevation = {"lower": lower, "upper": upper, "treeline": False}
     return {
         "problem_type": problem_type,
         "aspects": aspects or [],
-        "elevation": ElevationBounds(
-            lower=lower, upper=upper, display=display, bound_type=bound_type
-        ),
+        "elevation": elevation,
+        "time_period": "all_day",
+        "comment_html": "",
+        "core_zone_text": None,
+        "danger_rating_value": None,
     }
 
 
@@ -60,19 +63,19 @@ class TestRule1DangerousConditions:
 
     def test_danger_4_returns_dangerous(self) -> None:
         """Danger level 4 → Dangerous conditions."""
-        assert day_character(_panel("4")) == "Dangerous conditions"
+        assert compute_day_character(_render_model("4")) == "Dangerous conditions"
 
     def test_danger_5_returns_dangerous(self) -> None:
         """Danger level 5 → Dangerous conditions."""
-        assert day_character(_panel("5")) == "Dangerous conditions"
+        assert compute_day_character(_render_model("5")) == "Dangerous conditions"
 
     def test_danger_4_ignores_problems(self) -> None:
         """Rule 1 wins regardless of problem types."""
-        panel = _panel(
+        rm = _render_model(
             "4",
             problems=[_problem("no_distinct_avalanche_problem")],
         )
-        assert day_character(panel) == "Dangerous conditions"
+        assert compute_day_character(rm) == "Dangerous conditions"
 
 
 class TestRule2HardToReadDay:
@@ -80,29 +83,29 @@ class TestRule2HardToReadDay:
 
     def test_persistent_weak_layers_at_moderate(self) -> None:
         """Danger 2 + persistent weak layers → Hard-to-read day."""
-        panel = _panel("2", problems=[_problem("persistent_weak_layers")])
-        assert day_character(panel) == "Hard-to-read day"
+        rm = _render_model("2", problems=[_problem("persistent_weak_layers")])
+        assert compute_day_character(rm) == "Hard-to-read day"
 
     def test_gliding_snow_at_considerable(self) -> None:
         """Danger 3 + gliding snow → Hard-to-read day."""
-        panel = _panel("3", problems=[_problem("gliding_snow")])
-        assert day_character(panel) == "Hard-to-read day"
+        rm = _render_model("3", problems=[_problem("gliding_snow")])
+        assert compute_day_character(rm) == "Hard-to-read day"
 
     def test_does_not_trigger_at_danger_1(self) -> None:
         """Danger 1 + persistent weak layers → does NOT trigger rule 2."""
-        panel = _panel("1", problems=[_problem("persistent_weak_layers")])
-        assert day_character(panel) == "Stable day"
+        rm = _render_model("1", problems=[_problem("persistent_weak_layers")])
+        assert compute_day_character(rm) == "Stable day"
 
     def test_mixed_problems_still_triggers(self) -> None:
         """Any hard-to-read problem among others triggers the rule."""
-        panel = _panel(
+        rm = _render_model(
             "2",
             problems=[
                 _problem("new_snow"),
                 _problem("persistent_weak_layers"),
             ],
         )
-        assert day_character(panel) == "Hard-to-read day"
+        assert compute_day_character(rm) == "Hard-to-read day"
 
 
 class TestRule3WidespreadDanger:
@@ -110,7 +113,7 @@ class TestRule3WidespreadDanger:
 
     def test_six_or_more_unique_aspects(self) -> None:
         """Danger 3 + >= 6 unique aspects → Widespread danger."""
-        panel = _panel(
+        rm = _render_model(
             "3",
             problems=[
                 _problem(
@@ -119,38 +122,38 @@ class TestRule3WidespreadDanger:
                 ),
             ],
         )
-        assert day_character(panel) == "Widespread danger"
+        assert compute_day_character(rm) == "Widespread danger"
 
     def test_low_elevation_bound(self) -> None:
         """Danger 3 + lower bound <= 2000m → Widespread danger."""
-        panel = _panel(
+        rm = _render_model(
             "3",
-            problems=[_problem("new_snow", lower="1800")],
+            problems=[_problem("new_snow", lower=1800)],
         )
-        assert day_character(panel) == "Widespread danger"
+        assert compute_day_character(rm) == "Widespread danger"
 
     def test_elevation_exactly_2000(self) -> None:
         """Danger 3 + lower bound == 2000m → Widespread danger."""
-        panel = _panel(
+        rm = _render_model(
             "3",
-            problems=[_problem("new_snow", lower="2000")],
+            problems=[_problem("new_snow", lower=2000)],
         )
-        assert day_character(panel) == "Widespread danger"
+        assert compute_day_character(rm) == "Widespread danger"
 
     def test_two_or_more_problems(self) -> None:
         """Danger 3 + >= 2 problems → Widespread danger."""
-        panel = _panel(
+        rm = _render_model(
             "3",
             problems=[
-                _problem("new_snow", lower="2400"),
-                _problem("wind_slab", lower="2600"),
+                _problem("new_snow", lower=2400),
+                _problem("wind_slab", lower=2600),
             ],
         )
-        assert day_character(panel) == "Widespread danger"
+        assert compute_day_character(rm) == "Widespread danger"
 
     def test_not_triggered_at_danger_2(self) -> None:
         """Rule 3 only applies at danger 3, not danger 2."""
-        panel = _panel(
+        rm = _render_model(
             "2",
             problems=[
                 _problem(
@@ -161,7 +164,7 @@ class TestRule3WidespreadDanger:
         )
         # Rule 2 doesn't match (new_snow isn't hard-to-read), so falls
         # through to Rule 4 → Manageable day.
-        assert day_character(panel) == "Manageable day"
+        assert compute_day_character(rm) == "Manageable day"
 
 
 class TestRule3bWidespreadSubdivision:
@@ -169,21 +172,21 @@ class TestRule3bWidespreadSubdivision:
 
     def test_three_plus_returns_widespread(self) -> None:
         """Danger 3+ → Widespread danger even without broad exposure."""
-        panel = _panel(
+        rm = _render_model(
             "3",
             danger_subdivision="+",
-            problems=[_problem("new_snow", lower="2600", aspects=["N"])],
+            problems=[_problem("new_snow", lower=2600, aspects=["N"])],
         )
-        assert day_character(panel) == "Widespread danger"
+        assert compute_day_character(rm) == "Widespread danger"
 
     def test_three_minus_does_not_trigger(self) -> None:
         """Danger 3- does not trigger rule 3b."""
-        panel = _panel(
+        rm = _render_model(
             "3",
             danger_subdivision="-",
-            problems=[_problem("new_snow", lower="2600", aspects=["N"])],
+            problems=[_problem("new_snow", lower=2600, aspects=["N"])],
         )
-        assert day_character(panel) == "Manageable day"
+        assert compute_day_character(rm) == "Manageable day"
 
 
 class TestRule4ManageableDay:
@@ -191,16 +194,16 @@ class TestRule4ManageableDay:
 
     def test_danger_2_with_new_snow(self) -> None:
         """Danger 2 + new_snow (not hard-to-read) → Manageable day."""
-        panel = _panel("2", problems=[_problem("new_snow")])
-        assert day_character(panel) == "Manageable day"
+        rm = _render_model("2", problems=[_problem("new_snow")])
+        assert compute_day_character(rm) == "Manageable day"
 
     def test_danger_3_narrow_exposure(self) -> None:
         """Danger 3 with narrow exposure and no hard-to-read problems."""
-        panel = _panel(
+        rm = _render_model(
             "3",
-            problems=[_problem("wind_slab", lower="2600", aspects=["N", "NE"])],
+            problems=[_problem("wind_slab", lower=2600, aspects=["N", "NE"])],
         )
-        assert day_character(panel) == "Manageable day"
+        assert compute_day_character(rm) == "Manageable day"
 
 
 class TestRule5StableDay:
@@ -208,28 +211,28 @@ class TestRule5StableDay:
 
     def test_danger_1_is_stable(self) -> None:
         """Danger 1 → Stable day."""
-        assert day_character(_panel("1")) == "Stable day"
+        assert compute_day_character(_render_model("1")) == "Stable day"
 
     def test_danger_2_all_benign_problems(self) -> None:
         """Danger 2 with only no_distinct_avalanche_problem → Stable day."""
-        panel = _panel(
+        rm = _render_model(
             "2",
             problems=[_problem("no_distinct_avalanche_problem")],
         )
-        assert day_character(panel) == "Stable day"
+        assert compute_day_character(rm) == "Stable day"
 
     def test_danger_2_no_problems_is_stable(self) -> None:
         """Danger 2 with empty problems list → Stable day."""
-        panel = _panel("2", problems=[])
-        assert day_character(panel) == "Stable day"
+        rm = _render_model("2", problems=[])
+        assert compute_day_character(rm) == "Stable day"
 
 
 class TestSafeDefault:
     """Tests for the safe default fallback."""
 
-    def test_empty_panel_defaults_to_stable(self) -> None:
-        """A completely empty panel dict defaults to Stable day."""
-        assert day_character({}) == "Stable day"
+    def test_empty_render_model_defaults_to_stable(self) -> None:
+        """A completely empty render model dict defaults to Stable day."""
+        assert compute_day_character({}) == "Stable day"
 
 
 @pytest.mark.django_db
