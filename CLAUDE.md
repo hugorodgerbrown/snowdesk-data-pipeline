@@ -199,6 +199,36 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
   and always leave a comment explaining why.
 - Ensure that all function arguments are typed, except *args and **kwargs
 
+## Local CI — always run tox
+
+**`tox` is the single entry point** for running linters, type checks, Django
+system checks, and the test suite locally. The tox envs declare their own
+dependencies (independent of the Poetry venv), so a tox run mirrors what CI
+will execute — catching the "works on my machine" class of failure before a
+PR is opened.
+
+```bash
+poetry run tox                    # run every env (fmt, lint, mypy, django-checks, test)
+poetry run tox -e test            # one env at a time
+poetry run tox -e mypy
+poetry run tox -e django-checks
+poetry run tox -e fmt             # ruff format --check
+poetry run tox -e lint            # ruff check
+poetry run tox --recreate         # rebuild envs from scratch after a deps change
+```
+
+When a runtime dependency is added via `poetry add`, **also add it to the
+relevant `deps =` block in `tox.ini`** (`test`, `django-checks`, and
+`mypy` all need it; `fmt` and `lint` almost never do). Tox will not pick
+up `pyproject.toml` dependencies automatically.
+
+Template formatting is enforced by `djangofmt`, which runs as a pre-commit
+hook. Always run `pre-commit run djangofmt --files <path>` (or just `pre-commit
+run --all-files`) after editing templates so the hook doesn't reformat on commit.
+
+**Before opening a pull request**, run `poetry run tox` and fix every failure.
+Do not rely on CI to surface issues that tox would have caught locally.
+
 ## Django coding rules
 
 - All models to inherit from `BaseModel` abstract model
@@ -218,7 +248,11 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 corresponding test_{module_name}.py that contains the tests.
 - All new code must have covering tests
 - Always run tests after code changes and ensure 100% pass rate and 90% coverage.
-- Use tox to run local CI and tests
+- **Run tests via `poetry run tox -e test`** (not via a bare `pytest` call).
+  The tox env mirrors CI; running pytest directly may succeed against the
+  Poetry venv while CI fails on missing deps in the tox env.
+- See the "Local CI — always run tox" section above for the full command set
+  and the dependency-sync rule.
 - All datetime objects must have tzinfo
 - Always call factories with `.create()` (e.g. `RegionFactory.create(...)`) — never
   use direct instantiation (`RegionFactory(...)`). The `.create()` classmethod is
