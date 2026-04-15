@@ -27,12 +27,12 @@ from base.html's @theme tokens.
     <body class="bg-bg text-text-1 px-4 py-6 min-h-screen">
         {# ── Outermost container: font-sans overrides any serif from @theme ── #}
         <div class="font-sans max-w-[640px] mx-auto">
-            {# ════════════════════════════════════════════════════════════════
+            {% comment %}
                SECTION 1 — Page chrome
                Region name, date/validity, prev/next navigation.
                No Close button — artefact of WR's modal-over-map architecture,
                removed per DESIGN.md confirmed subtractions.
-               ════════════════════════════════════════════════════════════════ #}
+            {% endcomment %}
             <header class="mb-5">
                 <p class="text-xs text-text-3 text-center mb-1 uppercase tracking-widest font-mono">
                     {% if is_today %}Today{% else %}{{ page_date|date:"l j F Y" }}{% endif %}
@@ -113,11 +113,11 @@ from base.html's @theme tokens.
                     </div>
                 {% else %}
                     {% with rm=panel.render_model %}
-                        {# ════════════════════════════════════════════════════════════
-                   SECTION 2 — Bulletin headline band
-                   Always present.  One rating on simple days (1 trait),
-                   two ratings with → on variable days (2 traits).
-                   ════════════════════════════════════════════════════════════ #}
+                        {% comment %}
+                           SECTION 2 — Bulletin headline band
+                           Always present.  One rating on simple days (1 trait),
+                           two ratings with → on variable days (2 traits).
+                        {% endcomment %}
                         <div
                             class="danger-band rounded-[12px] px-4 py-3 mb-4 border border-border"
                             data-level="{{ panel.danger_key }}"
@@ -160,11 +160,11 @@ from base.html's @theme tokens.
                             {% endif %}
                         </div>
 
-                        {# ════════════════════════════════════════════════════════════
-                   SECTION 3 — Rating block(s)
-                   One block per trait.  The partial handles coloured header,
-                   aspect/elevation row, and problem rows.
-                   ════════════════════════════════════════════════════════════ #}
+                        {% comment %}
+                           SECTION 3 — Rating block(s)
+                           One block per trait.  The partial handles coloured header,
+                           aspect/elevation row, and problem rows.
+                        {% endcomment %}
                         {% if not rm.traits %}
                             <div class="rounded-[12px] border border-border bg-tag px-4 py-5 text-center mb-4">
                                 <p class="text-sm font-medium text-text-1 mb-0.5">
@@ -180,11 +180,11 @@ from base.html's @theme tokens.
                             {% endfor %}
                         {% endif %}
 
-                        {# ════════════════════════════════════════════════════════════
-                   SECTION 4 — Metadata strip
-                   Three fields: Issued / Valid until / Next update.
-                   Source: render_model.metadata.  Render — on None.
-                   ════════════════════════════════════════════════════════════ #}
+                        {% comment %}
+                           SECTION 4 — Metadata strip
+                           Three fields: Issued / Valid until / Next update.
+                           Source: render_model.metadata.  Render — on None.
+                        {% endcomment %}
                         {% with meta=rm.metadata %}
                             {% if meta %}
                                 <div
@@ -225,12 +225,12 @@ from base.html's @theme tokens.
                             {% endif %}
                         {% endwith %}
 
-                        {# ════════════════════════════════════════════════════════════
-                   SECTION 5 — Snowpack and weather
-                   Four prose sub-blocks in order.  Each skipped entirely when
-                   its source is None/empty — no empty headings rendered.
-                   HTML bodies pass through |snowdesk_html for sanitisation.
-                   ════════════════════════════════════════════════════════════ #}
+                        {% comment %}
+                           SECTION 5 — Snowpack and weather
+                           Four prose sub-blocks in order.  Each skipped entirely when
+                           its source is None/empty — no empty headings rendered.
+                           HTML bodies pass through |snowdesk_html for sanitisation.
+                        {% endcomment %}
                         {% with prose=rm.prose %}
                             {% if prose %}
                                 {% if prose.snowpack_structure or prose.weather_review or prose.weather_forecast or prose.tendency %}
