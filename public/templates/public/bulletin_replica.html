@@ -305,6 +305,12 @@ DESIGN.md specification.
                         {% endfor %}
                     {% endif %}
                 </p>
+                <p class="mb-2">
+                    <a
+                        class="underline hover:text-text-2"
+                        href="{% url 'public:random_bulletins' region_id=region_id %}"
+                    >View history</a>
+                </p>
                 <p>
                     Avalanche bulletin data &copy; <a
                         class="underline hover:text-text-2"
