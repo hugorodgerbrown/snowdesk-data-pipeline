@@ -349,56 +349,199 @@ def _render_bulletin_page(
     return response
 
 
-def _select_bulletin_for_date(
+def _issues_for_date(
     region: Region,
     target_date: datetime.date,
-) -> Bulletin | None:
+) -> list[Bulletin]:
     """
-    Select the appropriate bulletin for a region on a given date.
+    Return all bulletins whose validity window overlaps a calendar day.
 
-    The target date corresponds to the bulletin's ``valid_to`` date — both
-    the evening issue (previous-day valid_from) and the morning update
-    (same-day valid_from) share the same ``valid_to`` date.
+    Up to three SLF issues can touch a single day:
 
-    For past dates the morning bulletin is preferred (the most up-to-date
-    daytime assessment).  For the current day the bulletin whose validity
-    window contains *now* is returned.
+    * the previous-day evening issue (valid ``D-1 17:00 → D 17:00``),
+    * the same-day morning update  (valid ``D 08:00  → D 17:00``),
+    * the same-day evening issue    (valid ``D 17:00 → D+1 17:00``).
+
+    The query captures all three by asking for windows that *intersect*
+    day D: ``valid_from.date() <= D AND valid_to.date() >= D``.
+
+    The result is sorted by ``valid_from`` ascending so that rendering
+    the list chronologically matches the mental model of earlier → later
+    issue times on the day.
 
     Args:
         region: The Region to look up.
         target_date: Calendar date identifying the day to display.
 
     Returns:
-        The best-matching Bulletin, or None if no bulletins exist.
+        A chronologically-sorted list of Bulletins (possibly empty).
 
     """
-    now = timezone.now()
-    today = now.date()
-
-    candidates = list(
+    return list(
         Bulletin.objects.filter(
             regions=region,
-            valid_to__date=target_date,
-        ).order_by("-valid_from")
+            valid_from__date__lte=target_date,
+            valid_to__date__gte=target_date,
+        ).order_by("valid_from")
     )
 
-    if not candidates:
+
+def _select_default_issue(
+    issues: list[Bulletin],
+    target_date: datetime.date,
+) -> Bulletin | None:
+    """
+    Pick the default bulletin from a day's issues.
+
+    * For **today**, prefer the issue whose window contains *now* — the
+      bulletin being live-published to the public right this moment.
+    * For any other day (past or future), prefer the issue whose window
+      contains **10:00 UTC** on that calendar day.  10:00 sits after the
+      08:00 morning update but before the 17:00 evening rollover, so it
+      picks the morning update when it exists and falls back to the
+      previous day's evening issue (which is also valid at 10:00) when
+      it doesn't — matching SLF's "what did the current day-time
+      forecast say?" convention.
+
+    Falls back to the last issue in the list (the latest by
+    ``valid_from``) when nothing spans the pivot moment.  Returns
+    ``None`` when ``issues`` is empty.
+
+    Args:
+        issues: Day's issues, chronologically sorted.
+        target_date: Calendar date identifying the day being displayed.
+
+    Returns:
+        The default Bulletin to render, or ``None`` when no issues exist.
+
+    """
+    if not issues:
         return None
 
-    if target_date >= today:
-        # Current or future day — pick the bulletin valid right now.
-        for b in candidates:
-            if b.valid_from <= now <= b.valid_to:
-                return b
-        # Nothing spans *now*; return the most recently started.
-        return candidates[0]
+    now = timezone.now()
+    today = now.date()
+    if target_date == today:
+        pivot = now
+    else:
+        pivot = datetime.datetime.combine(
+            target_date, datetime.time(10, 0), tzinfo=datetime.UTC
+        )
 
-    # Past day — prefer the morning bulletin (valid_from on the same date).
-    for b in candidates:
-        if b.valid_from.date() == target_date:
+    # Iterate newest-first so that when both the previous-day evening
+    # issue AND the current-day morning update span the pivot, the
+    # morning update wins — its later ``valid_from`` marks it as the
+    # authoritative refresh of the earlier forecast.
+    for b in reversed(issues):
+        if b.valid_from <= pivot <= b.valid_to:
             return b
-    # No morning bulletin; fall back to the evening issue.
-    return candidates[0]
+
+    # No issue spans the pivot — fall back to the most recently-issued one.
+    return issues[-1]
+
+
+def _select_bulletin_for_date(
+    region: Region,
+    target_date: datetime.date,
+) -> Bulletin | None:
+    """
+    Return the default bulletin to display for a region on a given date.
+
+    Thin wrapper over :func:`_issues_for_date` +
+    :func:`_select_default_issue`.  Exposed as a named helper because
+    other views (``examples_random``, ``season_bulletins``) depend on
+    picking a single default without knowing about the full issue list.
+
+    Args:
+        region: The Region to look up.
+        target_date: Calendar date identifying the day to display.
+
+    Returns:
+        The default Bulletin for the day, or ``None`` if no bulletins exist.
+
+    """
+    return _select_default_issue(_issues_for_date(region, target_date), target_date)
+
+
+def _build_issue_tabs(
+    issues: list[Bulletin],
+    selected: Bulletin,
+    target_date: datetime.date,
+) -> list[dict[str, Any]]:
+    """
+    Build the per-issue tab entries displayed above the bulletin body.
+
+    Each tab carries a human-readable short label (e.g. ``"11 Apr
+    17:00"``), a longer accessible label (``"Issued 11 April 17:00
+    (previous evening)"``), the bulletin's UUID (used as the
+    ``?issue=`` query param), and an ``is_active`` flag so the template
+    can highlight the current selection.
+
+    The label includes a parenthesised role — *"previous evening"*,
+    *"morning"*, *"evening"* — derived from the issue's ``valid_from``
+    relative to the target calendar day so readers can orient
+    themselves without having to mentally diff dates.
+
+    Args:
+        issues: All bulletins overlapping ``target_date``, chronological.
+        selected: The issue currently being rendered.
+        target_date: Calendar date identifying the day on display.
+
+    Returns:
+        A list of dicts with ``bulletin_id``, ``short_label``,
+        ``long_label``, ``role``, and ``is_active`` keys.
+
+    """
+    tabs: list[dict[str, Any]] = []
+    for b in issues:
+        vf: datetime.datetime = b.valid_from
+        issue_date: datetime.date = vf.date()
+        if issue_date < target_date:
+            role = "previous evening"
+        elif vf.hour < 12:
+            role = "morning"
+        else:
+            role = "evening"
+        short_label = f"{vf.strftime('%-d %b')} {vf.strftime('%H:%M')}"
+        long_label = f"Issued {vf.strftime('%-d %B %H:%M')} ({role})"
+        tabs.append(
+            {
+                "bulletin_id": str(b.bulletin_id),
+                "short_label": short_label,
+                "long_label": long_label,
+                "role": role,
+                "is_active": b.pk == selected.pk,
+            }
+        )
+    return tabs
+
+
+def _resolve_selected_issue(
+    issues: list[Bulletin],
+    target_date: datetime.date,
+    requested_id: str | None,
+) -> Bulletin | None:
+    """
+    Resolve which issue should render given a user-requested override.
+
+    When ``?issue=<uuid>`` names one of the day's issues, return that
+    bulletin.  Otherwise fall back to :func:`_select_default_issue`.
+    Silently ignores unknown / malformed IDs so stale bookmarks degrade
+    to the default view rather than 404ing.
+
+    Args:
+        issues: All bulletins overlapping ``target_date``.
+        target_date: Calendar date identifying the day being displayed.
+        requested_id: The ``?issue`` query param value, or ``None``.
+
+    Returns:
+        The issue to render, or ``None`` when ``issues`` is empty.
+
+    """
+    if requested_id:
+        for b in issues:
+            if str(b.bulletin_id) == requested_id:
+                return b
+    return _select_default_issue(issues, target_date)
 
 
 def _get_nav_dates(
@@ -639,7 +782,9 @@ def examples_random(request: HttpRequest) -> HttpResponse:
 
     region = random.choice(list(regions))  # noqa: S311 — not crypto
     today = timezone.now().date()
-    selected = _select_bulletin_for_date(region, today)
+    issues = _issues_for_date(region, today)
+    requested_issue_id = request.GET.get("issue") or None
+    selected = _resolve_selected_issue(issues, today, requested_issue_id)
 
     if selected is None:
         return _render_bulletin_page(
@@ -653,7 +798,8 @@ def examples_random(request: HttpRequest) -> HttpResponse:
             bulletin=None,
         )
 
-    page_date = selected.valid_to.date()
+    page_date = today
+    issue_tabs = _build_issue_tabs(issues, selected, today)
 
     link = (
         RegionBulletin.objects.filter(bulletin=selected, region=region)
@@ -705,6 +851,7 @@ def examples_random(request: HttpRequest) -> HttpResponse:
         "next_update_time": next_update_time,
         "related_regions": related_regions,
         "year": today.year,
+        "issue_tabs": issue_tabs,
     }
     return _render_bulletin_page(request, context, bulletin=selected)
 
@@ -838,8 +985,14 @@ def bulletin_detail(
         except ValueError:
             target_date = today
 
-    # Select the best bulletin for this region and date.
-    selected = _select_bulletin_for_date(region, target_date)
+    # Collect every issue that touches the target day and pick the one
+    # the user asked for via ``?issue=<uuid>``; otherwise fall back to
+    # the 10:00-rule default.  Keeping the full list lets the template
+    # render an issue-tab strip so readers can swap between the
+    # evening / morning / evening issues without losing the URL date.
+    issues = _issues_for_date(region, target_date)
+    requested_issue_id = request.GET.get("issue") or None
+    selected = _resolve_selected_issue(issues, target_date, requested_issue_id)
 
     if selected is None:
         return _render_bulletin_page(
@@ -853,8 +1006,11 @@ def bulletin_detail(
             bulletin=None,
         )
 
-    # The page date is the valid_to date of the selected bulletin.
-    page_date = selected.valid_to.date()
+    # The page represents the calendar day chosen in the URL, independent
+    # of which issue the viewer has selected — otherwise flipping to the
+    # same-day-evening issue would silently bump the header to D+1.
+    page_date = target_date
+    issue_tabs = _build_issue_tabs(issues, selected, target_date)
 
     # Region name as it appeared in this bulletin.
     link = (
@@ -909,6 +1065,7 @@ def bulletin_detail(
         "next_update_time": next_update_time,
         "related_regions": related_regions,
         "year": today.year,
+        "issue_tabs": issue_tabs,
     }
     return _render_bulletin_page(request, context, bulletin=selected)
 

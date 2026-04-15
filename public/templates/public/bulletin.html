@@ -88,6 +88,33 @@ from base.html's @theme tokens.
                 </nav>
             {% endif %}
 
+            {# ── Issue tabs ─────────────────────────────────────────────── #}
+            {# Up to three bulletins can be valid within a single calendar  #}
+            {# day (previous evening, morning update, same-day evening).    #}
+            {# Only render the tab strip when there's a genuine choice to   #}
+            {# be made, i.e. two or more issues touch the target date.      #}
+            {% if issue_tabs and issue_tabs|length > 1 %}
+                <nav
+                    class="flex items-stretch justify-center gap-1 mb-6 text-[11px] font-mono"
+                    aria-label="Issues for this day"
+                    data-testid="issue-tabs"
+                >
+                    {% for tab in issue_tabs %}
+                        <a
+                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap {% if tab.is_active %}bg-text-1 text-bg border-text-1{% else %}bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2{% endif %}"
+                            href="?issue={{ tab.bulletin_id }}"
+                            aria-label="{{ tab.long_label }}"
+                            {% if tab.is_active %}
+                                aria-current="page"
+                            {% endif %}
+                            data-testid="issue-tab"
+                        >
+                            {{ tab.short_label }}
+                        </a>
+                    {% endfor %}
+                </nav>
+            {% endif %}
+
             {% if not bulletin %}
                 {# ── Empty state ─────────────────────────────────────────── #}
                 <div class="text-center text-text-3 py-16 text-sm">
