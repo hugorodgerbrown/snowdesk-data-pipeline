@@ -1,10 +1,10 @@
 """
-tests/public/test_bulletin_replica.py — Tests for the WhiteRisk-replica bulletin template.
+tests/public/test_bulletin_page.py — Tests for the WhiteRisk-replica bulletin template.
 
-Covers the ?replica=1 query-flag behaviour in bulletin_detail, plus structural
-assertions on the six sections of bulletin_replica.html.
+Covers structural assertions on the six sections of bulletin.html as rendered
+by the bulletin_detail view.
 
-Fixtures use the same helper pattern as test_bulletin_detail.py (AM/PM bulletin
+Fixtures use the same helper pattern as test_bulletin_detail.py (AM bulletin
 factories) to stay consistent with the existing test suite.
 """
 
@@ -177,56 +177,29 @@ def variable_bulletin(region):
     return _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
 
-def _url(region_id: str, slug: str, date_str: str, replica: bool = False) -> str:
-    """Build the bulletin date URL, optionally appending ?replica=1."""
-    base = reverse(
+def _url(region_id: str, slug: str, date_str: str) -> str:
+    """Build the bulletin date URL."""
+    return reverse(
         "public:bulletin_date",
         kwargs={"region_id": region_id, "slug": slug, "date_str": date_str},
     )
-    return f"{base}?replica=1" if replica else base
 
 
 # ---------------------------------------------------------------------------
-# Test: flag gates template selection
+# Test: template used is bulletin.html
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestReplicaFlag:
-    """?replica=1 selects bulletin_replica.html; default returns bulletin.html."""
+class TestTemplateName:
+    """bulletin_detail always renders public/bulletin.html."""
 
-    def test_default_renders_bulletin_html(
-        self, client: Client, simple_bulletin, region
-    ):
-        """Without ?replica=1 the standard bulletin.html is rendered."""
-        url = _url("CH-4115", "valais", "2026-03-15", replica=False)
+    def test_renders_bulletin_html(self, client: Client, simple_bulletin, region):
+        """The view renders public/bulletin.html."""
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
         assert "public/bulletin.html" in [t.name for t in response.templates]
-        assert "public/bulletin_replica.html" not in [
-            t.name for t in response.templates
-        ]
-
-    def test_replica_flag_renders_replica_html(
-        self, client: Client, simple_bulletin, region
-    ):
-        """With ?replica=1 the bulletin_replica.html is rendered."""
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
-        response = client.get(url)
-        assert response.status_code == 200
-        assert "public/bulletin_replica.html" in [t.name for t in response.templates]
-
-    def test_replica_flag_other_values_do_not_select_replica(
-        self, client: Client, simple_bulletin, region
-    ):
-        """?replica=0 or ?replica=yes do not select the replica template."""
-        for val in ("0", "yes", "true", ""):
-            url = _url("CH-4115", "valais", "2026-03-15") + f"?replica={val}"
-            response = client.get(url)
-            assert response.status_code == 200
-            assert "public/bulletin_replica.html" not in [
-                t.name for t in response.templates
-            ], f"replica={val!r} should not select replica template"
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +213,7 @@ class TestHeadlineBand:
 
     def test_simple_day_single_rating(self, client: Client, simple_bulletin, region):
         """A bulletin with 1 trait shows a single rating in the headline band."""
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
@@ -253,7 +226,7 @@ class TestHeadlineBand:
         self, client: Client, variable_bulletin, region
     ):
         """A bulletin with 2 traits shows both ratings and a → arrow."""
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
@@ -277,14 +250,14 @@ class TestRatingBlockCount:
 
     def test_one_trait_one_block(self, client: Client, simple_bulletin, region):
         """One trait produces exactly one rating block."""
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="rating-block"') == 1
 
     def test_two_traits_two_blocks(self, client: Client, variable_bulletin, region):
         """Two traits produce exactly two rating blocks."""
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="rating-block"') == 2
@@ -303,7 +276,7 @@ class TestAspectElevationRow:
         self, client: Client, simple_bulletin, region
     ):
         """Rating block has aspect/elevation row when geography.source is 'problems'."""
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="aspect-elevation-row"' in content
@@ -317,7 +290,7 @@ class TestAspectElevationRow:
         rm = _render_model_with_traits([wet_trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="aspect-elevation-row"' not in content
@@ -339,7 +312,7 @@ class TestAspectElevationRow:
         rm = _render_model_with_traits([trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="aspect-elevation-row"' not in content
@@ -368,7 +341,7 @@ class TestProseFull:
         rm = _render_model_with_traits([trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         # The prose is sanitised by snowdesk_html but the text content remains
@@ -404,7 +377,7 @@ class TestSnowpackWeatherSection:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="weather-review-heading"' not in content
@@ -424,7 +397,7 @@ class TestSnowpackWeatherSection:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="weather-review-heading"' in content
@@ -445,7 +418,7 @@ class TestSnowpackWeatherSection:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="snowpack-weather-section"' not in content
@@ -465,7 +438,7 @@ class TestSnowpackWeatherSection:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="weather-forecast-heading"' in content
@@ -493,7 +466,7 @@ class TestSnowpackWeatherSection:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="outlook-heading"' in content
@@ -526,7 +499,7 @@ class TestMetadataStrip:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         # Em-dash character should appear in the next-update cell
@@ -549,7 +522,7 @@ class TestMetadataStrip:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="metadata-strip"' in content
@@ -572,7 +545,7 @@ class TestFooter:
         self, client: Client, simple_bulletin, region
     ):
         """The focal region name appears in the footer."""
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="focal-region"' in content
@@ -594,7 +567,7 @@ class TestFooter:
             region_name_at_time="Münstertal",
         )
 
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
 
@@ -606,6 +579,27 @@ class TestFooter:
             "Focal region should appear before related regions"
         )
 
+    def test_view_full_season_link_present(
+        self, client: Client, simple_bulletin, region
+    ):
+        """Footer contains a 'View full season' link to season_bulletins."""
+        url = _url("CH-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert "View full season" in content
+        assert (
+            "/season/" in content
+            or "season_bulletins" in content
+            or "CH-4115" in content
+        )
+
+    def test_view_history_link_present(self, client: Client, simple_bulletin, region):
+        """Footer contains a 'View history' link to random_bulletins."""
+        url = _url("CH-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert "View history" in content
+
 
 # ---------------------------------------------------------------------------
 # Test: font-sans class on outermost container
@@ -614,11 +608,11 @@ class TestFooter:
 
 @pytest.mark.django_db
 class TestTypography:
-    """The replica's outermost container carries font-sans to prevent serif leakage."""
+    """The outermost container carries font-sans to prevent serif leakage."""
 
     def test_font_sans_on_container(self, client: Client, simple_bulletin, region):
-        """The outermost replica container has the font-sans class."""
-        url = _url("CH-4115", "valais", "2026-03-15", replica=True)
+        """The outermost container has the font-sans class."""
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         # The outermost div must carry font-sans

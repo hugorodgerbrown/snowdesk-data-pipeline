@@ -1,6 +1,6 @@
 {% comment %}
-public/templates/public/_replica_rating_block.html — Single rating block for the
-WhiteRisk-replica bulletin layout.
+public/templates/public/_rating_block.html — Single rating block for the
+bulletin page layout.
 
 Expects the following variables in scope:
   trait   — one entry from render_model.traits (enriched by _enrich_render_model)
@@ -17,7 +17,7 @@ Renders:
 
 {# ── Rating block container ──────────────────────────────────────────────── #}
 <div
-    class="replica-rating-block border border-border rounded-[12px] overflow-hidden mb-4 last:mb-0"
+    class="rating-block border border-border rounded-[12px] overflow-hidden mb-4 last:mb-0"
     data-testid="rating-block"
 >
     {# ── Header strip: coloured band with rating + trait title ──────────── #}
@@ -27,7 +27,7 @@ Renders:
                 {{ trait.danger_level|danger_level_label }}
                 ({{ trait.danger_level }})
             </span>
-            <span class="text-sm font-normal opacity-80">{{ trait.title }}</span>
+            <h3 class="text-sm font-normal opacity-80">{{ trait.title }}</h3>
         </div>
     </div>
 
