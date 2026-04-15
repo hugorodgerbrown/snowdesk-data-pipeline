@@ -307,8 +307,8 @@ class TestBulletinDetailView:
         content = response.content.decode()
         assert "Today" in content
 
-    def test_past_date_shown_in_nav(self, client: Client, region):
-        """A past page date appears as a formatted date."""
+    def test_past_date_shown_in_eyebrow(self, client: Client, region):
+        """A past page date appears as a full date in the page eyebrow."""
         _make_am_bulletin(region, date(2026, 3, 14))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
@@ -323,12 +323,18 @@ class TestBulletinDetailView:
             response = client.get(url)
 
         content = response.content.decode()
-        assert "Sat 14 Mar" in content
+        # The eyebrow renders the full ``l j F Y`` format, not the short
+        # ``D j M`` form used by the prev/next day arrows.
+        assert "Saturday 14 March 2026" in content
 
-    def test_next_update_shown_when_today_before_due(self, client: Client, region):
-        """On today, before the next bulletin is due, its time is shown."""
+    def test_next_update_context_populated_today_before_due(
+        self, client: Client, region
+    ):
+        """On today, before the next bulletin is due, ``next_update_time`` is set."""
+        # Context is still populated so a future chrome element (e.g. a
+        # ``next: HH:MM`` tooltip on the disabled `»` chip) can opt in.
+        # The current layout does not surface the value in the DOM.
         am = _make_am_bulletin(region, date(2026, 3, 15))
-        # next_update is 15:00 UTC on the same day
         from pipeline.models import Bulletin
 
         Bulletin.objects.filter(pk=am.pk).update(
@@ -343,8 +349,6 @@ class TestBulletinDetailView:
             response = client.get(url)
 
         assert response.context["next_update_time"] is not None
-        content = response.content.decode()
-        assert "15:00 UTC" in content
 
     def test_no_next_update_after_due_time(self, client: Client, region):
         """After the next_update time has passed, the disabled label is absent."""
@@ -438,22 +442,6 @@ class TestBulletinDetailView:
 # ── Issue discovery and selection ────────────────────────────────────────────
 
 
-def _make_evening_bulletin(region, day, **kwargs):
-    """Create a D-evening issue valid ``D 17:00 → D+1 17:00``."""
-    vf = datetime(day.year, day.month, day.day, 17, 0, tzinfo=UTC)
-    vt = vf + timedelta(hours=24)
-    bulletin = BulletinFactory.create(
-        issued_at=vf - timedelta(minutes=30),
-        valid_from=vf,
-        valid_to=vt,
-        **kwargs,
-    )
-    RegionBulletinFactory.create(
-        bulletin=bulletin, region=region, region_name_at_time=region.name
-    )
-    return bulletin
-
-
 @pytest.mark.django_db
 class TestIssuesForDate:
     """All three SLF-style issues covering a calendar day are returned."""
@@ -462,7 +450,7 @@ class TestIssuesForDate:
         """Previous evening + morning + same-day evening all overlap day D."""
         prev_evening = _make_pm_bulletin(region, date(2026, 3, 14))
         am = _make_am_bulletin(region, date(2026, 3, 15))
-        same_evening = _make_evening_bulletin(region, date(2026, 3, 15))
+        same_evening = _make_pm_bulletin(region, date(2026, 3, 15))
 
         issues = _issues_for_date(region, date(2026, 3, 15))
 
@@ -492,7 +480,7 @@ class TestDefaultIssueSelection:
             region, date(2026, 3, 14)
         )  # prev evening → valid to 3/15 15:00
         am = _make_am_bulletin(region, date(2026, 3, 15))
-        _make_evening_bulletin(region, date(2026, 3, 15))  # irrelevant (after 10:00)
+        _make_pm_bulletin(region, date(2026, 3, 15))  # irrelevant (after 10:00)
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             result = _select_bulletin_for_date(region, date(2026, 3, 15))
@@ -512,7 +500,7 @@ class TestDefaultIssueSelection:
     def test_today_prefers_window_containing_now(self, region):
         """For today, the pivot is *now* — not the synthetic 10:00 value."""
         _make_am_bulletin(region, date(2026, 3, 15))  # AM: 06:00–15:00
-        same_evening = _make_evening_bulletin(region, date(2026, 3, 15))  # 17:00+
+        same_evening = _make_pm_bulletin(region, date(2026, 3, 15))  # 17:00+
 
         # 18:00 is inside the same-day evening window and outside AM's.
         with _freeze("2026-03-15T18:00:00+00:00"):
@@ -556,26 +544,80 @@ class TestResolveSelectedIssue:
 class TestIssueTabLabels:
     """Issue tabs carry chronological labels and the correct ``is_active`` flag."""
 
-    def test_tab_labels_and_active_flag(self, region):
-        """Each tab's role + label reflect the issue's valid_from."""
-        _make_pm_bulletin(region, date(2026, 3, 14))  # 3/14 15:00
-        am = _make_am_bulletin(region, date(2026, 3, 15))  # 3/15 06:00
-        _make_evening_bulletin(region, date(2026, 3, 15))  # 3/15 17:00
+    def test_three_issue_day_morning_active(self, region):
+        """
+        On a three-issue day with the morning update active: the active
+        chip shows morning's own window; the previous-evening chip has
+        a ``< 06:00`` cutoff (where morning takes over) and the
+        same-day-evening chip has a ``> 15:00`` cutoff (where it takes
+        over from morning).
+        """
+        # Fixture times — all helpers share the same 15:00 rollover:
+        # * _make_pm_bulletin(D-1): valid 14 Mar 15:00 → 15 Mar 15:00
+        # * _make_am_bulletin(D):   valid 15 Mar 06:00 → 15 Mar 15:00
+        # * _make_pm_bulletin(D):   valid 15 Mar 15:00 → 16 Mar 15:00
+        _make_pm_bulletin(region, date(2026, 3, 14))
+        am = _make_am_bulletin(region, date(2026, 3, 15))
+        _make_pm_bulletin(region, date(2026, 3, 15))
         issues = _issues_for_date(region, date(2026, 3, 15))
 
         tabs = _build_issue_tabs(issues, am, date(2026, 3, 15))
 
         assert [t["role"] for t in tabs] == [
-            "previous evening",
-            "morning",
-            "evening",
+            "Previous evening",
+            "Morning",
+            "Evening",
         ]
-        # Morning update is the selected tab.
         assert [t["is_active"] for t in tabs] == [False, True, False]
-        # Short labels include day-of-month and HH:MM.
-        assert tabs[0]["short_label"] == "14 Mar 15:00"
-        assert tabs[1]["short_label"] == "15 Mar 06:00"
-        assert tabs[2]["short_label"] == "15 Mar 17:00"
+        # Time-window labels use the authority-window model: each
+        # chip points toward the active one with a `<` / `>` cutoff.
+        assert tabs[0]["short_label"] == "< 06:00"
+        assert tabs[1]["short_label"] == "06:00 - 15:00"
+        assert tabs[2]["short_label"] == "> 15:00"
+        # Long labels carry the role + concrete issuance time +
+        # clipped authority window for screen readers.
+        assert tabs[1]["long_label"].startswith("Morning: issued ")
+        assert "15 March 06:00 UTC" in tabs[1]["long_label"]
+        assert "authoritative 06:00 - 15:00" in tabs[1]["long_label"]
+
+    def test_two_issue_day_prev_evening_active(self, region):
+        """
+        On a two-issue day (no morning update) with the previous-day
+        evening active, its chip shows the full day-D authority window
+        ``00:00 - HH:MM`` (clipped to the start of day D), and the
+        same-day-evening chip shows ``> HH:MM``.
+        """
+        # Authority partition on day D:
+        # * previous-evening:   [D 00:00, D 15:00]  (clipped at D 00:00,
+        #   ends where same-day evening takes over)
+        # * same-day evening:   [D 15:00, D 24:00]  (clipped at D 24:00)
+        prev = _make_pm_bulletin(region, date(2026, 3, 14))
+        _make_pm_bulletin(region, date(2026, 3, 15))
+        issues = _issues_for_date(region, date(2026, 3, 15))
+
+        tabs = _build_issue_tabs(issues, prev, date(2026, 3, 15))
+
+        assert [t["role"] for t in tabs] == ["Previous evening", "Evening"]
+        assert [t["is_active"] for t in tabs] == [True, False]
+        # Active chip uses the full clipped window; ``00:00`` marks a
+        # window that reaches back into D-1 and ``24:00`` one that
+        # extends into D+1.
+        assert tabs[0]["short_label"] == "00:00 - 15:00"
+        assert tabs[1]["short_label"] == "> 15:00"
+
+    def test_same_day_evening_active_clips_to_24_00(self, region):
+        """
+        The same-day evening chip, when active, clips its end to 24:00
+        (since its actual validity spills into D+1).
+        """
+        _make_pm_bulletin(region, date(2026, 3, 14))
+        same_evening = _make_pm_bulletin(region, date(2026, 3, 15))
+        issues = _issues_for_date(region, date(2026, 3, 15))
+
+        tabs = _build_issue_tabs(issues, same_evening, date(2026, 3, 15))
+
+        assert tabs[1]["short_label"] == "15:00 - 24:00"
+        assert tabs[0]["short_label"] == "< 15:00"
 
 
 @pytest.mark.django_db
@@ -593,28 +635,33 @@ class TestBulletinDetailIssueTabs:
         )
 
     def test_tabs_rendered_when_multiple_issues(self, client: Client, region):
-        """With three issues touching a day, three tabs render."""
+        """With three issues touching a day, three tabs render inside the nav."""
         _make_pm_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
-        _make_evening_bulletin(region, date(2026, 3, 15))
+        _make_pm_bulletin(region, date(2026, 3, 15))
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             response = client.get(self._url(region, "2026-03-15"))
 
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'data-testid="issue-tabs"' in content
+        assert 'data-testid="bulletin-nav"' in content
         assert content.count('data-testid="issue-tab"') == 3
 
-    def test_tabs_hidden_when_only_one_issue(self, client: Client, region):
-        """A single issue day renders no tab strip (nothing to switch between)."""
+    def test_single_issue_still_renders_one_tab(self, client: Client, region):
+        """
+        A one-issue day renders a single chip carrying its authority
+        window — it still functions as the page's "what am I reading"
+        indicator even without siblings to switch to.
+        """
         _make_am_bulletin(region, date(2026, 3, 15))
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             response = client.get(self._url(region, "2026-03-15"))
 
         content = response.content.decode()
-        assert 'data-testid="issue-tabs"' not in content
+        assert 'data-testid="bulletin-nav"' in content
+        assert content.count('data-testid="issue-tab"') == 1
 
     def test_query_param_switches_rendered_issue(self, client: Client, region):
         """``?issue=<uuid>`` renders that specific issue (via X-Bulletin-Id)."""
@@ -643,7 +690,7 @@ class TestBulletinDetailIssueTabs:
         ``page_date``.
         """
         _make_am_bulletin(region, date(2026, 3, 15))
-        same_evening = _make_evening_bulletin(region, date(2026, 3, 15))
+        same_evening = _make_pm_bulletin(region, date(2026, 3, 15))
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             response = client.get(

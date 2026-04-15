@@ -462,6 +462,55 @@ def _select_bulletin_for_date(
     return _select_default_issue(_issues_for_date(region, target_date), target_date)
 
 
+def _authority_windows(
+    issues: list[Bulletin],
+    day_start: datetime.datetime,
+    day_end: datetime.datetime,
+) -> list[tuple[datetime.datetime, datetime.datetime]]:
+    """
+    Partition a chronologically-sorted list of issues into day-D windows.
+
+    Each issue's authority runs from its own ``valid_from`` until the
+    next issue's ``valid_from`` takes over (the last issue runs to its
+    own ``valid_to``), clipped to the day-D boundary.
+
+    Args:
+        issues: Chronologically-sorted bulletins touching day D.
+        day_start: Start-of-day (00:00) instant for day D (tz-aware).
+        day_end: End-of-day (next 00:00) instant for day D (tz-aware).
+
+    Returns:
+        A list of ``(start, end)`` tuples in the same order as ``issues``.
+
+    """
+    windows: list[tuple[datetime.datetime, datetime.datetime]] = []
+    for i, b in enumerate(issues):
+        start = max(b.valid_from, day_start)
+        if i + 1 < len(issues):
+            end = min(issues[i + 1].valid_from, day_end)
+        else:
+            end = min(b.valid_to, day_end)
+        windows.append((start, end))
+    return windows
+
+
+def _format_time_on_day(dt: datetime.datetime, day_end: datetime.datetime) -> str:
+    """Render a datetime as HH:MM, or "24:00" when it sits exactly at day end."""
+    if dt == day_end:
+        return "24:00"
+    return dt.strftime("%H:%M")
+
+
+def _classify_issue_role(b: Bulletin, target_date: datetime.date) -> str:
+    """Classify an issue by its ``valid_from`` relative to day D."""
+    vf: datetime.datetime = b.valid_from
+    if vf.date() < target_date:
+        return "Previous evening"
+    if vf.hour < 12:
+        return "Morning"
+    return "Evening"
+
+
 def _build_issue_tabs(
     issues: list[Bulletin],
     selected: Bulletin,
@@ -470,16 +519,24 @@ def _build_issue_tabs(
     """
     Build the per-issue tab entries displayed above the bulletin body.
 
-    Each tab carries a human-readable short label (e.g. ``"11 Apr
-    17:00"``), a longer accessible label (``"Issued 11 April 17:00
-    (previous evening)"``), the bulletin's UUID (used as the
-    ``?issue=`` query param), and an ``is_active`` flag so the template
-    can highlight the current selection.
+    The tabs partition day D into non-overlapping *authority* windows
+    (see :func:`_authority_windows`).  Label shape depends on whether
+    the tab is the active one:
 
-    The label includes a parenthesised role — *"previous evening"*,
-    *"morning"*, *"evening"* — derived from the issue's ``valid_from``
-    relative to the target calendar day so readers can orient
-    themselves without having to mentally diff dates.
+    * **Active** tab → full clipped window ``"HH:MM - HH:MM"``.  This
+      is the canonical "what am I reading" indicator on the page.
+    * **Inactive** tabs carry a directional stub pointing towards the
+      active selection:
+
+      * position before the active tab → ``"< HH:MM"`` — the
+        authority-end time on day D (when the following issue takes
+        over);
+      * position after the active tab → ``"> HH:MM"`` — the
+        authority-start time on day D (when it begins to supersede
+        the previous issue).
+
+    The long / aria label always carries role + concrete issuance
+    time + authority window for screen readers.
 
     Args:
         issues: All bulletins overlapping ``target_date``, chronological.
@@ -491,25 +548,44 @@ def _build_issue_tabs(
         ``long_label``, ``role``, and ``is_active`` keys.
 
     """
+    if not issues:
+        return []
+
+    day_start = datetime.datetime.combine(
+        target_date, datetime.time(0, 0), tzinfo=datetime.UTC
+    )
+    day_end = day_start + datetime.timedelta(days=1)
+    windows = _authority_windows(issues, day_start, day_end)
+
+    try:
+        active_index = next(i for i, b in enumerate(issues) if b.pk == selected.pk)
+    except StopIteration:
+        active_index = 0
+
     tabs: list[dict[str, Any]] = []
-    for b in issues:
-        vf: datetime.datetime = b.valid_from
-        issue_date: datetime.date = vf.date()
-        if issue_date < target_date:
-            role = "previous evening"
-        elif vf.hour < 12:
-            role = "morning"
+    for i, b in enumerate(issues):
+        start, end = windows[i]
+        start_txt = _format_time_on_day(start, day_end)
+        end_txt = _format_time_on_day(end, day_end)
+        window_text = f"{start_txt} - {end_txt}"
+        if i == active_index:
+            short_label = window_text
+        elif i < active_index:
+            short_label = f"< {end_txt}"
         else:
-            role = "evening"
-        short_label = f"{vf.strftime('%-d %b')} {vf.strftime('%H:%M')}"
-        long_label = f"Issued {vf.strftime('%-d %B %H:%M')} ({role})"
+            short_label = f"> {start_txt}"
+        role = _classify_issue_role(b, target_date)
+        long_label = (
+            f"{role}: issued {b.valid_from.strftime('%-d %B %H:%M')} UTC "
+            f"(authoritative {window_text})"
+        )
         tabs.append(
             {
                 "bulletin_id": str(b.bulletin_id),
                 "short_label": short_label,
                 "long_label": long_label,
                 "role": role,
-                "is_active": b.pk == selected.pk,
+                "is_active": i == active_index,
             }
         )
     return tabs
