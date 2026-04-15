@@ -864,7 +864,15 @@ def bulletin_detail(
         "related_regions": related_regions,
         "year": today.year,
     }
-    return render(request, "public/bulletin.html", context)
+    # Phase 1 comparison flag: ?replica=1 renders the WhiteRisk-replica
+    # template alongside the existing card so both can be screenshotted.
+    # Remove once the replica has passed the subtraction review.
+    template_name = (
+        "public/bulletin_replica.html"
+        if request.GET.get("replica") == "1"
+        else "public/bulletin.html"
+    )
+    return render(request, template_name, context)
 
 
 # ---------------------------------------------------------------------------
