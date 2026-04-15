@@ -11,7 +11,6 @@ The admin link is only rendered for authenticated staff users.
 {% endcomment %}
 {% load card_tags hazard_icons static %}
 <div class="bg-card rounded-[16px] overflow-hidden border border-border">
-
     {# ── Danger band ─────────────────────────────────────────────────── #}
     <div
         class="danger-band flex items-center gap-2.5 px-3.5 py-3 border-b border-border"
@@ -24,7 +23,15 @@ The admin link is only rendered for authenticated staff users.
         >
         <div class="flex-1">
             <div class="text-lg font-semibold leading-tight tracking-tight">
-                {{ panel.danger_label }} ({{ panel.danger_number }}{{ panel.danger_subdivision }})
+                {{ panel.danger_label }}
+                {% if panel.danger_subdivision %}
+                    <span class="text-xl font-bold"
+                    >({{ panel.danger_number }}<span
+                            class="text-base font-bold"
+                        >{{ panel.danger_subdivision }}</span>)</span>
+                {% else %}
+                    <span class="text-xl font-bold">({{ panel.danger_number }})</span>
+                {% endif %}
             </div>
             <div class="text-xs mt-px opacity-75">
                 {{ panel.danger_sub }}
@@ -41,32 +48,67 @@ The admin link is only rendered for authenticated staff users.
 
     {# ── Body ─────────────────────────────────────────────────────────── #}
     <div class="px-3.5 pt-3 pb-3.5">
-        {% if panel.render_model.traits %}
+        {% if panel.render_model.version == 0 %}
+            {# Error state — render model could not be built #}
+            <div class="rounded-[8px] border-l-4 border-amber-400 bg-amber-50 px-3.5 py-3 text-sm">
+                <p class="font-semibold text-amber-900 mb-1">We couldn't process this bulletin.</p>
+                {% if user.is_staff %}
+                    <p class="text-xs text-amber-800 mb-2">
+                        Bulletin ID: <span class="font-mono">{{ panel.bulletin.bulletin_id }}</span>
+                    </p>
+                    <p class="font-mono text-[11px] break-all text-amber-900 bg-amber-100 rounded px-2 py-1.5 mb-2">
+                        {{ panel.render_model.error }}
+                    </p>
+                    <a
+                        class="inline-block text-xs font-medium text-amber-900 underline underline-offset-2 hover:text-amber-700"
+                        href="/admin/pipeline/bulletin/{{ panel.bulletin.pk }}/change/"
+                    >
+                        Inspect in admin →
+                    </a>
+                {% else %}
+                    <p class="text-xs text-amber-800">
+                        We are sorry for the inconvenience. Please try again later or check back for an updated
+                        bulletin.
+                    </p>
+                {% endif %}
+            </div>
+        {% elif not panel.render_model.traits %}
+            {# Empty traits — no avalanche problems reported #}
+            <div class="rounded-[8px] border border-border bg-card-subtle px-3.5 py-4 text-center">
+                <p class="text-sm font-medium text-text-1 mb-0.5">No avalanche problems reported.</p>
+                <p class="text-xs text-text-3">The snowpack is stable. Conditions are favourable.</p>
+            </div>
+        {% else %}
             {% for trait in panel.render_model.traits %}
-                <div class="mb-3 last:mb-0">
-
+                <div class="mb-4 last:mb-0">
                     {# ── Trait header ──────────────────────────────── #}
-                    <div class="flex items-center gap-1.5 mb-1.5">
-                        {% if trait.title %}
-                            <p class="flex-1 font-mono text-[9.5px] tracking-[0.1em] uppercase text-text-3">
+                    <div class="border-l-[3px] border-text-3 pl-2.5 mb-2.5{% if not forloop.first %} mt-3{% endif %}">
+                        <div class="flex items-start gap-1.5 flex-wrap">
+                            <h3 class="flex-1 text-[13px] font-semibold text-text-1 leading-snug tracking-tight min-w-0">
                                 {{ trait.title }}
+                            </h3>
+                            <div class="flex items-center gap-1 shrink-0 mt-px">
+                                <span
+                                    class="font-mono text-[9px] tracking-[0.08em] uppercase text-text-1 bg-black/[0.08] px-1.5 py-0.5 rounded font-medium"
+                                >
+                                    {{ trait.category }}
+                                </span>
+                                {% if trait.time_period != "all_day" %}
+                                    <span
+                                        class="font-mono text-[9px] tracking-[0.08em] uppercase text-text-2 bg-black/[0.06] px-1.5 py-0.5 rounded"
+                                    >
+                                        {{ trait.time_period|cut:"_" }}
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {# For prose-only traits show problem types below the heading #}
+                        {% if trait.geography.source == "prose_only" and trait.problems %}
+                            <p class="font-mono text-[9px] tracking-[0.06em] uppercase text-text-3 mt-0.5">
+                                {% for p in trait.problems %}
+                                    {{ p.label }}{% if not forloop.last %} · {% endif %}
+                                {% endfor %}
                             </p>
-                        {% else %}
-                            <p class="flex-1 font-mono text-[9.5px] tracking-[0.1em] uppercase text-text-3">
-                                Avalanche problem{{ trait.problems|length|pluralize }}
-                            </p>
-                        {% endif %}
-                        <span
-                            class="font-mono text-[9px] tracking-[0.08em] uppercase text-text-2 bg-black/[0.06] px-1.5 py-0.5 rounded shrink-0"
-                        >
-                            {{ trait.category }}
-                        </span>
-                        {% if trait.time_period != "all_day" %}
-                            <span
-                                class="font-mono text-[9px] tracking-[0.08em] uppercase text-text-2 bg-black/[0.06] px-1.5 py-0.5 rounded shrink-0"
-                            >
-                                {{ trait.time_period|cut:"_" }}
-                            </span>
                         {% endif %}
                     </div>
 
@@ -81,94 +123,118 @@ The admin link is only rendered for authenticated staff users.
                             </p>
                         {% endif %}
 
-                    {# ── Geography: problems branch ────────────────── #}
+                        {# ── Geography: problems branch ────────────────── #}
                     {% else %}
                         {% for p in trait.problems %}
-                            <div class="mt-2.5 first:mt-0">
+                            <div
+                                class="problem-level mt-2.5 first:mt-0 pl-2.5 rounded-sm"
+                                data-level="{{ p.danger_level_css }}"
+                            >
                                 {% if p.field_guidance %}
                                     <details>
-                                        <summary
-                                            class="problem-tag flex items-center gap-1.5 bg-tag border border-border-strong rounded-[8px] px-2.5 py-1.5 text-[13px] font-medium text-text-1"
-                                        >
-                                {% else %}
-                                    <div
-                                        class="flex items-center gap-1.5 bg-tag border border-border-strong rounded-[8px] px-2.5 py-1.5 text-[13px] font-medium text-text-1"
-                                    >
-                                {% endif %}
-                                {% with icon_file=p.problem_type|hazard_icon %}
-                                    {% if icon_file %}
-                                        <div class="w-9 h-9 shrink-0 rounded overflow-hidden">
-                                            <img
-                                                class="w-full h-full object-cover"
-                                                src="{% static icon_file %}"
-                                                alt="{{ p.label }}"
+                                        <summary class="problem-tag flex items-center gap-1.5 bg-tag border border-border-strong rounded-[8px] px-2.5 py-1.5 text-[13px] font-medium text-text-1">
+                                            {% with icon_file=p.problem_type|hazard_icon %}
+                                                {% if icon_file %}
+                                                    <div class="w-9 h-9 shrink-0 rounded overflow-hidden">
+                                                        <img
+                                                            class="w-full h-full object-cover"
+                                                            src="{% static icon_file %}"
+                                                            alt="{{ p.label }}"
+                                                        >
+                                                    </div>
+                                                {% endif %}
+                                            {% endwith %}
+                                            {% if p.aspects %}
+                                                <div class="flex items-center shrink-0">
+                                                    {{ p.aspects|aspect_rose|safe }}
+                                                </div>
+                                            {% endif %}
+                                            {% if p.elevation %}
+                                                <div class="flex items-center shrink-0">
+                                                    {{ p.elevation|elevation_icon|safe }}
+                                                </div>
+                                            {% endif %}
+                                            <span class="flex-1 min-w-0 truncate">{{ p.label }}</span>
+                                            {% if p.time_period_label %}
+                                                <span
+                                                    class="font-mono text-[9.5px] tracking-[0.08em] uppercase text-text-2 bg-black/[0.06] px-1.5 py-0.5 rounded shrink-0"
+                                                >
+                                                    {{ p.time_period_label }}
+                                                </span>
+                                            {% endif %}
+                                            <span
+                                                class="ml-auto text-[0.7rem] text-text-3 transition-transform duration-150"
                                             >
-                                        </div>
-                                    {% endif %}
-                                {% endwith %}
-                                {% if p.aspects %}
-                                    <div class="flex items-center shrink-0">
-                                        {{ p.aspects|aspect_rose|safe }}
-                                    </div>
-                                {% endif %}
-                                {% if p.elevation %}
-                                    <div class="flex items-center shrink-0">
-                                        {{ p.elevation|elevation_icon|safe }}
-                                    </div>
-                                {% endif %}
-                                <span class="flex-1 min-w-0 truncate">{{ p.label }}</span>
-                                {% if p.time_period_label %}
-                                    <span
-                                        class="font-mono text-[9.5px] tracking-[0.08em] uppercase text-text-2 bg-black/[0.06] px-1.5 py-0.5 rounded shrink-0"
-                                    >
-                                        {{ p.time_period_label }}
-                                    </span>
-                                {% endif %}
-                                {% if p.field_guidance %}
-                                    <span
-                                        class="ml-auto text-[0.7rem] text-text-3 transition-transform duration-150"
-                                    >
-                                        ↓
-                                    </span>
-                                {% endif %}
-                                {% if p.field_guidance %}
-                                    </summary>
-                                {% else %}
-                                    </div>
-                                {% endif %}
-
-                                <p class="mt-1 px-1 font-mono text-[10px] tracking-[0.04em] text-text-3">
-                                    {{ p.summary }}
-                                </p>
-                                {% if p.comment_html and not p.hide_comment %}
-                                    <div class="slf-prose mt-1.5 px-1 text-sm leading-[1.55] text-text-2">
-                                        {{ p.comment_html|safe }}
-                                    </div>
-                                    <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
-                                        SLF Bulletin
-                                    </p>
-                                {% endif %}
-                                {% if p.field_guidance %}
-                                    <p class="mt-2.5 text-sm text-text-2 leading-[1.55]">
-                                        {{ p.field_guidance }}
-                                    </p>
-                                    <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
-                                        SLF Interpretation Guide
-                                    </p>
+                                                ↓
+                                            </span>
+                                        </summary>
+                                        <p class="mt-1 px-1 font-mono text-[10px] tracking-[0.04em] text-text-3">
+                                            {{ p.summary }}
+                                        </p>
+                                        {% if p.comment_html and not p.hide_comment %}
+                                            <div class="slf-prose mt-1.5 px-1 text-sm leading-[1.55] text-text-2">
+                                                {{ p.comment_html|safe }}
+                                            </div>
+                                            <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
+                                                SLF Bulletin
+                                            </p>
+                                        {% endif %}
+                                        <p class="mt-2.5 text-sm text-text-2 leading-[1.55]">
+                                            {{ p.field_guidance }}
+                                        </p>
+                                        <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
+                                            SLF Interpretation Guide
+                                        </p>
                                     </details>
+                                {% else %}
+                                    <div class="flex items-center gap-1.5 bg-tag border border-border-strong rounded-[8px] px-2.5 py-1.5 text-[13px] font-medium text-text-1">
+                                        {% with icon_file=p.problem_type|hazard_icon %}
+                                            {% if icon_file %}
+                                                <div class="w-9 h-9 shrink-0 rounded overflow-hidden">
+                                                    <img
+                                                        class="w-full h-full object-cover"
+                                                        src="{% static icon_file %}"
+                                                        alt="{{ p.label }}"
+                                                    >
+                                                </div>
+                                            {% endif %}
+                                        {% endwith %}
+                                        {% if p.aspects %}
+                                            <div class="flex items-center shrink-0">
+                                                {{ p.aspects|aspect_rose|safe }}
+                                            </div>
+                                        {% endif %}
+                                        {% if p.elevation %}
+                                            <div class="flex items-center shrink-0">
+                                                {{ p.elevation|elevation_icon|safe }}
+                                            </div>
+                                        {% endif %}
+                                        <span class="flex-1 min-w-0 truncate">{{ p.label }}</span>
+                                        {% if p.time_period_label %}
+                                            <span
+                                                class="font-mono text-[9.5px] tracking-[0.08em] uppercase text-text-2 bg-black/[0.06] px-1.5 py-0.5 rounded shrink-0"
+                                            >
+                                                {{ p.time_period_label }}
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                    <p class="mt-1 px-1 font-mono text-[10px] tracking-[0.04em] text-text-3">
+                                        {{ p.summary }}
+                                    </p>
+                                    {% if p.comment_html and not p.hide_comment %}
+                                        <div class="slf-prose mt-1.5 px-1 text-sm leading-[1.55] text-text-2">
+                                            {{ p.comment_html|safe }}
+                                        </div>
+                                        <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
+                                            SLF Bulletin
+                                        </p>
+                                    {% endif %}
                                 {% endif %}
                             </div>
                         {% endfor %}
                     {% endif %}
-
                 </div>
             {% endfor %}
-
-        {% elif panel.key_message %}
-            {# Fallback: no traits — show the key message prose #}
-            <div class="slf-prose text-sm leading-[1.55] text-text-2">
-                {{ panel.key_message|safe }}
-            </div>
         {% endif %}
 
         {% if panel.snowpack_structure %}
@@ -183,9 +249,7 @@ The admin link is only rendered for authenticated staff users.
 
     {# ── Debug: day character label ──────────────────────────────── #}
     {% if debug and panel.day_character %}
-        <div
-            class="px-3.5 py-1.5 border-t border-dashed border-border bg-tag font-mono text-[10px] tracking-[0.08em] uppercase text-text-3"
-        >
+        <div class="px-3.5 py-1.5 border-t border-dashed border-border bg-tag font-mono text-[10px] tracking-[0.08em] uppercase text-text-3">
             Day character: {{ panel.day_character }}
         </div>
     {% endif %}
@@ -200,5 +264,4 @@ The admin link is only rendered for authenticated staff users.
             Open in admin →
         </a>
     {% endif %}
-
 </div>

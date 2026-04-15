@@ -13,11 +13,31 @@ stale and rebuilt via the ``rebuild_render_models`` management command.
 Also provides ``compute_day_character``, a pure function that classifies a
 render_model into one of five day-character labels using the five-rule cascade
 defined in docs/day_character_rules_spec.md.
+
+Version 2 changes:
+  - Aggregation drives trait and problem ordering verbatim.
+  - Strict validation against the canonical 8-token EAWS problem-type enum.
+  - ``RenderModelBuildError`` raised on unexpected data shapes.
+  - ``title`` fallback derived from (category, time_period) when blank.
+  - On validation failure the caller stores
+    ``render_model = {"version": 0, "error": ..., "error_type": ...}``.
+
+Version 3 changes:
+  - Added ``metadata`` top-level key with publication/validity timestamps,
+    ``unscheduled`` flag, and ``lang``. Missing timestamps → ``None``;
+    unparseable timestamps → ``None`` (lenient, no raise).
+  - Added ``prose`` top-level key with ``snowpack_structure``,
+    ``weather_review``, ``weather_forecast`` HTML strings, and a
+    ``tendency`` list. Each tendency entry carries ``comment``,
+    ``tendency_type``, ``valid_from``, and ``valid_until``.
+  - Top-level ``snowpack_structure`` is kept (equals ``prose.snowpack_structure``)
+    for backward compatibility; the v4 bump will drop it.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -26,10 +46,34 @@ logger = logging.getLogger(__name__)
 # Version
 # ---------------------------------------------------------------------------
 
-RENDER_MODEL_VERSION: int = 1
+RENDER_MODEL_VERSION: int = 3
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants — EAWS problem-type enum (openapi.json lines 670–683)
+# ---------------------------------------------------------------------------
+
+DRY_PROBLEM_TYPES: frozenset[str] = frozenset(
+    {
+        "new_snow",
+        "wind_slab",
+        "persistent_weak_layers",
+        "cornices",
+        "no_distinct_avalanche_problem",
+        "favourable_situation",
+    }
+)
+WET_PROBLEM_TYPES: frozenset[str] = frozenset({"wet_snow", "gliding_snow"})
+KNOWN_PROBLEM_TYPES: frozenset[str] = DRY_PROBLEM_TYPES | WET_PROBLEM_TYPES
+
+PROBLEM_TYPE_TO_CATEGORY: dict[str, str] = {
+    **{t: "dry" for t in DRY_PROBLEM_TYPES},
+    **{t: "wet" for t in WET_PROBLEM_TYPES},
+}
+
+_VALID_TIME_PERIODS: frozenset[str] = frozenset({"all_day", "earlier", "later"})
+
+# ---------------------------------------------------------------------------
+# Danger constants
 # ---------------------------------------------------------------------------
 
 _DANGER_ORDER: tuple[str, ...] = (
@@ -60,6 +104,29 @@ _HARD_TO_READ_PROBLEMS: frozenset[str] = frozenset(
 )
 
 _TREELINE_TOKEN = "treeline"  # noqa: S105 — not a password; schema token
+
+# ---------------------------------------------------------------------------
+# Title fallbacks — (category, time_period) → display string
+# ---------------------------------------------------------------------------
+
+_TITLE_FALLBACK: dict[tuple[str, str], str] = {
+    ("dry", "all_day"): "Dry avalanches",
+    ("dry", "earlier"): "Dry avalanches, earlier",
+    ("dry", "later"): "Dry avalanches, later",
+    ("wet", "all_day"): "Wet avalanches",
+    ("wet", "earlier"): "Wet avalanches, earlier",
+    ("wet", "later"): "Wet avalanches, later",
+}
+
+
+# ---------------------------------------------------------------------------
+# Exception
+# ---------------------------------------------------------------------------
+
+
+class RenderModelBuildError(Exception):
+    """Raised when a bulletin's render model cannot be built cleanly."""
+
 
 # ---------------------------------------------------------------------------
 # Elevation parsing
@@ -157,41 +224,8 @@ def _resolve_danger(ratings: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Problem matching
+# Problem builder
 # ---------------------------------------------------------------------------
-
-
-def _match_problems(
-    aggregation_entry: dict[str, Any],
-    all_problems: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """
-    Match raw avalanche problems to a single aggregation entry.
-
-    Matching criteria: the problem's ``problemType`` must be in the
-    aggregation entry's ``problemTypes`` list AND its ``validTimePeriod``
-    must equal the aggregation entry's ``validTimePeriod``. This handles
-    dry/wet disambiguation when the same problem type appears in both.
-
-    Args:
-        aggregation_entry: A single entry from
-            ``customData.CH.aggregation``.
-        all_problems: The full ``avalancheProblems`` list from CAAML
-            properties.
-
-    Returns:
-        A list of matched problem dicts.
-
-    """
-    problem_types: set[str] = set(aggregation_entry.get("problemTypes") or [])
-    time_period: str = aggregation_entry.get("validTimePeriod", "")
-
-    matched: list[dict[str, Any]] = []
-    for problem in all_problems:
-        if problem.get("problemType") in problem_types:
-            if problem.get("validTimePeriod", "") == time_period:
-                matched.append(problem)
-    return matched
 
 
 def _build_problem(problem: dict[str, Any]) -> dict[str, Any]:
@@ -247,52 +281,184 @@ def _is_prose_only(matched_problems: list[dict[str, Any]]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Trait builder
+# Validation
 # ---------------------------------------------------------------------------
 
-_CATEGORY_MAP: dict[str, str] = {
-    "dry": "dry",
-    "wet": "wet",
-}
 
-_VALID_TIME_PERIOD_MAP: dict[str, str] = {
-    "all_day": "all_day",
-    "earlier": "earlier",
-    "later": "later",
-}
+def _validate_problems(avalanche_problems: list[dict[str, Any]]) -> None:
+    """
+    Validate each avalanche problem's type and validTimePeriod.
+
+    Args:
+        avalanche_problems: The ``avalancheProblems`` list from CAAML properties.
+
+    Raises:
+        RenderModelBuildError: On unknown problemType or validTimePeriod.
+
+    """
+    for problem in avalanche_problems:
+        pt = problem.get("problemType", "")
+        if pt not in KNOWN_PROBLEM_TYPES:
+            raise RenderModelBuildError(
+                f"Unknown problemType in avalancheProblems: {pt!r}. "
+                f"Known types: {sorted(KNOWN_PROBLEM_TYPES)}"
+            )
+        vtp = problem.get("validTimePeriod")
+        if vtp is not None and vtp not in _VALID_TIME_PERIODS:
+            raise RenderModelBuildError(
+                f"Unknown validTimePeriod on problem {pt!r}: {vtp!r}. "
+                f"Valid values: {sorted(_VALID_TIME_PERIODS)}"
+            )
+
+
+def _validate_aggregation(aggregation: list[dict[str, Any]]) -> None:
+    """
+    Validate each aggregation entry's structure.
+
+    Args:
+        aggregation: The ``customData.CH.aggregation`` list.
+
+    Raises:
+        RenderModelBuildError: On structural anomalies in any entry.
+
+    """
+    for entry in aggregation:
+        entry_types: list[str] = entry.get("problemTypes") or []
+        if not entry_types:
+            raise RenderModelBuildError(
+                "Aggregation entry has empty problemTypes list."
+            )
+        category = entry.get("category")
+        if not category or category not in {"dry", "wet"}:
+            raise RenderModelBuildError(
+                f"Aggregation entry has missing or unknown category: {category!r}."
+            )
+        vtp = entry.get("validTimePeriod")
+        if vtp is not None and vtp not in _VALID_TIME_PERIODS:
+            raise RenderModelBuildError(
+                f"Aggregation entry has unknown validTimePeriod: {vtp!r}. "
+                f"Valid values: {sorted(_VALID_TIME_PERIODS)}"
+            )
+        for pt in entry_types:
+            if pt not in KNOWN_PROBLEM_TYPES:
+                raise RenderModelBuildError(
+                    f"Unknown problemType in aggregation entry: {pt!r}. "
+                    f"Known types: {sorted(KNOWN_PROBLEM_TYPES)}"
+                )
+
+
+def _validate(
+    avalanche_problems: list[dict[str, Any]],
+    aggregation: list[dict[str, Any]],
+) -> None:
+    """
+    Validate the consistency of avalanche problems and aggregation entries.
+
+    Delegates per-list validation to ``_validate_problems`` and
+    ``_validate_aggregation``, then performs cross-list consistency checks.
+
+    Args:
+        avalanche_problems: The ``avalancheProblems`` list from CAAML properties.
+        aggregation: The ``customData.CH.aggregation`` list.
+
+    Raises:
+        RenderModelBuildError: On any of the fail-hard conditions described
+            in the module docstring.
+
+    """
+    _validate_problems(avalanche_problems)
+    _validate_aggregation(aggregation)
+
+    # Problems non-empty but no aggregation → fail hard.
+    if avalanche_problems and not aggregation:
+        raise RenderModelBuildError(
+            "Bulletin has avalancheProblems but no customData.CH.aggregation "
+            "entries. Cannot build render model without editorial grouping hints."
+        )
+
+    # Cross-check: problem types in avalancheProblems must exactly match
+    # the flattened set of problemTypes across aggregation entries.
+    if avalanche_problems or aggregation:
+        problem_set = {p["problemType"] for p in avalanche_problems}
+        agg_set: set[str] = set()
+        for entry in aggregation:
+            agg_set.update(entry.get("problemTypes") or [])
+        if problem_set != agg_set:
+            raise RenderModelBuildError(
+                f"Problem type mismatch: avalancheProblems contains "
+                f"{sorted(problem_set)!r} but aggregation references "
+                f"{sorted(agg_set)!r}."
+            )
+
+
+# ---------------------------------------------------------------------------
+# Trait builder
+# ---------------------------------------------------------------------------
 
 
 def _build_trait(
     aggregation_entry: dict[str, Any],
-    matched_problems: list[dict[str, Any]],
-    danger_level: int,
+    problems_by_type: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     """
-    Build a single trait dict from an aggregation entry and its matched problems.
+    Build a single trait dict from an aggregation entry and a problem lookup.
+
+    Problems are iterated in the order specified by the aggregation entry's
+    ``problemTypes`` list, preserving SLF's editorial ordering.
 
     Args:
         aggregation_entry: A single entry from ``customData.CH.aggregation``.
-        matched_problems: Problems matched to this aggregation entry.
-        danger_level: Numeric danger level (1–5) for this trait.
+        problems_by_type: Lookup dict mapping problemType → raw problem dict.
 
     Returns:
         A trait dict in the render model shape.
 
     """
-    category: str = _CATEGORY_MAP.get(aggregation_entry.get("category", "dry"), "dry")
-    time_period: str = _VALID_TIME_PERIOD_MAP.get(
-        aggregation_entry.get("validTimePeriod", "all_day"), "all_day"
+    category: str = aggregation_entry["category"]
+    time_period: str = aggregation_entry.get("validTimePeriod") or "all_day"
+    raw_title: str = aggregation_entry.get("title") or ""
+    title: str = (
+        raw_title
+        if raw_title
+        else _TITLE_FALLBACK.get(
+            (category, time_period), f"{category.capitalize()} avalanches"
+        )
     )
-    title: str = aggregation_entry.get("title", "") or ""
 
-    built_problems = [_build_problem(p) for p in matched_problems]
+    problem_types_ordered: list[str] = aggregation_entry["problemTypes"]
+
+    matched_raw: list[dict[str, Any]] = []
+    for pt in problem_types_ordered:
+        # Defensive: validation already guarantees pt is in problems_by_type,
+        # but assert to catch any future divergence.
+        assert pt in problems_by_type, (  # noqa: S101 — post-validation defensive check
+            f"Problem type {pt!r} not found in problems_by_type after validation."
+        )
+        matched_raw.append(problems_by_type[pt])
+
+    built_problems = [_build_problem(p) for p in matched_raw]
+
+    # Determine danger level as max across member problems.
+    danger_level = 1
+    for p in matched_raw:
+        drv = p.get("dangerRatingValue") or ""
+        if drv in _DANGER_ORDER:
+            candidate = int(_DANGER_NUMBER.get(drv, "1"))
+            if candidate > danger_level:
+                danger_level = candidate
 
     # Determine geography source.
     prose: str | None = None
-    if matched_problems and _is_prose_only(matched_problems):
+    if matched_raw and _is_prose_only(matched_raw):
         geography_source = "prose_only"
-        # Use the first problem's comment as prose.
-        prose = matched_problems[0].get("comment") or None
+        # Join all problem comments for multi-problem prose-only traits.
+        prose_parts = [p.get("comment") or "" for p in matched_raw if p.get("comment")]
+        if not prose_parts:
+            prose = None
+        elif len(prose_parts) == 1:
+            prose = prose_parts[0]
+        else:
+            prose = " ".join(prose_parts)
     else:
         geography_source = "problems"
 
@@ -308,7 +474,7 @@ def _build_trait(
 
 
 # ---------------------------------------------------------------------------
-# Public builder
+# Public builder — secondary helpers
 # ---------------------------------------------------------------------------
 
 
@@ -345,48 +511,134 @@ def _build_fallback_key_message(
     return None
 
 
-def _build_traits(
-    aggregation: list[dict[str, Any]],
-    all_problems: list[dict[str, Any]],
-    danger_level: int,
-) -> list[dict[str, Any]]:
-    """
-    Build the list of traits from aggregation entries and problems.
+# ---------------------------------------------------------------------------
+# Timestamp helper
+# ---------------------------------------------------------------------------
 
-    Falls back to a synthetic dry/all_day trait when aggregation is empty.
+
+def _parse_iso_timestamp(value: Any) -> str | None:
+    """
+    Parse a raw timestamp value into a canonical ISO 8601 string.
+
+    Accepts strings in common ISO 8601 / RFC 3339 formats (with or without
+    trailing ``Z``). Any parse failure returns ``None`` — timestamps are
+    display data and should never block rendering.
 
     Args:
-        aggregation: The ``customData.CH.aggregation`` list.
-        all_problems: The full ``avalancheProblems`` list.
-        danger_level: Numeric danger level (1–5).
+        value: The raw timestamp value from CAAML properties.
 
     Returns:
-        A list of trait dicts.
+        A canonical ISO 8601 string (UTC, with timezone offset) or ``None``.
 
     """
-    if aggregation:
-        return [
-            _build_trait(entry, _match_problems(entry, all_problems), danger_level)
-            for entry in aggregation
-        ]
+    if not value:
+        return None
+    if not isinstance(value, str):
+        return None
+    try:
+        # Replace trailing Z with +00:00 for Python < 3.11 compatibility.
+        normalised = value.strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalised)
+        # Attach UTC if no tzinfo was present.
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+    except (ValueError, AttributeError):
+        return None
 
-    # No aggregation — synthesise a single dry/all_day trait.
-    logger.warning(
-        "Bulletin properties missing customData.CH.aggregation; "
-        "synthesising fallback trait with all %d problems",
-        len(all_problems),
-    )
-    return [
-        {
-            "category": "dry",
-            "time_period": "all_day",
-            "title": "",
-            "geography": {"source": "problems"},
-            "problems": [_build_problem(p) for p in all_problems],
-            "prose": None,
-            "danger_level": danger_level,
-        }
-    ]
+
+# ---------------------------------------------------------------------------
+# Metadata builder
+# ---------------------------------------------------------------------------
+
+
+def _build_metadata(properties: dict[str, Any]) -> dict[str, Any]:
+    """
+    Extract bulletin metadata from CAAML properties.
+
+    Reads ``publicationTime``, ``validTime.startTime``, ``validTime.endTime``,
+    ``nextUpdate``, ``unscheduled``, and ``lang``. Missing or unparseable
+    timestamps yield ``None``. Missing ``unscheduled`` defaults to ``False``;
+    missing ``lang`` defaults to ``"en"``.
+
+    Args:
+        properties: The CAAML properties dict.
+
+    Returns:
+        A metadata dict with six keys: ``publication_time``, ``valid_from``,
+        ``valid_until``, ``next_update``, ``unscheduled``, and ``lang``.
+
+    """
+    valid_time: dict[str, Any] = properties.get("validTime") or {}
+    return {
+        "publication_time": _parse_iso_timestamp(properties.get("publicationTime")),
+        "valid_from": _parse_iso_timestamp(valid_time.get("startTime")),
+        "valid_until": _parse_iso_timestamp(valid_time.get("endTime")),
+        "next_update": _parse_iso_timestamp(properties.get("nextUpdate")),
+        "unscheduled": bool(properties.get("unscheduled", False)),
+        "lang": properties.get("lang") or "en",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Prose builder
+# ---------------------------------------------------------------------------
+
+
+def _build_prose(properties: dict[str, Any]) -> dict[str, Any]:
+    """
+    Extract prose sections from CAAML properties.
+
+    Reads ``snowpackStructure.comment``, ``weatherReview.comment``,
+    ``weatherForecast.comment``, and the ``tendency`` array. Each tendency
+    entry captures ``comment``, ``tendency_type`` (from ``tendencyType``),
+    ``valid_from``, and ``valid_until`` (from the entry's ``validTime``).
+    Missing or empty tendency array → ``[]``. Missing scalar prose → ``None``.
+
+    Args:
+        properties: The CAAML properties dict.
+
+    Returns:
+        A prose dict with ``snowpack_structure``, ``weather_review``,
+        ``weather_forecast``, and ``tendency`` keys.
+
+    """
+    snowpack_structure: str | None = (properties.get("snowpackStructure") or {}).get(
+        "comment"
+    ) or None
+
+    weather_review: str | None = (properties.get("weatherReview") or {}).get(
+        "comment"
+    ) or None
+
+    weather_forecast: str | None = (properties.get("weatherForecast") or {}).get(
+        "comment"
+    ) or None
+
+    raw_tendency: list[dict[str, Any]] = properties.get("tendency") or []
+    tendency: list[dict[str, Any]] = []
+    for entry in raw_tendency:
+        entry_valid_time: dict[str, Any] = entry.get("validTime") or {}
+        tendency.append(
+            {
+                "comment": entry.get("comment") or "",
+                "tendency_type": entry.get("tendencyType") or None,
+                "valid_from": _parse_iso_timestamp(entry_valid_time.get("startTime")),
+                "valid_until": _parse_iso_timestamp(entry_valid_time.get("endTime")),
+            }
+        )
+
+    return {
+        "snowpack_structure": snowpack_structure,
+        "weather_review": weather_review,
+        "weather_forecast": weather_forecast,
+        "tendency": tendency,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public builder
+# ---------------------------------------------------------------------------
 
 
 def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
@@ -395,6 +647,10 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
 
     This is a pure function: no Django imports, no I/O, no side effects.
 
+    Raises ``RenderModelBuildError`` when the data shape violates the
+    canonical EAWS problem-type enum or structural invariants. The caller
+    is responsible for catching this and storing an error sentinel.
+
     Args:
         properties: The CAAML properties dict (the ``"properties"`` key from
             the GeoJSON Feature envelope stored in ``Bulletin.raw_data``).
@@ -402,22 +658,50 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     Returns:
         A render model dict ready for storage in ``Bulletin.render_model``.
 
+    Raises:
+        RenderModelBuildError: When the bulletin data cannot be cleanly
+            mapped to the render model shape.
+
     """
+    bulletin_id: str = properties.get("bulletinID", "<unknown>")
+
     ratings: list[dict[str, Any]] = properties.get("dangerRatings") or []
     danger = _resolve_danger(ratings)
-    danger_level = int(danger["number"])
 
-    all_problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
-
+    avalanche_problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
     aggregation: list[dict[str, Any]] = (properties.get("customData") or {}).get(
         "CH", {}
     ).get("aggregation") or []
 
-    traits = _build_traits(aggregation, all_problems, danger_level)
+    # Validate — raises RenderModelBuildError on failure.
+    _validate(avalanche_problems, aggregation)
+
+    # Both lists empty → quiet day, no traits.
+    traits: list[dict[str, Any]] = []
+
+    if aggregation:
+        # Build a type→problem lookup for O(1) access.
+        problems_by_type: dict[str, dict[str, Any]] = {
+            p["problemType"]: p for p in avalanche_problems
+        }
+
+        for entry in aggregation:
+            traits.append(_build_trait(entry, problems_by_type))
+
+        if len(traits) > 2:
+            logger.warning(
+                "Bulletin %s produced %d traits — SLF may have extended the "
+                "editorial model",
+                bulletin_id,
+                len(traits),
+            )
+
     fallback_key_message = _build_fallback_key_message(properties)
-    snowpack_structure: str | None = (properties.get("snowpackStructure") or {}).get(
-        "comment"
-    ) or None
+    prose = _build_prose(properties)
+    metadata = _build_metadata(properties)
+
+    # Keep top-level snowpack_structure for v2 back-compat (equals prose copy).
+    snowpack_structure: str | None = prose["snowpack_structure"]
 
     return {
         "version": RENDER_MODEL_VERSION,
@@ -425,6 +709,8 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
         "traits": traits,
         "fallback_key_message": fallback_key_message,
         "snowpack_structure": snowpack_structure,
+        "metadata": metadata,
+        "prose": prose,
     }
 
 
@@ -502,8 +788,12 @@ def compute_day_character(render_model: dict[str, Any]) -> str:
     Classify a render model into one of five day-character labels.
 
     Rules are evaluated top-to-bottom; the first match wins. Uses the
-    five-rule cascade from docs/day_character_rules_spec.md. This function
-    is pure — no side effects, no database access.
+    five-rule cascade from docs/day_character_rules_spec.md.
+
+    When ``traits`` is empty (no avalanche problems reported), returns
+    ``"Stable day"`` immediately.
+
+    This function is pure — no side effects, no database access.
 
     Args:
         render_model: A render model dict as produced by
@@ -521,6 +811,11 @@ def compute_day_character(render_model: dict[str, Any]) -> str:
 
     # Flatten all problems across all traits for rule evaluation.
     traits: list[dict[str, Any]] = render_model.get("traits") or []
+
+    # Empty traits → quiet day, no problems to trigger any rule.
+    if not traits:
+        return "Stable day"
+
     problems: list[dict[str, Any]] = [
         p for trait in traits for p in (trait.get("problems") or [])
     ]

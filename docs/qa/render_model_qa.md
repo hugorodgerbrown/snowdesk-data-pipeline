@@ -18,7 +18,7 @@
 
 ### Scenario 1: Fetch today's bulletins from the live SLF API
 
-**Goal**: Populate the database with real bulletins that have `render_model_version = 1`.
+**Goal**: Populate the database with real bulletins that have `render_model_version = 2`.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -341,11 +341,32 @@ print("Done. 6 bulletins loaded.")
 
 ---
 
+---
+
+## F. Error state (render_model version = 0)
+
+### Scenario: bulletin with stored error state renders error card
+
+**Goal**: Confirm the panel shows a sympathetic error card rather than crashing when `render_model.version == 0`.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Open `http://localhost:8000/admin/pipeline/bulletin/` and find any bulletin | Admin changelist loads |
+| 2 | Click on a bulletin, set `render_model` to `{"version": 0, "error": "Synthetic test error", "error_type": "RenderModelBuildError"}` and save | Admin saves successfully |
+| 3 | Navigate to the public page for that bulletin's region | Panel renders with a red-bordered error card containing "Bulletin data could not be processed" |
+| 4 | As a non-staff user, confirm the error message is generic ("please report") | Technical error text is NOT visible |
+| 5 | As a staff user, confirm the error text is shown verbatim | "Synthetic test error" appears in the card |
+
+**Pass**: Page returns 200; error card renders; no traceback in the browser.
+**Fail**: 500 error, or the bulletin panel renders as if it had traits.
+
+---
+
 ## Relevant source files
 
-- `pipeline/services/render_model.py` — builder + `compute_day_character`
+- `pipeline/services/render_model.py` — builder + `compute_day_character` + `RenderModelBuildError`
 - `pipeline/management/commands/rebuild_render_models.py` — management command
-- `public/views.py` — `_build_panel_context`, `_enrich_render_model`, safety net
-- `public/templates/public/_bulletin_panel.html` — trait rendering, prose-only branch, debug band
+- `public/views.py` — `_build_panel_context`, `_get_render_model`, `_enrich_render_model`, safety net
+- `public/templates/public/_bulletin_panel.html` — trait rendering, error card, empty-traits card, prose-only branch
 - `pipeline/admin.py` — BulletinAdmin (render_model_version is editable, not read-only)
-- `sample_data/sample_variable_day.json`, `sample_stable_day.json`, `sample_subdivision_3plus_day.json`, `sample_prose_only_day.json`, `sample_no_aggregation_day.json`
+- `sample_data/sample_variable_day.json`, `sample_stable_day.json`, `sample_subdivision_3plus_day.json`, `sample_prose_only_day.json`, `sample_no_aggregation_day.json`, `sample_unknown_problem_type.json`

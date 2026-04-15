@@ -1,8 +1,10 @@
 # SnowDesk — Design Handover
 
-This document captures the state of the SnowDesk bulletin card design as of April 2026, including the editorial principles, the current implementation, the prioritised task list for refining it, the field guidance content drafts, and the open design questions worth working through next.
+This document captures the state of the SnowDesk bulletin page design as of April 2026, including the editorial principles, the current implementation, the prioritised task list, the field guidance content drafts, and the open design questions.
 
 It exists so that a new design-focused conversation can pick up where the previous strategy conversation left off without losing the specific decisions and reasoning. For background on SnowDesk's mission, target audience, competitive positioning, and product shape, see `README.md`. This document is the design-specific complement to that.
+
+**Major change as of April 2026:** the design approach has shifted from "iterate the existing card incrementally" to "replicate the WhiteRisk page structure exactly, then subtract." The reasoning is in the section "Why we're replicating WhiteRisk" below. The previous incremental task list has been retired in favour of a two-phase plan (replicate, then subtract).
 
 ---
 
@@ -14,113 +16,143 @@ SnowDesk is an **on-ramp to the official SLF avalanche bulletin**. It exists to 
 
 This framing has a load-bearing implication for design: the product treats users as thoughtful adults making real decisions, not as students of avalanche science (which is how WhiteRisk treats them) and not as casual consumers who need to be alarmed (which is how most safety apps treat them). The visual language needs to express respect for the reader's intelligence and time. Calm, confident, quietly expert. Closer to a well-edited publication than a software dashboard.
 
-The cleanest test as features get added: look at the card and ask whether it still feels like editorial content or whether it's drifted toward dashboard. If the latter, the addition needs to be reworked, not because it's wrong as a feature but because the visual character of the card *is* part of the product, not separate from it.
+The cleanest test as features get added: look at the page and ask whether it still feels like editorial content or whether it's drifted toward dashboard. If the latter, the addition needs to be reworked, not because it's wrong as a feature but because the visual character of the page *is* part of the product, not separate from it.
 
-## Current state of the card design
+## Why we're replicating WhiteRisk
 
-The bulletin card is the building block of the website. The current implementation (as of mid-April 2026) is rendered on a testing surface at `/<region-id>/random/` that displays ten consecutive historical bulletins for a single micro-region as a vertical scrolling list. This is not the final page layout — it's a development tool for getting lots of card variants on screen simultaneously. The card design itself is what's being iterated on.
+The previous approach — iterate the bulletin card design by adding small refinements — was producing a page that was neither WhiteRisk's clarity nor SnowDesk's identity. Inch-toward-WR creates a permanent halfway state where every addition has to be argued for in isolation against an unfinished baseline.
 
-What the card currently contains, top to bottom:
+Replicating WR's structure exactly, then subtracting, has three advantages:
 
-A **warm cream/orange header strip** containing the EAWS danger pictogram (top-left), the danger level name in large serif type (e.g. "Considerable"), the numeric level beside it ("3"), and a one-line tagline derived from the danger level meaning ("Dangerous off-piste conditions" for Considerable, "Cautious route selection needed" for Moderate).
+1. **The canonical SLF/EAWS information architecture is already encoded in WR's layout.** WR didn't invent it — they're rendering the structure SLF authors the bulletin in. Replicating WR means replicating the structure a graduating user will eventually encounter on the SLF site. That serves the on-ramp mission directly.
 
-A **white body section** labelled "AVALANCHE PROBLEMS" containing one block per active avalanche problem from the bulletin. Each problem block has the EAWS problem icon, the problem name in clear sans-serif (e.g. "Persistent weak layers"), an outlined timing pill ("ALL DAY", "LATER (AFTERNOON)"), the elevation qualifier in muted grey ("above 2400m"), and the SLF prose comment for that problem rendered with character-count truncation ending in an ellipsis.
+2. **Subtraction is where SnowDesk's editorial character actually gets expressed.** What we choose to *remove* from the WR layout (the Explanation modal button, the close button, possibly the day-summary band on simple days) communicates SnowDesk's positioning more clearly than any incremental addition could.
 
-A **footer strip** with the date in monospace ("Sat 11 Apr · 06:00–15:00") and the list of micro-regions grouped together in that bulletin edition ("Münstertal · unteres Puschlav · Corvatsch").
+3. **It collapses most of the previous task list automatically.** Tasks like "remove truncation," "promote elevation to body weight," "soften the timing badge" — these all fall out of replication, because WR already gets them right. The previous 17-task list is retired.
 
-**What's working well:**
-- Typography hierarchy with serif headlines and the calm editorial feel
-- Muted warm palette that reads as paper rather than as alarm
-- EAWS pictogram placement and integration with the danger headline
-- Per-problem structure with icon, name, timing, elevation, prose
-- Monospace date format with interpunct separators (small detail, real character)
-- Card-as-self-contained-unit feel — boundaries between cards are clear without heavy separators
+The replica pass uses **WR's typographic choices verbatim** (system sans throughout, no serif accents). SnowDesk's serif-headline styling is a restyling decision that comes after the structural replica is complete and we can see what it would replace.
 
-**What isn't yet quite right** (the items the task list addresses):
-- SLF prose is truncated mid-sentence at character count, losing the most actionable parts
-- Region context line doesn't make clear which micro-region the page is *about* — only lists the grouped regions
-- Page header showing the focal micro-region scrolls off and isn't sticky
-- Elevation qualifier is too quiet visually given how decision-relevant it is
-- Avalanche problem icons are slightly small and similar problem types are hard to differentiate at a glance
-- Inter-card spacing is tight enough that consecutive cards run together
-- Timing badges are slightly louder than they need to be (less urgent than initially thought)
-- Developer-internal alt text on the danger icon needs replacement
-- "Open in admin" link is currently visible on the testing surface
+## Canonical layout (replicated from SLF/WhiteRisk)
 
-## Editorial principles for the card
+The single-day page is the canonical product surface. It renders one bulletin for one micro-region for one validity period. The structure, top to bottom:
 
-These are the principles that should govern any addition or change to the card design. They're derived from longer conversations about SnowDesk's positioning and should be treated as constraints, not suggestions.
+**1. Page chrome.** Region name, date and validity window, prev/next day navigation. WhiteRisk has a "Close" button here because their bulletin opens as a modal over a map; SnowDesk's bulletin is the page itself, so Close is one of the first things to subtract.
+
+**2. Bulletin headline band.** A coloured strip showing the bulletin's danger rating(s). On a simple day this shows one rating (e.g. `3- Considerable`). On a variable day this shows two ratings with a transition arrow (e.g. `2+ Moderate → 3 Considerable`) and a one-line note that hazard changes through the day. **Always present** — not a variable-day affordance.
+
+**3. Rating block(s).** One block per `dangerRating` in the CAAML data. Each block is a self-contained container with:
+   - A coloured header strip naming the rating and a one-line scope (e.g. `Considerable (3)  Wet snow, as the day progresses`).
+   - An aspect/elevation row immediately below the header. The aspect rosette and elevation pictogram come from the structured CAAML fields. **Asymmetry is honest:** dry-side problems usually carry these structured fields; wet-side problems often don't, and the row is sparser or absent. Don't fabricate data to make blocks look uniform.
+   - One row per avalanche problem in the block: the EAWS problem icon, the problem name, and the SLF prose comment in full. No truncation, no expand-to-read-more.
+
+   On a simple day there is one block. On a variable day there are two stacked vertically. The block container is the unit of layout — not the page, not the problem.
+
+**4. Bulletin metadata.** Issue time, valid-until, next-update. Three small fields in a thin strip.
+
+**5. Snowpack and weather section.** A section heading followed by four sub-blocks rendered from SLF prose:
+   - **Snowpack** (`snowpackStructure.comment`)
+   - **Weather review** for yesterday (`weatherReview.comment`) — includes structured Fresh snow, Temperature, Wind subheadings
+   - **Weather forecast** for tomorrow (`weatherForecast.comment`) — same structured subheadings
+   - **Outlook** (`tendency[].comment`) — multi-day forward outlook, prose only
+
+   These fields ship from SLF as **HTML strings** with `<h1>`, `<h2>`, `<p>`, `<ul>`, `<li>` tags. The structured Fresh snow / Temperature / Wind subheadings WhiteRisk shows are literal `<h2>` tags in the source HTML. No parsing required — sanitise (allow only the tags listed; bleach is the right tool) and render.
+
+**6. Footer.** SLF attribution, region grouping context. The grouping context follows the rule from the previous task list: focal region first, grouped regions framed as additional context (e.g. `Val dal Spöl, with Münstertal · unteres Puschlav · Corvatsch`).
+
+## What the replica is NOT
+
+To keep the replica pass focused, these things are explicitly out of scope and will be decided in the subtraction pass:
+
+- Day-character labels (the SnowDesk-derived interpretation layer)
+- Field guidance (the SnowDesk-derived plain-language additions beneath SLF prose)
+- The change strip / diff indicator
+- The serif-headline restyling
+- Any decision to remove or restructure WR sections
+- The list view (see below)
+
+## The list view
+
+The previous testing surface at `/<region-id>/random/` displayed ten consecutive historical bulletins as a vertical scrolling list. This view is **deprecated as the canonical product surface** but **kept as a power-user history view** at a different route (suggested: `/<region-id>/history/`).
+
+The list view's strengths (longitudinal pattern visible at a glance, useful once the diff strip exists, matches how experienced tourers think about conditions) genuinely serve a power-user use case, just not the primary one. Keeping it as a separate route means the canonical single-day page can be designed without compromise, while the longitudinal view continues to exist for users who want it. The list view does not need to be a design priority — it can continue to use the existing card design, or eventually inherit a compact variant of the rating-block layout, but neither is urgent.
+
+## Editorial principles for the page
+
+These are the principles that should govern any addition or change to the page design. They're derived from longer conversations about SnowDesk's positioning and should be treated as constraints, not suggestions.
 
 **Never recommend behaviour.** SnowDesk characterises the day and explains the bulletin. It does not tell users to go or to stay. The line between "information" and "judgement" exists for good reasons in Swiss avalanche culture, and crossing it has real consequences. Even features that introduce SnowDesk's own interpretation (the day-character labels) are deliberately descriptive rather than prescriptive.
 
-**SLF is the authoritative source, and the card should make this visible.** The bulletin prose comes from SLF; SnowDesk renders it faithfully. Anywhere SnowDesk adds its own content alongside the SLF source — plain-language sentences, day-character labels, field guidance — the visual treatment must distinguish the SnowDesk layer from the SLF layer so users can tell which content comes from where.
+**SLF is the authoritative source, and the page should make this visible.** The bulletin prose comes from SLF; SnowDesk renders it faithfully. Anywhere SnowDesk adds its own content alongside the SLF source — plain-language sentences, day-character labels, field guidance — the visual treatment must distinguish the SnowDesk layer from the SLF layer so users can tell which content comes from where.
 
-**The templating table is the highest-leverage editorial work in the project.** A bad sentence in a problem card fails the user directly. Hand-write every template. Review with an experienced tourer or guide. Test against real bulletins across a variety of conditions. Faithfulness beats cleverness; clarity beats polish.
+**Replicate first, subtract second, add third.** The replica is the baseline against which all additions and removals are measured. Don't add SnowDesk-derived content (day-character labels, field guidance) until the replica is complete and the subtraction pass has happened. The subtraction pass is where editorial judgement gets exercised — what stays, what goes, what gets quieter.
+
+**Asymmetry is honest.** The CAAML data is uneven: dry-side problems carry structured aspect/elevation fields; wet-side problems often don't. Rating blocks for the two sides will visibly differ. Don't fabricate or NLP-extract structured data from prose to make blocks look uniform. The visible difference is a faithful reflection of how SLF authors the bulletin.
+
+**The templating table is the highest-leverage editorial work in the project.** A bad sentence in a problem block fails the user directly. Hand-write every template. Review with an experienced tourer or guide. Test against real bulletins across a variety of conditions. Faithfulness beats cleverness; clarity beats polish.
 
 **When in doubt, be conservative.** The cost of characterising a borderline day cautiously is a mild user complaint. The cost of the opposite error is not comparable.
 
 **The voice is calm, confident, quietly expert.** Direct and unpatronising. No extreme-sports energy. No emojis. No cheerful disclaimers hiding uncertainty. The tone should survive being pasted verbatim into a WhatsApp group without feeling out of place.
 
-**Restraint is part of the brand.** When adding new content (field guidance, day-character labels, change indicators), the temptation is to add visual weight or accent colours to make additions feel "important." Resist. The information density of the current card is high enough; what makes it work is the restraint in how the information is presented. New features should be added in the same restrained idiom — small, quiet, deferential to the existing hierarchy — not as visual additions that compete for attention.
+**Restraint is part of the brand.** When adding new content (field guidance, day-character labels, change indicators), the temptation is to add visual weight or accent colours to make additions feel "important." Resist. New features should be added in the same restrained idiom — small, quiet, deferential to the existing hierarchy.
 
-## Task list — in priority order
+## Phase 1: Replication tasks
 
-This list is the result of looking at the card on a real phone and thinking about what would most improve it without changing its fundamental character. Tasks are ordered so that earlier tasks set up the conditions for later ones (e.g. removing truncation before adding field guidance beneath the prose, because the field guidance layout depends on the prose being its full length).
+These tasks build the WR-canonical layout against the existing data pipeline. The goal is a single-day page that, screenshotted next to WR for the same bulletin, is structurally indistinguishable.
 
-The list has seventeen items. You don't need to do all of them before showing the card to real users — see the "when to ship" note after the list.
+1. **Create the new route and view.** A Django view that takes a region ID and a date, fetches the bulletin for that region/validity period, and renders the new template. URL pattern something like `/<region-id>/<date>/`. Default landing route (`/<region-id>/`) redirects to today.
 
-1. **Replace the developer alt text** on the EAWS danger icon. Currently reads `dangerRatings[*].mainValue (highest)`; should read something like "Danger level 3, Considerable". Five-minute task. Accessibility win.
+2. **Build the rating-block partial.** A template fragment that renders one `dangerRating` as a self-contained block: header strip (rating name, scope description), aspect/elevation row, problem rows. The same partial works for simple-day (one block) and variable-day (two stacked blocks). Pull aspect/elevation from the structured CAAML fields where present; render nothing where absent.
 
-2. **Restructure the region context line in the footer.** Change from "Münstertal · unteres Puschlav · Corvatsch" to "Val dal Spöl, with Münstertal · unteres Puschlav · Corvatsch" (or similar). The user's micro-region needs to appear first, with the grouped regions explicitly framed as additional context. A user landing on the page from a shared link, or scrolling past the header, needs to see at a glance that yes, this bulletin is about their region.
+3. **Build the bulletin headline band.** Always present. Renders one rating on simple days, two ratings with a transition arrow on variable days. The transition logic comes from `customData.CH.aggregation` — that field already encodes SLF's editorial dry/wet clustering and should drive this rather than re-derivation from `dangerRatings` alone.
 
-3. **Make the page header sticky on scroll.** The "VAL DAL SPÖL · LAST 10 DAYS" line at the top of the page should remain visible as the user reads down the list, anchoring the whole page. Small frontend change, real clarity improvement.
+4. **Render snowpack and weather HTML safely.** Add a Django template filter (e.g. `snowdesk_html`) that runs the SLF HTML strings through bleach with a strict allowlist: `h1, h2, p, ul, li, strong, em`. Strip everything else. Apply CSS to style the resulting headings consistently with the rest of the page. Test against the four fields (`snowpackStructure.comment`, `weatherReview.comment`, `weatherForecast.comment`, `tendency[].comment`).
 
-4. **Fix the truncation by removing it.** Show the SLF prose in full for both avalanche problems. No expand affordance, no "read more" link — just the full text. The card becomes taller; this is fine because it's a bulletin page, not a feed. Important to do before subsequent additions because the field guidance sits beneath the prose and the layout decisions for that depend on having the full prose in place.
+5. **Build the metadata strip and footer.** Three-field metadata (issue, valid, next update). Footer with SLF attribution and the focal-region-first grouping context.
 
-5. **Promote the elevation qualifier to body weight.** "Above 2400m" currently sits in muted grey under the problem name; move it to the same visual weight as the body text so it reads as substantive information rather than as metadata. The elevation band is the second-most decision-relevant piece of information on the card and shouldn't be hidden.
+6. **Replicate WR's typographic choices verbatim.** System sans throughout. No serif. Match WR's font sizes and weights as closely as possible. The point of the replica is structural fidelity; restyling comes later.
 
-6. **Add SLF attribution to the prose blocks.** Each avalanche problem currently shows the SLF prose without explicit attribution. Add a small "— SLF assessment" or similar marker at the end of each prose block, in muted text. This is the foundation for the next task (adding SnowDesk-derived field guidance that needs to be visually distinguished from the SLF source).
+7. **Move the existing list view to `/<region-id>/history/`.** Keep the existing card design for now. Add a small navigation affordance from the single-day page to the history view ("View history" link in the footer or near the prev/next controls).
 
-7. **Increase inter-card vertical spacing.** When card two starts immediately after card one ends, there isn't quite enough vertical space for the eye to register the boundary. Add 16-24 extra pixels between cards.
+8. **Screenshot test.** Pick three bulletins with known character — a simple-day, a variable-day with dry/wet split, a Level 4+ day if one exists in the archive. Screenshot SnowDesk and WR side by side for each. The structural layout should match. Differences should be limited to colour, spacing, and the items deliberately dropped (Close button, Explanation button).
 
-8. **Soften the avalanche problem icons** by giving them slightly larger sizing (perhaps 32px instead of 24px) and small background tints to differentiate the problem types visually. Persistent weak layer and wet snow icons are currently too similar in colour and texture for at-a-glance differentiation.
+That's the entire replica pass. Eight tasks, mostly templating and HTML sanitisation. No new editorial content, no new visual identity decisions.
 
-9. **Add the SLF interpretation guide field guidance for the persistent weak layer problem only.** As a test of the layered approach. The field guidance text (drafted below) slots in beneath the SLF prose, separated by a horizontal rule, with its own attribution. Look at the card afterwards. Does the additional content feel like it belongs, or does it tip the card toward dashboard? If it belongs, proceed. If it tips, rework the visual treatment before extending to other problems. Persistent weak layer is the right test case because it's the most consequential problem and the place where the on-ramp framing pays off most.
+## Phase 2: Subtraction pass
 
-10. **Soften the timing badge.** The "ALL DAY" / "LATER (AFTERNOON)" pills currently compete with the problem name. Either reduce the visual weight (lighter outline, smaller font, sentence case instead of all caps) or move the timing inline with the problem name as italic text.
+Once the replica is in place, walk through it and make subtraction decisions explicitly. Each item below is a question, not a foregone conclusion. The answers come from looking at the live replica, not from deciding in the abstract.
 
-11. **Extend field guidance to the other four problem types.** Once the persistent weak layer version has been validated, write the rendering for new snow, wind slab, wet snow, gliding snow, and the no-distinct-problem case.
+The principle for subtraction: **remove anything that doesn't earn its place against the on-ramp mission.** WR is built for educating beginners about avalanche science (their core business is selling courses). SnowDesk is built for helping competent intermediates read the bulletin faster. Anything in WR that serves the former but not the latter is a candidate for removal.
 
-12. **Add SLF logo or wordmark to the footer.** Something like "Bulletin data from SLF" with the SLF mark, in the same visual zone as the date and region context. Visiting tourers and beginners may not know who SLF is, and the credibility of the card depends on them understanding the source.
+Confirmed subtractions (decide first, no live-page review needed):
 
-13. **Day-character calibration** (logic only, no UI yet). Run the day-character rules cascade against your stored bulletins and produce the label for each historical bulletin in the database. Don't render the labels yet — just compute them and check that the distribution looks right (most days Stable or Manageable, Hard-to-read days clustered around persistent weak layer events, Widespread danger and Dangerous conditions rare). If the distribution is off, the rules need calibration before they're worth surfacing.
+- **The Explanation button on each rating block.** It opens a modal explaining what "Considerable" means in general. Educational scaffolding — out of scope for SnowDesk's competent-intermediate audience. The SLF interpretation guide is the right home for this content; link it once from the page footer.
+- **The Close button at the page top.** Artefact of WR's modal-over-map architecture. SnowDesk's bulletin is the page itself.
 
-14. **Add the day-character label to the card** in its own visual zone, distinct from the SLF danger headline above. The label sits between the danger headline and the avalanche problems list. Visual treatment needs to make clear it's SnowDesk's interpretation, not SLF's — perhaps a thin coloured left border, or a different background tint. The one-line explainer underneath teaches the concept ("The snowpack contains a problem you can't reliably read in the field..."). Highest-risk addition for the card's character because it's where SnowDesk steps furthest from being a faithful renderer toward being an interpreter.
+Subtraction questions to decide after looking at the replica:
 
-15. **Implement bulletin diffing logic.** Backend work. The diff produces a structured list of change events between two consecutive bulletins for the same micro-region, using the structured CAAML fields (not the prose). Output is a list of change events with type, severity, and a renderable description. No UI yet.
+- **Does the bulletin headline band still earn its place when there's only one rating?** The band exists to flag transitions. On a simple day it just repeats the rating-block header below. Possible answers: always show (consistency), hide on simple days (subtraction), keep but reduce visual weight on simple days (compromise).
+- **Does the snowpack/weather section help the on-ramp goal, or does it pad the page?** This is a substantial chunk of content. Some of it (snowpack history, weather review) is genuinely useful context for an experienced tourer. Some of it (multi-day outlook) competes with dedicated weather services. Possible answers: render in full (replica fidelity), render only Snowpack and Weather review (drop forecast and outlook as duplicative of MeteoSwiss), collapse behind a "Show snowpack and weather" toggle.
+- **Should the rating-block header be that loud?** WR's filled orange/yellow strips are the loudest visual element on the page. SnowDesk's editorial character would suggest a thinner left-border treatment in the same colour, with the rating name in body-weight type. Worth trying both side by side.
+- **Is the aspect rosette readable at this size, or does it need a larger treatment?** Worth checking on a real phone.
+- **What happens to the `comment` field at the bulletin level (the overall hazard description)?** WR doesn't seem to surface this prominently — the rating-block prose is the primary text. Worth checking whether this field exists in the CAAML data and where (if anywhere) it should appear.
 
-16. **Add the change strip to the top of the card** when material changes have occurred since the previous bulletin for the same micro-region. Quiet visual treatment — a thin coloured strip with one or two lines of text — and crucially, *absent* on cards where nothing material has changed. The absence is part of the design.
+## Phase 3: SnowDesk additions on top of the replica
 
-17. **Remove the "Open in admin" link** from the public-facing card template before any external user sees it.
+Only after Phase 1 and Phase 2 are complete. These add SnowDesk's editorial layer on top of the cleaned-up replica.
+
+- **Field guidance beneath each problem's SLF prose.** Test with the persistent weak layer problem first. Drafted content is in the "Field guidance drafts" section below. Visual treatment: separated from SLF prose by a horizontal rule, attributed to the SLF interpretation guide rather than to SnowDesk directly (we're paraphrasing SLF, not authoring novel guidance).
+- **Day-character label.** Sits between the bulletin headline band and the first rating block. Visual treatment must distinguish SnowDesk interpretation from SLF source. The label needs a one-line explainer underneath that teaches the concept. See the day-character model section below.
+- **Bulletin diffing logic and change strip.** Backend-first: produce a structured diff between consecutive bulletins for the same region using CAAML fields (not prose). Then add a quiet visual strip at the top of the page when material changes have occurred. *Absent* on cards where nothing material has changed — the absence is part of the design.
+- **Serif-headline restyling pass.** Once additions are in place, decide whether to introduce the SnowDesk serif-headline treatment for `h1`/`h2` elements (page titles, section headers, rating names). Replicate-then-restyle is safer than restyling speculatively.
 
 ## When to ship to first users
 
-Looking at the current state, the card is closer to "ready to show real users" than the desktop screenshots first suggested. My recommendation is **after task 9** in this list — once you have:
+After Phase 1 and Phase 2 are complete. The point of the replicate-then-subtract approach is that the result of those two phases is already a coherent, shippable product — it's WR's structure with WR's worst beginner-scaffolding removed and SnowDesk's micro-region focus baked in. That's enough to put in front of ten users and have real conversations.
 
-- The un-truncated prose
-- The fixed region context
-- The sticky header
-- The better inter-card spacing
-- The improved icons
-- The elevation promoted
-- The SLF attribution
-- The field guidance for the persistent weak layer problem as a test case
+Phase 3 is where you most need user feedback before committing. The day-character labels and field guidance are the most editorially load-bearing additions in the project, and they benefit from being shaped by what early users actually find missing in the replica + subtraction baseline.
 
-That's nine small-to-medium tasks, all focused on refining and extending what's already working rather than adding new architectural pieces. None of them require the day-character labels or the diff strip, both of which are bigger commitments that benefit from user feedback before being built.
-
-Tasks 10-17 are the more ambitious additions and they're worth doing, but they're also where you most need user feedback before committing. Shipping the card after task 9 to ten users, having conversations about what they actually wanted, and *then* deciding whether tasks 10-17 are still the right priorities is better than building all seventeen tasks in isolation and hoping the result resonates.
-
-You have an unusually good visual foundation already, and the temptation will be to keep refining it before showing it to anyone. Resist that. The next ten users can give you feedback worth more than another month of solo iteration.
+The temptation will be to keep building before showing it to anyone. Resist that. The next ten users can give you feedback worth more than another month of solo iteration.
 
 ## Field guidance drafts
 
@@ -152,9 +184,9 @@ Almost impossible to predict precisely, even when the warning signs are visible.
 
 This isn't a specific avalanche problem. SLF uses this label when no single problem dominates the assessment, often on lower-danger days. It doesn't mean conditions are safe: any avalanche type is still possible, and normal caution applies. On stable days this is usually a signal to enjoy the mountains with general awareness; on less-stable days where the assessment is still inconclusive, it's a signal to be cautious specifically *because* there's no clear pattern to follow.
 
-## The day-character model (for tasks 13-14)
+## The day-character model (Phase 3)
 
-This is included for context because it's the bigger editorial commitment that comes after the field guidance is in place. It's documented in the README but worth restating here because the design implications are specific.
+This is the bigger editorial commitment that comes after the replica + subtraction baseline is in place. It's documented in the README but worth restating here because the design implications are specific.
 
 Every bulletin gets one of five labels, derived from a deterministic rule cascade over the structured CAAML fields:
 
@@ -166,7 +198,7 @@ Every bulletin gets one of five labels, derived from a deterministic rule cascad
 
 Each label needs a one-paragraph plain-language explainer that teaches the concept. The labels become a shared vocabulary between SnowDesk and its readers over time, supporting the on-ramp goal.
 
-The cascade rules (provisional, need calibration in task 13):
+The cascade rules (provisional, need calibration before the label is rendered):
 
 | Order | Conditions | Label |
 |---|---|---|
@@ -177,24 +209,37 @@ The cascade rules (provisional, need calibration in task 13):
 | 4 | Danger rating 2 or 3, no earlier match | Manageable day |
 | 5 | Danger rating 1, OR rating 2 with no distinct problem | Stable day |
 
-Visual treatment when added: distinct zone between the SLF danger headline and the avalanche problems list. Must be clearly attributed to SnowDesk's interpretation rather than to SLF — perhaps a thin coloured left border, a different background tint, or a small distinctive icon. The label needs its own one-line explainer underneath that teaches the concept.
+A spring-pattern rule (e.g. "Race the sun day" for the morning-low/afternoon-considerable wet hazard pattern) is proposed but not yet in the cascade. Worth adding once the variable-day rendering is working in the replica.
+
+Visual treatment when added: distinct zone between the bulletin headline band and the first rating block. Must be clearly attributed to SnowDesk's interpretation rather than to SLF — perhaps a thin coloured left border, a different background tint, or a small distinctive icon. The label needs its own one-line explainer underneath that teaches the concept.
 
 ## Open design questions
 
-A few things that haven't been resolved and are worth thinking about in the new design conversation:
+A few things that haven't been resolved and are worth working through after Phase 1 is complete:
 
-**The no-distinct-problem stable day case.** The current card design assumes there's at least one avalanche problem to render. On days with `no_distinct_avalanche_problem` and Level 1 rating, the card has very little to render — just the danger headline and possibly a single brief note. What does this card look like? It needs to feel intentionally quiet rather than empty, and it needs to honour the SLF caution that "no distinct problem" doesn't mean "safe." This case should be designed deliberately before committing too hard to the current layout assumptions.
+**The no-distinct-problem stable day case.** On days with `no_distinct_avalanche_problem` and Level 1 rating, the rating block has very little to render — just the danger headline and possibly a single brief note. What does this block look like? It needs to feel intentionally quiet rather than empty, and it needs to honour the SLF caution that "no distinct problem" doesn't mean "safe."
 
-**The very-dangerous-day case (Level 4 or 5).** At the other end, the card needs to handle days where multiple problems are active, the rating is High, and the bulletin prose is longer and more urgent. Does the calm editorial treatment hold up when the content is genuinely alarming? The brand character requires that it does — SnowDesk shouldn't suddenly become a flashing-red dashboard on dangerous days — but it needs visual treatment that acknowledges the seriousness without abandoning the editorial tone.
+**The very-dangerous-day case (Level 4 or 5).** At the other end, the page needs to handle days where multiple problems are active, the rating is High, and the bulletin prose is longer and more urgent. Does the calm editorial treatment hold up when the content is genuinely alarming? The brand character requires that it does — SnowDesk shouldn't suddenly become a flashing-red dashboard on dangerous days — but it needs visual treatment that acknowledges the seriousness without abandoning the editorial tone.
 
-**The longitudinal list view.** The current testing surface stacks ten cards vertically. Is this the right format for the actual bulletin page, or is the canonical bulletin page a single-day view with day-navigation controls? The list view has real strengths (longitudinal pattern visible at a glance, the diff strip becomes more useful, matches how experienced tourers think about conditions) and real weaknesses (longer pages, harder to share a specific day, potentially overwhelming for casual users). A hybrid is possible. Worth deciding deliberately rather than letting the testing surface become the production design by default.
+**The SnowDesk visual identity beyond the page.** The bulletin page is the building block, but the surrounding website (homepage, about page, sample email page, account management) hasn't been designed yet. The page sets a visual direction; the rest of the site needs to extend it consistently. Worth thinking about as a system rather than letting each surface evolve in isolation.
 
-**The SnowDesk visual identity beyond the card.** The card design is strong but the surrounding website (homepage, about page, sample email page, account management) hasn't been designed yet. The card sets a visual direction — paper-like, restrained, editorial — and the rest of the site needs to extend it consistently. Worth thinking about as a system rather than letting each page evolve in isolation.
+**Email rendering vs web rendering.** The 5pm and 7am subscription emails need their own visual treatment that captures the same character within email's much tighter constraints (limited CSS support, no custom fonts, dark mode quirks, forwarding fragility). Email is the primary product surface — this is its own design conversation and hasn't been started yet.
 
-**Email rendering vs web rendering.** The card design uses typography and spacing decisions that work in a browser but don't necessarily translate to email clients. The 5pm and 7am subscription emails need their own visual treatment that captures the same character within email's much tighter constraints (limited CSS support, no custom fonts, dark mode quirks, forwarding fragility). This is its own design conversation and hasn't been started yet.
+## Archived: the side-by-side variable-day split
+
+An earlier design iteration rendered variable days as two side-by-side period columns (dry on the left, wet on the right, with a `→` between them). This approach is **deprecated** in favour of the WR-canonical vertical-stacked rating blocks for two reasons:
+
+1. It doesn't scale past two periods. Real bulletins occasionally have three (e.g. dry / wet morning / wet afternoon).
+2. It doesn't match the SLF mental model the user is graduating toward. Stacked rating blocks do.
+
+The pattern is preserved here in case a future surface (e.g. a comparison view between two adjacent regions) genuinely benefits from horizontal side-by-side layout. The CSS is in `bulletin_cards.html` under the `.split-wrapper` and `.period-col` classes. Don't reuse it for the daily bulletin page.
+
+## Archived: the previous 17-task list
+
+The previous task list (April 2026, pre-replication-decision) is retired. Most of its items either fall out of replication automatically (truncation removal, elevation promotion, problem icon improvements, timing badge softening) or move to Phase 3 (field guidance, day-character label, diff strip, SLF logo). A few small items survive into Phase 1 (alt text fix, region context line restructure, removing the dev-only "Open in admin" link). They're folded into the replication tasks above where relevant.
 
 ## How to use this document
 
-This is intended as the input to a new design-focused chat. When starting that chat, reference this document directly: "I'm continuing the SnowDesk design work. See `DESIGN.md` for current state, task list, field guidance drafts, and open questions." The new conversation can then dig into any of the open questions, refine specific tasks, or work through the cards for the cases that haven't been designed yet (no-distinct-problem, very-dangerous-day, the email format).
+This is intended as the input to a new design-focused chat. When starting that chat, reference this document directly: "I'm continuing the SnowDesk design work. See `DESIGN.md` for current state, the replicate-then-subtract plan, field guidance drafts, and open questions."
 
-The strategy conversation that produced this document remains in its own chat and shouldn't need to be re-derived. If a strategic question comes up in the design work that's already been resolved in the strategy chat, refer back to it rather than re-litigating it here.
+The strategy conversation that produced the original framing remains in its own chat and shouldn't need to be re-derived. If a strategic question comes up in the design work that's already been resolved in the strategy chat, refer back to it rather than re-litigating it here.

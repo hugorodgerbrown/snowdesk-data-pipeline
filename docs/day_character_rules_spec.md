@@ -70,6 +70,9 @@ OR (danger_rating == 2 AND all problems have problem_type == "no_distinct_avalan
   bottom and return on first match.
 - If no rule matches (should not happen with valid data), return `"Stable day"`
   as the safe default.
+- **Empty traits** (`render_model["traits"] == []`): return `"Stable day"`
+  immediately. This covers bulletins with no avalanche problems (e.g. very low
+  danger days where SLF omits problem data entirely).
 - The function is pure — no side effects, no database calls. Derive
   everything from the render model dict passed in.
 - Use type annotations throughout.

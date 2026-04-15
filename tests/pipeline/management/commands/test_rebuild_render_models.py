@@ -182,20 +182,46 @@ class TestRebuildRenderModelsDryRun:
 class TestRebuildRenderModelsErrorHandling:
     """Tests for error handling during rebuild."""
 
-    def test_error_during_build_does_not_raise(self) -> None:
-        """A build failure on one bulletin does not abort the whole run."""
+    def test_error_during_build_does_not_abort_run(self) -> None:
+        """A RenderModelBuildError on one bulletin does not abort the whole run."""
         from unittest.mock import patch
+
+        from pipeline.services.render_model import RenderModelBuildError
 
         b = _make_bulletin(render_model_version=0, bulletin_id="error-001")
 
         with patch(
             "pipeline.management.commands.rebuild_render_models.build_render_model",
-            side_effect=ValueError("simulated failure"),
+            side_effect=RenderModelBuildError("simulated failure"),
         ):
             # Should not raise — error is caught and stored.
-            call_command("rebuild_render_models", verbosity=0)
+            with pytest.raises(CommandError, match="failed"):
+                call_command("rebuild_render_models", verbosity=0)
 
         b.refresh_from_db()
         # On error, version stays 0 and render_model records the error.
         assert b.render_model_version == 0
         assert "error" in b.render_model
+        assert b.render_model["error_type"] == "RenderModelBuildError"
+
+    def test_error_summary_printed_and_exits_nonzero(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """When failures occur, command prints summary and exits non-zero."""
+        from unittest.mock import patch
+
+        from pipeline.services.render_model import RenderModelBuildError
+
+        _make_bulletin(render_model_version=0, bulletin_id="fail-sum-001")
+        _make_bulletin(render_model_version=0, bulletin_id="fail-sum-002")
+
+        with patch(
+            "pipeline.management.commands.rebuild_render_models.build_render_model",
+            side_effect=RenderModelBuildError("simulated failure"),
+        ):
+            with pytest.raises(CommandError):
+                call_command("rebuild_render_models", verbosity=1)
+
+        captured = capsys.readouterr()
+        # Summary should mention rebuilt count and failed count.
+        assert "Rebuilt" in captured.out or "failed" in captured.out

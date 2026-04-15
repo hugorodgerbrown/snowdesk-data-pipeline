@@ -46,6 +46,47 @@ def _make_bulletin(**properties: Any) -> Bulletin:
     )
 
 
+def _make_aggregation(
+    problems: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Auto-generate aggregation entries from a list of CAAML problems.
+
+    Groups problems by (category, validTimePeriod). Category is derived from
+    problemType using PROBLEM_TYPE_TO_CATEGORY. Each unique (category, period)
+    combination becomes one aggregation entry, preserving problem order.
+
+    Args:
+        problems: CAAML avalancheProblems list.
+
+    Returns:
+        A list of aggregation entry dicts suitable for customData.CH.aggregation.
+
+    """
+    from pipeline.services.render_model import PROBLEM_TYPE_TO_CATEGORY
+
+    seen: dict[tuple[str, str], list[str]] = {}
+    for p in problems:
+        pt = p.get("problemType", "")
+        vtp = p.get("validTimePeriod") or "all_day"
+        cat = PROBLEM_TYPE_TO_CATEGORY.get(pt, "dry")
+        key = (cat, vtp)
+        if key not in seen:
+            seen[key] = []
+        if pt not in seen[key]:
+            seen[key].append(pt)
+
+    return [
+        {
+            "category": cat,
+            "validTimePeriod": vtp,
+            "problemTypes": pts,
+            "title": f"{cat.capitalize()} avalanches",
+        }
+        for (cat, vtp), pts in seen.items()
+    ]
+
+
 def _make_region_bulletin(
     region: Region,
     day: date,
@@ -53,6 +94,7 @@ def _make_region_bulletin(
     main_value: str = "moderate",
     problems: list[dict[str, Any]] | None = None,
     problem_type: str = "wind_slab",
+    aggregation: list[dict[str, Any]] | None = None,
 ) -> Bulletin:
     """
     Create a Bulletin valid on ``day`` and link it to ``region``.
@@ -61,9 +103,25 @@ def _make_region_bulletin(
     UTC on ``day`` (mimicking the SLF morning issue shape). Pass
     ``problems`` to supply a full CAAML avalancheProblems list; otherwise a
     single problem of ``problem_type`` with no comment/period is used.
+
+    Aggregation is auto-generated from problems when not provided explicitly.
+
+    Args:
+        region: The Region to link the bulletin to.
+        day: The date the bulletin covers.
+        main_value: The danger rating main value.
+        problems: CAAML avalancheProblems list. Defaults to a single wind_slab.
+        problem_type: Used as default problem type when ``problems`` is None.
+        aggregation: Explicit aggregation list. Auto-generated when None.
+
+    Returns:
+        The created and linked Bulletin instance.
+
     """
     if problems is None:
         problems = [{"problemType": problem_type}]
+    if aggregation is None:
+        aggregation = _make_aggregation(problems)
     valid_from = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
     valid_to = datetime(day.year, day.month, day.day, 16, 0, tzinfo=UTC)
     bulletin = BulletinFactory.create(
@@ -72,6 +130,7 @@ def _make_region_bulletin(
                 "dangerRatings": [{"mainValue": main_value}],
                 "avalancheProblems": problems,
                 "regions": [{"name": region.name, "regionID": region.region_id}],
+                "customData": {"CH": {"aggregation": aggregation}},
             }
         ),
         issued_at=valid_from - timedelta(minutes=30),
@@ -578,7 +637,7 @@ class TestRandomBulletinsView:
     def test_problem_blocks_render_comment_and_time_period(
         self, client: Client, region: Region
     ) -> None:
-        """Each avalanche problem renders its comment and period badge."""
+        """Each avalanche problem renders its label and time-period badge."""
         _make_region_bulletin(
             region,
             date(2025, 3, 1),
@@ -587,11 +646,15 @@ class TestRandomBulletinsView:
                     "problemType": "persistent_weak_layers",
                     "comment": "<p>Buried weak layers on shady slopes.</p>",
                     "validTimePeriod": "all_day",
+                    "aspects": ["N", "NE"],
+                    "elevation": {"lowerBound": "2200"},
                 },
                 {
                     "problemType": "wind_slab",
                     "comment": "<p>Fresh drifts on lee slopes.</p>",
                     "validTimePeriod": "later",
+                    "aspects": ["NW"],
+                    "elevation": {"lowerBound": "2400"},
                 },
             ],
         )
@@ -607,8 +670,7 @@ class TestRandomBulletinsView:
         # Both comments appear as text.
         assert b"Buried weak layers on shady slopes." in body
         assert b"Fresh drifts on lee slopes." in body
-        # Time-period badges appear with their human labels.
-        assert b"All day" in body
+        # Time-period badge for later.
         assert b"Later (afternoon)" in body
         # Two problem-block wrappers rendered.
         assert body.count(b"bg-tag") >= 2
@@ -681,10 +743,10 @@ class TestRandomBulletinsView:
         assert body.count(b"Buried weak layers on shady slopes.") == 1
         assert body.count(b"slf-prose") == 1
 
-    def test_same_problem_type_with_different_periods_both_render(
+    def test_two_wet_problems_in_separate_aggregation_entries_both_render(
         self, client: Client, region: Region
     ) -> None:
-        """Repeated problemType entries with distinct periods both show."""
+        """Two wet problems in distinct aggregation entries (different periods) both show."""
         _make_region_bulletin(
             region,
             date(2025, 3, 1),
@@ -693,11 +755,29 @@ class TestRandomBulletinsView:
                     "problemType": "wet_snow",
                     "comment": "<p>Morning crust.</p>",
                     "validTimePeriod": "earlier",
+                    "aspects": ["S"],
+                    "elevation": {"upperBound": "2000"},
                 },
                 {
-                    "problemType": "wet_snow",
+                    "problemType": "gliding_snow",
                     "comment": "<p>Afternoon softening.</p>",
                     "validTimePeriod": "later",
+                    "aspects": ["SE"],
+                    "elevation": {"upperBound": "2200"},
+                },
+            ],
+            aggregation=[
+                {
+                    "category": "wet",
+                    "validTimePeriod": "earlier",
+                    "problemTypes": ["wet_snow"],
+                    "title": "Wet avalanches, earlier",
+                },
+                {
+                    "category": "wet",
+                    "validTimePeriod": "later",
+                    "problemTypes": ["gliding_snow"],
+                    "title": "Wet avalanches, later",
                 },
             ],
         )

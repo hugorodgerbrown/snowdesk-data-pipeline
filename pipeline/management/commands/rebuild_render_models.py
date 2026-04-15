@@ -29,7 +29,11 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from pipeline.models import Bulletin
-from pipeline.services.render_model import RENDER_MODEL_VERSION, build_render_model
+from pipeline.services.render_model import (
+    RENDER_MODEL_VERSION,
+    RenderModelBuildError,
+    build_render_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +119,7 @@ class Command(BaseCommand):
             new_render_model = build_render_model(props)
             new_version = RENDER_MODEL_VERSION
             success = True
-        except Exception as exc:
+        except RenderModelBuildError as exc:
             logger.error(
                 "Failed to build render model for bulletin %s: %s",
                 bulletin.bulletin_id,
@@ -124,8 +128,8 @@ class Command(BaseCommand):
             )
             new_render_model = {
                 "version": 0,
-                "traits": [],
                 "error": str(exc),
+                "error_type": exc.__class__.__name__,
             }
             new_version = 0
             success = False
@@ -203,17 +207,16 @@ class Command(BaseCommand):
 
             offset += batch_size
 
-        suffix = (f", {errored} error(s)" if errored else "") + "."
         if dry_run:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Dry run complete — would have rebuilt {rebuilt} bulletin(s)"
-                    + suffix
+                    f"Dry run complete — would have rebuilt {rebuilt} bulletin(s), "
+                    f"{errored} failed."
                 )
             )
         else:
             self.stdout.write(
-                self.style.SUCCESS(f"Done. Rebuilt {rebuilt} bulletin(s)" + suffix)
+                self.style.SUCCESS(f"Rebuilt {rebuilt} bulletin(s), {errored} failed.")
             )
 
         logger.info(
@@ -222,3 +225,9 @@ class Command(BaseCommand):
             errored,
             dry_run,
         )
+
+        if errored > 0:
+            raise CommandError(
+                f"{errored} bulletin(s) failed render-model rebuild. "
+                f"They are stored with version=0 error sentinels."
+            )

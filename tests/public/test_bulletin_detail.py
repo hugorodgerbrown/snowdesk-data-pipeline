@@ -393,3 +393,37 @@ class TestBulletinDetailView:
             and "current=2" in record.message
             for record in caplog.records
         )
+
+    def test_stale_render_model_rebuild_failure_returns_200_with_error_state(
+        self, client: Client, region, caplog
+    ):
+        """When stale rebuild raises RenderModelBuildError, page returns 200 with error card."""
+        from pipeline.services.render_model import RenderModelBuildError
+
+        am = _make_am_bulletin(region, date(2026, 3, 15), render_model_version=1)
+        url = reverse(
+            "public:bulletin",
+            kwargs={"region_id": "CH-4115", "slug": "valais"},
+        )
+
+        with patch("public.views.RENDER_MODEL_VERSION", 2):
+            with patch(
+                "public.views.build_render_model",
+                side_effect=RenderModelBuildError("validation failed"),
+            ):
+                with _freeze("2026-03-15T10:00:00+00:00"):
+                    with caplog.at_level("ERROR", logger="public.views"):
+                        response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.context["bulletin"].pk == am.pk
+        # The panel render model should have version=0 (error state).
+        panel = response.context.get("panel")
+        assert panel is not None
+        assert panel["render_model"]["version"] == 0
+        # An ERROR log entry should have been emitted.
+        assert any(
+            "render model rebuild failed" in record.message.lower()
+            for record in caplog.records
+            if record.levelname == "ERROR"
+        )

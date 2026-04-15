@@ -120,6 +120,27 @@
 .danger-band[data-level="very_high"]    { color: var(--color-eaws-very-high-text); }
 
 
+/* —— EAWS per-problem danger left-border ————
+   A 3px left border on individual avalanche problem
+   blocks indicating that problem's own danger rating.
+   Mirrors the danger-band data-level pattern so the
+   same EAWS token colours are reused consistently.
+   A missing / unknown danger_rating_value produces no
+   coloured border (falls back to border-border neutral).
+
+   Usage in template:
+     <div class="problem-level" data-level="considerable">
+   ————————————————————————————————————————— */
+
+.problem-level { border-left: 3px solid var(--color-border); }
+
+.problem-level[data-level="low"]          { border-left-color: var(--color-eaws-low); }
+.problem-level[data-level="moderate"]     { border-left-color: var(--color-eaws-moderate); }
+.problem-level[data-level="considerable"] { border-left-color: var(--color-eaws-considerable); }
+.problem-level[data-level="high"]         { border-left-color: var(--color-eaws-high); }
+.problem-level[data-level="very_high"]    { border-left-color: var(--color-eaws-very-high); }
+
+
 /* —— Field guidance <details> chevron ——————
    The animated chevron on the <summary> trigger
    cannot be done with Tailwind alone (no utility

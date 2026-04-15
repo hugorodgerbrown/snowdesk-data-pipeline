@@ -23,7 +23,11 @@ from typing import Any
 import requests
 
 from pipeline.models import Bulletin, PipelineRun, Region, RegionBulletin
-from pipeline.services.render_model import RENDER_MODEL_VERSION, build_render_model
+from pipeline.services.render_model import (
+    RENDER_MODEL_VERSION,
+    RenderModelBuildError,
+    build_render_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -172,19 +176,20 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
     try:
         computed_render_model = build_render_model(raw)
         computed_render_model_version = RENDER_MODEL_VERSION
-    except Exception as exc:
-        logger.error(
+    except RenderModelBuildError as exc:
+        logger.exception(
             "Failed to build render model for bulletin %s: %s",
             bulletin_id,
             exc,
-            exc_info=True,
         )
         computed_render_model = {
             "version": 0,
-            "traits": [],
             "error": str(exc),
+            "error_type": exc.__class__.__name__,
         }
         computed_render_model_version = 0
+        run.records_failed += 1
+        run.save(update_fields=["records_failed"])
 
     defaults: dict[str, Any] = {
         "raw_data": raw_data,

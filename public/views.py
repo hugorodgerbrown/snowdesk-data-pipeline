@@ -47,6 +47,7 @@ from pipeline.models import Bulletin, Region, RegionBulletin
 from pipeline.schema import ValidTimePeriod
 from pipeline.services.render_model import (
     RENDER_MODEL_VERSION,
+    RenderModelBuildError,
     build_render_model,
     compute_day_character,
 )
@@ -1176,6 +1177,14 @@ def _enrich_render_model_problem(
         if plain in later_plains:
             hide_comment = True
 
+    # Map the problem's own danger rating to its CSS data-level value.
+    # Uses the same key set as the danger-band data-level attribute so the
+    # same CSS token rules apply. Falls back to empty string (neutral/grey).
+    danger_rating_value: str = rm_problem.get("danger_rating_value") or ""
+    danger_level_css = (
+        danger_rating_value if danger_rating_value in _DANGER_ORDER else ""
+    )
+
     return {
         **rm_problem,
         "label": label,
@@ -1184,6 +1193,7 @@ def _enrich_render_model_problem(
         "summary": summary,
         "field_guidance": field_guidance,
         "hide_comment": hide_comment,
+        "danger_level_css": danger_level_css,
     }
 
 
@@ -1217,6 +1227,54 @@ def _enrich_render_model(
         enriched_traits.append({**trait, "problems": enriched_problems})
 
     return {**render_model, "traits": enriched_traits}
+
+
+def _get_render_model(
+    bulletin: Bulletin,
+    props: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Return the render model for a bulletin, rebuilding on the fly if stale.
+
+    When ``bulletin.render_model_version`` is older than
+    ``RENDER_MODEL_VERSION`` the render model is rebuilt from ``props``.
+    On ``RenderModelBuildError`` an error sentinel dict is returned so the
+    view can render an error card without crashing. The stored DB row is
+    never modified here.
+
+    Args:
+        bulletin: The Bulletin whose render model is needed.
+        props: The CAAML properties dict (from ``bulletin.raw_data``).
+
+    Returns:
+        A render model dict (may have version=0 on build failure).
+
+    """
+    if bulletin.render_model_version >= RENDER_MODEL_VERSION:
+        return cast("dict[str, Any]", bulletin.render_model)
+
+    logger.warning(
+        "Bulletin %s has stale render_model (stored version=%d, current=%d);"
+        " building on the fly",
+        bulletin.bulletin_id,
+        bulletin.render_model_version,
+        RENDER_MODEL_VERSION,
+    )
+    try:
+        return build_render_model(props)
+    except RenderModelBuildError as exc:
+        logger.error(
+            "Bulletin %s render model rebuild failed during view render: %s",
+            bulletin.bulletin_id,
+            exc,
+            exc_info=True,
+        )
+        # Return error sentinel for this render only — do NOT write to DB.
+        return {
+            "version": 0,
+            "error": str(exc),
+            "error_type": exc.__class__.__name__,
+        }
 
 
 def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
@@ -1272,16 +1330,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     # Retrieve or build the render model. Bulletins ingested before this
     # feature was deployed will have render_model_version == 0; build on
     # the fly so the page renders correctly while a backfill job catches up.
-    raw_render_model = bulletin.render_model
-    if bulletin.render_model_version < RENDER_MODEL_VERSION:
-        logger.warning(
-            "Bulletin %s has stale render_model (stored version=%d, current=%d);"
-            " building on the fly",
-            bulletin.bulletin_id,
-            bulletin.render_model_version,
-            RENDER_MODEL_VERSION,
-        )
-        raw_render_model = build_render_model(props)
+    raw_render_model = _get_render_model(bulletin, props)
 
     # Enrich the render model with presentation-ready fields (labels,
     # ElevationBounds, field_guidance, hide_comment per trait).

@@ -1,0 +1,46 @@
+{
+  "type": "Feature",
+  "geometry": null,
+  "properties": {
+    "bulletinID": "unknown-problem-type-001",
+    "lang": "en",
+    "validTime": {
+      "startTime": "2026-03-01T15:00:00Z",
+      "endTime": "2026-03-02T15:00:00Z"
+    },
+    "nextUpdate": "2026-03-02T15:00:00Z",
+    "unscheduled": false,
+    "regions": [
+      { "regionID": "CH-4115", "name": "Piz Buin" }
+    ],
+    "dangerRatings": [
+      { "mainValue": "moderate", "validTimePeriod": "all_day" }
+    ],
+    "avalancheProblems": [
+      {
+        "problemType": "alien_snow_type",
+        "comment": "This problem type does not exist in the EAWS schema.",
+        "dangerRatingValue": "moderate",
+        "validTimePeriod": "all_day",
+        "aspects": ["N", "NE"],
+        "elevation": { "lowerBound": "2000" }
+      }
+    ],
+    "customData": {
+      "CH": {
+        "aggregation": [
+          {
+            "category": "dry",
+            "validTimePeriod": "all_day",
+            "problemTypes": ["alien_snow_type"],
+            "title": "Unknown problem type"
+          }
+        ]
+      }
+    },
+    "publicationTime": "2026-03-01T15:00:00Z",
+    "snowpackStructure": {
+      "comment": "<p>Snowpack data unavailable.</p>"
+    }
+  }
+}

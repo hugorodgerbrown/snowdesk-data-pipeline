@@ -102,6 +102,13 @@ class PipelineRun(BaseModel):
     )
     records_created = models.PositiveIntegerField(default=0)
     records_updated = models.PositiveIntegerField(default=0)
+    records_failed = models.PositiveIntegerField(
+        default=0,
+        help_text=(
+            "Number of bulletins whose render model could not be built "
+            "(stored with version=0 error sentinel)."
+        ),
+    )
     error_message = models.TextField(blank=True)
     triggered_by = models.CharField(
         max_length=64,

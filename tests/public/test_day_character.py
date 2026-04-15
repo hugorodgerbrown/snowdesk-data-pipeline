@@ -259,6 +259,18 @@ class TestDayCharacterInPanelContext:
                             "validTimePeriod": "all_day",
                         }
                     ],
+                    "customData": {
+                        "CH": {
+                            "aggregation": [
+                                {
+                                    "category": "dry",
+                                    "validTimePeriod": "all_day",
+                                    "problemTypes": ["persistent_weak_layers"],
+                                    "title": "Persistent weak layers",
+                                }
+                            ]
+                        }
+                    },
                 }
             ),
             issued_at=datetime(2025, 3, 15, 8, 0, tzinfo=UTC),
