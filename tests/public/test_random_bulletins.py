@@ -2,11 +2,10 @@
 tests/public/test_random_bulletins.py — Tests for the random_bulletins view.
 
 Covers the ``random_bulletins`` view and its private helpers in
-``public.views``: ``_highest_danger_key``, ``_panel_problems``,
-``_build_panel_context``, ``_format_elevation``,
-and ``_parse_bulletin_count``. The view now lists the most recent bulletins
-for a single region (one per calendar day, reverse chronological) with an
-optional ``?b=N`` query parameter.
+``public.views``: ``_highest_danger_key``, ``_build_panel_context``,
+``_format_elevation``, and ``_parse_bulletin_count``. The view now lists the
+most recent bulletins for a single region (one per calendar day, reverse
+chronological) with an optional ``?b=N`` query parameter.
 """
 
 from __future__ import annotations
@@ -23,7 +22,6 @@ from public.views import (
     _build_panel_context,
     _format_elevation,
     _highest_danger_key,
-    _panel_problems,
     _parse_bulletin_count,
 )
 from tests.factories import BulletinFactory, RegionBulletinFactory, RegionFactory
@@ -48,6 +46,47 @@ def _make_bulletin(**properties: Any) -> Bulletin:
     )
 
 
+def _make_aggregation(
+    problems: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Auto-generate aggregation entries from a list of CAAML problems.
+
+    Groups problems by (category, validTimePeriod). Category is derived from
+    problemType using PROBLEM_TYPE_TO_CATEGORY. Each unique (category, period)
+    combination becomes one aggregation entry, preserving problem order.
+
+    Args:
+        problems: CAAML avalancheProblems list.
+
+    Returns:
+        A list of aggregation entry dicts suitable for customData.CH.aggregation.
+
+    """
+    from pipeline.services.render_model import PROBLEM_TYPE_TO_CATEGORY
+
+    seen: dict[tuple[str, str], list[str]] = {}
+    for p in problems:
+        pt = p.get("problemType", "")
+        vtp = p.get("validTimePeriod") or "all_day"
+        cat = PROBLEM_TYPE_TO_CATEGORY.get(pt, "dry")
+        key = (cat, vtp)
+        if key not in seen:
+            seen[key] = []
+        if pt not in seen[key]:
+            seen[key].append(pt)
+
+    return [
+        {
+            "category": cat,
+            "validTimePeriod": vtp,
+            "problemTypes": pts,
+            "title": f"{cat.capitalize()} avalanches",
+        }
+        for (cat, vtp), pts in seen.items()
+    ]
+
+
 def _make_region_bulletin(
     region: Region,
     day: date,
@@ -55,6 +94,7 @@ def _make_region_bulletin(
     main_value: str = "moderate",
     problems: list[dict[str, Any]] | None = None,
     problem_type: str = "wind_slab",
+    aggregation: list[dict[str, Any]] | None = None,
 ) -> Bulletin:
     """
     Create a Bulletin valid on ``day`` and link it to ``region``.
@@ -63,9 +103,25 @@ def _make_region_bulletin(
     UTC on ``day`` (mimicking the SLF morning issue shape). Pass
     ``problems`` to supply a full CAAML avalancheProblems list; otherwise a
     single problem of ``problem_type`` with no comment/period is used.
+
+    Aggregation is auto-generated from problems when not provided explicitly.
+
+    Args:
+        region: The Region to link the bulletin to.
+        day: The date the bulletin covers.
+        main_value: The danger rating main value.
+        problems: CAAML avalancheProblems list. Defaults to a single wind_slab.
+        problem_type: Used as default problem type when ``problems`` is None.
+        aggregation: Explicit aggregation list. Auto-generated when None.
+
+    Returns:
+        The created and linked Bulletin instance.
+
     """
     if problems is None:
         problems = [{"problemType": problem_type}]
+    if aggregation is None:
+        aggregation = _make_aggregation(problems)
     valid_from = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
     valid_to = datetime(day.year, day.month, day.day, 16, 0, tzinfo=UTC)
     bulletin = BulletinFactory.create(
@@ -74,6 +130,7 @@ def _make_region_bulletin(
                 "dangerRatings": [{"mainValue": main_value}],
                 "avalancheProblems": problems,
                 "regions": [{"name": region.name, "regionID": region.region_id}],
+                "customData": {"CH": {"aggregation": aggregation}},
             }
         ),
         issued_at=valid_from - timedelta(minutes=30),
@@ -216,277 +273,6 @@ class TestFormatElevation:
         assert result.bound_type == "UPPER"
 
 
-class TestPanelProblems:
-    """Tests for ``_panel_problems``."""
-
-    def test_empty_properties_returns_empty_list(self) -> None:
-        """No avalancheProblems → empty list."""
-        assert _panel_problems({}) == []
-
-    def test_maps_known_problem_types_to_labels(self) -> None:
-        """Known problem types resolve to their human-readable labels."""
-        props = {
-            "avalancheProblems": [
-                {"problemType": "new_snow"},
-                {"problemType": "persistent_weak_layers"},
-            ]
-        }
-        result = _panel_problems(props)
-        assert len(result) == 2
-        assert result[0]["problem_type"] == "new_snow"
-        assert result[0]["label"] == "New snow"
-        assert not result[0]["elevation"]
-        assert result[0]["aspects"] == []
-        assert result[1]["problem_type"] == "persistent_weak_layers"
-        assert result[1]["label"] == "Persistent weak layers"
-        assert not result[1]["elevation"]
-        assert result[1]["aspects"] == []
-
-    def test_includes_comment_and_time_period_label(self) -> None:
-        """Each problem carries a plain-text comment and period label."""
-        props = {
-            "avalancheProblems": [
-                {
-                    "problemType": "wind_slab",
-                    "comment": "<p>Fresh drifts on lee slopes.</p>",
-                    "validTimePeriod": "earlier",
-                    "elevation": {"lowerBound": "2200"},
-                    "aspects": ["N", "NE", "E"],
-                },
-            ]
-        }
-        result = _panel_problems(props)
-        assert len(result) == 1
-        p = result[0]
-        assert p["problem_type"] == "wind_slab"
-        assert p["label"] == "Wind slab"
-        assert p["comment"] == "<p>Fresh drifts on lee slopes.</p>"
-        assert p["time_period"] == "earlier"
-        assert p["time_period_label"] == "Earlier (morning)"
-        assert p["elevation"].display == "above 2200m"
-        assert p["elevation"].lower == "2200"
-        assert p["aspects"] == ["N", "NE", "E"]
-        assert p["summary"] == "Affects N, NE, E aspects above 2200m"
-        assert p["hide_comment"] is False
-
-    def test_summary_uses_core_zone_text_when_present(self) -> None:
-        """``customData.CH.coreZoneText`` is preferred for the summary."""
-        text = 'Danger level "moderate" (2+) in SW to N to SE aspects above 2200m.'
-        props = {
-            "avalancheProblems": [
-                {
-                    "problemType": "wind_slab",
-                    "elevation": {"lowerBound": "2200"},
-                    "aspects": ["N", "NE"],
-                    "customData": {"CH": {"coreZoneText": text}},
-                },
-            ]
-        }
-        result = _panel_problems(props)
-        assert result[0]["core_zone_text"] == text
-        assert result[0]["summary"] == text
-
-    def test_summary_fallback_when_no_aspects_or_elevation(self) -> None:
-        """A problem with no elevation or aspects gets the fallback summary."""
-        props = {"avalancheProblems": [{"problemType": "new_snow"}]}
-        result = _panel_problems(props)
-        assert result[0]["summary"] == "Affects all aspects and elevations"
-
-    def test_comment_is_raw_html(self) -> None:
-        """Comment HTML is passed through unchanged."""
-        html_comment = "<p>Fresh <strong>snow</strong> on lee slopes.</p>"
-        props = {
-            "avalancheProblems": [{"problemType": "new_snow", "comment": html_comment}]
-        }
-        result = _panel_problems(props)
-        assert result[0]["comment"] == html_comment
-
-    def test_does_not_deduplicate_repeated_problem_types(self) -> None:
-        """Two entries with the same problemType both render separately."""
-        props = {
-            "avalancheProblems": [
-                {
-                    "problemType": "persistent_weak_layers",
-                    "comment": "<p>Morning note.</p>",
-                    "validTimePeriod": "earlier",
-                },
-                {
-                    "problemType": "persistent_weak_layers",
-                    "comment": "<p>Afternoon note.</p>",
-                    "validTimePeriod": "later",
-                },
-            ]
-        }
-        result = _panel_problems(props)
-        assert len(result) == 2
-        assert result[0]["time_period_label"] == "Earlier (morning)"
-        assert result[1]["time_period_label"] == "Later (afternoon)"
-        assert result[0]["comment"] == "<p>Morning note.</p>"
-        assert result[1]["comment"] == "<p>Afternoon note.</p>"
-        # Different periods → signatures differ → both comments shown.
-        assert result[0]["hide_comment"] is False
-        assert result[1]["hide_comment"] is False
-
-    def test_missing_time_period_gives_empty_label(self) -> None:
-        """A problem without ``validTimePeriod`` has an empty label."""
-        props = {"avalancheProblems": [{"problemType": "wet_snow"}]}
-        result = _panel_problems(props)
-        assert result[0]["time_period"] == ""
-        assert result[0]["time_period_label"] == ""
-
-    def test_aspects_preserved_from_caaml(self) -> None:
-        """The raw aspects list from CAAML is passed through unchanged."""
-        props = {
-            "avalancheProblems": [
-                {
-                    "problemType": "wind_slab",
-                    "aspects": ["N", "NE", "E", "SE", "SW", "W", "NW"],
-                },
-            ]
-        }
-        result = _panel_problems(props)
-        assert result[0]["aspects"] == ["N", "NE", "E", "SE", "SW", "W", "NW"]
-
-    def test_missing_aspects_gives_empty_list(self) -> None:
-        """A problem with no ``aspects`` key returns an empty list."""
-        props = {"avalancheProblems": [{"problemType": "new_snow"}]}
-        result = _panel_problems(props)
-        assert result[0]["aspects"] == []
-
-    def test_elevation_bounds_accessible(self) -> None:
-        """Elevation bounds are accessible via dot notation."""
-        props = {
-            "avalancheProblems": [
-                {
-                    "problemType": "persistent_weak_layers",
-                    "elevation": {"lowerBound": "2200", "upperBound": "3000"},
-                },
-            ]
-        }
-        result = _panel_problems(props)
-        elev = result[0]["elevation"]
-        assert elev.lower == "2200"
-        assert elev.upper == "3000"
-        assert elev.display == "2200\u20133000m"
-
-    def test_missing_elevation_gives_falsy_bounds(self) -> None:
-        """A problem with no ``elevation`` key returns a falsy ElevationBounds."""
-        props = {"avalancheProblems": [{"problemType": "new_snow"}]}
-        result = _panel_problems(props)
-        assert not result[0]["elevation"]
-
-    def test_identical_scope_hides_comment_on_earlier_occurrence(self) -> None:
-        """
-        When two problems share elevation, aspects, period, and comment, the
-        earlier one has ``hide_comment`` set so only the later header owns
-        the shared comment.
-        """
-        props = {
-            "avalancheProblems": [
-                {
-                    "problemType": "persistent_weak_layers",
-                    "comment": "<p>Buried weak layers on shady slopes.</p>",
-                    "validTimePeriod": "all_day",
-                    "elevation": {"lowerBound": "2200"},
-                    "aspects": ["N", "NE", "E"],
-                },
-                {
-                    "problemType": "wind_slab",
-                    "comment": "<p>Buried weak layers on shady slopes.</p>",
-                    "validTimePeriod": "all_day",
-                    "elevation": {"lowerBound": "2200"},
-                    "aspects": ["NE", "N", "E"],  # same set, different order
-                },
-            ]
-        }
-        result = _panel_problems(props)
-        assert len(result) == 2
-        # First (earlier) occurrence has its comment suppressed.
-        assert result[0]["hide_comment"] is True
-        assert result[0]["comment"] == "<p>Buried weak layers on shady slopes.</p>"
-        # Last occurrence keeps its comment visible.
-        assert result[1]["hide_comment"] is False
-        assert result[1]["comment"] == "<p>Buried weak layers on shady slopes.</p>"
-
-    def test_three_identical_problems_only_last_shows_comment(self) -> None:
-        """In a run of three duplicates only the final one keeps its comment."""
-        same: dict[str, Any] = {
-            "comment": "<p>Shared note.</p>",
-            "validTimePeriod": "all_day",
-            "elevation": {"lowerBound": "2000"},
-            "aspects": ["N"],
-        }
-        props = {
-            "avalancheProblems": [
-                {**same, "problemType": "wind_slab"},
-                {**same, "problemType": "new_snow"},
-                {**same, "problemType": "persistent_weak_layers"},
-            ]
-        }
-        result = _panel_problems(props)
-        assert [p["hide_comment"] for p in result] == [True, True, False]
-
-    def test_different_elevation_keeps_both_comments(self) -> None:
-        """Differing elevation → the comments are NOT considered duplicates."""
-        props = {
-            "avalancheProblems": [
-                {
-                    "problemType": "wind_slab",
-                    "comment": "<p>Same text.</p>",
-                    "elevation": {"lowerBound": "2000"},
-                    "aspects": ["N"],
-                    "validTimePeriod": "all_day",
-                },
-                {
-                    "problemType": "wind_slab",
-                    "comment": "<p>Same text.</p>",
-                    "elevation": {"lowerBound": "2500"},
-                    "aspects": ["N"],
-                    "validTimePeriod": "all_day",
-                },
-            ]
-        }
-        result = _panel_problems(props)
-        assert result[0]["hide_comment"] is False
-        assert result[1]["hide_comment"] is False
-
-    def test_different_aspects_keeps_both_comments(self) -> None:
-        """Differing aspects → NOT duplicates."""
-        base: dict[str, Any] = {
-            "problemType": "wind_slab",
-            "comment": "<p>Same text.</p>",
-            "elevation": {"lowerBound": "2000"},
-            "validTimePeriod": "all_day",
-        }
-        props = {
-            "avalancheProblems": [
-                {**base, "aspects": ["N"]},
-                {**base, "aspects": ["S"]},
-            ]
-        }
-        result = _panel_problems(props)
-        assert result[0]["hide_comment"] is False
-        assert result[1]["hide_comment"] is False
-
-    def test_different_comment_keeps_both(self) -> None:
-        """Differing comment text → NOT duplicates."""
-        base: dict[str, Any] = {
-            "problemType": "wind_slab",
-            "validTimePeriod": "all_day",
-            "elevation": {"lowerBound": "2000"},
-            "aspects": ["N"],
-        }
-        props = {
-            "avalancheProblems": [
-                {**base, "comment": "<p>First note.</p>"},
-                {**base, "comment": "<p>Second note.</p>"},
-            ]
-        }
-        result = _panel_problems(props)
-        assert result[0]["hide_comment"] is False
-        assert result[1]["hide_comment"] is False
-
-
 # ---------------------------------------------------------------------------
 # _build_panel_context
 # ---------------------------------------------------------------------------
@@ -519,24 +305,12 @@ class TestBuildPanelContext:
         assert ctx["danger_subdivision"] == ""
         assert ctx["danger_label"] == "Low"
         assert ctx["danger_icon"] == "Dry-Snow-1.svg"
-        assert len(ctx["problems"]) == 1
-        p = ctx["problems"][0]
-        assert p["problem_type"] == "no_distinct_avalanche_problem"
-        assert p["label"] == "No distinct problem"
-        assert p["comment"] == "<p>No distinct problem to speak of.</p>"
-        assert p["time_period"] == "all_day"
-        assert p["time_period_label"] == "All day"
-        assert p["elevation"].display == "above 2200m"
-        assert p["elevation"].lower == "2200"
-        assert p["aspects"] == []
-        assert p["hide_comment"] is False
         assert ctx["key_message"] == "<p>No distinct problem to speak of.</p>"
         assert ctx["footer_date_from"] == bulletin.valid_from
         assert ctx["footer_date_to"] == bulletin.valid_to
 
         # Provenance strings — one per visible field, for the tooltips.
         assert ctx["danger_source"] == "dangerRatings[*].mainValue (highest)"
-        assert ctx["problems_source"] == "avalancheProblems[*].problemType"
         assert ctx["key_message_source"] == "avalancheProblems[0].comment"
         assert ctx["footer_date_source"] == "Bulletin.valid_from / valid_to"
         # Admin URL always populated; template gates it on user.is_staff.
@@ -566,7 +340,6 @@ class TestBuildPanelContext:
         bulletin = BulletinFactory.create(raw_data={})
         ctx = _build_panel_context(bulletin)
         assert ctx["danger_key"] == "low"
-        assert ctx["problems"] == []
         assert ctx["key_message"] == ""
         assert ctx["key_message_source"] == ""
         assert ctx["snowpack_structure"] == ""
@@ -864,7 +637,7 @@ class TestRandomBulletinsView:
     def test_problem_blocks_render_comment_and_time_period(
         self, client: Client, region: Region
     ) -> None:
-        """Each avalanche problem renders its comment and period badge."""
+        """Each avalanche problem renders its label and time-period badge."""
         _make_region_bulletin(
             region,
             date(2025, 3, 1),
@@ -873,11 +646,15 @@ class TestRandomBulletinsView:
                     "problemType": "persistent_weak_layers",
                     "comment": "<p>Buried weak layers on shady slopes.</p>",
                     "validTimePeriod": "all_day",
+                    "aspects": ["N", "NE"],
+                    "elevation": {"lowerBound": "2200"},
                 },
                 {
                     "problemType": "wind_slab",
                     "comment": "<p>Fresh drifts on lee slopes.</p>",
                     "validTimePeriod": "later",
+                    "aspects": ["NW"],
+                    "elevation": {"lowerBound": "2400"},
                 },
             ],
         )
@@ -893,8 +670,7 @@ class TestRandomBulletinsView:
         # Both comments appear as text.
         assert b"Buried weak layers on shady slopes." in body
         assert b"Fresh drifts on lee slopes." in body
-        # Time-period badges appear with their human labels.
-        assert b"All day" in body
+        # Time-period badge for later.
         assert b"Later (afternoon)" in body
         # Two problem-block wrappers rendered.
         assert body.count(b"bg-tag") >= 2
@@ -967,10 +743,10 @@ class TestRandomBulletinsView:
         assert body.count(b"Buried weak layers on shady slopes.") == 1
         assert body.count(b"slf-prose") == 1
 
-    def test_same_problem_type_with_different_periods_both_render(
+    def test_two_wet_problems_in_separate_aggregation_entries_both_render(
         self, client: Client, region: Region
     ) -> None:
-        """Repeated problemType entries with distinct periods both show."""
+        """Two wet problems in distinct aggregation entries (different periods) both show."""
         _make_region_bulletin(
             region,
             date(2025, 3, 1),
@@ -979,11 +755,29 @@ class TestRandomBulletinsView:
                     "problemType": "wet_snow",
                     "comment": "<p>Morning crust.</p>",
                     "validTimePeriod": "earlier",
+                    "aspects": ["S"],
+                    "elevation": {"upperBound": "2000"},
                 },
                 {
-                    "problemType": "wet_snow",
+                    "problemType": "gliding_snow",
                     "comment": "<p>Afternoon softening.</p>",
                     "validTimePeriod": "later",
+                    "aspects": ["SE"],
+                    "elevation": {"upperBound": "2200"},
+                },
+            ],
+            aggregation=[
+                {
+                    "category": "wet",
+                    "validTimePeriod": "earlier",
+                    "problemTypes": ["wet_snow"],
+                    "title": "Wet avalanches, earlier",
+                },
+                {
+                    "category": "wet",
+                    "validTimePeriod": "later",
+                    "problemTypes": ["gliding_snow"],
+                    "title": "Wet avalanches, later",
                 },
             ],
         )

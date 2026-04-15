@@ -1,0 +1,34 @@
+{
+  "type": "Feature",
+  "geometry": null,
+  "properties": {
+    "bulletinID": "no-aggregation-001",
+    "lang": "en",
+    "validTime": {
+      "startTime": "2026-03-01T15:00:00Z",
+      "endTime": "2026-03-02T15:00:00Z"
+    },
+    "nextUpdate": "2026-03-02T15:00:00Z",
+    "unscheduled": false,
+    "regions": [
+      { "regionID": "CH-4115", "name": "Piz Buin" }
+    ],
+    "dangerRatings": [
+      { "mainValue": "moderate", "validTimePeriod": "all_day" }
+    ],
+    "avalancheProblems": [
+      {
+        "problemType": "new_snow",
+        "comment": "New snow poses risk at higher elevations.",
+        "dangerRatingValue": "moderate",
+        "validTimePeriod": "all_day",
+        "aspects": ["N", "NE", "NW"],
+        "elevation": { "lowerBound": "2000" }
+      }
+    ],
+    "publicationTime": "2026-03-01T15:00:00Z",
+    "snowpackStructure": {
+      "comment": "<p>Fresh snow has accumulated on wind-exposed ridges.</p>"
+    }
+  }
+}

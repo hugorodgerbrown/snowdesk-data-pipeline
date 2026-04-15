@@ -107,16 +107,18 @@ class BulletinAdmin(admin.ModelAdmin):
         "unscheduled",
         "danger_ratings",
         "avalanche_problems",
+        "aggregation",
         "weather_forecast",
         "weather_review",
         "snowpack_structure",
         "tendency",
         "raw_data_pretty",
+        "render_model_pretty",
         "created_at",
         "updated_at",
     ]
     inlines = [RegionBulletinInline]
-    exclude = ["raw_data", "pipeline_run"]
+    exclude = ["raw_data", "render_model", "pipeline_run"]
 
     BACKFILL_START = date(2025, 12, 1)
 
@@ -386,6 +388,51 @@ class BulletinAdmin(admin.ModelAdmin):
         )
         return mark_safe(table)  # noqa: S308 — content is built from escaped data
 
+    @admin.display(description="Aggregation (customData.CH)")
+    def aggregation(self, obj: Bulletin) -> str:
+        """
+        Render the SLF customData.CH.aggregation array as an HTML table.
+
+        This is the SLF-authored dry/wet grouping that drives the render
+        model's trait split. One row per aggregation entry.
+        """
+        props = self._get_properties(obj)
+        entries = props.get("customData", {}).get("CH", {}).get("aggregation", [])
+        if not entries:
+            return "—"
+
+        rows = []
+        for entry in entries:
+            category = entry.get("category", "")
+            period = entry.get("validTimePeriod", "")
+            title = entry.get("title", "")
+            problem_types = ", ".join(
+                pt.replace("_", " ") for pt in entry.get("problemTypes", [])
+            )
+            rows.append(
+                f'<tr style="border-bottom:1px solid #e5e7eb;vertical-align:top">'
+                f'<td style="padding:8px 12px;font-weight:600;'
+                f'text-transform:uppercase">{category or "—"}</td>'
+                f'<td style="padding:8px 12px">'
+                f"{self._format_time_period(period) if period else '—'}</td>"
+                f'<td style="padding:8px 12px">{title or "—"}</td>'
+                f'<td style="padding:8px 12px">{problem_types or "—"}</td>'
+                f"</tr>"
+            )
+
+        table = (
+            '<table style="border-collapse:collapse;width:100%">'
+            '<thead><tr style="border-bottom:2px solid #d1d5db">'
+            '<th style="padding:6px 12px;text-align:left">Category</th>'
+            '<th style="padding:6px 12px;text-align:left">Period</th>'
+            '<th style="padding:6px 12px;text-align:left">Title</th>'
+            '<th style="padding:6px 12px;text-align:left">Problem types</th>'
+            "</tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody>"
+            "</table>"
+        )
+        return mark_safe(table)  # noqa: S308 — content is built from escaped data
+
     @admin.display(description="Weather forecast")
     def weather_forecast(self, obj: Bulletin) -> str:
         """Extract and render the weather forecast comment."""
@@ -425,6 +472,17 @@ class BulletinAdmin(admin.ModelAdmin):
     def raw_data_pretty(self, obj: Bulletin) -> str:
         """Render raw_data as syntax-highlighted, indented JSON."""
         formatted = json.dumps(obj.raw_data, indent=2, ensure_ascii=False)
+        return format_html(
+            '<pre style="max-height:400px;overflow:auto;background:#f5f5f5;'
+            "padding:0.75rem;border-radius:4px;"
+            'white-space:pre-wrap;word-break:break-word">{}</pre>',
+            formatted,
+        )
+
+    @admin.display(description="Render model")
+    def render_model_pretty(self, obj: Bulletin) -> str:
+        """Render render_model as syntax-highlighted, indented JSON."""
+        formatted = json.dumps(obj.render_model, indent=2, ensure_ascii=False)
         return format_html(
             '<pre style="max-height:400px;overflow:auto;background:#f5f5f5;'
             "padding:0.75rem;border-radius:4px;"

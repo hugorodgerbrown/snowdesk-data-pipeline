@@ -39,6 +39,10 @@ logs/            Log files (gitignored except .gitkeep)
   in every module.
 - Management commands live in `pipeline/management/commands/`. Each command has
   `--dry-run` and `--verbosity` support.
+- **No Django signals for side effects** — side effects triggered at save time
+  (e.g. building the render model) are called inline from the relevant service
+  function, not via `post_save` signals. This keeps data flow explicit and
+  testable.
 
 ## Running locally
 
@@ -98,6 +102,34 @@ Users subscribe to bulletin alerts via a magic-link auth flow — no passwords.
 - `EMAIL_BACKEND` — use `django.core.mail.backends.console.EmailBackend` in development.
 - `DEFAULT_FROM_EMAIL` — sender address for outbound mail.
 
+## Render model
+
+Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest time so templates contain no derivation logic.
+
+**Shape**: `{ version, danger, traits[], fallback_key_message, snowpack_structure, metadata, prose }`.
+- `danger` — `{ key, number, subdivision }` resolved from `dangerRatings`.
+- `traits[]` — one entry per `customData.CH.aggregation` entry; each has `{ category, time_period, title, geography, problems[], prose, danger_level }`.
+  - Trait and problem ordering is taken verbatim from SLF's aggregation.
+  - `category` is `"dry"` or `"wet"`, sourced directly from SLF's aggregation — not inferred.
+  - `geography.source` is `"problems"` when aspects/elevation are present, or `"prose_only"` when the SLF prose comment is the only geographic description.
+- `metadata` — `{ publication_time, valid_from, valid_until, next_update, unscheduled, lang }`. Timestamps are ISO 8601 strings or `None`; `unscheduled` defaults to `False`; `lang` defaults to `"en"`.
+- `prose` — `{ snowpack_structure, weather_review, weather_forecast, tendency[] }`. Scalars are HTML strings or `None`. Each tendency entry has `{ comment, tendency_type, valid_from, valid_until }`.
+- `snowpack_structure` (top-level) is kept alongside `prose.snowpack_structure` for backward compatibility; both hold the same value. Will be dropped in v4.
+
+**Versioning**: `RENDER_MODEL_VERSION = 3` (in `pipeline/services/render_model.py`). Bump it and run `rebuild_render_models` whenever the output shape or builder logic changes. `BulletinQuerySet.needs_render_model_rebuild()` returns all rows with a stale version.
+
+**Validation**: `build_render_model` validates against the canonical 8-token EAWS problem-type enum (`DRY_PROBLEM_TYPES | WET_PROBLEM_TYPES`) and raises `RenderModelBuildError` on unknown types, aggregation/problem set mismatches, empty `problemTypes`, or missing aggregation when problems exist. Both lists empty is a legitimate quiet-day state (no raise).
+
+**On validation failure**: the caller stores `render_model = {"version": 0, "error": "...", "error_type": "..."}`. `fetch_data` and `backfill_data` exit non-zero via `CommandError` when `run.records_failed > 0`. `rebuild_render_models` prints a failure summary and exits non-zero.
+
+**Safety net**: `_get_render_model` in `public/views.py` detects a stale `render_model_version` at render time, rebuilds on the fly, and logs a warning. On `RenderModelBuildError` during the rebuild it returns an error sentinel dict (does NOT write to DB); the template renders an error card. This keeps the page functional during a backfill; the warning is the signal to run the rebuild command.
+
+**Day character**: `compute_day_character(render_model)` is a pure function that classifies a render model into one of five labels (`"Stable day"`, `"Manageable day"`, `"Hard-to-read day"`, `"Widespread danger"`, `"Dangerous conditions"`). Empty `traits` → `"Stable day"` immediately.
+
+**Services**:
+- `pipeline/services/render_model.py` — `build_render_model()`, `compute_day_character()`, `RenderModelBuildError`, `RENDER_MODEL_VERSION`.
+- `pipeline/services/data_fetcher.py` — `upsert_bulletin` calls `build_render_model` inline (never via a signal); increments `run.records_failed` on `RenderModelBuildError`.
+
 ## Data source
 
 SLF CAAML bulletin list API (public, no auth required):
@@ -125,6 +157,11 @@ poetry run python manage.py backfill_data --start-date 2024-01-01 --end-date 202
 # All commands accept:
 #   --dry-run   fetch but do not write to the database
 #   --force     upsert existing bulletins instead of skipping
+
+# Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION)
+poetry run python manage.py rebuild_render_models
+
+# Flags: --all (every row), --bulletin-id <id> (single row), --dry-run, --batch-size N
 ```
 
 ## Frontend
@@ -162,6 +199,36 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
   and always leave a comment explaining why.
 - Ensure that all function arguments are typed, except *args and **kwargs
 
+## Local CI — always run tox
+
+**`tox` is the single entry point** for running linters, type checks, Django
+system checks, and the test suite locally. The tox envs declare their own
+dependencies (independent of the Poetry venv), so a tox run mirrors what CI
+will execute — catching the "works on my machine" class of failure before a
+PR is opened.
+
+```bash
+poetry run tox                    # run every env (fmt, lint, mypy, django-checks, test)
+poetry run tox -e test            # one env at a time
+poetry run tox -e mypy
+poetry run tox -e django-checks
+poetry run tox -e fmt             # ruff format --check
+poetry run tox -e lint            # ruff check
+poetry run tox --recreate         # rebuild envs from scratch after a deps change
+```
+
+When a runtime dependency is added via `poetry add`, **also add it to the
+relevant `deps =` block in `tox.ini`** (`test`, `django-checks`, and
+`mypy` all need it; `fmt` and `lint` almost never do). Tox will not pick
+up `pyproject.toml` dependencies automatically.
+
+Template formatting is enforced by `djangofmt`, which runs as a pre-commit
+hook. Always run `pre-commit run djangofmt --files <path>` (or just `pre-commit
+run --all-files`) after editing templates so the hook doesn't reformat on commit.
+
+**Before opening a pull request**, run `poetry run tox` and fix every failure.
+Do not rely on CI to surface issues that tox would have caught locally.
+
 ## Django coding rules
 
 - All models to inherit from `BaseModel` abstract model
@@ -181,7 +248,11 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 corresponding test_{module_name}.py that contains the tests.
 - All new code must have covering tests
 - Always run tests after code changes and ensure 100% pass rate and 90% coverage.
-- Use tox to run local CI and tests
+- **Run tests via `poetry run tox -e test`** (not via a bare `pytest` call).
+  The tox env mirrors CI; running pytest directly may succeed against the
+  Poetry venv while CI fails on missing deps in the tox env.
+- See the "Local CI — always run tox" section above for the full command set
+  and the dependency-sync rule.
 - All datetime objects must have tzinfo
 - Always call factories with `.create()` (e.g. `RegionFactory.create(...)`) — never
   use direct instantiation (`RegionFactory(...)`). The `.create()` classmethod is

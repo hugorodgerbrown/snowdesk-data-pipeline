@@ -1,11 +1,21 @@
 {% comment %}
 public/templates/public/bulletin.html — Single-day bulletin page for a region.
 
-Displays the bulletin panel card with a header showing region name,
-date, and prev/next navigation. Uses the shared _bulletin_panel.html
-partial for the card content.
+WhiteRisk-replica layout rendered from the bulletin_detail view context.
+
+Six structural sections, top to bottom:
+  1. Page chrome — region name, date/validity, prev/next nav.  No Close button.
+  2. Bulletin headline band — one or two ratings with → on variable days.
+  3. Rating block(s) — one per trait via _rating_block.html partial.
+  4. Metadata strip — issued / valid until / next update.
+  5. Snowpack and weather — four prose sub-blocks rendered via |snowdesk_html.
+  6. Footer — SLF attribution, "View history" and "View full season" links,
+     and (DEBUG only) a subscribe link.
+
+Typography: font-sans on the outermost container overrides any serif inheritance
+from base.html's @theme tokens.
 {% endcomment %}
-{% load static %}
+{% load static snowdesk_html snowdesk_time %}
 <!DOCTYPE html>
 <html lang="en">
     <head>
@@ -13,29 +23,45 @@ partial for the card content.
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{{ region_name }} — Snowdesk</title>
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
+        {% if raw_data_json %}
+            {# DEBUG-only: raw CAAML payload embedded for source-level inspection. #}
+            {# Not rendered visibly; removed in production where DEBUG=False.     #}
+            <script type="application/json" id="bulletin-raw-data">
+            {{ raw_data_json|safe }}
+            </script>
+        {% endif %}
     </head>
-    <body class="bg-bg font-sans text-text-1 px-4 py-6 min-h-screen">
-        <div class="max-w-[390px] mx-auto">
-            {# ── Header ──────────────────────────────────────────────────── #}
-            <header class="mb-4">
-                <p class="font-mono text-[10px] tracking-[0.12em] uppercase text-text-3 mb-1 text-center">
-                    {% if is_today %}Today{% else %}{{ page_date|date:"D j M Y" }}{% endif %}
+    <body class="bg-bg text-text-1 px-4 py-6 min-h-screen">
+        {# ── Outermost container: font-sans overrides any serif from @theme ── #}
+        <div class="font-sans max-w-[640px] mx-auto">
+            {% comment %}
+               SECTION 1 — Page chrome
+               Region name, date/validity, prev/next navigation.
+               No Close button — artefact of WR's modal-over-map architecture,
+               removed per DESIGN.md confirmed subtractions.
+            {% endcomment %}
+            <header class="mb-5">
+                <p class="text-xs text-text-3 text-center mb-1 uppercase tracking-widest font-mono">
+                    {% if is_today %}Today{% else %}{{ page_date|date:"l j F Y" }}{% endif %}
                     {% if bulletin %}
-                        · issued {{ bulletin.issued_at|date:"H:i" }} UTC
+                        &middot;
+                        {{ bulletin.valid_from|date:"H:i" }}–{{ bulletin.valid_to|date:"H:i" }} UTC
                     {% endif %}
                 </p>
-                <h1 class="text-xl font-semibold text-center leading-tight">{{ region_name }}</h1>
+                <h1 class="text-2xl font-semibold text-center leading-tight tracking-tight">
+                    {{ region_name }}
+                </h1>
             </header>
 
             {# ── Day navigation ──────────────────────────────────────────── #}
             {% if bulletin %}
-                <nav class="flex items-center justify-between mb-4 text-sm" aria-label="Bulletin navigation">
+                <nav class="flex items-center justify-between mb-6 text-sm" aria-label="Bulletin navigation">
                     {% if prev_date %}
                         <a
                             class="text-text-2 hover:text-text-1"
                             href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
                         >
-                            ← {{ prev_date|date:"D j M" }}
+                            &#8592; {{ prev_date|date:"D j M" }}
                         </a>
                     {% else %}
                         <span></span>
@@ -50,11 +76,11 @@ partial for the card content.
                             class="text-text-2 hover:text-text-1"
                             href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=next_date|date:'Y-m-d' %}"
                         >
-                            {{ next_date|date:"D j M" }} →
+                            {{ next_date|date:"D j M" }} &#8594;
                         </a>
                     {% elif next_update_time %}
                         <span class="font-mono text-[11px] text-text-3">
-                            {{ next_update_time|date:"H:i" }} UTC
+                            next: {{ next_update_time|date:"H:i" }} UTC
                         </span>
                     {% else %}
                         <span></span>
@@ -62,24 +88,275 @@ partial for the card content.
                 </nav>
             {% endif %}
 
-            {# ── Bulletin panel ──────────────────────────────────────────── #}
-            {% if bulletin %}
-                {% include "public/_bulletin_panel.html" with panel=panel %}
-            {% else %}
-                <div class="text-center text-text-3 py-12 text-sm">
+            {% if not bulletin %}
+                {# ── Empty state ─────────────────────────────────────────── #}
+                <div class="text-center text-text-3 py-16 text-sm">
                     No bulletins available for this region.
                 </div>
-            {% endif %}
+            {% else %}
+                {# ── Error state (version == 0) ──────────────────────────────── #}
+                {% if panel.render_model.version == 0 %}
+                    <div class="rounded-[8px] border-l-4 border-amber-400 bg-amber-50 px-3.5 py-3 text-sm mb-4">
+                        <p class="font-semibold text-amber-900 mb-1">We couldn't process this bulletin.</p>
+                        {% if user.is_staff %}
+                            <p class="text-xs text-amber-800 mb-2">
+                                Bulletin ID: <span class="font-mono">{{ panel.bulletin.bulletin_id }}</span>
+                            </p>
+                            <p class="font-mono text-[11px] break-all text-amber-900 bg-amber-100 rounded px-2 py-1.5 mb-2">
+                                {{ panel.render_model.error }}
+                            </p>
+                            <a
+                                class="inline-block text-xs font-medium text-amber-900 underline underline-offset-2 hover:text-amber-700"
+                                href="/admin/pipeline/bulletin/{{ panel.bulletin.pk }}/change/"
+                            >
+                                Inspect in admin →
+                            </a>
+                        {% else %}
+                            <p class="text-xs text-amber-800">
+                                We are sorry for the inconvenience. Please try again later or check back for an updated
+                                bulletin.
+                            </p>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    {% with rm=panel.render_model %}
+                        {% comment %}
+                           SECTION 2 — Bulletin headline band
+                           Always present.  One rating on simple days (1 trait),
+                           two side-by-side coloured segments on variable days
+                           (2 traits) — each tinted by its own danger level so
+                           the split is visible at a glance.
+                        {% endcomment %}
+                        {% if not panel.is_time_variable %}
+                            {# ── Simple day (1 trait, or ≥2 traits sharing    #}
+                            {# the same time_period) — single coloured band    #}
+                            {# tinted by the highest rating.                   #}
+                            <div
+                                class="danger-band rounded-[12px] px-4 py-3 mb-4 border border-border"
+                                data-level="{{ panel.danger_key }}"
+                                data-testid="headline-band"
+                            >
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg font-semibold">
+                                        {{ panel.danger_label }}
+                                        {% if panel.danger_subdivision %}
+                                            ({{ panel.danger_number }}{{ panel.danger_subdivision }})
+                                        {% else %}
+                                            ({{ panel.danger_number }})
+                                        {% endif %}
+                                    </span>
+                                    {% if panel.primary_trait %}
+                                        <span class="text-sm opacity-75">{{ panel.primary_trait.title }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% else %}
+                            {# ── Variable day — two coloured segments ───────── #}
+                            {% with t1=rm.traits.0 t2=rm.traits.1 %}
+                                <div
+                                    class="grid grid-cols-[1fr_auto_1fr] items-stretch gap-0 mb-4 rounded-[12px] overflow-hidden border border-border"
+                                    data-testid="headline-band"
+                                >
+                                    <div
+                                        class="danger-band px-4 py-3"
+                                        data-level="{{ t1.danger_level|danger_level_key }}"
+                                        data-testid="headline-segment-first"
+                                    >
+                                        <div class="text-lg font-semibold leading-tight">
+                                            {{ t1.danger_level|danger_level_label }}
+                                            ({{ t1.danger_level }})
+                                        </div>
+                                        <div class="text-xs opacity-75">{{ t1.title }}</div>
+                                    </div>
+                                    <div
+                                        class="flex items-center justify-center px-3 text-text-3 bg-bg"
+                                        data-testid="transition-arrow"
+                                        aria-hidden="true"
+                                    >
+                                        &#8594;
+                                    </div>
+                                    <div
+                                        class="danger-band px-4 py-3 text-right"
+                                        data-level="{{ t2.danger_level|danger_level_key }}"
+                                        data-testid="headline-segment-second"
+                                    >
+                                        <div class="text-lg font-semibold leading-tight">
+                                            {{ t2.danger_level|danger_level_label }}
+                                            ({{ t2.danger_level }})
+                                        </div>
+                                        <div class="text-xs opacity-75">{{ t2.title }}</div>
+                                    </div>
+                                </div>
+                                <p class="text-sm text-text-2 mb-4 -mt-2 px-1">
+                                    Hazard changes through the day
+                                </p>
+                            {% endwith %}
+                        {% endif %}
 
-            {# ── Season link ─────────────────────────────────────────────── #}
-            <div class="mt-4 text-center">
-                <a
-                    href="{% url 'public:season_bulletins' region_id=region_id %}"
-                    class="text-sm text-text-2 hover:text-text-1"
-                >
-                    View full season →
-                </a>
-            </div>
+                        {% comment %}
+                           SECTION 3 — Rating block(s)
+                           One block per trait.  The partial handles coloured header,
+                           aspect/elevation row, and problem rows.
+                        {% endcomment %}
+                        {% if not rm.traits %}
+                            <div class="rounded-[12px] border border-border bg-tag px-4 py-5 text-center mb-4">
+                                <p class="text-sm font-medium text-text-1 mb-0.5">
+                                    No avalanche problems reported.
+                                </p>
+                                <p class="text-xs text-text-3">
+                                    The snowpack is stable. Conditions are favourable.
+                                </p>
+                            </div>
+                        {% else %}
+                            {% for trait in rm.traits %}
+                                {% include "public/_rating_block.html" with trait=trait %}
+                            {% endfor %}
+                        {% endif %}
+
+                        {% comment %}
+                           SECTION 4 — Metadata strip
+                           Three fields: Issued / Valid until / Next update.
+                           Source: render_model.metadata.  Render — on None.
+                        {% endcomment %}
+                        {% with meta=rm.metadata %}
+                            {% if meta %}
+                                <div
+                                    class="flex items-start gap-4 px-1 py-3 border-t border-b border-border mb-4 text-xs text-text-3"
+                                    data-testid="metadata-strip"
+                                >
+                                    <div>
+                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">Issued</p>
+                                        <p class="text-text-2">
+                                            {% if meta.publication_time %}
+                                                {{ meta.publication_time|parse_iso|date:"j M H:i" }} UTC
+                                            {% else %}
+                                                &mdash;
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">Valid until</p>
+                                        <p class="text-text-2">
+                                            {% if meta.valid_until %}
+                                                {{ meta.valid_until|parse_iso|date:"j M H:i" }} UTC
+                                            {% else %}
+                                                &mdash;
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                    <div data-testid="next-update-cell">
+                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">Next update</p>
+                                        <p class="text-text-2">
+                                            {% if meta.next_update %}
+                                                {{ meta.next_update|parse_iso|date:"j M H:i" }} UTC
+                                            {% else %}
+                                                &mdash;
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            {% endif %}
+                        {% endwith %}
+
+                        {% comment %}
+                           SECTION 5 — Snowpack and weather
+                           Four prose sub-blocks in order.  Each skipped entirely when
+                           its source is None/empty — no empty headings rendered.
+                           HTML bodies pass through |snowdesk_html for sanitisation.
+                        {% endcomment %}
+                        {% with prose=rm.prose %}
+                            {% if prose %}
+                                {% if prose.snowpack_structure or prose.weather_review or prose.weather_forecast or prose.tendency %}
+                                    <section class="mb-4" data-testid="snowpack-weather-section">
+                                        <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3">
+                                            Snowpack &amp; Weather
+                                        </h2>
+
+                                        {# — Snowpack ─────────────────────────────── #}
+                                        {% if prose.snowpack_structure %}
+                                            <div class="mb-4">
+                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
+                                                    {{ prose.snowpack_structure|snowdesk_html }}
+                                                </div>
+                                            </div>
+                                        {% endif %}
+
+                                        {# — Weather review ──────────────────────── #}
+                                        {% if prose.weather_review %}
+                                            <div class="mb-4">
+                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
+                                                    {{ prose.weather_review|snowdesk_html }}
+                                                </div>
+                                            </div>
+                                        {% endif %}
+
+                                        {# — Weather forecast ────────────────────── #}
+                                        {% if prose.weather_forecast %}
+                                            <div class="mb-4">
+                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
+                                                    {{ prose.weather_forecast|snowdesk_html }}
+                                                </div>
+                                            </div>
+                                        {% endif %}
+
+                                        {# — Outlook (tendency[]) ─────────────────── #}
+                                        {% if prose.tendency %}
+                                            <div class="mb-4">
+                                                {% for entry in prose.tendency %}
+                                                    {% if entry.comment %}
+                                                        <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-2{% endif %}">
+                                                            {{ entry.comment|snowdesk_html }}
+                                                        </div>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </div>
+                                        {% endif %}
+                                    </section>
+                                {% endif %}
+                            {% endif %}
+                        {% endwith %}
+                    {% endwith %}{# rm #}
+                {% endif %}{# error state else #}
+            {% endif %}
+            {# bulletin #}
+
+            {% comment %}
+               SECTION 6 — Footer
+               SLF attribution + focal-region-first grouping context.
+               Focal region name first, then related_regions as additional
+               context (e.g. "Val dal Spöl, with adjacent micro-regions").
+            {% endcomment %}
+            <footer class="mt-8 pt-4 border-t border-border text-xs text-text-3" data-testid="page-footer">
+                <p class="mb-1">
+                    {# Focal region first #}
+                    <span class="font-medium text-text-2" data-testid="focal-region">{{ region_name }}</span>
+                    {% if related_regions %}
+                        <span class="text-text-3">, with </span>
+                        {% for r in related_regions %}
+                            <span>{{ r.name }}</span>{% if not forloop.last %} &middot; {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                </p>
+                <p class="mb-1">
+                    <a
+                        class="underline hover:text-text-2"
+                        href="{% url 'public:random_bulletins' region_id=region_id %}"
+                    >View history</a>
+                    &middot;
+                    <a
+                        class="underline hover:text-text-2"
+                        href="{% url 'public:season_bulletins' region_id=region_id %}"
+                    >View full season</a>
+                </p>
+                <p>
+                    Avalanche bulletin data &copy; <a
+                        class="underline hover:text-text-2"
+                        href="https://www.slf.ch"
+                        target="_blank"
+                        rel="noopener"
+                    >SLF — WSL Institute for Snow and Avalanche Research</a>. Rendered by Snowdesk.
+                </p>
+            </footer>
 
             {% if debug %}
                 {# ── Subscribe link (DEBUG only) ────────────────────────────── #}
@@ -93,5 +370,6 @@ partial for the card content.
                 </div>
             {% endif %}
         </div>
+        {# /font-sans container #}
     </body>
 </html>

@@ -110,9 +110,17 @@ class Command(BaseCommand):
                 )
             )
         logger.info(
-            "backfill_data finished: run=%s status=%s created=%s updated=%s",
+            "backfill_data finished: run=%s status=%s created=%s updated=%s failed=%s",
             run.pk,
             run.status,
             run.records_created,
             run.records_updated,
+            run.records_failed,
         )
+
+        if run.records_failed > 0:
+            raise CommandError(
+                f"Run #{run.pk} completed with {run.records_failed} render-model "
+                f"failure(s). Bulletins were stored with version=0 error sentinels. "
+                f"Run 'rebuild_render_models' after fixing the issue."
+            )

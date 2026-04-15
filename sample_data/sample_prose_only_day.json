@@ -1,0 +1,46 @@
+{
+  "type": "Feature",
+  "geometry": null,
+  "properties": {
+    "bulletinID": "prose-only-001",
+    "lang": "en",
+    "validTime": {
+      "startTime": "2026-03-10T15:00:00Z",
+      "endTime": "2026-03-11T15:00:00Z"
+    },
+    "nextUpdate": "2026-03-11T15:00:00Z",
+    "unscheduled": false,
+    "regions": [
+      { "regionID": "CH-4115", "name": "Piz Buin" }
+    ],
+    "dangerRatings": [
+      { "mainValue": "low", "validTimePeriod": "all_day" }
+    ],
+    "avalancheProblems": [
+      {
+        "problemType": "no_distinct_avalanche_problem",
+        "comment": "Isolated wet slab releases are possible below 2000m on sunny aspects. The hazard is low overall.",
+        "dangerRatingValue": "low",
+        "validTimePeriod": "all_day",
+        "aspects": [],
+        "elevation": null
+      }
+    ],
+    "customData": {
+      "CH": {
+        "aggregation": [
+          {
+            "category": "dry",
+            "validTimePeriod": "all_day",
+            "problemTypes": ["no_distinct_avalanche_problem"],
+            "title": "Dry avalanches, whole day"
+          }
+        ]
+      }
+    },
+    "publicationTime": "2026-03-10T15:00:00Z",
+    "snowpackStructure": {
+      "comment": "<p>The snowpack is well-settled and generally stable.</p>"
+    }
+  }
+}

@@ -8,7 +8,10 @@ Defines a BaseModel abstract class and five concrete models:
     parent for broader region grouping.
   - Resort: ski resorts mapped to their SLF avalanche warning region.
   - Bulletin: stores SLF avalanche bulletins fetched from the CAAML API,
-    keyed by bulletin_id.
+    keyed by bulletin_id. Includes a ``render_model`` JSONField (a
+    versioned, presentation-ready view derived from ``raw_data``) and a
+    ``render_model_version`` integer used to trigger incremental rebuilds
+    when the builder logic changes.
   - RegionBulletin: many-to-many through table linking bulletins to regions.
 
 Each model uses a custom Manager + QuerySet pair so that domain-specific
@@ -99,6 +102,13 @@ class PipelineRun(BaseModel):
     )
     records_created = models.PositiveIntegerField(default=0)
     records_updated = models.PositiveIntegerField(default=0)
+    records_failed = models.PositiveIntegerField(
+        default=0,
+        help_text=(
+            "Number of bulletins whose render model could not be built "
+            "(stored with version=0 error sentinel)."
+        ),
+    )
     error_message = models.TextField(blank=True)
     triggered_by = models.CharField(
         max_length=64,
@@ -300,10 +310,22 @@ class Resort(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class BulletinQuerySet(models.QuerySet):
+class BulletinQuerySet(models.QuerySet["Bulletin"]):
     """Custom queryset for Bulletin."""
 
-    pass
+    def needs_render_model_rebuild(self, current_version: int) -> "BulletinQuerySet":
+        """
+        Return bulletins whose render_model_version is older than current_version.
+
+        Args:
+            current_version: The current RENDER_MODEL_VERSION constant from
+                pipeline.services.render_model.
+
+        Returns:
+            A filtered queryset of stale Bulletin rows.
+
+        """
+        return self.filter(render_model_version__lt=current_version)
 
 
 class Bulletin(BaseModel):
@@ -320,6 +342,21 @@ class Bulletin(BaseModel):
         default=dict,
         blank=True,
         help_text="Full CAAML bulletin wrapped in a GeoJSON Feature envelope.",
+    )
+    render_model = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Versioned, presentation-ready view of the bulletin built from "
+            "raw_data. Shape: {version, danger, traits, fallback_key_message, "
+            "snowpack_structure}. Rebuilt by upsert_bulletin and on demand by "
+            "rebuild_render_models."
+        ),
+    )
+    render_model_version = models.PositiveIntegerField(
+        default=0,
+        db_index=True,
+        help_text="Version of the render_model schema. 0 means not yet built.",
     )
     issued_at = models.DateTimeField(db_index=True)
     valid_from = models.DateTimeField()

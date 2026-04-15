@@ -8,6 +8,7 @@ URL structure:
                                                matching the given danger level.
   /random/                                     Deprecated → /examples/random/.
   /<region_id>/season/                         Full-season page (up to 100 panels).
+  /<region_id>/history/                        Recent bulletin history for a region.
   /<region_id>/                                Redirects to /<region_id>/<slug>/.
   /<region_id>/<slug>/                         Today's bulletin for a region.
   /<region_id>/<slug>/<date>/                  Bulletin for a specific date.
@@ -40,7 +41,7 @@ urlpatterns = [
         name="season_bulletins",
     ),
     path(
-        "<str:region_id>/recent/",
+        "<str:region_id>/history/",
         views.random_bulletins,
         name="random_bulletins",
     ),

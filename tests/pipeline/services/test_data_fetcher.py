@@ -26,6 +26,7 @@ from pipeline.services.data_fetcher import (
     run_pipeline,
     upsert_bulletin,
 )
+from pipeline.services.render_model import RENDER_MODEL_VERSION, RenderModelBuildError
 from tests.factories import PipelineRunFactory
 
 
@@ -200,6 +201,26 @@ class TestUpsertBulletin:
         assert bulletin.unscheduled is False
         assert bulletin.pipeline_run == run
 
+    def test_render_model_is_populated(self):
+        """upsert_bulletin populates render_model and render_model_version."""
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin()
+        upsert_bulletin(raw, run)
+
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert isinstance(bulletin.render_model, dict)
+        assert bulletin.render_model_version == RENDER_MODEL_VERSION
+        assert "version" in bulletin.render_model
+
+    def test_render_model_version_set(self):
+        """render_model_version equals RENDER_MODEL_VERSION after upsert."""
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin()
+        upsert_bulletin(raw, run)
+
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert bulletin.render_model_version == RENDER_MODEL_VERSION
+
     def test_wraps_raw_data_in_geojson_feature(self):
         """Raw data is wrapped in a GeoJSON Feature envelope."""
         run = PipelineRunFactory.create()
@@ -285,6 +306,49 @@ class TestUpsertBulletin:
         upsert_bulletin(raw, run)
 
         assert RegionBulletin.objects.count() == 0
+
+    def test_render_model_fallback_on_build_error(self):
+        """When build_render_model raises RenderModelBuildError, stores error sentinel."""
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin()
+
+        with patch(
+            "pipeline.services.data_fetcher.build_render_model",
+            side_effect=RenderModelBuildError("boom"),
+        ):
+            upsert_bulletin(raw, run)
+
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert bulletin.render_model_version == 0
+        assert bulletin.render_model["version"] == 0
+        assert bulletin.render_model["error"] == "boom"
+        assert bulletin.render_model["error_type"] == "RenderModelBuildError"
+
+    def test_render_model_error_increments_records_failed(self):
+        """RenderModelBuildError increments run.records_failed."""
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin()
+
+        with patch(
+            "pipeline.services.data_fetcher.build_render_model",
+            side_effect=RenderModelBuildError("boom"),
+        ):
+            upsert_bulletin(raw, run)
+
+        run.refresh_from_db()
+        assert run.records_failed == 1
+
+    def test_non_render_model_exception_propagates(self):
+        """Exceptions that are not RenderModelBuildError propagate uncaught."""
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin()
+
+        with patch(
+            "pipeline.services.data_fetcher.build_render_model",
+            side_effect=ValueError("unexpected error"),
+        ):
+            with pytest.raises(ValueError, match="unexpected error"):
+                upsert_bulletin(raw, run)
 
 
 # ---------------------------------------------------------------------------
