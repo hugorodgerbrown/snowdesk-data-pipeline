@@ -41,49 +41,71 @@ from base.html's @theme tokens.
                removed per DESIGN.md confirmed subtractions.
             {% endcomment %}
             <header class="mb-5">
-                <p class="text-xs text-text-3 text-center mb-1 uppercase tracking-widest font-mono">
-                    {% if is_today %}Today{% else %}{{ page_date|date:"l j F Y" }}{% endif %}
-                    {% if bulletin %}
-                        &middot;
-                        {{ bulletin.valid_from|date:"H:i" }}–{{ bulletin.valid_to|date:"H:i" }} UTC
-                    {% endif %}
-                </p>
                 <h1 class="text-2xl font-semibold text-center leading-tight tracking-tight">
                     {{ region_name }}
                 </h1>
+                <p class="text-xs text-text-3 text-center mt-1 uppercase tracking-widest font-mono">
+                    {% if is_today %}Today{% else %}{{ page_date|date:"l j F Y" }}{% endif %}
+                </p>
             </header>
 
-            {# ── Day navigation ──────────────────────────────────────────── #}
+            {# ── Unified navigation row ──────────────────────────────────── #}
+            {# Media-player-style controls: outer «« / »» skip to the previous #}
+            {# or next calendar day; inner chips are the issues that touched   #}
+            {# today, labelled by the window during which each issue is the   #}
+            {# authoritative forecast.  The active chip shows its full        #}
+            {# authority window on day D; inactive chips point towards the    #}
+            {# active one with a ``<`` or ``>`` cutoff.                        #}
             {% if bulletin %}
-                <nav class="flex items-center justify-between mb-6 text-sm" aria-label="Bulletin navigation">
+                <nav
+                    class="flex items-center justify-center gap-1 mb-6 text-[11px] font-mono"
+                    aria-label="Bulletin navigation"
+                    data-testid="bulletin-nav"
+                >
                     {% if prev_date %}
                         <a
-                            class="text-text-2 hover:text-text-1"
+                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2"
                             href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
+                            aria-label="Previous day: {{ prev_date|date:'l j F Y' }}"
+                            data-testid="nav-prev-day"
                         >
-                            &#8592; {{ prev_date|date:"D j M" }}
+                            &laquo;
                         </a>
                     {% else %}
-                        <span></span>
+                        <span
+                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-3 border-border opacity-40"
+                            aria-hidden="true"
+                        >&laquo;</span>
                     {% endif %}
 
-                    <span class="font-mono text-[11px] text-text-3">
-                        {% if is_today %}Today{% else %}{{ page_date|date:"D j M" }}{% endif %}
-                    </span>
+                    {% for tab in issue_tabs %}
+                        <a
+                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap {% if tab.is_active %}bg-text-1 text-bg border-text-1{% else %}bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2{% endif %}"
+                            href="?issue={{ tab.bulletin_id }}"
+                            aria-label="{{ tab.long_label }}"
+                            {% if tab.is_active %}
+                                aria-current="page"
+                            {% endif %}
+                            data-testid="issue-tab"
+                        >
+                            {{ tab.short_label }}
+                        </a>
+                    {% endfor %}
 
                     {% if next_date %}
                         <a
-                            class="text-text-2 hover:text-text-1"
+                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2"
                             href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=next_date|date:'Y-m-d' %}"
+                            aria-label="Next day: {{ next_date|date:'l j F Y' }}"
+                            data-testid="nav-next-day"
                         >
-                            {{ next_date|date:"D j M" }} &#8594;
+                            &raquo;
                         </a>
-                    {% elif next_update_time %}
-                        <span class="font-mono text-[11px] text-text-3">
-                            next: {{ next_update_time|date:"H:i" }} UTC
-                        </span>
                     {% else %}
-                        <span></span>
+                        <span
+                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-3 border-border opacity-40"
+                            aria-hidden="true"
+                        >&raquo;</span>
                     {% endif %}
                 </nav>
             {% endif %}
