@@ -23,6 +23,13 @@ from base.html's @theme tokens.
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{{ region_name }} — Snowdesk</title>
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
+        {% if raw_data_json %}
+            {# DEBUG-only: raw CAAML payload embedded for source-level inspection. #}
+            {# Not rendered visibly; removed in production where DEBUG=False.     #}
+            <script type="application/json" id="bulletin-raw-data">
+            {{ raw_data_json|safe }}
+            </script>
+        {% endif %}
     </head>
     <body class="bg-bg text-text-1 px-4 py-6 min-h-screen">
         {# ── Outermost container: font-sans overrides any serif from @theme ── #}
@@ -116,15 +123,19 @@ from base.html's @theme tokens.
                         {% comment %}
                            SECTION 2 — Bulletin headline band
                            Always present.  One rating on simple days (1 trait),
-                           two ratings with → on variable days (2 traits).
+                           two side-by-side coloured segments on variable days
+                           (2 traits) — each tinted by its own danger level so
+                           the split is visible at a glance.
                         {% endcomment %}
-                        <div
-                            class="danger-band rounded-[12px] px-4 py-3 mb-4 border border-border"
-                            data-level="{{ panel.danger_key }}"
-                            data-testid="headline-band"
-                        >
-                            {% if rm.traits|length <= 1 %}
-                                {# ── Simple day — single rating ────────────────── #}
+                        {% if not panel.is_time_variable %}
+                            {# ── Simple day (1 trait, or ≥2 traits sharing    #}
+                            {# the same time_period) — single coloured band    #}
+                            {# tinted by the highest rating.                   #}
+                            <div
+                                class="danger-band rounded-[12px] px-4 py-3 mb-4 border border-border"
+                                data-level="{{ panel.danger_key }}"
+                                data-testid="headline-band"
+                            >
                                 <div class="flex items-center gap-2">
                                     <span class="text-lg font-semibold">
                                         {{ panel.danger_label }}
@@ -134,31 +145,53 @@ from base.html's @theme tokens.
                                             ({{ panel.danger_number }})
                                         {% endif %}
                                     </span>
-                                    {% if rm.traits %}
-                                        <span class="text-sm opacity-75">{{ rm.traits.0.title }}</span>
+                                    {% if panel.primary_trait %}
+                                        <span class="text-sm opacity-75">{{ panel.primary_trait.title }}</span>
                                     {% endif %}
                                 </div>
-                            {% else %}
-                                {# ── Variable day — two ratings with transition arrow #}
-                                {% with t1=rm.traits.0 t2=rm.traits.1 %}
-                                    <div class="flex items-center gap-2 flex-wrap">
-                                        <span class="text-lg font-semibold">
+                            </div>
+                        {% else %}
+                            {# ── Variable day — two coloured segments ───────── #}
+                            {% with t1=rm.traits.0 t2=rm.traits.1 %}
+                                <div
+                                    class="grid grid-cols-[1fr_auto_1fr] items-stretch gap-0 mb-4 rounded-[12px] overflow-hidden border border-border"
+                                    data-testid="headline-band"
+                                >
+                                    <div
+                                        class="danger-band px-4 py-3"
+                                        data-level="{{ t1.danger_level|danger_level_key }}"
+                                        data-testid="headline-segment-first"
+                                    >
+                                        <div class="text-lg font-semibold leading-tight">
                                             {{ t1.danger_level|danger_level_label }}
                                             ({{ t1.danger_level }})
-                                        </span>
-                                        <span class="text-lg font-semibold opacity-50" data-testid="transition-arrow"
-                                        >&#8594;</span>
-                                        <span class="text-lg font-semibold">
+                                        </div>
+                                        <div class="text-xs opacity-75">{{ t1.title }}</div>
+                                    </div>
+                                    <div
+                                        class="flex items-center justify-center px-3 text-text-3 bg-bg"
+                                        data-testid="transition-arrow"
+                                        aria-hidden="true"
+                                    >
+                                        &#8594;
+                                    </div>
+                                    <div
+                                        class="danger-band px-4 py-3 text-right"
+                                        data-level="{{ t2.danger_level|danger_level_key }}"
+                                        data-testid="headline-segment-second"
+                                    >
+                                        <div class="text-lg font-semibold leading-tight">
                                             {{ t2.danger_level|danger_level_label }}
                                             ({{ t2.danger_level }})
-                                        </span>
+                                        </div>
+                                        <div class="text-xs opacity-75">{{ t2.title }}</div>
                                     </div>
-                                    <p class="text-sm opacity-75 mt-0.5">
-                                        Hazard changes through the day
-                                    </p>
-                                {% endwith %}
-                            {% endif %}
-                        </div>
+                                </div>
+                                <p class="text-sm text-text-2 mb-4 -mt-2 px-1">
+                                    Hazard changes through the day
+                                </p>
+                            {% endwith %}
+                        {% endif %}
 
                         {% comment %}
                            SECTION 3 — Rating block(s)
@@ -242,12 +275,6 @@ from base.html's @theme tokens.
                                         {# — Snowpack ─────────────────────────────── #}
                                         {% if prose.snowpack_structure %}
                                             <div class="mb-4">
-                                                <h3
-                                                    class="text-[11px] font-semibold uppercase tracking-wider text-text-3 mb-1.5"
-                                                    data-testid="snowpack-heading"
-                                                >
-                                                    Snowpack
-                                                </h3>
                                                 <div class="slf-prose text-sm leading-[1.6] text-text-2">
                                                     {{ prose.snowpack_structure|snowdesk_html }}
                                                 </div>
@@ -257,12 +284,6 @@ from base.html's @theme tokens.
                                         {# — Weather review ──────────────────────── #}
                                         {% if prose.weather_review %}
                                             <div class="mb-4">
-                                                <h3
-                                                    class="text-[11px] font-semibold uppercase tracking-wider text-text-3 mb-1.5"
-                                                    data-testid="weather-review-heading"
-                                                >
-                                                    Weather review
-                                                </h3>
                                                 <div class="slf-prose text-sm leading-[1.6] text-text-2">
                                                     {{ prose.weather_review|snowdesk_html }}
                                                 </div>
@@ -272,12 +293,6 @@ from base.html's @theme tokens.
                                         {# — Weather forecast ────────────────────── #}
                                         {% if prose.weather_forecast %}
                                             <div class="mb-4">
-                                                <h3
-                                                    class="text-[11px] font-semibold uppercase tracking-wider text-text-3 mb-1.5"
-                                                    data-testid="weather-forecast-heading"
-                                                >
-                                                    Weather forecast
-                                                </h3>
                                                 <div class="slf-prose text-sm leading-[1.6] text-text-2">
                                                     {{ prose.weather_forecast|snowdesk_html }}
                                                 </div>
@@ -287,12 +302,6 @@ from base.html's @theme tokens.
                                         {# — Outlook (tendency[]) ─────────────────── #}
                                         {% if prose.tendency %}
                                             <div class="mb-4">
-                                                <h3
-                                                    class="text-[11px] font-semibold uppercase tracking-wider text-text-3 mb-1.5"
-                                                    data-testid="outlook-heading"
-                                                >
-                                                    Outlook
-                                                </h3>
                                                 {% for entry in prose.tendency %}
                                                     {% if entry.comment %}
                                                         <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-2{% endif %}">

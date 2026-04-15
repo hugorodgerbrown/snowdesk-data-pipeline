@@ -238,6 +238,55 @@ class TestHeadlineBand:
         # The HTML entity for →
         assert "&#8594;" in content or "→" in content
 
+    def test_two_traits_same_time_period_collapses_to_single(
+        self, client: Client, region
+    ):
+        """
+        When both traits share the same ``time_period`` they overlap 100%
+        in time, so the headline must collapse to a single rating (the
+        highest) — showing a split "L1 → L3" would misrepresent the
+        hazard as time-varying when both problems are present together.
+        The lower trait still appears in the rating blocks below.
+        """
+        day = date(2026, 3, 20)
+        low_dry = {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Dry avalanches, whole day",
+            "geography": {"source": "problems"},
+            "problems": [_problem_no_geo(problem_type="no_distinct_avalanche_problem")],
+            "prose": None,
+            "danger_level": 1,
+        }
+        considerable_wet = {
+            "category": "wet",
+            "time_period": "all_day",
+            "title": "Wet avalanches, whole day",
+            "geography": {"source": "problems"},
+            "problems": [_problem(problem_type="wet_snow")],
+            "prose": None,
+            "danger_level": 3,
+        }
+        rm = _render_model_with_traits([low_dry, considerable_wet])
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+
+        url = _url("CH-4115", "valais", "2026-03-20")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        # No transition arrow — not a time-variable day.
+        assert 'data-testid="transition-arrow"' not in content
+        # Headline band is the single-band variant.
+        assert 'data-testid="headline-segment-first"' not in content
+        assert 'data-testid="headline-segment-second"' not in content
+        # Rating blocks still render both traits (lower one remains listed).
+        import re
+
+        positions = [
+            m.start() for m in re.finditer(r'data-testid="rating-block"', content)
+        ]
+        assert len(positions) == 2
+
 
 # ---------------------------------------------------------------------------
 # Test: rating blocks count matches traits
@@ -383,7 +432,7 @@ class TestSnowpackWeatherSection:
         assert 'data-testid="weather-review-heading"' not in content
 
     def test_weather_review_rendered_when_present(self, client: Client, region):
-        """'Weather review' heading and content appear when prose.weather_review is set."""
+        """prose.weather_review content appears in the Snowpack & Weather section."""
         day = date(2026, 3, 15)
         prose: dict = {
             "snowpack_structure": None,
@@ -400,7 +449,7 @@ class TestSnowpackWeatherSection:
         url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="weather-review-heading"' in content
+        assert 'data-testid="snowpack-weather-section"' in content
         assert "Cold and clear overnight" in content
 
     def test_snowpack_section_absent_when_all_prose_empty(self, client: Client, region):
@@ -423,8 +472,8 @@ class TestSnowpackWeatherSection:
         content = response.content.decode()
         assert 'data-testid="snowpack-weather-section"' not in content
 
-    def test_weather_forecast_heading_rendered(self, client: Client, region):
-        """'Weather forecast' heading appears when prose.weather_forecast is set."""
+    def test_weather_forecast_rendered_when_present(self, client: Client, region):
+        """prose.weather_forecast content appears in the Snowpack & Weather section."""
         day = date(2026, 3, 15)
         prose: dict = {
             "snowpack_structure": None,
@@ -441,11 +490,11 @@ class TestSnowpackWeatherSection:
         url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="weather-forecast-heading"' in content
+        assert 'data-testid="snowpack-weather-section"' in content
         assert "Warm and sunny tomorrow" in content
 
     def test_outlook_rendered_from_tendency(self, client: Client, region):
-        """Outlook sub-block renders tendency comments."""
+        """Tendency comments render inside the Snowpack & Weather section."""
         day = date(2026, 3, 15)
         prose: dict = {
             "snowpack_structure": None,
@@ -469,7 +518,7 @@ class TestSnowpackWeatherSection:
         url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="outlook-heading"' in content
+        assert 'data-testid="snowpack-weather-section"' in content
         assert "Hazard will increase over the coming days" in content
 
 
@@ -617,3 +666,197 @@ class TestTypography:
         content = response.content.decode()
         # The outermost div must carry font-sans
         assert 'class="font-sans' in content
+
+
+# ---------------------------------------------------------------------------
+# Test: X-Bulletin-Id header and DEBUG raw-data embed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestDebuggingAids:
+    """
+    The bulletin page always carries an ``X-Bulletin-Id`` header so
+    operators can identify the rendered row from network tools.  When
+    ``settings.DEBUG`` is True (and a bulletin is present) the raw CAAML
+    ``raw_data`` is embedded as a ``<script type="application/json">``
+    tag for source-level inspection; the tag is absent in production.
+    """
+
+    def test_x_bulletin_id_header_present(
+        self, client: Client, simple_bulletin, region
+    ):
+        """Response carries the bulletin UUID in ``X-Bulletin-Id``."""
+        url = _url("CH-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response["X-Bulletin-Id"] == str(simple_bulletin.bulletin_id)
+
+    def test_x_bulletin_id_header_absent_on_empty_state(self, client: Client, region):
+        """No bulletin → no ``X-Bulletin-Id`` header."""
+        url = _url("CH-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        assert "X-Bulletin-Id" not in response
+
+    def test_raw_data_embedded_when_debug_true(self, client: Client, region, settings):
+        """DEBUG=True → raw_data JSON embedded in page source."""
+        settings.DEBUG = True
+        day = date(2026, 3, 17)
+        bulletin = _make_am_bulletin(
+            region,
+            day,
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=3,
+            raw_data={"properties": {"bulletinID": "sentinel-uuid-12345"}},
+        )
+        url = _url("CH-4115", "valais", "2026-03-17")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert '<script type="application/json" id="bulletin-raw-data">' in content
+        assert "sentinel-uuid-12345" in content
+        # Header still present.
+        assert response["X-Bulletin-Id"] == str(bulletin.bulletin_id)
+
+    def test_raw_data_absent_when_debug_false(
+        self, client: Client, simple_bulletin, region, settings
+    ):
+        """DEBUG=False → no raw_data script tag, header still present."""
+        settings.DEBUG = False
+        url = _url("CH-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'id="bulletin-raw-data"' not in content
+        assert response["X-Bulletin-Id"] == str(simple_bulletin.bulletin_id)
+
+    def test_script_breakout_payload_is_escaped(self, client: Client, region, settings):
+        """A ``</script>`` substring in raw_data must not break out of the tag."""
+        settings.DEBUG = True
+        day = date(2026, 3, 18)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=3,
+            raw_data={"properties": {"comment": "hostile </script><b>pwn</b>"}},
+        )
+        url = _url("CH-4115", "valais", "2026-03-18")
+        response = client.get(url)
+        content = response.content.decode()
+        # The literal ``</script>`` must not appear inside the raw-data
+        # block — it must be escaped as ``<\/script>``.
+        start = content.index('id="bulletin-raw-data">')
+        end = content.index("</script>", start)
+        embedded = content[start:end]
+        assert "</script>" not in embedded
+        assert "<\\/script>" in embedded
+
+
+# ---------------------------------------------------------------------------
+# Test: rating-block DOM order mirrors render_model.traits (aggregation order)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestRatingBlockOrder:
+    """
+    Rating blocks must appear in the DOM in exactly the order given by
+    ``render_model.traits``, which itself is taken verbatim from SLF's
+    aggregation (see docs/day_character_rules_spec.md and the builder
+    ordering guarantee in pipeline/services/render_model.py). Reordering
+    at any layer (enrichment, panel context, or template loop) would
+    violate SLF's editorial intent, so we assert the DOM order matches.
+    """
+
+    @staticmethod
+    def _extract_dom_order(content: str) -> list[str]:
+        """Return the sequence of category+level icons in DOM order."""
+        import re
+
+        segments = [
+            content[m.start() : m.start() + 800]
+            for m in re.finditer(r'data-testid="rating-block"', content)
+        ]
+        order: list[str] = []
+        for seg in segments:
+            m = re.search(r"(Dry|Wet)-Snow-([0-9\-]+)\.svg", seg)
+            order.append(m.group(0) if m else "?")
+        return order
+
+    def test_dry_allday_before_wet_later(self, client: Client, region):
+        """
+        Mirrors bulletin 1931's shape: aggregation = [dry/all_day/L1,
+        wet/later/L3]. The rendered DOM must show the dry (Low) block
+        BEFORE the wet (Considerable) block — never the reverse.
+        """
+        day = date(2026, 3, 15)
+        dry_trait = {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Dry avalanches, whole day",
+            "geography": {"source": "problems"},
+            "problems": [_problem_no_geo(problem_type="no_distinct_avalanche_problem")],
+            "prose": None,
+            "danger_level": 1,
+        }
+        wet_trait = {
+            "category": "wet",
+            "time_period": "later",
+            "title": "Wet-snow avalanches, as the day progresses",
+            "geography": {"source": "problems"},
+            "problems": [_problem(problem_type="wet_snow")],
+            "prose": None,
+            "danger_level": 3,
+        }
+        rm = _render_model_with_traits([dry_trait, wet_trait])
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+
+        url = _url("CH-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+
+        order = self._extract_dom_order(response.content.decode())
+        assert order == ["Dry-Snow-1.svg", "Wet-Snow-3.svg"], (
+            f"rating blocks appeared in wrong DOM order: {order} "
+            "(expected aggregation order: dry/L1 first, wet/L3 second)"
+        )
+
+    def test_wet_first_when_aggregation_lists_wet_first(self, client: Client, region):
+        """
+        When aggregation orders wet BEFORE dry (as in some SLF bulletins),
+        the DOM must honour that — never silently reshuffle to a
+        dry-first convention.
+        """
+        day = date(2026, 3, 16)
+        wet_trait = {
+            "category": "wet",
+            "time_period": "all_day",
+            "title": "Wet-snow avalanches",
+            "geography": {"source": "problems"},
+            "problems": [_problem(problem_type="wet_snow")],
+            "prose": None,
+            "danger_level": 3,
+        }
+        dry_trait = {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Dry avalanches",
+            "geography": {"source": "problems"},
+            "problems": [_problem_no_geo(problem_type="no_distinct_avalanche_problem")],
+            "prose": None,
+            "danger_level": 1,
+        }
+        rm = _render_model_with_traits([wet_trait, dry_trait])
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+
+        url = _url("CH-4115", "valais", "2026-03-16")
+        response = client.get(url)
+        assert response.status_code == 200
+
+        order = self._extract_dom_order(response.content.decode())
+        assert order == ["Wet-Snow-3.svg", "Dry-Snow-1.svg"], (
+            f"rating blocks appeared in wrong DOM order: {order} "
+            "(expected aggregation order: wet/L3 first, dry/L1 second)"
+        )

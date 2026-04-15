@@ -31,10 +31,12 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import json
 import logging
 import random
 from typing import Any, cast
 
+from django.conf import settings
 from django.core.cache import cache
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -301,6 +303,50 @@ def _extract_weather_forecast(props: dict[str, Any]) -> str:
     if not forecast:
         return ""
     return html_to_markdown(forecast.get("comment") or "")
+
+
+def _render_bulletin_page(
+    request: HttpRequest,
+    context: dict[str, Any],
+    bulletin: Bulletin | None,
+) -> HttpResponse:
+    """
+    Render ``public/bulletin.html`` with debugging aids attached to the response.
+
+    Two cross-cutting concerns live here so the three render sites
+    (``examples_random``, ``bulletin_detail`` no-bulletin fallback, and
+    ``bulletin_detail`` happy path) stay consistent:
+
+    * When ``bulletin`` is not None an ``X-Bulletin-Id`` response header
+      carries the bulletin UUID so operators can identify exactly which
+      row rendered this page from network tools.
+    * When ``settings.DEBUG`` is True and a bulletin is present, its raw
+      CAAML ``raw_data`` payload is embedded as a ``<script
+      type="application/json">`` tag so it is visible in the page source
+      but invisible to the reader.  Never emitted in production.
+
+    Args:
+        request: The incoming HTTP request.
+        context: The template context (this helper adds ``raw_data_json``
+            when appropriate but leaves the rest untouched).
+        bulletin: The bulletin being rendered, or ``None`` for empty-state pages.
+
+    Returns:
+        The rendered ``HttpResponse`` with the debug header (and, when
+        DEBUG=True, the raw-data script tag) attached.
+
+    """
+    if bulletin is not None and settings.DEBUG:
+        # Escape ``</`` so a stray ``</script>`` substring in the CAAML
+        # payload cannot terminate the embedding ``<script>`` tag.  JSON
+        # decodes ``\/`` to ``/`` so round-tripping with JSON.parse is
+        # unaffected.
+        raw = json.dumps(bulletin.raw_data, ensure_ascii=False).replace("</", "<\\/")
+        context = {**context, "raw_data_json": raw}
+    response = render(request, "public/bulletin.html", context)
+    if bulletin is not None:
+        response["X-Bulletin-Id"] = str(bulletin.bulletin_id)
+    return response
 
 
 def _select_bulletin_for_date(
@@ -596,15 +642,15 @@ def examples_random(request: HttpRequest) -> HttpResponse:
     selected = _select_bulletin_for_date(region, today)
 
     if selected is None:
-        return render(
+        return _render_bulletin_page(
             request,
-            "public/bulletin.html",
             {
                 "bulletin": None,
                 "region_name": region.name,
                 "region_id": region.region_id,
                 "year": today.year,
             },
+            bulletin=None,
         )
 
     page_date = selected.valid_to.date()
@@ -660,7 +706,7 @@ def examples_random(request: HttpRequest) -> HttpResponse:
         "related_regions": related_regions,
         "year": today.year,
     }
-    return render(request, "public/bulletin.html", context)
+    return _render_bulletin_page(request, context, bulletin=selected)
 
 
 def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
@@ -796,15 +842,15 @@ def bulletin_detail(
     selected = _select_bulletin_for_date(region, target_date)
 
     if selected is None:
-        return render(
+        return _render_bulletin_page(
             request,
-            "public/bulletin.html",
             {
                 "bulletin": None,
                 "region_name": region.name,
                 "region_id": region.region_id,
                 "year": datetime.date.today().year,
             },
+            bulletin=None,
         )
 
     # The page date is the valid_to date of the selected bulletin.
@@ -864,7 +910,7 @@ def bulletin_detail(
         "related_regions": related_regions,
         "year": today.year,
     }
-    return render(request, "public/bulletin.html", context)
+    return _render_bulletin_page(request, context, bulletin=selected)
 
 
 # ---------------------------------------------------------------------------
@@ -1336,6 +1382,21 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     # ElevationBounds, field_guidance, hide_comment per trait).
     render_model = _enrich_render_model(raw_render_model)
 
+    # Time-variable day detection.  The headline band renders a split
+    # "L1 → L3" transition only when the traits describe genuinely
+    # time-varying hazard (e.g. all_day + later).  When two traits share
+    # the same time_period they overlap 100%, so the split is
+    # misleading — collapse to a single headline using the highest
+    # trait.  The lower-ranked trait is still listed in the rating
+    # blocks below.
+    traits: list[dict[str, Any]] = render_model.get("traits") or []
+    is_time_variable = len(traits) > 1 and traits[0].get("time_period") != traits[
+        1
+    ].get("time_period")
+    primary_trait: dict[str, Any] | None = None
+    if traits:
+        primary_trait = max(traits, key=lambda t: int(t.get("danger_level") or 0))
+
     panel: dict[str, Any] = {
         "bulletin": bulletin,
         "danger_key": danger_key,
@@ -1358,6 +1419,8 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "footer_date_source": "Bulletin.valid_from / valid_to",
         "admin_url": reverse("admin:pipeline_bulletin_change", args=[bulletin.pk]),
         "render_model": render_model,
+        "is_time_variable": is_time_variable,
+        "primary_trait": primary_trait,
     }
     panel["day_character"] = compute_day_character(raw_render_model)
     return panel

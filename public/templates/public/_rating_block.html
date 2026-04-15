@@ -6,12 +6,15 @@ Expects the following variables in scope:
   trait   — one entry from render_model.traits (enriched by _enrich_render_model)
 
 Renders:
-  1. Coloured header strip — danger rating name + level, trait title as scope line.
-  2. Aspect / elevation row — only when trait.geography.source == "problems" and
-     the first problem carries structured aspects or elevation data.
+  1. Coloured header strip — category danger-level pictogram, rating name
+     + level, and the trait title as scope line.
+  2. Aspect / elevation row — only when trait.geography.source == "problems"
+     and the first problem carries structured aspects or elevation data.
      Absent entirely when source == "prose_only" (asymmetry is honest).
   3. One row per problem — EAWS icon + name + SLF prose in full, no truncation.
-     For prose-only traits the trait.prose is rendered instead.
+     Always rendered, irrespective of geography source: prose-only traits
+     still get their per-problem icon and heading so wet_snow / gliding_snow
+     remain visually identifiable.
 {% endcomment %}
 {% load static card_tags hazard_icons snowdesk_html snowdesk_time %}
 
@@ -20,14 +23,26 @@ Renders:
     class="rating-block border border-border rounded-[12px] overflow-hidden mb-4 last:mb-0"
     data-testid="rating-block"
 >
-    {# ── Header strip: coloured band with rating + trait title ──────────── #}
+    {# ── Header strip: coloured band with category pictogram + rating + title #}
     <div class="danger-band px-4 py-3 border-b border-border" data-level="{{ trait.danger_level|danger_level_key }}">
-        <div class="flex items-baseline justify-between gap-2 flex-wrap">
-            <span class="text-base font-semibold leading-tight">
-                {{ trait.danger_level|danger_level_label }}
-                ({{ trait.danger_level }})
-            </span>
-            <h3 class="text-sm font-normal opacity-80">{{ trait.title }}</h3>
+        <div class="flex items-center gap-3">
+            {% with cat_icon=trait|category_danger_icon %}
+                {% if cat_icon %}
+                    <img
+                        class="w-9 h-9 shrink-0"
+                        src="{% static cat_icon %}"
+                        alt="{{ trait.category|capfirst }} snow level {{ trait.danger_level }}"
+                        data-testid="category-danger-icon"
+                    >
+                {% endif %}
+            {% endwith %}
+            <div class="flex items-baseline justify-between gap-2 flex-wrap flex-1 min-w-0">
+                <span class="text-base font-semibold leading-tight">
+                    {{ trait.danger_level|danger_level_label }}
+                    ({{ trait.danger_level }})
+                </span>
+                <h3 class="text-sm font-normal opacity-80">{{ trait.title }}</h3>
+            </div>
         </div>
     </div>
 
@@ -61,48 +76,40 @@ Renders:
     {% endif %}
 
     {# ── Problem rows ────────────────────────────────────────────────────── #}
-    {# One row per structured problem.  Prose-only traits fall to the else.  #}
+    {# One row per structured problem — icons render regardless of geography #}
+    {# source so wet_snow / gliding_snow are always visually identifiable.   #}
     <div class="px-4 pt-3 pb-4 divide-y divide-border">
-        {% if trait.geography.source == "problems" %}
-            {% for problem in trait.problems %}
-                <div class="problem-row {% if not forloop.first %}pt-3{% endif %} {% if not forloop.last %}pb-3{% endif %}">
-                    {# Icon + name header #}
-                    <div class="flex items-center gap-2.5 mb-2">
-                        {% with icon_file=problem.problem_type|hazard_icon %}
-                            {% if icon_file %}
-                                <div class="w-8 h-8 shrink-0 rounded overflow-hidden">
-                                    <img
-                                        class="w-full h-full object-cover"
-                                        src="{% static icon_file %}"
-                                        alt="{{ problem.label }}"
-                                    >
-                                </div>
-                            {% endif %}
-                        {% endwith %}
-                        <span class="text-[13px] font-semibold text-text-1">{{ problem.label }}</span>
-                        {% if problem.time_period_label and problem.time_period != "all_day" %}
-                            <span
-                                class="font-mono text-[9.5px] tracking-[0.08em] uppercase text-text-2 bg-black/[0.06] px-1.5 py-0.5 rounded shrink-0"
-                            >
-                                {{ problem.time_period_label }}
-                            </span>
+        {% for problem in trait.problems %}
+            <div class="problem-row {% if not forloop.first %}pt-3{% endif %} {% if not forloop.last %}pb-3{% endif %}">
+                {# Icon + name header #}
+                <div class="flex items-center gap-2.5 mb-2">
+                    {% with icon_file=problem.problem_type|hazard_icon %}
+                        {% if icon_file %}
+                            <div class="w-8 h-8 shrink-0 rounded overflow-hidden">
+                                <img
+                                    class="w-full h-full object-cover"
+                                    src="{% static icon_file %}"
+                                    alt="{{ problem.label }}"
+                                >
+                            </div>
                         {% endif %}
-                    </div>
-                    {# SLF prose in full — no truncation #}
-                    {% if problem.comment_html %}
-                        <div class="slf-prose text-sm leading-[1.6] text-text-2">
-                            {{ problem.comment_html|snowdesk_html }}
-                        </div>
+                    {% endwith %}
+                    <span class="text-[13px] font-semibold text-text-1">{{ problem.label }}</span>
+                    {% if problem.time_period_label and problem.time_period != "all_day" %}
+                        <span
+                            class="font-mono text-[9.5px] tracking-[0.08em] uppercase text-text-2 bg-black/[0.06] px-1.5 py-0.5 rounded shrink-0"
+                        >
+                            {{ problem.time_period_label }}
+                        </span>
                     {% endif %}
                 </div>
-            {% endfor %}
-        {% else %}
-            {# prose-only trait — render combined prose block #}
-            {% if trait.prose %}
-                <div class="slf-prose text-sm leading-[1.6] text-text-2 py-1" data-testid="prose-only-body">
-                    {{ trait.prose|snowdesk_html }}
-                </div>
-            {% endif %}
-        {% endif %}
+                {# SLF prose in full — no truncation #}
+                {% if problem.comment_html %}
+                    <div class="slf-prose text-sm leading-[1.6] text-text-2">
+                        {{ problem.comment_html|snowdesk_html }}
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
     </div>
 </div>
