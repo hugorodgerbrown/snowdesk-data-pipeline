@@ -88,8 +88,16 @@ class TestValidateMagicLinkToken:
 
     def test_tampered_token_returns_none(self):
         token = generate_magic_link_token("alice@example.com")
-        # Flip the last character to break the signature
-        tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+        # Flip the FIRST char of the signature, not the last.  A 32-byte
+        # HS256 signature encodes to 43 base64url chars where the final
+        # char carries only 4 signature bits + 2 unused padding bits, so
+        # a one-char flip there can decode to the same signature byte
+        # (e.g. "A"→"B": both have top-4-bits 0000).  The first char's 6
+        # bits all map into signature byte 0, so any flip there is
+        # guaranteed to change the decoded signature.
+        head, payload, sig = token.split(".")
+        flipped_sig = ("A" if sig[0] != "A" else "B") + sig[1:]
+        tampered = ".".join((head, payload, flipped_sig))
         result = validate_magic_link_token(tampered)
         assert result is None
 
