@@ -1,0 +1,68 @@
+{% comment %}
+templates/includes/nav.html — Persistent top navigation bar.
+
+Renders the Snowdesk wordmark plus an optional back link. Kept deliberately
+minimal: no hamburger menu, no right-hand nav items, no secondary links —
+the bulletin site is mobile-first and ships one concept per page.
+
+Parameters
+----------
+back_url : str, optional
+    URL for a back-chevron link. Omit on pages where "back" has no
+    obvious target (home, map). When present, a thin vertical divider
+    separates the chevron from the wordmark.
+back_label : str, optional
+    Label shown next to the chevron. Defaults to "Back" — prefer a
+    destination-specific label ("Map", "Season") where possible so the
+    user knows where the arrow leads.
+
+Usage
+-----
+    {% include "includes/nav.html" %}
+    {% include "includes/nav.html" with back_url="/map/" back_label="Map" %}
+
+Layout
+------
+The <nav> spans the full page width so its border-bottom forms an
+edge-to-edge rule. Content sits inside a max-w-[640px] inner container
+that matches the bulletin-family page width, so the wordmark aligns
+with the body copy on wider viewports. On narrower phone-frame pages
+(/map/) the max-width is never hit — the inner container just inherits
+the frame's width.
+
+The wordmark font-size drops from 18px (standalone) to 15px (paired
+with a back link) so the back chevron is the lead visual in the paired
+state.
+{% endcomment %}
+<nav class="border-b border-border">
+    <div class="mx-auto max-w-[640px] flex items-center gap-3 px-4 py-2.5">
+        {% if back_url %}
+            <a
+                href="{{ back_url }}"
+                class="flex items-center gap-1.5 text-text-2 text-sm hover:text-text-1"
+            >
+                <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="m15 18-6-6 6-6" />
+                </svg>
+                {{ back_label|default:"Back" }}
+            </a>
+            <div class="h-4 w-px bg-border" aria-hidden="true"></div>
+        {% endif %}
+        <a
+            href="{% url 'public:home' %}"
+            class="text-text-1 leading-none font-semibold tracking-tight hover:opacity-80 {% if back_url %}text-[15px]{% else %}text-[18px]{% endif %}"
+        >
+            Snowdesk
+        </a>
+    </div>
+</nav>

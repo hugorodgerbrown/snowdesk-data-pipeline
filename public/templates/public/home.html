@@ -18,43 +18,46 @@ This will be replaced with a full marketing site before launch.
         <title>Snowdesk — Avalanche bulletins for backcountry skiers</title>
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
     </head>
-    <body class="bg-bg font-sans text-text-1 min-h-screen flex flex-col items-center justify-center px-4">
-        <div class="max-w-lg text-center">
-            <h1 class="text-3xl font-semibold tracking-tight mb-4">Snowdesk</h1>
-            <p class="text-text-2 text-lg leading-relaxed mb-6">
-                Avalanche bulletins for backcountry skiers.
-            </p>
-            <p class="text-text-2 text-lg leading-relaxed mb-6">
-                We take the daily SLF avalanche forecast and present it in a clear, mobile-friendly format so you can
-                make better decisions in the mountains.
-            </p>
-            <div class="space-y-3 text-text-2 text-sm">
-                <p>
-                    <strong class="text-text-1">Daily bulletins</strong> — fetched automatically from the Swiss
-                    Institute for Snow and Avalanche Research (SLF).
+    <body class="bg-bg font-sans text-text-1 min-h-screen flex flex-col">
+        {% include "includes/nav.html" %}
+        <div class="flex-1 flex flex-col items-center justify-center px-4 py-8">
+            <div class="max-w-lg text-center">
+                <h1 class="text-3xl font-semibold tracking-tight mb-4">Snowdesk</h1>
+                <p class="text-text-2 text-lg leading-relaxed mb-6">
+                    Avalanche bulletins for backcountry skiers.
                 </p>
-                <p>
-                    <strong class="text-text-1">Per-region detail</strong> — danger level, avalanche problems, snowpack
-                    structure, and field guidance for every forecast region.
+                <p class="text-text-2 text-lg leading-relaxed mb-6">
+                    We take the daily SLF avalanche forecast and present it in a clear, mobile-friendly format so you
+                    can make better decisions in the mountains.
                 </p>
-                <p>
-                    <strong class="text-text-1">Season archives</strong> — browse the full season history for any
-                    region.
-                </p>
-            </div>
-            <div class="mt-8 flex flex-wrap justify-center gap-3">
-                <a
-                    href="{% url 'public:examples_random' %}"
-                    class="inline-block bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
-                >
-                    View a sample bulletin →
-                </a>
-                <a
-                    href="{% url 'public:map' %}"
-                    class="inline-block bg-card text-text-1 border border-text-1 px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
-                >
-                    Explore the map →
-                </a>
+                <div class="space-y-3 text-text-2 text-sm">
+                    <p>
+                        <strong class="text-text-1">Daily bulletins</strong> — fetched automatically from the Swiss
+                        Institute for Snow and Avalanche Research (SLF).
+                    </p>
+                    <p>
+                        <strong class="text-text-1">Per-region detail</strong> — danger level, avalanche problems,
+                        snowpack structure, and field guidance for every forecast region.
+                    </p>
+                    <p>
+                        <strong class="text-text-1">Season archives</strong> — browse the full season history for any
+                        region.
+                    </p>
+                </div>
+                <div class="mt-8 flex flex-wrap justify-center gap-3">
+                    <a
+                        href="{% url 'public:examples_random' %}"
+                        class="inline-block bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
+                    >
+                        View a sample bulletin →
+                    </a>
+                    <a
+                        href="{% url 'public:map' %}"
+                        class="inline-block bg-card text-text-1 border border-text-1 px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
+                    >
+                        Explore the map →
+                    </a>
+                </div>
             </div>
         </div>
     </body>

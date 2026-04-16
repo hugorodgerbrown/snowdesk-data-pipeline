@@ -16,39 +16,43 @@ test harness.
         <title>{{ region_name }} — Season test — Snowdesk</title>
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
     </head>
-    <body class="bg-bg font-sans text-text-1 px-4 md:px-8 py-6 min-h-screen">
-        <header class="max-w-[1200px] mx-auto mb-6 px-1">
-            <p class="font-mono text-[10px] tracking-[0.12em] uppercase text-text-3 mb-5 text-center">
-                Panel UI test · {{ season_label }}
-            </p>
-            <h1 class="font-sans text-xl md:text-[1.75rem] font-semibold text-text-1 leading-tight">
-                {{ region_name }}
-            </h1>
-            <p class="font-mono text-[11px] tracking-[0.06em] text-text-3 mt-1.5">
-                {{ panel_count }} bulletin{{ panel_count|pluralize }} this season
-            </p>
-        </header>
-
-        {% if debug %}
-            {# ── Subscribe link (DEBUG only) ────────────────────────────────── #}
-            <div class="max-w-[1200px] mx-auto mb-4 px-1">
-                <a
-                    href="{% url 'subscriptions:enter_email' %}"
-                    class="text-xs text-text-3 hover:text-text-2 border border-text-3/20 rounded-[6px] px-3 py-1.5 inline-block"
-                >
-                    Subscribe to alerts
-                </a>
-            </div>
-        {% endif %}
-
-        <div class="grid gap-3 max-w-[1200px] mx-auto grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {% for panel in panels %}
-                {% include "public/_bulletin_panel.html" with panel=panel %}
-            {% empty %}
-                <p class="col-span-full text-center text-text-3 py-12 text-sm">
-                    No bulletins for this region and season.
+    <body class="bg-bg font-sans text-text-1 min-h-screen">
+        {% url 'public:map' as map_url %}
+        {% include "includes/nav.html" with back_url=map_url back_label="Map" %}
+        <div class="px-4 md:px-8 py-6">
+            <header class="max-w-[1200px] mx-auto mb-6 px-1">
+                <p class="font-mono text-[10px] tracking-[0.12em] uppercase text-text-3 mb-5 text-center">
+                    Panel UI test · {{ season_label }}
                 </p>
-            {% endfor %}
+                <h1 class="font-sans text-xl md:text-[1.75rem] font-semibold text-text-1 leading-tight">
+                    {{ region_name }}
+                </h1>
+                <p class="font-mono text-[11px] tracking-[0.06em] text-text-3 mt-1.5">
+                    {{ panel_count }} bulletin{{ panel_count|pluralize }} this season
+                </p>
+            </header>
+
+            {% if debug %}
+                {# ── Subscribe link (DEBUG only) ────────────────────────────────── #}
+                <div class="max-w-[1200px] mx-auto mb-4 px-1">
+                    <a
+                        href="{% url 'subscriptions:enter_email' %}"
+                        class="text-xs text-text-3 hover:text-text-2 border border-text-3/20 rounded-[6px] px-3 py-1.5 inline-block"
+                    >
+                        Subscribe to alerts
+                    </a>
+                </div>
+            {% endif %}
+
+            <div class="grid gap-3 max-w-[1200px] mx-auto grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                {% for panel in panels %}
+                    {% include "public/_bulletin_panel.html" with panel=panel %}
+                {% empty %}
+                    <p class="col-span-full text-center text-text-3 py-12 text-sm">
+                        No bulletins for this region and season.
+                    </p>
+                {% endfor %}
+            </div>
         </div>
     </body>
 </html>

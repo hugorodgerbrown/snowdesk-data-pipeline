@@ -47,13 +47,6 @@ header {
     position: relative;
 }
 
-.brand {
-    font-family: var(--serif);
-    font-size: 20px;
-    line-height: 1;
-    margin: 0 0 10px;
-}
-
 .search {
     display: flex;
     align-items: center;

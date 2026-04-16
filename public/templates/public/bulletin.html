@@ -48,9 +48,11 @@ from base.html's @theme tokens.
             </script>
         {% endif %}
     </head>
-    <body class="bg-bg text-text-1 px-4 py-6 min-h-screen">
+    <body class="bg-bg text-text-1 min-h-screen">
+        {% url 'public:map' as map_url %}
+        {% include "includes/nav.html" with back_url=map_url back_label="Map" %}
         {# ── Outermost container: font-sans overrides any serif from @theme ── #}
-        <div class="font-sans max-w-[640px] mx-auto">
+        <div class="font-sans max-w-[640px] mx-auto px-4 py-6">
             {% comment %}
                SECTION 1 — Page chrome
                Region name, date/validity, prev/next navigation.
