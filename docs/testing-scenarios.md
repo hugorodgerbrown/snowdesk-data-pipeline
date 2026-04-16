@@ -7,7 +7,7 @@
 > 3. Tailwind CSS watcher running: `npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch`
 > 4. Database migrated: `poetry run python manage.py migrate`
 > 5. Fixtures loaded: `poetry run python manage.py loaddata regions resorts`
-> 6. At least one day of bulletin data fetched: `poetry run python manage.py fetch_data` (or `backfill_data --start-date 2026-04-01 --end-date 2026-04-13` for date navigation tests)
+> 6. At least one day of bulletin data fetched: `poetry run python manage.py fetch_bulletins --date $(date +%Y-%m-%d) --commit` (or `fetch_bulletins --start-date 2026-04-01 --end-date 2026-04-13 --commit` for date navigation tests)
 
 ---
 
@@ -140,8 +140,8 @@ inner content stays aligned with the body copy.
 danger rating, and shows the legend.
 
 **Preconditions**: Bulletins for today have been fetched
-(`poetry run python manage.py fetch_data`) and regions/resorts fixtures are
-loaded.
+(`poetry run python manage.py fetch_bulletins --date $(date +%Y-%m-%d) --commit`)
+and regions/resorts fixtures are loaded.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|

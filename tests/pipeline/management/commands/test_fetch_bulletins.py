@@ -1,0 +1,295 @@
+"""
+tests/pipeline/management/commands/test_fetch_bulletins.py — Tests for fetch_bulletins.
+
+Covers argument defaults (no-args invocation), --date / --start-date /
+--end-date semantics, --commit / --force forwarding, error handling, and
+the records_failed exit-code path.
+"""
+
+from datetime import date
+from unittest.mock import MagicMock, patch
+
+import pytest
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.test import override_settings
+
+from pipeline.models import PipelineRun
+from tests.factories import PipelineRunFactory
+
+
+def _make_successful_run(**overrides: int) -> PipelineRun:
+    """
+    Build a PipelineRun in SUCCESS state for mocking run_pipeline return.
+
+    Args:
+        **overrides: Optional overrides for records_created / records_updated.
+
+    Returns:
+        A persisted PipelineRun marked as successful.
+
+    """
+    return PipelineRunFactory.create(
+        status=PipelineRun.Status.SUCCESS,
+        records_created=overrides.get("records_created", 3),
+        records_updated=overrides.get("records_updated", 0),
+    )
+
+
+def _make_failed_run(error_message: str = "API timeout") -> PipelineRun:
+    """
+    Build a PipelineRun in FAILED state for mocking run_pipeline return.
+
+    Args:
+        error_message: The error message to store on the run.
+
+    Returns:
+        A persisted PipelineRun marked as failed.
+
+    """
+    return PipelineRunFactory.create(
+        status=PipelineRun.Status.FAILED,
+        error_message=error_message,
+    )
+
+
+def _make_failed_records_run(records_failed: int = 2) -> PipelineRun:
+    """
+    Build a SUCCESS-state run with a non-zero records_failed counter.
+
+    Args:
+        records_failed: The number of render-model failures to record.
+
+    Returns:
+        A persisted PipelineRun whose status is success but with
+        records_failed > 0 — i.e. one or more render-model build errors.
+
+    """
+    return PipelineRunFactory.create(
+        status=PipelineRun.Status.SUCCESS,
+        records_created=5,
+        records_updated=0,
+        records_failed=records_failed,
+    )
+
+
+PATCH_TARGET = "pipeline.management.commands.fetch_bulletins.run_pipeline"
+
+
+@pytest.mark.django_db
+class TestFetchBulletinsCommand:
+    """Tests for the fetch_bulletins management command."""
+
+    # ------------------------------------------------------------------
+    # Defaults — bare invocation
+    # ------------------------------------------------------------------
+
+    @override_settings(SEASON_START_DATE=date(2025, 11, 1))
+    @patch(PATCH_TARGET)
+    def test_no_args_defaults_to_season_start_through_today(
+        self, mock_run: MagicMock
+    ) -> None:
+        """Bare invocation runs from SEASON_START_DATE to today, read-only."""
+        mock_run.return_value = _make_successful_run()
+
+        with patch(
+            "pipeline.management.commands.fetch_bulletins.timezone.localdate",
+            return_value=date(2026, 4, 16),
+        ):
+            call_command("fetch_bulletins")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["start"] == date(2025, 11, 1)
+        assert kwargs["end"] == date(2026, 4, 16)
+        # Read-only by default — dry_run forwarded as True.
+        assert kwargs["dry_run"] is True
+        assert kwargs["force"] is False
+
+    @patch(PATCH_TARGET)
+    def test_no_args_does_not_pass_commit(
+        self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Bare invocation prints the read-only confirmation message."""
+        mock_run.return_value = _make_successful_run()
+
+        call_command("fetch_bulletins")
+
+        out = capsys.readouterr().out
+        assert "Read-only run complete" in out
+        assert "--commit to persist" in out
+
+    # ------------------------------------------------------------------
+    # --date single-day shortcut
+    # ------------------------------------------------------------------
+
+    @patch(PATCH_TARGET)
+    def test_date_sets_both_start_and_end(self, mock_run: MagicMock) -> None:
+        """--date forwards the same value for start and end."""
+        mock_run.return_value = _make_successful_run()
+
+        call_command("fetch_bulletins", "--date", "2026-01-15")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["start"] == date(2026, 1, 15)
+        assert kwargs["end"] == date(2026, 1, 15)
+
+    def test_date_conflicts_with_start_date(self) -> None:
+        """--date and --start-date together raise CommandError."""
+        with pytest.raises(CommandError, match="mutually exclusive"):
+            call_command(
+                "fetch_bulletins",
+                "--date",
+                "2026-01-15",
+                "--start-date",
+                "2026-01-01",
+            )
+
+    def test_date_conflicts_with_end_date(self) -> None:
+        """--date and --end-date together raise CommandError."""
+        with pytest.raises(CommandError, match="mutually exclusive"):
+            call_command(
+                "fetch_bulletins",
+                "--date",
+                "2026-01-15",
+                "--end-date",
+                "2026-01-31",
+            )
+
+    # ------------------------------------------------------------------
+    # Range arguments
+    # ------------------------------------------------------------------
+
+    @patch(PATCH_TARGET)
+    def test_explicit_range_forwarded(
+        self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Explicit --start-date / --end-date are forwarded verbatim."""
+        mock_run.return_value = _make_successful_run(
+            records_created=15, records_updated=3
+        )
+
+        call_command(
+            "fetch_bulletins",
+            "--start-date",
+            "2026-03-01",
+            "--end-date",
+            "2026-03-31",
+            "--commit",
+        )
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["start"] == date(2026, 3, 1)
+        assert kwargs["end"] == date(2026, 3, 31)
+        out = capsys.readouterr().out
+        assert "31 day(s)" in out
+        assert "15 created" in out
+        assert "3 updated" in out
+
+    def test_rejects_end_before_start(self) -> None:
+        """CommandError when --end-date precedes --start-date."""
+        with pytest.raises(CommandError, match="on or after"):
+            call_command(
+                "fetch_bulletins",
+                "--start-date",
+                "2026-03-31",
+                "--end-date",
+                "2026-03-01",
+            )
+
+    @override_settings(SEASON_START_DATE=date(2025, 11, 1))
+    @patch(PATCH_TARGET)
+    def test_end_only_uses_season_start(self, mock_run: MagicMock) -> None:
+        """Omitting --start-date falls back to settings.SEASON_START_DATE."""
+        mock_run.return_value = _make_successful_run()
+
+        call_command("fetch_bulletins", "--end-date", "2026-01-31")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["start"] == date(2025, 11, 1)
+        assert kwargs["end"] == date(2026, 1, 31)
+
+    @patch(PATCH_TARGET)
+    def test_start_only_uses_today_for_end(self, mock_run: MagicMock) -> None:
+        """Omitting --end-date defaults to today (UTC)."""
+        mock_run.return_value = _make_successful_run()
+
+        with patch(
+            "pipeline.management.commands.fetch_bulletins.timezone.localdate",
+            return_value=date(2026, 4, 16),
+        ):
+            call_command("fetch_bulletins", "--start-date", "2026-04-01")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["start"] == date(2026, 4, 1)
+        assert kwargs["end"] == date(2026, 4, 16)
+
+    # ------------------------------------------------------------------
+    # --commit / --force
+    # ------------------------------------------------------------------
+
+    @patch(PATCH_TARGET)
+    def test_commit_disables_dry_run(
+        self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--commit forwards dry_run=False and prints the success summary."""
+        mock_run.return_value = _make_successful_run(
+            records_created=5, records_updated=2
+        )
+
+        call_command("fetch_bulletins", "--date", "2026-03-15", "--commit")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["dry_run"] is False
+
+        out = capsys.readouterr().out
+        assert "5 created" in out
+        assert "2 updated" in out
+        assert "Read-only" not in out
+
+    @patch(PATCH_TARGET)
+    def test_force_flag_forwarded(self, mock_run: MagicMock) -> None:
+        """--force forwards force=True to the pipeline."""
+        mock_run.return_value = _make_successful_run()
+
+        call_command("fetch_bulletins", "--date", "2026-03-15", "--commit", "--force")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["force"] is True
+
+    # ------------------------------------------------------------------
+    # Triggered-by label & error paths
+    # ------------------------------------------------------------------
+
+    @patch(PATCH_TARGET)
+    def test_sets_triggered_by(self, mock_run: MagicMock) -> None:
+        """The triggered_by label identifies the command in PipelineRun history."""
+        mock_run.return_value = _make_successful_run()
+
+        call_command("fetch_bulletins", "--date", "2026-03-15")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["triggered_by"] == "fetch_bulletins command"
+
+    @patch(PATCH_TARGET)
+    def test_raises_on_failed_run(self, mock_run: MagicMock) -> None:
+        """CommandError is raised when run_pipeline returns a failed run."""
+        mock_run.return_value = _make_failed_run("connection refused")
+
+        with pytest.raises(CommandError, match="connection refused"):
+            call_command("fetch_bulletins", "--date", "2026-03-15", "--commit")
+
+    @patch(PATCH_TARGET)
+    def test_raises_on_pipeline_exception(self, mock_run: MagicMock) -> None:
+        """CommandError wraps an unexpected exception from run_pipeline."""
+        mock_run.side_effect = RuntimeError("unexpected error")
+
+        with pytest.raises(CommandError, match="unexpected error"):
+            call_command("fetch_bulletins", "--date", "2026-03-15", "--commit")
+
+    @patch(PATCH_TARGET)
+    def test_raises_when_records_failed_nonzero(self, mock_run: MagicMock) -> None:
+        """records_failed > 0 surfaces as a non-zero exit (CommandError)."""
+        mock_run.return_value = _make_failed_records_run(records_failed=2)
+
+        with pytest.raises(CommandError, match="render-model"):
+            call_command("fetch_bulletins", "--date", "2026-03-15", "--commit")

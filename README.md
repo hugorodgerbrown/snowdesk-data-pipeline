@@ -25,9 +25,11 @@ SLF CAAML bulletin list API (public, no auth required). Bulletins are stored
 as GeoJSON Feature envelopes wrapping the raw CAAML payload.
 
 ```bash
-poetry run python manage.py fetch_data             # today
-poetry run python manage.py fetch_data --date 2024-06-15
-poetry run python manage.py backfill_data --start-date 2024-01-01 --end-date 2024-12-31
+poetry run python manage.py fetch_bulletins                       # read-only (no writes)
+poetry run python manage.py fetch_bulletins --commit              # season-to-date
+poetry run python manage.py fetch_bulletins --date 2024-06-15 --commit
+poetry run python manage.py fetch_bulletins \
+    --start-date 2024-01-01 --end-date 2024-12-31 --commit
 ```
 
 ## Stack

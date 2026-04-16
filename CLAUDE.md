@@ -13,7 +13,7 @@ updates without a full JavaScript framework.
 config/          Django project settings (split base/development/production)
 pipeline/        Core app: models, views, services, management commands
   services/      Pure-function modules for fetching and processing SLF bulletins
-  management/    Django management commands (backfill_data, fetch_data)
+  management/    Django management commands (fetch_bulletins, rebuild_render_models)
   templates/     Django templates; partials/ holds HTMX fragment responses
 subscriptions/   Magic-link subscription auth: Subscriber and Subscription models
   services/      token.py (PyJWT) and email.py (magic-link sending)
@@ -39,8 +39,9 @@ logs/            Log files (gitignored except .gitkeep)
 - Use `python-decouple` for secrets; never hard-code credentials.
 - Logging is configured in `base.py` under `LOGGING`. Use `logging.getLogger(__name__)`
   in every module.
-- Management commands live in `pipeline/management/commands/`. Each command has
-  `--dry-run` and `--verbosity` support.
+- Management commands live in `pipeline/management/commands/`. See the
+  **Management command design** section below for the full convention
+  (sensible defaults, dry-run-by-default, confirmation prompts).
 - **No Django signals for side effects** — side effects triggered at save time
   (e.g. building the render model) are called inline from the relevant service
   function, not via `post_save` signals. This keeps data flow explicit and
@@ -185,7 +186,7 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
 
 **Validation**: `build_render_model` validates against the canonical 8-token EAWS problem-type enum (`DRY_PROBLEM_TYPES | WET_PROBLEM_TYPES`) and raises `RenderModelBuildError` on unknown types, aggregation/problem set mismatches, empty `problemTypes`, or missing aggregation when problems exist. Both lists empty is a legitimate quiet-day state (no raise).
 
-**On validation failure**: the caller stores `render_model = {"version": 0, "error": "...", "error_type": "..."}`. `fetch_data` and `backfill_data` exit non-zero via `CommandError` when `run.records_failed > 0`. `rebuild_render_models` prints a failure summary and exits non-zero.
+**On validation failure**: the caller stores `render_model = {"version": 0, "error": "...", "error_type": "..."}`. `fetch_bulletins` exits non-zero via `CommandError` when `run.records_failed > 0`. `rebuild_render_models` prints a failure summary and exits non-zero.
 
 **Safety net**: `_get_render_model` in `public/views.py` detects a stale `render_model_version` at render time, rebuilds on the fly, and logs a warning. On `RenderModelBuildError` during the rebuild it returns an error sentinel dict (does NOT write to DB); the template renders an error card. This keeps the page functional during a backfill; the warning is the signal to run the rebuild command.
 
@@ -207,27 +208,94 @@ stops once it passes the start date boundary.
 Raw bulletins are wrapped in a GeoJSON Feature envelope before storage so
 that downstream consumers see `{ type: "Feature", geometry: null, properties: {…} }`.
 
+## Management command design
+
+These rules apply to **every** new or refactored management command.
+Existing commands that pre-date these rules are being migrated; don't
+copy their old shape when adding new ones.
+
+1. **Sensible defaults — runs with no arguments.** The bare invocation
+   (`poetry run python manage.py <name>`) must do the most useful thing
+   for the common case (e.g. `fetch_bulletins` defaults to a read-only
+   walk from `SEASON_START_DATE` to today). Required
+   positional arguments are a smell — prefer optional flags with
+   defaults derived from context (current date, settings, etc.).
+
+2. **Never alter data by default — dry-run is the default.** A command
+   invoked with no arguments must not write to the database, send mail,
+   or call out to a paid/rate-limited external service. The user (or a
+   script) must take an **explicit** step to commit changes.
+
+3. **Pick one of the two safe shapes** — be consistent within a command,
+   and ideally across the project:
+
+   **Option A (preferred for new commands): explicit `--commit`.**
+   Drop `--dry-run` entirely. The command is read-only by default;
+   passing `--commit` is the only way to persist changes. This makes
+   the safe path the short path and the destructive path the verbose one.
+
+   **Option B: keep `--dry-run`, but require confirmation when absent.**
+   If you keep the existing `--dry-run` flag, the command must prompt
+   the user (`Proceed? [y/N]`) before writing when `--dry-run` is not
+   passed. For unattended runs (cron, APScheduler, CI), accept a
+   `--no-input` flag that skips the prompt. Production callers must
+   pass `--no-input` explicitly — never default it on.
+
+   Don't mix shapes within one command (e.g. `--commit` *and*
+   `--dry-run`) — pick one and document it in the command's `help`.
+
+4. **Always implement `--verbosity`** (Django gives this for free via
+   `BaseCommand` — just respect it in log calls).
+
+5. **Exit non-zero on failure.** Any unhandled error, or a partially
+   failed batch (`records_failed > 0`), must surface as a non-zero exit
+   so cron/CI can detect it.
+
 ## Management commands
 
+`fetch_bulletins` is the single entry point for fetching SLF bulletins —
+it supersedes the old `fetch_data` and `backfill_data` commands and
+follows the **Management command design** convention (read-only by
+default; opt in to writes with `--commit`).
+
 ```bash
-# Fetch bulletins for today
-poetry run python manage.py fetch_data
+# Read-only walk over the whole season so far (SEASON_START_DATE → today).
+# Useful as a "what would happen?" probe before committing.
+poetry run python manage.py fetch_bulletins
 
-# Fetch for a specific date
-poetry run python manage.py fetch_data --date 2024-06-15
+# Persist the season so far.
+poetry run python manage.py fetch_bulletins --commit
 
-# Backfill historical bulletins
-poetry run python manage.py backfill_data --start-date 2024-01-01 --end-date 2024-12-31
+# Single day (typical scheduled-run shape).
+poetry run python manage.py fetch_bulletins --date 2024-06-15 --commit
 
-# All commands accept:
-#   --dry-run   fetch but do not write to the database
-#   --force     upsert existing bulletins instead of skipping
+# Explicit window.
+poetry run python manage.py fetch_bulletins \
+    --start-date 2024-01-01 --end-date 2024-12-31 --commit
 
-# Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION)
-poetry run python manage.py rebuild_render_models
+# Re-pull existing rows.
+poetry run python manage.py fetch_bulletins --commit --force
 
-# Flags: --all (every row), --bulletin-id <id> (single row), --dry-run, --batch-size N
+# Flags:
+#   --start-date YYYY-MM-DD  default: settings.SEASON_START_DATE
+#   --end-date   YYYY-MM-DD  default: today (UTC)
+#   --date       YYYY-MM-DD  shortcut for --start-date == --end-date
+#                            (mutually exclusive with the range flags)
+#   --commit                 persist; omit for a read-only run
+#   --force                  upsert existing bulletins instead of skipping
+
+# Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
+# Read-only by default — pass --commit to persist (same convention as fetch_bulletins).
+poetry run python manage.py rebuild_render_models           # read-only
+poetry run python manage.py rebuild_render_models --commit  # persist
+
+# Flags: --commit, --all (every row), --bulletin-id <id> (single row), --batch-size N
 ```
+
+`SEASON_START_DATE` is read from the environment in
+`config/settings/base.py` (default: `2025-11-01`) and acts as the
+backstop start date — a bare invocation captures the full snowpack
+build-up.
 
 ## Frontend
 

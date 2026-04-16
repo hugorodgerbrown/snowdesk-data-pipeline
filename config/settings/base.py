@@ -7,6 +7,7 @@ environment-specific values live in development.py / production.py and are
 read from the environment via python-decouple.
 """
 
+from datetime import date
 from pathlib import Path
 
 from decouple import config
@@ -131,6 +132,19 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
+
+# ---------------------------------------------------------------------------
+# Pipeline / data fetching
+# ---------------------------------------------------------------------------
+# Default --start-date for the fetch_bulletins management command. Set to
+# the start of the avalanche season so a bare invocation captures the full
+# snowpack build-up. Override via env when backfilling earlier seasons.
+
+SEASON_START_DATE = config(
+    "SEASON_START_DATE",
+    default="2025-11-01",
+    cast=date.fromisoformat,
+)
 
 # ---------------------------------------------------------------------------
 # Magic-link authentication

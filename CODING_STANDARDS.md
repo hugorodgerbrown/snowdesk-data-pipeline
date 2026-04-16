@@ -224,14 +224,15 @@ Every command under `pipeline/management/commands/` must:
 - Override `add_arguments(self, parser: ArgumentParser) -> None` with
   fully-typed arguments.
 - Override `handle(self, *args: Any, **options: Any) -> None`.
-- Support `--dry-run` and `--verbosity` where the operation mutates
-  state.
+- Be runnable with no arguments and produce no destructive side effects
+  by default. Use the explicit `--commit` opt-in for writes (see
+  CLAUDE.md → **Management command design**).
 - Log start, success, and failure via the module logger in addition to
   using `self.stdout.write(self.style.*)` for operator feedback.
 - Raise `CommandError` on fatal failure.
 
 See
-[pipeline/management/commands/fetch_data.py](pipeline/management/commands/fetch_data.py)
+[pipeline/management/commands/fetch_bulletins.py](pipeline/management/commands/fetch_bulletins.py)
 for the reference shape.
 
 ### 3.7 Settings

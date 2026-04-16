@@ -58,7 +58,7 @@ jobs:
       - name: Load fixtures
         run: |
           poetry run python manage.py loaddata regions resorts bulletins region_bulletins
-          poetry run python manage.py rebuild_render_models
+          poetry run python manage.py rebuild_render_models --commit
 
       - name: Collect static files (perf settings — ManifestStaticFilesStorage)
         env:

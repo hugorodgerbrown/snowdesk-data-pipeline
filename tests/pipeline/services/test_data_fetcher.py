@@ -571,7 +571,7 @@ class TestRunPipeline:
         run = run_pipeline(
             start=date(2025, 3, 15),
             end=date(2025, 3, 15),
-            triggered_by="backfill_data command",
+            triggered_by="fetch_bulletins command",
         )
 
-        assert run.triggered_by == "backfill_data command"
+        assert run.triggered_by == "fetch_bulletins command"

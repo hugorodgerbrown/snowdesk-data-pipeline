@@ -5,21 +5,24 @@ Rebuilds the ``render_model`` JSONField on Bulletin rows whose
 ``render_model_version`` is older than the current ``RENDER_MODEL_VERSION``
 constant, or on a specific bulletin, or on all bulletins.
 
+Read-only by default — pass ``--commit`` to persist changes (per the
+project-wide management command convention).
+
 Typical use after a builder logic change::
 
+    # Read-only walk over stale rows (counts what would change).
     python manage.py rebuild_render_models
+
+    # Persist.
+    python manage.py rebuild_render_models --commit
 
 Backfill everything::
 
-    python manage.py rebuild_render_models --all
+    python manage.py rebuild_render_models --all --commit
 
 Single bulletin::
 
-    python manage.py rebuild_render_models --bulletin-id <id>
-
-Dry run (build but do not write)::
-
-    python manage.py rebuild_render_models --dry-run
+    python manage.py rebuild_render_models --bulletin-id <id> --commit
 """
 
 import logging
@@ -45,15 +48,19 @@ class Command(BaseCommand):
 
     help = (
         "Rebuild render_model on Bulletin rows that are stale "
-        "(render_model_version < RENDER_MODEL_VERSION)."
+        "(render_model_version < RENDER_MODEL_VERSION). "
+        "Read-only unless --commit is passed."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register command-line arguments."""
         parser.add_argument(
-            "--dry-run",
+            "--commit",
             action="store_true",
-            help="Build render models but do not write them to the database.",
+            help=(
+                "Persist rebuilt render models to the database. "
+                "Without this flag the command is read-only."
+            ),
         )
         parser.add_argument(
             "--all",
@@ -102,13 +109,15 @@ class Command(BaseCommand):
             return Bulletin.objects.all()
         return Bulletin.objects.needs_render_model_rebuild(RENDER_MODEL_VERSION)
 
-    def _process_bulletin(self, bulletin: Bulletin, dry_run: bool) -> tuple[bool, int]:
+    def _process_bulletin(
+        self, bulletin: Bulletin, *, commit: bool
+    ) -> tuple[bool, int]:
         """
         Build and optionally write the render model for one bulletin.
 
         Args:
             bulletin: The Bulletin to rebuild.
-            dry_run: If True, do not write to the database.
+            commit: If False, build the model but do not write to the database.
 
         Returns:
             A ``(success, new_version)`` tuple. ``success`` is False on error.
@@ -134,9 +143,9 @@ class Command(BaseCommand):
             new_version = 0
             success = False
 
-        if dry_run:
+        if not commit:
             logger.info(
-                "[dry-run] Would update bulletin %s render_model_version=%d",
+                "[read-only] Would update bulletin %s render_model_version=%d",
                 bulletin.bulletin_id,
                 new_version,
             )
@@ -152,16 +161,17 @@ class Command(BaseCommand):
 
         Default behaviour: rebuilds all Bulletin rows whose
         ``render_model_version`` is less than ``RENDER_MODEL_VERSION``,
-        processed in batches of ``--batch-size`` (default 500).
+        processed in batches of ``--batch-size`` (default 500). Read-only
+        unless ``--commit`` is passed.
 
         Flags:
+            --commit: Persist rebuilt models to the database.
             --all: Rebuild every bulletin regardless of stored version.
             --bulletin-id: Rebuild a single bulletin by its bulletin_id.
-            --dry-run: Build render models but do not write to the database.
             --batch-size N: Override the default batch size.
 
         """
-        dry_run: bool = options["dry_run"]
+        commit: bool = options["commit"]
         rebuild_all: bool = options["rebuild_all"]
         bulletin_id_arg: str | None = options["bulletin_id"]
         batch_size: int = options["batch_size"]
@@ -171,7 +181,7 @@ class Command(BaseCommand):
                 f"Rebuilding render models (version={RENDER_MODEL_VERSION})"
                 + (" [ALL]" if rebuild_all else "")
                 + (f" [bulletin-id={bulletin_id_arg}]" if bulletin_id_arg else "")
-                + (" [DRY RUN]" if dry_run else "")
+                + ("" if commit else " [READ-ONLY]")
             )
         )
 
@@ -184,6 +194,44 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Nothing to do."))
             return
 
+        rebuilt, errored = self._process_in_batches(qs, total, batch_size, commit)
+
+        if not commit:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Read-only run complete — would have rebuilt {rebuilt} "
+                    f"bulletin(s), {errored} would have failed. "
+                    f"Pass --commit to persist."
+                )
+            )
+        else:
+            self.stdout.write(
+                self.style.SUCCESS(f"Rebuilt {rebuilt} bulletin(s), {errored} failed.")
+            )
+
+        logger.info(
+            "rebuild_render_models finished: rebuilt=%d errored=%d commit=%s",
+            rebuilt,
+            errored,
+            commit,
+        )
+
+        if errored > 0:
+            raise CommandError(
+                f"{errored} bulletin(s) failed render-model rebuild. "
+                f"They are stored with version=0 error sentinels."
+            )
+
+    def _process_in_batches(
+        self, qs: Any, total: int, batch_size: int, commit: bool
+    ) -> tuple[int, int]:
+        """
+        Iterate the queryset in pk-ordered batches, processing each bulletin.
+
+        Returns:
+            A ``(rebuilt, errored)`` count tuple.
+
+        """
         rebuilt = 0
         errored = 0
         offset = 0
@@ -198,36 +246,12 @@ class Command(BaseCommand):
                 break
 
             batch = Bulletin.objects.filter(pk__in=batch_ids).order_by("pk")
-
             for bulletin in batch:
-                success, _ = self._process_bulletin(bulletin, dry_run)
+                success, _ = self._process_bulletin(bulletin, commit=commit)
                 rebuilt += 1
                 if not success:
                     errored += 1
 
             offset += batch_size
 
-        if dry_run:
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"Dry run complete — would have rebuilt {rebuilt} bulletin(s), "
-                    f"{errored} failed."
-                )
-            )
-        else:
-            self.stdout.write(
-                self.style.SUCCESS(f"Rebuilt {rebuilt} bulletin(s), {errored} failed.")
-            )
-
-        logger.info(
-            "rebuild_render_models finished: rebuilt=%d errored=%d dry_run=%s",
-            rebuilt,
-            errored,
-            dry_run,
-        )
-
-        if errored > 0:
-            raise CommandError(
-                f"{errored} bulletin(s) failed render-model rebuild. "
-                f"They are stored with version=0 error sentinels."
-            )
+        return rebuilt, errored
