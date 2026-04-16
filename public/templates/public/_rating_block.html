@@ -20,7 +20,7 @@ Renders:
 
 {# ── Rating block container ──────────────────────────────────────────────── #}
 <div
-    class="rating-block border border-border rounded-[12px] overflow-hidden mb-4 last:mb-0"
+    class="rating-block bg-card border border-border rounded-[12px] overflow-hidden mb-4 last:mb-0"
     data-testid="rating-block"
 >
     {# ── Header strip: coloured band with category pictogram + rating + title #}
@@ -53,7 +53,7 @@ Renders:
         {% with first_problem=trait.problems|first %}
             {% if first_problem.aspects or first_problem.elevation %}
                 <div
-                    class="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-tag"
+                    class="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card"
                     data-testid="aspect-elevation-row"
                 >
                     {% if first_problem.aspects %}

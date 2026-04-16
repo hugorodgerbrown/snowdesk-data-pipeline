@@ -61,10 +61,10 @@
   --color-eaws-very-high:     #ff0000;   /* same hue as High per EAWS spec  */
 
   /* Muted tint backgrounds for danger band strips */
-  --color-eaws-low-tint:          #f2ffd9;
-  --color-eaws-moderate-tint:     #fffde6;
-  --color-eaws-considerable-tint: #fff5e6;
-  --color-eaws-high-tint:         #fff0f0;
+  --color-eaws-low-tint:          #e8ffb8;
+  --color-eaws-moderate-tint:     #fff7b8;
+  --color-eaws-considerable-tint: #ffe5c2;
+  --color-eaws-high-tint:         #ffd9d9;
   --color-eaws-very-high-tint:    #1a0000;   /* inverted — white text on dark */
 
   /* Readable text colours on tint backgrounds */
@@ -118,6 +118,15 @@
 .danger-band[data-level="considerable"] { color: var(--color-eaws-considerable-text); }
 .danger-band[data-level="high"]         { color: var(--color-eaws-high-text); }
 .danger-band[data-level="very_high"]    { color: var(--color-eaws-very-high-text); }
+
+/* Saturated EAWS accent stripe along the top edge of every danger band.
+   The pale tint sits behind the text; the stripe gives the panel an
+   unmistakable level identifier even at a glance. */
+.danger-band[data-level="low"]          { border-top: 4px solid var(--color-eaws-low); }
+.danger-band[data-level="moderate"]     { border-top: 4px solid var(--color-eaws-moderate); }
+.danger-band[data-level="considerable"] { border-top: 4px solid var(--color-eaws-considerable); }
+.danger-band[data-level="high"]         { border-top: 4px solid var(--color-eaws-high); }
+.danger-band[data-level="very_high"]    { border-top: 4px solid var(--color-eaws-very-high); }
 
 
 /* —— EAWS per-problem danger left-border ————
