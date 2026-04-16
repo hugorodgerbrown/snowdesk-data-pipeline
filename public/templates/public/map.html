@@ -32,11 +32,7 @@ This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
         <div id="frame">
             <header>
                 <h1 class="brand">Snowdesk</h1>
-                {# Search widget is a visual placeholder until wired up. Mark
-                   aria-hidden so screen readers skip it and keyboard users
-                   don't land on an inert affordance. Remove aria-hidden
-                   (and add role="search" / tabindex) when behaviour is added. #}
-                <div class="search" aria-hidden="true">
+                <label class="search" for="search-input">
                     <svg
                         width="13"
                         height="13"
@@ -44,12 +40,26 @@ This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
                         fill="none"
                         stroke="currentColor"
                         stroke-width="2"
+                        aria-hidden="true"
                     >
                         <circle cx="11" cy="11" r="7" />
                         <path d="m20 20-3-3" />
                     </svg>
-                    <span>Find a region</span>
-                </div>
+                    <input
+                        id="search-input"
+                        class="search-input"
+                        type="search"
+                        placeholder="Find a region or resort"
+                        autocomplete="off"
+                        spellcheck="false"
+                        aria-label="Find a region or resort"
+                        aria-autocomplete="list"
+                        aria-controls="search-results"
+                        aria-expanded="false"
+                        role="combobox"
+                    >
+                </label>
+                <ul id="search-results" class="search-results" role="listbox" hidden></ul>
             </header>
             <div
                 id="map"

@@ -56,6 +56,12 @@
   // Numeric because setFeatureState requires a numeric (or numeric-coerceable) id.
   const REGION_LOOKUP = {};
 
+  // Parallel lookups used by the search box — FEATURE_BY_ID keeps the full
+  // (un-clipped) feature for panning, FEATURE_BY_REGION_ID lets the search
+  // resolve a user-typed match back to the feature it points at.
+  const FEATURE_BY_ID = {};
+  const FEATURE_BY_REGION_ID = {};
+
   map.on('load', async () => {
     // Fetch everything in parallel. The three requests are independent —
     // geometry, bulletin summaries, resort lists — so they can all fly at once.
@@ -83,6 +89,8 @@
       f.properties.regionID = regionID;
       f.properties.rating = RATINGS[regionID] || 'no_rating';
       REGION_LOOKUP[i] = f.properties;
+      FEATURE_BY_ID[i] = f;
+      FEATURE_BY_REGION_ID[regionID] = f;
     });
 
     map.addSource('regions', { type: 'geojson', data: geojson });
@@ -275,16 +283,17 @@
       });
     };
 
-    map.on('click', 'regions-fill', (e) => {
-      if (!e.features.length) return;
-      const f = e.features[0];
-      const numericId = f.id;
-
+    // Re-usable selection logic. Both the map click handler and the search
+    // dropdown route through this so "make this region the active one" has
+    // a single definition. ``toggle`` mirrors the map-click UX where a
+    // second click on the already-selected region dismisses the sheet;
+    // search callers pass ``toggle: false`` so selecting a result always
+    // opens it, never toggles it off.
+    const selectFeature = (numericId, { toggle = true } = {}) => {
       if (numericId === selectedId) {
-        clearSelection();
+        if (toggle) clearSelection();
         return;
       }
-
       if (selectedId !== null) {
         map.setFeatureState({ source: 'regions', id: selectedId }, { selected: false });
       }
@@ -296,7 +305,13 @@
       // Wait for the sheet to measure itself (it just became .open). One frame
       // is enough — the CSS transition hasn't finished but offsetHeight is already
       // the final height because the transform, not height, is animating.
-      requestAnimationFrame(() => panToRegionAboveSheet(f));
+      const feature = FEATURE_BY_ID[numericId];
+      requestAnimationFrame(() => panToRegionAboveSheet(feature));
+    };
+
+    map.on('click', 'regions-fill', (e) => {
+      if (!e.features.length) return;
+      selectFeature(e.features[0].id);
     });
 
     // Dismiss sheet on map tap outside a region
@@ -522,5 +537,200 @@
     sheet.addEventListener('pointermove', pointerMove);
     sheet.addEventListener('pointerup', pointerUp);
     sheet.addEventListener('pointercancel', pointerUp);
+
+    // --- Search ---
+    //
+    // In-memory autocomplete over region names + resort names. All data
+    // is already resident after the initial load, so search is purely
+    // local — no server round-trip per keystroke, no indexing cost worth
+    // worrying about (a few hundred entries total).
+
+    const MAX_RESULTS = 8;
+
+    // NFD-decompose and strip combining marks so "Évolène" matches "evolene",
+    // "Graubünden" matches "graubunden", etc.
+    const normalise = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    const SEARCH_INDEX = [];
+
+    // One entry per region (matchable by display name or SLF region_id).
+    for (const props of Object.values(REGION_LOOKUP)) {
+      const regionID = props.regionID;
+      const name = props.name || regionID;
+      SEARCH_INDEX.push({
+        type: 'region',
+        primary: name,
+        secondary: regionID,
+        regionID,
+        searchable: normalise(`${name} ${regionID}`),
+      });
+    }
+    // One entry per resort, pointing back to its parent region. The
+    // secondary label carries the region name so users see context when
+    // several resorts share a first word.
+    for (const [regionID, resorts] of Object.entries(RESORTS_BY_REGION)) {
+      const feature = FEATURE_BY_REGION_ID[regionID];
+      if (!feature) continue;
+      const regionName = feature.properties.name || regionID;
+      for (const resort of resorts) {
+        SEARCH_INDEX.push({
+          type: 'resort',
+          primary: resort,
+          secondary: regionName,
+          regionID,
+          searchable: normalise(`${resort} ${regionName}`),
+        });
+      }
+    }
+
+    // Ranking: prefix matches on the primary label sort above substring
+    // matches; ties break alphabetically. Cap at MAX_RESULTS so the
+    // dropdown stays usable on narrow viewports.
+    const runSearch = (query) => {
+      const q = normalise(query).trim();
+      if (!q) return [];
+      const hits = [];
+      for (const item of SEARCH_INDEX) {
+        const idx = item.searchable.indexOf(q);
+        if (idx === -1) continue;
+        const primaryIdx = normalise(item.primary).indexOf(q);
+        const score = primaryIdx === 0 ? 0 : primaryIdx > 0 ? 1 : 2;
+        hits.push({ item, score, pos: idx });
+      }
+      hits.sort((a, b) =>
+        a.score - b.score ||
+        a.pos - b.pos ||
+        a.item.primary.localeCompare(b.item.primary),
+      );
+      return hits.slice(0, MAX_RESULTS).map(h => h.item);
+    };
+
+    const inputEl = document.getElementById('search-input');
+    const resultsEl = document.getElementById('search-results');
+    let currentResults = [];
+    let activeIdx = -1;
+
+    const closeResults = () => {
+      resultsEl.hidden = true;
+      inputEl.setAttribute('aria-expanded', 'false');
+      inputEl.removeAttribute('aria-activedescendant');
+      activeIdx = -1;
+    };
+
+    const setActive = (idx) => {
+      const items = resultsEl.children;
+      if (activeIdx >= 0 && items[activeIdx]) items[activeIdx].classList.remove('active');
+      activeIdx = idx;
+      if (idx >= 0 && items[idx]) {
+        items[idx].classList.add('active');
+        inputEl.setAttribute('aria-activedescendant', items[idx].id);
+        items[idx].scrollIntoView({ block: 'nearest' });
+      } else {
+        inputEl.removeAttribute('aria-activedescendant');
+      }
+    };
+
+    const renderResults = (results) => {
+      resultsEl.replaceChildren();
+      currentResults = results;
+      activeIdx = -1;
+      if (results.length === 0) {
+        closeResults();
+        return;
+      }
+      results.forEach((r, i) => {
+        const li = document.createElement('li');
+        li.className = 'search-result';
+        li.setAttribute('role', 'option');
+        li.id = `search-result-${i}`;
+
+        // Text column (primary/secondary) and a type badge side by side.
+        // The badge disambiguates region hits from resort hits, which
+        // otherwise render identically when a resort shares its name
+        // with its region (e.g. "Davos" in the Davos region).
+        const text = document.createElement('div');
+        text.className = 'search-result-text';
+        const primary = document.createElement('div');
+        primary.className = 'search-result-primary';
+        primary.textContent = r.primary;
+        const secondary = document.createElement('div');
+        secondary.className = 'search-result-secondary';
+        secondary.textContent = r.secondary;
+        text.append(primary, secondary);
+
+        const badge = document.createElement('span');
+        badge.className = `search-result-badge search-result-badge--${r.type}`;
+        badge.textContent = r.type === 'region' ? 'Region' : 'Resort';
+
+        li.append(text, badge);
+        // Use pointerdown rather than click so we act before the input's
+        // blur handler closes the dropdown. pointerdown covers both mouse
+        // and touch — mousedown alone is unreliable on iOS Safari, where
+        // the synthesised mousedown after touchend can be skipped.
+        li.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          chooseResult(r);
+        });
+        resultsEl.append(li);
+      });
+      resultsEl.hidden = false;
+      inputEl.setAttribute('aria-expanded', 'true');
+    };
+
+    const chooseResult = (item) => {
+      const feature = FEATURE_BY_REGION_ID[item.regionID];
+      if (!feature) return;
+      inputEl.value = item.primary;
+      closeResults();
+      inputEl.blur();
+      // Force a fresh open even if the region is already the selected one —
+      // the user clearly wants to see it, not toggle it off.
+      selectFeature(feature.id, { toggle: false });
+    };
+
+    inputEl.addEventListener('input', () => {
+      renderResults(runSearch(inputEl.value));
+    });
+
+    inputEl.addEventListener('focus', () => {
+      if (inputEl.value) renderResults(runSearch(inputEl.value));
+    });
+
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') {
+        if (!currentResults.length) return;
+        e.preventDefault();
+        setActive(Math.min(activeIdx + 1, currentResults.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        if (!currentResults.length) return;
+        e.preventDefault();
+        // Allow ArrowUp past index 0 back to -1, returning focus to the
+        // free-typed state (ARIA APG combobox pattern — keyboard users
+        // must not get trapped inside the list).
+        setActive(Math.max(activeIdx - 1, -1));
+      } else if (e.key === 'Enter') {
+        const pick = activeIdx >= 0 ? currentResults[activeIdx] : currentResults[0];
+        if (pick) {
+          e.preventDefault();
+          chooseResult(pick);
+        }
+      } else if (e.key === 'Escape') {
+        if (inputEl.value) {
+          inputEl.value = '';
+          closeResults();
+        } else {
+          inputEl.blur();
+        }
+      }
+    });
+
+    // Close the dropdown on outside pointer interaction. Use pointerdown
+    // (before focus changes) and ignore clicks inside the results list
+    // so ``li`` mousedown handlers still fire.
+    document.addEventListener('pointerdown', (e) => {
+      if (e.target === inputEl) return;
+      if (resultsEl.contains(e.target)) return;
+      closeResults();
+    });
   });
 })();
