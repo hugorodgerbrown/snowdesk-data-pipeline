@@ -55,24 +55,34 @@ You are a senior Django code reviewer specialising in security, performance, and
 - [ ] No business logic in templates
 - [ ] Tailwind classes only — no inline styles unless unavoidable (and commented if so)
 
-### Lighthouse (accessibility / SEO / performance)
+### Lighthouse (accessibility / SEO / performance / best-practices)
 
-Run `npm run lh` before concluding the review. `lighthouserc.json`
-starts its own Django dev server on port 8765 and audits `/` and
-`/examples/random/` with 3 runs each against: accessibility ≥ 0.95
-(error), SEO ≥ 0.95 (error), performance ≥ 0.85 (warn), best-practices
-≥ 0.9 (warn). `includePassedAssertions` is on, so every category score
-is printed in the terminal.
+Run `npm run lh` before concluding the review — it's the same command
+CI runs on the PR. The script collects static files under
+`config.settings.perf` (mirrors production WhiteNoise + GZip) and
+starts its own Django dev server on port 8765 for audits.
+`lighthouserc.json` is the source of truth for URLs and budgets:
+
+- accessibility ≥ 0.95 — **error**
+- SEO ≥ 0.95 — **error**
+- performance ≥ 0.85 — warn
+- best-practices ≥ 0.9 — warn
+
+`includePassedAssertions` is on, so every category score is printed
+in the terminal.
 
 - [ ] `npm run lh` exits 0 (no assertion errors)
 - [ ] Report any warnings (perf / best-practices) with the category and
       URL so the developer can decide whether to address them now or
       track them
+- [ ] For every new public page in the diff, confirm the page carries
+      a `<meta name="description">` and a `<link rel="icon">` — both
+      are CI-enforced and easy to forget.
 
-HTML reports land in `.lighthouseci/` (gitignored); open them with
-`open .lighthouseci/*.html` for the full Lighthouse UI on any URL with a
-regression. The run takes ~90s; if the Django server fails to start or
-pages 404 locally, note that in the review rather than failing silently.
+HTML reports land in `.lighthouseci/` (gitignored); `npm run lh:open`
+opens the representative report per URL (macOS). The run takes ~90s;
+if the Django server fails to start or pages 404 locally, note that
+in the review rather than failing silently.
 
 ## Output format
 
