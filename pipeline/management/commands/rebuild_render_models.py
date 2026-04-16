@@ -3,7 +3,10 @@ pipeline/management/commands/rebuild_render_models.py — Management command.
 
 Rebuilds the ``render_model`` JSONField on Bulletin rows whose
 ``render_model_version`` is older than the current ``RENDER_MODEL_VERSION``
-constant, or on a specific bulletin, or on all bulletins.
+constant, or on a specific bulletin, or on all bulletins. After a successful
+render-model rebuild it also refreshes the RegionDayRating rows for every
+(region, day) covered by the rebuilt bulletins (pass ``--skip-day-ratings``
+to suppress this step).
 
 Read-only by default — pass ``--commit`` to persist changes (per the
 project-wide management command convention).
@@ -23,15 +26,21 @@ Backfill everything::
 Single bulletin::
 
     python manage.py rebuild_render_models --bulletin-id <id> --commit
+
+Skip day-rating refresh::
+
+    python manage.py rebuild_render_models --commit --skip-day-ratings
 """
 
 import logging
 from argparse import ArgumentParser
+from datetime import timedelta
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
 from pipeline.models import Bulletin
+from pipeline.services.day_rating import recompute_region_day
 from pipeline.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -48,8 +57,10 @@ class Command(BaseCommand):
 
     help = (
         "Rebuild render_model on Bulletin rows that are stale "
-        "(render_model_version < RENDER_MODEL_VERSION). "
-        "Read-only unless --commit is passed."
+        "(render_model_version < RENDER_MODEL_VERSION), then refresh "
+        "RegionDayRating rows for every covered (region, day). "
+        "Read-only unless --commit is passed. "
+        "Pass --skip-day-ratings to suppress the day-rating refresh step."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -81,6 +92,11 @@ class Command(BaseCommand):
             help=(
                 f"Process bulletins in batches of N (default: {_DEFAULT_BATCH_SIZE})."
             ),
+        )
+        parser.add_argument(
+            "--skip-day-ratings",
+            action="store_true",
+            help="Skip the RegionDayRating refresh step after rebuilding.",
         )
 
     def _build_queryset(self, bulletin_id_arg: str | None, rebuild_all: bool) -> Any:
@@ -162,19 +178,23 @@ class Command(BaseCommand):
         Default behaviour: rebuilds all Bulletin rows whose
         ``render_model_version`` is less than ``RENDER_MODEL_VERSION``,
         processed in batches of ``--batch-size`` (default 500). Read-only
-        unless ``--commit`` is passed.
+        unless ``--commit`` is passed. After rebuild, refreshes
+        RegionDayRating for every covered (region, day) unless
+        ``--skip-day-ratings`` is passed.
 
         Flags:
             --commit: Persist rebuilt models to the database.
             --all: Rebuild every bulletin regardless of stored version.
             --bulletin-id: Rebuild a single bulletin by its bulletin_id.
             --batch-size N: Override the default batch size.
+            --skip-day-ratings: Skip the RegionDayRating refresh step.
 
         """
         commit: bool = options["commit"]
         rebuild_all: bool = options["rebuild_all"]
         bulletin_id_arg: str | None = options["bulletin_id"]
         batch_size: int = options["batch_size"]
+        skip_day_ratings: bool = options["skip_day_ratings"]
 
         self.stdout.write(
             self.style.MIGRATE_HEADING(
@@ -194,7 +214,9 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Nothing to do."))
             return
 
-        rebuilt, errored = self._process_in_batches(qs, total, batch_size, commit)
+        rebuilt, errored, rebuilt_bulletins = self._process_in_batches(
+            qs, total, batch_size, commit
+        )
 
         if not commit:
             self.stdout.write(
@@ -216,24 +238,71 @@ class Command(BaseCommand):
             commit,
         )
 
+        # Refresh day ratings for all (region, day) pairs covered by
+        # successfully rebuilt bulletins.
+        if commit and not skip_day_ratings and rebuilt_bulletins:
+            self._refresh_day_ratings(rebuilt_bulletins)
+
         if errored > 0:
             raise CommandError(
                 f"{errored} bulletin(s) failed render-model rebuild. "
                 f"They are stored with version=0 error sentinels."
             )
 
+    def _refresh_day_ratings(self, bulletins: list[Bulletin]) -> None:
+        """
+        Recompute RegionDayRating for every (region, day) touched by ``bulletins``.
+
+        Deduplicates pairs before calling ``recompute_region_day`` so a region+day
+        covered by several bulletins is only recomputed once.
+
+        Args:
+            bulletins: Bulletins whose day ratings should be refreshed.
+
+        """
+        from datetime import date
+
+        pairs: set[tuple[Any, date]] = set()
+        for bulletin in bulletins:
+            regions = list(bulletin.regions.all())
+            start_day = bulletin.valid_from.date()
+            end_day = bulletin.valid_to.date()
+            day = start_day
+            while day <= end_day:
+                for region in regions:
+                    pairs.add((region, day))
+                day += timedelta(days=1)
+
+        self.stdout.write(
+            f"Refreshing day ratings for {len(pairs)} (region, day) pairs."
+        )
+        for region, day in pairs:
+            try:
+                recompute_region_day(region, day, commit=True)
+            except Exception:
+                logger.exception(
+                    "Failed to refresh day rating for region=%s day=%s",
+                    region.region_id,
+                    day,
+                )
+        self.stdout.write(self.style.SUCCESS("Day ratings refreshed."))
+
     def _process_in_batches(
         self, qs: Any, total: int, batch_size: int, commit: bool
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, list[Bulletin]]:
         """
         Iterate the queryset in pk-ordered batches, processing each bulletin.
 
         Returns:
-            A ``(rebuilt, errored)`` count tuple.
+            A ``(rebuilt, errored, successfully_rebuilt_bulletins)`` tuple.
+            ``successfully_rebuilt_bulletins`` contains only bulletins that
+            succeeded (version > 0) so day ratings are not refreshed for
+            error sentinels.
 
         """
         rebuilt = 0
         errored = 0
+        rebuilt_bulletins: list[Bulletin] = []
         offset = 0
 
         while offset < total:
@@ -251,7 +320,9 @@ class Command(BaseCommand):
                 rebuilt += 1
                 if not success:
                     errored += 1
+                else:
+                    rebuilt_bulletins.append(bulletin)
 
             offset += batch_size
 
-        return rebuilt, errored
+        return rebuilt, errored, rebuilt_bulletins

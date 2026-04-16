@@ -1,0 +1,157 @@
+{% comment %}
+public/templates/public/partials/calendar.html — Monthly calendar fragment.
+
+Displays a 6-week × 7-day grid of daily danger ratings for a single region.
+Each cell links to the bulletin page for rated days; no_rating cells are
+non-interactive. Today's cell carries a ring highlight; the currently-viewed
+bulletin's date carries a stronger accent.
+
+Outer wrapper is <div id="bulletin-calendar"> so prev/next navigation can
+swap the whole fragment with hx-target="#bulletin-calendar" hx-swap="outerHTML".
+
+Context variables
+-----------------
+region        : Region object
+year          : int
+month         : int
+month_label   : str  (e.g. "April 2026")
+grid          : list[list[CalendarCell]]  (6 rows × 7 cols)
+today         : date
+prev_url      : str | None
+next_url      : str | None
+calendar_current_date : date | None  (the bulletin date being viewed, if any)
+{% endcomment %}
+<div
+    id="bulletin-calendar"
+    class="bg-card rounded-[var(--radius-card)] border border-border p-4 shadow-sm"
+>
+    {# ── Month header with prev/next navigation ── #}
+    <div class="flex items-center justify-between mb-3">
+        {% if prev_url %}
+            <button
+                hx-get="{{ prev_url }}"
+                hx-target="#bulletin-calendar"
+                hx-swap="outerHTML"
+                class="p-1 text-text-2 hover:text-text-1 rounded"
+                aria-label="Previous month"
+                type="button"
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="m15 18-6-6 6-6" />
+                </svg>
+            </button>
+        {% else %}
+            <span class="p-1 text-text-3 cursor-not-allowed" aria-hidden="true">
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="m15 18-6-6 6-6" />
+                </svg>
+            </span>
+        {% endif %}
+
+        <span class="text-sm font-semibold text-text-1">{{ month_label }}</span>
+
+        {% if next_url %}
+            <button
+                hx-get="{{ next_url }}"
+                hx-target="#bulletin-calendar"
+                hx-swap="outerHTML"
+                class="p-1 text-text-2 hover:text-text-1 rounded"
+                aria-label="Next month"
+                type="button"
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="m9 18 6-6-6-6" />
+                </svg>
+            </button>
+        {% else %}
+            <span class="p-1 text-text-3 cursor-not-allowed" aria-hidden="true">
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="m9 18 6-6-6-6" />
+                </svg>
+            </span>
+        {% endif %}
+    </div>
+
+    {# ── Weekday header row (Mon–Sun, British week start) ── #}
+    <div class="grid grid-cols-7 mb-1">
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Mon</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Tue</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Wed</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Thu</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Fri</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Sat</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Sun</div>
+    </div>
+
+    {# ── 6 × 7 calendar grid ── #}
+    <div class="grid grid-cols-7 gap-0.5">
+        {% for week in grid %}
+            {% for cell in week %}
+                {% if cell.date is None %}
+                    {# Pad cell — empty placeholder #}
+                    <div class="aspect-square"></div>
+                {% else %}
+                    {% if cell.has_bulletin %}
+                        <a
+                            href="{% url 'public:bulletin_date' region.region_id region.slug cell.date|date:'Y-m-d' %}"
+                            class="aspect-square rounded flex items-center justify-center text-[10px] font-medium calendar-cell{% if cell.date == today %} ring-2 ring-offset-2 ring-text-1{% endif %}{% if cell.is_selected %} ring-2 ring-blue-500{% endif %}"
+                            data-rating-min="{{ cell.min_rating_key }}"
+                            data-rating-max="{{ cell.max_rating_key }}"
+                            title="{{ cell.date|date:'j N' }}: {{ cell.max_rating_key|title }}"
+                        >
+                            {% if cell.min_rating_key == cell.max_rating_key and cell.subdivision %}{{ cell.subdivision }}{% endif %}{{ cell.date.day }}
+                        </a>
+                    {% else %}
+                        <div
+                            class="aspect-square rounded flex items-center justify-center text-[10px] text-text-3 calendar-cell{% if cell.date == today %} ring-2 ring-offset-2 ring-text-1{% endif %}{% if cell.is_selected %} ring-2 ring-blue-500{% endif %}"
+                            data-rating-min="{{ cell.min_rating_key }}"
+                            data-rating-max="{{ cell.max_rating_key }}"
+                        >
+                            {{ cell.date.day }}
+                        </div>
+                    {% endif %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+    </div>
+</div>

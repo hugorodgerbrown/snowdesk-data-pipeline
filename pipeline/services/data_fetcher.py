@@ -23,6 +23,7 @@ from typing import Any
 import requests
 
 from pipeline.models import Bulletin, PipelineRun, Region, RegionBulletin
+from pipeline.services.day_rating import apply_bulletin_day_ratings
 from pipeline.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -229,6 +230,18 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
         defaults["issued_at"],
         len(raw_regions),
     )
+
+    # Refresh day ratings — wrapped in a broad except so that a day-rating
+    # failure never aborts bulletin ingest.  Day ratings are a denormalisation;
+    # the authoritative data lives in Bulletin/RegionBulletin.
+    try:
+        apply_bulletin_day_ratings(bulletin)
+    except Exception:
+        logger.exception(
+            "apply_bulletin_day_ratings failed for bulletin %s — ingest continues",
+            bulletin_id,
+        )
+
     return created
 
 

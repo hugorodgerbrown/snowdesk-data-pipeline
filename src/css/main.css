@@ -178,6 +178,42 @@ details > summary.problem-tag {
 details > summary.problem-tag::-webkit-details-marker { display: none; }
 
 
+/* —— Calendar cell danger-rating fills ——————
+   Applied via data-rating-min / data-rating-max on each calendar tile so
+   the background comes from EAWS tokens.
+
+   Stable days (min == max): solid tint fill.
+   Variable days (min != max): left-to-right linear gradient, min colour on
+   the left, max colour on the right.  Text colour follows max for legibility.
+
+   Usage in template:
+     <div class="calendar-cell"
+          data-rating-min="moderate"
+          data-rating-max="considerable">
+   ————————————————————————————————————————— */
+
+/* Stable-day fills */
+.calendar-cell[data-rating-min="no_rating"][data-rating-max="no_rating"] { background: transparent; }
+.calendar-cell[data-rating-min="low"][data-rating-max="low"]             { background: var(--color-eaws-low-tint); color: var(--color-eaws-low-text); }
+.calendar-cell[data-rating-min="moderate"][data-rating-max="moderate"]   { background: var(--color-eaws-moderate-tint); color: var(--color-eaws-moderate-text); }
+.calendar-cell[data-rating-min="considerable"][data-rating-max="considerable"] { background: var(--color-eaws-considerable-tint); color: var(--color-eaws-considerable-text); }
+.calendar-cell[data-rating-min="high"][data-rating-max="high"]           { background: var(--color-eaws-high-tint); color: var(--color-eaws-high-text); }
+.calendar-cell[data-rating-min="very_high"][data-rating-max="very_high"] { background: var(--color-eaws-very-high-tint); color: var(--color-eaws-very-high-text); }
+
+/* Variable-day gradient fills — one rule per (min, max) pair where min < max.
+   Text colour uses the max-rating token for legibility on the right half. */
+.calendar-cell[data-rating-min="low"][data-rating-max="moderate"]           { background: linear-gradient(to right, var(--color-eaws-low-tint) 0 50%, var(--color-eaws-moderate-tint) 50% 100%); color: var(--color-eaws-moderate-text); }
+.calendar-cell[data-rating-min="low"][data-rating-max="considerable"]        { background: linear-gradient(to right, var(--color-eaws-low-tint) 0 50%, var(--color-eaws-considerable-tint) 50% 100%); color: var(--color-eaws-considerable-text); }
+.calendar-cell[data-rating-min="low"][data-rating-max="high"]                { background: linear-gradient(to right, var(--color-eaws-low-tint) 0 50%, var(--color-eaws-high-tint) 50% 100%); color: var(--color-eaws-high-text); }
+.calendar-cell[data-rating-min="low"][data-rating-max="very_high"]           { background: linear-gradient(to right, var(--color-eaws-low-tint) 0 50%, var(--color-eaws-very-high-tint) 50% 100%); color: var(--color-eaws-very-high-text); }
+.calendar-cell[data-rating-min="moderate"][data-rating-max="considerable"]   { background: linear-gradient(to right, var(--color-eaws-moderate-tint) 0 50%, var(--color-eaws-considerable-tint) 50% 100%); color: var(--color-eaws-considerable-text); }
+.calendar-cell[data-rating-min="moderate"][data-rating-max="high"]           { background: linear-gradient(to right, var(--color-eaws-moderate-tint) 0 50%, var(--color-eaws-high-tint) 50% 100%); color: var(--color-eaws-high-text); }
+.calendar-cell[data-rating-min="moderate"][data-rating-max="very_high"]      { background: linear-gradient(to right, var(--color-eaws-moderate-tint) 0 50%, var(--color-eaws-very-high-tint) 50% 100%); color: var(--color-eaws-very-high-text); }
+.calendar-cell[data-rating-min="considerable"][data-rating-max="high"]       { background: linear-gradient(to right, var(--color-eaws-considerable-tint) 0 50%, var(--color-eaws-high-tint) 50% 100%); color: var(--color-eaws-high-text); }
+.calendar-cell[data-rating-min="considerable"][data-rating-max="very_high"]  { background: linear-gradient(to right, var(--color-eaws-considerable-tint) 0 50%, var(--color-eaws-very-high-tint) 50% 100%); color: var(--color-eaws-very-high-text); }
+.calendar-cell[data-rating-min="high"][data-rating-max="very_high"]          { background: linear-gradient(to right, var(--color-eaws-high-tint) 0 50%, var(--color-eaws-very-high-tint) 50% 100%); color: var(--color-eaws-very-high-text); }
+
+
 /* —— SLF prose resets ———————————————————————
    SLF bulletin HTML arrives as raw markup with
    its own h1/h2/p/ul/li. We scale it down to

@@ -16,7 +16,14 @@ from django.urls import URLPattern, path, reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
-from .models import Bulletin, PipelineRun, Region, RegionBulletin, Resort
+from .models import (
+    Bulletin,
+    PipelineRun,
+    Region,
+    RegionBulletin,
+    RegionDayRating,
+    Resort,
+)
 from .services.data_fetcher import run_pipeline
 from .utils import html_to_markdown
 
@@ -489,3 +496,23 @@ class BulletinAdmin(admin.ModelAdmin):
             'white-space:pre-wrap;word-break:break-word">{}</pre>',
             formatted,
         )
+
+
+@admin.register(RegionDayRating)
+class RegionDayRatingAdmin(admin.ModelAdmin):
+    """Admin view for RegionDayRating."""
+
+    list_display = (
+        "region",
+        "date",
+        "min_rating",
+        "max_rating",
+        "max_subdivision",
+        "version",
+    )
+    list_filter = ("min_rating", "max_rating", "version")
+    search_fields = ("region__region_id",)
+    date_hierarchy = "date"
+    raw_id_fields = ("region", "source_bulletin")
+    ordering = ("-date", "region__region_id")
+    readonly_fields = ("uuid", "created_at", "updated_at")

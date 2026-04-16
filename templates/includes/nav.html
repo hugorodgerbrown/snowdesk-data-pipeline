@@ -1,9 +1,10 @@
 {% comment %}
 templates/includes/nav.html — Persistent top navigation bar.
 
-Renders the Snowdesk wordmark plus an optional back link. Kept deliberately
-minimal: no hamburger menu, no right-hand nav items, no secondary links —
-the bulletin site is mobile-first and ships one concept per page.
+Renders the Snowdesk wordmark plus an optional back link and optional
+calendar toggle button. Kept deliberately minimal: no hamburger menu,
+no right-hand nav items, no secondary links — the bulletin site is
+mobile-first and ships one concept per page.
 
 Parameters
 ----------
@@ -15,11 +16,19 @@ back_label : str, optional
     Label shown next to the chevron. Defaults to "Back" — prefer a
     destination-specific label ("Map", "Season") where possible so the
     user knows where the arrow leads.
+calendar_region_id : str, optional
+    When set, a calendar glyph button is rendered right-aligned. Clicking
+    it issues an HTMX GET to calendar_partial_url, swapping the result
+    into #bulletin-calendar-host.
+calendar_partial_url : str, optional
+    HTMX endpoint URL for the calendar fragment (required when
+    calendar_region_id is set).
 
 Usage
 -----
     {% include "includes/nav.html" %}
     {% include "includes/nav.html" with back_url="/map/" back_label="Map" %}
+    {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=region.region_id calendar_partial_url=calendar_partial_url %}
 
 Layout
 ------
@@ -64,5 +73,38 @@ state.
         >
             Snowdesk
         </a>
+        {% if calendar_region_id and calendar_partial_url %}
+            <button
+                type="button"
+                class="ml-auto p-1.5 text-text-2 hover:text-text-1 rounded"
+                hx-get="{{ calendar_partial_url }}"
+                hx-target="#bulletin-calendar-host"
+                hx-swap="innerHTML"
+                hx-indicator="#calendar-spinner"
+                aria-label="Show monthly calendar"
+            >
+                <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" />
+                    <line x1="8" y1="2" x2="8" y2="6" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+            </button>
+            <span
+                id="calendar-spinner"
+                class="htmx-indicator text-text-3 text-xs"
+                aria-live="polite"
+            >Loading…</span>
+        {% endif %}
     </div>
 </nav>

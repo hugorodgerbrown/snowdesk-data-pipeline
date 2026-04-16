@@ -10,11 +10,19 @@ return type when calling ``RegionFactory(...)`` — no casts needed at
 call sites.
 """
 
+import datetime
 from datetime import UTC
 
 import factory
 
-from pipeline.models import Bulletin, PipelineRun, Region, RegionBulletin, Resort
+from pipeline.models import (
+    Bulletin,
+    PipelineRun,
+    Region,
+    RegionBulletin,
+    RegionDayRating,
+    Resort,
+)
 from subscriptions.models import Subscriber, Subscription
 
 
@@ -91,6 +99,28 @@ class RegionBulletinFactory(factory.django.DjangoModelFactory[RegionBulletin]):
     bulletin = factory.SubFactory(BulletinFactory)
     region = factory.SubFactory(RegionFactory)
     region_name_at_time = factory.LazyAttribute(lambda obj: obj.region.name)
+
+
+class RegionDayRatingFactory(factory.django.DjangoModelFactory[RegionDayRating]):
+    """Factory for RegionDayRating instances.
+
+    Defaults ``min_rating`` to the same value as ``max_rating`` (uniform day)
+    so existing tests that only set one field continue to work without change.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = RegionDayRating
+
+    region = factory.SubFactory(RegionFactory)
+    date = factory.LazyFunction(lambda: datetime.date.today())
+    min_rating = RegionDayRating.Rating.LOW
+    min_subdivision = ""
+    max_rating = RegionDayRating.Rating.LOW
+    max_subdivision = ""
+    source_bulletin = None
+    version = 1
 
 
 class SubscriberFactory(factory.django.DjangoModelFactory[Subscriber]):
