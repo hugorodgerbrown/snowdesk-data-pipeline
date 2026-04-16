@@ -21,12 +21,24 @@ from base.html's @theme tokens.
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+        {# Favicon tinted to the bulletin's highest EAWS danger level so       #}
+        {# the level is visible at a glance in the browser tab.  Falls back to  #}
+        {# the default mark when no panel/danger_key is in scope (empty state). #}
+        {% if panel.danger_key %}
+            {% with fav_path="favicon-"|add:panel.danger_key|add:".svg" %}
+                <link rel="icon" type="image/svg+xml" href="{% static fav_path %}">
+            {% endwith %}
+        {% else %}
+            <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+        {% endif %}
         <meta
             name="description"
             content='Avalanche bulletin for {{ region_name }}{% if page_date %}, {{ page_date|date:"j F Y" }}{% endif %}.'
         >
-        <title>{{ region_name }} — Snowdesk</title>
+        <title>
+            {{ region_name }} &middot; {% if is_today %}Today{% else %}{{ page_date|date:"j F Y" }}{% endif %} &middot;
+            Snowdesk
+        </title>
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
         {% if raw_data_json %}
             {# DEBUG-only: raw CAAML payload embedded for source-level inspection. #}
@@ -62,8 +74,11 @@ from base.html's @theme tokens.
             {# authority window on day D; inactive chips point towards the    #}
             {# active one with a ``<`` or ``>`` cutoff.                        #}
             {% if bulletin %}
+                {# Day-nav arrows are pinned to the panel edges via         #}
+                {# justify-between so they hold position regardless of how  #}
+                {# many issue tabs sit between them; tabs stay centred.     #}
                 <nav
-                    class="flex items-center justify-center gap-1 mb-6 text-[11px] font-mono"
+                    class="flex items-center justify-between mb-6 text-[11px] font-mono"
                     aria-label="Bulletin navigation"
                     data-testid="bulletin-nav"
                 >
@@ -83,19 +98,21 @@ from base.html's @theme tokens.
                         >&laquo;</span>
                     {% endif %}
 
-                    {% for tab in issue_tabs %}
-                        <a
-                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap {% if tab.is_active %}bg-text-1 text-bg border-text-1{% else %}bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2{% endif %}"
-                            href="?issue={{ tab.bulletin_id }}"
-                            aria-label="{{ tab.long_label }}"
-                            {% if tab.is_active %}
-                                aria-current="page"
-                            {% endif %}
-                            data-testid="issue-tab"
-                        >
-                            {{ tab.short_label }}
-                        </a>
-                    {% endfor %}
+                    <div class="flex items-center gap-1">
+                        {% for tab in issue_tabs %}
+                            <a
+                                class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap {% if tab.is_active %}bg-text-1 text-bg border-text-1{% else %}bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2{% endif %}"
+                                href="?issue={{ tab.bulletin_id }}"
+                                aria-label="{{ tab.long_label }}"
+                                {% if tab.is_active %}
+                                    aria-current="page"
+                                {% endif %}
+                                data-testid="issue-tab"
+                            >
+                                {{ tab.short_label }}
+                            </a>
+                        {% endfor %}
+                    </div>
 
                     {% if next_date %}
                         <a
