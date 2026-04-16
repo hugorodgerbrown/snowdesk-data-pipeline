@@ -2,7 +2,7 @@
   "ci": {
     "collect": {
       "numberOfRuns": 3,
-      "startServerCommand": "poetry run python manage.py runserver --noreload 8765",
+      "startServerCommand": "DJANGO_SETTINGS_MODULE=config.settings.perf poetry run python manage.py runserver --noreload 8765",
       "startServerReadyPattern": "Starting development server at",
       "startServerReadyTimeout": 10000,
       "url": [

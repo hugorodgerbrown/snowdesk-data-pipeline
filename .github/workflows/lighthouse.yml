@@ -60,10 +60,14 @@ jobs:
           poetry run python manage.py loaddata regions resorts bulletins region_bulletins
           poetry run python manage.py rebuild_render_models
 
-      - name: Collect static files
+      - name: Collect static files (perf settings — ManifestStaticFilesStorage)
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.perf
         run: poetry run python manage.py collectstatic --noinput
 
       - name: Run Lighthouse CI
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.perf
         run: npx lhci autorun --collect.url=http://localhost:8765/CH-4115/martigny-verbier/2026-04-02/
 
       - name: Upload Lighthouse reports

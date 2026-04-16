@@ -20,6 +20,17 @@ MIDDLEWARE.insert(  # noqa: F405 — MIDDLEWARE imported via wildcard from base
     "whitenoise.middleware.WhiteNoiseMiddleware",
 )
 
+# GZipMiddleware compresses dynamic responses (rendered HTML, JSON).
+# WhiteNoise handles its own compression for static files.
+# NOTE: GZip + HTTPS + reflected user input can be vulnerable to the BREACH
+# attack. All sensitive endpoints here (magic-link verification) use tokens
+# passed in URLs rather than reflected bodies; keep that in mind if adding
+# authenticated pages that echo user-supplied content.
+MIDDLEWARE.insert(  # noqa: F405
+    MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,  # noqa: F405
+    "django.middleware.gzip.GZipMiddleware",
+)
+
 STORAGES = {
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
