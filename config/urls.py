@@ -2,7 +2,8 @@
 config/urls.py — Root URL configuration.
 
 Mounts the Django admin, the internal pipeline dashboard under /dashboard/,
-and the public-facing bulletin site at the root.
+the subscriptions flow under /subscribe/, the JSON API under /api/, and
+the public-facing bulletin site at the root.
 """
 
 from django.contrib import admin
@@ -12,5 +13,6 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("dashboard/", include("pipeline.urls")),
     path("subscribe/", include("subscriptions.urls")),
+    path("api/", include("public.api_urls")),
     path("", include("public.urls")),
 ]

@@ -1,0 +1,237 @@
+/*
+ * static/css/map.css — Styles for the interactive map page (/map/).
+ *
+ * Lifted verbatim from DO_NOT_ADD/snowdesk_map_preview.html. Kept in a
+ * standalone stylesheet rather than @tailwindcss directives because the
+ * component exists in its own page frame (phone-shaped on mobile, no
+ * shared chrome with the bulletin site) and the selectors below target
+ * MapLibre internals / a custom bottom-sheet that Tailwind can't express
+ * cleanly.
+ */
+
+:root {
+    --paper: #f4f1e8;
+    --ink: #1a1a1a;
+    --muted: #5f5e5a;
+    --border: rgba(0, 0, 0, 0.12);
+    --serif: Georgia, "Times New Roman", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: var(--sans);
+    color: var(--ink);
+    background: var(--paper);
+}
+
+#frame {
+    max-width: 390px;
+    margin: 16px auto;
+    background: #fff;
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 2px 20px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 32px);
+    max-height: 780px;
+}
+
+header {
+    padding: 14px 16px 10px;
+    border-bottom: 0.5px solid var(--border);
+}
+
+.brand {
+    font-family: var(--serif);
+    font-size: 20px;
+    line-height: 1;
+    margin: 0 0 10px;
+}
+
+.search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f2efe7;
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 13px;
+    color: #8a8880;
+}
+
+.search svg {
+    flex: 0 0 auto;
+}
+
+#map {
+    flex: 1 1 auto;
+    position: relative;
+}
+
+.hint {
+    padding: 10px 12px;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    border-top: 0.5px solid var(--border);
+}
+
+.legend {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 2;
+    background: rgba(255, 255, 255, 0.94);
+    border: 0.5px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 9px;
+    font-size: 10px;
+    line-height: 1.5;
+}
+
+.legend-title {
+    font-weight: 500;
+    color: var(--muted);
+    margin-bottom: 3px;
+}
+
+.legend-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.legend-swatch {
+    width: 10px;
+    height: 10px;
+    display: inline-block;
+    border: 0.5px solid rgba(0, 0, 0, 0.15);
+}
+
+.maplibregl-ctrl-attrib {
+    font-size: 9px !important;
+}
+
+/* Bottom sheet — iOS-style drawer that slides up on region tap. */
+
+.sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+    background: #fff;
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    border-top: 0.5px solid var(--border);
+    padding: 0;
+    transform: translateY(100%);
+    transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
+    user-select: none;
+    max-height: 70%;
+    display: flex;
+    flex-direction: column;
+    /*
+     * touch-action: none on the sheet itself — we take over vertical
+     * gestures. The scrollable inner body re-enables scroll locally.
+     */
+    touch-action: none;
+}
+
+.sheet.open {
+    transform: translateY(0);
+}
+
+.sheet.dragging {
+    transition: none;
+}
+
+.sheet.animating {
+    /* JS drives the transform during release. */
+    transition: none;
+}
+
+.sheet-grab {
+    padding: 10px 14px 4px;
+    cursor: grab;
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.sheet-grab:active {
+    cursor: grabbing;
+}
+
+.sheet-handle {
+    width: 36px;
+    height: 4px;
+    background: rgba(0, 0, 0, 0.22);
+    border-radius: 2px;
+    margin: 0 auto;
+}
+
+.sheet-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.05);
+    border: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    color: rgba(0, 0, 0, 0.6);
+}
+
+.sheet-close:hover {
+    background: rgba(0, 0, 0, 0.09);
+}
+
+.sheet-close:focus-visible {
+    outline: 2px solid #0c447c;
+    outline-offset: 2px;
+}
+
+.sheet-body-wrap {
+    padding: 6px 14px 14px;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    /*
+     * Inner scrolling is allowed; the drag controller watches scrollTop
+     * to decide whether a downward gesture should scroll the body or
+     * drag the sheet.
+     */
+    touch-action: pan-y;
+}
+
+.sheet-title {
+    font-family: var(--serif);
+    font-size: 19px;
+    font-weight: 500;
+    line-height: 1.2;
+    margin: 0;
+    padding-right: 36px;
+}
+
+.sheet-cta {
+    display: block;
+    margin-top: 14px;
+    text-align: center;
+    background: var(--ink);
+    color: #fff;
+    padding: 13px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 500;
+    text-decoration: none;
+}

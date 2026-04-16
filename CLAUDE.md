@@ -19,6 +19,8 @@ subscriptions/   Magic-link subscription auth: Subscriber and Subscription model
   services/      token.py (PyJWT) and email.py (magic-link sending)
   templates/     Subscription flow pages and email templates
 public/          Public-facing bulletin site
+  api.py         Plain JsonResponse endpoints consumed by the map page
+  api_urls.py    URL routing for /api/ (namespace: api:)
 src/             Tailwind CSS source (main.css — not served directly)
 static/          CSS/JS assets (includes compiled output.css)
 logs/            Log files (gitignored except .gitkeep)
@@ -101,6 +103,38 @@ Users subscribe to bulletin alerts via a magic-link auth flow — no passwords.
 - `MAGIC_LINK_BASE_URL` — base URL prepended to the verify path (e.g. `https://example.com`).
 - `EMAIL_BACKEND` — use `django.core.mail.backends.console.EmailBackend` in development.
 - `DEFAULT_FROM_EMAIL` — sender address for outbound mail.
+
+## Map page and JSON API
+
+`/map/` (`public:map`) renders a MapLibre GL JS choropleth of Swiss avalanche
+regions. Tapping a region opens a bottom sheet with today's danger rating,
+resort list, and a CTA to the full bulletin. The template (`public/templates/public/map.html`)
+is standalone — it does not extend `base.html`. Static assets are
+`static/js/map.js` and `static/css/map.css`.
+
+The map JS reads endpoint URLs from `data-*` attributes on the `#map` element,
+so `{% url %}` in the template remains the single source of truth for all three
+API paths.
+
+**Route ordering**: `/map/` is registered before `<str:region_id>/` in
+`public/urls.py`. Do not reorder these — Django matches URL patterns
+top-to-bottom and the generic region pattern would swallow `/map/` if it
+appeared first.
+
+**JSON API** — plain `JsonResponse` views, no DRF. Mounted at `/api/` in
+`config/urls.py` under the `api:` namespace (`public/api_urls.py`):
+
+| URL | Name | Response |
+|-----|------|----------|
+| `GET /api/today-summaries/` | `api:today_summaries` | `{region_id: {rating, subdivision, problem, elevation, aspects, valid_from, valid_to, name}}` |
+| `GET /api/resorts-by-region/` | `api:resorts_by_region` | `{region_id: [resort_name, …]}` — alphabetical; regions without resorts omitted |
+| `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary`; each feature has `properties.id` + `properties.name` |
+
+`today-summaries` uses the same `_select_default_issue` helper as the bulletin
+page (morning-update-wins-over-previous-evening), so the map and bulletin views
+always agree on which issue to show. Regions with no covering bulletin today are
+absent from the response; the map fill layer treats absence as `no_rating`.
+Stale/errored render models (`version: 0`) resolve to `rating: "no_rating"`.
 
 ## Render model
 

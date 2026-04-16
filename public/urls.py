@@ -3,6 +3,7 @@ public/urls.py — URL routing for the public bulletin site.
 
 URL structure:
   /                                            Marketing homepage.
+  /map/                                        Interactive region-choropleth map.
   /examples/random/                            Redirects to a random bulletin.
   /examples/category/<danger_level>/           Redirects to a random bulletin
                                                matching the given danger level.
@@ -13,9 +14,9 @@ URL structure:
   /<region_id>/<slug>/                         Today's bulletin for a region.
   /<region_id>/<slug>/<date>/                  Bulletin for a specific date.
 
-The ``/examples/`` and ``/<region_id>/season/`` routes are registered before
-the generic ``<str:region_id>/<slug:slug>/`` pattern so Django's URL
-resolver matches the literal suffixes first.
+The ``/map/``, ``/examples/`` and ``/<region_id>/season/`` routes are
+registered before the generic ``<str:region_id>/<slug:slug>/`` pattern so
+Django's URL resolver matches the literal suffixes first.
 """
 
 from django.urls import path
@@ -26,6 +27,7 @@ app_name = "public"
 
 urlpatterns = [
     path("", views.home, name="home"),
+    path("map/", views.map_view, name="map"),
     # Examples — sample bulletin links
     path("examples/random/", views.examples_random, name="examples_random"),
     path(

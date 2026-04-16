@@ -800,6 +800,27 @@ def home(request: HttpRequest) -> HttpResponse:
     return render(request, "public/home.html")
 
 
+def map_view(request: HttpRequest) -> HttpResponse:
+    """
+    Render the interactive region-choropleth map page.
+
+    The page is a MapLibre GL JS client that fetches three JSON
+    endpoints (``/api/regions.geojson``, ``/api/today-summaries/``,
+    ``/api/resorts-by-region/``) and colours each region by today's
+    danger rating. The map template is a standalone page today but the
+    DOM is structured so it can be embedded inside the marketing
+    homepage later.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered map page.
+
+    """
+    return render(request, "public/map.html")
+
+
 def random_redirect(request: HttpRequest) -> HttpResponse:
     """
     Redirect ``/random/`` to ``/examples/random/`` (deprecated).

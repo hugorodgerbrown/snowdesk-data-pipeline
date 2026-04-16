@@ -1,0 +1,118 @@
+{% comment %}
+public/templates/public/map.html — Interactive region-choropleth map.
+
+A standalone page (like home.html) rather than an extension of base.html
+so the map can claim the full viewport without fighting the site chrome.
+The body DOM is structured so the ``#frame`` block can later be pulled
+into an include partial and embedded on the homepage.
+
+Three endpoints are resolved server-side and passed through to the
+client via ``data-*`` attributes — that way the JS never hard-codes URLs
+and ``{% url %}`` remains the single source of truth.
+
+This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
+{% endcomment %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+        <meta
+            name="description"
+            content="Interactive map of Swiss avalanche regions — tap a region to see today's danger rating, headline problem, and nearby resorts."
+        >
+        <title>Snowdesk — Avalanche map</title>
+        <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+        <link rel="stylesheet" href="{% static 'css/output.css' %}">
+        <link rel="stylesheet" href="{% static 'css/map.css' %}">
+    </head>
+    <body>
+        <div id="frame">
+            <header>
+                <h1 class="brand">Snowdesk</h1>
+                {# Search widget is a visual placeholder until wired up. Mark
+                   aria-hidden so screen readers skip it and keyboard users
+                   don't land on an inert affordance. Remove aria-hidden
+                   (and add role="search" / tabindex) when behaviour is added. #}
+                <div class="search" aria-hidden="true">
+                    <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                    >
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="m20 20-3-3" />
+                    </svg>
+                    <span>Find a region</span>
+                </div>
+            </header>
+            <div
+                id="map"
+                data-regions-url="{% url 'api:regions_geojson' %}"
+                data-summaries-url="{% url 'api:today_summaries' %}"
+                data-resorts-url="{% url 'api:resorts_by_region' %}"
+            >
+                <div class="legend">
+                    <div class="legend-title">Today</div>
+                    <div class="legend-row">
+                        <span class="legend-swatch" style="background: #ccff66"></span>Low (1)
+                    </div>
+                    <div class="legend-row">
+                        <span class="legend-swatch" style="background: #ffff00"></span>Moderate (2)
+                    </div>
+                    <div class="legend-row">
+                        <span class="legend-swatch" style="background: #ff9900"></span>Considerable (3)
+                    </div>
+                    <div class="legend-row">
+                        <span class="legend-swatch" style="background: #ff0000"></span>High (4)
+                    </div>
+                </div>
+                <div
+                    id="debug-pill"
+                    style="display: none; position: absolute; top: 10px; right: 10px; z-index: 2; background: #1a1a1a; color: #fff; font-size: 10px; padding: 4px 7px; border-radius: 3px; font-family: ui-monospace, monospace"
+                >
+                    debug &middot; press d
+                </div>
+                <div id="sheet" class="sheet">
+                    <div id="sheet-grab" class="sheet-grab">
+                        <div class="sheet-handle"></div>
+                        <button id="sheet-close" class="sheet-close" aria-label="Close">
+                            <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                aria-hidden="true"
+                            >
+                                <line x1="6" y1="6" x2="18" y2="18" />
+                                <line x1="6" y1="18" x2="18" y2="6" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="sheet-body-wrap">
+                        <div class="sheet-title" id="sheet-title">&mdash;</div>
+                        <div
+                            id="sheet-debug-id"
+                            style="display: none; font-family: ui-monospace, monospace; font-size: 10px; color: #8a8880; margin-top: 2px"
+                        >
+                            &mdash;
+                        </div>
+                        <div id="sheet-body"></div>
+                        <a class="sheet-cta" id="sheet-cta" href="#">Read today's bulletin &rarr;</a>
+                    </div>
+                </div>
+            </div>
+            <div class="hint" aria-hidden="true">Pinch to zoom &middot; tap a region</div>
+        </div>
+        <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+        <script src="{% static 'js/map.js' %}"></script>
+    </body>
+</html>
