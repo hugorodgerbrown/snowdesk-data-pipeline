@@ -20,8 +20,9 @@
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/ | Page loads with heading "Snowdesk" and subtitle "Avalanche bulletins for backcountry skiers." |
-| 2 | Read the feature descriptions on the page | Three features listed: "Daily bulletins", "Per-region detail", and "Season archives" |
-| 3 | Locate the call-to-action button | A button labelled "View a sample bulletin" is visible at the bottom of the page |
+| 2 | Look at the page chrome | A thin top nav bar with a "Snowdesk" wordmark (no back link) sits above the content |
+| 3 | Read the feature descriptions on the page | Three features listed: "Daily bulletins", "Per-region detail", and "Season archives" |
+| 4 | Locate the call-to-action buttons | Two side-by-side buttons are visible: "View a sample bulletin →" (dark fill) and "Explore the map →" (light fill, outlined) |
 
 ### Scenario 2: View a random sample bulletin from the homepage
 
@@ -99,6 +100,168 @@
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/examples/category/extreme/ | Browser shows a 404 Not Found page |
+
+---
+
+## Top Navigation
+
+### Scenario N1: Persistent nav bar appears on every public page
+
+**Goal**: Verify `templates/includes/nav.html` is rendered consistently and
+the wordmark always links home.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Navigate to http://localhost:8000/ | Nav bar visible at the top with a "Snowdesk" wordmark (18px); no back link |
+| 2 | Navigate to http://localhost:8000/map/ | Same nav bar visible above the map frame; no back link |
+| 3 | Navigate to http://localhost:8000/CH-4115/verbier/ | Nav bar shows a left-chevron + "Map" link, a thin vertical divider, and the "Snowdesk" wordmark at a smaller size (15px) |
+| 4 | Navigate to http://localhost:8000/CH-4115/season/ | Nav bar again shows "← Map" and the wordmark |
+| 5 | Navigate to http://localhost:8000/CH-4115/ (random/recent bulletins) | Nav bar again shows "← Map" and the wordmark |
+| 6 | Click the "Snowdesk" wordmark from any of the pages above | Browser navigates to http://localhost:8000/ |
+| 7 | From a bulletin page, click the "← Map" back link | Browser navigates to http://localhost:8000/map/ |
+
+### Scenario N2: Nav border spans the full viewport
+
+**Goal**: Verify the nav's bottom border stretches edge-to-edge while the
+inner content stays aligned with the body copy.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Navigate to http://localhost:8000/CH-4115/verbier/ on a wide desktop window | The `<nav>` bottom border runs across the full browser width; the "← Map" link and wordmark sit within a 640px-wide inner column that matches the bulletin body copy |
+| 2 | Resize the window down to ~390px (phone width) | The nav keeps the chevron, label, divider, and wordmark on a single row with no wrap |
+
+---
+
+## Map Page
+
+### Scenario M1: Load the map and see today's choropleth
+
+**Goal**: Verify the /map/ page renders all regions, colours them by today's
+danger rating, and shows the legend.
+
+**Preconditions**: Bulletins for today have been fetched
+(`poetry run python manage.py fetch_data`) and regions/resorts fixtures are
+loaded.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Navigate to http://localhost:8000/map/ | MapLibre basemap of Switzerland renders centred on the Alps; Swiss region polygons are overlaid and filled in danger-level colours |
+| 2 | Locate the legend | A "Today" legend is visible with four swatch rows: "Low (1)" green-yellow, "Moderate (2)" yellow, "Considerable (3)" orange, "High (4)" red |
+| 3 | Locate the hint text | Footer hint reads "Pinch to zoom · tap a region" |
+| 4 | Check regions without today's bulletin | Rendered in grey (no_rating colour) — not missing |
+| 5 | Zoom in past zoom level ~8.5 | Region labels appear (region names rendered in the polygon centres); zoom back out and they disappear |
+
+### Scenario M2: Tap a region to open the bottom sheet
+
+**Goal**: Verify clicking a region surfaces today's danger rating, linked
+resorts, and a working CTA to the bulletin page.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | On http://localhost:8000/map/, click a region with a bulletin (e.g. Verbier / CH-4115) | A bottom sheet slides up from the page bottom |
+| 2 | Read the sheet title | Shows the region name (e.g. "Verbier") |
+| 3 | Read the sheet body | Shows today's danger rating and any linked resort names |
+| 4 | Locate the CTA | "Read today's bulletin →" link visible at the bottom of the sheet |
+| 5 | Click the CTA | Browser navigates to the region's bulletin page for today (e.g. `/CH-4115/verbier/`) |
+| 6 | Return to /map/ and click a different region | Sheet content updates; the newly selected region's outline thickens and darkens |
+| 7 | Click the × close button on the sheet | Sheet dismisses; the region's selection outline is removed |
+
+### Scenario M3: Regions with no bulletin render as no_rating
+
+**Goal**: Verify regions absent from `/api/today-summaries/` show as grey
+and the sheet reflects that.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | In the Django shell, delete today's bulletins for one region (e.g. `RegionBulletin.objects.filter(region__region_id='CH-4115', ...)`) | Bulletins removed |
+| 2 | Reload http://localhost:8000/map/ | That region renders in grey |
+| 3 | Click the region | Sheet opens; danger rating shows as "no rating" / unavailable |
+
+### Scenario M4: Debug mode reveals region IDs
+
+**Goal**: Verify `?debug=1` or pressing `d` on the page reveals the debug pill
+and region IDs in the sheet.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Navigate to http://localhost:8000/map/?debug=1 | Map loads; a small "debug · press d" pill visible top-right |
+| 2 | Click a region | Sheet shows the SLF region identifier (e.g. "CH-4115") in a monospace debug line beneath the region name |
+| 3 | Navigate to http://localhost:8000/map/ (without the debug flag) | Debug pill is hidden |
+| 4 | Press `d` on the keyboard | Debug pill appears and the sheet's region-id line becomes visible |
+
+---
+
+## Map Search
+
+### Scenario MS1: Search for a region by name
+
+**Goal**: Verify the autocomplete finds a Swiss avalanche region by name.
+
+**Preconditions**: /map/ has fully loaded (regions + resorts + summaries).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | On http://localhost:8000/map/, click into the search input placeholder "Find a region or resort" | Input receives focus |
+| 2 | Type `Graubünden` | A dropdown appears below the input with up to eight results; a row for "Graubünden" is visible with a "Region" badge |
+| 3 | Click the "Graubünden" row | Dropdown closes; the map pans/zooms to the region and its bottom sheet opens with today's rating |
+
+### Scenario MS2: Search for a resort and land on its parent region
+
+**Goal**: Verify resort hits route to the region sheet, not a separate page.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | In the map search box, type `Verbier` | Results dropdown shows a "Verbier" row with a "Resort" badge and "Les 4 Vallées" (or similar region name) as secondary text |
+| 2 | Click the row | Dropdown closes; the map pans to CH-4115 and the bottom sheet opens showing Verbier listed among the region's resorts |
+
+### Scenario MS3: Diacritic-insensitive matching
+
+**Goal**: Verify the search matches regardless of accented characters.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | In the map search box, type `evolene` (no accent) | Results include "Évolène" with its diacritics intact |
+| 2 | Clear and type `graubunden` (no umlaut) | Results include "Graubünden" |
+
+### Scenario MS4: Region and resort with the same name disambiguated by badge
+
+**Goal**: Verify that when a resort shares its name with its parent region,
+both hits appear and the badge makes the distinction obvious.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | In the map search box, type `Davos` | Two rows appear: one "Davos" with a "Region" badge, and one "Davos" with a "Resort" badge |
+| 2 | Hover/scroll the results | The badges are visually distinct (different colour/shape) so the two rows can't be confused |
+
+### Scenario MS5: Keyboard navigation of results
+
+**Goal**: Verify the dropdown is operable without a mouse.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Focus the search input and type `Zermatt` | Results dropdown opens with the first row highlighted as the user moves down |
+| 2 | Press the Down arrow key | First result becomes active (visually highlighted) |
+| 3 | Press Down again | Active row moves to the next result |
+| 4 | Press Enter | Dropdown closes; the map selects the active result's region and opens the sheet |
+| 5 | Re-focus the input, type a query, then press Escape | Dropdown closes without any selection |
+
+### Scenario MS6: Empty state and no matches
+
+**Goal**: Verify the dropdown handles empty / unmatched queries gracefully.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Click into the search input and clear any existing text | Dropdown is hidden |
+| 2 | Type `xyznonexistent` | Dropdown does not open (no results, no error message shown) |
+
+### Scenario MS7: Homepage CTA opens the map
+
+**Goal**: Verify the "Explore the map" homepage CTA routes to the map page.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Navigate to http://localhost:8000/ | Homepage loads with two CTAs side by side |
+| 2 | Click "Explore the map →" | Browser navigates to http://localhost:8000/map/ and the choropleth loads |
 
 ---
 

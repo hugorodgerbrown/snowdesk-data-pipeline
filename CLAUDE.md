@@ -104,6 +104,28 @@ Users subscribe to bulletin alerts via a magic-link auth flow — no passwords.
 - `EMAIL_BACKEND` — use `django.core.mail.backends.console.EmailBackend` in development.
 - `DEFAULT_FROM_EMAIL` — sender address for outbound mail.
 
+## Navigation
+
+All public pages include a shared top nav partial at
+`templates/includes/nav.html`. It renders the "Snowdesk" wordmark (always
+linking home) plus an optional chevron-back link controlled by two include
+parameters:
+
+```django
+{# logo only — home, map #}
+{% include "includes/nav.html" %}
+
+{# logo + back link — bulletin, random_bulletins, season_bulletins #}
+{% url 'public:map' as map_url %}
+{% include "includes/nav.html" with back_url=map_url back_label="Map" %}
+```
+
+The `<nav>` spans full viewport width so its bottom border forms an
+edge-to-edge rule; inner content sits in a 640px max-width container that
+aligns with the bulletin body copy. See
+[`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) for
+the full spec.
+
 ## Map page and JSON API
 
 `/map/` (`public:map`) renders a MapLibre GL JS choropleth of Swiss avalanche
@@ -115,6 +137,15 @@ is standalone — it does not extend `base.html`. Static assets are
 The map JS reads endpoint URLs from `data-*` attributes on the `#map` element,
 so `{% url %}` in the template remains the single source of truth for all three
 API paths.
+
+**Search**: the header hosts a client-side autocomplete over the regions +
+resorts data already fetched at load time (no extra round-trips). Matching is
+diacritic-insensitive, prefix hits rank above substring hits, and results
+carry a "Region" or "Resort" badge to disambiguate cases where a resort
+shares its name with its parent region (e.g. "Davos"). Selecting a result
+routes through the same `selectFeature` helper used by the map click handler.
+The homepage links to `/map/` via an "Explore the map →" CTA next to the
+existing sample-bulletin button.
 
 **Route ordering**: `/map/` is registered before `<str:region_id>/` in
 `public/urls.py`. Do not reorder these — Django matches URL patterns
