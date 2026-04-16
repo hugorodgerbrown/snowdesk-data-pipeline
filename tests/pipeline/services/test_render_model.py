@@ -6,7 +6,10 @@ Covers:
     elevation parsing, danger resolution, geography source detection.
   - compute_day_character: all five cascade rules with render model inputs.
   - Validation: fail-hard on unknown problem types, aggregation mismatch,
-    empty problemTypes, missing aggregation when problems exist.
+    empty problemTypes.
+  - Aggregation synthesis: missing customData.CH.aggregation is rebuilt
+    from problem types (a real-world SLF quirk; aggregation is a display
+    hint, not source-of-truth).
   - Happy paths: both empty, empty title fallback, 3+ aggregation warning.
   - Version 3: metadata and prose extraction, _parse_iso_timestamp helper,
     tendency list, back-compat top-level snowpack_structure.
@@ -341,24 +344,122 @@ class TestBuildRenderModelSubdivision3Plus:
 
 
 # ---------------------------------------------------------------------------
-# build_render_model — missing aggregation (now a fail-hard condition)
+# build_render_model — missing aggregation (synthesised from problems)
 # ---------------------------------------------------------------------------
 
 
 class TestBuildRenderModelNoAggregation:
-    """Tests for bulletins missing customData.CH.aggregation."""
+    """Tests for bulletins missing customData.CH.aggregation.
 
-    def test_raises_when_problems_exist_but_aggregation_missing(self) -> None:
-        """Problems present but no aggregation → RenderModelBuildError."""
-        props = _load_sample("sample_no_aggregation_day.json")
-        with pytest.raises(RenderModelBuildError, match="aggregation"):
-            build_render_model(props)
+    SLF occasionally publishes bulletins with avalancheProblems but no
+    aggregation hint. The builder synthesises aggregation from the
+    problem types (dry/wet are disjoint, so grouping is unambiguous)
+    and logs a warning. See
+    [project_aggregation_purpose.md] — the schema treats aggregation
+    as a visualisation hint, not source-of-truth.
+    """
 
     def test_no_aggregation_fixture_has_problems(self) -> None:
-        """The no-aggregation fixture contains avalanche problems (drives the error)."""
+        """Sanity check: the fixture exercises the synthesis branch."""
         props = _load_sample("sample_no_aggregation_day.json")
         assert len(props.get("avalancheProblems", [])) > 0
         assert not props.get("customData", {}).get("CH", {}).get("aggregation")
+
+    def test_synthesises_aggregation_from_problems(self) -> None:
+        """Missing aggregation is rebuilt; render model returns the current version."""
+        props = _load_sample("sample_no_aggregation_day.json")
+
+        rm = build_render_model(props)
+
+        assert rm["version"] == RENDER_MODEL_VERSION
+        # The fixture has one dry, all_day problem (new_snow) — exactly one trait.
+        assert len(rm["traits"]) == 1
+        trait = rm["traits"][0]
+        assert trait["category"] == "dry"
+        assert trait["time_period"] == "all_day"
+        assert [p["problem_type"] for p in trait["problems"]] == ["new_snow"]
+
+    def test_synthesis_logs_warning(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The synthesis path logs a warning so operators can track upstream gaps."""
+        import logging
+
+        # config/settings/base.py sets propagate=False on the pipeline logger
+        # so that pytest's root caplog doesn't see records by default. Flip it
+        # for the duration of this test so caplog can verify the warning.
+        monkeypatch.setattr(logging.getLogger("pipeline"), "propagate", True)
+
+        props = _load_sample("sample_no_aggregation_day.json")
+
+        with caplog.at_level(logging.WARNING, logger="pipeline.services.render_model"):
+            build_render_model(props)
+
+        assert any(
+            "synthesising aggregation" in rec.getMessage() for rec in caplog.records
+        )
+
+    def test_synthesis_groups_by_category_and_time_period(self) -> None:
+        """Multiple problems group into the right number of traits."""
+        props: dict[str, Any] = {
+            "bulletinID": "synth-multi-001",
+            "dangerRatings": [{"mainValue": "moderate"}],
+            "avalancheProblems": [
+                {
+                    "problemType": "new_snow",
+                    "validTimePeriod": "all_day",
+                    "aspects": ["N"],
+                    "elevation": {"lowerBound": "2000"},
+                },
+                {
+                    "problemType": "wind_slab",
+                    "validTimePeriod": "all_day",
+                    "aspects": ["NE"],
+                    "elevation": {"lowerBound": "2000"},
+                },
+                {
+                    "problemType": "wet_snow",
+                    "validTimePeriod": "later",
+                    "aspects": ["S"],
+                    "elevation": {"upperBound": "2400"},
+                },
+            ],
+        }
+
+        rm = build_render_model(props)
+
+        # Three problems → two traits: (dry, all_day) with new_snow + wind_slab,
+        # and (wet, later) with wet_snow.
+        assert rm["version"] == RENDER_MODEL_VERSION
+        assert len(rm["traits"]) == 2
+
+        dry_trait, wet_trait = rm["traits"]
+        assert dry_trait["category"] == "dry"
+        assert dry_trait["time_period"] == "all_day"
+        assert [p["problem_type"] for p in dry_trait["problems"]] == [
+            "new_snow",
+            "wind_slab",
+        ]
+
+        assert wet_trait["category"] == "wet"
+        assert wet_trait["time_period"] == "later"
+        assert [p["problem_type"] for p in wet_trait["problems"]] == ["wet_snow"]
+
+    def test_unknown_problem_type_still_raises_via_synthesis_path(self) -> None:
+        """Unknown problem types still fail validation before synthesis runs."""
+        props: dict[str, Any] = {
+            "bulletinID": "synth-unknown-001",
+            "dangerRatings": [{"mainValue": "moderate"}],
+            "avalancheProblems": [
+                {"problemType": "not_a_real_type", "validTimePeriod": "all_day"}
+            ],
+            # No aggregation — would normally hit the synthesis path.
+        }
+
+        with pytest.raises(RenderModelBuildError, match="Unknown problemType"):
+            build_render_model(props)
 
 
 # ---------------------------------------------------------------------------

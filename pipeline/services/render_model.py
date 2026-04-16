@@ -32,6 +32,13 @@ Version 3 changes:
     ``tendency_type``, ``valid_from``, and ``valid_until``.
   - Top-level ``snowpack_structure`` is kept (equals ``prose.snowpack_structure``)
     for backward compatibility; the v4 bump will drop it.
+  - **Missing aggregation no longer raises.** When ``customData.CH.aggregation``
+    is absent but ``avalancheProblems`` is non-empty (a real-world SLF
+    quirk), aggregation is synthesised from the problems by grouping on
+    ``(category, validTimePeriod)``. Per the CAAML schema, aggregation
+    is a visualisation hint and dry/wet problem types are disjoint, so
+    the synthesis is unambiguous. A warning is logged so operators can
+    track the upstream gap. Output shape is unchanged — no version bump.
 """
 
 from __future__ import annotations
@@ -369,13 +376,6 @@ def _validate(
     _validate_problems(avalanche_problems)
     _validate_aggregation(aggregation)
 
-    # Problems non-empty but no aggregation → fail hard.
-    if avalanche_problems and not aggregation:
-        raise RenderModelBuildError(
-            "Bulletin has avalancheProblems but no customData.CH.aggregation "
-            "entries. Cannot build render model without editorial grouping hints."
-        )
-
     # Cross-check: problem types in avalancheProblems must exactly match
     # the flattened set of problemTypes across aggregation entries.
     if avalanche_problems or aggregation:
@@ -389,6 +389,57 @@ def _validate(
                 f"{sorted(problem_set)!r} but aggregation references "
                 f"{sorted(agg_set)!r}."
             )
+
+
+# ---------------------------------------------------------------------------
+# Aggregation synthesis (fallback when SLF omits customData.CH.aggregation)
+# ---------------------------------------------------------------------------
+
+
+def _synthesise_aggregation(
+    avalanche_problems: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Build aggregation entries from avalancheProblems alone.
+
+    Used when SLF has not provided ``customData.CH.aggregation`` but the
+    bulletin still carries problems. Groups problems by
+    ``(category, validTimePeriod)``, preserving SLF's problem ordering
+    within and across groups. Category is resolved via
+    ``PROBLEM_TYPE_TO_CATEGORY`` — dry/wet problem types are disjoint so
+    the grouping is unambiguous.
+
+    Caller must run ``_validate_problems`` first; this helper assumes
+    every ``problemType`` is a known EAWS token.
+
+    Args:
+        avalanche_problems: Raw CAAML avalancheProblems list.
+
+    Returns:
+        A list of aggregation-entry dicts in the same shape as
+        ``customData.CH.aggregation``.
+
+    """
+    groups: dict[tuple[str, str], list[str]] = {}
+    order: list[tuple[str, str]] = []
+    for problem in avalanche_problems:
+        pt = problem.get("problemType", "")
+        category = PROBLEM_TYPE_TO_CATEGORY[pt]
+        time_period = problem.get("validTimePeriod") or "all_day"
+        key = (category, time_period)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(pt)
+
+    return [
+        {
+            "category": category,
+            "validTimePeriod": time_period,
+            "problemTypes": groups[(category, time_period)],
+        }
+        for category, time_period in order
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -672,6 +723,18 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     aggregation: list[dict[str, Any]] = (properties.get("customData") or {}).get(
         "CH", {}
     ).get("aggregation") or []
+
+    # SLF occasionally omits the aggregation hint; rebuild it from the
+    # problem types so the bulletin still renders. Validate problems first
+    # so synthesis only sees known EAWS types.
+    if avalanche_problems and not aggregation:
+        _validate_problems(avalanche_problems)
+        logger.warning(
+            "Bulletin %s has avalancheProblems but no customData.CH.aggregation; "
+            "synthesising aggregation from problem types.",
+            bulletin_id,
+        )
+        aggregation = _synthesise_aggregation(avalanche_problems)
 
     # Validate — raises RenderModelBuildError on failure.
     _validate(avalanche_problems, aggregation)
