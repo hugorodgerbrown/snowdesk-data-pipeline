@@ -41,7 +41,7 @@ Renders:
                     {{ trait.danger_level|danger_level_label }}
                     ({{ trait.danger_level }})
                 </span>
-                <h3 class="text-sm font-normal opacity-80">{{ trait.title }}</h3>
+                <h2 class="text-sm font-normal">{{ trait.title }}</h2>
             </div>
         </div>
     </div>
@@ -97,7 +97,7 @@ Renders:
                     <span class="text-[13px] font-semibold text-text-1">{{ problem.label }}</span>
                     {% if problem.time_period_label and problem.time_period != "all_day" %}
                         <span
-                            class="font-mono text-[9.5px] tracking-[0.08em] uppercase text-text-2 bg-black/[0.06] px-1.5 py-0.5 rounded shrink-0"
+                            class="font-mono text-[9.5px] tracking-[0.08em] uppercase text-text-1 bg-black/[0.06] px-1.5 py-0.5 rounded shrink-0"
                         >
                             {{ problem.time_period_label }}
                         </span>

@@ -41,7 +41,7 @@
   /* Text ramp — warm neutrals */
   --color-text-1:       #1a1916;   /* headings, primary labels             */
   --color-text-2:       #6b6860;   /* body, descriptions                   */
-  --color-text-3:       #9c9a96;   /* tertiary: dates, eyebrows, meta      */
+  --color-text-3:       #6e6b65;   /* tertiary: dates, eyebrows, meta — 4.67:1 on --color-bg for WCAG AA */
 
   /* Borders */
   --color-border:       rgba(0, 0, 0, 0.09);
