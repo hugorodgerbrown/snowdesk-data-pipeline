@@ -40,6 +40,11 @@ from base.html's @theme tokens.
             Snowdesk
         </title>
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
+        <script
+            src="https://unpkg.com/htmx.org@2.0.4"
+            integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+            crossorigin="anonymous"
+        ></script>
         {% if raw_data_json %}
             {# DEBUG-only: raw CAAML payload embedded for source-level inspection. #}
             {# Not rendered visibly; removed in production where DEBUG=False.     #}

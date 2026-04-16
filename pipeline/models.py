@@ -518,13 +518,17 @@ class RegionDayRating(BaseModel):
     service whenever a bulletin covering the (region, date) is ingested or
     its render model is rebuilt. Drives the longitudinal calendar view.
 
-    ``max_rating`` is the highest rating across all qualifying bulletins
-    (render_model_version >= DAY_RATING_VERSION) that overlap the date.
-    ``min_rating`` is the lowest rating across the same set.
-    Both are set to ``NO_RATING`` when no qualifying bulletin exists.
+    For each (region, day) we pick a single authoritative bulletin — the
+    one with the latest ``valid_from`` among those whose target day equals
+    this date (morning-of-day if present, else the prior day's evening
+    issue). ``min_rating`` and ``max_rating`` are then derived from the
+    traits *within* that single bulletin: the lowest and highest
+    ``danger_level`` among its traits. If the bulletin has no traits
+    (quiet day) both fall back to its headline ``danger.key``; if there is
+    no qualifying bulletin at all both are set to ``NO_RATING``.
 
-    When ``min_rating != max_rating`` the day is considered "variable" and
-    the calendar tile renders a split fill (min colour left, max colour right).
+    When ``min_rating != max_rating`` the day is "variable" and the
+    calendar tile renders a diagonal split fill.
     """
 
     class Rating(models.TextChoices):

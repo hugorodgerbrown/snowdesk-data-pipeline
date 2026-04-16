@@ -23,6 +23,7 @@ from pipeline.models import (
     RegionDayRating,
     Resort,
 )
+from pipeline.services.day_rating import DAY_RATING_VERSION
 from subscriptions.models import Subscriber, Subscription
 
 
@@ -120,7 +121,7 @@ class RegionDayRatingFactory(factory.django.DjangoModelFactory[RegionDayRating])
     max_rating = RegionDayRating.Rating.LOW
     max_subdivision = ""
     source_bulletin = None
-    version = 1
+    version = DAY_RATING_VERSION
 
 
 class SubscriberFactory(factory.django.DjangoModelFactory[Subscriber]):

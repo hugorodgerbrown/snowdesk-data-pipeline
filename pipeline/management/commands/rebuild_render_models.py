@@ -34,7 +34,6 @@ Skip day-rating refresh::
 
 import logging
 from argparse import ArgumentParser
-from datetime import timedelta
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
@@ -262,16 +261,14 @@ class Command(BaseCommand):
         """
         from datetime import date
 
+        from pipeline.services.day_rating import _target_day
+
         pairs: set[tuple[Any, date]] = set()
         for bulletin in bulletins:
             regions = list(bulletin.regions.all())
-            start_day = bulletin.valid_from.date()
-            end_day = bulletin.valid_to.date()
-            day = start_day
-            while day <= end_day:
-                for region in regions:
-                    pairs.add((region, day))
-                day += timedelta(days=1)
+            day = _target_day(bulletin)
+            for region in regions:
+                pairs.add((region, day))
 
         self.stdout.write(
             f"Refreshing day ratings for {len(pairs)} (region, day) pairs."

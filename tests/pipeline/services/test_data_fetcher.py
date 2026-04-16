@@ -365,7 +365,9 @@ class TestUpsertBulletin:
         )
         upsert_bulletin(raw, run)
 
-        # The bulletin covers CH-4115 and CH-7111 for 2025-03-15 and 2025-03-16.
+        # The bulletin's validTime startTime is 2025-03-15T17:00:00Z (hour=17,
+        # evening issue) so its target day is 2025-03-16.  Under the v3
+        # target-day rule, exactly one RegionDayRating row is created per region.
 
         assert RegionDayRating.objects.filter(
             region__region_id="CH-4115",

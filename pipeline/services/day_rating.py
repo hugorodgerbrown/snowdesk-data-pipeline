@@ -2,20 +2,36 @@
 pipeline/services/day_rating.py — Per-(region, date) danger rating aggregation.
 
 Maintains the RegionDayRating denormalisation table. Each row stores both the
-minimum and maximum danger ratings (across all qualifying bulletins) for a
-single (region, calendar day) pair.
+minimum and maximum danger ratings (within one chosen bulletin) for a single
+(region, calendar day) pair.
 
-Tie-break policy (locked in by the architect):
-  - ``max_rating`` is the highest mainValue across every qualifying bulletin
-    that covers (region, date). "Qualifying" means
-    render_model_version >= RENDER_MODEL_VERSION (version=0 rows excluded).
-  - ``min_rating`` is the lowest mainValue across the same set.
-  - When two bulletins share the same extreme rating, the one whose
-    ``valid_from`` is latest is chosen as the subdivision contributor.
-  - ``source_bulletin`` always points to the bulletin that supplied
-    ``max_rating`` (tie-broken by latest valid_from).
-  - Only bulletins explicitly linked to the region via RegionBulletin are
-    considered (no cross-region fallback).
+Aggregation policy (v4 — single-bulletin):
+  - For day X, pick the single bulletin that was most recently published by
+    ~10am on day X:
+    - Morning-of-X (valid_from.date() == X, hour < 12) takes priority.
+    - Prior-evening-of-(X-1) (valid_from.date() == X-1, hour >= 12) is the
+      fallback when no morning-of-X bulletin exists.
+    - Evening-of-X (valid_from.date() == X, hour >= 12) is excluded — its
+      target day is X+1.
+  - Formally: keep candidates where ``_target_day(b) == X``; pick the one
+    with the latest ``valid_from``.  Because morning-of-X has a later
+    ``valid_from`` than prior-evening-of-(X-1), this naturally implements
+    the morning-wins / prior-evening-fallback convention.
+  - Aggregate *within* the chosen bulletin's ``render_model["traits"]``:
+    each trait's ``danger_level`` int is mapped to a rating key.
+    ``max_rating`` is the highest; ``min_rating`` is the lowest.
+  - Bulletins with an empty traits list (quiet day) fall back to the
+    bulletin's aggregate ``render_model["danger"]["key"]`` for both min and
+    max (debug log).
+  - Bulletins with a completely malformed render_model (empty dict or missing
+    both ``danger`` and ``traits``) → write ``no_rating``.
+  - Traits with missing or non-integer ``danger_level`` are skipped (debug log).
+  - Qualifying means ``render_model_version >= RENDER_MODEL_VERSION``
+    (version=0 error sentinels are excluded).
+  - ``source_bulletin`` is always the chosen bulletin (or None when no
+    candidate exists).
+  - ``max_subdivision`` / ``min_subdivision``: sourced from the chosen
+    bulletin's aggregate ``render_model["danger"]["subdivision"]``.
 
 This module intentionally does NOT use post_save signals.
 Call ``apply_bulletin_day_ratings`` from ``upsert_bulletin`` inline.
@@ -23,6 +39,7 @@ Call ``apply_bulletin_day_ratings`` from ``upsert_bulletin`` inline.
 
 from __future__ import annotations
 
+import datetime
 import logging
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
@@ -34,9 +51,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DAY_RATING_VERSION: int = 1
+DAY_RATING_VERSION: int = 4
 
-# Canonical ordering from lowest to highest (mirrors _DANGER_ORDER in views).
+# Canonical ordering from lowest to highest (mirrors _DANGER_ORDER in render_model).
 _RATING_ORDER: tuple[str, ...] = (
     "low",
     "moderate",
@@ -45,13 +62,55 @@ _RATING_ORDER: tuple[str, ...] = (
     "very_high",
 )
 
+# Map trait danger_level int (1–5) to rating key string.
+_DANGER_LEVEL_TO_KEY: dict[int, str] = {
+    1: "low",
+    2: "moderate",
+    3: "considerable",
+    4: "high",
+    5: "very_high",
+}
+
 # Map CAAML customData.CH.subdivision strings to the suffix stored in
-# RegionDayRating.max_subdivision.
+# RegionDayRating.max_subdivision / min_subdivision.
 _SUBDIVISION_SUFFIX: dict[str, str] = {
     "minus": "-",
     "neutral": "=",
     "plus": "+",
 }
+
+
+def _target_day(bulletin: "Bulletin") -> datetime.date:
+    """
+    Return the calendar day that a bulletin is forecasting.
+
+    SLF publishes two issues per day:
+
+    * **Morning** issue (~07:00 UTC): forecasts **today**.
+      ``valid_from.hour < 12`` → target_day = ``valid_from.date()``.
+    * **Evening** issue (~16:00 UTC): forecasts **tomorrow**.
+      ``valid_from.hour >= 12`` → target_day = ``valid_from.date() + 1 day``.
+
+    The 12:00 UTC boundary is chosen so that noon (the earliest plausible
+    "afternoon" publication) falls on the evening side, which is the
+    conservative choice: if ever SLF shifts an evening issue to exactly
+    noon, we still attribute it to the *next* day.
+
+    This mirrors the morning-wins / prior-evening-fallback convention
+    implemented by ``_select_default_issue`` in ``public/views.py``
+    (which uses 10:00 UTC as the pivot to prefer the morning update).
+
+    Args:
+        bulletin: A Bulletin instance with a timezone-aware ``valid_from``.
+
+    Returns:
+        The calendar date that this bulletin is forecasting.
+
+    """
+    vf: datetime.datetime = bulletin.valid_from
+    if vf.hour < 12:
+        return vf.date()
+    return (vf + timedelta(days=1)).date()
 
 
 def _rating_rank(key: str) -> int:
@@ -74,12 +133,13 @@ def _rating_rank(key: str) -> int:
         return -1
 
 
-def _extract_max_from_render_model(render_model: dict) -> tuple[str, str]:
+def _extract_headline_from_render_model(render_model: dict) -> tuple[str, str]:
     """
-    Extract the highest danger rating key and subdivision suffix from a render model.
+    Extract the headline danger key and subdivision suffix from a render model.
 
-    Reads ``render_model["danger"]["key"]`` (the pre-computed max) and its
-    ``subdivision`` field.
+    Reads ``render_model["danger"]["key"]`` (the pre-computed aggregate) and its
+    ``subdivision`` field. Used as the subdivision source and as the min/max
+    value for quiet-day bulletins with empty traits.
 
     Args:
         render_model: A render model dict produced by build_render_model.
@@ -106,10 +166,22 @@ def recompute_region_day(
     """
     Recompute and (optionally) persist the RegionDayRating for one (region, day).
 
-    Considers all Bulletin rows linked to ``region`` whose validity window
-    overlaps ``day`` and whose ``render_model_version >= RENDER_MODEL_VERSION``
-    (version=0 error sentinels are excluded). Writes ``no_rating`` when no
-    qualifying bulletin exists.
+    Selects the single bulletin that was most recently published by ~10am on
+    ``day`` (the morning-of-day if available; otherwise the prior-evening).
+    Aggregates min/max ratings across that bulletin's traits only.
+
+    The SQL pre-filter fetches bulletins with ``valid_from.date`` in
+    ``{day, day - 1}`` to capture both the morning-of-day and
+    prior-evening candidates; a Python post-filter via ``_target_day``
+    then drops any evening-of-day bulletin (whose target is day+1).
+
+    Aggregates at the trait level within the chosen bulletin: each trait's
+    ``danger_level`` int is mapped to a rating key. Bulletins with an empty
+    traits list (quiet day) fall back to the bulletin's aggregate
+    ``render_model["danger"]["key"]``.
+
+    Writes ``no_rating`` when no qualifying bulletin exists or when the
+    chosen bulletin's render_model is entirely malformed.
 
     Args:
         region: The Region to aggregate for.
@@ -121,84 +193,89 @@ def recompute_region_day(
     # Avoid circular import — models is always available at call time.
     from pipeline.models import Bulletin, RegionDayRating
 
-    # All bulletins whose validity window overlaps ``day``.
-    candidates = list(
+    no_rating = RegionDayRating.Rating.NO_RATING
+
+    # SQL pre-filter: valid_from date in {day, day-1} covers the two possible
+    # candidate bulletins for day X (morning-of-X and evening-of-(X-1)).
+    pre_candidates = list(
         Bulletin.objects.filter(
             regions=region,
-            valid_from__date__lte=day,
-            valid_to__date__gte=day,
+            valid_from__date__in=[day, day - timedelta(days=1)],
             render_model_version__gte=RENDER_MODEL_VERSION,
-        ).order_by("valid_from")
+        )
     )
 
-    best_key: str
-    worst_key: str
+    # Python post-filter: keep only bulletins whose target day equals ``day``.
+    # This drops the evening-of-X bulletin (valid_from.date() == day, hour >= 12)
+    # whose target is actually day+1.
+    candidates = [b for b in pre_candidates if _target_day(b) == day]
+
     if not candidates:
-        best_key = RegionDayRating.Rating.NO_RATING
-        best_subdivision = ""
-        best_bulletin = None
-        worst_key = RegionDayRating.Rating.NO_RATING
-        worst_subdivision = ""
+        min_key: str = no_rating
+        min_subdivision: str = ""
+        max_key: str = no_rating
+        max_subdivision: str = ""
+        source_bulletin = None
     else:
-        best_key = RegionDayRating.Rating.NO_RATING
-        best_rank = -1
-        best_valid_from = None
-        best_bulletin = None
-        best_subdivision = ""
+        # Single-bulletin policy: pick the candidate with the latest valid_from.
+        # When both morning-of-X and prior-evening-of-(X-1) exist, morning-of-X
+        # has the later valid_from and is therefore chosen automatically.
+        chosen = max(candidates, key=lambda b: b.valid_from)
+        rm = chosen.render_model or {}
+        headline_key, headline_subdivision = _extract_headline_from_render_model(rm)
+        traits: list = rm.get("traits") or []
 
-        # Worst tracker: initialise to a sentinel rank above any valid rating so
-        # the first real candidate always wins.  Uses len(_RATING_ORDER) as the
-        # "above everything" sentinel value.
-        worst_key = RegionDayRating.Rating.NO_RATING
-        worst_rank = len(_RATING_ORDER)
-        worst_valid_from = None
-        worst_subdivision = ""
+        if not traits:
+            # Quiet day: no traits — fall back to headline danger key.
+            logger.debug(
+                "Bulletin %s has empty traits; using headline danger key %r.",
+                chosen.bulletin_id,
+                headline_key,
+            )
+            min_key = headline_key
+            min_subdivision = headline_subdivision
+            max_key = headline_key
+            max_subdivision = headline_subdivision
+            source_bulletin = chosen
+        else:
+            # Extract valid trait danger levels from the chosen bulletin only.
+            valid_keys: list[str] = []
+            for trait in traits:
+                raw_level = trait.get("danger_level")
+                if (
+                    not isinstance(raw_level, int)
+                    or raw_level not in _DANGER_LEVEL_TO_KEY
+                ):
+                    logger.debug(
+                        "Bulletin %s trait has missing/invalid danger_level"
+                        " %r; skipping.",
+                        chosen.bulletin_id,
+                        raw_level,
+                    )
+                    continue
+                valid_keys.append(_DANGER_LEVEL_TO_KEY[raw_level])
 
-        for bulletin in candidates:
-            rm = bulletin.render_model or {}
-            key, subdivision = _extract_max_from_render_model(rm)
-            rank = _rating_rank(key)
-
-            # Max tracker: pick this bulletin if it has a strictly higher rating,
-            # or ties with the current best but has a later valid_from.
-            if rank > best_rank or (
-                rank == best_rank
-                and best_valid_from is not None
-                and bulletin.valid_from > best_valid_from
-            ):
-                best_key = key
-                best_rank = rank
-                best_valid_from = bulletin.valid_from
-                best_bulletin = bulletin
-                best_subdivision = subdivision
-
-            # Min tracker: pick this bulletin if it has a strictly lower rank, or
-            # ties with the current worst but has a later valid_from.
-            # Malformed bulletins (rank == -1) are excluded from the min tracker
-            # to avoid promoting an unrecognised key as the minimum.
-            if rank >= 0 and (
-                rank < worst_rank
-                or (
-                    rank == worst_rank
-                    and worst_valid_from is not None
-                    and bulletin.valid_from > worst_valid_from
-                )
-            ):
-                worst_key = key
-                worst_rank = rank
-                worst_valid_from = bulletin.valid_from
-                worst_subdivision = subdivision
-
-        # If every candidate had an unrecognised key (rank == -1), the worst
-        # tracker never updated — leave worst as NO_RATING (already set above).
+            if not valid_keys:
+                # All trait levels were invalid — no usable data.
+                min_key = no_rating
+                min_subdivision = ""
+                max_key = no_rating
+                max_subdivision = ""
+                source_bulletin = None
+            else:
+                max_key = max(valid_keys, key=_rating_rank)
+                min_key = min(valid_keys, key=_rating_rank)
+                max_subdivision = headline_subdivision
+                min_subdivision = headline_subdivision
+                source_bulletin = chosen
 
     if not commit:
         logger.info(
             "[read-only] Would write RegionDayRating: region=%s date=%s min=%s max=%s",
             region.region_id,
             day,
-            worst_key,
-            best_key,
+            min_key,
+            max_key,
         )
         return
 
@@ -206,53 +283,55 @@ def recompute_region_day(
         region=region,
         date=day,
         defaults={
-            "min_rating": worst_key,
-            "min_subdivision": worst_subdivision,
-            "max_rating": best_key,
-            "max_subdivision": best_subdivision,
-            "source_bulletin": best_bulletin,
+            "min_rating": min_key,
+            "min_subdivision": min_subdivision,
+            "max_rating": max_key,
+            "max_subdivision": max_subdivision,
+            "source_bulletin": source_bulletin,
             "version": DAY_RATING_VERSION,
         },
     )
     logger.debug(
-        "RegionDayRating upserted: region=%s date=%s rating=%s",
+        "RegionDayRating upserted: region=%s date=%s min=%s max=%s",
         region.region_id,
         day,
-        best_key,
+        min_key,
+        max_key,
     )
 
 
 def apply_bulletin_day_ratings(bulletin: "Bulletin") -> None:
     """
-    Recompute RegionDayRating for every (region, day) covered by a bulletin.
+    Recompute RegionDayRating for the (region, target_day) pairs of a bulletin.
 
-    Iterates each region linked to the bulletin via RegionBulletin and each
-    calendar day in [valid_from.date(), valid_to.date()], calling
-    ``recompute_region_day`` for each pair.
+    A bulletin targets exactly one calendar day — determined by ``_target_day``:
+    morning issues (valid_from.hour < 12) target their own date; evening issues
+    (valid_from.hour >= 12) target the following date.
+
+    For each region linked to the bulletin, calls ``recompute_region_day`` for
+    that single target day.  The recompute also pulls in the complementary
+    candidate (morning + prior-evening pair) so the chosen bulletin for the day
+    is always up to date.
 
     Designed to be called inline from ``upsert_bulletin`` after the
     RegionBulletin links are created.  Callers must wrap this in a
     try/except so that day-rating failures never abort ingest.
 
     Args:
-        bulletin: The Bulletin whose linked (region, date) pairs to refresh.
+        bulletin: The Bulletin whose linked (region, target_day) pairs to refresh.
 
     """
-    start_day = bulletin.valid_from.date()
-    end_day = bulletin.valid_to.date()
+    target = _target_day(bulletin)
 
     # Gather distinct regions linked to this bulletin.
     regions = list(bulletin.regions.all())
 
-    day = start_day
-    while day <= end_day:
-        for region in regions:
-            recompute_region_day(region, day, commit=True)
-        day += timedelta(days=1)
+    for region in regions:
+        recompute_region_day(region, target, commit=True)
 
     logger.debug(
-        "apply_bulletin_day_ratings: bulletin=%s regions=%d days=%d",
+        "apply_bulletin_day_ratings: bulletin=%s target_day=%s regions=%d",
         bulletin.bulletin_id,
+        target,
         len(regions),
-        (end_day - start_day).days + 1,
     )

@@ -183,8 +183,15 @@ details > summary.problem-tag::-webkit-details-marker { display: none; }
    the background comes from EAWS tokens.
 
    Stable days (min == max): solid tint fill.
-   Variable days (min != max): left-to-right linear gradient, min colour on
-   the left, max colour on the right.  Text colour follows max for legibility.
+   Variable days (min != max): diagonal triangle split using a hard-stop
+   linear-gradient at 50%.  Direction "to top right" places the min (floor)
+   colour in the bottom-left triangle and the max (ceiling) colour in the
+   top-right triangle.  The hard stop at 50% on both sides gives a crisp
+   diagonal edge with no gradient blur.  Text colour follows max for
+   legibility on the dominant upper-right area.
+
+   Ring borders (ring-2) are set on the tile element and frame the whole
+   square regardless of fill style — today/selected rings are unaffected.
 
    Usage in template:
      <div class="calendar-cell"
@@ -200,18 +207,30 @@ details > summary.problem-tag::-webkit-details-marker { display: none; }
 .calendar-cell[data-rating-min="high"][data-rating-max="high"]           { background: var(--color-eaws-high-tint); color: var(--color-eaws-high-text); }
 .calendar-cell[data-rating-min="very_high"][data-rating-max="very_high"] { background: var(--color-eaws-very-high-tint); color: var(--color-eaws-very-high-text); }
 
-/* Variable-day gradient fills — one rule per (min, max) pair where min < max.
-   Text colour uses the max-rating token for legibility on the right half. */
-.calendar-cell[data-rating-min="low"][data-rating-max="moderate"]           { background: linear-gradient(to right, var(--color-eaws-low-tint) 0 50%, var(--color-eaws-moderate-tint) 50% 100%); color: var(--color-eaws-moderate-text); }
-.calendar-cell[data-rating-min="low"][data-rating-max="considerable"]        { background: linear-gradient(to right, var(--color-eaws-low-tint) 0 50%, var(--color-eaws-considerable-tint) 50% 100%); color: var(--color-eaws-considerable-text); }
-.calendar-cell[data-rating-min="low"][data-rating-max="high"]                { background: linear-gradient(to right, var(--color-eaws-low-tint) 0 50%, var(--color-eaws-high-tint) 50% 100%); color: var(--color-eaws-high-text); }
-.calendar-cell[data-rating-min="low"][data-rating-max="very_high"]           { background: linear-gradient(to right, var(--color-eaws-low-tint) 0 50%, var(--color-eaws-very-high-tint) 50% 100%); color: var(--color-eaws-very-high-text); }
-.calendar-cell[data-rating-min="moderate"][data-rating-max="considerable"]   { background: linear-gradient(to right, var(--color-eaws-moderate-tint) 0 50%, var(--color-eaws-considerable-tint) 50% 100%); color: var(--color-eaws-considerable-text); }
-.calendar-cell[data-rating-min="moderate"][data-rating-max="high"]           { background: linear-gradient(to right, var(--color-eaws-moderate-tint) 0 50%, var(--color-eaws-high-tint) 50% 100%); color: var(--color-eaws-high-text); }
-.calendar-cell[data-rating-min="moderate"][data-rating-max="very_high"]      { background: linear-gradient(to right, var(--color-eaws-moderate-tint) 0 50%, var(--color-eaws-very-high-tint) 50% 100%); color: var(--color-eaws-very-high-text); }
-.calendar-cell[data-rating-min="considerable"][data-rating-max="high"]       { background: linear-gradient(to right, var(--color-eaws-considerable-tint) 0 50%, var(--color-eaws-high-tint) 50% 100%); color: var(--color-eaws-high-text); }
-.calendar-cell[data-rating-min="considerable"][data-rating-max="very_high"]  { background: linear-gradient(to right, var(--color-eaws-considerable-tint) 0 50%, var(--color-eaws-very-high-tint) 50% 100%); color: var(--color-eaws-very-high-text); }
-.calendar-cell[data-rating-min="high"][data-rating-max="very_high"]          { background: linear-gradient(to right, var(--color-eaws-high-tint) 0 50%, var(--color-eaws-very-high-tint) 50% 100%); color: var(--color-eaws-very-high-text); }
+/* Variable-day diagonal triangle fills — one rule per (min, max) pair where min < max.
+   min colour fills the bottom-left triangle; max colour fills the top-right triangle.
+   Text colour uses the max-rating token for legibility on the dominant triangle. */
+.calendar-cell[data-rating-min="low"][data-rating-max="moderate"]           { background: linear-gradient(to top right, var(--color-eaws-low-tint) 50%, var(--color-eaws-moderate-tint) 50%); color: var(--color-eaws-moderate-text); }
+.calendar-cell[data-rating-min="low"][data-rating-max="considerable"]        { background: linear-gradient(to top right, var(--color-eaws-low-tint) 50%, var(--color-eaws-considerable-tint) 50%); color: var(--color-eaws-considerable-text); }
+.calendar-cell[data-rating-min="low"][data-rating-max="high"]                { background: linear-gradient(to top right, var(--color-eaws-low-tint) 50%, var(--color-eaws-high-tint) 50%); color: var(--color-eaws-high-text); }
+.calendar-cell[data-rating-min="low"][data-rating-max="very_high"]           { background: linear-gradient(to top right, var(--color-eaws-low-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
+.calendar-cell[data-rating-min="moderate"][data-rating-max="considerable"]   { background: linear-gradient(to top right, var(--color-eaws-moderate-tint) 50%, var(--color-eaws-considerable-tint) 50%); color: var(--color-eaws-considerable-text); }
+.calendar-cell[data-rating-min="moderate"][data-rating-max="high"]           { background: linear-gradient(to top right, var(--color-eaws-moderate-tint) 50%, var(--color-eaws-high-tint) 50%); color: var(--color-eaws-high-text); }
+.calendar-cell[data-rating-min="moderate"][data-rating-max="very_high"]      { background: linear-gradient(to top right, var(--color-eaws-moderate-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
+.calendar-cell[data-rating-min="considerable"][data-rating-max="high"]       { background: linear-gradient(to top right, var(--color-eaws-considerable-tint) 50%, var(--color-eaws-high-tint) 50%); color: var(--color-eaws-high-text); }
+.calendar-cell[data-rating-min="considerable"][data-rating-max="very_high"]  { background: linear-gradient(to top right, var(--color-eaws-considerable-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
+.calendar-cell[data-rating-min="high"][data-rating-max="very_high"]          { background: linear-gradient(to top right, var(--color-eaws-high-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
+
+
+/* —— HTMX indicator —————————————————————————
+   Any element with class="htmx-indicator" is hidden by default and
+   revealed while its associated hx-request is in flight.  Mirrors the
+   canonical htmx.css rule so we don't need to ship htmx.css separately.
+   ————————————————————————————————————————— */
+
+.htmx-indicator                   { opacity: 0; transition: opacity 200ms ease-in; }
+.htmx-request .htmx-indicator     { opacity: 1; }
+.htmx-request.htmx-indicator      { opacity: 1; }
 
 
 /* —— SLF prose resets ———————————————————————
