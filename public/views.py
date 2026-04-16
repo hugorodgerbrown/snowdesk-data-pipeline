@@ -38,12 +38,16 @@ from typing import Any, cast
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db.models import Max
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.cache import patch_cache_control
 from django.utils.html import strip_tags
 from django.utils.text import slugify
+from django.views.decorators.cache import never_cache
+from django.views.decorators.http import condition
 
 from pipeline.models import Bulletin, Region, RegionBulletin
 from pipeline.schema import ValidTimePeriod
@@ -825,9 +829,14 @@ _DANGER_SLUG_TO_KEY: dict[str, str] = {
 }
 
 
+@never_cache
 def examples_random(request: HttpRequest) -> HttpResponse:
     """
     Render a random region's bulletin inline (no redirect).
+
+    Decorated with ``@never_cache`` because the region is picked at
+    random per request — caching would freeze the "random" choice for
+    every client behind a shared cache / CDN.
 
     Finds the most recent bulletin issue date, picks a random region from
     that issue, and renders the bulletin template directly at the current
@@ -1014,6 +1023,95 @@ def region_redirect(request: HttpRequest, region_id: str) -> HttpResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# Bulletin-detail HTTP caching helpers
+# ---------------------------------------------------------------------------
+#
+# ``bulletin_detail`` is wrapped in ``@condition`` so browsers and CDNs can
+# do conditional GETs and serve ``304 Not Modified`` when the underlying
+# bulletin data hasn't changed. The two callables below drive the ETag
+# and Last-Modified headers; both intentionally do cheap single-aggregate
+# queries so the short-circuit is meaningfully cheaper than running the
+# full view.
+#
+# Cache-Control is set inside the view via ``patch_cache_control`` because
+# it branches on whether the page date is in the past (immutable, max-age
+# 1y) or today (short, max-age aligned to the bulletin's next_update).
+
+
+def _parse_target_date(date_str: str | None) -> datetime.date:
+    """
+    Parse a ``YYYY-MM-DD`` URL segment into a date.
+
+    Falls back to today on missing or invalid input so the helper never
+    raises — the downstream view handles any date-specific mismatch.
+    """
+    today = timezone.now().date()
+    if not date_str:
+        return today
+    try:
+        return datetime.date.fromisoformat(date_str)
+    except ValueError:
+        return today
+
+
+def _bulletin_page_last_modified(
+    request: HttpRequest,
+    region_id: str,
+    slug: str,
+    date_str: str | None = None,
+) -> datetime.datetime | None:
+    """
+    Return the latest ``updated_at`` across bulletins covering this page.
+
+    Keyed by (region, target_date). Drives the ``Last-Modified`` header
+    and the ``@condition`` short-circuit. Returns ``None`` when no
+    bulletins exist so the view still runs for the empty-state render.
+    """
+    target_date = _parse_target_date(date_str)
+    result = Bulletin.objects.filter(
+        regions__region_id__iexact=region_id,
+        valid_from__date__lte=target_date,
+        valid_to__date__gte=target_date,
+    ).aggregate(latest=Max("updated_at"))
+    return cast("datetime.datetime | None", result["latest"])
+
+
+def _bulletin_page_etag(
+    request: HttpRequest,
+    region_id: str,
+    slug: str,
+    date_str: str | None = None,
+) -> str | None:
+    """
+    Weak ETag from latest-update + issue tab + render-model + release version.
+
+    - ``?issue=<uuid>`` selects which issue tab renders active, so two
+      requests with the same region+date but different ``?issue`` values
+      must get different ETags.
+    - Baking in ``RENDER_MODEL_VERSION`` means a builder bump invalidates
+      every cached response without needing to touch ``updated_at``.
+    - Baking in ``settings.RELEASE_VERSION`` (Render's ``RENDER_GIT_COMMIT``
+      in production, ``"dev"`` locally) means every deploy invalidates
+      otherwise-immutable historic URLs so template / CSS / view-logic
+      edits don't get pinned behind year-long CDN caches.
+    """
+    latest = _bulletin_page_last_modified(request, region_id, slug, date_str)
+    if latest is None:
+        return None
+    issue = request.GET.get("issue") or ""
+    return (
+        f'W/"{int(latest.timestamp())}'
+        f"-{issue}"
+        f"-{RENDER_MODEL_VERSION}"
+        f'-{settings.RELEASE_VERSION}"'
+    )
+
+
+@condition(
+    etag_func=_bulletin_page_etag,
+    last_modified_func=_bulletin_page_last_modified,
+)
 def bulletin_detail(
     request: HttpRequest,
     region_id: str,
@@ -1071,7 +1169,7 @@ def bulletin_detail(
     selected = _resolve_selected_issue(issues, target_date, requested_issue_id)
 
     if selected is None:
-        return _render_bulletin_page(
+        response = _render_bulletin_page(
             request,
             {
                 "bulletin": None,
@@ -1081,6 +1179,10 @@ def bulletin_detail(
             },
             bulletin=None,
         )
+        # Empty-state: cache briefly so a freshly-ingested bulletin surfaces
+        # within a minute without re-running the view on every pageview.
+        patch_cache_control(response, public=True, max_age=60)
+        return response
 
     # The page represents the calendar day chosen in the URL, independent
     # of which issue the viewer has selected — otherwise flipping to the
@@ -1143,7 +1245,24 @@ def bulletin_detail(
         "year": today.year,
         "issue_tabs": issue_tabs,
     }
-    return _render_bulletin_page(request, context, bulletin=selected)
+    response = _render_bulletin_page(request, context, bulletin=selected)
+
+    # Cache-Control — branch on whether the page date is in the past.
+    if page_date < today:
+        # Historic bulletins are truly immutable by (bulletin_id, render
+        # model version). Cache aggressively at both the browser and any
+        # upstream CDN.
+        patch_cache_control(response, public=True, max_age=31536000, immutable=True)
+    else:
+        # Today: short cache, aligned to the bulletin's next_update when
+        # present. Clamped to [30s, 300s] so we never go stale for more
+        # than 5 minutes regardless of what next_update claims.
+        max_age = 60
+        if next_update_time:
+            remaining = int((next_update_time - timezone.now()).total_seconds())
+            max_age = max(30, min(remaining, 300))
+        patch_cache_control(response, public=True, max_age=max_age)
+    return response
 
 
 # ---------------------------------------------------------------------------

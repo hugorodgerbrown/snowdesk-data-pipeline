@@ -160,10 +160,17 @@ class TestErrorStateCard:
 
 @pytest.mark.django_db
 class TestTraitHeaderSemantics:
-    """Tests that trait titles render inside <h3> elements."""
+    """
+    Tests that trait titles render inside <h2> elements.
 
-    def test_trait_title_rendered_in_h3(self, anon_client: Client, region):
-        """Each trait title appears inside an <h3> tag, not a <p> or <div>."""
+    The page hierarchy is ``h1`` (region) → ``h2`` (trait title) → ``h2``
+    (Snowpack & Weather section) so Lighthouse's ``heading-order`` audit
+    passes. Traits must NOT render as <h3> (which would skip a level
+    given the h1 parent).
+    """
+
+    def test_trait_title_rendered_in_h2(self, anon_client: Client, region):
+        """Each trait title appears inside an <h2> tag, not a <p> or <div>."""
         from pipeline.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 5, 10)
@@ -195,12 +202,12 @@ class TestTraitHeaderSemantics:
         assert response.status_code == 200
         content = response.content.decode()
 
-        # Title should appear inside an h3 element.
-        assert "<h3" in content
+        # Title should appear inside an h2 element (the trait heading level).
+        assert "<h2" in content
         assert "Dry avalanches, whole day" in content
 
     def test_two_trait_headers_present(self, anon_client: Client, region):
-        """A variable-day bulletin produces two <h3> headings."""
+        """A variable-day bulletin produces two <h2> headings (one per trait)."""
         from pipeline.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 5, 11)
@@ -240,7 +247,7 @@ class TestTraitHeaderSemantics:
         assert response.status_code == 200
         content = response.content.decode()
 
-        assert content.count("<h3") == 2
+        assert content.count("<h2") == 2
         assert "Dry avalanches, whole day" in content
         assert "Wet-snow avalanches, later" in content
 

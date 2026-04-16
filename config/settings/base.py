@@ -24,6 +24,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 SECRET_KEY = config("SECRET_KEY")
 
 # ---------------------------------------------------------------------------
+# Release identifier
+# ---------------------------------------------------------------------------
+# Baked into ETags on cacheable pages so every deploy invalidates stale
+# browser / CDN entries when template HTML, CSS, or view logic changes —
+# not just when the underlying bulletin data changes. On Render.com the
+# RENDER_GIT_COMMIT env var is auto-populated with the build commit SHA;
+# locally it falls back to "dev" so the ETag is still stable across a
+# development session.
+
+RELEASE_VERSION = config(
+    "RELEASE_VERSION",
+    default=config("RENDER_GIT_COMMIT", default="dev"),
+)
+
+# ---------------------------------------------------------------------------
 # Application definition
 # ---------------------------------------------------------------------------
 
