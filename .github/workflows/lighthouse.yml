@@ -1,0 +1,75 @@
+# .github/workflows/lighthouse.yml — Run Lighthouse CI against the public
+# site on pull requests. Asserts accessibility and SEO scores, warns on
+# performance and best-practices regressions.
+
+name: Lighthouse
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    name: Audit public pages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python (3.12)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node (20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install Python dependencies
+        run: poetry install --no-interaction
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build Tailwind CSS
+        run: npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
+
+      - name: Create .env
+        run: |
+          echo "SECRET_KEY=ci-test-secret-key" > .env
+          echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
+          echo "MAGIC_LINK_SECRET_KEY=ci-test-magic-link-secret" >> .env
+          echo "MAGIC_LINK_BASE_URL=http://localhost:8000" >> .env
+          echo "EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend" >> .env
+          echo "DEFAULT_FROM_EMAIL=ci@example.com" >> .env
+
+      - name: Run migrations
+        run: poetry run python manage.py migrate --noinput
+
+      - name: Load fixtures
+        run: |
+          poetry run python manage.py loaddata regions resorts bulletins region_bulletins
+          poetry run python manage.py rebuild_render_models
+
+      - name: Collect static files
+        run: poetry run python manage.py collectstatic --noinput
+
+      - name: Run Lighthouse CI
+        run: npx lhci autorun --collect.url=http://localhost:8765/CH-4115/martigny-verbier/2026-04-02/
+
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports
+          path: .lighthouseci/
+          retention-days: 14

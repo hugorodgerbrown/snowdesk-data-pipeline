@@ -36,6 +36,9 @@ mediafiles/
 htmlcov/
 .coverage
 
+# Lighthouse CI
+.lighthouseci/
+
 # IDE
 .vscode/
 .idea/

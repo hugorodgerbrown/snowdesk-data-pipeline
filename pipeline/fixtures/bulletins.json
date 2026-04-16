@@ -1,0 +1,254 @@
+[
+  {
+    "model": "pipeline.bulletin",
+    "pk": 1,
+    "fields": {
+      "bulletin_id": "a4020001-4115-4bd2-9fe6-d0e4f9a1b2c3",
+      "render_model": {},
+      "render_model_version": 0,
+      "issued_at": "2026-04-01T15:53:05Z",
+      "valid_from": "2026-04-01T16:00:00Z",
+      "valid_to": "2026-04-02T16:00:00Z",
+      "next_update": "2026-04-02T16:00:00Z",
+      "lang": "en",
+      "unscheduled": false,
+      "pipeline_run": null,
+      "created_at": "2026-04-01T15:53:05Z",
+      "updated_at": "2026-04-01T15:53:05Z",
+      "raw_data": {
+        "type": "Feature",
+        "geometry": null,
+        "properties": {
+          "lang": "en",
+          "bulletinID": "a4020001-4115-4bd2-9fe6-d0e4f9a1b2c3",
+          "regions": [
+            { "name": "Martigny-Verbier", "regionID": "CH-4115" }
+          ],
+          "validTime": {
+            "startTime": "2026-04-01T16:00:00Z",
+            "endTime": "2026-04-02T16:00:00Z"
+          },
+          "publicationTime": "2026-04-01T15:53:05Z",
+          "nextUpdate": "2026-04-02T16:00:00Z",
+          "unscheduled": false,
+          "customData": {
+            "CH": {
+              "aggregation": [
+                {
+                  "category": "dry",
+                  "problemTypes": ["persistent_weak_layers"],
+                  "validTimePeriod": "all_day"
+                }
+              ]
+            }
+          },
+          "dangerRatings": [
+            {
+              "mainValue": "moderate",
+              "customData": { "CH": { "subdivision": "plus" } },
+              "validTimePeriod": "all_day"
+            }
+          ],
+          "avalancheProblems": [
+            {
+              "aspects": ["N", "NE", "E", "SE", "SW", "W", "NW"],
+              "comment": "Weak layers in the old snowpack represent the main danger. Avalanches can be triggered in the weakly bonded old snow. Mostly they are medium-sized. Caution is to be exercised in particular on steep shady slopes above approximately 2400 m. Isolated whumpfing sounds can indicate the danger. <br/> In addition the wind slabs of the last few days are prone to triggering in some cases still. They will be covered with new snow and therefore difficult to recognise. <br/> Defensive route selection is important.",
+              "elevation": { "lowerBound": "2200" },
+              "customData": {
+                "CH": {
+                  "subdivision": "plus",
+                  "coreZoneText": "Danger level \"moderate\" (2+) in southwest to north to southeast facing aspects above 2200m."
+                }
+              },
+              "problemType": "persistent_weak_layers",
+              "validTimePeriod": "all_day",
+              "dangerRatingValue": "moderate"
+            }
+          ],
+          "snowpackStructure": {
+            "comment": "<h1>Snowpack</h1><p>Snow depths in the Martigny-Verbier region are above average, with a widespread 150 to 200% of the usual amount of snow for early April.</p><p>Especially on shady slopes above approximately 2400 m and generally in the high Alpine regions, there are faceted, long-lasting weak layers deep in the old snowpack. In many places these layers are overlaid with deep fresh snow and so can no longer be easily triggered by winter sport participants. However, any avalanches that are triggered in these deep layers can still become large, as has been clear from the avalanches in recent days.</p><p>Small to medium gliding avalanches are still to be expected in the western Alps.</p>"
+          },
+          "weatherReview": {
+            "comment": "<h1>Weather review for Wednesday</h1><p>Conditions were cloudy but mostly dry on Wednesday in the western Alps.</p><h2>Fresh snow</h2><p>-</p><h2>Temperature</h2><p>At midday at 2000 m around +1°C</p><h2>Wind</h2><p>Winds were mostly light and occasionally moderate from the south.</p>"
+          },
+          "weatherForecast": {
+            "comment": "<h1>Weather forecast for Thursday</h1><p>There will be little snowfall overnight, except in the very south. The snowfall level will drop from 1500 m to 800 m. Some clouds will remain along the Prealps during the day. Conditions will be sunny in the west and generally at high altitude.</p><h2>Fresh snow</h2><p>Overnight above approximately 1600 m:</p><ul><li>western Alps: 5 to 10 cm</li><li>other regions less or dry</li></ul><h2>Temperature</h2><p>At midday at 2000 m, around -2°C</p><h2>Wind</h2><p>Mostly light from southerly directions</p>"
+          },
+          "tendency": [
+            {
+              "comment": "<h1>Outlook</h1><p>On Friday and Saturday there will be low stratus cloud in the north with only occasional sunny spells due to the broken, higher altitude cloud cover. Most of the sunshine will be in the west. Conditions will be mainly cloudy on both days on the southern flank of the Alps. A few centimetres of snow may fall above approximately 1400 m on Saturday. There will be a light to moderate southerly wind on both days.</p><p>Avalanche risk will continue to fall. Avalanches, possibly large, may still be triggered in the old snowpack, especially on steep shady slopes at high altitudes. Gliding avalanches are still possible in regions with deep snow in the west and north.</p>"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "model": "pipeline.bulletin",
+    "pk": 2,
+    "fields": {
+      "bulletin_id": "a4020002-4115-4bd2-9fe6-d0e4f9a1b2c3",
+      "render_model": {},
+      "render_model_version": 0,
+      "issued_at": "2026-04-02T06:50:00Z",
+      "valid_from": "2026-04-02T07:00:00Z",
+      "valid_to": "2026-04-02T16:00:00Z",
+      "next_update": "2026-04-02T16:00:00Z",
+      "lang": "en",
+      "unscheduled": false,
+      "pipeline_run": null,
+      "created_at": "2026-04-02T06:50:00Z",
+      "updated_at": "2026-04-02T06:50:00Z",
+      "raw_data": {
+        "type": "Feature",
+        "geometry": null,
+        "properties": {
+          "lang": "en",
+          "bulletinID": "a4020002-4115-4bd2-9fe6-d0e4f9a1b2c3",
+          "regions": [
+            { "name": "Martigny-Verbier", "regionID": "CH-4115" }
+          ],
+          "validTime": {
+            "startTime": "2026-04-02T07:00:00Z",
+            "endTime": "2026-04-02T16:00:00Z"
+          },
+          "publicationTime": "2026-04-02T06:50:00Z",
+          "nextUpdate": "2026-04-02T16:00:00Z",
+          "unscheduled": false,
+          "customData": {
+            "CH": {
+              "aggregation": [
+                {
+                  "category": "dry",
+                  "problemTypes": ["persistent_weak_layers"],
+                  "validTimePeriod": "all_day"
+                }
+              ]
+            }
+          },
+          "dangerRatings": [
+            {
+              "mainValue": "moderate",
+              "customData": { "CH": { "subdivision": "plus" } },
+              "validTimePeriod": "all_day"
+            }
+          ],
+          "avalancheProblems": [
+            {
+              "aspects": ["N", "NE", "E", "SE", "SW", "W", "NW"],
+              "comment": "Morning update: conditions remain consistent with the overnight forecast. Weak layers in the old snowpack represent the main danger. Avalanches can be triggered in the weakly bonded old snow. Mostly they are medium-sized. Caution is to be exercised in particular on steep shady slopes above approximately 2400 m. Isolated whumpfing sounds can indicate the danger. <br/> Defensive route selection is important.",
+              "elevation": { "lowerBound": "2200" },
+              "customData": {
+                "CH": {
+                  "subdivision": "plus",
+                  "coreZoneText": "Danger level \"moderate\" (2+) in southwest to north to southeast facing aspects above 2200m."
+                }
+              },
+              "problemType": "persistent_weak_layers",
+              "validTimePeriod": "all_day",
+              "dangerRatingValue": "moderate"
+            }
+          ],
+          "snowpackStructure": {
+            "comment": "<h1>Snowpack</h1><p>Snow depths in the Martigny-Verbier region are above average, with a widespread 150 to 200% of the usual amount of snow for early April.</p><p>Especially on shady slopes above approximately 2400 m and generally in the high Alpine regions, there are faceted, long-lasting weak layers deep in the old snowpack. In many places these layers are overlaid with deep fresh snow and so can no longer be easily triggered by winter sport participants. However, any avalanches that are triggered in these deep layers can still become large.</p><p>Small to medium gliding avalanches are still to be expected in the western Alps.</p>"
+          },
+          "weatherReview": {
+            "comment": "<h1>Weather review for Wednesday</h1><p>Conditions were cloudy but mostly dry on Wednesday in the western Alps.</p><h2>Fresh snow</h2><p>-</p><h2>Temperature</h2><p>At midday at 2000 m around +1°C</p><h2>Wind</h2><p>Winds were mostly light and occasionally moderate from the south.</p>"
+          },
+          "weatherForecast": {
+            "comment": "<h1>Weather forecast for Thursday</h1><p>Clearing skies through the morning with sunny intervals at altitude. Conditions remain largely dry in the west.</p><h2>Fresh snow</h2><p>-</p><h2>Temperature</h2><p>At midday at 2000 m, around -2°C</p><h2>Wind</h2><p>Light from southerly directions</p>"
+          },
+          "tendency": [
+            {
+              "comment": "<h1>Outlook</h1><p>On Friday and Saturday there will be low stratus cloud in the north. Avalanche risk will continue to fall. Gliding avalanches are still possible in regions with deep snow in the west and north.</p>"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "model": "pipeline.bulletin",
+    "pk": 3,
+    "fields": {
+      "bulletin_id": "a4020003-4115-4bd2-9fe6-d0e4f9a1b2c3",
+      "render_model": {},
+      "render_model_version": 0,
+      "issued_at": "2026-04-02T15:53:05Z",
+      "valid_from": "2026-04-02T16:00:00Z",
+      "valid_to": "2026-04-03T16:00:00Z",
+      "next_update": "2026-04-03T07:00:00Z",
+      "lang": "en",
+      "unscheduled": false,
+      "pipeline_run": null,
+      "created_at": "2026-04-02T15:53:05Z",
+      "updated_at": "2026-04-02T15:53:05Z",
+      "raw_data": {
+        "type": "Feature",
+        "geometry": null,
+        "properties": {
+          "lang": "en",
+          "bulletinID": "a4020003-4115-4bd2-9fe6-d0e4f9a1b2c3",
+          "regions": [
+            { "name": "Martigny-Verbier", "regionID": "CH-4115" }
+          ],
+          "validTime": {
+            "startTime": "2026-04-02T16:00:00Z",
+            "endTime": "2026-04-03T16:00:00Z"
+          },
+          "publicationTime": "2026-04-02T15:53:05Z",
+          "nextUpdate": "2026-04-03T07:00:00Z",
+          "unscheduled": false,
+          "customData": {
+            "CH": {
+              "aggregation": [
+                {
+                  "category": "dry",
+                  "problemTypes": ["persistent_weak_layers"],
+                  "validTimePeriod": "all_day"
+                }
+              ]
+            }
+          },
+          "dangerRatings": [
+            {
+              "mainValue": "moderate",
+              "customData": { "CH": { "subdivision": "neutral" } },
+              "validTimePeriod": "all_day"
+            }
+          ],
+          "avalancheProblems": [
+            {
+              "aspects": ["N", "NE", "E", "SE", "NW"],
+              "comment": "Weak layers in the old snowpack remain the main concern on shady slopes at high altitudes. Trigger probability has decreased slightly with settlement. Caution remains warranted on steep shady slopes above approximately 2400 m. <br/> Defensive route selection is important.",
+              "elevation": { "lowerBound": "2400" },
+              "customData": {
+                "CH": {
+                  "subdivision": "neutral",
+                  "coreZoneText": "Danger level \"moderate\" (2) in north-east to north to north-west facing aspects above 2400m."
+                }
+              },
+              "problemType": "persistent_weak_layers",
+              "validTimePeriod": "all_day",
+              "dangerRatingValue": "moderate"
+            }
+          ],
+          "snowpackStructure": {
+            "comment": "<h1>Snowpack</h1><p>Snow depths in the Martigny-Verbier region remain above average for early April. The snowpack continues to settle under mild daytime temperatures.</p><p>Faceted weak layers persist on shady high-altitude slopes. Any avalanche released in these deep layers can still become large.</p><p>Small gliding avalanches are still to be expected on sunlit slopes in the western Alps.</p>"
+          },
+          "weatherReview": {
+            "comment": "<h1>Weather review for Thursday</h1><p>Mostly sunny conditions on Thursday in the western Alps with light southerly winds.</p><h2>Fresh snow</h2><p>-</p><h2>Temperature</h2><p>At midday at 2000 m around 0°C</p><h2>Wind</h2><p>Light from the south.</p>"
+          },
+          "weatherForecast": {
+            "comment": "<h1>Weather forecast for Friday</h1><p>Cloudy intervals with a chance of light snowfall above 1600 m during the afternoon. Sunny spells in the west in the morning.</p><h2>Fresh snow</h2><p>From Thursday evening to Friday evening above approximately 1600 m:</p><ul><li>western Alps: up to 5 cm</li><li>other regions dry</li></ul><h2>Temperature</h2><p>At midday at 2000 m, around -3°C</p><h2>Wind</h2><p>Light to moderate from southerly directions</p>"
+          },
+          "tendency": [
+            {
+              "comment": "<h1>Outlook</h1><p>On Saturday and Sunday cloud cover will persist with only occasional sunny spells. Avalanche risk will continue to decrease gradually. Gliding avalanches remain possible in regions with deep snow in the west.</p>"
+            }
+          ]
+        }
+      }
+    }
+  }
+]

@@ -1,5 +1,10 @@
 {
+  "scripts": {
+    "lh": "lhci autorun",
+    "lh:open": "open $(python -c \"import json; print(' '.join(r['htmlPath'] for r in json.load(open('.lighthouseci/manifest.json')) if r['isRepresentativeRun']))\")"
+  },
   "devDependencies": {
+    "@lhci/cli": "^0.14.0",
     "@tailwindcss/cli": "^4.2.2",
     "supabase": "^2.87.1"
   }
