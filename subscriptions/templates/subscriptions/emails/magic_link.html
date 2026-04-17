@@ -1,26 +1,31 @@
+{% load i18n %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ LANGUAGE_CODE }}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>SnowDesk magic link</title>
+        <title>{% trans "SnowDesk magic link" %}</title>
     </head>
     <body style="font-family: sans-serif; color: #1f2937; max-width: 600px; margin: 0 auto; padding: 2rem 1rem">
-        <p>Hi,</p>
-        <p>Click the button below to {{ purpose }} to SnowDesk:</p>
+        <p>{% trans "Hi," %}</p>
+        <p>
+            {% blocktrans with purpose=purpose %}Click the button below to {{ purpose }} to SnowDesk:{% endblocktrans %}
+        </p>
         <p style="margin: 2rem 0">
             <a
                 href="{{ magic_link_url }}"
                 style="background: #2563eb; color: #fff; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 600"
             >
-                {{ purpose|capfirst }} to SnowDesk
+                {{ purpose|capfirst }} {% trans "to SnowDesk" %}
             </a>
         </p>
         <p style="color: #6b7280; font-size: 0.875rem">
-            This link expires in {{ expiry_minutes }} minutes.<br>
-            If you did not request this, you can safely ignore this email.
+            {% blocktrans with minutes=expiry_minutes trimmed %}
+                This link expires in {{ minutes }} minutes.
+            {% endblocktrans %}<br>
+            {% trans "If you did not request this, you can safely ignore this email." %}
         </p>
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 2rem 0">
-        <p style="color: #9ca3af; font-size: 0.75rem">SnowDesk — Swiss Avalanche Bulletins</p>
+        <p style="color: #9ca3af; font-size: 0.75rem">{% trans "SnowDesk — Swiss Avalanche Bulletins" %}</p>
     </body>
 </html>

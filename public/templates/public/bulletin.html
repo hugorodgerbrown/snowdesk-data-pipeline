@@ -15,9 +15,9 @@ Six structural sections, top to bottom:
 Typography: font-sans on the outermost container overrides any serif inheritance
 from base.html's @theme tokens.
 {% endcomment %}
-{% load static snowdesk_html snowdesk_time %}
+{% load i18n static snowdesk_html snowdesk_time %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ LANGUAGE_CODE }}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -33,11 +33,11 @@ from base.html's @theme tokens.
         {% endif %}
         <meta
             name="description"
-            content='Avalanche bulletin for {{ region_name }}{% if page_date %}, {{ page_date|date:"j F Y" }}{% endif %}.'
+            content='{% blocktrans with name=region_name %}Avalanche bulletin for {{ name }}{% endblocktrans %}{% if page_date %}, {{ page_date|date:"j F Y" }}{% endif %}.'
         >
         <title>
-            {{ region_name }} &middot; {% if is_today %}Today{% else %}{{ page_date|date:"j F Y" }}{% endif %} &middot;
-            Snowdesk
+            {{ region_name }} &middot;
+            {% if is_today %}{% trans "Today" %}{% else %}{{ page_date|date:"j F Y" }}{% endif %} &middot; Snowdesk
         </title>
         {% include "includes/theme_head.html" %}
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
@@ -78,7 +78,7 @@ from base.html's @theme tokens.
                     {{ region_name }}
                 </h1>
                 <p class="text-xs text-text-3 text-center mt-1 uppercase tracking-widest font-mono">
-                    {% if is_today %}Today{% else %}{{ page_date|date:"l j F Y" }}{% endif %}
+                    {% if is_today %}{% trans "Today" %}{% else %}{{ page_date|date:"l j F Y" }}{% endif %}
                 </p>
             </header>
 
@@ -95,14 +95,14 @@ from base.html's @theme tokens.
                 {# many issue tabs sit between them; tabs stay centred.     #}
                 <nav
                     class="flex items-center justify-between mb-6 text-[11px] font-mono"
-                    aria-label="Bulletin navigation"
+                    aria-label='{% trans "Bulletin navigation" %}'
                     data-testid="bulletin-nav"
                 >
                     {% if prev_date %}
                         <a
                             class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2"
                             href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
-                            aria-label="Previous day: {{ prev_date|date:'l j F Y' }}"
+                            aria-label="{% blocktrans with date=prev_date|date:'l j F Y' %}Previous day: {{ date }}{% endblocktrans %}"
                             data-testid="nav-prev-day"
                         >
                             &laquo;
@@ -134,7 +134,7 @@ from base.html's @theme tokens.
                         <a
                             class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2"
                             href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=next_date|date:'Y-m-d' %}"
-                            aria-label="Next day: {{ next_date|date:'l j F Y' }}"
+                            aria-label="{% blocktrans with date=next_date|date:'l j F Y' %}Next day: {{ date }}{% endblocktrans %}"
                             data-testid="nav-next-day"
                         >
                             &raquo;
@@ -151,14 +151,14 @@ from base.html's @theme tokens.
             {% if not bulletin %}
                 {# ── Empty state ─────────────────────────────────────────── #}
                 <div class="text-center text-text-3 py-16 text-sm">
-                    No bulletins available for this region.
+                    {% trans "No bulletins available for this region." %}
                 </div>
             {% else %}
                 {# ── Error state (version == 0) ──────────────────────────────── #}
                 {% if panel.render_model.version == 0 %}
                     <div class="rounded-[8px] border-l-4 border-callout-warning-border bg-callout-warning-bg px-3.5 py-3 text-sm mb-4">
                         <p class="font-semibold text-callout-warning-heading mb-1">
-                            We couldn't process this bulletin.
+                            {% trans "We couldn't process this bulletin." %}
                         </p>
                         {% if user.is_staff %}
                             <p class="text-xs text-callout-warning-text mb-2">
@@ -171,12 +171,11 @@ from base.html's @theme tokens.
                                 class="inline-block text-xs font-medium text-callout-warning-heading underline underline-offset-2 hover:text-callout-warning-link-hover"
                                 href="/admin/pipeline/bulletin/{{ panel.bulletin.pk }}/change/"
                             >
-                                Inspect in admin →
+                                {% trans "Inspect in admin →" %}
                             </a>
                         {% else %}
                             <p class="text-xs text-callout-warning-text">
-                                We are sorry for the inconvenience. Please try again later or check back for an updated
-                                bulletin.
+                                {% trans "We are sorry for the inconvenience. Please try again later or check back for an updated bulletin." %}
                             </p>
                         {% endif %}
                     </div>
@@ -204,7 +203,7 @@ from base.html's @theme tokens.
                                 data-testid="headline-band"
                             >
                                 <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
-                                    All day
+                                    {% trans "All day" %}
                                 </div>
                                 <span
                                     class="danger-tile text-base"
@@ -218,7 +217,7 @@ from base.html's @theme tokens.
                             >
                                 <div data-testid="headline-segment-first">
                                     <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
-                                        Morning
+                                        {% trans "Morning" %}
                                     </div>
                                     <span
                                         class="danger-tile text-base"
@@ -232,7 +231,7 @@ from base.html's @theme tokens.
                                 >&#8594;</span>
                                 <div data-testid="headline-segment-second">
                                     <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
-                                        Later
+                                        {% trans "Later" %}
                                     </div>
                                     <span
                                         class="danger-tile text-base"
@@ -251,15 +250,15 @@ from base.html's @theme tokens.
                             class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3"
                             data-testid="avalanche-problems-heading"
                         >
-                            Avalanche Problems
+                            {% trans "Avalanche Problems" %}
                         </h2>
                         {% if not rm.traits %}
                             <div class="rounded-[12px] border border-border bg-card px-4 py-5 text-center mb-4">
                                 <p class="text-sm font-medium text-text-1 mb-0.5">
-                                    No avalanche problems reported.
+                                    {% trans "No avalanche problems reported." %}
                                 </p>
                                 <p class="text-xs text-text-3">
-                                    The snowpack is stable. Conditions are favourable.
+                                    {% trans "The snowpack is stable. Conditions are favourable." %}
                                 </p>
                             </div>
                         {% else %}
@@ -284,13 +283,13 @@ from base.html's @theme tokens.
                                     <section class="mb-4" data-testid="snowpack-weather-section">
                                         <div class="flex items-baseline justify-between mb-3">
                                             <h2 class="text-xs font-mono uppercase tracking-widest text-text-3">
-                                                Snowpack &amp; Weather
+                                                {% trans "Snowpack & Weather" %}
                                             </h2>
                                             <span
                                                 class="text-[10px] font-mono uppercase tracking-widest text-text-3/70"
                                                 aria-hidden="true"
                                             >
-                                                Tap to expand
+                                                {% trans "Tap to expand" %}
                                             </span>
                                         </div>
 
@@ -423,7 +422,9 @@ from base.html's @theme tokens.
                                     data-testid="metadata-strip"
                                 >
                                     <div>
-                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">Issued</p>
+                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
+                                            {% trans "Issued" %}
+                                        </p>
                                         <p class="text-text-2">
                                             {% if meta.publication_time %}
                                                 {{ meta.publication_time|parse_iso|date:"j M H:i" }} UTC
@@ -433,7 +434,9 @@ from base.html's @theme tokens.
                                         </p>
                                     </div>
                                     <div>
-                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">Valid until</p>
+                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
+                                            {% trans "Valid until" %}
+                                        </p>
                                         <p class="text-text-2">
                                             {% if meta.valid_until %}
                                                 {{ meta.valid_until|parse_iso|date:"j M H:i" }} UTC
@@ -443,7 +446,9 @@ from base.html's @theme tokens.
                                         </p>
                                     </div>
                                     <div data-testid="next-update-cell">
-                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">Next update</p>
+                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
+                                            {% trans "Next update" %}
+                                        </p>
                                         <p class="text-text-2">
                                             {% if meta.next_update %}
                                                 {{ meta.next_update|parse_iso|date:"j M H:i" }} UTC
@@ -471,7 +476,7 @@ from base.html's @theme tokens.
                     {# Focal region first #}
                     <span class="font-medium text-text-2" data-testid="focal-region">{{ region_name }}</span>
                     {% if related_regions %}
-                        <span class="text-text-3">, with </span>
+                        <span class="text-text-3">, {% trans "with" %} </span>
                         {% for r in related_regions %}
                             <span>{{ r.name }}</span>{% if not forloop.last %} &middot; {% endif %}
                         {% endfor %}
@@ -481,12 +486,12 @@ from base.html's @theme tokens.
                     <a
                         class="underline hover:text-text-2"
                         href="{% url 'public:random_bulletins' region_id=region_id %}"
-                    >View history</a>
+                    >{% trans "View history" %}</a>
                     &middot;
                     <a
                         class="underline hover:text-text-2"
                         href="{% url 'public:season_bulletins' region_id=region_id %}"
-                    >View full season</a>
+                    >{% trans "View full season" %}</a>
                     {# DEBUG-only shortcut into Django admin for the current   #}
                     {# bulletin record.  Present only when ``settings.DEBUG``  #}
                     {# is truthy and a panel was built (empty-state pages     #}
@@ -497,16 +502,20 @@ from base.html's @theme tokens.
                             class="underline hover:text-text-2"
                             href="{{ panel.admin_url }}"
                             data-testid="footer-admin-link"
-                        >Open in admin</a>
+                        >{% trans "Open in admin" %}</a>
                     {% endif %}
                 </p>
                 <p>
-                    Avalanche bulletin data &copy; <a
+                    {% blocktrans trimmed %}
+                        Avalanche bulletin data &copy;
+                    {% endblocktrans %}
+                    <a
                         class="underline hover:text-text-2"
                         href="https://www.slf.ch"
                         target="_blank"
                         rel="noopener"
-                    >SLF — WSL Institute for Snow and Avalanche Research</a>. Rendered by Snowdesk.
+                    >{% trans "SLF — WSL Institute for Snow and Avalanche Research" %}</a>.
+                    {% trans "Rendered by Snowdesk." %}
                 </p>
             </footer>
 
@@ -517,7 +526,7 @@ from base.html's @theme tokens.
                         href="{% url 'subscriptions:enter_email' %}"
                         class="text-xs text-text-3 hover:text-text-2 border border-text-3/20 rounded-[6px] px-3 py-1.5 inline-block"
                     >
-                        Subscribe to alerts
+                        {% trans "Subscribe to alerts" %}
                     </a>
                 </div>
             {% endif %}

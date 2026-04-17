@@ -5,9 +5,9 @@ Loads Google Fonts (Playfair Display, DM Sans, DM Mono), the design-system
 stylesheet, and renders the mountain silhouette SVG background. All public
 pages extend this template.
 {% endcomment %}
-{% load static %}
+{% load i18n static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ LANGUAGE_CODE }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -34,7 +34,7 @@ pages extend this template.
         </main>
 
         <footer class="footer">
-            &copy; {{ year }} Snowdesk &middot; Data sourced from
+            &copy; {{ year }} Snowdesk &middot; {% trans "Data sourced from" %}
             <a href="https://www.slf.ch" target="_blank" rel="noopener">SLF</a>
         </footer>
 

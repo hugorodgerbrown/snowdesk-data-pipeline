@@ -18,6 +18,7 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.http import HttpRequest
 from django.template.loader import render_to_string
+from django.utils.translation import gettext as _
 
 from .token import generate_magic_link_token
 
@@ -61,7 +62,7 @@ def send_magic_link_email(
         "expiry_minutes": expiry_minutes,
     }
 
-    subject = f"Your SnowDesk {purpose} link"
+    subject = _("Your SnowDesk %(purpose)s link") % {"purpose": purpose}
     plain_body = render_to_string("subscriptions/emails/magic_link.txt", context)
     html_body = render_to_string("subscriptions/emails/magic_link.html", context)
 

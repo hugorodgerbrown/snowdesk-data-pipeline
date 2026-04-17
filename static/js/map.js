@@ -156,6 +156,7 @@
     let selectedId = null;
 
     const ratingLabel = (r, sub) => {
+      // i18n: translatable — danger level labels
       const names = {
         low: 'Low (1)', moderate: 'Moderate (2)', considerable: 'Considerable (3)',
         high: 'High (4)', very_high: 'Very high (5)', no_rating: 'No rating',
@@ -206,6 +207,7 @@
         body.append(el(
           'div',
           { style: 'padding: 8px 0; color: #8a8880; font-size: 12px;' },
+          // i18n: translatable
           'No bulletin data available for this region today.',
         ));
       } else {
@@ -227,6 +229,7 @@
           const wrap = el('div', { style: 'margin-top: 10px;' });
           const line = el('div', { style: 'font-size: 12px;' });
           line.append(el(
+            // i18n: translatable
             'span', { style: 'color: #8a8880;' }, 'Resorts',
           ));
           line.append(document.createTextNode(' \u00b7 '));
@@ -234,6 +237,7 @@
           const note = el(
             'div',
             { style: 'font-size: 11px; color: #8a8880; margin-top: 4px; font-style: italic;' },
+            // i18n: translatable
             'Resorts & ski areas may span multiple regions.',
           );
           wrap.append(line, note);
@@ -660,6 +664,7 @@
 
         const badge = document.createElement('span');
         badge.className = `search-result-badge search-result-badge--${r.type}`;
+        // i18n: translatable — search result type badges
         badge.textContent = r.type === 'region' ? 'Region' : 'Resort';
 
         li.append(text, badge);

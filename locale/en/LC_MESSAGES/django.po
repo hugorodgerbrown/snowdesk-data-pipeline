@@ -1,0 +1,510 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-04-17 19:09+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Low (1)"
+msgstr ""
+
+msgid "Moderate (2)"
+msgstr ""
+
+msgid "Considerable (3)"
+msgstr ""
+
+msgid "High (4)"
+msgstr ""
+
+msgid "Very high (5)"
+msgstr ""
+
+msgid "No snow"
+msgstr ""
+
+msgid "No rating"
+msgstr ""
+
+msgid "All day"
+msgstr ""
+
+msgid "Earlier (morning)"
+msgstr ""
+
+msgid "Later (afternoon)"
+msgstr ""
+
+msgid "New snow"
+msgstr ""
+
+msgid "Wind slab"
+msgstr ""
+
+msgid "Persistent weak layers"
+msgstr ""
+
+msgid "Wet snow"
+msgstr ""
+
+msgid "Gliding snow"
+msgstr ""
+
+msgid "Cornices"
+msgstr ""
+
+msgid "No distinct avalanche problem"
+msgstr ""
+
+msgid "Favourable situation"
+msgstr ""
+
+msgid "Stable day"
+msgstr ""
+
+msgid "Dangerous conditions"
+msgstr ""
+
+msgid "Hard-to-read day"
+msgstr ""
+
+msgid "Widespread danger"
+msgstr ""
+
+msgid "Manageable day"
+msgstr ""
+
+#, python-format
+msgid "Danger level %(number)s %(label)s"
+msgstr ""
+
+msgid "We couldn't process this bulletin."
+msgstr ""
+
+msgid "Inspect in admin →"
+msgstr ""
+
+msgid ""
+"We are sorry for the inconvenience. Please try again later or check back for "
+"an updated bulletin."
+msgstr ""
+
+msgid "No avalanche problems reported."
+msgstr ""
+
+msgid "The snowpack is stable. Conditions are favourable."
+msgstr ""
+
+msgid "SLF Bulletin"
+msgstr ""
+
+msgid "SLF Interpretation Guide"
+msgstr ""
+
+msgid "Day character:"
+msgstr ""
+
+msgid "Open this bulletin in the Django admin"
+msgstr ""
+
+msgid "Open in admin →"
+msgstr ""
+
+msgid "Data sourced from"
+msgstr ""
+
+#, python-format
+msgid "Avalanche bulletin for %(name)s"
+msgstr ""
+
+msgid "Today"
+msgstr ""
+
+msgid "Bulletin navigation"
+msgstr ""
+
+#, python-format
+msgid "Previous day: %(date)s"
+msgstr ""
+
+#, python-format
+msgid "Next day: %(date)s"
+msgstr ""
+
+msgid "No bulletins available for this region."
+msgstr ""
+
+msgid "Morning"
+msgstr ""
+
+msgid "Later"
+msgstr ""
+
+msgid "Avalanche Problems"
+msgstr ""
+
+msgid "Snowpack & Weather"
+msgstr ""
+
+msgid "Tap to expand"
+msgstr ""
+
+msgid "Issued"
+msgstr ""
+
+msgid "Valid until"
+msgstr ""
+
+msgid "Next update"
+msgstr ""
+
+msgid "with"
+msgstr ""
+
+msgid "View history"
+msgstr ""
+
+msgid "View full season"
+msgstr ""
+
+msgid "Open in admin"
+msgstr ""
+
+msgid "Avalanche bulletin data &copy;"
+msgstr ""
+
+msgid "SLF — WSL Institute for Snow and Avalanche Research"
+msgstr ""
+
+msgid "Rendered by Snowdesk."
+msgstr ""
+
+msgid "Subscribe to alerts"
+msgstr ""
+
+msgid ""
+"Daily Swiss avalanche bulletins for backcountry skiers — per-region danger "
+"levels, avalanche problems, snowpack structure, and season archives, sourced "
+"from SLF."
+msgstr ""
+
+msgid "Snowdesk — Avalanche bulletins for backcountry skiers"
+msgstr ""
+
+msgid "Snowdesk"
+msgstr ""
+
+msgid "Avalanche bulletins for backcountry skiers."
+msgstr ""
+
+msgid ""
+"We take the daily SLF avalanche forecast and present it in a clear, mobile-"
+"friendly format so you can make better decisions in the mountains."
+msgstr ""
+
+msgid "Daily bulletins"
+msgstr ""
+
+msgid ""
+"fetched automatically from the Swiss Institute for Snow and Avalanche "
+"Research (SLF)."
+msgstr ""
+
+msgid "Per-region detail"
+msgstr ""
+
+msgid ""
+"danger level, avalanche problems, snowpack structure, and field guidance for "
+"every forecast region."
+msgstr ""
+
+msgid "Season archives"
+msgstr ""
+
+msgid "browse the full season history for any region."
+msgstr ""
+
+msgid "View a sample bulletin →"
+msgstr ""
+
+msgid "Explore the map →"
+msgstr ""
+
+msgid ""
+"Interactive map of Swiss avalanche regions — tap a region to see today's "
+"danger rating, headline problem, and nearby resorts."
+msgstr ""
+
+msgid "Snowdesk — Avalanche map"
+msgstr ""
+
+msgid "Find a region or resort"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "Read today's bulletin →"
+msgstr ""
+
+msgid "Pinch to zoom · tap a region"
+msgstr ""
+
+msgid "Previous month"
+msgstr ""
+
+msgid "Next month"
+msgstr ""
+
+msgid "Mon"
+msgstr ""
+
+msgid "Tue"
+msgstr ""
+
+msgid "Wed"
+msgstr ""
+
+msgid "Thu"
+msgstr ""
+
+msgid "Fri"
+msgstr ""
+
+msgid "Sat"
+msgstr ""
+
+msgid "Sun"
+msgstr ""
+
+#, python-format
+msgid "Avalanche bulletins for %(name)s, last %(count_val)s day."
+msgid_plural "Avalanche bulletins for %(name)s, last %(count_val)s days."
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "last %(count_val)s day"
+msgid_plural "last %(count_val)s days"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Season test"
+msgstr ""
+
+msgid "Panel UI test"
+msgstr ""
+
+#, python-format
+msgid "%(count)s bulletin this season"
+msgid_plural "%(count)s bulletins this season"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "No bulletins for this region and season."
+msgstr ""
+
+msgid "Elevation: above lower bound"
+msgstr ""
+
+msgid "Elevation: below upper bound"
+msgstr ""
+
+msgid "Elevation: between bounds"
+msgstr ""
+
+msgid "Low"
+msgstr ""
+
+msgid "Moderate"
+msgstr ""
+
+msgid "Considerable"
+msgstr ""
+
+msgid "High"
+msgstr ""
+
+msgid "Very High"
+msgstr ""
+
+msgid "GO"
+msgstr ""
+
+msgid "CAUTION"
+msgstr ""
+
+msgid "AVOID"
+msgstr ""
+
+msgid "Stable snowpack"
+msgstr ""
+
+msgid "Cautious route selection needed"
+msgstr ""
+
+msgid "Dangerous off-piste conditions"
+msgstr ""
+
+msgid "Very critical off-piste conditions"
+msgstr ""
+
+msgid "Very high"
+msgstr ""
+
+msgid "Do not enter avalanche terrain"
+msgstr ""
+
+msgid "No rating available"
+msgstr ""
+
+msgid "No distinct problem"
+msgstr ""
+
+#, python-format
+msgid "Your SnowDesk %(purpose)s link"
+msgstr ""
+
+msgid "You're all set — Snowdesk"
+msgstr ""
+
+msgid "You're all set!"
+msgstr ""
+
+msgid ""
+"Your region subscriptions have been saved. We'll notify you when new "
+"avalanche bulletins are published for your regions."
+msgstr ""
+
+msgid "View bulletins"
+msgstr ""
+
+msgid "Check your inbox — Snowdesk"
+msgstr ""
+
+msgid "Check your inbox"
+msgstr ""
+
+msgid ""
+"We've sent you a magic link. Click it to continue — the link expires in "
+"<strong class=\"text-text-1\">15 minutes</strong>."
+msgstr ""
+
+msgid "Can't find it? Check your spam folder, or"
+msgstr ""
+
+msgid "try again"
+msgstr ""
+
+msgid "SnowDesk magic link"
+msgstr ""
+
+msgid "Hi,"
+msgstr ""
+
+#, python-format
+msgid "Click the button below to %(purpose)s to SnowDesk:"
+msgstr ""
+
+msgid "to SnowDesk"
+msgstr ""
+
+#, python-format
+msgid "This link expires in %(minutes)s minutes."
+msgstr ""
+
+msgid "If you did not request this, you can safely ignore this email."
+msgstr ""
+
+msgid "SnowDesk — Swiss Avalanche Bulletins"
+msgstr ""
+
+msgid "Subscribe — Snowdesk"
+msgstr ""
+
+msgid "Subscribe to avalanche bulletins"
+msgstr ""
+
+msgid ""
+"Enter your email and we'll send you a link to choose your regions. No "
+"password required."
+msgstr ""
+
+msgid "Email address"
+msgstr ""
+
+msgid "Send magic link"
+msgstr ""
+
+msgid "Link expired — Snowdesk"
+msgstr ""
+
+msgid "This link has expired"
+msgstr ""
+
+#, python-format
+msgid ""
+"Magic links are only valid for %(minutes)s minutes. This one has expired or "
+"is invalid."
+msgstr ""
+
+msgid "Request a new link"
+msgstr ""
+
+msgid "Manage subscriptions — Snowdesk"
+msgstr ""
+
+msgid "Manage your subscriptions"
+msgstr ""
+
+msgid "Update the regions you follow. Your current selections are pre-checked."
+msgstr ""
+
+msgid "Search regions"
+msgstr ""
+
+msgid "Searching…"
+msgstr ""
+
+msgid "No regions available."
+msgstr ""
+
+msgid "Save changes"
+msgstr ""
+
+msgid "No regions match your search."
+msgstr ""
+
+msgid "Pick your regions — Snowdesk"
+msgstr ""
+
+msgid "Pick your regions"
+msgstr ""
+
+msgid "Choose the avalanche warning regions you want to follow."
+msgstr ""
+
+msgid "Save my regions"
+msgstr ""
+
+msgid "Back"
+msgstr ""
+
+msgid "Show monthly calendar"
+msgstr ""
+
+msgid "Loading…"
+msgstr ""
