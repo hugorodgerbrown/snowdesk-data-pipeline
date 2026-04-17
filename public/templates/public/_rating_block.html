@@ -95,7 +95,11 @@ Renders:
                         {% endif %}
                     {% endwith %}
                     <span class="text-[13px] font-semibold text-text-1">{{ problem.label }}</span>
-                    {% if problem.time_period_label and problem.time_period != "all_day" %}
+                    {# Period pill always renders — "All day" on constant-scope   #}
+                    {# problems, "Earlier (morning)" or "Later (afternoon)" on    #}
+                    {# time-scoped ones.  Keeping it present on every row makes   #}
+                    {# the scope unambiguous at a glance rather than inferred.    #}
+                    {% if problem.time_period_label %}
                         <span
                             class="font-mono text-[9.5px] tracking-[0.08em] uppercase text-text-1 bg-black/[0.06] px-1.5 py-0.5 rounded shrink-0"
                         >

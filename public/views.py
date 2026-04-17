@@ -1774,20 +1774,29 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     # ElevationBounds, field_guidance, hide_comment per trait).
     render_model = _enrich_render_model(raw_render_model)
 
-    # Time-variable day detection.  The headline band renders a split
-    # "L1 → L3" transition only when the traits describe genuinely
-    # time-varying hazard (e.g. all_day + later).  When two traits share
-    # the same time_period they overlap 100%, so the split is
-    # misleading — collapse to a single headline using the highest
-    # trait.  The lower-ranked trait is still listed in the rating
-    # blocks below.
+    # Headline-band variance detection.  Two orthogonal signals, each
+    # driving its own piece of UI, so a Binntal-style "L3 all_day + L3
+    # later" day doesn't misrepresent a same-level problem-mix evolution
+    # as a danger-level transition.
+    #
+    #   is_level_variable — traits span multiple time periods AND
+    #     multiple danger levels.  Drives the split headline band
+    #     (two coloured segments with a → arrow).  Equal levels on
+    #     both sides would render an arrow that reads as "level
+    #     changes" when it doesn't, so we suppress the split.  Equal
+    #     periods (both ``all_day``) would claim a time transition
+    #     that doesn't exist, so we suppress that too.
+    #
+    #   is_time_variable — any trait is scoped to morning (``earlier``)
+    #     or afternoon (``later``).  Drives the "Conditions change
+    #     through the day" caption.  Independent of level variance
+    #     so same-level-across-periods days still surface the signal
+    #     that the problem mix evolves.
     traits: list[dict[str, Any]] = render_model.get("traits") or []
-    is_time_variable = len(traits) > 1 and traits[0].get("time_period") != traits[
-        1
-    ].get("time_period")
-    primary_trait: dict[str, Any] | None = None
-    if traits:
-        primary_trait = max(traits, key=lambda t: int(t.get("danger_level") or 0))
+    time_periods: set[str | None] = {t.get("time_period") for t in traits}
+    levels: set[int] = {int(t.get("danger_level") or 0) for t in traits}
+    is_level_variable = len(traits) > 1 and len(time_periods) > 1 and len(levels) > 1
+    is_time_variable = any(t.get("time_period") in {"earlier", "later"} for t in traits)
 
     panel: dict[str, Any] = {
         "bulletin": bulletin,
@@ -1811,8 +1820,8 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "footer_date_source": "Bulletin.valid_from / valid_to",
         "admin_url": reverse("admin:pipeline_bulletin_change", args=[bulletin.pk]),
         "render_model": render_model,
+        "is_level_variable": is_level_variable,
         "is_time_variable": is_time_variable,
-        "primary_trait": primary_trait,
     }
     panel["day_character"] = compute_day_character(raw_render_model)
     return panel
