@@ -206,8 +206,8 @@ class TestTraitHeaderSemantics:
         assert "<h2" in content
         assert "Dry avalanches, whole day" in content
 
-    def test_two_trait_headers_present(self, anon_client: Client, region):
-        """A variable-day bulletin produces two <h2> headings (one per trait)."""
+    def test_two_trait_rating_blocks_present(self, anon_client: Client, region):
+        """A variable-day bulletin produces one rating block per trait."""
         from pipeline.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 5, 11)
@@ -247,7 +247,12 @@ class TestTraitHeaderSemantics:
         assert response.status_code == 200
         content = response.content.decode()
 
-        assert content.count("<h2") == 2
+        # Count rating-block wrappers rather than ``<h2`` occurrences: the page
+        # now carries other ``<h2>`` elements outside the rating blocks (section
+        # headings for "Avalanche Problems", "Snowpack & Weather", …) and the
+        # test's concern is specifically "one rating block per trait", not
+        # "exactly N headings on the page".
+        assert content.count('data-testid="rating-block"') == 2
         assert "Dry avalanches, whole day" in content
         assert "Wet-snow avalanches, later" in content
 

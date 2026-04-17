@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-04-17 17:26+0000\n"
+"POT-Creation-Date: 2026-04-17 19:09+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -147,7 +147,19 @@ msgstr ""
 msgid "No bulletins available for this region."
 msgstr ""
 
-msgid "Conditions change through the day"
+msgid "Morning"
+msgstr ""
+
+msgid "Later"
+msgstr ""
+
+msgid "Avalanche Problems"
+msgstr ""
+
+msgid "Snowpack & Weather"
+msgstr ""
+
+msgid "Tap to expand"
 msgstr ""
 
 msgid "Issued"
@@ -159,12 +171,6 @@ msgstr ""
 msgid "Next update"
 msgstr ""
 
-msgid "Snowpack & Weather"
-msgstr ""
-
-msgid "Tap to expand"
-msgstr ""
-
 msgid "with"
 msgstr ""
 
@@ -172,6 +178,9 @@ msgid "View history"
 msgstr ""
 
 msgid "View full season"
+msgstr ""
+
+msgid "Open in admin"
 msgstr ""
 
 msgid "Avalanche bulletin data &copy;"
@@ -357,6 +366,9 @@ msgid "Very high"
 msgstr ""
 
 msgid "Do not enter avalanche terrain"
+msgstr ""
+
+msgid "No rating available"
 msgstr ""
 
 msgid "No distinct problem"

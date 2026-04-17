@@ -182,93 +182,62 @@ from base.html's @theme tokens.
                     {% with rm=panel.render_model %}
                         {% comment %}
                            SECTION 2 — Bulletin headline band
-                           Always present.  The band itself carries the danger
-                           level(s); trait titles are intentionally omitted
-                           here because they are repeated inside the rating
-                           blocks below.
-
-                           Two orthogonal signals drive this section:
-                             * panel.is_level_variable — split band with a →
-                               arrow when the day's danger level genuinely
-                               changes across time periods.
-                             * panel.is_time_variable — "Conditions change
-                               through the day" caption when at least one
-                               trait is scoped to morning/afternoon, even if
-                               the level is constant (same-level, different-
-                               period days where the problem mix evolves).
+                           Full-width panel split into AM/PM halves.  Mirrors
+                           WhiteRisk's "Morning" + "As the day progresses"
+                           maps: every day shows both halves, even when they
+                           share a level, so the user never has to infer the
+                           second value.  Each half is tinted with its half's
+                           EAWS colour via the ``.danger-band[data-level=…]``
+                           rule.  The ``is_time_variable`` caption below adds
+                           the problem-mix-changes signal for same-level days
+                           where the evolution is only visible in the rating
+                           blocks (e.g. dry all day + wet afternoon at L3/L3).
                         {% endcomment %}
-                        {% if not panel.is_level_variable %}
-                            {# ── Single coloured band tinted by the highest   #}
-                            {# rating.  Covers one-trait days, same-period      #}
-                            {# multi-trait days, and same-level-different-      #}
-                            {# period days (Binntal-style).                     #}
+                        {# When AM and PM resolve to the same danger key AND the  #}
+                        {# same subdivision, the display collapses to a single    #}
+                        {# "All day" tile so we don't render two identical values. #}
+                        {% if panel.morning_key == panel.afternoon_key and panel.morning_subdivision == panel.afternoon_subdivision %}
                             <div
-                                class="danger-band rounded-[12px] px-4 py-3 mb-4 border border-border"
-                                data-level="{{ panel.danger_key }}"
+                                class="mb-4"
                                 data-testid="headline-band"
                             >
-                                <span class="text-lg font-semibold">
-                                    {{ panel.danger_label }}
-                                    {% if panel.danger_subdivision %}
-                                        ({{ panel.danger_number }}{{ panel.danger_subdivision }})
-                                    {% else %}
-                                        ({{ panel.danger_number }})
-                                    {% endif %}
-                                </span>
+                                <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
+                                    {% trans "All day" %}
+                                </div>
+                                <span
+                                    class="danger-tile text-base"
+                                    data-level="{{ panel.morning_key }}"
+                                >{{ panel.morning_number }}{{ panel.morning_subdivision }}</span>
                             </div>
                         {% else %}
-                            {# ── Level-variable day — two coloured segments.   #}
-                            {# Each tinted by its own danger level; the arrow   #}
-                            {# marks the level transition across time.          #}
-                            {% with t1=rm.traits.0 t2=rm.traits.1 %}
-                                <div
-                                    class="grid grid-cols-[1fr_auto_1fr] items-stretch gap-0 mb-4 rounded-[12px] overflow-hidden border border-border"
-                                    data-testid="headline-band"
-                                >
-                                    <div
-                                        class="danger-band px-4 py-3"
-                                        data-level="{{ t1.danger_level|danger_level_key }}"
-                                        data-testid="headline-segment-first"
-                                    >
-                                        <div class="text-lg font-semibold leading-tight">
-                                            {{ t1.danger_level|danger_level_label }}
-                                            ({{ t1.danger_level }})
-                                        </div>
-                                    </div>
-                                    <div
-                                        class="flex items-center justify-center px-3 text-text-3 bg-bg"
-                                        data-testid="transition-arrow"
-                                        aria-hidden="true"
-                                    >
-                                        &#8594;
-                                    </div>
-                                    <div
-                                        class="danger-band px-4 py-3 text-right"
-                                        data-level="{{ t2.danger_level|danger_level_key }}"
-                                        data-testid="headline-segment-second"
-                                    >
-                                        <div class="text-lg font-semibold leading-tight">
-                                            {{ t2.danger_level|danger_level_label }}
-                                            ({{ t2.danger_level }})
-                                        </div>
-                                    </div>
-                                </div>
-                            {% endwith %}
-                        {% endif %}
-
-                        {# ── Conditions-change caption ───────────────────── #}
-                        {# Independent of the band variant — surfaces whenever  #}
-                        {# any trait is scoped to ``earlier`` or ``later`` so  #}
-                        {# the signal is preserved on same-level days where    #}
-                        {# the problem mix evolves (e.g. dry all day + wet     #}
-                        {# afternoon at the same danger level).                 #}
-                        {% if panel.is_time_variable %}
-                            <p
-                                class="text-sm text-text-2 mb-4 -mt-2 px-1"
-                                data-testid="conditions-change-caption"
+                            <div
+                                class="flex items-end gap-3 mb-4"
+                                data-testid="headline-band"
                             >
-                                {% trans "Conditions change through the day" %}
-                            </p>
+                                <div data-testid="headline-segment-first">
+                                    <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
+                                        {% trans "Morning" %}
+                                    </div>
+                                    <span
+                                        class="danger-tile text-base"
+                                        data-level="{{ panel.morning_key }}"
+                                    >{{ panel.morning_number }}{{ panel.morning_subdivision }}</span>
+                                </div>
+                                <span
+                                    class="text-text-3 text-lg leading-none pb-3"
+                                    data-testid="transition-arrow"
+                                    aria-hidden="true"
+                                >&#8594;</span>
+                                <div data-testid="headline-segment-second">
+                                    <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
+                                        {% trans "Later" %}
+                                    </div>
+                                    <span
+                                        class="danger-tile text-base"
+                                        data-level="{{ panel.afternoon_key }}"
+                                    >{{ panel.afternoon_number }}{{ panel.afternoon_subdivision }}</span>
+                                </div>
+                            </div>
                         {% endif %}
 
                         {% comment %}
@@ -276,6 +245,12 @@ from base.html's @theme tokens.
                            One block per trait.  The partial handles coloured header,
                            aspect/elevation row, and problem rows.
                         {% endcomment %}
+                        <h2
+                            class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3"
+                            data-testid="avalanche-problems-heading"
+                        >
+                            {% trans "Avalanche Problems" %}
+                        </h2>
                         {% if not rm.traits %}
                             <div class="rounded-[12px] border border-border bg-card px-4 py-5 text-center mb-4">
                                 <p class="text-sm font-medium text-text-1 mb-0.5">
@@ -292,58 +267,7 @@ from base.html's @theme tokens.
                         {% endif %}
 
                         {% comment %}
-                           SECTION 4 — Metadata strip
-                           Three fields: Issued / Valid until / Next update.
-                           Source: render_model.metadata.  Render — on None.
-                        {% endcomment %}
-                        {% with meta=rm.metadata %}
-                            {% if meta %}
-                                <div
-                                    class="flex items-start gap-4 px-1 py-3 border-t border-b border-border mb-4 text-xs text-text-3"
-                                    data-testid="metadata-strip"
-                                >
-                                    <div>
-                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
-                                            {% trans "Issued" %}
-                                        </p>
-                                        <p class="text-text-2">
-                                            {% if meta.publication_time %}
-                                                {{ meta.publication_time|parse_iso|date:"j M H:i" }} UTC
-                                            {% else %}
-                                                &mdash;
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
-                                            {% trans "Valid until" %}
-                                        </p>
-                                        <p class="text-text-2">
-                                            {% if meta.valid_until %}
-                                                {{ meta.valid_until|parse_iso|date:"j M H:i" }} UTC
-                                            {% else %}
-                                                &mdash;
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                    <div data-testid="next-update-cell">
-                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
-                                            {% trans "Next update" %}
-                                        </p>
-                                        <p class="text-text-2">
-                                            {% if meta.next_update %}
-                                                {{ meta.next_update|parse_iso|date:"j M H:i" }} UTC
-                                            {% else %}
-                                                &mdash;
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                </div>
-                            {% endif %}
-                        {% endwith %}
-
-                        {% comment %}
-                           SECTION 5 — Snowpack and weather
+                           SECTION 4 — Snowpack and weather
                            Four prose sub-blocks rendered as collapsible panels
                            (native <details>/<summary>, zero JS).  Each panel is
                            skipped entirely when its source is None/empty, so no
@@ -480,6 +404,61 @@ from base.html's @theme tokens.
                                 {% endif %}
                             {% endif %}
                         {% endwith %}
+
+                        {% comment %}
+                           SECTION 5 — Metadata strip
+                           Three fields: Issued / Valid until / Next update.
+                           Source: render_model.metadata.  Pushed to the
+                           bottom of the content (above the footer) because
+                           the precise timestamps are reference data — the
+                           reader wants the hazard read first.  Render — on
+                           None.
+                        {% endcomment %}
+                        {% with meta=rm.metadata %}
+                            {% if meta %}
+                                <div
+                                    class="flex items-start gap-4 px-1 pt-3 mt-8 border-t border-border text-xs text-text-3"
+                                    data-testid="metadata-strip"
+                                >
+                                    <div>
+                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
+                                            {% trans "Issued" %}
+                                        </p>
+                                        <p class="text-text-2">
+                                            {% if meta.publication_time %}
+                                                {{ meta.publication_time|parse_iso|date:"j M H:i" }} UTC
+                                            {% else %}
+                                                &mdash;
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
+                                            {% trans "Valid until" %}
+                                        </p>
+                                        <p class="text-text-2">
+                                            {% if meta.valid_until %}
+                                                {{ meta.valid_until|parse_iso|date:"j M H:i" }} UTC
+                                            {% else %}
+                                                &mdash;
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                    <div data-testid="next-update-cell">
+                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
+                                            {% trans "Next update" %}
+                                        </p>
+                                        <p class="text-text-2">
+                                            {% if meta.next_update %}
+                                                {{ meta.next_update|parse_iso|date:"j M H:i" }} UTC
+                                            {% else %}
+                                                &mdash;
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            {% endif %}
+                        {% endwith %}
                     {% endwith %}{# rm #}
                 {% endif %}{# error state else #}
             {% endif %}
@@ -512,6 +491,18 @@ from base.html's @theme tokens.
                         class="underline hover:text-text-2"
                         href="{% url 'public:season_bulletins' region_id=region_id %}"
                     >{% trans "View full season" %}</a>
+                    {# DEBUG-only shortcut into Django admin for the current   #}
+                    {# bulletin record.  Present only when ``settings.DEBUG``  #}
+                    {# is truthy and a panel was built (empty-state pages     #}
+                    {# have no bulletin to open).  Production omits the link. #}
+                    {% if debug and panel.admin_url %}
+                        &middot;
+                        <a
+                            class="underline hover:text-text-2"
+                            href="{{ panel.admin_url }}"
+                            data-testid="footer-admin-link"
+                        >{% trans "Open in admin" %}</a>
+                    {% endif %}
                 </p>
                 <p>
                     {% blocktrans trimmed %}
