@@ -47,6 +47,45 @@
   --color-border:       rgba(0, 0, 0, 0.09);
   --color-border-strong: rgba(0, 0, 0, 0.16);
 
+  /* Pipeline admin chrome */
+  --color-admin-bg:         #f9fafb;   /* page background (gray-50)           */
+  --color-admin-nav:        #0f172a;   /* top nav bar (slate-900)             */
+  --color-admin-nav-text:   #ffffff;   /* nav bar text                        */
+
+  /* Interactive accent (buttons, focus rings, indicators) */
+  --color-accent:           #2563eb;   /* primary action / focus ring (blue-600)  */
+  --color-accent-hover:     #1d4ed8;   /* button hover (blue-700)                 */
+  --color-accent-text:      #ffffff;   /* text on accent backgrounds               */
+
+  /* Status feedback (flash messages, status badges) */
+  --color-status-error-bg:    #fee2e2;   /* red-100   */
+  --color-status-error-text:  #991b1b;   /* red-800   */
+  --color-status-warning-bg:  #fef3c7;   /* amber-100 */
+  --color-status-warning-text:#92400e;   /* amber-800 */
+  --color-status-success-bg:  #d1fae5;   /* emerald-100 */
+  --color-status-success-text:#065f46;   /* emerald-800 */
+  --color-status-info-bg:     #dbeafe;   /* blue-100  */
+  --color-status-info-text:   #1e40af;   /* blue-800  */
+
+  /* Warning callout (render-model error banners) */
+  --color-callout-warning-bg:         #fffbeb;   /* amber-50  */
+  --color-callout-warning-border:     #fbbf24;   /* amber-400 */
+  --color-callout-warning-heading:    #78350f;   /* amber-900 */
+  --color-callout-warning-text:       #92400e;   /* amber-800 */
+  --color-callout-warning-code-bg:    #fef3c7;   /* amber-100 */
+  --color-callout-warning-link-hover: #b45309;   /* amber-700 */
+
+  /* Form validation */
+  --color-form-error:     #ef4444;   /* inline error text (red-500)         */
+
+  /* Chip / pill overlays */
+  --color-chip:           rgba(0, 0, 0, 0.06);   /* period pill, time badge   */
+  --color-chip-strong:    rgba(0, 0, 0, 0.08);   /* category badge            */
+
+  /* Misc interactive */
+  --color-card-hover:     #eeeae2;   /* subtle card footer hover            */
+  --color-ring-selected:  #3b82f6;   /* calendar selected-date ring (blue-500) */
+
   /* —— EAWS danger scale ————————————————————
      Exact EAWS specification colours. Do not
      adjust for brand reasons — these are a

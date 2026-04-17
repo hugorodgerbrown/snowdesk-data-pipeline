@@ -12,7 +12,7 @@
     - content   : main page body
     - extra_js  : scripts loaded at end of <body>
 -->
-<html lang="en" class="h-full bg-gray-50">
+<html lang="en" class="h-full bg-admin-bg">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -41,9 +41,9 @@
         {% block extra_head %}{% endblock %}
     </head>
     <body class="h-full">
-        <nav class="bg-slate-900 px-6 py-3">
+        <nav class="bg-admin-nav px-6 py-3">
             <a
-                class="text-white font-semibold text-lg tracking-tight no-underline"
+                class="text-admin-nav-text font-semibold text-lg tracking-tight no-underline"
                 href="{% url 'pipeline:dashboard' %}"
             >
                 Snowdesk Pipeline
@@ -53,7 +53,7 @@
         <!-- HTMX global loading indicator -->
         <div
             id="htmx-indicator"
-            class="fixed top-3 right-4 z-50 bg-blue-600 text-white text-xs font-medium px-3 py-1 rounded shadow"
+            class="fixed top-3 right-4 z-50 bg-accent text-accent-text text-xs font-medium px-3 py-1 rounded shadow"
         >
             Loading…
         </div>
@@ -65,10 +65,10 @@
                         <li
                             class="
                                 px-4 py-3 rounded text-sm
-                                {% if message.tags == 'error' %}bg-red-100 text-red-800
-                                {% elif message.tags == 'warning' %}bg-amber-100 text-amber-800
-                                {% elif message.tags == 'success' %}bg-emerald-100 text-emerald-800
-                                {% else %}bg-blue-100 text-blue-800{% endif %}
+                                {% if message.tags == 'error' %}bg-status-error-bg text-status-error-text
+                                {% elif message.tags == 'warning' %}bg-status-warning-bg text-status-warning-text
+                                {% elif message.tags == 'success' %}bg-status-success-bg text-status-success-text
+                                {% else %}bg-status-info-bg text-status-info-text{% endif %}
                             "
                         >
                             {{ message }}
