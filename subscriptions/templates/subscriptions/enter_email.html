@@ -27,7 +27,7 @@ enter their email address to receive a magic link.
                         {% if form.email.errors %}
                             <ul class="mt-1.5 space-y-0.5">
                                 {% for error in form.email.errors %}
-                                    <li class="text-xs text-red-500">{{ error }}</li>
+                                    <li class="text-xs text-form-error">{{ error }}</li>
                                 {% endfor %}
                             </ul>
                         {% endif %}

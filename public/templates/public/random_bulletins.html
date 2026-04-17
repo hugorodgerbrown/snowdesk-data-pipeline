@@ -17,6 +17,7 @@ Play CDN and the design-token stylesheet (static/css/main.css).
             content="Avalanche bulletins for {{ region_name }}, last {{ count }} day{{ count|pluralize }}."
         >
         <title>{{ region_name }} — Snowdesk</title>
+        {% include "includes/theme_head.html" %}
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
     </head>
     <body class="bg-bg font-sans text-text-1 min-h-screen">

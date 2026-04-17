@@ -134,7 +134,7 @@ calendar_current_date : date | None  (the bulletin date being viewed, if any)
                     {% if cell.has_bulletin %}
                         <a
                             href="{% url 'public:bulletin_date' region.region_id region.slug cell.date|date:'Y-m-d' %}"
-                            class="aspect-square rounded flex items-center justify-center text-[10px] font-medium calendar-cell{% if cell.date == today %} ring-2 ring-offset-2 ring-text-1{% endif %}{% if cell.is_selected %} ring-2 ring-blue-500{% endif %}"
+                            class="aspect-square rounded flex items-center justify-center text-[10px] font-medium calendar-cell{% if cell.date == today %} ring-2 ring-offset-2 ring-text-1{% endif %}{% if cell.is_selected %} ring-2 ring-ring-selected{% endif %}"
                             data-rating-min="{{ cell.min_rating_key }}"
                             data-rating-max="{{ cell.max_rating_key }}"
                             title="{{ cell.date|date:'j N' }}: {{ cell.max_rating_key|title }}"
@@ -143,7 +143,7 @@ calendar_current_date : date | None  (the bulletin date being viewed, if any)
                         </a>
                     {% else %}
                         <div
-                            class="aspect-square rounded flex items-center justify-center text-[10px] text-text-3 calendar-cell{% if cell.date == today %} ring-2 ring-offset-2 ring-text-1{% endif %}{% if cell.is_selected %} ring-2 ring-blue-500{% endif %}"
+                            class="aspect-square rounded flex items-center justify-center text-[10px] text-text-3 calendar-cell{% if cell.date == today %} ring-2 ring-offset-2 ring-text-1{% endif %}{% if cell.is_selected %} ring-2 ring-ring-selected{% endif %}"
                             data-rating-min="{{ cell.min_rating_key }}"
                             data-rating-max="{{ cell.max_rating_key }}"
                         >

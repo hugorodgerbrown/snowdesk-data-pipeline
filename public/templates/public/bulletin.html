@@ -39,6 +39,7 @@ from base.html's @theme tokens.
             {{ region_name }} &middot; {% if is_today %}Today{% else %}{{ page_date|date:"j F Y" }}{% endif %} &middot;
             Snowdesk
         </title>
+        {% include "includes/theme_head.html" %}
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
         <script
             src="https://unpkg.com/htmx.org@2.0.4"
@@ -155,23 +156,25 @@ from base.html's @theme tokens.
             {% else %}
                 {# ── Error state (version == 0) ──────────────────────────────── #}
                 {% if panel.render_model.version == 0 %}
-                    <div class="rounded-[8px] border-l-4 border-amber-400 bg-amber-50 px-3.5 py-3 text-sm mb-4">
-                        <p class="font-semibold text-amber-900 mb-1">We couldn't process this bulletin.</p>
+                    <div class="rounded-[8px] border-l-4 border-callout-warning-border bg-callout-warning-bg px-3.5 py-3 text-sm mb-4">
+                        <p class="font-semibold text-callout-warning-heading mb-1">
+                            We couldn't process this bulletin.
+                        </p>
                         {% if user.is_staff %}
-                            <p class="text-xs text-amber-800 mb-2">
+                            <p class="text-xs text-callout-warning-text mb-2">
                                 Bulletin ID: <span class="font-mono">{{ panel.bulletin.bulletin_id }}</span>
                             </p>
-                            <p class="font-mono text-[11px] break-all text-amber-900 bg-amber-100 rounded px-2 py-1.5 mb-2">
+                            <p class="font-mono text-[11px] break-all text-callout-warning-heading bg-callout-warning-code-bg rounded px-2 py-1.5 mb-2">
                                 {{ panel.render_model.error }}
                             </p>
                             <a
-                                class="inline-block text-xs font-medium text-amber-900 underline underline-offset-2 hover:text-amber-700"
+                                class="inline-block text-xs font-medium text-callout-warning-heading underline underline-offset-2 hover:text-callout-warning-link-hover"
                                 href="/admin/pipeline/bulletin/{{ panel.bulletin.pk }}/change/"
                             >
                                 Inspect in admin →
                             </a>
                         {% else %}
-                            <p class="text-xs text-amber-800">
+                            <p class="text-xs text-callout-warning-text">
                                 We are sorry for the inconvenience. Please try again later or check back for an updated
                                 bulletin.
                             </p>

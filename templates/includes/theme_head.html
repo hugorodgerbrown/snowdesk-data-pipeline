@@ -1,0 +1,32 @@
+{% comment %}
+templates/includes/theme_head.html — Dark mode FOUC prevention.
+
+Include this in <head> BEFORE the stylesheet link. It synchronously
+applies the .dark class to <html> based on the user's saved preference
+(localStorage) or OS setting (prefers-color-scheme), preventing a
+flash of the wrong theme on page load.
+
+Also exposes window.__setTheme(mode) for the toggle button:
+  __setTheme('dark')   — force dark
+  __setTheme('light')  — force light
+  __setTheme('system') — follow OS preference
+{% endcomment %}
+<script>
+    (function () {
+      var stored = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = stored === 'dark' || (stored !== 'light' && prefersDark);
+      document.documentElement.classList.toggle('dark', dark);
+
+      window.__setTheme = function (mode) {
+        if (mode === 'system') {
+          localStorage.removeItem('theme');
+          dark = prefersDark;
+        } else {
+          localStorage.setItem('theme', mode);
+          dark = mode === 'dark';
+        }
+        document.documentElement.classList.toggle('dark', dark);
+      };
+    })();
+</script>
