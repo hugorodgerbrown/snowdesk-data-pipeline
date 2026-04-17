@@ -2,9 +2,8 @@
 <!--
   pipeline/templates/pipeline/base.html — Base layout template.
 
-  All full-page templates extend this. Loads Tailwind CSS via the Play CDN
-  (suitable for development; switch to the Tailwind CLI for production builds)
-  and HTMX from CDN.
+  All full-page templates extend this. Loads the compiled Tailwind
+  stylesheet (static/css/output.css) and HTMX from CDN.
 
   Blocks available for child templates:
     - title     : page <title> suffix
@@ -12,14 +11,14 @@
     - content   : main page body
     - extra_js  : scripts loaded at end of <body>
 -->
+{% load static %}
 <html lang="en" class="h-full bg-admin-bg">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Snowdesk Pipeline{% block title %}{% endblock %}</title>
 
-        <!-- Tailwind CSS Play CDN — replace with CLI build for production -->
-        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+        <link rel="stylesheet" href="{% static 'css/output.css' %}">
 
         <!-- HTMX -->
         <script
@@ -80,7 +79,6 @@
             {% block content %}{% endblock %}
         </main>
 
-        {% load static %}
         <script src="{% static 'js/main.js' %}"></script>
         {% block extra_js %}{% endblock %}
     </body>
