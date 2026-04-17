@@ -376,15 +376,17 @@ Settings (`config/settings/base.py`):
 **Adding new strings**: after adding any user-facing string, run:
 ```bash
 poetry run python manage.py makemessages -l en --no-location
-poetry run python manage.py compilemessages
 ```
 
-**File tracking**: `.po` files are checked in; `.mo` files are gitignored (regenerated
-by `compilemessages`). The `django-checks` tox env runs `compilemessages` so CI catches
-a missing or corrupt catalogue.
+**File tracking**: `.po` files are checked in; `.mo` files are gitignored. We do **not**
+run `compilemessages` in CI or on deploy while the catalogue is English-only — every
+`msgstr` is empty, so Django falls back to the `msgid` at render time and no compiled
+binary is needed. Re-enable the compile step (and install `gettext` on the build
+container) when DE/FR/IT translations are added.
 
-**System requirement**: `gettext` system package must be installed (`brew install gettext`
-on macOS) for `makemessages` and `compilemessages` to work.
+**System requirement**: the `gettext` system package is only needed locally for
+`makemessages` / `compilemessages` (`brew install gettext` on macOS). Not required for
+deploy.
 
 ## Code style
 
