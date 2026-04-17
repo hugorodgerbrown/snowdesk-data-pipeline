@@ -11,7 +11,7 @@
     <div class="overflow-x-auto">
         <table class="min-w-full text-sm">
             <thead>
-                <tr class="border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <tr class="border-b border-border-strong text-left text-xs font-semibold text-text-3 uppercase tracking-wider">
                     <th class="pb-3 pr-4">#</th>
                     <th class="pb-3 pr-4">Status</th>
                     <th class="pb-3 pr-4">Triggered by</th>
@@ -21,33 +21,33 @@
                     <th class="pb-3">Updated</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100">
+            <tbody class="divide-y divide-border">
                 {% for run in recent_runs %}
-                    <tr class="hover:bg-gray-50">
-                        <td class="py-2.5 pr-4 text-gray-500">{{ run.pk }}</td>
+                    <tr class="hover:bg-card-subtle">
+                        <td class="py-2.5 pr-4 text-text-3">{{ run.pk }}</td>
                         <td class="py-2.5 pr-4">
                             <span
                                 class="
                                     inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wide
-                                    {% if run.status == 'success' %}bg-emerald-100 text-emerald-800
-                                    {% elif run.status == 'failed' %}bg-red-100 text-red-800
-                                    {% elif run.status == 'running' %}bg-blue-100 text-blue-800
-                                    {% else %}bg-amber-100 text-amber-800{% endif %}
+                                    {% if run.status == 'success' %}bg-status-success-bg text-status-success-text
+                                    {% elif run.status == 'failed' %}bg-status-error-bg text-status-error-text
+                                    {% elif run.status == 'running' %}bg-status-info-bg text-status-info-text
+                                    {% else %}bg-status-warning-bg text-status-warning-text{% endif %}
                                 "
                             >
                                 {{ run.status }}
                             </span>
                         </td>
-                        <td class="py-2.5 pr-4 text-gray-700">{{ run.triggered_by }}</td>
-                        <td class="py-2.5 pr-4 text-gray-700 tabular-nums">{{ run.started_at|date:"Y-m-d H:i:s" }}</td>
-                        <td class="py-2.5 pr-4 text-gray-700 tabular-nums">{{ run.duration_seconds|default:"—" }}</td>
-                        <td class="py-2.5 pr-4 text-gray-700 tabular-nums">{{ run.records_created }}</td>
-                        <td class="py-2.5 text-gray-700 tabular-nums">{{ run.records_updated }}</td>
+                        <td class="py-2.5 pr-4 text-text-2">{{ run.triggered_by }}</td>
+                        <td class="py-2.5 pr-4 text-text-2 tabular-nums">{{ run.started_at|date:"Y-m-d H:i:s" }}</td>
+                        <td class="py-2.5 pr-4 text-text-2 tabular-nums">{{ run.duration_seconds|default:"—" }}</td>
+                        <td class="py-2.5 pr-4 text-text-2 tabular-nums">{{ run.records_created }}</td>
+                        <td class="py-2.5 text-text-2 tabular-nums">{{ run.records_updated }}</td>
                     </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 {% else %}
-    <p class="text-sm text-gray-400 italic py-4">No pipeline runs yet.</p>
+    <p class="text-sm text-text-3 italic py-4">No pipeline runs yet.</p>
 {% endif %}
