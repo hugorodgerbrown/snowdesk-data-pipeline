@@ -39,6 +39,7 @@ from base.html's @theme tokens.
             {{ region_name }} &middot; {% if is_today %}Today{% else %}{{ page_date|date:"j F Y" }}{% endif %} &middot;
             Snowdesk
         </title>
+        {% include "includes/theme_head.html" %}
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
         <script
             src="https://unpkg.com/htmx.org@2.0.4"

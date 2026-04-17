@@ -130,6 +130,70 @@
 
 
 /* ———————————————————————————————————————————
+   1b. DARK MODE OVERRIDES
+   Applied when .dark is present on <html>.
+   Only tokens that change are listed — EAWS
+   danger colours are intentionally unchanged.
+   ——————————————————————————————————————————— */
+
+.dark {
+  /* Surface colours */
+  --color-bg:           #1c1b19;
+  --color-card:         #2a2825;
+  --color-card-subtle:  #23211f;
+  --color-tag:          #302e2a;
+
+  /* Text ramp */
+  --color-text-1:       #edece8;
+  --color-text-2:       #a8a49c;
+  --color-text-3:       #8a867e;
+
+  /* Borders */
+  --color-border:       rgba(255, 255, 255, 0.09);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+
+  /* Pipeline admin chrome */
+  --color-admin-bg:         #1c1b19;
+  --color-admin-nav:        #141312;
+  --color-admin-nav-text:   #edece8;
+
+  /* Interactive accent */
+  --color-accent:           #3b82f6;
+  --color-accent-hover:     #60a5fa;
+  --color-accent-text:      #ffffff;
+
+  /* Status feedback — deeper backgrounds, lighter text */
+  --color-status-error-bg:    #451a1a;
+  --color-status-error-text:  #fca5a5;
+  --color-status-warning-bg:  #452a0a;
+  --color-status-warning-text:#fcd34d;
+  --color-status-success-bg:  #14332a;
+  --color-status-success-text:#6ee7b7;
+  --color-status-info-bg:     #1e2a4a;
+  --color-status-info-text:   #93c5fd;
+
+  /* Warning callout */
+  --color-callout-warning-bg:         #2a2010;
+  --color-callout-warning-border:     #b8860b;
+  --color-callout-warning-heading:    #fcd34d;
+  --color-callout-warning-text:       #fbbf24;
+  --color-callout-warning-code-bg:    #332a14;
+  --color-callout-warning-link-hover: #fde68a;
+
+  /* Form validation */
+  --color-form-error:     #f87171;
+
+  /* Chip / pill overlays — inverted for dark surfaces */
+  --color-chip:           rgba(255, 255, 255, 0.07);
+  --color-chip-strong:    rgba(255, 255, 255, 0.10);
+
+  /* Misc interactive */
+  --color-card-hover:     #353330;
+  --color-ring-selected:  #60a5fa;
+}
+
+
+/* ———————————————————————————————————————————
    2. COMPONENT EXCEPTIONS
    Styles that cannot be expressed as Tailwind
    utilities. Keep this section minimal.
