@@ -1436,36 +1436,64 @@ _AFTERNOON_PERIODS: frozenset[str] = frozenset({"all_day", "later"})
 
 
 def _resolve_period_danger(
-    ratings: list[dict[str, Any]], period_group: frozenset[str]
+    ratings: list[dict[str, Any]],
+    traits: list[dict[str, Any]],
+    period_group: frozenset[str],
 ) -> tuple[str, str]:
     """
-    Return the highest danger key + subdivision among ratings covering a period.
+    Return the highest danger key + subdivision covering a half of the day.
 
-    Filters ``ratings`` to those whose ``validTimePeriod`` is in
-    ``period_group`` (defaulting absent values to ``"all_day"`` since
-    an unscoped CAAML rating applies all day).  Returns the
-    ``_highest_danger_key`` of the filtered list, or ``("no_rating", "")``
-    if nothing matches — defensive for malformed bulletins; in practice
-    every bulletin carries an ``all_day`` rating so both halves always
-    match at least one entry.
+    Primary source is the CAAML ``dangerRatings`` list — filtered to entries
+    whose ``validTimePeriod`` is in ``period_group`` (defaulting absent values
+    to ``"all_day"`` since an unscoped rating applies all day), then reduced
+    with :func:`_highest_danger_key` to pick the highest ``mainValue`` and
+    its subdivision suffix.
+
+    When ``dangerRatings`` carries nothing for the period, falls back to the
+    render-model ``traits`` and returns the highest ``danger_level`` among
+    traits whose ``time_period`` covers the half.  Subdivision is ``""`` in
+    the fallback path — traits don't carry it.  This branch exists so test
+    fixtures that populate only ``render_model`` (not ``raw_data``) still
+    render the headline band correctly; real SLF bulletins always populate
+    ``dangerRatings`` and hit the primary path.
+
+    Returns ``("no_rating", "")`` only when *both* sources are empty for
+    this half.
 
     Args:
-        ratings: The CAAML ``dangerRatings`` list.
-        period_group: Set of ``validTimePeriod`` tokens covering the
-            target half of the day (``_MORNING_PERIODS`` or
-            ``_AFTERNOON_PERIODS``).
+        ratings: The CAAML ``dangerRatings`` list from ``raw_data``.
+        traits: The render-model ``traits`` list (used as the fallback).
+        period_group: Set of ``validTimePeriod`` tokens covering the target
+            half of the day (``_MORNING_PERIODS`` or ``_AFTERNOON_PERIODS``).
 
     Returns:
         A ``(key, subdivision_suffix)`` tuple, same shape as
         :func:`_highest_danger_key`.
 
     """
-    relevant = [
+    relevant_ratings = [
         r for r in ratings if r.get("validTimePeriod", "all_day") in period_group
     ]
-    if not relevant:
+    if relevant_ratings:
+        return _highest_danger_key(relevant_ratings)
+
+    # Fallback: derive the half's level from traits when ``dangerRatings``
+    # is absent or omits a covering entry.  Tests populate ``render_model``
+    # directly and leave ``raw_data`` empty — without this fallback the
+    # headline band would read ``no_rating`` on every test bulletin.
+    levels: list[int] = []
+    for t in traits:
+        if t.get("time_period") not in period_group:
+            continue
+        try:
+            level = int(t.get("danger_level") or 0)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= level <= 5:
+            levels.append(level)
+    if not levels:
         return "no_rating", ""
-    return _highest_danger_key(relevant)
+    return _DANGER_ORDER[max(levels) - 1], ""
 
 
 def _is_numeric_bound(value: Any) -> bool:
@@ -1795,19 +1823,6 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     danger_key, danger_subdivision = _highest_danger_key(ratings)
     danger_meta = _DANGER_PANEL_META[danger_key]
 
-    # Per-half danger resolution for the AM/PM split headline.  Mirrors
-    # WhiteRisk's "Morning" + "As the day progresses" maps: the half's
-    # level is the highest of any rating that covers it (``all_day`` is
-    # always counted, plus ``earlier`` for morning or ``later`` for
-    # afternoon).  Both halves render explicitly, even when they share a
-    # level, so the user never has to infer a missing value.
-    morning_key, morning_subdivision = _resolve_period_danger(ratings, _MORNING_PERIODS)
-    afternoon_key, afternoon_subdivision = _resolve_period_danger(
-        ratings, _AFTERNOON_PERIODS
-    )
-    morning_meta = _DANGER_PANEL_META[morning_key]
-    afternoon_meta = _DANGER_PANEL_META[afternoon_key]
-
     # Fallback key-message: used by the template when the bulletin has no
     # avalanche problems. Try avalancheProblems[0].comment first, then
     # snowpackStructure.comment, then weatherReview.comment.
@@ -1838,13 +1853,29 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     # ElevationBounds, field_guidance, hide_comment per trait).
     render_model = _enrich_render_model(raw_render_model)
 
+    traits: list[dict[str, Any]] = render_model.get("traits") or []
+
+    # Per-half danger resolution for the AM/PM split headline.  Mirrors
+    # WhiteRisk's "Morning" + "As the day progresses" maps: the half's
+    # level is the highest of any rating that covers it (``all_day`` is
+    # always counted, plus ``earlier`` for morning or ``later`` for
+    # afternoon).  Primary source is ``dangerRatings``; traits are the
+    # fallback when the raw data omits per-period entries.
+    morning_key, morning_subdivision = _resolve_period_danger(
+        ratings, traits, _MORNING_PERIODS
+    )
+    afternoon_key, afternoon_subdivision = _resolve_period_danger(
+        ratings, traits, _AFTERNOON_PERIODS
+    )
+    morning_meta = _DANGER_PANEL_META[morning_key]
+    afternoon_meta = _DANGER_PANEL_META[afternoon_key]
+
     # Conditions-change caption trigger.  Fires when any trait is scoped
     # to morning (``earlier``) or afternoon (``later``), even if the
     # AM/PM danger levels happen to match — the problem *mix* still
     # evolves (e.g. dry all day + wet afternoon at the same level) and
     # the caption surfaces that signal beside the headline band, which
     # only carries the level tints.
-    traits: list[dict[str, Any]] = render_model.get("traits") or []
     is_time_variable = any(t.get("time_period") in {"earlier", "later"} for t in traits)
 
     panel: dict[str, Any] = {
