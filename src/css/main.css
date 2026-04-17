@@ -150,6 +150,39 @@
 .problem-level[data-level="very_high"]    { border-left-color: var(--color-eaws-very-high); }
 
 
+/* —— EAWS danger-level compact tile —————————
+   A small coloured square that carries a danger
+   level number (and optional subdivision suffix,
+   e.g. "3−") next to a plain-text label — used in
+   the bulletin headline band.  The tint comes
+   from the saturated EAWS tokens so the tile
+   reads as a pictogram rather than an area fill.
+   High/very_high swap to white text for contrast
+   on the saturated red background; ``no_rating``
+   falls back to a neutral grey surface.
+   ————————————————————————————————————————— */
+
+.danger-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding: 0 0.4rem;
+  border-radius: 8px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--color-text-1);
+  flex-shrink: 0;
+}
+.danger-tile[data-level="no_rating"]    { background: var(--color-card-subtle); color: var(--color-text-3); }
+.danger-tile[data-level="low"]          { background: var(--color-eaws-low); }
+.danger-tile[data-level="moderate"]     { background: var(--color-eaws-moderate); }
+.danger-tile[data-level="considerable"] { background: var(--color-eaws-considerable); }
+.danger-tile[data-level="high"]         { background: var(--color-eaws-high); color: #fff; }
+.danger-tile[data-level="very_high"]    { background: var(--color-eaws-very-high); color: #fff; }
+
+
 /* —— Field guidance <details> chevron ——————
    The animated chevron on the <summary> trigger
    cannot be done with Tailwind alone (no utility
