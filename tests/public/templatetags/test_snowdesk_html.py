@@ -15,7 +15,7 @@ import pytest
 from django.template import Context, Template
 from django.utils.safestring import SafeString
 
-from public.templatetags.snowdesk_html import snowdesk_html
+from public.templatetags.snowdesk_html import prose_body, prose_title, snowdesk_html
 
 # Absolute path to the sample data fixture used in the real-SLF test.
 _SAMPLE_PATH = (
@@ -209,3 +209,82 @@ class TestSnowdeskHtmlTemplateIntegration:
         # If auto-escaping hit the output the tag would be &lt;p&gt;...
         assert rendered == "<p>hello</p>"
         assert "&lt;" not in rendered
+
+
+class TestProseTitle:
+    """Extracts the leading ``<h1>`` of an SLF prose block as plain text."""
+
+    def test_extracts_leading_h1(self):
+        """The leading ``<h1>`` text is returned stripped of tags."""
+        html = "<h1>Weather review for Thursday</h1><p>Overnight…</p>"
+        assert prose_title(html, "Weather review") == "Weather review for Thursday"
+
+    def test_tolerates_leading_whitespace(self):
+        """Leading whitespace before ``<h1>`` does not prevent extraction."""
+        html = "   \n<h1>Outlook to Sunday</h1><p>…</p>"
+        assert prose_title(html, "Outlook") == "Outlook to Sunday"
+
+    def test_tolerates_attributes_on_h1(self):
+        """Attributes on the ``<h1>`` tag do not break extraction."""
+        html = '<h1 class="x">Snowpack</h1><p>…</p>'
+        assert prose_title(html, "fallback") == "Snowpack"
+
+    def test_strips_inline_tags_from_title(self):
+        """Inline tags inside the ``<h1>`` are stripped from the returned title."""
+        html = "<h1>Weather <em>review</em></h1>"
+        assert prose_title(html, "fallback") == "Weather review"
+
+    def test_falls_back_when_no_h1(self):
+        """When the prose has no leading ``<h1>``, the fallback is returned."""
+        html = "<p>Just a paragraph, no heading.</p>"
+        assert prose_title(html, "Snowpack") == "Snowpack"
+
+    def test_falls_back_on_empty_h1(self):
+        """An empty ``<h1>`` body falls back — a blank summary would be useless."""
+        html = "<h1></h1><p>body</p>"
+        assert prose_title(html, "Snowpack") == "Snowpack"
+
+    def test_none_returns_fallback(self):
+        """``None`` input returns the fallback."""
+        assert prose_title(None, "Snowpack") == "Snowpack"
+
+    def test_empty_string_returns_fallback(self):
+        """Empty-string input returns the fallback."""
+        assert prose_title("", "Snowpack") == "Snowpack"
+
+    def test_only_first_h1_is_extracted(self):
+        """A second ``<h1>`` later in the prose is ignored."""
+        html = "<h1>First</h1><p>x</p><h1>Second</h1>"
+        assert prose_title(html, "fallback") == "First"
+
+
+class TestProseBody:
+    """Returns the prose HTML with the leading ``<h1>`` removed."""
+
+    def test_strips_leading_h1(self):
+        """The leading ``<h1>`` is removed; the remainder is returned."""
+        html = "<h1>Weather review for Thursday</h1><p>Overnight…</p>"
+        assert prose_body(html) == "<p>Overnight…</p>"
+
+    def test_preserves_subsequent_h1(self):
+        """Only the first ``<h1>`` is stripped — later headings stay."""
+        html = "<h1>First</h1><p>x</p><h1>Wind</h1><p>y</p>"
+        assert prose_body(html) == "<p>x</p><h1>Wind</h1><p>y</p>"
+
+    def test_leaves_body_unchanged_when_no_leading_h1(self):
+        """Prose without a leading ``<h1>`` is returned unchanged."""
+        html = "<p>Just a paragraph.</p>"
+        assert prose_body(html) == html
+
+    def test_none_returns_empty(self):
+        """``None`` input returns an empty string."""
+        assert prose_body(None) == ""
+
+    def test_empty_string_returns_empty(self):
+        """Empty-string input returns an empty string."""
+        assert prose_body("") == ""
+
+    def test_handles_whitespace_and_attributes(self):
+        """Leading whitespace and attributes on ``<h1>`` don't leave debris."""
+        html = '  <h1 class="x">Snowpack</h1><p>body</p>'
+        assert prose_body(html) == "<p>body</p>"

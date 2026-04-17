@@ -178,6 +178,31 @@ details > summary.problem-tag {
 details > summary.problem-tag::-webkit-details-marker { display: none; }
 
 
+/* —— Snowpack & weather collapsible panels —
+   Strips the native <summary> disclosure marker
+   so we can render our own chevron affordance,
+   and rotates that chevron 180° when the panel
+   is open.  Tailwind has no utility for the
+   details[open] state or the ::-webkit-details-marker
+   pseudo-element, so these live here.
+   ————————————————————————————————————————— */
+
+.snowdesk-panel-summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.snowdesk-panel-summary::-webkit-details-marker { display: none; }
+
+.snowdesk-panel-chevron {
+  display: inline-block;
+  transition: transform 150ms ease;
+}
+details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
+  transform: rotate(180deg);
+}
+
+
 /* —— Calendar cell danger-rating fills ——————
    Applied via data-rating-min / data-rating-max on each calendar tile so
    the background comes from EAWS tokens.
