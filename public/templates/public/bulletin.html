@@ -181,36 +181,44 @@ from base.html's @theme tokens.
                     {% with rm=panel.render_model %}
                         {% comment %}
                            SECTION 2 — Bulletin headline band
-                           Always present.  One rating on simple days (1 trait),
-                           two side-by-side coloured segments on variable days
-                           (2 traits) — each tinted by its own danger level so
-                           the split is visible at a glance.
+                           Always present.  The band itself carries the danger
+                           level(s); trait titles are intentionally omitted
+                           here because they are repeated inside the rating
+                           blocks below.
+
+                           Two orthogonal signals drive this section:
+                             * panel.is_level_variable — split band with a →
+                               arrow when the day's danger level genuinely
+                               changes across time periods.
+                             * panel.is_time_variable — "Conditions change
+                               through the day" caption when at least one
+                               trait is scoped to morning/afternoon, even if
+                               the level is constant (same-level, different-
+                               period days where the problem mix evolves).
                         {% endcomment %}
-                        {% if not panel.is_time_variable %}
-                            {# ── Simple day (1 trait, or ≥2 traits sharing    #}
-                            {# the same time_period) — single coloured band    #}
-                            {# tinted by the highest rating.                   #}
+                        {% if not panel.is_level_variable %}
+                            {# ── Single coloured band tinted by the highest   #}
+                            {# rating.  Covers one-trait days, same-period      #}
+                            {# multi-trait days, and same-level-different-      #}
+                            {# period days (Binntal-style).                     #}
                             <div
                                 class="danger-band rounded-[12px] px-4 py-3 mb-4 border border-border"
                                 data-level="{{ panel.danger_key }}"
                                 data-testid="headline-band"
                             >
-                                <div class="flex items-center gap-2">
-                                    <span class="text-lg font-semibold">
-                                        {{ panel.danger_label }}
-                                        {% if panel.danger_subdivision %}
-                                            ({{ panel.danger_number }}{{ panel.danger_subdivision }})
-                                        {% else %}
-                                            ({{ panel.danger_number }})
-                                        {% endif %}
-                                    </span>
-                                    {% if panel.primary_trait %}
-                                        <span class="text-sm">{{ panel.primary_trait.title }}</span>
+                                <span class="text-lg font-semibold">
+                                    {{ panel.danger_label }}
+                                    {% if panel.danger_subdivision %}
+                                        ({{ panel.danger_number }}{{ panel.danger_subdivision }})
+                                    {% else %}
+                                        ({{ panel.danger_number }})
                                     {% endif %}
-                                </div>
+                                </span>
                             </div>
                         {% else %}
-                            {# ── Variable day — two coloured segments ───────── #}
+                            {# ── Level-variable day — two coloured segments.   #}
+                            {# Each tinted by its own danger level; the arrow   #}
+                            {# marks the level transition across time.          #}
                             {% with t1=rm.traits.0 t2=rm.traits.1 %}
                                 <div
                                     class="grid grid-cols-[1fr_auto_1fr] items-stretch gap-0 mb-4 rounded-[12px] overflow-hidden border border-border"
@@ -225,7 +233,6 @@ from base.html's @theme tokens.
                                             {{ t1.danger_level|danger_level_label }}
                                             ({{ t1.danger_level }})
                                         </div>
-                                        <div class="text-xs">{{ t1.title }}</div>
                                     </div>
                                     <div
                                         class="flex items-center justify-center px-3 text-text-3 bg-bg"
@@ -243,13 +250,24 @@ from base.html's @theme tokens.
                                             {{ t2.danger_level|danger_level_label }}
                                             ({{ t2.danger_level }})
                                         </div>
-                                        <div class="text-xs">{{ t2.title }}</div>
                                     </div>
                                 </div>
-                                <p class="text-sm text-text-2 mb-4 -mt-2 px-1">
-                                    Hazard changes through the day
-                                </p>
                             {% endwith %}
+                        {% endif %}
+
+                        {# ── Conditions-change caption ───────────────────── #}
+                        {# Independent of the band variant — surfaces whenever  #}
+                        {# any trait is scoped to ``earlier`` or ``later`` so  #}
+                        {# the signal is preserved on same-level days where    #}
+                        {# the problem mix evolves (e.g. dry all day + wet     #}
+                        {# afternoon at the same danger level).                 #}
+                        {% if panel.is_time_variable %}
+                            <p
+                                class="text-sm text-text-2 mb-4 -mt-2 px-1"
+                                data-testid="conditions-change-caption"
+                            >
+                                Conditions change through the day
+                            </p>
                         {% endif %}
 
                         {% comment %}
@@ -319,56 +337,137 @@ from base.html's @theme tokens.
 
                         {% comment %}
                            SECTION 5 — Snowpack and weather
-                           Four prose sub-blocks in order.  Each skipped entirely when
-                           its source is None/empty — no empty headings rendered.
+                           Four prose sub-blocks rendered as collapsible panels
+                           (native <details>/<summary>, zero JS).  Each panel is
+                           skipped entirely when its source is None/empty, so no
+                           empty summaries render.  Closed by default — the section
+                           heading carries a "Tap to expand" hint and each
+                           summary shows a chevron affordance.
                            HTML bodies pass through |snowdesk_html for sanitisation.
                         {% endcomment %}
                         {% with prose=rm.prose %}
                             {% if prose %}
                                 {% if prose.snowpack_structure or prose.weather_review or prose.weather_forecast or prose.tendency %}
                                     <section class="mb-4" data-testid="snowpack-weather-section">
-                                        <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3">
-                                            Snowpack &amp; Weather
-                                        </h2>
+                                        <div class="flex items-baseline justify-between mb-3">
+                                            <h2 class="text-xs font-mono uppercase tracking-widest text-text-3">
+                                                Snowpack &amp; Weather
+                                            </h2>
+                                            <span
+                                                class="text-[10px] font-mono uppercase tracking-widest text-text-3/70"
+                                                aria-hidden="true"
+                                            >
+                                                Tap to expand
+                                            </span>
+                                        </div>
 
                                         {# — Snowpack ─────────────────────────────── #}
+                                        {# Each panel's summary lifts the leading <h1> out of the SLF prose   #}
+                                        {# (e.g. "Weather review for Thursday") so the user sees the real    #}
+                                        {# bulletin date/scope, not a generic static label.  The body strips #}
+                                        {# that h1 to avoid a duplicated heading, and falls back to a static #}
+                                        {# title when the prose has no leading <h1>.                         #}
                                         {% if prose.snowpack_structure %}
-                                            <div class="mb-4">
-                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
-                                                    {{ prose.snowpack_structure|snowdesk_html }}
+                                            <details
+                                                class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                                data-testid="snowpack-panel"
+                                            >
+                                                <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
+                                                    <span class="text-[13px] font-semibold text-text-1">
+                                                        {{ prose.snowpack_structure|prose_title:"Snowpack" }}
+                                                    </span>
+                                                    <span
+                                                        class="snowdesk-panel-chevron text-text-3 text-sm"
+                                                        aria-hidden="true"
+                                                    >&#x25BE;</span>
+                                                </summary>
+                                                <div class="px-4 pb-4 pt-3 border-t border-border">
+                                                    <div class="slf-prose text-sm leading-[1.6] text-text-2">
+                                                        {{ prose.snowpack_structure|prose_body|snowdesk_html }}
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            </details>
                                         {% endif %}
 
                                         {# — Weather review ──────────────────────── #}
                                         {% if prose.weather_review %}
-                                            <div class="mb-4">
-                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
-                                                    {{ prose.weather_review|snowdesk_html }}
+                                            <details
+                                                class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                                data-testid="weather-review-panel"
+                                            >
+                                                <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
+                                                    <span class="text-[13px] font-semibold text-text-1">
+                                                        {{ prose.weather_review|prose_title:"Weather review" }}
+                                                    </span>
+                                                    <span
+                                                        class="snowdesk-panel-chevron text-text-3 text-sm"
+                                                        aria-hidden="true"
+                                                    >&#x25BE;</span>
+                                                </summary>
+                                                <div class="px-4 pb-4 pt-3 border-t border-border">
+                                                    <div class="slf-prose text-sm leading-[1.6] text-text-2">
+                                                        {{ prose.weather_review|prose_body|snowdesk_html }}
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            </details>
                                         {% endif %}
 
                                         {# — Weather forecast ────────────────────── #}
                                         {% if prose.weather_forecast %}
-                                            <div class="mb-4">
-                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
-                                                    {{ prose.weather_forecast|snowdesk_html }}
+                                            <details
+                                                class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                                data-testid="weather-forecast-panel"
+                                            >
+                                                <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
+                                                    <span class="text-[13px] font-semibold text-text-1">
+                                                        {{ prose.weather_forecast|prose_title:"Weather forecast" }}
+                                                    </span>
+                                                    <span
+                                                        class="snowdesk-panel-chevron text-text-3 text-sm"
+                                                        aria-hidden="true"
+                                                    >&#x25BE;</span>
+                                                </summary>
+                                                <div class="px-4 pb-4 pt-3 border-t border-border">
+                                                    <div class="slf-prose text-sm leading-[1.6] text-text-2">
+                                                        {{ prose.weather_forecast|prose_body|snowdesk_html }}
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            </details>
                                         {% endif %}
 
                                         {# — Outlook (tendency[]) ─────────────────── #}
+                                        {# Summary uses the first tendency entry's <h1>; subsequent entries  #}
+                                        {# keep their own <h1> so multi-day outlooks remain disambiguated.   #}
                                         {% if prose.tendency %}
-                                            <div class="mb-4">
-                                                {% for entry in prose.tendency %}
-                                                    {% if entry.comment %}
-                                                        <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-2{% endif %}">
-                                                            {{ entry.comment|snowdesk_html }}
-                                                        </div>
-                                                    {% endif %}
-                                                {% endfor %}
-                                            </div>
+                                            {% with first_entry=prose.tendency|first %}
+                                                <details
+                                                    class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                                    data-testid="tendency-panel"
+                                                >
+                                                    <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
+                                                        <span class="text-[13px] font-semibold text-text-1">
+                                                            {{ first_entry.comment|prose_title:"Outlook" }}
+                                                        </span>
+                                                        <span
+                                                            class="snowdesk-panel-chevron text-text-3 text-sm"
+                                                            aria-hidden="true"
+                                                        >&#x25BE;</span>
+                                                    </summary>
+                                                    <div class="px-4 pb-4 pt-3 border-t border-border">
+                                                        {% for entry in prose.tendency %}
+                                                            {% if entry.comment %}
+                                                                <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-3{% endif %}">
+                                                                    {% if forloop.first %}
+                                                                        {{ entry.comment|prose_body|snowdesk_html }}
+                                                                    {% else %}
+                                                                        {{ entry.comment|snowdesk_html }}
+                                                                    {% endif %}
+                                                                </div>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    </div>
+                                                </details>
+                                            {% endwith %}
                                         {% endif %}
                                     </section>
                                 {% endif %}

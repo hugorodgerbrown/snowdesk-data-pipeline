@@ -1,20 +1,27 @@
 """
-public/templatetags/snowdesk_html.py — Template filter for safe HTML rendering.
+public/templatetags/snowdesk_html.py — Template filters for SLF prose.
 
-Provides the ``snowdesk_html`` filter which sanitises SLF prose HTML strings
-before they are rendered in templates.  SLF prose fields (snowpackStructure,
-weatherReview, weatherForecast, tendency[].comment) arrive as raw HTML from
-the API and are stored untouched in the render model.  Sanitisation is a
-render-time concern so the allowlist can be changed without triggering a
-render-model rebuild.
+``snowdesk_html`` sanitises SLF prose HTML strings before they are rendered in
+templates.  SLF prose fields (snowpackStructure, weatherReview, weatherForecast,
+tendency[].comment) arrive as raw HTML from the API and are stored untouched in
+the render model.  Sanitisation is a render-time concern so the allowlist can
+be changed without triggering a render-model rebuild.
 
-The filter runs ``bleach.clean`` with a strict allowlist of structural tags
-only (``h1``, ``h2``, ``p``, ``ul``, ``li``, ``strong``, ``em``).  All
+``prose_title`` and ``prose_body`` pair up to hoist the leading ``<h1>`` out of
+an SLF prose block — SLF always starts every prose string with a context-rich
+``<h1>`` (e.g. ``"Weather review for Thursday"``) which makes a better panel
+summary than a static label.  ``prose_title`` returns the stripped title text
+(falling back to a caller-supplied default); ``prose_body`` returns the prose
+HTML with the leading ``<h1>`` removed so the body doesn't duplicate it.
+
+``snowdesk_html`` runs ``bleach.clean`` with a strict allowlist of structural
+tags only (``h1``, ``h2``, ``p``, ``ul``, ``li``, ``strong``, ``em``).  All
 attributes and protocols are removed.  Disallowed tags are *stripped* (not
 escaped) so that unknown or dangerous tags disappear silently from the output.
 """
 
 import logging
+import re
 
 import bleach
 from django import template
@@ -23,6 +30,11 @@ from django.utils.safestring import SafeString, mark_safe
 logger = logging.getLogger(__name__)
 
 register = template.Library()
+
+# Matches the leading <h1>…</h1> of an SLF prose block, allowing for leading
+# whitespace and any attributes on the opening tag.  Non-greedy body match so
+# we only consume the first heading.
+_LEADING_H1_RE = re.compile(r"^\s*<h1\b[^>]*>(.*?)</h1>", re.DOTALL | re.IGNORECASE)
 
 # Tags that SLF prose is known to contain and that are safe to render.
 # This list is intentionally conservative — add tags here only when SLF
@@ -69,3 +81,51 @@ def snowdesk_html(value: str | None) -> SafeString:
         strip=True,
     )
     return mark_safe(cleaned)  # noqa: S308 — content has been sanitised by bleach above
+
+
+@register.filter
+def prose_title(value: str | None, fallback: str = "") -> str:
+    """
+    Extract the leading ``<h1>`` text from an SLF prose block.
+
+    SLF prose always begins with a context-rich heading (e.g. ``"Weather
+    review for Thursday"``) that is a better panel summary than a static
+    label.  This filter returns that heading as plain text, stripped of any
+    nested inline tags, or the ``fallback`` value when no leading ``<h1>``
+    is present or the value is empty.
+
+    The return type is a plain ``str`` so Django's auto-escaping applies
+    when it lands in the template — the caller cannot end up rendering
+    unexpected markup in a ``<summary>``.
+
+    Usage::
+
+        {{ prose.snowpack_structure|prose_title:"Snowpack" }}
+    """
+    if not value:
+        return fallback
+    match = _LEADING_H1_RE.match(value)
+    if not match:
+        return fallback
+    # Strip any nested markup so the title is plain text only.
+    plain = bleach.clean(match.group(1), tags=[], strip=True).strip()
+    return plain or fallback
+
+
+@register.filter
+def prose_body(value: str | None) -> str:
+    """
+    Return an SLF prose block with the leading ``<h1>`` removed.
+
+    Pairs with ``prose_title``: the h1 becomes the panel summary and this
+    filter yields the remaining HTML for the body, avoiding a duplicated
+    heading.  The returned string is still raw (unsanitised) HTML — pipe
+    it through ``snowdesk_html`` when rendering.
+
+    Usage::
+
+        {{ prose.snowpack_structure|prose_body|snowdesk_html }}
+    """
+    if not value:
+        return ""
+    return _LEADING_H1_RE.sub("", value, count=1).lstrip()
