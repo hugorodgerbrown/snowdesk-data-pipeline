@@ -326,6 +326,49 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 - Use `hx-target`, `hx-swap="innerHTML"`, and `hx-indicator` for all dynamic
   requests.
 
+## Internationalisation
+
+Settings (`config/settings/base.py`):
+- `LANGUAGE_CODE = "en-gb"` — British English, matching the project spelling convention.
+- `LANGUAGES = [("en", "English")]` — single-language catalogue for now.
+- `LOCALE_PATHS = [BASE_DIR / "locale"]` — `.po` / `.mo` files live under `locale/en/LC_MESSAGES/`.
+
+**Template strings**: use `{% load i18n %}` at the top of every template that wraps strings.
+- `{% trans "string" %}` for short single-line strings without variables.
+- `{% blocktrans with var=value %}...{{ var }}...{% endblocktrans %}` for strings with
+  template variables.
+- `{% blocktrans trimmed %}` when spanning multiple lines.
+
+**Python strings**:
+- `from django.utils.translation import gettext_lazy as _` at module scope for import-time
+  strings (dict values, `TextChoices` labels, render model labels).
+- `from django.utils.translation import gettext as _` inside functions for request-time
+  strings (view helpers, template tag filters).
+- Always use `%`-formatting with named placeholders for translatable strings that
+  contain variables: `_("above %(bound)s") % {"bound": lower_fmt}`. Never f-strings —
+  `xgettext` cannot extract them.
+
+**Do NOT wrap**:
+- SLF bulletin prose (`|snowdesk_html` / `|safe` content arriving from the API).
+- Logging messages — these are operator-facing, not user-facing.
+- `_TITLE_FALLBACK` values in `render_model.py` — persisted to the DB JSON field as plain strings.
+- `pipeline/templates/pipeline/*` — staff-only ops UI, English-only by design.
+- `static/js/map.js` strings — flagged with `// i18n: translatable` comments for a future
+  JS-i18n phase; do not wrap them yet.
+
+**Adding new strings**: after adding any user-facing string, run:
+```bash
+poetry run python manage.py makemessages -l en --no-location
+poetry run python manage.py compilemessages
+```
+
+**File tracking**: `.po` files are checked in; `.mo` files are gitignored (regenerated
+by `compilemessages`). The `django-checks` tox env runs `compilemessages` so CI catches
+a missing or corrupt catalogue.
+
+**System requirement**: `gettext` system package must be installed (`brew install gettext`
+on macOS) for `makemessages` and `compilemessages` to work.
+
 ## Code style
 
 - `ruff` for linting and formatting (includes import sorting).

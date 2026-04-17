@@ -21,6 +21,7 @@ prev_url      : str | None
 next_url      : str | None
 calendar_current_date : date | None  (the bulletin date being viewed, if any)
 {% endcomment %}
+{% load i18n %}
 <div
     id="bulletin-calendar"
     class="bg-card rounded-[var(--radius-card)] border border-border p-4 shadow-sm"
@@ -33,7 +34,7 @@ calendar_current_date : date | None  (the bulletin date being viewed, if any)
                 hx-target="#bulletin-calendar"
                 hx-swap="outerHTML"
                 class="p-1 text-text-2 hover:text-text-1 rounded"
-                aria-label="Previous month"
+                aria-label='{% trans "Previous month" %}'
                 type="button"
             >
                 <svg
@@ -76,7 +77,7 @@ calendar_current_date : date | None  (the bulletin date being viewed, if any)
                 hx-target="#bulletin-calendar"
                 hx-swap="outerHTML"
                 class="p-1 text-text-2 hover:text-text-1 rounded"
-                aria-label="Next month"
+                aria-label='{% trans "Next month" %}'
                 type="button"
             >
                 <svg
@@ -114,13 +115,13 @@ calendar_current_date : date | None  (the bulletin date being viewed, if any)
 
     {# ── Weekday header row (Mon–Sun, British week start) ── #}
     <div class="grid grid-cols-7 mb-1">
-        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Mon</div>
-        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Tue</div>
-        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Wed</div>
-        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Thu</div>
-        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Fri</div>
-        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Sat</div>
-        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">Sun</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">{% trans "Mon" %}</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">{% trans "Tue" %}</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">{% trans "Wed" %}</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">{% trans "Thu" %}</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">{% trans "Fri" %}</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">{% trans "Sat" %}</div>
+        <div class="text-center text-[10px] font-medium text-text-3 py-0.5">{% trans "Sun" %}</div>
     </div>
 
     {# ── 6 × 7 calendar grid ── #}

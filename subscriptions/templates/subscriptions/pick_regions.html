@@ -6,16 +6,17 @@ Shows a search input (backed by HTMX live search) and a checkbox list of
 matching regions. Submitting the form saves the selected regions as
 Subscription records.
 {% endcomment %}
+{% load i18n %}
 
-{% block title %}Pick your regions — Snowdesk{% endblock %}
+{% block title %}{% trans "Pick your regions — Snowdesk" %}{% endblock %}
 
 {% block content %}
     <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">
         <div class="w-full max-w-lg">
             <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10">
-                <h1 class="text-2xl font-semibold text-text-1 mb-2">Pick your regions</h1>
+                <h1 class="text-2xl font-semibold text-text-1 mb-2">{% trans "Pick your regions" %}</h1>
                 <p class="text-text-2 text-sm mb-6 leading-relaxed">
-                    Choose the avalanche warning regions you want to follow.
+                    {% trans "Choose the avalanche warning regions you want to follow." %}
                 </p>
 
                 <form method="post" novalidate>
@@ -24,7 +25,7 @@ Subscription records.
                     {# Live search input — triggers HTMX request on keyup #}
                     <div class="mb-4">
                         <label for="region-search" class="block text-sm font-medium text-text-1 mb-1.5">
-                            Search regions
+                            {% trans "Search regions" %}
                         </label>
                         <input
                             id="region-search"
@@ -39,8 +40,10 @@ Subscription records.
                             hx-indicator="#search-indicator"
                             class="w-full px-4 py-2.5 rounded-[8px] border border-text-3/30 bg-card text-text-1 placeholder:text-text-3 focus:outline-none focus:ring-2 focus:ring-text-1/30"
                         >
-                        <span id="search-indicator" class="htmx-indicator text-xs text-text-3 mt-1 block"
-                        >Searching…</span>
+                        <span
+                            id="search-indicator"
+                            class="htmx-indicator text-xs text-text-3 mt-1 block"
+                        >{% trans "Searching…" %}</span>
                     </div>
 
                     {# Region checkboxes — updated by HTMX or rendered server-side #}
@@ -60,7 +63,7 @@ Subscription records.
                                 <span>{{ region.name }}</span>
                             </label>
                         {% empty %}
-                            <p class="text-text-3 text-sm">No regions available.</p>
+                            <p class="text-text-3 text-sm">{% trans "No regions available." %}</p>
                         {% endfor %}
                     </div>
 
@@ -68,7 +71,7 @@ Subscription records.
                         type="submit"
                         class="w-full bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
                     >
-                        Save my regions
+                        {% trans "Save my regions" %}
                     </button>
                 </form>
             </div>

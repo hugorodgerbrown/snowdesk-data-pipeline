@@ -307,7 +307,7 @@ class TestCalendarPartialNavigation:
         content = response.content.decode()
         assert response.status_code == 200
         # When prev is disabled, the button is a <span>, not a hx-get button.
-        assert 'aria-label="Previous month"' not in content
+        assert "aria-label='Previous month'" not in content
 
     def test_next_disabled_at_current_month(self, region, htmx_client) -> None:
         """At the current month, next_url is None (no nav button)."""
@@ -324,7 +324,7 @@ class TestCalendarPartialNavigation:
 
         content = response.content.decode()
         assert response.status_code == 200
-        assert 'aria-label="Next month"' not in content
+        assert "aria-label='Next month'" not in content
 
     def test_prev_present_when_not_at_season_start(self, region, htmx_client) -> None:
         """When month > season start, prev navigation is rendered."""
@@ -340,7 +340,7 @@ class TestCalendarPartialNavigation:
             response = htmx_client.get(url)
 
         content = response.content.decode()
-        assert 'aria-label="Previous month"' in content
+        assert "aria-label='Previous month'" in content
 
 
 @pytest.mark.django_db

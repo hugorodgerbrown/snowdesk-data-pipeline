@@ -12,18 +12,18 @@ and ``{% url %}`` remains the single source of truth.
 
 This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
 {% endcomment %}
-{% load static %}
+{% load i18n static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ LANGUAGE_CODE }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
         <meta
             name="description"
-            content="Interactive map of Swiss avalanche regions — tap a region to see today's danger rating, headline problem, and nearby resorts."
+            content="{% trans "Interactive map of Swiss avalanche regions — tap a region to see today's danger rating, headline problem, and nearby resorts." %}"
         >
-        <title>Snowdesk — Avalanche map</title>
+        <title>{% trans "Snowdesk — Avalanche map" %}</title>
         <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
         <link rel="stylesheet" href="{% static 'css/map.css' %}">
@@ -49,10 +49,10 @@ This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
                         id="search-input"
                         class="search-input"
                         type="search"
-                        placeholder="Find a region or resort"
+                        placeholder='{% trans "Find a region or resort" %}'
                         autocomplete="off"
                         spellcheck="false"
-                        aria-label="Find a region or resort"
+                        aria-label='{% trans "Find a region or resort" %}'
                         aria-autocomplete="list"
                         aria-controls="search-results"
                         aria-expanded="false"
@@ -68,18 +68,18 @@ This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
                 data-resorts-url="{% url 'api:resorts_by_region' %}"
             >
                 <div class="legend">
-                    <div class="legend-title">Today</div>
+                    <div class="legend-title">{% trans "Today" %}</div>
                     <div class="legend-row">
-                        <span class="legend-swatch" style="background: #ccff66"></span>Low (1)
+                        <span class="legend-swatch" style="background: #ccff66"></span>{% trans "Low (1)" %}
                     </div>
                     <div class="legend-row">
-                        <span class="legend-swatch" style="background: #ffff00"></span>Moderate (2)
+                        <span class="legend-swatch" style="background: #ffff00"></span>{% trans "Moderate (2)" %}
                     </div>
                     <div class="legend-row">
-                        <span class="legend-swatch" style="background: #ff9900"></span>Considerable (3)
+                        <span class="legend-swatch" style="background: #ff9900"></span>{% trans "Considerable (3)" %}
                     </div>
                     <div class="legend-row">
-                        <span class="legend-swatch" style="background: #ff0000"></span>High (4)
+                        <span class="legend-swatch" style="background: #ff0000"></span>{% trans "High (4)" %}
                     </div>
                 </div>
                 <div
@@ -91,7 +91,7 @@ This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
                 <div id="sheet" class="sheet">
                     <div id="sheet-grab" class="sheet-grab">
                         <div class="sheet-handle"></div>
-                        <button id="sheet-close" class="sheet-close" aria-label="Close">
+                        <button id="sheet-close" class="sheet-close" aria-label='{% trans "Close" %}'>
                             <svg
                                 width="14"
                                 height="14"
@@ -116,11 +116,11 @@ This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
                             &mdash;
                         </div>
                         <div id="sheet-body"></div>
-                        <a class="sheet-cta" id="sheet-cta" href="#">Read today's bulletin &rarr;</a>
+                        <a class="sheet-cta" id="sheet-cta" href="#">{% trans "Read today's bulletin →" %}</a>
                     </div>
                 </div>
             </div>
-            <div class="hint" aria-hidden="true">Pinch to zoom &middot; tap a region</div>
+            <div class="hint" aria-hidden="true">{% trans "Pinch to zoom · tap a region" %}</div>
         </div>
         <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
         <script src="{% static 'js/map.js' %}"></script>

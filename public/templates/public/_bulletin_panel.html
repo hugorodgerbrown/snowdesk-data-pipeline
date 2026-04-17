@@ -9,7 +9,7 @@ by CSS rules in main.css.
 
 The admin link is only rendered for authenticated staff users.
 {% endcomment %}
-{% load card_tags hazard_icons static %}
+{% load i18n card_tags hazard_icons static %}
 <div class="bg-card rounded-[16px] overflow-hidden border border-border">
     {# ── Danger band ─────────────────────────────────────────────────── #}
     <div
@@ -19,7 +19,7 @@ The admin link is only rendered for authenticated staff users.
         <img
             class="w-11 shrink-0"
             src="{% static 'icons/eaws/danger_levels/' %}{{ panel.danger_icon }}"
-            alt="Danger level {{ panel.danger_number }} {{ panel.danger_label }}"
+            alt="{% blocktrans with number=panel.danger_number label=panel.danger_label %}Danger level {{ number }} {{ label }}{% endblocktrans %}"
         >
         <div class="flex-1">
             <div class="text-lg font-semibold leading-tight tracking-tight">
@@ -51,7 +51,7 @@ The admin link is only rendered for authenticated staff users.
         {% if panel.render_model.version == 0 %}
             {# Error state — render model could not be built #}
             <div class="rounded-[8px] border-l-4 border-amber-400 bg-amber-50 px-3.5 py-3 text-sm">
-                <p class="font-semibold text-amber-900 mb-1">We couldn't process this bulletin.</p>
+                <p class="font-semibold text-amber-900 mb-1">{% trans "We couldn't process this bulletin." %}</p>
                 {% if user.is_staff %}
                     <p class="text-xs text-amber-800 mb-2">
                         Bulletin ID: <span class="font-mono">{{ panel.bulletin.bulletin_id }}</span>
@@ -63,20 +63,19 @@ The admin link is only rendered for authenticated staff users.
                         class="inline-block text-xs font-medium text-amber-900 underline underline-offset-2 hover:text-amber-700"
                         href="/admin/pipeline/bulletin/{{ panel.bulletin.pk }}/change/"
                     >
-                        Inspect in admin →
+                        {% trans "Inspect in admin →" %}
                     </a>
                 {% else %}
                     <p class="text-xs text-amber-800">
-                        We are sorry for the inconvenience. Please try again later or check back for an updated
-                        bulletin.
+                        {% trans "We are sorry for the inconvenience. Please try again later or check back for an updated bulletin." %}
                     </p>
                 {% endif %}
             </div>
         {% elif not panel.render_model.traits %}
             {# Empty traits — no avalanche problems reported #}
             <div class="rounded-[8px] border border-border bg-card-subtle px-3.5 py-4 text-center">
-                <p class="text-sm font-medium text-text-1 mb-0.5">No avalanche problems reported.</p>
-                <p class="text-xs text-text-3">The snowpack is stable. Conditions are favourable.</p>
+                <p class="text-sm font-medium text-text-1 mb-0.5">{% trans "No avalanche problems reported." %}</p>
+                <p class="text-xs text-text-3">{% trans "The snowpack is stable. Conditions are favourable." %}</p>
             </div>
         {% else %}
             {% for trait in panel.render_model.traits %}
@@ -119,7 +118,7 @@ The admin link is only rendered for authenticated staff users.
                                 {{ trait.prose|safe }}
                             </div>
                             <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
-                                SLF Bulletin
+                                {% trans "SLF Bulletin" %}
                             </p>
                         {% endif %}
 
@@ -176,14 +175,14 @@ The admin link is only rendered for authenticated staff users.
                                                 {{ p.comment_html|safe }}
                                             </div>
                                             <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
-                                                SLF Bulletin
+                                                {% trans "SLF Bulletin" %}
                                             </p>
                                         {% endif %}
                                         <p class="mt-2.5 text-sm text-text-2 leading-[1.55]">
                                             {{ p.field_guidance }}
                                         </p>
                                         <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
-                                            SLF Interpretation Guide
+                                            {% trans "SLF Interpretation Guide" %}
                                         </p>
                                     </details>
                                 {% else %}
@@ -226,7 +225,7 @@ The admin link is only rendered for authenticated staff users.
                                             {{ p.comment_html|safe }}
                                         </div>
                                         <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
-                                            SLF Bulletin
+                                            {% trans "SLF Bulletin" %}
                                         </p>
                                     {% endif %}
                                 {% endif %}
@@ -242,7 +241,7 @@ The admin link is only rendered for authenticated staff users.
                 <div class="slf-prose text-sm leading-[1.55] text-text-2">
                     {{ panel.snowpack_structure|safe }}
                 </div>
-                <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">SLF Bulletin</p>
+                <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">{% trans "SLF Bulletin" %}</p>
             </div>
         {% endif %}
     </div>
@@ -250,7 +249,7 @@ The admin link is only rendered for authenticated staff users.
     {# ── Debug: day character label ──────────────────────────────── #}
     {% if debug and panel.day_character %}
         <div class="px-3.5 py-1.5 border-t border-dashed border-border bg-tag font-mono text-[10px] tracking-[0.08em] uppercase text-text-3">
-            Day character: {{ panel.day_character }}
+            {% trans "Day character:" %} {{ panel.day_character }}
         </div>
     {% endif %}
 
@@ -259,9 +258,9 @@ The admin link is only rendered for authenticated staff users.
         <a
             class="block px-3.5 py-1.5 border-t border-dashed border-border bg-tag font-mono text-[10px] tracking-[0.08em] uppercase text-text-2 no-underline text-right hover:text-text-1 hover:bg-[#eeeae2]"
             href="{{ panel.admin_url }}"
-            title="Open this bulletin in the Django admin"
+            title='{% trans "Open this bulletin in the Django admin" %}'
         >
-            Open in admin →
+            {% trans "Open in admin →" %}
         </a>
     {% endif %}
 </div>

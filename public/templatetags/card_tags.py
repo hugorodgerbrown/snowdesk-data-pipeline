@@ -13,6 +13,7 @@ import math
 
 from django import template
 from django.utils.safestring import mark_safe
+from django.utils.translation import gettext as _
 
 from pipeline.schema import Elevation
 
@@ -175,7 +176,7 @@ def elevation_icon(elevation: Elevation, size: int = 24) -> str:
             f'x2="{brx:.2f}" y2="{line_y:.2f}" '
             f'stroke="{stroke}" stroke-width="1" {dash}/>'
         )
-        aria = "Elevation: above lower bound"
+        aria = _("Elevation: above lower bound")
 
     elif bound_type == "UPPER":
         # Shaded zone: below the line to base
@@ -190,7 +191,7 @@ def elevation_icon(elevation: Elevation, size: int = 24) -> str:
             f'x2="{brx:.2f}" y2="{line_y:.2f}" '
             f'stroke="{stroke}" stroke-width="1" {dash}/>'
         )
-        aria = "Elevation: below upper bound"
+        aria = _("Elevation: below upper bound")
 
     else:  # BOTH
         # Shaded band between two lines
@@ -209,7 +210,7 @@ def elevation_icon(elevation: Elevation, size: int = 24) -> str:
             f'x2="{brx:.2f}" y2="{lower_y:.2f}" '
             f'stroke="{stroke}" stroke-width="1" {dash}/>'
         )
-        aria = "Elevation: between bounds"
+        aria = _("Elevation: between bounds")
 
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" '

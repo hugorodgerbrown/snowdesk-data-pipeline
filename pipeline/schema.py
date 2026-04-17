@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 # ---------------------------------------------------------------------------
 # TextChoices
@@ -31,37 +32,37 @@ from django.db import models
 class DangerRatingValue(models.TextChoices):
     """EAWS five-level danger rating, plus the two non-numeric states."""
 
-    LOW = "low", "Low (1)"
-    MODERATE = "moderate", "Moderate (2)"
-    CONSIDERABLE = "considerable", "Considerable (3)"
-    HIGH = "high", "High (4)"
-    VERY_HIGH = "very_high", "Very high (5)"
-    NO_SNOW = "no_snow", "No snow"
-    NO_RATING = "no_rating", "No rating"
+    LOW = "low", _("Low (1)")
+    MODERATE = "moderate", _("Moderate (2)")
+    CONSIDERABLE = "considerable", _("Considerable (3)")
+    HIGH = "high", _("High (4)")
+    VERY_HIGH = "very_high", _("Very high (5)")
+    NO_SNOW = "no_snow", _("No snow")
+    NO_RATING = "no_rating", _("No rating")
 
 
 class ValidTimePeriod(models.TextChoices):
     """Time-of-day qualifier used to scope a rating or problem."""
 
-    ALL_DAY = "all_day", "All day"
-    EARLIER = "earlier", "Earlier (morning)"
-    LATER = "later", "Later (afternoon)"
+    ALL_DAY = "all_day", _("All day")
+    EARLIER = "earlier", _("Earlier (morning)")
+    LATER = "later", _("Later (afternoon)")
 
 
 class AvalancheProblemType(models.TextChoices):
     """The eight EAWS avalanche problem types."""
 
-    NEW_SNOW = "new_snow", "New snow"
-    WIND_SLAB = "wind_slab", "Wind slab"
-    PERSISTENT_WEAK_LAYERS = "persistent_weak_layers", "Persistent weak layers"
-    WET_SNOW = "wet_snow", "Wet snow"
-    GLIDING_SNOW = "gliding_snow", "Gliding snow"
-    CORNICES = "cornices", "Cornices"
+    NEW_SNOW = "new_snow", _("New snow")
+    WIND_SLAB = "wind_slab", _("Wind slab")
+    PERSISTENT_WEAK_LAYERS = "persistent_weak_layers", _("Persistent weak layers")
+    WET_SNOW = "wet_snow", _("Wet snow")
+    GLIDING_SNOW = "gliding_snow", _("Gliding snow")
+    CORNICES = "cornices", _("Cornices")
     NO_DISTINCT_AVALANCHE_PROBLEM = (
         "no_distinct_avalanche_problem",
-        "No distinct avalanche problem",
+        _("No distinct avalanche problem"),
     )
-    FAVOURABLE_SITUATION = "favourable_situation", "Favourable situation"
+    FAVOURABLE_SITUATION = "favourable_situation", _("Favourable situation")
 
 
 # ---------------------------------------------------------------------------

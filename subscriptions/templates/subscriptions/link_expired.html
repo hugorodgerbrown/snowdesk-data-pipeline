@@ -5,22 +5,25 @@ subscriptions/templates/subscriptions/link_expired.html — Invalid/expired magi
 Shown when the token is missing, malformed, or has expired. Offers a link
 back to the email entry page so the subscriber can request a fresh link.
 {% endcomment %}
+{% load i18n %}
 
-{% block title %}Link expired — Snowdesk{% endblock %}
+{% block title %}{% trans "Link expired — Snowdesk" %}{% endblock %}
 
 {% block content %}
     <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">
         <div class="w-full max-w-md">
             <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10 text-center">
-                <h1 class="text-2xl font-semibold text-text-1 mb-3">This link has expired</h1>
+                <h1 class="text-2xl font-semibold text-text-1 mb-3">{% trans "This link has expired" %}</h1>
                 <p class="text-text-2 text-sm leading-relaxed mb-6">
-                    Magic links are only valid for {{ expiry_minutes }} minutes. This one has expired or is invalid.
+                    {% blocktrans with minutes=expiry_minutes trimmed %}
+                        Magic links are only valid for {{ minutes }} minutes. This one has expired or is invalid.
+                    {% endblocktrans %}
                 </p>
                 <a
                     href="{% url 'subscriptions:enter_email' %}"
                     class="inline-block bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
                 >
-                    Request a new link
+                    {% trans "Request a new link" %}
                 </a>
             </div>
         </div>

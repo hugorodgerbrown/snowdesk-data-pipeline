@@ -43,9 +43,11 @@ The wordmark font-size drops from 18px (standalone) to 15px (paired
 with a back link) so the back chevron is the lead visual in the paired
 state.
 {% endcomment %}
+{% load i18n %}
 <nav class="border-b border-border">
     <div class="mx-auto max-w-[640px] flex items-center gap-3 px-4 py-2.5">
         {% if back_url %}
+            {% trans "Back" as back_default %}
             <a
                 href="{{ back_url }}"
                 class="flex items-center gap-1.5 text-text-2 text-sm hover:text-text-1"
@@ -63,7 +65,7 @@ state.
                 >
                     <path d="m15 18-6-6 6-6" />
                 </svg>
-                {{ back_label|default:"Back" }}
+                {{ back_label|default:back_default }}
             </a>
             <div class="h-4 w-px bg-border" aria-hidden="true"></div>
         {% endif %}
@@ -81,7 +83,7 @@ state.
                 hx-target="#bulletin-calendar-host"
                 hx-swap="innerHTML"
                 hx-indicator="#calendar-spinner"
-                aria-label="Show monthly calendar"
+                aria-label='{% trans "Show monthly calendar" %}'
             >
                 <svg
                     width="18"
@@ -104,7 +106,7 @@ state.
                 id="calendar-spinner"
                 class="htmx-indicator text-text-3 text-xs"
                 aria-live="polite"
-            >Loading…</span>
+            >{% trans "Loading…" %}</span>
         {% endif %}
     </div>
 </nav>

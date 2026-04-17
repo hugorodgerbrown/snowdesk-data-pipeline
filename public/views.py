@@ -46,8 +46,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.cache import patch_cache_control
+from django.utils.functional import Promise
 from django.utils.html import strip_tags
 from django.utils.text import slugify
+from django.utils.translation import gettext as _gettext, gettext_lazy as _
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition
 
@@ -68,35 +70,35 @@ logger = logging.getLogger(__name__)
 
 # Mapping from CAAML danger-level keywords to display metadata.
 # Colours taken from EAWS website - https://www.avalanches.org/downloads/#avalanche-danger-scale
-_DANGER_MAP: dict[str, dict[str, str]] = {
+_DANGER_MAP: dict[str, dict[str, Any]] = {
     "low": {
         "number": "1",
-        "label": "Low",
-        "verdict": "GO",
+        "label": _("Low"),
+        "verdict": _("GO"),
         "colour": "#ccff66",
     },
     "moderate": {
         "number": "2",
-        "label": "Moderate",
-        "verdict": "GO",
+        "label": _("Moderate"),
+        "verdict": _("GO"),
         "colour": "#ffff00",
     },
     "considerable": {
         "number": "3",
-        "label": "Considerable",
-        "verdict": "CAUTION",
+        "label": _("Considerable"),
+        "verdict": _("CAUTION"),
         "colour": "#ff9900",
     },
     "high": {
         "number": "4",
-        "label": "High",
-        "verdict": "AVOID",
+        "label": _("High"),
+        "verdict": _("AVOID"),
         "colour": "#ff0000",
     },
     "very_high": {
         "number": "5",
-        "label": "Very High",
-        "verdict": "AVOID",
+        "label": _("Very High"),
+        "verdict": _("AVOID"),
         "colour": "#ff0000",
     },
 }
@@ -512,10 +514,10 @@ def _classify_issue_role(b: Bulletin, target_date: datetime.date) -> str:
     """Classify an issue by its ``valid_from`` relative to day D."""
     vf: datetime.datetime = b.valid_from
     if vf.date() < target_date:
-        return "Previous evening"
+        return _gettext("Previous evening")
     if vf.hour < 12:
-        return "Morning"
-    return "Evening"
+        return _gettext("Morning")
+    return _gettext("Evening")
 
 
 def _build_issue_tabs(
@@ -1312,55 +1314,55 @@ def bulletin_detail(
 # Per-level display metadata used by the compact panel card. Keys match the
 # CAAML ``mainValue`` strings; ``icon`` is the filename inside
 # ``static/icons/eaws/danger_levels/``.
-_DANGER_PANEL_META: dict[str, dict[str, str]] = {
+_DANGER_PANEL_META: dict[str, dict[str, Any]] = {
     "low": {
         "number": "1",
-        "label": "Low",
-        "sub": "Stable snowpack",
+        "label": _("Low"),
+        "sub": _("Stable snowpack"),
         "icon": "Dry-Snow-1.svg",
     },
     "moderate": {
         "number": "2",
-        "label": "Moderate",
-        "sub": "Cautious route selection needed",
+        "label": _("Moderate"),
+        "sub": _("Cautious route selection needed"),
         "icon": "Dry-Snow-2.svg",
     },
     "considerable": {
         "number": "3",
-        "label": "Considerable",
-        "sub": "Dangerous off-piste conditions",
+        "label": _("Considerable"),
+        "sub": _("Dangerous off-piste conditions"),
         "icon": "Dry-Snow-3.svg",
     },
     "high": {
         "number": "4",
-        "label": "High",
-        "sub": "Very critical off-piste conditions",
+        "label": _("High"),
+        "sub": _("Very critical off-piste conditions"),
         "icon": "Dry-Snow-4-5.svg",
     },
     "very_high": {
         "number": "5",
-        "label": "Very high",
-        "sub": "Do not enter avalanche terrain",
+        "label": _("Very high"),
+        "sub": _("Do not enter avalanche terrain"),
         "icon": "Dry-Snow-4-5.svg",
     },
 }
 
 # Human labels for the CAAML ``problemType`` enum used on the panel tags.
-_PROBLEM_LABELS: dict[str, str] = {
-    "new_snow": "New snow",
-    "wind_slab": "Wind slab",
-    "persistent_weak_layers": "Persistent weak layers",
-    "wet_snow": "Wet snow",
-    "gliding_snow": "Gliding snow",
-    "cornices": "Cornices",
-    "no_distinct_avalanche_problem": "No distinct problem",
-    "favourable_situation": "Favourable situation",
+_PROBLEM_LABELS: dict[str, Any] = {
+    "new_snow": _("New snow"),
+    "wind_slab": _("Wind slab"),
+    "persistent_weak_layers": _("Persistent weak layers"),
+    "wet_snow": _("Wet snow"),
+    "gliding_snow": _("Gliding snow"),
+    "cornices": _("Cornices"),
+    "no_distinct_avalanche_problem": _("No distinct problem"),
+    "favourable_situation": _("Favourable situation"),
 }
 
 # Human labels for the CAAML ``validTimePeriod`` enum. Derived from the
 # ``ValidTimePeriod`` TextChoices so the display strings stay in sync with
 # the canonical schema definition.
-_TIME_PERIOD_LABELS: dict[str, str] = dict(ValidTimePeriod.choices)
+_TIME_PERIOD_LABELS: dict[str, str | Promise] = dict(ValidTimePeriod.choices)
 
 _DANGER_ORDER: tuple[str, ...] = (
     "low",
@@ -1476,9 +1478,9 @@ def _elevation_display(lower_raw: Any, upper_raw: Any) -> str:
     if lower_fmt and upper_fmt:
         return f"{lower_fmt}\u2013{upper_fmt}"
     if lower_fmt:
-        return f"above {lower_fmt}"
+        return _gettext("above %(bound)s") % {"bound": lower_fmt}
     if upper_fmt:
-        return f"below {upper_fmt}"
+        return _gettext("below %(bound)s") % {"bound": upper_fmt}
     return ""
 
 
@@ -1545,8 +1547,11 @@ def _problem_summary(
         return core_zone_text
     if aspects and elevation:
         aspect_str = ", ".join(aspects)
-        return f"Affects {aspect_str} aspects {elevation.display}"
-    return "Affects all aspects and elevations"
+        return _gettext("Affects %(aspect_str)s aspects %(elevation)s") % {
+            "aspect_str": aspect_str,
+            "elevation": elevation.display,
+        }
+    return _gettext("Affects all aspects and elevations")
 
 
 def _enrich_render_model_problem(

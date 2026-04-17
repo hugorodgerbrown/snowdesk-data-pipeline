@@ -47,6 +47,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from django.utils.translation import gettext_lazy as _
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -877,7 +879,7 @@ def compute_day_character(render_model: dict[str, Any]) -> str:
 
     # Empty traits → quiet day, no problems to trigger any rule.
     if not traits:
-        return "Stable day"
+        return _("Stable day")  # type: ignore[return-value]
 
     problems: list[dict[str, Any]] = [
         p for trait in traits for p in (trait.get("problems") or [])
@@ -885,29 +887,29 @@ def compute_day_character(render_model: dict[str, Any]) -> str:
 
     # Rule 1 — Dangerous conditions: danger >= 4
     if danger >= 4:
-        return "Dangerous conditions"
+        return _("Dangerous conditions")  # type: ignore[return-value]
 
     # Rule 2 — Hard-to-read day: danger >= 2 and any hard-to-read problem
     if danger >= 2 and any(
         p.get("problem_type") in _HARD_TO_READ_PROBLEMS for p in problems
     ):
-        return "Hard-to-read day"
+        return _("Hard-to-read day")  # type: ignore[return-value]
 
     # Rule 3 — Widespread danger: danger == 3 and broad exposure
     if danger == 3 and _is_widespread(problems):
-        return "Widespread danger"
+        return _("Widespread danger")  # type: ignore[return-value]
 
     # Rule 3b — Widespread danger: danger == 3 and upper subdivision (3+)
     if danger == 3 and subdivision == "+":
-        return "Widespread danger"
+        return _("Widespread danger")  # type: ignore[return-value]
 
     # Rule 5 — Stable day
     if _is_stable(danger, problems):
-        return "Stable day"
+        return _("Stable day")  # type: ignore[return-value]
 
     # Rule 4 — Manageable day: danger 2 or 3 with no earlier match
     if danger in {2, 3}:
-        return "Manageable day"
+        return _("Manageable day")  # type: ignore[return-value]
 
     # Safe default
-    return "Stable day"
+    return _("Stable day")  # type: ignore[return-value]

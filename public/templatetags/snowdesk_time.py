@@ -17,8 +17,10 @@ The filter returns ``None`` on any parse failure so that downstream filters
 
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 from django import template
+from django.utils.translation import gettext_lazy as _
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +73,12 @@ _DANGER_LEVEL_TO_KEY: dict[int, str] = {
     5: "very_high",
 }
 
-_DANGER_LEVEL_TO_LABEL: dict[int, str] = {
-    1: "Low",
-    2: "Moderate",
-    3: "Considerable",
-    4: "High",
-    5: "Very High",
+_DANGER_LEVEL_TO_LABEL: dict[int, Any] = {
+    1: _("Low"),
+    2: _("Moderate"),
+    3: _("Considerable"),
+    4: _("High"),
+    5: _("Very High"),
 }
 
 
@@ -123,6 +125,6 @@ def danger_level_label(level: int | None) -> str:
     if level is None:
         return ""
     try:
-        return _DANGER_LEVEL_TO_LABEL.get(int(level), "")
+        return str(_DANGER_LEVEL_TO_LABEL.get(int(level), ""))
     except (ValueError, TypeError):
         return ""
