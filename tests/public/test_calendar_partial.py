@@ -368,7 +368,7 @@ class TestCalendarPartialSelectedDate:
     """Selected-date (?date=) query parameter behaviour."""
 
     def test_selected_date_cell_carries_accent_class(self, region, htmx_client) -> None:
-        """A cell matching ?date= carries the ring-blue-500 accent class."""
+        """A cell matching ?date= carries the ring-ring-selected accent class."""
         day = datetime.date(2026, 1, 15)
         vf = datetime.datetime(2026, 1, 14, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
@@ -405,7 +405,7 @@ class TestCalendarPartialSelectedDate:
 
         assert response.status_code == 200
         content = response.content.decode()
-        assert "ring-blue-500" in content
+        assert "ring-ring-selected" in content
 
     def test_bad_date_query_param_ignored(self, region, htmx_client) -> None:
         """An unparseable ?date= is silently ignored — no crash, 200 response."""
@@ -422,7 +422,7 @@ class TestCalendarPartialSelectedDate:
 
         assert response.status_code == 200
         # No selected-date ring present.
-        assert "ring-blue-500" not in response.content.decode()
+        assert "ring-ring-selected" not in response.content.decode()
 
 
 @pytest.mark.django_db
