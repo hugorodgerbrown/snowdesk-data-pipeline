@@ -40,6 +40,11 @@ from base.html's @theme tokens.
             Snowdesk
         </title>
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
+        <script
+            src="https://unpkg.com/htmx.org@2.0.4"
+            integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+            crossorigin="anonymous"
+        ></script>
         {% if raw_data_json %}
             {# DEBUG-only: raw CAAML payload embedded for source-level inspection. #}
             {# Not rendered visibly; removed in production where DEBUG=False.     #}
@@ -50,7 +55,15 @@ from base.html's @theme tokens.
     </head>
     <body class="bg-bg text-text-1 min-h-screen">
         {% url 'public:map' as map_url %}
-        {% include "includes/nav.html" with back_url=map_url back_label="Map" %}
+        {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=calendar_region_id calendar_partial_url=calendar_partial_url %}
+        {# ── Calendar popover host — swapped in by the nav calendar button ── #}
+        <div class="relative mx-auto max-w-[640px] px-4">
+            <div
+                id="bulletin-calendar-host"
+                class="absolute top-0 right-4 z-10 w-72"
+            >
+            </div>
+        </div>
         {# ── Outermost container: font-sans overrides any serif from @theme ── #}
         <div class="font-sans max-w-[640px] mx-auto px-4 py-6">
             {% comment %}

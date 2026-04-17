@@ -17,7 +17,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from pipeline.models import Bulletin, PipelineRun, Region, RegionBulletin
+from pipeline.models import (
+    Bulletin,
+    PipelineRun,
+    Region,
+    RegionBulletin,
+    RegionDayRating,
+)
 from pipeline.services.data_fetcher import (
     _get_or_create_region,
     _normalise_response,
@@ -349,6 +355,26 @@ class TestUpsertBulletin:
         ):
             with pytest.raises(ValueError, match="unexpected error"):
                 upsert_bulletin(raw, run)
+
+    def test_upsert_bulletin_creates_day_rating_rows(self):
+        """upsert_bulletin creates RegionDayRating rows for each covered region."""
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin(
+            bulletin_id="dr-test-001",
+            publication_time="2025-03-15T08:00:00Z",
+        )
+        upsert_bulletin(raw, run)
+
+        # The bulletin's validTime startTime is 2025-03-15T17:00:00Z (hour=17,
+        # evening issue) so its target day is 2025-03-16.  Under the v3
+        # target-day rule, exactly one RegionDayRating row is created per region.
+
+        assert RegionDayRating.objects.filter(
+            region__region_id="CH-4115",
+        ).exists()
+        assert RegionDayRating.objects.filter(
+            region__region_id="CH-7111",
+        ).exists()
 
 
 # ---------------------------------------------------------------------------

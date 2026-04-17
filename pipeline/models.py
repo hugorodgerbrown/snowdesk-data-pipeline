@@ -1,7 +1,7 @@
 """
 pipeline/models.py — Database models for the pipeline application.
 
-Defines a BaseModel abstract class and five concrete models:
+Defines a BaseModel abstract class and six concrete models:
   - PipelineRun: records each execution of the data pipeline (scheduled or
     manual), its status, and timing metadata.
   - Region: SLF avalanche warning regions (e.g. "CH-4115"), with an optional
@@ -13,6 +13,9 @@ Defines a BaseModel abstract class and five concrete models:
     ``render_model_version`` integer used to trigger incremental rebuilds
     when the builder logic changes.
   - RegionBulletin: many-to-many through table linking bulletins to regions.
+  - RegionDayRating: denormalised per-(region, date) max danger rating,
+    updated whenever a bulletin covering that (region, date) is ingested or
+    rebuilt. Drives the longitudinal calendar view.
 
 Each model uses a custom Manager + QuerySet pair so that domain-specific
 query methods live on the queryset and are accessible via both
@@ -25,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import date as _date
 from typing import Any
 
 from django.db import models
@@ -471,3 +475,150 @@ class RegionBulletin(BaseModel):
     def __str__(self) -> str:
         """Return a human-readable representation."""
         return f"{self.bulletin.bulletin_id} ↔ {self.region.region_id}"
+
+
+# ---------------------------------------------------------------------------
+# RegionDayRating
+# ---------------------------------------------------------------------------
+
+
+class RegionDayRatingQuerySet(models.QuerySet["RegionDayRating"]):
+    """Custom queryset for RegionDayRating."""
+
+    def for_region_month(
+        self, region: "Region", year: int, month: int
+    ) -> "RegionDayRatingQuerySet":
+        """
+        Return all RegionDayRating rows for a region within a calendar month.
+
+        Args:
+            region: The Region to filter by.
+            year: Calendar year (e.g. 2026).
+            month: Calendar month as an integer 1–12.
+
+        Returns:
+            A filtered queryset covering the full calendar month.
+
+        """
+        import calendar
+
+        last_day = calendar.monthrange(year, month)[1]
+        return self.filter(
+            region=region,
+            date__gte=_date(year, month, 1),
+            date__lte=_date(year, month, last_day),
+        )
+
+
+class RegionDayRating(BaseModel):
+    """
+    Denormalised per-(region, date) min and max danger ratings.
+
+    One row per (region, calendar day) pair. Updated by the day_rating
+    service whenever a bulletin covering the (region, date) is ingested or
+    its render model is rebuilt. Drives the longitudinal calendar view.
+
+    For each (region, day) we pick a single authoritative bulletin — the
+    one with the latest ``valid_from`` among those whose target day equals
+    this date (morning-of-day if present, else the prior day's evening
+    issue). ``min_rating`` and ``max_rating`` are then derived from the
+    traits *within* that single bulletin: the lowest and highest
+    ``danger_level`` among its traits. If the bulletin has no traits
+    (quiet day) both fall back to its headline ``danger.key``; if there is
+    no qualifying bulletin at all both are set to ``NO_RATING``.
+
+    When ``min_rating != max_rating`` the day is "variable" and the
+    calendar tile renders a diagonal split fill.
+    """
+
+    class Rating(models.TextChoices):
+        """Danger rating choices for the calendar view."""
+
+        NO_RATING = "no_rating", "No rating"
+        LOW = "low", "Low"
+        MODERATE = "moderate", "Moderate"
+        CONSIDERABLE = "considerable", "Considerable"
+        HIGH = "high", "High"
+        VERY_HIGH = "very_high", "Very high"
+
+    region = models.ForeignKey(
+        Region,
+        on_delete=models.CASCADE,
+        related_name="day_ratings",
+    )
+    date = models.DateField(db_index=True)
+    min_rating = models.CharField(
+        max_length=16,
+        choices=Rating.choices,
+        default=Rating.NO_RATING,
+        help_text=(
+            "Lowest danger rating across all qualifying bulletins for this day. "
+            "Equals max_rating on uniform days; differs on variable days."
+        ),
+    )
+    min_subdivision = models.CharField(
+        max_length=2,
+        blank=True,
+        default="",
+        help_text=(
+            "Subdivision suffix ('+', '-', '=') from the bulletin that gave "
+            "min_rating (latest valid_from on ties), or blank."
+        ),
+    )
+    max_rating = models.CharField(
+        max_length=16,
+        choices=Rating.choices,
+        default=Rating.NO_RATING,
+    )
+    max_subdivision = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        help_text=(
+            "Subdivision suffix ('+', '-', '=') from the source bulletin, or blank."
+        ),
+    )
+    source_bulletin = models.ForeignKey(
+        Bulletin,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="day_ratings",
+        help_text="The bulletin that produced max_rating.",
+    )
+    version = models.PositiveIntegerField(
+        default=0,
+        db_index=True,
+        help_text="DAY_RATING_VERSION at the time this row was computed.",
+    )
+
+    objects = RegionDayRatingQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        unique_together = [("region", "date")]
+        ordering = ["-date", "region__region_id"]
+        indexes = [
+            models.Index(fields=["region", "date"]),
+        ]
+
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this day rating.
+
+        Format for uniform days (min == max):
+            ``CH-4115 2026-04-16 considerable+``
+        Format for variable days (min != max):
+            ``CH-4115 2026-04-16 moderate..considerable``
+        """
+        if self.min_rating != self.max_rating:
+            return (
+                f"{self.region.region_id} {self.date}"
+                f" {self.min_rating}..{self.max_rating}"
+            )
+        suffix = self.max_subdivision or ""
+        return f"{self.region.region_id} {self.date} {self.max_rating}{suffix}"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()

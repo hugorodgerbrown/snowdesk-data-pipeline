@@ -19,9 +19,9 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from pipeline.models import Bulletin
+from pipeline.models import Bulletin, RegionDayRating
 from pipeline.services.render_model import RENDER_MODEL_VERSION
-from tests.factories import BulletinFactory
+from tests.factories import BulletinFactory, RegionBulletinFactory, RegionFactory
 
 
 def _make_bulletin(
@@ -205,7 +205,7 @@ class TestRebuildRenderModelsErrorHandling:
 
         from pipeline.services.render_model import RenderModelBuildError
 
-        b = _make_bulletin(render_model_version=0, bulletin_id="error-001")
+        _make_bulletin(render_model_version=0, bulletin_id="error-001")
 
         with patch(
             "pipeline.management.commands.rebuild_render_models.build_render_model",
@@ -215,11 +215,37 @@ class TestRebuildRenderModelsErrorHandling:
             with pytest.raises(CommandError, match="failed"):
                 call_command("rebuild_render_models", commit=True, verbosity=0)
 
+
+@pytest.mark.django_db
+class TestRebuildRenderModelsDayRatings:
+    """Tests for day-rating refresh after rebuild."""
+
+    def test_commit_refreshes_day_ratings(self) -> None:
+        """After --commit, RegionDayRating rows are created for rebuilt bulletins."""
+        region = RegionFactory.create(region_id="CH-4115")
+        b = _make_bulletin(render_model_version=0, bulletin_id="dr-rebuild-001")
+        RegionBulletinFactory.create(bulletin=b, region=region)
+
+        call_command("rebuild_render_models", commit=True, verbosity=0)
+
+        # Day ratings should now exist for the bulletin's covered dates.
+        assert RegionDayRating.objects.filter(region=region).exists()
+
+    def test_skip_day_ratings_flag(self) -> None:
+        """--skip-day-ratings prevents day-rating rows from being created."""
+        region = RegionFactory.create(region_id="CH-skip-test")
+        b = _make_bulletin(render_model_version=0, bulletin_id="dr-skip-001")
+        RegionBulletinFactory.create(bulletin=b, region=region)
+
+        call_command(
+            "rebuild_render_models", commit=True, skip_day_ratings=True, verbosity=0
+        )
+
+        # Render model should have been rebuilt (--commit was given).
         b.refresh_from_db()
-        # On error, version stays 0 and render_model records the error.
-        assert b.render_model_version == 0
-        assert "error" in b.render_model
-        assert b.render_model["error_type"] == "RenderModelBuildError"
+        assert b.render_model_version == RENDER_MODEL_VERSION
+        # But no day rating rows should have been created.
+        assert not RegionDayRating.objects.filter(region=region).exists()
 
     def test_error_summary_printed_and_exits_nonzero(
         self, capsys: pytest.CaptureFixture

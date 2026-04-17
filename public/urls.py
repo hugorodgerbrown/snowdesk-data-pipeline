@@ -28,6 +28,12 @@ app_name = "public"
 urlpatterns = [
     path("", views.home, name="home"),
     path("map/", views.map_view, name="map"),
+    # Calendar partial — registered before generic <str:region_id>/ patterns.
+    path(
+        "partials/calendar/<str:region_id>/<int:year>/<int:month>/",
+        views.calendar_partial,
+        name="calendar_partial",
+    ),
     # Examples — sample bulletin links
     path("examples/random/", views.examples_random, name="examples_random"),
     path(
