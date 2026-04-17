@@ -7,6 +7,23 @@ Avalanche Research) avalanche bulletins from the CAAML API, stores them,
 and renders them on a dashboard. The frontend uses HTMX for dynamic
 updates without a full JavaScript framework.
 
+## Linear workflow
+
+Linear (team prefix `SNOW-`) is the issue source of truth. The Linear MCP
+server is available for fetching and updating issues. When implementing a
+Linear ticket:
+
+1. **Fetch** the issue and any comments via the Linear MCP server to
+   understand the full context.
+2. **Create a branch** named `feature/SNOW-xxx-short-description` and
+   push it to GitHub. The GitHub–Linear integration automatically moves
+   the ticket to "In Progress".
+3. **Implement** the work on that branch.
+4. **Open a PR** referencing `SNOW-xxx` in the description. The
+   GitHub–Linear integration automatically moves the ticket to
+   "In Review".
+5. **Comment** the PR link on the Linear issue via MCP.
+
 ## Architecture
 
 ```
