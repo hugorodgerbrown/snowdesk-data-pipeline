@@ -1,43 +1,56 @@
 {% comment %}
-public/templates/public/base.html — Base layout for the public bulletin site.
+public/templates/public/base.html — Canonical layout for the public site.
 
-Loads Google Fonts (Playfair Display, DM Sans, DM Mono), the design-system
-stylesheet, and renders the mountain silhouette SVG background. All public
-pages extend this template.
+Pulled out of bulletin.html (the "most complete, use as base" page flagged
+in SNOW-9). Every public page except /map/ extends this template; the map
+page owns its full viewport and keeps its own doctype for that reason.
+Subscription pages also extend this file indirectly via
+subscriptions/templates/subscriptions/base.html.
+
+Blocks
+------
+title           : <title> contents. Default "Snowdesk".
+meta_description: <meta name="description"> content. Empty by default.
+favicon         : the <link rel="icon"> tag. Default points at the plain
+                  favicon.svg; bulletin.html overrides with a level-tinted
+                  variant matching the page's danger rating.
+extra_head      : page-specific <head> content (stylesheets, scripts,
+                  embedded JSON). Loaded AFTER output.css so page-level
+                  overrides win.
+body_class      : Tailwind classes on <body>. Default gives background,
+                  text colour, font, min-h-screen, and flex-col so pages
+                  with a centred hero (home.html) can rely on flex-1 to
+                  fill remaining vertical space.
+nav             : top navigation. Default = the plain wordmark variant;
+                  pages that want a back-chevron override this block.
+content         : the page body.
+extra_js        : scripts loaded at end of <body>. Used by
+                  subscriptions/base.html to inject HTMX.
+
+No global footer — the canonical bulletin page owns a rich per-page
+footer rather than a site-wide one, and home/map/random/season all
+omit a footer too. Pages render their own if they need one.
 {% endcomment %}
 {% load i18n static %}
 <!DOCTYPE html>
 <html lang="{{ LANGUAGE_CODE }}">
     <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        {% block favicon %}
+            <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+        {% endblock %}
+        <meta name="description" content="{% block meta_description %}{% endblock %}">
         <title>{% block title %}Snowdesk{% endblock %}</title>
         {% include "includes/theme_head.html" %}
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
-        <link rel="stylesheet" href="{% static 'css/public.css' %}">
         {% block extra_head %}{% endblock %}
     </head>
-    <body>
-        <!-- Mountain silhouette — fixed to bottom of viewport -->
-        <div class="mountain-bg" aria-hidden="true">
-            <svg viewBox="0 0 1440 220" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                    d="M0,220 L0,180 L80,140 L160,160 L240,100 L320,130 L400,70 L480,110 L540,50 L600,90 L680,35 L760,80 L820,55 L900,95 L960,40 L1040,75 L1100,25 L1160,65 L1240,45 L1300,85 L1360,60 L1440,100 L1440,220 Z"
-                    fill="#2d4a3e"
-                />
-            </svg>
-        </div>
-
-        <main class="page">
-            {% block content %}{% endblock %}
-        </main>
-
-        <footer class="footer">
-            &copy; {{ year }} Snowdesk &middot; {% trans "Data sourced from" %}
-            <a href="https://www.slf.ch" target="_blank" rel="noopener">SLF</a>
-        </footer>
-
+    <body class="{% block body_class %}bg-bg text-text-1 font-sans min-h-screen flex flex-col{% endblock %}">
+        {% block nav %}
+            {% include "includes/nav.html" %}
+        {% endblock %}
+        {% block content %}{% endblock %}
         {% block extra_js %}{% endblock %}
     </body>
 </html>
