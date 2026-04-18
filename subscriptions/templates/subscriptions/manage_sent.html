@@ -1,0 +1,25 @@
+{% extends "public/base.html" %}
+{% comment %}
+subscriptions/templates/subscriptions/manage_sent.html — "Check your inbox" page.
+
+Shown after the unauthenticated manage POST. The response is identical
+whether the email was known or unknown to prevent account enumeration.
+{% endcomment %}
+{% load i18n %}
+
+{% block title %}{% trans "Check your inbox — Snowdesk" %}{% endblock %}
+
+{% block meta_description %}{% trans "We've sent you an account link. Check your inbox to manage your Snowdesk subscriptions." %}{% endblock %}
+
+{% block content %}
+    <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">
+        <div class="w-full max-w-md">
+            <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10 text-center">
+                <h1 class="text-2xl font-semibold text-text-1 mb-3">{% trans "Check your inbox" %}</h1>
+                <p class="text-text-2 text-sm leading-relaxed">
+                    {% trans "If that address is registered, we've sent you a link to manage your subscriptions. It expires in 24 hours." %}
+                </p>
+            </div>
+        </div>
+    </div>
+{% endblock %}

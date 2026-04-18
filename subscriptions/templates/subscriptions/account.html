@@ -1,0 +1,57 @@
+{% extends "public/base.html" %}
+{% comment %}
+subscriptions/templates/subscriptions/account.html — Account landing page.
+
+Shown after a subscriber clicks their account-access link. Lets them
+review and update their region subscriptions.
+{% endcomment %}
+{% load i18n %}
+
+{% block title %}{% trans "My account — Snowdesk" %}{% endblock %}
+
+{% block meta_description %}{% trans "Manage your Snowdesk avalanche bulletin subscriptions." %}{% endblock %}
+
+{% block content %}
+    <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">
+        <div class="w-full max-w-lg">
+            <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10">
+                <h1 class="text-2xl font-semibold text-text-1 mb-2">{% trans "Your account" %}</h1>
+                <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                    {% blocktrans with email=subscriber.email trimmed %}
+                        Signed in as <strong>{{ email }}</strong>. Choose the regions you'd like to follow.
+                    {% endblocktrans %}
+                </p>
+
+                <form method="post" action="{% url 'subscriptions:manage' %}" novalidate>
+                    {% csrf_token %}
+                    <div class="max-h-72 overflow-y-auto border border-text-3/20 rounded-[8px] p-3 mb-6 space-y-2">
+                        {% for region in all_regions %}
+                            <label class="flex items-center gap-2 text-sm text-text-1 cursor-pointer hover:text-text-1">
+                                <input
+                                    type="checkbox"
+                                    name="regions"
+                                    value="{{ region.pk }}"
+                                    {% if region.pk in current_region_pks %}
+                                        checked
+                                    {% endif %}
+                                    class="rounded border-text-3/30 text-text-1 focus:ring-text-1/30"
+                                >
+                                <span class="font-mono text-xs text-text-3">{{ region.region_id }}</span>
+                                <span>{{ region.name }}</span>
+                            </label>
+                        {% empty %}
+                            <p class="text-text-3 text-sm">{% trans "No regions available." %}</p>
+                        {% endfor %}
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="w-full bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
+                    >
+                        {% trans "Save regions" %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+{% endblock %}

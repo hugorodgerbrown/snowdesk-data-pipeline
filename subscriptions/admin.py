@@ -28,10 +28,10 @@ class SubscriptionInline(admin.TabularInline):
 class SubscriberAdmin(admin.ModelAdmin):
     """Admin view for Subscriber."""
 
-    list_display = ["email", "is_active", "last_authenticated_at", "created_at"]
-    list_filter = ["is_active"]
+    list_display = ["email", "status", "confirmed_at", "created_at"]
+    list_filter = ["status"]
     search_fields = ["email"]
-    readonly_fields = ["uuid", "created_at", "updated_at", "last_authenticated_at"]
+    readonly_fields = ["uuid", "created_at", "updated_at", "confirmed_at"]
     inlines = [SubscriptionInline]
 
 

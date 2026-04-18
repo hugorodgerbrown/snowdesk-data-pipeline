@@ -29,9 +29,6 @@ LOGGING["loggers"]["django.db.backends"] = {  # type: ignore[index]  # noqa: F40
     "propagate": False,
 }
 
-# Mailhog runs locally to handle email capture
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = "localhost"
-EMAIL_PORT = 1025
-EMAIL_USE_TLS = False
-EMAIL_USE_SSL = False
+# Disable rate limiting in development and tests so that rapid local requests
+# (including the full test suite) are never throttled.
+RATELIMIT_ENABLE = False

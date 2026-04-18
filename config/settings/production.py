@@ -55,6 +55,18 @@ DATABASES = {
 }
 
 # ---------------------------------------------------------------------------
+# Cache — DatabaseCache is the baseline shared cache for django-ratelimit
+# across workers.  Upgrade to Redis when traffic warrants.
+# ---------------------------------------------------------------------------
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "django_cache",
+    },
+}
+
+# ---------------------------------------------------------------------------
 # Security headers
 # ---------------------------------------------------------------------------
 

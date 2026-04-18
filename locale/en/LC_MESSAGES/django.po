@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-04-17 19:09+0000\n"
+"POT-Creation-Date: 2026-04-18 16:42+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -123,9 +123,6 @@ msgstr ""
 msgid "Open in admin →"
 msgstr ""
 
-msgid "Data sourced from"
-msgstr ""
-
 #, python-format
 msgid "Avalanche bulletin for %(name)s"
 msgstr ""
@@ -192,16 +189,13 @@ msgstr ""
 msgid "Rendered by Snowdesk."
 msgstr ""
 
-msgid "Subscribe to alerts"
+msgid "Snowdesk — Avalanche bulletins for backcountry skiers"
 msgstr ""
 
 msgid ""
 "Daily Swiss avalanche bulletins for backcountry skiers — per-region danger "
 "levels, avalanche problems, snowpack structure, and season archives, sourced "
 "from SLF."
-msgstr ""
-
-msgid "Snowdesk — Avalanche bulletins for backcountry skiers"
 msgstr ""
 
 msgid "Snowdesk"
@@ -314,6 +308,9 @@ msgid_plural "%(count)s bulletins this season"
 msgstr[0] ""
 msgstr[1] ""
 
+msgid "Subscribe to alerts"
+msgstr ""
+
 msgid "No bulletins for this region and season."
 msgstr ""
 
@@ -374,91 +371,73 @@ msgstr ""
 msgid "No distinct problem"
 msgstr ""
 
+msgid "Your Snowdesk account link"
+msgstr ""
+
+msgid "My account — Snowdesk"
+msgstr ""
+
+msgid "Manage your Snowdesk avalanche bulletin subscriptions."
+msgstr ""
+
+msgid "Your account"
+msgstr ""
+
 #, python-format
-msgid "Your SnowDesk %(purpose)s link"
-msgstr ""
-
-msgid "You're all set — Snowdesk"
-msgstr ""
-
-msgid "You're all set!"
-msgstr ""
-
 msgid ""
-"Your region subscriptions have been saved. We'll notify you when new "
-"avalanche bulletins are published for your regions."
+"Signed in as <strong>%(email)s</strong>. Choose the regions you'd like to "
+"follow."
 msgstr ""
 
-msgid "View bulletins"
+msgid "No regions available."
 msgstr ""
 
-msgid "Check your inbox — Snowdesk"
-msgstr ""
-
-msgid "Check your inbox"
-msgstr ""
-
-msgid ""
-"We've sent you a magic link. Click it to continue — the link expires in "
-"<strong class=\"text-text-1\">15 minutes</strong>."
-msgstr ""
-
-msgid "Can't find it? Check your spam folder, or"
-msgstr ""
-
-msgid "try again"
-msgstr ""
-
-msgid "SnowDesk magic link"
+msgid "Save regions"
 msgstr ""
 
 msgid "Hi,"
 msgstr ""
 
-#, python-format
-msgid "Click the button below to %(purpose)s to SnowDesk:"
+msgid ""
+"Click the button below to access your Snowdesk account and manage your "
+"avalanche bulletin subscriptions."
 msgstr ""
 
-msgid "to SnowDesk"
+msgid "Access my Snowdesk account"
+msgstr ""
+
+msgid "Or copy this link into your browser:"
 msgstr ""
 
 #, python-format
-msgid "This link expires in %(minutes)s minutes."
+msgid "This link expires in %(hours)s hours."
 msgstr ""
 
 msgid "If you did not request this, you can safely ignore this email."
 msgstr ""
 
-msgid "SnowDesk — Swiss Avalanche Bulletins"
-msgstr ""
-
-msgid "Subscribe — Snowdesk"
-msgstr ""
-
-msgid "Subscribe to avalanche bulletins"
+msgid "Snowdesk — Swiss Avalanche Bulletins"
 msgstr ""
 
 msgid ""
-"Enter your email and we'll send you a link to choose your regions. No "
-"password required."
-msgstr ""
-
-msgid "Email address"
-msgstr ""
-
-msgid "Send magic link"
+"Click the link below to access your Snowdesk account and manage your "
+"avalanche bulletin subscriptions."
 msgstr ""
 
 msgid "Link expired — Snowdesk"
 msgstr ""
 
+msgid ""
+"This account link has expired or is invalid. Request a new one to manage "
+"your Snowdesk subscriptions."
+msgstr ""
+
 msgid "This link has expired"
 msgstr ""
 
-#, python-format
 msgid ""
-"Magic links are only valid for %(minutes)s minutes. This one has expired or "
-"is invalid."
+"Account links are only valid for 24 hours. This one has expired or is "
+"invalid."
 msgstr ""
 
 msgid "Request a new link"
@@ -467,37 +446,114 @@ msgstr ""
 msgid "Manage subscriptions — Snowdesk"
 msgstr ""
 
-msgid "Manage your subscriptions"
+msgid "Update your Snowdesk avalanche bulletin region subscriptions."
 msgstr ""
 
-msgid "Update the regions you follow. Your current selections are pre-checked."
+msgid "Manage subscriptions"
 msgstr ""
 
-msgid "Search regions"
-msgstr ""
-
-msgid "Searching…"
-msgstr ""
-
-msgid "No regions available."
+msgid "Update the regions you follow. Uncheck all to remove your account."
 msgstr ""
 
 msgid "Save changes"
 msgstr ""
 
-msgid "No regions match your search."
+msgid "Manage your subscriptions"
 msgstr ""
 
-msgid "Pick your regions — Snowdesk"
+msgid ""
+"Enter your email address and we'll send you a link to manage your regions."
 msgstr ""
 
-msgid "Pick your regions"
+msgid "Email address"
 msgstr ""
 
-msgid "Choose the avalanche warning regions you want to follow."
+msgid "Send account link"
 msgstr ""
 
-msgid "Save my regions"
+msgid "Subscriptions saved — Snowdesk"
+msgstr ""
+
+msgid ""
+"Your Snowdesk avalanche bulletin region subscriptions have been updated."
+msgstr ""
+
+msgid "Regions saved"
+msgstr ""
+
+msgid "Your bulletin subscriptions have been updated."
+msgstr ""
+
+msgid "Back to Snowdesk"
+msgstr ""
+
+msgid "Check your inbox — Snowdesk"
+msgstr ""
+
+msgid ""
+"We've sent you an account link. Check your inbox to manage your Snowdesk "
+"subscriptions."
+msgstr ""
+
+msgid "Check your inbox"
+msgstr ""
+
+msgid ""
+"If that address is registered, we've sent you a link to manage your "
+"subscriptions. It expires in 24 hours."
+msgstr ""
+
+msgid "Get avalanche alerts"
+msgstr ""
+
+msgid "Enter your email to receive daily bulletin updates for this region."
+msgstr ""
+
+msgid "Enter your email to receive daily avalanche bulletin updates."
+msgstr ""
+
+msgid "Subscribe"
+msgstr ""
+
+msgid "Sending…"
+msgstr ""
+
+msgid "We've sent you a link to access your account. It expires in 24 hours."
+msgstr ""
+
+msgid "Unsubscribe — Snowdesk"
+msgstr ""
+
+msgid ""
+"Confirm your unsubscribe request to stop receiving avalanche bulletin alerts "
+"for this region."
+msgstr ""
+
+msgid "Unsubscribe"
+msgstr ""
+
+#, python-format
+msgid "You are about to unsubscribe <strong>%(email)s</strong> from:"
+msgstr ""
+
+msgid "Yes, unsubscribe me"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Unsubscribed — Snowdesk"
+msgstr ""
+
+msgid ""
+"You have been successfully unsubscribed from Snowdesk avalanche bulletin "
+"alerts."
+msgstr ""
+
+msgid "You've been unsubscribed"
+msgstr ""
+
+msgid "You will no longer receive avalanche bulletin alerts for that region."
 msgstr ""
 
 msgid "Back"

@@ -1,8 +1,11 @@
 """
-tests/subscriptions/test_email.py — Tests for magic-link email service.
+tests/subscriptions/test_email.py — Tests for the account-access email service.
 
-Covers URL construction, template rendering, and mail dispatch. Uses Django's
-test mail backend via the outbox rather than mocking send_mail directly.
+Covers:
+  - send_account_access_email sends one email with correct recipient/subject/body.
+  - The account-access URL in the email body round-trips through verify_token.
+  - send_noop_email sends zero emails and raises no errors.
+  - URL is built from request when provided, SITE_BASE_URL otherwise.
 """
 
 import pytest
@@ -10,8 +13,8 @@ from django.conf import settings
 from django.core import mail
 from django.test import RequestFactory
 
-from subscriptions.services.email import send_magic_link_email
-from subscriptions.services.token import validate_magic_link_token
+from subscriptions.services.email import send_account_access_email, send_noop_email
+from subscriptions.services.token import SALT_ACCOUNT_ACCESS, verify_token
 
 
 @pytest.fixture
@@ -20,63 +23,88 @@ def rf():
     return RequestFactory()
 
 
-class TestSendMagicLinkEmail:
-    """Tests for send_magic_link_email."""
+class TestSendAccountAccessEmail:
+    """Tests for send_account_access_email."""
 
     @pytest.fixture(autouse=True)
-    def use_console_backend(self, settings):
+    def use_locmem_backend(self, settings):
         """Switch to the locmem backend so outbox works."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def test_sends_one_email(self):
-        send_magic_link_email("alice@example.com")
+        send_account_access_email("alice@example.com")
         assert len(mail.outbox) == 1
 
     def test_recipient_is_correct(self):
-        send_magic_link_email("alice@example.com")
+        send_account_access_email("alice@example.com")
         assert mail.outbox[0].to == ["alice@example.com"]
 
     def test_from_email_uses_setting(self):
-        send_magic_link_email("alice@example.com")
+        send_account_access_email("alice@example.com")
         assert mail.outbox[0].from_email == settings.DEFAULT_FROM_EMAIL
 
-    def test_subject_contains_purpose(self):
-        send_magic_link_email("alice@example.com", purpose="login")
-        assert "login" in mail.outbox[0].subject
+    def test_subject_contains_snowdesk(self):
+        send_account_access_email("alice@example.com")
+        assert "Snowdesk" in mail.outbox[0].subject
 
-    def test_body_contains_verify_path(self):
-        send_magic_link_email("alice@example.com")
-        assert "/subscribe/verify/" in mail.outbox[0].body
+    def test_body_contains_account_path(self):
+        send_account_access_email("alice@example.com")
+        assert "/subscribe/account/" in mail.outbox[0].body
 
-    def test_html_body_contains_verify_path(self):
-        send_magic_link_email("alice@example.com")
+    def test_html_body_contains_account_path(self):
+        send_account_access_email("alice@example.com")
         html, _ = mail.outbox[0].alternatives[0]
-        assert "/subscribe/verify/" in html
+        assert "/subscribe/account/" in html
 
     def test_token_in_url_is_valid(self):
-        send_magic_link_email("alice@example.com")
+        """The token embedded in the URL should verify back to the email."""
+        send_account_access_email("alice@example.com")
         body = mail.outbox[0].body
-        # Extract token from the URL line
-        token_line = next(
-            line for line in body.splitlines() if "/subscribe/verify/" in line
+        # Find the account URL line
+        url_line = next(
+            line for line in body.splitlines() if "/subscribe/account/" in line
         )
-        token = token_line.split("?token=")[-1].strip()
-        payload = validate_magic_link_token(token)
-        assert payload is not None
-        assert payload["email"] == "alice@example.com"
+        # Extract token from the URL path: /subscribe/account/<token>/
+        token = url_line.strip().rstrip("/").split("/subscribe/account/")[-1]
+        result = verify_token(
+            token, salt=SALT_ACCOUNT_ACCESS, max_age=settings.ACCOUNT_TOKEN_MAX_AGE
+        )
+        assert result == "alice@example.com"
 
-    def test_uses_base_url_from_settings(self):
-        send_magic_link_email("alice@example.com")
+    def test_uses_site_base_url_from_settings(self):
+        send_account_access_email("alice@example.com")
         body = mail.outbox[0].body
-        assert settings.MAGIC_LINK_BASE_URL in body
+        assert settings.SITE_BASE_URL in body
 
     def test_uses_request_origin_when_provided(self, rf):
         request = rf.get("/")
-        send_magic_link_email("alice@example.com", request=request)
+        send_account_access_email("alice@example.com", request=request)
         body = mail.outbox[0].body
-        # The request-derived base URL should appear instead of the setting
-        assert "/subscribe/verify/" in body
+        assert "/subscribe/account/" in body
 
-    def test_custom_purpose_in_body(self):
-        send_magic_link_email("alice@example.com", purpose="subscribe")
-        assert "subscribe" in mail.outbox[0].body
+    def test_html_alternative_present(self):
+        send_account_access_email("alice@example.com")
+        assert len(mail.outbox[0].alternatives) == 1
+        _, mimetype = mail.outbox[0].alternatives[0]
+        assert mimetype == "text/html"
+
+
+class TestSendNoopEmail:
+    """Tests for send_noop_email."""
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings):
+        """Switch to the locmem backend so outbox is available."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def test_sends_zero_emails(self):
+        send_noop_email("alice@example.com")
+        assert len(mail.outbox) == 0
+
+    def test_does_not_raise(self):
+        """send_noop_email must not raise even with an arbitrary email."""
+        send_noop_email("nonexistent@example.com")
+
+    def test_does_not_raise_on_empty_string(self):
+        """Edge case: empty string should not raise."""
+        send_noop_email("")
