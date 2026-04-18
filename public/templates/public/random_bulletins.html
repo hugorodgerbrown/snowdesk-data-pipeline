@@ -1,43 +1,40 @@
+{% extends "public/base.html" %}
 {% comment %}
 public/templates/public/random_bulletins.html — Recent bulletin cards for a
 single region.
-
-Standalone page (does NOT extend public/base.html). Loads the Tailwind
-Play CDN and the design-token stylesheet (static/css/main.css).
 {% endcomment %}
-{% load i18n static %}
-<!DOCTYPE html>
-<html lang="{{ LANGUAGE_CODE }}">
-    <head>
-        {% blocktrans trimmed asvar page_description count count_val=count with name=region_name %}Avalanche bulletins
-            for {{ name }}, last {{ count_val }} day.{% plural %}Avalanche bulletins for {{ name }}, last
-            {{ count_val }} days.{% endblocktrans %}
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
-        <meta name="description" content="{{ page_description }}">
-        <title>{{ region_name }} — Snowdesk</title>
-        {% include "includes/theme_head.html" %}
-        <link rel="stylesheet" href="{% static 'css/output.css' %}">
-    </head>
-    <body class="bg-bg font-sans text-text-1 min-h-screen">
-        {% url 'public:map' as map_url %}
-        {% include "includes/nav.html" with back_url=map_url back_label="Map" %}
-        <div class="px-4 py-6">
-            <p class="font-mono text-[10px] tracking-[0.12em] uppercase text-text-3 mb-5 text-center">
-                {{ region_name }} · {% blocktrans trimmed count count_val=count %}last {{ count_val }}
-                    day{% plural %}last {{ count_val }} days{% endblocktrans %}
-            </p>
+{% load i18n %}
 
-            <div class="flex flex-col gap-3 max-w-[390px] mx-auto">
-                {% for panel in panels %}
-                    {% include "public/_bulletin_panel.html" with panel=panel %}
-                {% empty %}
-                    <p class="text-center text-text-3 py-12 text-sm">
-                        {% trans "No bulletins available for this region." %}
-                    </p>
-                {% endfor %}
-            </div>
+{% block title %}
+    {{ region_name }} — Snowdesk
+{% endblock %}
+
+{% block meta_description %}
+    {% blocktrans trimmed count count_val=count with name=region_name %}Avalanche bulletins for {{ name }}, last
+        {{ count_val }} day.{% plural %}Avalanche bulletins for {{ name }}, last {{ count_val }}
+        days.{% endblocktrans %}
+{% endblock %}
+
+{% block nav %}
+    {% url 'public:map' as map_url %}
+    {% include "includes/nav.html" with back_url=map_url back_label="Map" %}
+{% endblock %}
+
+{% block content %}
+    <div class="px-4 py-6">
+        <p class="font-mono text-[10px] tracking-[0.12em] uppercase text-text-3 mb-5 text-center">
+            {{ region_name }} · {% blocktrans trimmed count count_val=count %}last {{ count_val }} day{% plural %}last
+                {{ count_val }} days{% endblocktrans %}
+        </p>
+
+        <div class="flex flex-col gap-3 max-w-[390px] mx-auto">
+            {% for panel in panels %}
+                {% include "public/_bulletin_panel.html" with panel=panel %}
+            {% empty %}
+                <p class="text-center text-text-3 py-12 text-sm">
+                    {% trans "No bulletins available for this region." %}
+                </p>
+            {% endfor %}
         </div>
-    </body>
-</html>
+    </div>
+{% endblock %}

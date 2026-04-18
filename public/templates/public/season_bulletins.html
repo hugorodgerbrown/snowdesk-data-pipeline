@@ -1,60 +1,57 @@
+{% extends "public/base.html" %}
 {% comment %}
 public/templates/public/season_bulletins.html — Full-season test page.
 
-Standalone page (does NOT extend public/base.html) displaying up to 100
-bulletin panels in a responsive CSS-grid that collapses from three
-columns on wide screens to a single column on mobile. Intended as a UI
-test harness.
+Displays up to 100 bulletin panels in a responsive CSS-grid that collapses
+from three columns on wide screens to a single column on mobile. Intended
+as a UI test harness.
 {% endcomment %}
-{% load i18n static %}
-<!DOCTYPE html>
-<html lang="{{ LANGUAGE_CODE }}">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
-        <title>{{ region_name }} — {% trans "Season test" %} — Snowdesk</title>
-        {% include "includes/theme_head.html" %}
-        <link rel="stylesheet" href="{% static 'css/output.css' %}">
-    </head>
-    <body class="bg-bg font-sans text-text-1 min-h-screen">
-        {% url 'public:map' as map_url %}
-        {% include "includes/nav.html" with back_url=map_url back_label="Map" %}
-        <div class="px-4 md:px-8 py-6">
-            <header class="max-w-[1200px] mx-auto mb-6 px-1">
-                <p class="font-mono text-[10px] tracking-[0.12em] uppercase text-text-3 mb-5 text-center">
-                    {% trans "Panel UI test" %} · {{ season_label }}
-                </p>
-                <h1 class="font-sans text-xl md:text-[1.75rem] font-semibold text-text-1 leading-tight">
-                    {{ region_name }}
-                </h1>
-                <p class="font-mono text-[11px] tracking-[0.06em] text-text-3 mt-1.5">
-                    {% blocktrans trimmed count count=panel_count %}{{ count }} bulletin this
-                        season{% plural %}{{ count }} bulletins this season{% endblocktrans %}
-                </p>
-            </header>
+{% load i18n %}
 
-            {% if debug %}
-                {# ── Subscribe link (DEBUG only) ────────────────────────────────── #}
-                <div class="max-w-[1200px] mx-auto mb-4 px-1">
-                    <a
-                        href="{% url 'subscriptions:enter_email' %}"
-                        class="text-xs text-text-3 hover:text-text-2 border border-text-3/20 rounded-[6px] px-3 py-1.5 inline-block"
-                    >
-                        {% trans "Subscribe to alerts" %}
-                    </a>
-                </div>
-            {% endif %}
+{% block title %}
+    {{ region_name }} — {% trans "Season test" %} — Snowdesk
+{% endblock %}
 
-            <div class="grid gap-3 max-w-[1200px] mx-auto grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                {% for panel in panels %}
-                    {% include "public/_bulletin_panel.html" with panel=panel %}
-                {% empty %}
-                    <p class="col-span-full text-center text-text-3 py-12 text-sm">
-                        {% trans "No bulletins for this region and season." %}
-                    </p>
-                {% endfor %}
+{% block nav %}
+    {% url 'public:map' as map_url %}
+    {% include "includes/nav.html" with back_url=map_url back_label="Map" %}
+{% endblock %}
+
+{% block content %}
+    <div class="px-4 md:px-8 py-6">
+        <header class="max-w-[1200px] mx-auto mb-6 px-1">
+            <p class="font-mono text-[10px] tracking-[0.12em] uppercase text-text-3 mb-5 text-center">
+                {% trans "Panel UI test" %} · {{ season_label }}
+            </p>
+            <h1 class="font-sans text-xl md:text-[1.75rem] font-semibold text-text-1 leading-tight">
+                {{ region_name }}
+            </h1>
+            <p class="font-mono text-[11px] tracking-[0.06em] text-text-3 mt-1.5">
+                {% blocktrans trimmed count count=panel_count %}{{ count }} bulletin this season{% plural %}{{ count }}
+                    bulletins this season{% endblocktrans %}
+            </p>
+        </header>
+
+        {% if debug %}
+            {# ── Subscribe link (DEBUG only) ────────────────────────────────── #}
+            <div class="max-w-[1200px] mx-auto mb-4 px-1">
+                <a
+                    href="{% url 'subscriptions:enter_email' %}"
+                    class="text-xs text-text-3 hover:text-text-2 border border-text-3/20 rounded-[6px] px-3 py-1.5 inline-block"
+                >
+                    {% trans "Subscribe to alerts" %}
+                </a>
             </div>
+        {% endif %}
+
+        <div class="grid gap-3 max-w-[1200px] mx-auto grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+            {% for panel in panels %}
+                {% include "public/_bulletin_panel.html" with panel=panel %}
+            {% empty %}
+                <p class="col-span-full text-center text-text-3 py-12 text-sm">
+                    {% trans "No bulletins for this region and season." %}
+                </p>
+            {% endfor %}
         </div>
-    </body>
-</html>
+    </div>
+{% endblock %}
