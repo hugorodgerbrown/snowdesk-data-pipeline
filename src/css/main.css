@@ -263,6 +263,12 @@
    High/very_high swap to white text for contrast
    on the saturated red background; ``no_rating``
    falls back to a neutral grey surface.
+
+   Text colour is hardcoded rather than pulled from
+   --color-text-1 because the saturated EAWS backgrounds
+   are intentionally identical in light and dark mode —
+   so the tile number must stay dark on low/moderate/
+   considerable regardless of theme.
    ————————————————————————————————————————— */
 
 .danger-tile {
@@ -275,7 +281,7 @@
   border-radius: 8px;
   font-weight: 600;
   line-height: 1;
-  color: var(--color-text-1);
+  color: #1a1916;
   flex-shrink: 0;
 }
 .danger-tile[data-level="no_rating"]    { background: var(--color-card-subtle); color: var(--color-text-3); }
