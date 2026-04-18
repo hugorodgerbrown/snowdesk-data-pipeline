@@ -6,7 +6,7 @@ Covers argument defaults (no-args invocation), --date / --start-date /
 the records_failed exit-code path.
 """
 
-from datetime import date
+from datetime import UTC, date, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,7 +15,7 @@ from django.core.management.base import CommandError
 from django.test import override_settings
 
 from pipeline.models import PipelineRun
-from tests.factories import PipelineRunFactory
+from tests.factories import BulletinFactory, PipelineRunFactory
 
 
 def _make_successful_run(**overrides: int) -> PipelineRun:
@@ -86,10 +86,10 @@ class TestFetchBulletinsCommand:
 
     @override_settings(SEASON_START_DATE=date(2025, 11, 1))
     @patch(PATCH_TARGET)
-    def test_no_args_defaults_to_season_start_through_today(
-        self, mock_run: MagicMock
+    def test_no_args_empty_db_falls_back_to_season_start(
+        self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Bare invocation runs from SEASON_START_DATE to today, read-only."""
+        """Empty DB: bare invocation runs from SEASON_START_DATE to today."""
         mock_run.return_value = _make_successful_run()
 
         with patch(
@@ -104,6 +104,66 @@ class TestFetchBulletinsCommand:
         # Read-only by default — dry_run forwarded as True.
         assert kwargs["dry_run"] is True
         assert kwargs["force"] is False
+        # Banner surfaces the backstop source.
+        assert "SEASON_START_DATE backstop" in capsys.readouterr().out
+
+    @patch(PATCH_TARGET)
+    def test_no_args_uses_latest_bulletin_valid_from_day(
+        self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Populated DB: start defaults to latest bulletin's valid_from day."""
+        mock_run.return_value = _make_successful_run()
+        # Latest bulletin valid from midday 2026-04-15 UTC.
+        BulletinFactory.create(
+            issued_at=datetime(2026, 4, 15, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 15, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 16, 12, 0, tzinfo=UTC),
+        )
+        # Older bulletin — must be ignored by the MAX aggregate.
+        BulletinFactory.create(
+            issued_at=datetime(2026, 4, 10, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 10, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 11, 12, 0, tzinfo=UTC),
+        )
+
+        with patch(
+            "pipeline.management.commands.fetch_bulletins.timezone.localdate",
+            return_value=date(2026, 4, 16),
+        ):
+            call_command("fetch_bulletins")
+
+        _, kwargs = mock_run.call_args
+        # Same-day overlap so earlier-in-day issues get re-fetched.
+        assert kwargs["start"] == date(2026, 4, 15)
+        assert kwargs["end"] == date(2026, 4, 16)
+        assert "from latest bulletin valid_from day" in capsys.readouterr().out
+
+    @override_settings(SEASON_START_DATE=date(2025, 11, 1))
+    @patch(PATCH_TARGET)
+    def test_explicit_start_date_overrides_smart_default(
+        self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--start-date wins over the latest-bulletin default even with data in DB."""
+        mock_run.return_value = _make_successful_run()
+        BulletinFactory.create(
+            issued_at=datetime(2026, 4, 15, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 15, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 16, 12, 0, tzinfo=UTC),
+        )
+
+        with patch(
+            "pipeline.management.commands.fetch_bulletins.timezone.localdate",
+            return_value=date(2026, 4, 16),
+        ):
+            call_command("fetch_bulletins", "--start-date", "2026-01-01")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["start"] == date(2026, 1, 1)
+        assert kwargs["end"] == date(2026, 4, 16)
+        # Explicit source suppresses the start-source suffix.
+        out = capsys.readouterr().out
+        assert "from latest bulletin" not in out
+        assert "SEASON_START_DATE backstop" not in out
 
     @patch(PATCH_TARGET)
     def test_no_args_does_not_pass_commit(
