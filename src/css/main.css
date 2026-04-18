@@ -113,6 +113,18 @@
   --color-eaws-high-text:         #6b0000;
   --color-eaws-very-high-text:    #ffffff;
 
+  /* Foreground text colours on saturated backgrounds (tile pictograms).
+     Distinct from *-text above, which is calibrated for the pale tint
+     backgrounds.  These are deliberately declared alongside the rest of
+     the EAWS scale (not the neutral text ramp) so they stay theme-
+     invariant — saturated EAWS colours don't change in dark mode, so
+     their text mustn't either. */
+  --color-eaws-low-fg:          #1a1916;
+  --color-eaws-moderate-fg:     #1a1916;
+  --color-eaws-considerable-fg: #1a1916;
+  --color-eaws-high-fg:         #ffffff;
+  --color-eaws-very-high-fg:    #ffffff;
+
   /* Border radius */
   --radius-card:   16px;   /* outer card shell                    */
   --radius-tag:    8px;    /* problem tag, inner chips             */
@@ -260,9 +272,15 @@
    the bulletin headline band.  The tint comes
    from the saturated EAWS tokens so the tile
    reads as a pictogram rather than an area fill.
-   High/very_high swap to white text for contrast
-   on the saturated red background; ``no_rating``
-   falls back to a neutral grey surface.
+
+   Text colour uses the theme-invariant --color-eaws-*-fg
+   tokens (dark on low/moderate/considerable, white on
+   high/very_high) so the pictogram stays readable in
+   both light and dark mode — the saturated EAWS
+   backgrounds don't change across themes, so their
+   text mustn't either.  ``no_rating`` falls through to
+   --color-text-3 because its background (--color-card-
+   subtle) does track the theme.
    ————————————————————————————————————————— */
 
 .danger-tile {
@@ -275,15 +293,14 @@
   border-radius: 8px;
   font-weight: 600;
   line-height: 1;
-  color: var(--color-text-1);
   flex-shrink: 0;
 }
 .danger-tile[data-level="no_rating"]    { background: var(--color-card-subtle); color: var(--color-text-3); }
-.danger-tile[data-level="low"]          { background: var(--color-eaws-low); }
-.danger-tile[data-level="moderate"]     { background: var(--color-eaws-moderate); }
-.danger-tile[data-level="considerable"] { background: var(--color-eaws-considerable); }
-.danger-tile[data-level="high"]         { background: var(--color-eaws-high); color: #fff; }
-.danger-tile[data-level="very_high"]    { background: var(--color-eaws-very-high); color: #fff; }
+.danger-tile[data-level="low"]          { background: var(--color-eaws-low);          color: var(--color-eaws-low-fg); }
+.danger-tile[data-level="moderate"]     { background: var(--color-eaws-moderate);     color: var(--color-eaws-moderate-fg); }
+.danger-tile[data-level="considerable"] { background: var(--color-eaws-considerable); color: var(--color-eaws-considerable-fg); }
+.danger-tile[data-level="high"]         { background: var(--color-eaws-high);         color: var(--color-eaws-high-fg); }
+.danger-tile[data-level="very_high"]    { background: var(--color-eaws-very-high);    color: var(--color-eaws-very-high-fg); }
 
 
 /* —— Field guidance <details> chevron ——————
