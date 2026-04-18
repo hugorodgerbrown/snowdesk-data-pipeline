@@ -22,12 +22,12 @@ DATABASES = {
     }
 }
 
-# Show all SQL queries in the console during development
-LOGGING["loggers"]["django.db.backends"] = {  # type: ignore[index]  # noqa: F405
-    "handlers": ["console"],
-    "level": "DEBUG",
-    "propagate": False,
-}
+# # Show all SQL queries in the console during development
+# LOGGING["loggers"]["django.db.backends"] = {  # type: ignore[index]  # noqa: F405
+#     "handlers": ["console"],
+#     "level": "DEBUG",
+#     "propagate": False,
+# }
 
 # Disable rate limiting in development and tests so that rapid local requests
 # (including the full test suite) are never throttled.

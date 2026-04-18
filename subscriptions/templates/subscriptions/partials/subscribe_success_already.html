@@ -1,0 +1,17 @@
+{% load i18n %}
+{% comment %}
+subscriptions/templates/subscriptions/partials/subscribe_success_already.html
+HTMX response fragment for case D (existing active subscriber, already subscribed to this region).
+
+True no-op — no email sent, no data changed.
+{% endcomment %}
+<div class="bg-card rounded-[12px] border border-text-3/10 shadow-sm p-6">
+    <h2 class="text-base font-semibold text-text-1 mb-1">
+        {% blocktrans with region=region_name trimmed %}
+            You're already subscribed to <strong>{{ region }}</strong>
+        {% endblocktrans %}
+    </h2>
+    <p class="text-sm text-text-2 leading-relaxed">
+        <a href="/subscribe/manage/" class="underline text-text-1">{% trans "Manage your subscriptions" %}</a>
+    </p>
+</div>

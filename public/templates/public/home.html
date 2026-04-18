@@ -11,14 +11,6 @@ This will be replaced with a full marketing site before launch.
     {% trans "Snowdesk — Avalanche bulletins for backcountry skiers" %}
 {% endblock %}
 
-{% block extra_head %}
-    <script
-        src="https://unpkg.com/htmx.org@2.0.4"
-        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-        crossorigin="anonymous"
-    ></script>
-{% endblock %}
-
 {% block meta_description %}
     {% trans "Daily Swiss avalanche bulletins for backcountry skiers — per-region danger levels, avalanche problems, snowpack structure, and season archives, sourced from SLF." %}
 {% endblock %}
@@ -63,9 +55,6 @@ This will be replaced with a full marketing site before launch.
                 >
                     {% trans "Explore the map →" %}
                 </a>
-            </div>
-            <div class="mt-8 w-full text-left">
-                {% include "subscriptions/partials/subscribe_form.html" %}
             </div>
         </div>
     </div>

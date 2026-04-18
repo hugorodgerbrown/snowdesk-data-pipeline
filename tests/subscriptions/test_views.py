@@ -2,14 +2,23 @@
 tests/subscriptions/test_views.py — Tests for subscriptions views.
 
 Covers:
-  subscribe_partial   — new/pending/active branches; byte-equal response;
-                        rate-limit 429; HTMX-only.
-  account_view        — valid token activates pending subscriber; idempotent
-                        on re-click; bad/expired token → 400.
-  manage_view         — unauthenticated GET/POST; authenticated GET/POST;
-                        hard-delete on empty selection; rate-limit 429.
+  subscribe_partial   — four-case matrix (A=new, B=pending, C=active+new-region,
+                        D=active+already-subscribed); rate-limit 429; HTMX-only;
+                        missing region_id rejected (400 form error);
+                        unknown region_id returns 400 error fragment.
+  account_view        — valid token activates pending subscriber; redirects to
+                        manage with ?just_confirmed=1; idempotent on re-click;
+                        bad/expired token → 400.
+  manage_view         — unauthenticated GET/POST (byte-equal response for known
+                        and unknown emails); authenticated GET shows region cards;
+                        non-subscribed regions absent; just_confirmed banner.
+  remove_region       — removes one region; last region → hard-delete + HX-Redirect;
+                        no session → 403; non-HTMX → 400; rate-limit 429.
+  delete_account      — hard-deletes subscriber; clears session; HX-Redirect to done;
+                        no session → 403; non-HTMX → 400.
   unsubscribe_view    — valid token GET/POST; idempotent; bad token → 400;
                         last-subscription hard-delete; rate-limit 429.
+  unsubscribe_done_view — GET renders done page.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -17,6 +26,7 @@ from unittest.mock import patch
 
 import pytest
 from django.conf import settings
+from django.core import mail
 from django.test import Client, RequestFactory
 from django.urls import reverse
 from freezegun import freeze_time
@@ -27,7 +37,12 @@ from subscriptions.services.token import (
     generate_token,
     generate_unsubscribe_token,
 )
-from tests.factories import RegionFactory, SubscriberFactory, SubscriptionFactory
+from tests.factories import (
+    RegionFactory,
+    ResortFactory,
+    SubscriberFactory,
+    SubscriptionFactory,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -57,22 +72,15 @@ def _valid_account_token(email: str) -> str:
 
 @pytest.mark.django_db
 class TestSubscribePartial:
-    """Tests for the subscribe_partial HTMX view."""
+    """Tests for the subscribe_partial HTMX view — four-case matrix."""
 
     @pytest.fixture(autouse=True)
-    def patch_email(self):
-        """Prevent real email dispatch during all subscribe_partial tests."""
-        import subscriptions.views  # ensure the module is imported before patching  # noqa: F401
-
-        with (
-            patch("subscriptions.views.send_account_access_email") as mock_send,
-            patch("subscriptions.views.send_noop_email") as mock_noop,
-        ):
-            self.mock_send = mock_send
-            self.mock_noop = mock_noop
-            yield
+    def use_locmem_backend(self, settings):
+        """Use in-memory email backend so mail.outbox is populated."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def test_non_htmx_post_returns_400(self):
+        """Non-HTMX POST is rejected with 400."""
         client = Client()
         region = RegionFactory.create()
         response = client.post(
@@ -82,91 +90,36 @@ class TestSubscribePartial:
         assert response.status_code == 400
 
     def test_get_returns_405(self):
+        """GET on subscribe_partial is method-not-allowed."""
         client = Client()
         response = client.get(reverse("subscriptions:subscribe"), **_HTMX_HEADERS)
         assert response.status_code == 405
 
-    def test_new_subscriber_creates_pending_record(self):
+    def test_missing_region_id_returns_form_with_errors(self):
+        """POST without region_id returns the form with validation errors."""
         client = Client()
-        region = RegionFactory.create()
         response = client.post(
             reverse("subscriptions:subscribe"),
-            data={"email": "newuser@example.com", "region_id": region.region_id},
+            data={"email": "noregion@example.com"},
             **_HTMX_HEADERS,
         )
         assert response.status_code == 200
-        assert Subscriber.objects.filter(email="newuser@example.com").exists()
-        sub = Subscriber.objects.get(email="newuser@example.com")
-        assert sub.status == Subscriber.Status.PENDING
+        # Form is re-rendered — no subscriber created
+        assert not Subscriber.objects.filter(email="noregion@example.com").exists()
 
-    def test_new_subscriber_sends_account_access_email(self):
+    def test_unknown_region_id_returns_400_error_fragment(self):
+        """POST with a region_id that does not exist in the DB returns 400."""
         client = Client()
-        region = RegionFactory.create()
-        client.post(
+        response = client.post(
             reverse("subscriptions:subscribe"),
-            data={"email": "newuser@example.com", "region_id": region.region_id},
+            data={"email": "alice@example.com", "region_id": "CH-NOTEXIST"},
             **_HTMX_HEADERS,
         )
-        self.mock_send.assert_called_once()
-
-    def test_pending_subscriber_sends_account_access_email(self):
-        SubscriberFactory.create(
-            email="pending@example.com", status=Subscriber.Status.PENDING
-        )
-        client = Client()
-        region = RegionFactory.create()
-        client.post(
-            reverse("subscriptions:subscribe"),
-            data={"email": "pending@example.com", "region_id": region.region_id},
-            **_HTMX_HEADERS,
-        )
-        self.mock_send.assert_called_once()
-
-    def test_active_subscriber_sends_noop_email(self):
-        SubscriberFactory.create(
-            email="active@example.com", status=Subscriber.Status.ACTIVE
-        )
-        client = Client()
-        region = RegionFactory.create()
-        client.post(
-            reverse("subscriptions:subscribe"),
-            data={"email": "active@example.com", "region_id": region.region_id},
-            **_HTMX_HEADERS,
-        )
-        self.mock_noop.assert_called_once()
-        self.mock_send.assert_not_called()
-
-    def test_response_body_byte_equal_across_all_three_branches(self):
-        """All three subscribe branches must return the same HTML fragment."""
-        region = RegionFactory.create()
-        SubscriberFactory.create(
-            email="pending@example.com", status=Subscriber.Status.PENDING
-        )
-        SubscriberFactory.create(
-            email="active@example.com", status=Subscriber.Status.ACTIVE
-        )
-
-        client = Client()
-
-        resp_new = client.post(
-            reverse("subscriptions:subscribe"),
-            data={"email": "brand-new@example.com", "region_id": region.region_id},
-            **_HTMX_HEADERS,
-        )
-        resp_pending = client.post(
-            reverse("subscriptions:subscribe"),
-            data={"email": "pending@example.com", "region_id": region.region_id},
-            **_HTMX_HEADERS,
-        )
-        resp_active = client.post(
-            reverse("subscriptions:subscribe"),
-            data={"email": "active@example.com", "region_id": region.region_id},
-            **_HTMX_HEADERS,
-        )
-
-        assert resp_new.content == resp_pending.content == resp_active.content
+        assert response.status_code == 400
+        assert b"went wrong" in response.content.lower()
 
     def test_invalid_email_returns_form_with_errors(self):
+        """Invalid email address → form re-rendered with validation errors."""
         client = Client()
         region = RegionFactory.create()
         response = client.post(
@@ -178,7 +131,7 @@ class TestSubscribePartial:
         assert b"valid email" in response.content.lower()
 
     def test_rate_limit_returns_429(self):
-        # Directly test by faking the `limited` flag that django-ratelimit sets.
+        """Exceeding rate limit returns 429."""
         rf = RequestFactory()
         request = rf.post(
             reverse("subscriptions:subscribe"),
@@ -193,35 +146,202 @@ class TestSubscribePartial:
         response = subscribe_partial(request)
         assert response.status_code == 429
 
-    def test_subscribe_from_landing_creates_subscriber_without_regions(self):
-        """POST without region_id (landing page) creates a Subscriber with no Subscription rows."""
+    # ---- Case A: new subscriber ----
+
+    def test_case_a_new_subscriber_creates_pending_record(self):
+        """Case A: new email → Subscriber created with status=pending."""
         client = Client()
+        region = RegionFactory.create()
         response = client.post(
             reverse("subscriptions:subscribe"),
-            data={"email": "landing@example.com"},
+            data={"email": "newuser@example.com", "region_id": region.region_id},
             **_HTMX_HEADERS,
         )
         assert response.status_code == 200
-        sub = Subscriber.objects.get(email="landing@example.com")
+        sub = Subscriber.objects.get(email="newuser@example.com")
         assert sub.status == Subscriber.Status.PENDING
-        assert not sub.subscriptions.exists()
 
-    def test_subscribe_from_landing_success_fragment_byte_equal_to_bulletin(self):
-        """Success fragment from the landing page is byte-equal to the bulletin-page success."""
+    def test_case_a_new_subscriber_creates_subscription_row(self):
+        """Case A: new email + region → Subscription row created."""
+        client = Client()
+        region = RegionFactory.create()
+        client.post(
+            reverse("subscriptions:subscribe"),
+            data={"email": "newwithregion@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        sub = Subscriber.objects.get(email="newwithregion@example.com")
+        assert Subscription.objects.filter(subscriber=sub, region=region).exists()
+
+    def test_case_a_new_subscriber_sends_account_access_email(self):
+        """Case A: new email → account-access email sent (subject contains 'Snowdesk')."""
+        client = Client()
+        region = RegionFactory.create()
+        client.post(
+            reverse("subscriptions:subscribe"),
+            data={"email": "newuser@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        assert len(mail.outbox) == 1
+        assert "Snowdesk" in mail.outbox[0].subject
+        assert "account" in mail.outbox[0].subject.lower()
+
+    def test_case_a_response_contains_check_your_inbox(self):
+        """Case A: response fragment contains 'Check your inbox'."""
+        client = Client()
+        region = RegionFactory.create()
+        response = client.post(
+            reverse("subscriptions:subscribe"),
+            data={"email": "newuser@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        assert b"Check your inbox" in response.content
+
+    # ---- Case B: existing pending subscriber ----
+
+    def test_case_b_pending_creates_subscription_row(self):
+        """Case B: existing pending + new region → Subscription row created."""
+        subscriber = SubscriberFactory.create(
+            email="pending@example.com", status=Subscriber.Status.PENDING
+        )
         region = RegionFactory.create()
         client = Client()
+        client.post(
+            reverse("subscriptions:subscribe"),
+            data={"email": "pending@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region
+        ).exists()
 
-        resp_landing = client.post(
+    def test_case_b_pending_sends_account_access_email(self):
+        """Case B: existing pending subscriber → account-access email resent."""
+        SubscriberFactory.create(
+            email="pending@example.com", status=Subscriber.Status.PENDING
+        )
+        region = RegionFactory.create()
+        client = Client()
+        client.post(
             reverse("subscriptions:subscribe"),
-            data={"email": "landing2@example.com"},
+            data={"email": "pending@example.com", "region_id": region.region_id},
             **_HTMX_HEADERS,
         )
-        resp_bulletin = client.post(
+        assert len(mail.outbox) == 1
+        assert "account" in mail.outbox[0].subject.lower()
+
+    def test_case_b_response_contains_check_your_inbox(self):
+        """Case B: response fragment contains 'Check your inbox'."""
+        SubscriberFactory.create(
+            email="pending@example.com", status=Subscriber.Status.PENDING
+        )
+        region = RegionFactory.create()
+        client = Client()
+        response = client.post(
             reverse("subscriptions:subscribe"),
-            data={"email": "bulletin2@example.com", "region_id": region.region_id},
+            data={"email": "pending@example.com", "region_id": region.region_id},
             **_HTMX_HEADERS,
         )
-        assert resp_landing.content == resp_bulletin.content
+        assert b"Check your inbox" in response.content
+
+    # ---- Case C: existing active subscriber, new region ----
+
+    def test_case_c_active_new_region_creates_subscription_row(self):
+        """Case C: active subscriber + new region → Subscription row created."""
+        subscriber = SubscriberFactory.create(
+            email="active@example.com", status=Subscriber.Status.ACTIVE
+        )
+        region = RegionFactory.create()
+        client = Client()
+        client.post(
+            reverse("subscriptions:subscribe"),
+            data={"email": "active@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region
+        ).exists()
+
+    def test_case_c_active_new_region_sends_confirmation_email(self):
+        """Case C: active subscriber + new region → subscription confirmation email sent."""
+        SubscriberFactory.create(
+            email="active@example.com", status=Subscriber.Status.ACTIVE
+        )
+        region = RegionFactory.create(name="Davos Region")
+        client = Client()
+        client.post(
+            reverse("subscriptions:subscribe"),
+            data={"email": "active@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        assert len(mail.outbox) == 1
+        assert "Davos Region" in mail.outbox[0].subject
+
+    def test_case_c_response_contains_added_and_region_name(self):
+        """Case C: response fragment contains 'Added' and the region name."""
+        SubscriberFactory.create(
+            email="active@example.com", status=Subscriber.Status.ACTIVE
+        )
+        region = RegionFactory.create(name="Davos Region")
+        client = Client()
+        response = client.post(
+            reverse("subscriptions:subscribe"),
+            data={"email": "active@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        assert b"Added" in response.content
+        assert b"Davos Region" in response.content
+
+    # ---- Case D: existing active subscriber, already subscribed ----
+
+    def test_case_d_already_subscribed_is_idempotent(self):
+        """Case D: active subscriber already subscribed → no duplicate Subscription row."""
+        subscriber = SubscriberFactory.create(
+            email="active2@example.com", status=Subscriber.Status.ACTIVE
+        )
+        region = RegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = Client()
+        client.post(
+            reverse("subscriptions:subscribe"),
+            data={"email": "active2@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        assert (
+            Subscription.objects.filter(subscriber=subscriber, region=region).count()
+            == 1
+        )
+
+    def test_case_d_already_subscribed_sends_no_email(self):
+        """Case D: active subscriber already subscribed → no email sent."""
+        subscriber = SubscriberFactory.create(
+            email="active2@example.com", status=Subscriber.Status.ACTIVE
+        )
+        region = RegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = Client()
+        client.post(
+            reverse("subscriptions:subscribe"),
+            data={"email": "active2@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        assert len(mail.outbox) == 0
+
+    def test_case_d_response_contains_already_subscribed_and_region_name(self):
+        """Case D: response fragment contains 'already subscribed' and the region name."""
+        subscriber = SubscriberFactory.create(
+            email="active2@example.com", status=Subscriber.Status.ACTIVE
+        )
+        region = RegionFactory.create(name="Zermatt Region")
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = Client()
+        response = client.post(
+            reverse("subscriptions:subscribe"),
+            data={"email": "active2@example.com", "region_id": region.region_id},
+            **_HTMX_HEADERS,
+        )
+        assert b"already subscribed" in response.content.lower()
+        assert b"Zermatt Region" in response.content
 
 
 # ---------------------------------------------------------------------------
@@ -235,21 +355,34 @@ class TestAccountView:
 
     @pytest.fixture(autouse=True)
     def use_locmem_backend(self, settings):
+        """Use in-memory email backend to avoid real dispatch."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def test_valid_token_activates_pending_subscriber(self):
+        """Pending subscriber is activated when a valid token is presented."""
         SubscriberFactory.create(
             email="pending@example.com", status=Subscriber.Status.PENDING
         )
         token = _valid_account_token("pending@example.com")
         client = Client()
-        response = client.get(reverse("subscriptions:account", kwargs={"token": token}))
-        assert response.status_code == 200
+        client.get(reverse("subscriptions:account", kwargs={"token": token}))
         sub = Subscriber.objects.get(email="pending@example.com")
         assert sub.status == Subscriber.Status.ACTIVE
         assert sub.confirmed_at is not None
 
+    def test_valid_token_redirects_to_manage_with_just_confirmed(self):
+        """Successful token click redirects to /subscribe/manage/?just_confirmed=1."""
+        SubscriberFactory.create(
+            email="redirect@example.com", status=Subscriber.Status.PENDING
+        )
+        token = _valid_account_token("redirect@example.com")
+        client = Client()
+        response = client.get(reverse("subscriptions:account", kwargs={"token": token}))
+        assert response.status_code == 302
+        assert response["Location"] == "/subscribe/manage/?just_confirmed=1"
+
     def test_valid_token_sets_confirmed_at_with_timezone(self):
+        """confirmed_at timestamp has tzinfo set."""
         SubscriberFactory.create(
             email="tz@example.com", status=Subscriber.Status.PENDING
         )
@@ -261,6 +394,7 @@ class TestAccountView:
         assert sub.confirmed_at.tzinfo is not None
 
     def test_valid_token_sets_session(self):
+        """Session is populated with subscriber_uuid after successful token click."""
         SubscriberFactory.create(
             email="session@example.com", status=Subscriber.Status.PENDING
         )
@@ -271,7 +405,7 @@ class TestAccountView:
         assert client.session.get("subscriber_uuid") == str(sub.uuid)
 
     def test_idempotent_on_re_click_does_not_re_stamp_confirmed_at(self):
-        """Re-clicking the same link must not update confirmed_at."""
+        """Re-clicking the same link for an already-active subscriber does not re-stamp confirmed_at."""
         sub = SubscriberFactory.create(
             email="active@example.com", status=Subscriber.Status.ACTIVE
         )
@@ -280,12 +414,28 @@ class TestAccountView:
 
         token = _valid_account_token("active@example.com")
         client = Client()
-        client.get(reverse("subscriptions:account", kwargs={"token": token}))
+        response = client.get(reverse("subscriptions:account", kwargs={"token": token}))
+        # Still redirects, not an error
+        assert response.status_code == 302
 
         sub.refresh_from_db()
         assert sub.confirmed_at == datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
+    def test_active_subscriber_re_click_also_redirects(self):
+        """Active subscriber clicking the link again still gets redirected to manage."""
+        sub = SubscriberFactory.create(
+            email="active2@example.com", status=Subscriber.Status.ACTIVE
+        )
+        sub.confirmed_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+        sub.save(update_fields=["confirmed_at"])
+        token = _valid_account_token("active2@example.com")
+        client = Client()
+        response = client.get(reverse("subscriptions:account", kwargs={"token": token}))
+        assert response.status_code == 302
+        assert "/subscribe/manage/" in response["Location"]
+
     def test_expired_token_returns_400(self):
+        """Expired token renders link_expired.html with status 400."""
         with freeze_time("2026-01-01T00:00:00Z"):
             token = _valid_account_token("expired@example.com")
         future = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC) + timedelta(
@@ -300,6 +450,7 @@ class TestAccountView:
         assert b"expired" in response.content.lower()
 
     def test_garbage_token_returns_400(self):
+        """Garbage token string returns 400."""
         client = Client()
         response = client.get(
             reverse("subscriptions:account", kwargs={"token": "garbage-token"})
@@ -307,24 +458,14 @@ class TestAccountView:
         assert response.status_code == 400
 
     def test_valid_token_unknown_email_returns_400(self):
-        """Token is valid but subscriber does not exist — treat as expired."""
+        """Valid token for a deleted subscriber returns 400."""
         token = _valid_account_token("ghost@example.com")
         client = Client()
         response = client.get(reverse("subscriptions:account", kwargs={"token": token}))
         assert response.status_code == 400
 
-    def test_renders_account_template(self):
-        SubscriberFactory.create(
-            email="render@example.com", status=Subscriber.Status.PENDING
-        )
-        token = _valid_account_token("render@example.com")
-        client = Client()
-        response = client.get(reverse("subscriptions:account", kwargs={"token": token}))
-        assert response.status_code == 200
-        assert b"account" in response.content.lower()
-
     def test_unsubscribe_token_at_account_endpoint_returns_400(self):
-        """An unsubscribe token must not be accepted by the account endpoint."""
+        """An unsubscribe token must not be accepted at the account endpoint."""
         token = generate_unsubscribe_token("ghost@example.com", "CH-4115")
         client = Client()
         response = client.get(reverse("subscriptions:account", kwargs={"token": token}))
@@ -341,24 +482,19 @@ class TestManageViewUnauthenticated:
     """Tests for manage_view without a session."""
 
     @pytest.fixture(autouse=True)
-    def patch_email(self):
-        import subscriptions.views  # ensure the module is imported before patching  # noqa: F401
-
-        with (
-            patch("subscriptions.views.send_account_access_email") as mock_send,
-            patch("subscriptions.views.send_noop_email") as mock_noop,
-        ):
-            self.mock_send = mock_send
-            self.mock_noop = mock_noop
-            yield
+    def use_locmem_backend(self, settings):
+        """Use in-memory email backend so mail.outbox is populated."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def test_get_returns_200_with_email_form(self):
+        """Unauthenticated GET renders the email entry form."""
         client = Client()
         response = client.get(reverse("subscriptions:manage"))
         assert response.status_code == 200
         assert b"email" in response.content.lower()
 
     def test_post_known_email_sends_account_access_email(self):
+        """Known email on unauthenticated POST → account access email sent."""
         SubscriberFactory.create(email="known@example.com")
         client = Client()
         response = client.post(
@@ -366,20 +502,21 @@ class TestManageViewUnauthenticated:
             data={"email": "known@example.com"},
         )
         assert response.status_code == 200
-        self.mock_send.assert_called_once()
+        assert len(mail.outbox) == 1
+        assert "Snowdesk" in mail.outbox[0].subject
 
-    def test_post_unknown_email_sends_noop_email(self):
+    def test_post_unknown_email_sends_no_email(self):
+        """Unknown email on unauthenticated POST → no email sent (no enumeration)."""
         client = Client()
         response = client.post(
             reverse("subscriptions:manage"),
             data={"email": "unknown@example.com"},
         )
         assert response.status_code == 200
-        self.mock_noop.assert_called_once()
-        self.mock_send.assert_not_called()
+        assert len(mail.outbox) == 0
 
     def test_post_known_email_response_identical_to_unknown(self):
-        """Responses must be byte-equal to prevent account enumeration."""
+        """Responses for known and unknown emails must be byte-equal."""
         SubscriberFactory.create(email="exists@example.com")
         client = Client()
         resp_known = client.post(
@@ -393,6 +530,7 @@ class TestManageViewUnauthenticated:
         assert resp_known.content == resp_unknown.content
 
     def test_post_invalid_email_rerenders_form(self):
+        """Invalid email on unauthenticated POST re-renders the form with errors."""
         client = Client()
         response = client.post(
             reverse("subscriptions:manage"),
@@ -428,7 +566,18 @@ class TestManageViewUnauthenticated:
 class TestManageViewAuthenticated:
     """Tests for manage_view with a valid session."""
 
-    def test_get_with_session_returns_region_form(self):
+    def test_get_shows_subscribed_region_name(self):
+        """Authenticated GET shows the subscribed region's name."""
+        subscriber = SubscriberFactory.create()
+        region = RegionFactory.create(name="Zermatt Region")
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("subscriptions:manage"))
+        assert response.status_code == 200
+        assert b"Zermatt Region" in response.content
+
+    def test_get_shows_subscribed_region_id(self):
+        """Authenticated GET shows the subscribed region's region_id."""
         subscriber = SubscriberFactory.create()
         region = RegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
@@ -437,42 +586,43 @@ class TestManageViewAuthenticated:
         assert response.status_code == 200
         assert region.region_id.encode() in response.content
 
-    def test_post_updates_subscriptions(self):
+    def test_get_shows_resort_names_for_subscribed_region(self):
+        """Authenticated GET lists resort names for subscribed regions."""
         subscriber = SubscriberFactory.create()
-        old_region = RegionFactory.create()
-        new_region = RegionFactory.create()
-        SubscriptionFactory.create(subscriber=subscriber, region=old_region)
+        region = RegionFactory.create()
+        ResortFactory.create(region=region, name="Verbier")
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
         client = _make_session_client(subscriber)
-        response = client.post(
-            reverse("subscriptions:manage"),
-            data={"regions": [new_region.pk]},
-        )
-        assert response.status_code == 200
-        assert Subscription.objects.filter(
-            subscriber=subscriber, region=new_region
-        ).exists()
-        assert not Subscription.objects.filter(
-            subscriber=subscriber, region=old_region
-        ).exists()
+        response = client.get(reverse("subscriptions:manage"))
+        assert b"Verbier" in response.content
 
-    def test_post_empty_selection_hard_deletes_subscriber(self):
+    def test_get_does_not_show_non_subscribed_region(self):
+        """Non-subscribed regions must not appear in the manage page."""
         subscriber = SubscriberFactory.create()
-        SubscriptionFactory.create(subscriber=subscriber, region=RegionFactory.create())
-        subscriber_pk = subscriber.pk
+        subscribed_region = RegionFactory.create(name="Subscribed Region")
+        RegionFactory.create(name="Other Region Zephyr")
+        SubscriptionFactory.create(subscriber=subscriber, region=subscribed_region)
         client = _make_session_client(subscriber)
-        response = client.post(
-            reverse("subscriptions:manage"),
-            data={},
-        )
-        assert response.status_code == 200
-        assert not Subscriber.objects.filter(pk=subscriber_pk).exists()
+        response = client.get(reverse("subscriptions:manage"))
+        assert b"Other Region Zephyr" not in response.content
 
-    def test_post_empty_clears_session(self):
+    def test_get_shows_welcome_banner_when_just_confirmed(self):
+        """?just_confirmed=1 querystring renders the welcome banner."""
         subscriber = SubscriberFactory.create()
-        SubscriptionFactory.create(subscriber=subscriber, region=RegionFactory.create())
+        RegionFactory.create()
         client = _make_session_client(subscriber)
-        client.post(reverse("subscriptions:manage"), data={})
-        assert "subscriber_uuid" not in client.session
+        response = client.get(reverse("subscriptions:manage") + "?just_confirmed=1")
+        assert response.status_code == 200
+        assert b"confirmed" in response.content.lower()
+
+    def test_get_no_welcome_banner_without_just_confirmed(self):
+        """Without ?just_confirmed the welcome banner is absent."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("subscriptions:manage"))
+        assert response.status_code == 200
+        # The banner contains a specific phrase; assert it's absent
+        assert b"Your subscription is confirmed" not in response.content
 
     def test_stale_session_uuid_returns_unauthenticated_view(self):
         """A session with a deleted subscriber UUID should show email entry form."""
@@ -481,8 +631,188 @@ class TestManageViewAuthenticated:
         subscriber.delete()
         response = client.get(reverse("subscriptions:manage"))
         assert response.status_code == 200
-        # Should render the unauthenticated form
         assert b"Send account link" in response.content
+
+    def test_get_shows_map_cta_link(self):
+        """Authenticated manage page contains the 'Choose more regions on the map' link."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("subscriptions:manage"))
+        assert b"map" in response.content.lower()
+        assert b"/map/" in response.content
+
+
+# ---------------------------------------------------------------------------
+# remove_region
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestRemoveRegion:
+    """Tests for the remove_region HTMX view."""
+
+    def test_removes_subscription_row(self):
+        """Session-authenticated POST removes the Subscription row."""
+        subscriber = SubscriberFactory.create()
+        region1 = RegionFactory.create()
+        region2 = RegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region1)
+        SubscriptionFactory.create(subscriber=subscriber, region=region2)
+        client = _make_session_client(subscriber)
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region", kwargs={"region_id": region1.region_id}
+            ),
+            **_HTMX_HEADERS,
+        )
+        assert response.status_code == 200
+        assert not Subscription.objects.filter(
+            subscriber=subscriber, region=region1
+        ).exists()
+        # Other subscription retained
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region2
+        ).exists()
+
+    def test_last_region_hard_deletes_subscriber(self):
+        """Removing the last region hard-deletes the subscriber."""
+        subscriber = SubscriberFactory.create()
+        region = RegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        sub_pk = subscriber.pk
+        client = _make_session_client(subscriber)
+        client.post(
+            reverse(
+                "subscriptions:remove_region", kwargs={"region_id": region.region_id}
+            ),
+            **_HTMX_HEADERS,
+        )
+        assert not Subscriber.objects.filter(pk=sub_pk).exists()
+
+    def test_last_region_responds_with_hx_redirect(self):
+        """Removing the last region responds with HX-Redirect header."""
+        subscriber = SubscriberFactory.create()
+        region = RegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = _make_session_client(subscriber)
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region", kwargs={"region_id": region.region_id}
+            ),
+            **_HTMX_HEADERS,
+        )
+        assert "HX-Redirect" in response
+        assert "unsubscribe" in response["HX-Redirect"]
+
+    def test_no_session_returns_403(self):
+        """Unauthenticated POST returns 403."""
+        region = RegionFactory.create()
+        client = Client()
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region", kwargs={"region_id": region.region_id}
+            ),
+            **_HTMX_HEADERS,
+        )
+        assert response.status_code == 403
+
+    def test_non_htmx_returns_400(self):
+        """Non-HTMX POST returns 400."""
+        subscriber = SubscriberFactory.create()
+        region = RegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = _make_session_client(subscriber)
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region", kwargs={"region_id": region.region_id}
+            ),
+        )
+        assert response.status_code == 400
+
+    def test_rate_limit_returns_429(self):
+        """Exceeding rate limit returns 429."""
+        rf = RequestFactory()
+        request = rf.post(
+            reverse("subscriptions:remove_region", kwargs={"region_id": "CH-0001"}),
+        )
+        request.htmx = True  # noqa: B010
+        request.limited = True  # noqa: B010
+
+        from subscriptions.views import remove_region
+
+        response = remove_region(request, region_id="CH-0001")
+        assert response.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# delete_account
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestDeleteAccount:
+    """Tests for the delete_account HTMX view."""
+
+    def test_hard_deletes_subscriber(self):
+        """Session-authenticated POST hard-deletes the subscriber."""
+        subscriber = SubscriberFactory.create()
+        region = RegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        sub_pk = subscriber.pk
+        client = _make_session_client(subscriber)
+        client.post(reverse("subscriptions:delete_account"), **_HTMX_HEADERS)
+        assert not Subscriber.objects.filter(pk=sub_pk).exists()
+
+    def test_cascades_subscription_rows(self):
+        """Subscriber deletion cascades to Subscription rows."""
+        subscriber = SubscriberFactory.create()
+        region = RegionFactory.create()
+        sub = SubscriptionFactory.create(subscriber=subscriber, region=region)
+        sub_pk = sub.pk
+        client = _make_session_client(subscriber)
+        client.post(reverse("subscriptions:delete_account"), **_HTMX_HEADERS)
+        assert not Subscription.objects.filter(pk=sub_pk).exists()
+
+    def test_clears_session(self):
+        """Session is cleared after account deletion."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        client.post(reverse("subscriptions:delete_account"), **_HTMX_HEADERS)
+        assert "subscriber_uuid" not in client.session
+
+    def test_responds_with_hx_redirect(self):
+        """Response includes HX-Redirect header pointing to unsubscribe-done."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.post(reverse("subscriptions:delete_account"), **_HTMX_HEADERS)
+        assert response.status_code == 200
+        assert "HX-Redirect" in response
+        assert "unsubscribe" in response["HX-Redirect"]
+
+    def test_no_session_returns_403(self):
+        """Unauthenticated POST returns 403."""
+        client = Client()
+        response = client.post(reverse("subscriptions:delete_account"), **_HTMX_HEADERS)
+        assert response.status_code == 403
+
+    def test_non_htmx_returns_400(self):
+        """Non-HTMX POST returns 400."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.post(reverse("subscriptions:delete_account"))
+        assert response.status_code == 400
+
+    def test_rate_limit_returns_429(self):
+        """Exceeding rate limit returns 429."""
+        rf = RequestFactory()
+        request = rf.post(reverse("subscriptions:delete_account"))
+        request.htmx = True  # noqa: B010
+        request.limited = True  # noqa: B010
+
+        from subscriptions.views import delete_account
+
+        response = delete_account(request)
+        assert response.status_code == 429
 
 
 # ---------------------------------------------------------------------------
@@ -495,6 +825,7 @@ class TestUnsubscribeView:
     """Tests for the unsubscribe_view."""
 
     def test_get_valid_token_renders_confirmation(self):
+        """Valid token GET renders the unsubscribe confirmation page."""
         subscriber = SubscriberFactory.create(email="unsub@example.com")
         region = RegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
@@ -507,6 +838,7 @@ class TestUnsubscribeView:
         assert b"unsubscribe" in response.content.lower()
 
     def test_post_valid_token_removes_subscription(self):
+        """Valid token POST deletes the matching Subscription row."""
         subscriber = SubscriberFactory.create(email="unsub2@example.com")
         region = RegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
@@ -521,6 +853,7 @@ class TestUnsubscribeView:
         ).exists()
 
     def test_post_last_subscription_hard_deletes_subscriber(self):
+        """Removing last subscription hard-deletes the Subscriber."""
         subscriber = SubscriberFactory.create(email="lastregion@example.com")
         region = RegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
@@ -531,6 +864,7 @@ class TestUnsubscribeView:
         assert not Subscriber.objects.filter(pk=sub_pk).exists()
 
     def test_post_not_last_subscription_keeps_subscriber(self):
+        """Removing one of multiple subscriptions keeps the subscriber."""
         subscriber = SubscriberFactory.create(email="keep@example.com")
         region1 = RegionFactory.create()
         region2 = RegionFactory.create()
@@ -545,7 +879,7 @@ class TestUnsubscribeView:
         ).exists()
 
     def test_post_idempotent_when_already_deleted(self):
-        """Re-submitting after subscriber is deleted renders done page, not error."""
+        """Re-submitting after subscriber deletion renders done page without error."""
         subscriber = SubscriberFactory.create(email="gone@example.com")
         region = RegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
@@ -559,6 +893,7 @@ class TestUnsubscribeView:
         assert b"unsubscribed" in response.content.lower()
 
     def test_bad_token_returns_400(self):
+        """Garbage token returns 400."""
         client = Client()
         response = client.get(
             reverse("subscriptions:unsubscribe", kwargs={"token": "garbage"})
@@ -587,7 +922,7 @@ class TestUnsubscribeView:
         region = RegionFactory.create()
         token = generate_unsubscribe_token("rl@example.com", region.region_id)
         request = rf.get(reverse("subscriptions:unsubscribe", kwargs={"token": token}))
-        request.limited = True  # noqa: B010 — set on test request object
+        request.limited = True  # noqa: B010
 
         from subscriptions.views import unsubscribe_view
 
@@ -595,10 +930,27 @@ class TestUnsubscribeView:
         assert response.status_code == 429
 
     def test_cross_salt_token_returns_400(self):
-        """An account-access token cannot be used as an unsubscribe token."""
+        """An account-access token must not be accepted at the unsubscribe endpoint."""
         token = generate_token("alice@example.com", salt=SALT_ACCOUNT_ACCESS)
         client = Client()
         response = client.get(
             reverse("subscriptions:unsubscribe", kwargs={"token": token})
         )
         assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# unsubscribe_done_view
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUnsubscribeDoneView:
+    """Tests for the standalone unsubscribe_done_view."""
+
+    def test_get_renders_done_page(self):
+        """GET /subscribe/unsubscribe-done/ renders the done page."""
+        client = Client()
+        response = client.get(reverse("subscriptions:unsubscribe_done"))
+        assert response.status_code == 200
+        assert b"unsubscribed" in response.content.lower()

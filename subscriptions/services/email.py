@@ -2,7 +2,7 @@
 # module lives inside the subscriptions/services/ package so it does not shadow
 # the stdlib email package at runtime.
 """
-subscriptions/services/email.py — Account-access email delivery.
+subscriptions/services/email.py — Email delivery for the subscription flow.
 
 Provides two public functions:
 
@@ -11,15 +11,18 @@ Provides two public functions:
     ``/subscribe/account/<token>/``, renders plain-text and HTML templates,
     and dispatches via Django's configured mail backend.
 
-``send_noop_email(email)``
-    Performs the same token-generation and template-render work as
-    ``send_account_access_email`` but does **not** call ``send_mail``.
-    Use this on the active-subscriber branch of the subscribe form so the
-    timing profile (token gen + render) is similar to the real path without
-    leaking account existence to an observer.
+``send_subscription_confirmation_email(email, *, region, request=None)``
+    Sends a confirmation email to an already-active subscriber who just added
+    a new region.  Generates an account-access token (same salt as the
+    account-access flow) so the link in the email lands directly on the
+    manage page.  Includes the region name in the subject and body.
 
-    Limitation: The noop path saves ~1 ms of network I/O vs the real send,
-    so it is not a perfect timing equaliser — sufficient for v1.
+``simulate_account_access_work(email)``
+    Performs the same token generation and template rendering as
+    ``send_account_access_email`` but does **not** call ``send_mail``.  Used
+    on the unknown-email branch of ``POST /subscribe/manage/`` so the CPU
+    timing profile roughly matches the real send path — a mitigation against
+    enumeration timing attacks against the re-auth endpoint.
 """
 
 from __future__ import annotations
@@ -32,6 +35,8 @@ from django.http import HttpRequest
 from django.template.loader import render_to_string
 from django.utils.translation import gettext_lazy
 
+from pipeline.models import Region
+
 from .token import SALT_ACCOUNT_ACCESS, generate_token
 
 logger = logging.getLogger(__name__)
@@ -39,10 +44,11 @@ logger = logging.getLogger(__name__)
 # Path template for account-access links: ``/subscribe/account/<token>/``
 _ACCOUNT_PATH_PREFIX = "/subscribe/account/"
 
-# Email subject used for all account-access messages.
-# gettext_lazy is required here (not plain gettext) so xgettext / makemessages
-# can extract the string from module scope.
-_SUBJECT = gettext_lazy("Your Snowdesk account link")
+# Email subjects — gettext_lazy so xgettext / makemessages can extract them at
+# module scope.  Use %-named placeholders (not f-strings) as xgettext cannot
+# parse f-strings.
+_SUBJECT_ACCESS = gettext_lazy("Your Snowdesk account link")
+_SUBJECT_SUBSCRIBED = gettext_lazy("Snowdesk: you're subscribed to %(region_name)s")
 
 
 def _build_account_url(token: str, request: HttpRequest | None) -> str:
@@ -94,7 +100,7 @@ def send_account_access_email(
         "expiry_hours": expiry_hours,
     }
 
-    subject = str(_SUBJECT)
+    subject = str(_SUBJECT_ACCESS)
     plain_body = render_to_string("subscriptions/emails/account_access.txt", context)
     html_body = render_to_string("subscriptions/emails/account_access.html", context)
 
@@ -110,17 +116,72 @@ def send_account_access_email(
     )
 
 
-def send_noop_email(email: str) -> None:
+def send_subscription_confirmation_email(
+    email: str,
+    *,
+    region: Region,
+    request: HttpRequest | None = None,
+) -> None:
     """
-    Perform the same work as ``send_account_access_email`` without sending.
+    Send a subscription confirmation email to an active subscriber.
 
-    Generates a token and renders the templates to maintain a similar timing
-    profile to the real send path.  Used on the active-subscriber branch of
-    the subscribe form so the response time does not reveal whether an email
-    address is already registered.
+    Called when an already-active subscriber adds a new region via the
+    inline subscribe CTA.  Generates an account-access token (same salt as
+    ``send_account_access_email``) so the embedded link lands directly on
+    the manage page without re-authentication.
 
-    Note: This is a best-effort timing equaliser only.  The actual network
-    I/O of ``send_mail`` is skipped, so there is a small timing difference.
+    Args:
+        email: Recipient email address.
+        region: The newly-added Region instance (provides ``region.name``).
+        request: Optional HttpRequest used to derive the absolute base URL.
+
+    """
+    token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
+    account_url = _build_account_url(token, request)
+    expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
+
+    context = {
+        "account_url": account_url,
+        "expiry_hours": expiry_hours,
+        "region_name": region.name,
+    }
+
+    subject = str(_SUBJECT_SUBSCRIBED % {"region_name": region.name})
+    plain_body = render_to_string(
+        "subscriptions/emails/account_subscribed.txt", context
+    )
+    html_body = render_to_string(
+        "subscriptions/emails/account_subscribed.html", context
+    )
+
+    logger.info(
+        "Sending subscription confirmation email to %s for region %s",
+        email,
+        region.name,
+    )
+
+    send_mail(
+        subject=subject,
+        message=plain_body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[email],
+        html_message=html_body,
+        fail_silently=False,
+    )
+
+
+def simulate_account_access_work(email: str) -> None:
+    """
+    Perform the CPU work of ``send_account_access_email`` without sending.
+
+    Generates a token and renders both email templates but skips the
+    ``send_mail`` call.  This narrows the timing side-channel on the
+    ``POST /subscribe/manage/`` unknown-email branch, where an attacker
+    probing whether an address is registered would otherwise see a
+    measurably faster response on unknown emails.
+
+    Not a perfect equaliser — the real path still pays the SMTP round-trip
+    cost.  Good enough given the 3/min rate limit on the endpoint.
 
     Args:
         email: The email address to use for token generation (not sent to).
@@ -135,8 +196,8 @@ def send_noop_email(email: str) -> None:
         "expiry_hours": expiry_hours,
     }
 
-    # Render templates to mirror the real code path's CPU work.
+    # Render both templates to mirror the real code path's CPU cost.
     render_to_string("subscriptions/emails/account_access.txt", context)
     render_to_string("subscriptions/emails/account_access.html", context)
 
-    logger.debug("Noop email for %s (no message sent)", email)
+    logger.debug("Simulated account-access work for %s (no message sent)", email)

@@ -6,17 +6,9 @@ Provides forms used in the subscription flow:
     inline subscribe CTAs embedded on bulletin pages.
   - EmailForm: captures an email address for the standalone manage page
     (unauthenticated entry point).
-  - RegionSelectionForm: lets a subscriber choose which SLF warning regions
-    they want to follow.
 """
 
-import logging
-
 from django import forms
-
-from pipeline.models import Region
-
-logger = logging.getLogger(__name__)
 
 
 class SubscribeForm(forms.Form):
@@ -41,7 +33,7 @@ class SubscribeForm(forms.Form):
     )
     region_id = forms.CharField(
         max_length=32,
-        required=False,
+        required=True,
         widget=forms.HiddenInput(),
     )
 
@@ -62,14 +54,4 @@ class EmailForm(forms.Form):
                 "autofocus": True,
             }
         ),
-    )
-
-
-class RegionSelectionForm(forms.Form):
-    """Form for selecting bulletin regions to subscribe to."""
-
-    regions = forms.ModelMultipleChoiceField(
-        queryset=Region.objects.all(),
-        widget=forms.CheckboxSelectMultiple,
-        required=False,
     )

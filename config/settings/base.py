@@ -244,6 +244,11 @@ LOGGING = {
             "level": "DEBUG",
             "propagate": False,
         },
+        "subscriptions": {
+            "handlers": ["console", "file_pipeline", "file_errors"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
     },
     "root": {
         "handlers": ["console", "file_errors"],

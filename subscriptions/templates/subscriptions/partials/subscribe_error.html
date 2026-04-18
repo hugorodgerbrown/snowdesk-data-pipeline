@@ -1,0 +1,15 @@
+{% load i18n %}
+{% comment %}
+subscriptions/templates/subscriptions/partials/subscribe_error.html
+HTMX error fragment returned with HTTP 400 when the region_id in the POST
+data does not match any Region in the database.
+
+This should not occur in normal use — the region_id is set by the bulletin
+page template. It is a defensive fallback for stale or malformed requests.
+{% endcomment %}
+<div class="bg-card rounded-[12px] border border-text-3/10 shadow-sm p-6">
+    <h2 class="text-base font-semibold text-text-1 mb-1">{% trans "Something went wrong" %}</h2>
+    <p class="text-sm text-text-2 leading-relaxed">
+        {% trans "We couldn't find that region — please try again from the bulletin page." %}
+    </p>
+</div>

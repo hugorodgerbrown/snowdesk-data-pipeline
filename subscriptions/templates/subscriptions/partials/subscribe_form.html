@@ -1,36 +1,28 @@
 {% load i18n %}
 {% comment %}
 subscriptions/templates/subscriptions/partials/subscribe_form.html
-Inline subscribe CTA embedded on bulletin pages or the landing page.
+Inline subscribe CTA embedded on bulletin pages.
 
-Include with a region_id for bulletin pages:
+Always include with a region_id (required by the view):
     {% include "subscriptions/partials/subscribe_form.html" with region_id=region.region_id %}
 
-Include without region_id for the landing page (no initial subscription row):
-    {% include "subscriptions/partials/subscribe_form.html" %}
-
 The outer div carries the hx-target id so the success fragment can replace it.
-When region_id is absent the id falls back to "subscribe-cta-global".
 {% endcomment %}
-<div id="subscribe-cta-{% if region_id %}{{ region_id }}{% else %}global{% endif %}">
+<div id="subscribe-cta-{{ region_id }}">
     <div class="bg-card rounded-[12px] border border-text-3/10 shadow-sm p-6">
         <h2 class="text-base font-semibold text-text-1 mb-1">{% trans "Get avalanche alerts" %}</h2>
         <p class="text-sm text-text-2 mb-4 leading-relaxed">
-            {% if region_id %}
-                {% trans "Enter your email to receive daily bulletin updates for this region." %}
-            {% else %}
-                {% trans "Enter your email to receive daily avalanche bulletin updates." %}
-            {% endif %}
+            {% trans "Enter your email to receive daily bulletin updates for this region." %}
         </p>
         <form
             hx-post="{% url 'subscriptions:subscribe' %}"
-            hx-target="#subscribe-cta-{% if region_id %}{{ region_id }}{% else %}global{% endif %}"
+            hx-target="#subscribe-cta-{{ region_id }}"
             hx-swap="outerHTML"
-            hx-indicator="#subscribe-indicator-{% if region_id %}{{ region_id }}{% else %}global{% endif %}"
+            hx-indicator="#subscribe-indicator-{{ region_id }}"
             novalidate
         >
             {% csrf_token %}
-            {% if region_id %}<input type="hidden" name="region_id" value="{{ region_id }}">{% endif %}
+            <input type="hidden" name="region_id" value="{{ region_id }}">
             <div class="flex gap-2">
                 <input
                     type="email"
@@ -47,7 +39,7 @@ When region_id is absent the id falls back to "subscribe-cta-global".
                 </button>
             </div>
             <span
-                id="subscribe-indicator-{% if region_id %}{{ region_id }}{% else %}global{% endif %}"
+                id="subscribe-indicator-{{ region_id }}"
                 class="htmx-indicator text-xs text-text-3 mt-1 block"
             >{% trans "Sending…" %}</span>
             {% if form.email.errors %}

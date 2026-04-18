@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-04-18 16:42+0000\n"
+"POT-Creation-Date: 2026-04-18 19:15+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -374,25 +374,8 @@ msgstr ""
 msgid "Your Snowdesk account link"
 msgstr ""
 
-msgid "My account — Snowdesk"
-msgstr ""
-
-msgid "Manage your Snowdesk avalanche bulletin subscriptions."
-msgstr ""
-
-msgid "Your account"
-msgstr ""
-
 #, python-format
-msgid ""
-"Signed in as <strong>%(email)s</strong>. Choose the regions you'd like to "
-"follow."
-msgstr ""
-
-msgid "No regions available."
-msgstr ""
-
-msgid "Save regions"
+msgid "Snowdesk: you're subscribed to %(region_name)s"
 msgstr ""
 
 msgid "Hi,"
@@ -424,6 +407,26 @@ msgid ""
 "avalanche bulletin subscriptions."
 msgstr ""
 
+#, python-format
+msgid "Snowdesk: you're subscribed to %(region)s"
+msgstr ""
+
+#, python-format
+msgid ""
+"You're now subscribed to avalanche bulletin alerts for <strong>%(region)s</"
+"strong>."
+msgstr ""
+
+msgid "Manage your subscriptions"
+msgstr ""
+
+#, python-format
+msgid "You're now subscribed to avalanche bulletin alerts for %(region)s."
+msgstr ""
+
+msgid "Use the link below to manage your subscriptions:"
+msgstr ""
+
 msgid "Link expired — Snowdesk"
 msgstr ""
 
@@ -449,16 +452,34 @@ msgstr ""
 msgid "Update your Snowdesk avalanche bulletin region subscriptions."
 msgstr ""
 
-msgid "Manage subscriptions"
+msgid "Your subscription is confirmed."
 msgstr ""
 
-msgid "Update the regions you follow. Uncheck all to remove your account."
+msgid "You'll receive alerts for the regions below."
 msgstr ""
 
-msgid "Save changes"
+msgid "Your subscription"
+msgid_plural "Your subscriptions"
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "Remove alerts for %(name)s?"
 msgstr ""
 
-msgid "Manage your subscriptions"
+msgid "Remove"
+msgstr ""
+
+msgid "You have no active subscriptions."
+msgstr ""
+
+msgid "Choose more regions on the map →"
+msgstr ""
+
+msgid "Unsubscribe from all alerts and delete your account?"
+msgstr ""
+
+msgid "Unsubscribe from all alerts"
 msgstr ""
 
 msgid ""
@@ -503,13 +524,16 @@ msgid ""
 "subscriptions. It expires in 24 hours."
 msgstr ""
 
+msgid "Something went wrong"
+msgstr ""
+
+msgid "We couldn't find that region — please try again from the bulletin page."
+msgstr ""
+
 msgid "Get avalanche alerts"
 msgstr ""
 
 msgid "Enter your email to receive daily bulletin updates for this region."
-msgstr ""
-
-msgid "Enter your email to receive daily avalanche bulletin updates."
 msgstr ""
 
 msgid "Subscribe"
@@ -519,6 +543,17 @@ msgid "Sending…"
 msgstr ""
 
 msgid "We've sent you a link to access your account. It expires in 24 hours."
+msgstr ""
+
+#, python-format
+msgid "Added <strong>%(region)s</strong> to your alerts"
+msgstr ""
+
+msgid "We've sent a confirmation to your email."
+msgstr ""
+
+#, python-format
+msgid "You're already subscribed to <strong>%(region)s</strong>"
 msgstr ""
 
 msgid "Unsubscribe — Snowdesk"

@@ -1,11 +1,13 @@
 """
-tests/subscriptions/test_email.py — Tests for the account-access email service.
+tests/subscriptions/test_email.py — Tests for the subscription email services.
 
 Covers:
   - send_account_access_email sends one email with correct recipient/subject/body.
   - The account-access URL in the email body round-trips through verify_token.
-  - send_noop_email sends zero emails and raises no errors.
   - URL is built from request when provided, SITE_BASE_URL otherwise.
+  - send_subscription_confirmation_email sends one email with region name in
+    subject/body; the embedded URL round-trips through verify_token with
+    SALT_ACCOUNT_ACCESS.
 """
 
 import pytest
@@ -13,8 +15,13 @@ from django.conf import settings
 from django.core import mail
 from django.test import RequestFactory
 
-from subscriptions.services.email import send_account_access_email, send_noop_email
+from subscriptions.services.email import (
+    send_account_access_email,
+    send_subscription_confirmation_email,
+    simulate_account_access_work,
+)
 from subscriptions.services.token import SALT_ACCOUNT_ACCESS, verify_token
+from tests.factories import RegionFactory
 
 
 @pytest.fixture
@@ -89,22 +96,100 @@ class TestSendAccountAccessEmail:
         assert mimetype == "text/html"
 
 
-class TestSendNoopEmail:
-    """Tests for send_noop_email."""
+@pytest.mark.django_db
+class TestSendSubscriptionConfirmationEmail:
+    """Tests for send_subscription_confirmation_email."""
 
     @pytest.fixture(autouse=True)
     def use_locmem_backend(self, settings):
         """Switch to the locmem backend so outbox is available."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
-    def test_sends_zero_emails(self):
-        send_noop_email("alice@example.com")
+    def test_sends_one_email(self):
+        """Exactly one email is dispatched."""
+        region = RegionFactory.create(name="Engelberg Region")
+        send_subscription_confirmation_email("alice@example.com", region=region)
+        assert len(mail.outbox) == 1
+
+    def test_recipient_is_correct(self):
+        """Email is addressed to the supplied recipient."""
+        region = RegionFactory.create(name="Engelberg Region")
+        send_subscription_confirmation_email("alice@example.com", region=region)
+        assert mail.outbox[0].to == ["alice@example.com"]
+
+    def test_subject_contains_region_name(self):
+        """Subject line includes the region name."""
+        region = RegionFactory.create(name="Engelberg Region")
+        send_subscription_confirmation_email("alice@example.com", region=region)
+        assert "Engelberg Region" in mail.outbox[0].subject
+
+    def test_subject_contains_snowdesk(self):
+        """Subject line includes the 'Snowdesk' brand name."""
+        region = RegionFactory.create(name="Engelberg Region")
+        send_subscription_confirmation_email("alice@example.com", region=region)
+        assert "Snowdesk" in mail.outbox[0].subject
+
+    def test_body_contains_region_name(self):
+        """Plain-text body includes the region name."""
+        region = RegionFactory.create(name="Engelberg Region")
+        send_subscription_confirmation_email("alice@example.com", region=region)
+        assert "Engelberg Region" in mail.outbox[0].body
+
+    def test_body_contains_account_path(self):
+        """Plain-text body contains the account-access URL path."""
+        region = RegionFactory.create(name="Engelberg Region")
+        send_subscription_confirmation_email("alice@example.com", region=region)
+        assert "/subscribe/account/" in mail.outbox[0].body
+
+    def test_html_alternative_present(self):
+        """Email includes an HTML alternative."""
+        region = RegionFactory.create(name="Engelberg Region")
+        send_subscription_confirmation_email("alice@example.com", region=region)
+        assert len(mail.outbox[0].alternatives) == 1
+        _, mimetype = mail.outbox[0].alternatives[0]
+        assert mimetype == "text/html"
+
+    def test_html_body_contains_region_name(self):
+        """HTML body includes the region name."""
+        region = RegionFactory.create(name="Engelberg Region")
+        send_subscription_confirmation_email("alice@example.com", region=region)
+        html, _ = mail.outbox[0].alternatives[0]
+        assert "Engelberg Region" in html
+
+    def test_token_in_url_uses_account_access_salt(self):
+        """The token embedded in the body URL verifies with SALT_ACCOUNT_ACCESS."""
+        region = RegionFactory.create(name="Engelberg Region")
+        send_subscription_confirmation_email("alice@example.com", region=region)
+        body = mail.outbox[0].body
+        url_line = next(
+            line for line in body.splitlines() if "/subscribe/account/" in line
+        )
+        token = url_line.strip().rstrip("/").split("/subscribe/account/")[-1]
+        result = verify_token(
+            token, salt=SALT_ACCOUNT_ACCESS, max_age=settings.ACCOUNT_TOKEN_MAX_AGE
+        )
+        assert result == "alice@example.com"
+
+    def test_uses_request_origin_when_provided(self):
+        """When a request is supplied, the URL reflects its origin."""
+        region = RegionFactory.create(name="Engelberg Region")
+        rf = RequestFactory()
+        request = rf.get("/")
+        send_subscription_confirmation_email(
+            "alice@example.com", region=region, request=request
+        )
+        assert "/subscribe/account/" in mail.outbox[0].body
+
+
+@pytest.mark.django_db
+class TestSimulateAccountAccessWork:
+    """The manage-POST unknown-email timing equaliser."""
+
+    def test_sends_no_email(self):
+        """simulate_account_access_work must not populate mail.outbox."""
+        simulate_account_access_work("ghost@example.com")
         assert len(mail.outbox) == 0
 
-    def test_does_not_raise(self):
-        """send_noop_email must not raise even with an arbitrary email."""
-        send_noop_email("nonexistent@example.com")
-
-    def test_does_not_raise_on_empty_string(self):
-        """Edge case: empty string should not raise."""
-        send_noop_email("")
+    def test_executes_without_error(self):
+        """Should run token-gen + template-render cleanly for any string email."""
+        simulate_account_access_work("anyone@example.com")

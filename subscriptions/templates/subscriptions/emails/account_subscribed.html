@@ -1,0 +1,38 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>
+            {% blocktrans with region=region_name trimmed %}
+                Snowdesk: you're subscribed to {{ region }}
+            {% endblocktrans %}
+        </title>
+    </head>
+    <body style="font-family: sans-serif; color: #1f2937; max-width: 600px; margin: 0 auto; padding: 2rem 1rem">
+        <p>{% trans "Hi," %}</p>
+        <p>
+            {% blocktrans with region=region_name trimmed %}
+                You're now subscribed to avalanche bulletin alerts for <strong>{{ region }}</strong>.
+            {% endblocktrans %}
+        </p>
+        <p style="margin: 2rem 0">
+            <a
+                href="{{ account_url }}"
+                style="background: #2563eb; color: #fff; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 600"
+            >{% trans "Manage your subscriptions" %}</a>
+        </p>
+        <p>
+            {% trans "Or copy this link into your browser:" %}<br>
+            <span style="font-size: 0.875rem; color: #374151; word-break: break-all">{{ account_url }}</span>
+        </p>
+        <p style="color: #6b7280; font-size: 0.875rem">
+            {% blocktrans with hours=expiry_hours trimmed %}
+                This link expires in {{ hours }} hours.
+            {% endblocktrans %}
+        </p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 2rem 0">
+        <p style="color: #9ca3af; font-size: 0.75rem">{% trans "Snowdesk — Swiss Avalanche Bulletins" %}</p>
+    </body>
+</html>
