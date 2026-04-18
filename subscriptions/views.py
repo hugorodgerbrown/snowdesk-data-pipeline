@@ -23,8 +23,8 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 
+from pipeline.decorators import require_htmx
 from pipeline.models import Region
-from pipeline.views import require_htmx
 
 from .forms import EmailForm, RegionSelectionForm
 from .models import Subscriber, Subscription
