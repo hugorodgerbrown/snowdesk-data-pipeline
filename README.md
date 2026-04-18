@@ -37,7 +37,7 @@ poetry run python manage.py fetch_bulletins \
 - **Python / Django** — data pipeline, models, views
 - **Tailwind CSS v4** — compiled via `@tailwindcss/cli` from `src/css/main.css`
   to `static/css/output.css`
-- **HTMX** — dynamic updates on the pipeline dashboard
+- **HTMX** — dynamic fragments on the public site (bulletin calendar, subscription region search)
 - **Poetry** — Python dependency management
 - **WhiteNoise** — static file serving in production
 

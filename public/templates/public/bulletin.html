@@ -1,536 +1,537 @@
+{% extends "public/base.html" %}
 {% comment %}
 public/templates/public/bulletin.html — Single-day bulletin page for a region.
 
 WhiteRisk-replica layout rendered from the bulletin_detail view context.
 
 Six structural sections, top to bottom:
-  1. Page chrome — region name, date/validity, prev/next nav.  No Close button.
+  1. Page chrome — region name, date/validity, prev/next nav. No Close button.
   2. Bulletin headline band — one or two ratings with → on variable days.
   3. Rating block(s) — one per trait via _rating_block.html partial.
   4. Metadata strip — issued / valid until / next update.
   5. Snowpack and weather — four prose sub-blocks rendered via |snowdesk_html.
   6. Footer — SLF attribution, "View history" and "View full season" links,
      and (DEBUG only) a subscribe link.
-
-Typography: font-sans on the outermost container overrides any serif inheritance
-from base.html's @theme tokens.
 {% endcomment %}
 {% load i18n static snowdesk_html snowdesk_time %}
-<!DOCTYPE html>
-<html lang="{{ LANGUAGE_CODE }}">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        {# Favicon tinted to the bulletin's highest EAWS danger level so       #}
-        {# the level is visible at a glance in the browser tab.  Falls back to  #}
-        {# the default mark when no panel/danger_key is in scope (empty state). #}
-        {% if panel.danger_key %}
-            {% with fav_path="favicon-"|add:panel.danger_key|add:".svg" %}
-                <link rel="icon" type="image/svg+xml" href="{% static fav_path %}">
-            {% endwith %}
-        {% else %}
-            <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
-        {% endif %}
-        <meta
-            name="description"
-            content='{% blocktrans with name=region_name %}Avalanche bulletin for {{ name }}{% endblocktrans %}{% if page_date %}, {{ page_date|date:"j F Y" }}{% endif %}.'
+
+{% block favicon %}
+    {# Favicon tinted to the bulletin's highest EAWS danger level so       #}
+    {# the level is visible at a glance in the browser tab.  Falls back to  #}
+    {# the default mark when no panel/danger_key is in scope (empty state). #}
+    {% if panel.danger_key %}
+        {% with fav_path="favicon-"|add:panel.danger_key|add:".svg" %}
+            <link rel="icon" type="image/svg+xml" href="{% static fav_path %}">
+        {% endwith %}
+    {% else %}
+        <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+    {% endif %}
+{% endblock %}
+
+{% block meta_description %}
+    {% blocktrans with name=region_name %}Avalanche bulletin for {{ name }}{% endblocktrans %}{% if page_date %},
+        {{ page_date|date:"j F Y" }}{% endif %}.
+{% endblock %}
+
+{% block title %}
+    {{ region_name }} &middot;
+    {% if is_today %}{% trans "Today" %}{% else %}{{ page_date|date:"j F Y" }}{% endif %} &middot; Snowdesk
+{% endblock %}
+
+{% block extra_head %}
+    <script
+        src="https://unpkg.com/htmx.org@2.0.4"
+        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+        crossorigin="anonymous"
+    ></script>
+    {% if raw_data_json %}
+        {# DEBUG-only: raw CAAML payload embedded for source-level inspection. #}
+        {# Not rendered visibly; removed in production where DEBUG=False.     #}
+        <script type="application/json" id="bulletin-raw-data">
+        {{ raw_data_json|safe }}
+        </script>
+    {% endif %}
+{% endblock %}
+
+{% block nav %}
+    {% url 'public:map' as map_url %}
+    {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=calendar_region_id calendar_partial_url=calendar_partial_url %}
+{% endblock %}
+
+{% block content %}
+    {# ── Calendar popover host — swapped in by the nav calendar button ── #}
+    <div class="relative mx-auto max-w-[640px] px-4">
+        <div
+            id="bulletin-calendar-host"
+            class="absolute top-0 right-4 z-10 w-72"
         >
-        <title>
-            {{ region_name }} &middot;
-            {% if is_today %}{% trans "Today" %}{% else %}{{ page_date|date:"j F Y" }}{% endif %} &middot; Snowdesk
-        </title>
-        {% include "includes/theme_head.html" %}
-        <link rel="stylesheet" href="{% static 'css/output.css' %}">
-        <script
-            src="https://unpkg.com/htmx.org@2.0.4"
-            integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-            crossorigin="anonymous"
-        ></script>
-        {% if raw_data_json %}
-            {# DEBUG-only: raw CAAML payload embedded for source-level inspection. #}
-            {# Not rendered visibly; removed in production where DEBUG=False.     #}
-            <script type="application/json" id="bulletin-raw-data">
-            {{ raw_data_json|safe }}
-            </script>
-        {% endif %}
-    </head>
-    <body class="bg-bg text-text-1 min-h-screen">
-        {% url 'public:map' as map_url %}
-        {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=calendar_region_id calendar_partial_url=calendar_partial_url %}
-        {# ── Calendar popover host — swapped in by the nav calendar button ── #}
-        <div class="relative mx-auto max-w-[640px] px-4">
-            <div
-                id="bulletin-calendar-host"
-                class="absolute top-0 right-4 z-10 w-72"
-            >
-            </div>
         </div>
-        {# ── Outermost container: font-sans overrides any serif from @theme ── #}
-        <div class="font-sans max-w-[640px] mx-auto px-4 py-6">
-            {% comment %}
-               SECTION 1 — Page chrome
-               Region name, date/validity, prev/next navigation.
-               No Close button — artefact of WR's modal-over-map architecture,
-               removed per DESIGN.md confirmed subtractions.
-            {% endcomment %}
-            <header class="mb-5">
-                <h1 class="text-2xl font-semibold text-center leading-tight tracking-tight">
-                    {{ region_name }}
-                </h1>
-                <p class="text-xs text-text-3 text-center mt-1 uppercase tracking-widest font-mono">
-                    {% if is_today %}{% trans "Today" %}{% else %}{{ page_date|date:"l j F Y" }}{% endif %}
-                </p>
-            </header>
+    </div>
+    {# ── Outermost container: font-sans overrides any serif from @theme ── #}
+    <div class="font-sans max-w-[640px] mx-auto px-4 py-6">
+        {% comment %}
+           SECTION 1 — Page chrome
+           Region name, date/validity, prev/next navigation.
+           No Close button — artefact of WR's modal-over-map architecture,
+           removed per DESIGN.md confirmed subtractions.
+        {% endcomment %}
+        <header class="mb-5">
+            <h1 class="text-2xl font-semibold text-center leading-tight tracking-tight">
+                {{ region_name }}
+            </h1>
+            <p class="text-xs text-text-3 text-center mt-1 uppercase tracking-widest font-mono">
+                {% if is_today %}{% trans "Today" %}{% else %}{{ page_date|date:"l j F Y" }}{% endif %}
+            </p>
+        </header>
 
-            {# ── Unified navigation row ──────────────────────────────────── #}
-            {# Media-player-style controls: outer «« / »» skip to the previous #}
-            {# or next calendar day; inner chips are the issues that touched   #}
-            {# today, labelled by the window during which each issue is the   #}
-            {# authoritative forecast.  The active chip shows its full        #}
-            {# authority window on day D; inactive chips point towards the    #}
-            {# active one with a ``<`` or ``>`` cutoff.                        #}
-            {% if bulletin %}
-                {# Day-nav arrows are pinned to the panel edges via         #}
-                {# justify-between so they hold position regardless of how  #}
-                {# many issue tabs sit between them; tabs stay centred.     #}
-                <nav
-                    class="flex items-center justify-between mb-6 text-[11px] font-mono"
-                    aria-label='{% trans "Bulletin navigation" %}'
-                    data-testid="bulletin-nav"
-                >
-                    {% if prev_date %}
+        {# ── Unified navigation row ──────────────────────────────────── #}
+        {# Media-player-style controls: outer «« / »» skip to the previous #}
+        {# or next calendar day; inner chips are the issues that touched   #}
+        {# today, labelled by the window during which each issue is the   #}
+        {# authoritative forecast.  The active chip shows its full        #}
+        {# authority window on day D; inactive chips point towards the    #}
+        {# active one with a ``<`` or ``>`` cutoff.                        #}
+        {% if bulletin %}
+            {# Day-nav arrows are pinned to the panel edges via         #}
+            {# justify-between so they hold position regardless of how  #}
+            {# many issue tabs sit between them; tabs stay centred.     #}
+            <nav
+                class="flex items-center justify-between mb-6 text-[11px] font-mono"
+                aria-label='{% trans "Bulletin navigation" %}'
+                data-testid="bulletin-nav"
+            >
+                {% if prev_date %}
+                    <a
+                        class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2"
+                        href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
+                        aria-label="{% blocktrans with date=prev_date|date:'l j F Y' %}Previous day: {{ date }}{% endblocktrans %}"
+                        data-testid="nav-prev-day"
+                    >
+                        &laquo;
+                    </a>
+                {% else %}
+                    <span
+                        class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-3 border-border opacity-40"
+                        aria-hidden="true"
+                    >&laquo;</span>
+                {% endif %}
+
+                <div class="flex items-center gap-1">
+                    {% for tab in issue_tabs %}
                         <a
-                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2"
-                            href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
-                            aria-label="{% blocktrans with date=prev_date|date:'l j F Y' %}Previous day: {{ date }}{% endblocktrans %}"
-                            data-testid="nav-prev-day"
+                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap {% if tab.is_active %}bg-text-1 text-bg border-text-1{% else %}bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2{% endif %}"
+                            href="?issue={{ tab.bulletin_id }}"
+                            aria-label="{{ tab.long_label }}"
+                            {% if tab.is_active %}
+                                aria-current="page"
+                            {% endif %}
+                            data-testid="issue-tab"
                         >
-                            &laquo;
+                            {{ tab.short_label }}
+                        </a>
+                    {% endfor %}
+                </div>
+
+                {% if next_date %}
+                    <a
+                        class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2"
+                        href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=next_date|date:'Y-m-d' %}"
+                        aria-label="{% blocktrans with date=next_date|date:'l j F Y' %}Next day: {{ date }}{% endblocktrans %}"
+                        data-testid="nav-next-day"
+                    >
+                        &raquo;
+                    </a>
+                {% else %}
+                    <span
+                        class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-3 border-border opacity-40"
+                        aria-hidden="true"
+                    >&raquo;</span>
+                {% endif %}
+            </nav>
+        {% endif %}
+
+        {% if not bulletin %}
+            {# ── Empty state ─────────────────────────────────────────── #}
+            <div class="text-center text-text-3 py-16 text-sm">
+                {% trans "No bulletins available for this region." %}
+            </div>
+        {% else %}
+            {# ── Error state (version == 0) ──────────────────────────────── #}
+            {% if panel.render_model.version == 0 %}
+                <div class="rounded-[8px] border-l-4 border-callout-warning-border bg-callout-warning-bg px-3.5 py-3 text-sm mb-4">
+                    <p class="font-semibold text-callout-warning-heading mb-1">
+                        {% trans "We couldn't process this bulletin." %}
+                    </p>
+                    {% if user.is_staff %}
+                        <p class="text-xs text-callout-warning-text mb-2">
+                            Bulletin ID: <span class="font-mono">{{ panel.bulletin.bulletin_id }}</span>
+                        </p>
+                        <p class="font-mono text-[11px] break-all text-callout-warning-heading bg-callout-warning-code-bg rounded px-2 py-1.5 mb-2">
+                            {{ panel.render_model.error }}
+                        </p>
+                        <a
+                            class="inline-block text-xs font-medium text-callout-warning-heading underline underline-offset-2 hover:text-callout-warning-link-hover"
+                            href="/admin/pipeline/bulletin/{{ panel.bulletin.pk }}/change/"
+                        >
+                            {% trans "Inspect in admin →" %}
                         </a>
                     {% else %}
-                        <span
-                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-3 border-border opacity-40"
-                            aria-hidden="true"
-                        >&laquo;</span>
+                        <p class="text-xs text-callout-warning-text">
+                            {% trans "We are sorry for the inconvenience. Please try again later or check back for an updated bulletin." %}
+                        </p>
                     {% endif %}
-
-                    <div class="flex items-center gap-1">
-                        {% for tab in issue_tabs %}
-                            <a
-                                class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap {% if tab.is_active %}bg-text-1 text-bg border-text-1{% else %}bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2{% endif %}"
-                                href="?issue={{ tab.bulletin_id }}"
-                                aria-label="{{ tab.long_label }}"
-                                {% if tab.is_active %}
-                                    aria-current="page"
-                                {% endif %}
-                                data-testid="issue-tab"
-                            >
-                                {{ tab.short_label }}
-                            </a>
-                        {% endfor %}
-                    </div>
-
-                    {% if next_date %}
-                        <a
-                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2"
-                            href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=next_date|date:'Y-m-d' %}"
-                            aria-label="{% blocktrans with date=next_date|date:'l j F Y' %}Next day: {{ date }}{% endblocktrans %}"
-                            data-testid="nav-next-day"
-                        >
-                            &raquo;
-                        </a>
-                    {% else %}
-                        <span
-                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-3 border-border opacity-40"
-                            aria-hidden="true"
-                        >&raquo;</span>
-                    {% endif %}
-                </nav>
-            {% endif %}
-
-            {% if not bulletin %}
-                {# ── Empty state ─────────────────────────────────────────── #}
-                <div class="text-center text-text-3 py-16 text-sm">
-                    {% trans "No bulletins available for this region." %}
                 </div>
             {% else %}
-                {# ── Error state (version == 0) ──────────────────────────────── #}
-                {% if panel.render_model.version == 0 %}
-                    <div class="rounded-[8px] border-l-4 border-callout-warning-border bg-callout-warning-bg px-3.5 py-3 text-sm mb-4">
-                        <p class="font-semibold text-callout-warning-heading mb-1">
-                            {% trans "We couldn't process this bulletin." %}
-                        </p>
-                        {% if user.is_staff %}
-                            <p class="text-xs text-callout-warning-text mb-2">
-                                Bulletin ID: <span class="font-mono">{{ panel.bulletin.bulletin_id }}</span>
-                            </p>
-                            <p class="font-mono text-[11px] break-all text-callout-warning-heading bg-callout-warning-code-bg rounded px-2 py-1.5 mb-2">
-                                {{ panel.render_model.error }}
-                            </p>
-                            <a
-                                class="inline-block text-xs font-medium text-callout-warning-heading underline underline-offset-2 hover:text-callout-warning-link-hover"
-                                href="/admin/pipeline/bulletin/{{ panel.bulletin.pk }}/change/"
-                            >
-                                {% trans "Inspect in admin →" %}
-                            </a>
-                        {% else %}
-                            <p class="text-xs text-callout-warning-text">
-                                {% trans "We are sorry for the inconvenience. Please try again later or check back for an updated bulletin." %}
-                            </p>
-                        {% endif %}
-                    </div>
-                {% else %}
-                    {% with rm=panel.render_model %}
-                        {% comment %}
-                           SECTION 2 — Bulletin headline band
-                           Full-width panel split into AM/PM halves.  Mirrors
-                           WhiteRisk's "Morning" + "As the day progresses"
-                           maps: every day shows both halves, even when they
-                           share a level, so the user never has to infer the
-                           second value.  Each half is tinted with its half's
-                           EAWS colour via the ``.danger-band[data-level=…]``
-                           rule.  The ``is_time_variable`` caption below adds
-                           the problem-mix-changes signal for same-level days
-                           where the evolution is only visible in the rating
-                           blocks (e.g. dry all day + wet afternoon at L3/L3).
-                        {% endcomment %}
-                        {# When AM and PM resolve to the same danger key AND the  #}
-                        {# same subdivision, the display collapses to a single    #}
-                        {# "All day" tile so we don't render two identical values. #}
-                        {% if panel.morning_key == panel.afternoon_key and panel.morning_subdivision == panel.afternoon_subdivision %}
-                            <div
-                                class="mb-4"
-                                data-testid="headline-band"
-                            >
+                {% with rm=panel.render_model %}
+                    {% comment %}
+                       SECTION 2 — Bulletin headline band
+                       Full-width panel split into AM/PM halves.  Mirrors
+                       WhiteRisk's "Morning" + "As the day progresses"
+                       maps: every day shows both halves, even when they
+                       share a level, so the user never has to infer the
+                       second value.  Each half is tinted with its half's
+                       EAWS colour via the ``.danger-band[data-level=…]``
+                       rule.  The ``is_time_variable`` caption below adds
+                       the problem-mix-changes signal for same-level days
+                       where the evolution is only visible in the rating
+                       blocks (e.g. dry all day + wet afternoon at L3/L3).
+                    {% endcomment %}
+                    {# When AM and PM resolve to the same danger key AND the  #}
+                    {# same subdivision, the display collapses to a single    #}
+                    {# "All day" tile so we don't render two identical values. #}
+                    {% if panel.morning_key == panel.afternoon_key and panel.morning_subdivision == panel.afternoon_subdivision %}
+                        <div
+                            class="mb-4"
+                            data-testid="headline-band"
+                        >
+                            <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
+                                {% trans "All day" %}
+                            </div>
+                            <span
+                                class="danger-tile text-base"
+                                data-level="{{ panel.morning_key }}"
+                            >{{ panel.morning_number }}{{ panel.morning_subdivision }}</span>
+                        </div>
+                    {% else %}
+                        <div
+                            class="flex items-end gap-3 mb-4"
+                            data-testid="headline-band"
+                        >
+                            <div data-testid="headline-segment-first">
                                 <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
-                                    {% trans "All day" %}
+                                    {% trans "Morning" %}
                                 </div>
                                 <span
                                     class="danger-tile text-base"
                                     data-level="{{ panel.morning_key }}"
                                 >{{ panel.morning_number }}{{ panel.morning_subdivision }}</span>
                             </div>
-                        {% else %}
-                            <div
-                                class="flex items-end gap-3 mb-4"
-                                data-testid="headline-band"
-                            >
-                                <div data-testid="headline-segment-first">
-                                    <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
-                                        {% trans "Morning" %}
-                                    </div>
-                                    <span
-                                        class="danger-tile text-base"
-                                        data-level="{{ panel.morning_key }}"
-                                    >{{ panel.morning_number }}{{ panel.morning_subdivision }}</span>
+                            <span
+                                class="text-text-3 text-lg leading-none pb-3"
+                                data-testid="transition-arrow"
+                                aria-hidden="true"
+                            >&#8594;</span>
+                            <div data-testid="headline-segment-second">
+                                <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
+                                    {% trans "Later" %}
                                 </div>
                                 <span
-                                    class="text-text-3 text-lg leading-none pb-3"
-                                    data-testid="transition-arrow"
-                                    aria-hidden="true"
-                                >&#8594;</span>
-                                <div data-testid="headline-segment-second">
-                                    <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
-                                        {% trans "Later" %}
-                                    </div>
-                                    <span
-                                        class="danger-tile text-base"
-                                        data-level="{{ panel.afternoon_key }}"
-                                    >{{ panel.afternoon_number }}{{ panel.afternoon_subdivision }}</span>
-                                </div>
+                                    class="danger-tile text-base"
+                                    data-level="{{ panel.afternoon_key }}"
+                                >{{ panel.afternoon_number }}{{ panel.afternoon_subdivision }}</span>
                             </div>
-                        {% endif %}
+                        </div>
+                    {% endif %}
 
-                        {% comment %}
-                           SECTION 3 — Rating block(s)
-                           One block per trait.  The partial handles coloured header,
-                           aspect/elevation row, and problem rows.
-                        {% endcomment %}
-                        <h2
-                            class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3"
-                            data-testid="avalanche-problems-heading"
-                        >
-                            {% trans "Avalanche Problems" %}
-                        </h2>
-                        {% if not rm.traits %}
-                            <div class="rounded-[12px] border border-border bg-card px-4 py-5 text-center mb-4">
-                                <p class="text-sm font-medium text-text-1 mb-0.5">
-                                    {% trans "No avalanche problems reported." %}
-                                </p>
-                                <p class="text-xs text-text-3">
-                                    {% trans "The snowpack is stable. Conditions are favourable." %}
-                                </p>
-                            </div>
-                        {% else %}
-                            {% for trait in rm.traits %}
-                                {% include "public/_rating_block.html" with trait=trait %}
-                            {% endfor %}
-                        {% endif %}
-
-                        {% comment %}
-                           SECTION 4 — Snowpack and weather
-                           Four prose sub-blocks rendered as collapsible panels
-                           (native <details>/<summary>, zero JS).  Each panel is
-                           skipped entirely when its source is None/empty, so no
-                           empty summaries render.  Closed by default — the section
-                           heading carries a "Tap to expand" hint and each
-                           summary shows a chevron affordance.
-                           HTML bodies pass through |snowdesk_html for sanitisation.
-                        {% endcomment %}
-                        {% with prose=rm.prose %}
-                            {% if prose %}
-                                {% if prose.snowpack_structure or prose.weather_review or prose.weather_forecast or prose.tendency %}
-                                    <section class="mb-4" data-testid="snowpack-weather-section">
-                                        <div class="flex items-baseline justify-between mb-3">
-                                            <h2 class="text-xs font-mono uppercase tracking-widest text-text-3">
-                                                {% trans "Snowpack & Weather" %}
-                                            </h2>
-                                            <span
-                                                class="text-[10px] font-mono uppercase tracking-widest text-text-3/70"
-                                                aria-hidden="true"
-                                            >
-                                                {% trans "Tap to expand" %}
-                                            </span>
-                                        </div>
-
-                                        {# — Snowpack ─────────────────────────────── #}
-                                        {# Each panel's summary lifts the leading <h1> out of the SLF prose   #}
-                                        {# (e.g. "Weather review for Thursday") so the user sees the real    #}
-                                        {# bulletin date/scope, not a generic static label.  The body strips #}
-                                        {# that h1 to avoid a duplicated heading, and falls back to a static #}
-                                        {# title when the prose has no leading <h1>.                         #}
-                                        {% if prose.snowpack_structure %}
-                                            <details
-                                                class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
-                                                data-testid="snowpack-panel"
-                                            >
-                                                <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
-                                                    <span class="text-[13px] font-semibold text-text-1">
-                                                        {{ prose.snowpack_structure|prose_title:"Snowpack" }}
-                                                    </span>
-                                                    <span
-                                                        class="snowdesk-panel-chevron text-text-3 text-sm"
-                                                        aria-hidden="true"
-                                                    >&#x25BE;</span>
-                                                </summary>
-                                                <div class="px-4 pb-4 pt-3 border-t border-border">
-                                                    <div class="slf-prose text-sm leading-[1.6] text-text-2">
-                                                        {{ prose.snowpack_structure|prose_body|snowdesk_html }}
-                                                    </div>
-                                                </div>
-                                            </details>
-                                        {% endif %}
-
-                                        {# — Weather review ──────────────────────── #}
-                                        {% if prose.weather_review %}
-                                            <details
-                                                class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
-                                                data-testid="weather-review-panel"
-                                            >
-                                                <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
-                                                    <span class="text-[13px] font-semibold text-text-1">
-                                                        {{ prose.weather_review|prose_title:"Weather review" }}
-                                                    </span>
-                                                    <span
-                                                        class="snowdesk-panel-chevron text-text-3 text-sm"
-                                                        aria-hidden="true"
-                                                    >&#x25BE;</span>
-                                                </summary>
-                                                <div class="px-4 pb-4 pt-3 border-t border-border">
-                                                    <div class="slf-prose text-sm leading-[1.6] text-text-2">
-                                                        {{ prose.weather_review|prose_body|snowdesk_html }}
-                                                    </div>
-                                                </div>
-                                            </details>
-                                        {% endif %}
-
-                                        {# — Weather forecast ────────────────────── #}
-                                        {% if prose.weather_forecast %}
-                                            <details
-                                                class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
-                                                data-testid="weather-forecast-panel"
-                                            >
-                                                <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
-                                                    <span class="text-[13px] font-semibold text-text-1">
-                                                        {{ prose.weather_forecast|prose_title:"Weather forecast" }}
-                                                    </span>
-                                                    <span
-                                                        class="snowdesk-panel-chevron text-text-3 text-sm"
-                                                        aria-hidden="true"
-                                                    >&#x25BE;</span>
-                                                </summary>
-                                                <div class="px-4 pb-4 pt-3 border-t border-border">
-                                                    <div class="slf-prose text-sm leading-[1.6] text-text-2">
-                                                        {{ prose.weather_forecast|prose_body|snowdesk_html }}
-                                                    </div>
-                                                </div>
-                                            </details>
-                                        {% endif %}
-
-                                        {# — Outlook (tendency[]) ─────────────────── #}
-                                        {# Summary uses the first tendency entry's <h1>; subsequent entries  #}
-                                        {# keep their own <h1> so multi-day outlooks remain disambiguated.   #}
-                                        {% if prose.tendency %}
-                                            {% with first_entry=prose.tendency|first %}
-                                                <details
-                                                    class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
-                                                    data-testid="tendency-panel"
-                                                >
-                                                    <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
-                                                        <span class="text-[13px] font-semibold text-text-1">
-                                                            {{ first_entry.comment|prose_title:"Outlook" }}
-                                                        </span>
-                                                        <span
-                                                            class="snowdesk-panel-chevron text-text-3 text-sm"
-                                                            aria-hidden="true"
-                                                        >&#x25BE;</span>
-                                                    </summary>
-                                                    <div class="px-4 pb-4 pt-3 border-t border-border">
-                                                        {% for entry in prose.tendency %}
-                                                            {% if entry.comment %}
-                                                                <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-3{% endif %}">
-                                                                    {% if forloop.first %}
-                                                                        {{ entry.comment|prose_body|snowdesk_html }}
-                                                                    {% else %}
-                                                                        {{ entry.comment|snowdesk_html }}
-                                                                    {% endif %}
-                                                                </div>
-                                                            {% endif %}
-                                                        {% endfor %}
-                                                    </div>
-                                                </details>
-                                            {% endwith %}
-                                        {% endif %}
-                                    </section>
-                                {% endif %}
-                            {% endif %}
-                        {% endwith %}
-
-                        {% comment %}
-                           SECTION 5 — Metadata strip
-                           Three fields: Issued / Valid until / Next update.
-                           Source: render_model.metadata.  Pushed to the
-                           bottom of the content (above the footer) because
-                           the precise timestamps are reference data — the
-                           reader wants the hazard read first.  Render — on
-                           None.
-                        {% endcomment %}
-                        {% with meta=rm.metadata %}
-                            {% if meta %}
-                                <div
-                                    class="flex items-start gap-4 px-1 pt-3 mt-8 border-t border-border text-xs text-text-3"
-                                    data-testid="metadata-strip"
-                                >
-                                    <div>
-                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
-                                            {% trans "Issued" %}
-                                        </p>
-                                        <p class="text-text-2">
-                                            {% if meta.publication_time %}
-                                                {{ meta.publication_time|parse_iso|date:"j M H:i" }} UTC
-                                            {% else %}
-                                                &mdash;
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
-                                            {% trans "Valid until" %}
-                                        </p>
-                                        <p class="text-text-2">
-                                            {% if meta.valid_until %}
-                                                {{ meta.valid_until|parse_iso|date:"j M H:i" }} UTC
-                                            {% else %}
-                                                &mdash;
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                    <div data-testid="next-update-cell">
-                                        <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
-                                            {% trans "Next update" %}
-                                        </p>
-                                        <p class="text-text-2">
-                                            {% if meta.next_update %}
-                                                {{ meta.next_update|parse_iso|date:"j M H:i" }} UTC
-                                            {% else %}
-                                                &mdash;
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                </div>
-                            {% endif %}
-                        {% endwith %}
-                    {% endwith %}{# rm #}
-                {% endif %}{# error state else #}
-            {% endif %}
-            {# bulletin #}
-
-            {% comment %}
-               SECTION 6 — Footer
-               SLF attribution + focal-region-first grouping context.
-               Focal region name first, then related_regions as additional
-               context (e.g. "Val dal Spöl, with adjacent micro-regions").
-            {% endcomment %}
-            <footer class="mt-8 pt-4 border-t border-border text-xs text-text-3" data-testid="page-footer">
-                <p class="mb-1">
-                    {# Focal region first #}
-                    <span class="font-medium text-text-2" data-testid="focal-region">{{ region_name }}</span>
-                    {% if related_regions %}
-                        <span class="text-text-3">, {% trans "with" %} </span>
-                        {% for r in related_regions %}
-                            <span>{{ r.name }}</span>{% if not forloop.last %} &middot; {% endif %}
+                    {% comment %}
+                       SECTION 3 — Rating block(s)
+                       One block per trait.  The partial handles coloured header,
+                       aspect/elevation row, and problem rows.
+                    {% endcomment %}
+                    <h2
+                        class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3"
+                        data-testid="avalanche-problems-heading"
+                    >
+                        {% trans "Avalanche Problems" %}
+                    </h2>
+                    {% if not rm.traits %}
+                        <div class="rounded-[12px] border border-border bg-card px-4 py-5 text-center mb-4">
+                            <p class="text-sm font-medium text-text-1 mb-0.5">
+                                {% trans "No avalanche problems reported." %}
+                            </p>
+                            <p class="text-xs text-text-3">
+                                {% trans "The snowpack is stable. Conditions are favourable." %}
+                            </p>
+                        </div>
+                    {% else %}
+                        {% for trait in rm.traits %}
+                            {% include "public/_rating_block.html" with trait=trait %}
                         {% endfor %}
                     {% endif %}
-                </p>
-                <p class="mb-1">
-                    <a
-                        class="underline hover:text-text-2"
-                        href="{% url 'public:random_bulletins' region_id=region_id %}"
-                    >{% trans "View history" %}</a>
+
+                    {% comment %}
+                       SECTION 4 — Snowpack and weather
+                       Four prose sub-blocks rendered as collapsible panels
+                       (native <details>/<summary>, zero JS).  Each panel is
+                       skipped entirely when its source is None/empty, so no
+                       empty summaries render.  Closed by default — the section
+                       heading carries a "Tap to expand" hint and each
+                       summary shows a chevron affordance.
+                       HTML bodies pass through |snowdesk_html for sanitisation.
+                    {% endcomment %}
+                    {% with prose=rm.prose %}
+                        {% if prose %}
+                            {% if prose.snowpack_structure or prose.weather_review or prose.weather_forecast or prose.tendency %}
+                                <section class="mb-4" data-testid="snowpack-weather-section">
+                                    <div class="flex items-baseline justify-between mb-3">
+                                        <h2 class="text-xs font-mono uppercase tracking-widest text-text-3">
+                                            {% trans "Snowpack & Weather" %}
+                                        </h2>
+                                        <span
+                                            class="text-[10px] font-mono uppercase tracking-widest text-text-3/70"
+                                            aria-hidden="true"
+                                        >
+                                            {% trans "Tap to expand" %}
+                                        </span>
+                                    </div>
+
+                                    {# — Snowpack ─────────────────────────────── #}
+                                    {# Each panel's summary lifts the leading <h1> out of the SLF prose   #}
+                                    {# (e.g. "Weather review for Thursday") so the user sees the real    #}
+                                    {# bulletin date/scope, not a generic static label.  The body strips #}
+                                    {# that h1 to avoid a duplicated heading, and falls back to a static #}
+                                    {# title when the prose has no leading <h1>.                         #}
+                                    {% if prose.snowpack_structure %}
+                                        <details
+                                            class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                            data-testid="snowpack-panel"
+                                        >
+                                            <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
+                                                <span class="text-[13px] font-semibold text-text-1">
+                                                    {{ prose.snowpack_structure|prose_title:"Snowpack" }}
+                                                </span>
+                                                <span
+                                                    class="snowdesk-panel-chevron text-text-3 text-sm"
+                                                    aria-hidden="true"
+                                                >&#x25BE;</span>
+                                            </summary>
+                                            <div class="px-4 pb-4 pt-3 border-t border-border">
+                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
+                                                    {{ prose.snowpack_structure|prose_body|snowdesk_html }}
+                                                </div>
+                                            </div>
+                                        </details>
+                                    {% endif %}
+
+                                    {# — Weather review ──────────────────────── #}
+                                    {% if prose.weather_review %}
+                                        <details
+                                            class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                            data-testid="weather-review-panel"
+                                        >
+                                            <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
+                                                <span class="text-[13px] font-semibold text-text-1">
+                                                    {{ prose.weather_review|prose_title:"Weather review" }}
+                                                </span>
+                                                <span
+                                                    class="snowdesk-panel-chevron text-text-3 text-sm"
+                                                    aria-hidden="true"
+                                                >&#x25BE;</span>
+                                            </summary>
+                                            <div class="px-4 pb-4 pt-3 border-t border-border">
+                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
+                                                    {{ prose.weather_review|prose_body|snowdesk_html }}
+                                                </div>
+                                            </div>
+                                        </details>
+                                    {% endif %}
+
+                                    {# — Weather forecast ────────────────────── #}
+                                    {% if prose.weather_forecast %}
+                                        <details
+                                            class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                            data-testid="weather-forecast-panel"
+                                        >
+                                            <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
+                                                <span class="text-[13px] font-semibold text-text-1">
+                                                    {{ prose.weather_forecast|prose_title:"Weather forecast" }}
+                                                </span>
+                                                <span
+                                                    class="snowdesk-panel-chevron text-text-3 text-sm"
+                                                    aria-hidden="true"
+                                                >&#x25BE;</span>
+                                            </summary>
+                                            <div class="px-4 pb-4 pt-3 border-t border-border">
+                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
+                                                    {{ prose.weather_forecast|prose_body|snowdesk_html }}
+                                                </div>
+                                            </div>
+                                        </details>
+                                    {% endif %}
+
+                                    {# — Outlook (tendency[]) ─────────────────── #}
+                                    {# Summary uses the first tendency entry's <h1>; subsequent entries  #}
+                                    {# keep their own <h1> so multi-day outlooks remain disambiguated.   #}
+                                    {% if prose.tendency %}
+                                        {% with first_entry=prose.tendency|first %}
+                                            <details
+                                                class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                                data-testid="tendency-panel"
+                                            >
+                                                <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
+                                                    <span class="text-[13px] font-semibold text-text-1">
+                                                        {{ first_entry.comment|prose_title:"Outlook" }}
+                                                    </span>
+                                                    <span
+                                                        class="snowdesk-panel-chevron text-text-3 text-sm"
+                                                        aria-hidden="true"
+                                                    >&#x25BE;</span>
+                                                </summary>
+                                                <div class="px-4 pb-4 pt-3 border-t border-border">
+                                                    {% for entry in prose.tendency %}
+                                                        {% if entry.comment %}
+                                                            <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-3{% endif %}">
+                                                                {% if forloop.first %}
+                                                                    {{ entry.comment|prose_body|snowdesk_html }}
+                                                                {% else %}
+                                                                    {{ entry.comment|snowdesk_html }}
+                                                                {% endif %}
+                                                            </div>
+                                                        {% endif %}
+                                                    {% endfor %}
+                                                </div>
+                                            </details>
+                                        {% endwith %}
+                                    {% endif %}
+                                </section>
+                            {% endif %}
+                        {% endif %}
+                    {% endwith %}
+
+                    {% comment %}
+                       SECTION 5 — Metadata strip
+                       Three fields: Issued / Valid until / Next update.
+                       Source: render_model.metadata.  Pushed to the
+                       bottom of the content (above the footer) because
+                       the precise timestamps are reference data — the
+                       reader wants the hazard read first.  Render — on
+                       None.
+                    {% endcomment %}
+                    {% with meta=rm.metadata %}
+                        {% if meta %}
+                            <div
+                                class="flex items-start gap-4 px-1 pt-3 mt-8 border-t border-border text-xs text-text-3"
+                                data-testid="metadata-strip"
+                            >
+                                <div>
+                                    <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
+                                        {% trans "Issued" %}
+                                    </p>
+                                    <p class="text-text-2">
+                                        {% if meta.publication_time %}
+                                            {{ meta.publication_time|parse_iso|date:"j M H:i" }} UTC
+                                        {% else %}
+                                            &mdash;
+                                        {% endif %}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
+                                        {% trans "Valid until" %}
+                                    </p>
+                                    <p class="text-text-2">
+                                        {% if meta.valid_until %}
+                                            {{ meta.valid_until|parse_iso|date:"j M H:i" }} UTC
+                                        {% else %}
+                                            &mdash;
+                                        {% endif %}
+                                    </p>
+                                </div>
+                                <div data-testid="next-update-cell">
+                                    <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
+                                        {% trans "Next update" %}
+                                    </p>
+                                    <p class="text-text-2">
+                                        {% if meta.next_update %}
+                                            {{ meta.next_update|parse_iso|date:"j M H:i" }} UTC
+                                        {% else %}
+                                            &mdash;
+                                        {% endif %}
+                                    </p>
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% endwith %}
+                {% endwith %}{# rm #}
+            {% endif %}{# error state else #}
+        {% endif %}
+        {# bulletin #}
+
+        {% comment %}
+           SECTION 6 — Footer
+           SLF attribution + focal-region-first grouping context.
+           Focal region name first, then related_regions as additional
+           context (e.g. "Val dal Spöl, with adjacent micro-regions").
+        {% endcomment %}
+        <footer class="mt-8 pt-4 border-t border-border text-xs text-text-3" data-testid="page-footer">
+            <p class="mb-1">
+                {# Focal region first #}
+                <span class="font-medium text-text-2" data-testid="focal-region">{{ region_name }}</span>
+                {% if related_regions %}
+                    <span class="text-text-3">, {% trans "with" %} </span>
+                    {% for r in related_regions %}
+                        <span>{{ r.name }}</span>{% if not forloop.last %} &middot; {% endif %}
+                    {% endfor %}
+                {% endif %}
+            </p>
+            <p class="mb-1">
+                <a
+                    class="underline hover:text-text-2"
+                    href="{% url 'public:random_bulletins' region_id=region_id %}"
+                >{% trans "View history" %}</a>
+                &middot;
+                <a
+                    class="underline hover:text-text-2"
+                    href="{% url 'public:season_bulletins' region_id=region_id %}"
+                >{% trans "View full season" %}</a>
+                {# DEBUG-only shortcut into Django admin for the current   #}
+                {# bulletin record.  Present only when ``settings.DEBUG``  #}
+                {# is truthy and a panel was built (empty-state pages     #}
+                {# have no bulletin to open).  Production omits the link. #}
+                {% if debug and panel.admin_url %}
                     &middot;
                     <a
                         class="underline hover:text-text-2"
-                        href="{% url 'public:season_bulletins' region_id=region_id %}"
-                    >{% trans "View full season" %}</a>
-                    {# DEBUG-only shortcut into Django admin for the current   #}
-                    {# bulletin record.  Present only when ``settings.DEBUG``  #}
-                    {# is truthy and a panel was built (empty-state pages     #}
-                    {# have no bulletin to open).  Production omits the link. #}
-                    {% if debug and panel.admin_url %}
-                        &middot;
-                        <a
-                            class="underline hover:text-text-2"
-                            href="{{ panel.admin_url }}"
-                            data-testid="footer-admin-link"
-                        >{% trans "Open in admin" %}</a>
-                    {% endif %}
-                </p>
-                <p>
-                    {% blocktrans trimmed %}
-                        Avalanche bulletin data &copy;
-                    {% endblocktrans %}
-                    <a
-                        class="underline hover:text-text-2"
-                        href="https://www.slf.ch"
-                        target="_blank"
-                        rel="noopener"
-                    >{% trans "SLF — WSL Institute for Snow and Avalanche Research" %}</a>.
-                    {% trans "Rendered by Snowdesk." %}
-                </p>
-            </footer>
+                        href="{{ panel.admin_url }}"
+                        data-testid="footer-admin-link"
+                    >{% trans "Open in admin" %}</a>
+                {% endif %}
+            </p>
+            <p>
+                {% blocktrans trimmed %}
+                    Avalanche bulletin data &copy;
+                {% endblocktrans %}
+                <a
+                    class="underline hover:text-text-2"
+                    href="https://www.slf.ch"
+                    target="_blank"
+                    rel="noopener"
+                >{% trans "SLF — WSL Institute for Snow and Avalanche Research" %}</a>.
+                {% trans "Rendered by Snowdesk." %}
+            </p>
+        </footer>
 
-            {% if debug %}
-                {# ── Subscribe link (DEBUG only) ────────────────────────────── #}
-                <div class="mt-3 text-center">
-                    <a
-                        href="{% url 'subscriptions:enter_email' %}"
-                        class="text-xs text-text-3 hover:text-text-2 border border-text-3/20 rounded-[6px] px-3 py-1.5 inline-block"
-                    >
-                        {% trans "Subscribe to alerts" %}
-                    </a>
-                </div>
-            {% endif %}
-        </div>
-        {# /font-sans container #}
-    </body>
-</html>
+        {% if debug %}
+            {# ── Subscribe link (DEBUG only) ────────────────────────────── #}
+            <div class="mt-3 text-center">
+                <a
+                    href="{% url 'subscriptions:enter_email' %}"
+                    class="text-xs text-text-3 hover:text-text-2 border border-text-3/20 rounded-[6px] px-3 py-1.5 inline-block"
+                >
+                    {% trans "Subscribe to alerts" %}
+                </a>
+            </div>
+        {% endif %}
+    </div>
+    {# /font-sans container #}
+{% endblock %}

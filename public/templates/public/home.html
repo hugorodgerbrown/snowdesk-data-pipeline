@@ -1,67 +1,61 @@
+{% extends "public/base.html" %}
 {% comment %}
 public/templates/public/home.html — Marketing landing page.
 
 Placeholder page describing what SnowDesk is and how it works.
 This will be replaced with a full marketing site before launch.
 {% endcomment %}
-{% load i18n static %}
-<!DOCTYPE html>
-<html lang="{{ LANGUAGE_CODE }}">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
-        <meta
-            name="description"
-            content='{% trans "Daily Swiss avalanche bulletins for backcountry skiers — per-region danger levels, avalanche problems, snowpack structure, and season archives, sourced from SLF." %}'
-        >
-        <title>{% trans "Snowdesk — Avalanche bulletins for backcountry skiers" %}</title>
-        {% include "includes/theme_head.html" %}
-        <link rel="stylesheet" href="{% static 'css/output.css' %}">
-    </head>
-    <body class="bg-bg font-sans text-text-1 min-h-screen flex flex-col">
-        {% include "includes/nav.html" %}
-        <div class="flex-1 flex flex-col items-center justify-center px-4 py-8">
-            <div class="max-w-lg text-center">
-                <h1 class="text-3xl font-semibold tracking-tight mb-4">{% trans "Snowdesk" %}</h1>
-                <p class="text-text-2 text-lg leading-relaxed mb-6">
-                    {% trans "Avalanche bulletins for backcountry skiers." %}
+{% load i18n %}
+
+{% block title %}
+    {% trans "Snowdesk — Avalanche bulletins for backcountry skiers" %}
+{% endblock %}
+
+{% block meta_description %}
+    {% trans "Daily Swiss avalanche bulletins for backcountry skiers — per-region danger levels, avalanche problems, snowpack structure, and season archives, sourced from SLF." %}
+{% endblock %}
+
+{% block content %}
+    <div class="flex-1 flex flex-col items-center justify-center px-4 py-8">
+        <div class="max-w-lg text-center">
+            <h1 class="text-3xl font-semibold tracking-tight mb-4">{% trans "Snowdesk" %}</h1>
+            <p class="text-text-2 text-lg leading-relaxed mb-6">
+                {% trans "Avalanche bulletins for backcountry skiers." %}
+            </p>
+            <p class="text-text-2 text-lg leading-relaxed mb-6">
+                {% blocktrans trimmed %}
+                    We take the daily SLF avalanche forecast and present it in a clear, mobile-friendly format so you
+                    can make better decisions in the mountains.
+                {% endblocktrans %}
+            </p>
+            <div class="space-y-3 text-text-2 text-sm">
+                <p>
+                    <strong class="text-text-1">{% trans "Daily bulletins" %}</strong> &mdash;
+                    {% trans "fetched automatically from the Swiss Institute for Snow and Avalanche Research (SLF)." %}
                 </p>
-                <p class="text-text-2 text-lg leading-relaxed mb-6">
-                    {% blocktrans trimmed %}
-                        We take the daily SLF avalanche forecast and present it in a clear, mobile-friendly format so
-                        you can make better decisions in the mountains.
-                    {% endblocktrans %}
+                <p>
+                    <strong class="text-text-1">{% trans "Per-region detail" %}</strong> &mdash;
+                    {% trans "danger level, avalanche problems, snowpack structure, and field guidance for every forecast region." %}
                 </p>
-                <div class="space-y-3 text-text-2 text-sm">
-                    <p>
-                        <strong class="text-text-1">{% trans "Daily bulletins" %}</strong> &mdash;
-                        {% trans "fetched automatically from the Swiss Institute for Snow and Avalanche Research (SLF)." %}
-                    </p>
-                    <p>
-                        <strong class="text-text-1">{% trans "Per-region detail" %}</strong> &mdash;
-                        {% trans "danger level, avalanche problems, snowpack structure, and field guidance for every forecast region." %}
-                    </p>
-                    <p>
-                        <strong class="text-text-1">{% trans "Season archives" %}</strong> &mdash;
-                        {% trans "browse the full season history for any region." %}
-                    </p>
-                </div>
-                <div class="mt-8 flex flex-wrap justify-center gap-3">
-                    <a
-                        href="{% url 'public:examples_random' %}"
-                        class="inline-block bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
-                    >
-                        {% trans "View a sample bulletin →" %}
-                    </a>
-                    <a
-                        href="{% url 'public:map' %}"
-                        class="inline-block bg-card text-text-1 border border-text-1 px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
-                    >
-                        {% trans "Explore the map →" %}
-                    </a>
-                </div>
+                <p>
+                    <strong class="text-text-1">{% trans "Season archives" %}</strong> &mdash;
+                    {% trans "browse the full season history for any region." %}
+                </p>
+            </div>
+            <div class="mt-8 flex flex-wrap justify-center gap-3">
+                <a
+                    href="{% url 'public:examples_random' %}"
+                    class="inline-block bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
+                >
+                    {% trans "View a sample bulletin →" %}
+                </a>
+                <a
+                    href="{% url 'public:map' %}"
+                    class="inline-block bg-card text-text-1 border border-text-1 px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
+                >
+                    {% trans "Explore the map →" %}
+                </a>
             </div>
         </div>
-    </body>
-</html>
+    </div>
+{% endblock %}

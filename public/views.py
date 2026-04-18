@@ -53,6 +53,7 @@ from django.utils.translation import gettext as _gettext, gettext_lazy as _
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition
 
+from pipeline.decorators import require_htmx
 from pipeline.models import Bulletin, Region, RegionBulletin, RegionDayRating
 from pipeline.schema import ValidTimePeriod
 from pipeline.services.render_model import (
@@ -62,7 +63,6 @@ from pipeline.services.render_model import (
     compute_day_character,
 )
 from pipeline.utils import html_to_markdown
-from pipeline.views import require_htmx
 
 from .guidance import load_field_guidance
 
