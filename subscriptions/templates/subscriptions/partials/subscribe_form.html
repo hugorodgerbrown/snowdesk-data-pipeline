@@ -1,0 +1,54 @@
+{% load i18n %}
+{% comment %}
+subscriptions/templates/subscriptions/partials/subscribe_form.html
+Inline subscribe CTA embedded on bulletin pages.
+
+Always include with a region_id (required by the view):
+    {% include "subscriptions/partials/subscribe_form.html" with region_id=region.region_id %}
+
+The outer div carries the hx-target id so the success fragment can replace it.
+{% endcomment %}
+<div id="subscribe-cta-{{ region_id }}">
+    <div class="bg-card rounded-[12px] border border-text-3/10 shadow-sm p-6">
+        <h2 class="text-base font-semibold text-text-1 mb-1">{% trans "Get avalanche alerts" %}</h2>
+        <p class="text-sm text-text-2 mb-4 leading-relaxed">
+            {% trans "Enter your email to receive daily bulletin updates for this region." %}
+        </p>
+        <form
+            hx-post="{% url 'subscriptions:subscribe' %}"
+            hx-target="#subscribe-cta-{{ region_id }}"
+            hx-swap="outerHTML"
+            hx-indicator="#subscribe-indicator-{{ region_id }}"
+            novalidate
+        >
+            {% csrf_token %}
+            <input type="hidden" name="region_id" value="{{ region_id }}">
+            <div class="flex gap-2">
+                <input
+                    type="email"
+                    name="email"
+                    placeholder="your@email.com"
+                    required
+                    class="flex-1 px-3 py-2 rounded-[8px] border border-text-3/30 bg-card text-text-1 placeholder:text-text-3 text-sm focus:outline-none focus:ring-2 focus:ring-text-1/30"
+                >
+                <button
+                    type="submit"
+                    class="px-4 py-2 bg-text-1 text-card text-sm font-medium rounded-[8px] hover:opacity-90 transition-opacity whitespace-nowrap"
+                >
+                    {% trans "Subscribe" %}
+                </button>
+            </div>
+            <span
+                id="subscribe-indicator-{{ region_id }}"
+                class="htmx-indicator text-xs text-text-3 mt-1 block"
+            >{% trans "Sending…" %}</span>
+            {% if form.email.errors %}
+                <ul class="mt-1.5 space-y-0.5">
+                    {% for error in form.email.errors %}
+                        <li class="text-xs text-form-error">{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        </form>
+    </div>
+</div>

@@ -133,8 +133,7 @@ class SubscriberFactory(factory.django.DjangoModelFactory[Subscriber]):
         model = Subscriber
 
     email = factory.Sequence(lambda n: f"subscriber{n}@example.com")
-    is_active = True
-    last_authenticated_at = None
+    status = Subscriber.Status.ACTIVE
 
 
 class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):

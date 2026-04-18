@@ -150,18 +150,29 @@ SEASON_START_DATE = config(
 )
 
 # ---------------------------------------------------------------------------
-# Magic-link authentication
+# Account-access token
+# ---------------------------------------------------------------------------
+# Maximum age (in seconds) for account-access tokens verified by
+# subscriptions/services/token.py.  Defaults to 24 hours.
+
+ACCOUNT_TOKEN_MAX_AGE = config("ACCOUNT_TOKEN_MAX_AGE", default=86400, cast=int)
+
+# Base URL used when building absolute links in emails sent outside a request
+# context (e.g. from management commands or background tasks).
+SITE_BASE_URL = config("SITE_BASE_URL", default="http://localhost:8000")
+
+# ---------------------------------------------------------------------------
+# Email — SMTP everywhere.  Dev uses Mailhog (localhost:1025, no auth, no
+# TLS); prod uses Resend's SMTP relay (smtp.resend.com:587, STARTTLS).
 # ---------------------------------------------------------------------------
 
-MAGIC_LINK_SECRET_KEY = config("MAGIC_LINK_SECRET_KEY", default=SECRET_KEY)
-MAGIC_LINK_EXPIRY_SECONDS = config("MAGIC_LINK_EXPIRY_SECONDS", default=900, cast=int)
-MAGIC_LINK_BASE_URL = config("MAGIC_LINK_BASE_URL", default="http://localhost:8000")
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = config("EMAIL_HOST", default="localhost")
+EMAIL_PORT = config("EMAIL_PORT", default=1025, cast=int)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=False, cast=bool)
 
-# ---------------------------------------------------------------------------
-# Email
-# ---------------------------------------------------------------------------
-
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@snowdesk.ch")
 
 # ---------------------------------------------------------------------------
@@ -229,6 +240,11 @@ LOGGING = {
             "propagate": False,
         },
         "pipeline": {
+            "handlers": ["console", "file_pipeline", "file_errors"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "subscriptions": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",
             "propagate": False,

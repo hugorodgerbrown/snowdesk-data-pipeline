@@ -1,0 +1,17 @@
+{% load i18n %}
+{% trans "Hi," %}
+
+{% blocktrans with region=region_name trimmed %}
+You're now subscribed to avalanche bulletin alerts for {{ region }}.
+{% endblocktrans %}
+
+{% trans "Use the link below to manage your subscriptions:" %}
+
+{{ account_url }}
+
+{% blocktrans with hours=expiry_hours trimmed %}
+This link expires in {{ hours }} hours.
+{% endblocktrans %}
+
+---
+{% trans "Snowdesk — Swiss Avalanche Bulletins" %}

@@ -1,83 +1,207 @@
-{% extends "subscriptions/base.html" %}
+{% extends "public/base.html" %}
 {% comment %}
-subscriptions/templates/subscriptions/manage.html — Region management for returning subscribers.
+subscriptions/templates/subscriptions/manage.html — Subscription management page.
 
-Shows the subscriber's current subscriptions pre-checked, the same live
-region search widget as pick_regions, and a save button that replaces the
-full set of subscriptions.
+Two modes depending on whether the visitor has a valid session:
+
+authenticated=False (no session):
+    Shows an email entry form. POST sends an account-access link.
+
+authenticated=True (session present):
+    Shows one card per subscribed region, ordered by region name.
+    Each card shows the region name, region ID, and resort list.
+    A per-region "Remove" button POSTs to subscriptions:remove_region via HTMX.
+    A "Choose more regions on the map" link routes to /map/.
+    A destructive "Unsubscribe from all alerts" button hard-deletes the subscriber.
 {% endcomment %}
 {% load i18n %}
 
 {% block title %}{% trans "Manage subscriptions — Snowdesk" %}{% endblock %}
 
+{% block meta_description %}{% trans "Update your Snowdesk avalanche bulletin region subscriptions." %}{% endblock %}
+
+{% block extra_head %}
+    <script
+        src="https://unpkg.com/htmx.org@2.0.4"
+        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+        crossorigin="anonymous"
+    ></script>
+{% endblock %}
+
 {% block content %}
-    <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">
-        <div class="w-full max-w-lg">
-            <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10">
-                <h1 class="text-2xl font-semibold text-text-1 mb-2">{% trans "Manage your subscriptions" %}</h1>
-                <p class="text-text-2 text-sm mb-6 leading-relaxed">
-                    {% trans "Update the regions you follow. Your current selections are pre-checked." %}
-                </p>
+    <div class="px-4 py-10">
+        <div class="max-w-[640px] mx-auto">
+            {% if authenticated %}
+                {% comment %}
+                    Authenticated: subscriptions dashboard.
 
-                <form method="post" novalidate>
-                    {% csrf_token %}
-
-                    {# Live search input #}
-                    <div class="mb-4">
-                        <label for="region-search" class="block text-sm font-medium text-text-1 mb-1.5">
-                            {% trans "Search regions" %}
-                        </label>
-                        <input
-                            id="region-search"
-                            type="search"
-                            name="q"
-                            placeholder="e.g. CH-4115 or Davos"
-                            autocomplete="off"
-                            hx-get="{% url 'subscriptions:region_search_partial' %}"
-                            hx-target="#region-results"
-                            hx-swap="innerHTML"
-                            hx-trigger="keyup changed delay:300ms"
-                            hx-indicator="#search-indicator"
-                            class="w-full px-4 py-2.5 rounded-[8px] border border-text-3/30 bg-card text-text-1 placeholder:text-text-3 focus:outline-none focus:ring-2 focus:ring-text-1/30"
-                        >
-                        <span
-                            id="search-indicator"
-                            class="htmx-indicator text-xs text-text-3 mt-1 block"
-                        >{% trans "Searching…" %}</span>
-                    </div>
-
-                    {# Region checkboxes — pre-check current subscriptions #}
+                    hx-headers on this wrapper injects the CSRF token on every
+                    HTMX POST below (Remove, Unsubscribe-from-all).  HTMX
+                    inherits hx-headers from ancestors, so we set it once here
+                    rather than on each button.
+                {% endcomment %}
+                <div hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                    {% comment %}
+                        Silent error banner — revealed by JS on htmx:responseError
+                        so users see feedback when a Remove/Delete POST fails
+                        (e.g. CSRF rejection, rate limit, network).
+                    {% endcomment %}
                     <div
-                        id="region-results"
-                        class="max-h-72 overflow-y-auto border border-text-3/20 rounded-[8px] p-3 mb-6 space-y-2"
+                        id="htmx-error-banner"
+                        role="alert"
+                        aria-live="polite"
+                        class="hidden mb-6 bg-card rounded-[12px] border border-form-error/40 px-5 py-4 shadow-sm"
                     >
-                        {% for region in regions %}
-                            <label class="flex items-center gap-2 text-sm text-text-1 cursor-pointer hover:text-text-1">
-                                <input
-                                    type="checkbox"
-                                    name="regions"
-                                    value="{{ region.pk }}"
-                                    {% if region in current_regions %}
-                                        checked
-                                    {% endif %}
-                                    class="rounded border-text-3/30 text-text-1 focus:ring-text-1/30"
-                                >
-                                <span class="font-mono text-xs text-text-3">{{ region.region_id }}</span>
-                                <span>{{ region.name }}</span>
-                            </label>
-                        {% empty %}
-                            <p class="text-text-3 text-sm">{% trans "No regions available." %}</p>
-                        {% endfor %}
+                        <p class="text-sm text-text-1 font-medium">
+                            {% trans "Something went wrong." %}
+                        </p>
+                        <p class="text-sm text-text-2 mt-0.5">
+                            {% trans "Please reload the page and try again." %}
+                        </p>
                     </div>
 
-                    <button
-                        type="submit"
-                        class="w-full bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
-                    >
-                        {% trans "Save changes" %}
-                    </button>
-                </form>
-            </div>
+                    {# Optional one-time welcome banner when arriving via confirmation link #}
+                    {% if just_confirmed %}
+                        <div class="mb-6 bg-card rounded-[12px] border border-text-3/10 px-5 py-4 shadow-sm">
+                            <p class="text-sm text-text-1 font-medium">
+                                {% trans "Your subscription is confirmed." %}
+                            </p>
+                            <p class="text-sm text-text-2 mt-0.5">
+                                {% trans "You'll receive alerts for the regions below." %}
+                            </p>
+                        </div>
+                    {% endif %}
+
+                    {# Page heading — singular/plural based on subscription count #}
+                    <h1 class="text-2xl font-semibold text-text-1 mb-6">
+                        {% blocktrans count count=subscriptions|length trimmed %}
+                            Your subscription
+                            {% plural %}
+                            Your subscriptions
+                        {% endblocktrans %}
+                    </h1>
+
+                    {# One card per subscribed region #}
+                    {% for subscription in subscriptions %}
+                        <div class="subscription-card bg-card rounded-[12px] border border-text-3/10 shadow-sm p-6 mb-4">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="min-w-0">
+                                    <h2 class="text-lg font-semibold text-text-1 leading-snug">
+                                        {{ subscription.region.name }}
+                                    </h2>
+                                    <p class="font-mono text-xs text-text-3 mt-0.5">
+                                        {{ subscription.region.region_id }}
+                                    </p>
+                                </div>
+                                <button
+                                    hx-post="{% url 'subscriptions:remove_region' region_id=subscription.region.region_id %}"
+                                    hx-target="closest .subscription-card"
+                                    hx-swap="outerHTML"
+                                    class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-[6px] px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                                >
+                                    {% trans "Remove" %}
+                                </button>
+                            </div>
+
+                            {# Resort list — omit entirely when empty #}
+                            {% with resorts=subscription.region.resorts.all %}
+                                {% if resorts %}
+                                    <p class="mt-3 text-sm text-text-2 leading-relaxed">
+                                        {% for resort in resorts %}{{ resort.name }}{% if not forloop.last %},
+                                            {% endif %}{% endfor %}
+                                    </p>
+                                {% endif %}
+                            {% endwith %}
+                        </div>
+                    {% empty %}
+                        <div class="bg-card rounded-[12px] border border-text-3/10 shadow-sm px-6 py-8 text-center mb-4">
+                            <p class="text-sm text-text-2">
+                                {% trans "You have no active subscriptions." %}
+                            </p>
+                        </div>
+                    {% endfor %}
+
+                    {# Map CTA — choose more regions #}
+                    <div class="mt-2 mb-10">
+                        <a
+                            href="{% url 'public:map' %}"
+                            class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+                        >
+                            {% trans "Choose more regions on the map →" %}
+                        </a>
+                    </div>
+
+                    {% comment %}
+                        Destructive account deletion — visually separated,
+                        small, muted.  hx-confirm stays here: deleting the
+                        whole account is irreversible.
+                    {% endcomment %}
+                    <div class="border-t border-border pt-8">
+                        <button
+                            hx-post="{% url 'subscriptions:delete_account' %}"
+                            hx-confirm='{% trans "Unsubscribe from all alerts and delete your account?" %}'
+                            class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
+                        >
+                            {% trans "Unsubscribe from all alerts" %}
+                        </button>
+                    </div>
+                </div>{# /hx-headers wrapper #}
+
+                {% comment %}
+                    Reveal the error banner on any HTMX error (CSRF failure,
+                    rate-limit 429, network drop, 5xx).  Declarative listeners
+                    via hx-on::response-error would need one per button; a
+                    single document-level listener is cleaner.
+                {% endcomment %}
+                <script>
+                    (function () {
+                        var banner = document.getElementById("htmx-error-banner");
+                        if (!banner) return;
+                        document.body.addEventListener("htmx:responseError", function () {
+                            banner.classList.remove("hidden");
+                            banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                        });
+                        document.body.addEventListener("htmx:sendError", function () {
+                            banner.classList.remove("hidden");
+                        });
+                    })();
+                </script>
+            {% else %}
+                {# ── Unauthenticated: email entry ── #}
+                <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10">
+                    <h1 class="text-2xl font-semibold text-text-1 mb-2">{% trans "Manage your subscriptions" %}</h1>
+                    <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                        {% trans "Enter your email address and we'll send you a link to manage your regions." %}
+                    </p>
+
+                    <form method="post" novalidate>
+                        {% csrf_token %}
+                        <div class="mb-4">
+                            <label
+                                for="{{ form.email.id_for_label }}"
+                                class="block text-sm font-medium text-text-1 mb-1.5"
+                            >
+                                {% trans "Email address" %}
+                            </label>
+                            {{ form.email }}
+                            {% if form.email.errors %}
+                                <ul class="mt-1.5 space-y-0.5">
+                                    {% for error in form.email.errors %}
+                                        <li class="text-xs text-form-error">{{ error }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                        </div>
+
+                        <button
+                            type="submit"
+                            class="w-full bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
+                        >
+                            {% trans "Send account link" %}
+                        </button>
+                    </form>
+                </div>
+            {% endif %}
         </div>
     </div>
 {% endblock %}

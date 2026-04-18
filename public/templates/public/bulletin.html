@@ -521,17 +521,10 @@ Six structural sections, top to bottom:
             </p>
         </footer>
 
-        {% if debug %}
-            {# ── Subscribe link (DEBUG only) ────────────────────────────── #}
-            <div class="mt-3 text-center">
-                <a
-                    href="{% url 'subscriptions:enter_email' %}"
-                    class="text-xs text-text-3 hover:text-text-2 border border-text-3/20 rounded-[6px] px-3 py-1.5 inline-block"
-                >
-                    {% trans "Subscribe to alerts" %}
-                </a>
-            </div>
-        {% endif %}
+        {# ── Subscribe CTA (always visible) ────────────────────────── #}
+        <div class="mt-6">
+            {% include "subscriptions/partials/subscribe_form.html" with region_id=region.region_id %}
+        </div>
     </div>
     {# /font-sans container #}
 {% endblock %}

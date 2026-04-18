@@ -1,13 +1,16 @@
-{% extends "subscriptions/base.html" %}
+{% extends "public/base.html" %}
 {% comment %}
-subscriptions/templates/subscriptions/link_expired.html — Invalid/expired magic link page.
+subscriptions/templates/subscriptions/link_expired.html — Invalid or expired token page.
 
-Shown when the token is missing, malformed, or has expired. Offers a link
-back to the email entry page so the subscriber can request a fresh link.
+Shown when the token in an account-access or unsubscribe URL is missing,
+malformed, or has expired. Offers a link to the manage page so the
+visitor can request a fresh access link.
 {% endcomment %}
 {% load i18n %}
 
 {% block title %}{% trans "Link expired — Snowdesk" %}{% endblock %}
+
+{% block meta_description %}{% trans "This account link has expired or is invalid. Request a new one to manage your Snowdesk subscriptions." %}{% endblock %}
 
 {% block content %}
     <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">
@@ -15,12 +18,10 @@ back to the email entry page so the subscriber can request a fresh link.
             <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10 text-center">
                 <h1 class="text-2xl font-semibold text-text-1 mb-3">{% trans "This link has expired" %}</h1>
                 <p class="text-text-2 text-sm leading-relaxed mb-6">
-                    {% blocktrans with minutes=expiry_minutes trimmed %}
-                        Magic links are only valid for {{ minutes }} minutes. This one has expired or is invalid.
-                    {% endblocktrans %}
+                    {% trans "Account links are only valid for 24 hours. This one has expired or is invalid." %}
                 </p>
                 <a
-                    href="{% url 'subscriptions:enter_email' %}"
+                    href="{% url 'subscriptions:manage' %}"
                     class="inline-block bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
                 >
                     {% trans "Request a new link" %}

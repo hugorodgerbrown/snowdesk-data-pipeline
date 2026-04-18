@@ -1,23 +1,45 @@
 """
 subscriptions/forms.py — Django forms for the subscriptions application.
 
-Provides two forms used in the magic-link subscription flow:
-  - EmailForm: captures the subscriber's email address to send a magic link.
-  - RegionSelectionForm: lets a subscriber choose which SLF warning regions
-    they want to follow.
+Provides forms used in the subscription flow:
+  - SubscribeForm: captures an email address and a hidden region_id for
+    inline subscribe CTAs embedded on bulletin pages.
+  - EmailForm: captures an email address for the standalone manage page
+    (unauthenticated entry point).
 """
-
-import logging
 
 from django import forms
 
-from pipeline.models import Region
 
-logger = logging.getLogger(__name__)
+class SubscribeForm(forms.Form):
+    """Form for the inline subscribe CTA on bulletin pages.
+
+    Accepts an email address and a hidden region_id so the subscribe
+    partial knows which region to pre-associate on first confirmation.
+    """
+
+    email = forms.EmailField(
+        max_length=254,
+        widget=forms.EmailInput(
+            attrs={
+                "placeholder": "your@email.com",
+                "class": (
+                    "w-full px-4 py-2.5 rounded-[8px] border border-text-3/30 "
+                    "bg-card text-text-1 placeholder:text-text-3 "
+                    "focus:outline-none focus:ring-2 focus:ring-text-1/30"
+                ),
+            }
+        ),
+    )
+    region_id = forms.CharField(
+        max_length=32,
+        required=True,
+        widget=forms.HiddenInput(),
+    )
 
 
 class EmailForm(forms.Form):
-    """Form for capturing the subscriber's email address."""
+    """Form for capturing the subscriber's email address on the manage page."""
 
     email = forms.EmailField(
         max_length=254,
@@ -32,14 +54,4 @@ class EmailForm(forms.Form):
                 "autofocus": True,
             }
         ),
-    )
-
-
-class RegionSelectionForm(forms.Form):
-    """Form for selecting bulletin regions to subscribe to."""
-
-    regions = forms.ModelMultipleChoiceField(
-        queryset=Region.objects.all(),
-        widget=forms.CheckboxSelectMultiple,
-        required=False,
     )

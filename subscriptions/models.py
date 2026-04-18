@@ -3,7 +3,7 @@ subscriptions/models.py — Database models for the subscriptions application.
 
 Defines two concrete models:
   - Subscriber: an email address that has opted in to receive avalanche
-    bulletin notifications. Tracks active status and last authentication time.
+    bulletin notifications. Tracks subscription status and confirmation time.
   - Subscription: links a Subscriber to a specific SLF Region so that
     notifications can be scoped to the regions the subscriber cares about.
 
@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-class SubscriberQuerySet(models.QuerySet):
+class SubscriberQuerySet(models.QuerySet["Subscriber"]):
     """Custom queryset for Subscriber."""
 
     def active(self) -> SubscriberQuerySet:
         """Return only active subscribers."""
-        return self.filter(is_active=True)
+        return self.filter(status=Subscriber.Status.ACTIVE)
 
     def by_email(self, email: str) -> SubscriberQuerySet:
         """Return subscribers matching the given email (case-insensitive)."""
@@ -44,11 +44,30 @@ class Subscriber(BaseModel):
 
     Each subscriber has a unique email address and may have zero or more
     Subscription records linking them to specific SLF warning regions.
+
+    The ``status`` field tracks the lifecycle of the subscription:
+    - ``pending``: address captured but not yet confirmed via a link click.
+    - ``active``: confirmed at least once; receives bulletin emails.
     """
 
+    class Status(models.TextChoices):
+        """Lifecycle status for a Subscriber."""
+
+        PENDING = "pending", "Pending"
+        ACTIVE = "active", "Active"
+
     email = models.EmailField(unique=True, db_index=True)
-    is_active = models.BooleanField(default=True)
-    last_authenticated_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    confirmed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp of first account-link verification.",
+    )
 
     objects = SubscriberQuerySet.as_manager()
 
@@ -71,7 +90,7 @@ class Subscriber(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class SubscriptionQuerySet(models.QuerySet):
+class SubscriptionQuerySet(models.QuerySet["Subscription"]):
     """Custom queryset for Subscription."""
 
     def for_subscriber(self, subscriber: Subscriber) -> SubscriptionQuerySet:
@@ -80,7 +99,7 @@ class SubscriptionQuerySet(models.QuerySet):
 
     def active(self) -> SubscriptionQuerySet:
         """Return subscriptions whose subscriber is active."""
-        return self.filter(subscriber__is_active=True)
+        return self.filter(subscriber__status=Subscriber.Status.ACTIVE)
 
 
 class Subscription(BaseModel):

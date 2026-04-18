@@ -1,0 +1,15 @@
+{% load i18n %}
+{% trans "Hi," %}
+
+{% trans "Click the link below to access your Snowdesk account and manage your avalanche bulletin subscriptions." %}
+
+{{ account_url }}
+
+{% blocktrans with hours=expiry_hours trimmed %}
+This link expires in {{ hours }} hours.
+{% endblocktrans %}
+
+{% trans "If you did not request this, you can safely ignore this email." %}
+
+---
+{% trans "Snowdesk — Swiss Avalanche Bulletins" %}

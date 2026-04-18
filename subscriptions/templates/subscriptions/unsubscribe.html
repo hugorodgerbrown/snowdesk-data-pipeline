@@ -1,0 +1,46 @@
+{% extends "public/base.html" %}
+{% comment %}
+subscriptions/templates/subscriptions/unsubscribe.html — Unsubscribe confirmation.
+
+GET: shows the region being unsubscribed from and a confirm button.
+POST: the view performs the deletion; this template is only for GET.
+{% endcomment %}
+{% load i18n %}
+
+{% block title %}{% trans "Unsubscribe — Snowdesk" %}{% endblock %}
+
+{% block meta_description %}{% trans "Confirm your unsubscribe request to stop receiving avalanche bulletin alerts for this region." %}{% endblock %}
+
+{% block content %}
+    <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">
+        <div class="w-full max-w-md">
+            <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10 text-center">
+                <h1 class="text-2xl font-semibold text-text-1 mb-3">{% trans "Unsubscribe" %}</h1>
+                <p class="text-text-2 text-sm leading-relaxed mb-2">
+                    {% blocktrans with email=email trimmed %}
+                        You are about to unsubscribe <strong>{{ email }}</strong> from:
+                    {% endblocktrans %}
+                </p>
+                <p class="text-text-1 font-medium mb-6">
+                    <span class="font-mono text-xs text-text-3">{{ region.region_id }}</span>
+                    {{ region.name }}
+                </p>
+                <form method="post" novalidate>
+                    {% csrf_token %}
+                    <button
+                        type="submit"
+                        class="w-full bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
+                    >
+                        {% trans "Yes, unsubscribe me" %}
+                    </button>
+                </form>
+                <p class="mt-4">
+                    <a
+                        href="{% url 'public:home' %}"
+                        class="text-xs text-text-3 hover:text-text-2"
+                    >{% trans "Cancel" %}</a>
+                </p>
+            </div>
+        </div>
+    </div>
+{% endblock %}

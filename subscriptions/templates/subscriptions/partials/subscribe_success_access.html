@@ -1,0 +1,14 @@
+{% load i18n %}
+{% comment %}
+subscriptions/templates/subscriptions/partials/subscribe_success_access.html
+HTMX response fragment for cases A (new subscriber) and B (existing pending).
+
+Shown when an account-access email has been sent — the user needs to click
+the link in their inbox to activate their account.
+{% endcomment %}
+<div class="bg-card rounded-[12px] border border-text-3/10 shadow-sm p-6">
+    <h2 class="text-base font-semibold text-text-1 mb-1">{% trans "Check your inbox" %}</h2>
+    <p class="text-sm text-text-2 leading-relaxed">
+        {% trans "We've sent you a link to access your account. It expires in 24 hours." %}
+    </p>
+</div>
