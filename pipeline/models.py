@@ -331,6 +331,28 @@ class BulletinQuerySet(models.QuerySet["Bulletin"]):
         """
         return self.filter(render_model_version__lt=current_version)
 
+    def latest_valid_from_date(self) -> _date | None:
+        """
+        Return the ``valid_from`` day of the most recent stored bulletin.
+
+        Used by ``fetch_bulletins`` to pick a gentle default start date so
+        scheduled runs don't re-walk the full season on every invocation.
+        Overlap is built in: using ``valid_from.date()`` means the same
+        calendar day is re-fetched, so any earlier-in-day issues (morning
+        update, prior evening re-issue) are picked up for free. The
+        duplicates are ignored downstream — the optimisation is the smaller
+        fetch, not the skipped upsert.
+
+        Returns:
+            The local-timezone ``valid_from`` day of the newest bulletin in
+            this queryset, or ``None`` if the queryset is empty.
+
+        """
+        latest = self.aggregate(latest=models.Max("valid_from"))["latest"]
+        if latest is None:
+            return None
+        return timezone.localtime(latest).date()
+
 
 class Bulletin(BaseModel):
     """

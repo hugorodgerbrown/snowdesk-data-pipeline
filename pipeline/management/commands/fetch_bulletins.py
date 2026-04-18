@@ -6,7 +6,12 @@ persists them to the database. Supersedes the previous fetch_data and
 backfill_data commands.
 
 Defaults are tuned for the unattended scheduled-run case:
-  * --start-date defaults to settings.SEASON_START_DATE (snowpack build-up).
+  * --start-date defaults to the ``valid_from`` day of the most recent
+    bulletin already in the DB — i.e. a one-day overlap so earlier-in-day
+    issues (morning updates, prior-evening re-issues) are re-fetched. The
+    duplicates are ignored downstream; it's the fetch that's being
+    optimised, not the upsert. When the database is empty this falls back
+    to settings.SEASON_START_DATE as a first-run backstop.
   * --end-date defaults to today (UTC).
   * No writes happen unless --commit is passed (read-only by default).
 
@@ -34,10 +39,14 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from pipeline.models import PipelineRun
+from pipeline.models import Bulletin, PipelineRun
 from pipeline.services.data_fetcher import run_pipeline
 
 logger = logging.getLogger(__name__)
+
+_START_SOURCE_EXPLICIT = "explicit"
+_START_SOURCE_LATEST_BULLETIN = "latest_bulletin"
+_START_SOURCE_SEASON_BACKSTOP = "season_backstop"
 
 
 class Command(BaseCommand):
@@ -45,8 +54,9 @@ class Command(BaseCommand):
 
     help = (
         "Fetch SLF bulletins for a date range. Defaults: "
-        "--start-date=settings.SEASON_START_DATE, --end-date=today. "
-        "Read-only unless --commit is passed."
+        "--start-date=(latest bulletin's valid_from day) with "
+        "settings.SEASON_START_DATE as the empty-DB backstop, "
+        "--end-date=today. Read-only unless --commit is passed."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -57,7 +67,9 @@ class Command(BaseCommand):
             default=None,
             metavar="YYYY-MM-DD",
             help=(
-                "First date to fetch (inclusive). Default: settings.SEASON_START_DATE."
+                "First date to fetch (inclusive). Default: the valid_from "
+                "day of the newest bulletin already in the DB, or "
+                "settings.SEASON_START_DATE when the DB is empty."
             ),
         )
         parser.add_argument(
@@ -93,12 +105,14 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
-        start, end = self._resolve_dates(options)
+        start, end, start_source = self._resolve_dates(options)
         commit: bool = options["commit"]
         force: bool = options["force"]
         days = (end - start).days + 1
 
-        self._announce(start, end, days, commit=commit, force=force)
+        self._announce(
+            start, end, days, commit=commit, force=force, start_source=start_source
+        )
 
         try:
             run = run_pipeline(
@@ -123,13 +137,25 @@ class Command(BaseCommand):
                 f"Run 'rebuild_render_models' after fixing the issue."
             )
 
-    def _resolve_dates(self, options: dict[str, Any]) -> tuple[date, date]:
+    def _resolve_dates(self, options: dict[str, Any]) -> tuple[date, date, str]:
         """
         Collapse the --date / --start-date / --end-date options into a range.
+
+        When ``--start-date`` is not provided (and ``--date`` is not used),
+        the start is chosen dynamically: the ``valid_from`` day of the
+        newest bulletin in the DB. An empty DB falls back to
+        ``settings.SEASON_START_DATE``.
 
         Raises:
             CommandError: if --date is combined with the range flags, or if
                 the resolved end precedes the resolved start.
+
+        Returns:
+            A tuple of ``(start, end, start_source)`` where ``start_source``
+            is one of ``_START_SOURCE_EXPLICIT``,
+            ``_START_SOURCE_LATEST_BULLETIN``, or
+            ``_START_SOURCE_SEASON_BACKSTOP`` — used by ``_announce`` to
+            explain how the default was picked.
 
         """
         single: date | None = options["date"]
@@ -143,13 +169,41 @@ class Command(BaseCommand):
 
         if single is not None:
             start = end = single
+            start_source = _START_SOURCE_EXPLICIT
         else:
-            start = start_arg or settings.SEASON_START_DATE
             end = end_arg or timezone.localdate()
+            if start_arg is not None:
+                start = start_arg
+                start_source = _START_SOURCE_EXPLICIT
+            else:
+                start, start_source = self._default_start_date()
 
         if end < start:
             raise CommandError("--end-date must be on or after --start-date.")
-        return start, end
+        return start, end, start_source
+
+    def _default_start_date(self) -> tuple[date, str]:
+        """
+        Pick a default start date when ``--start-date`` is not provided.
+
+        If the DB has bulletins, returns the newest ``valid_from`` day. The
+        same-day overlap is deliberate: it re-fetches earlier-in-day issues
+        (morning updates, prior-evening re-issues) that may have been
+        reissued since the last run. Duplicates are ignored downstream — it
+        is the fetch that's being optimised, not the upsert.
+
+        If the DB is empty, returns ``settings.SEASON_START_DATE`` as a
+        first-run backstop so the full snowpack build-up is captured.
+
+        Returns:
+            ``(start, start_source)`` where ``start_source`` explains which
+            branch produced the date.
+
+        """
+        latest = Bulletin.objects.latest_valid_from_date()
+        if latest is None:
+            return settings.SEASON_START_DATE, _START_SOURCE_SEASON_BACKSTOP
+        return latest, _START_SOURCE_LATEST_BULLETIN
 
     def _announce(
         self,
@@ -159,6 +213,7 @@ class Command(BaseCommand):
         *,
         commit: bool,
         force: bool,
+        start_source: str,
     ) -> None:
         """Write the start-of-run banner and matching log line."""
         flags: list[str] = []
@@ -168,19 +223,34 @@ class Command(BaseCommand):
             flags.append("FORCE")
         flag_label = " [" + ", ".join(flags) + "]" if flags else ""
 
+        source_label = self._start_source_label(start_source)
+        source_suffix = f" — start {source_label}" if source_label else ""
+
         self.stdout.write(
             self.style.MIGRATE_HEADING(
-                f"Fetching bulletins from {start} to {end} ({days} day(s)){flag_label}"
+                f"Fetching bulletins from {start} to {end} "
+                f"({days} day(s)){flag_label}{source_suffix}"
             )
         )
         logger.info(
-            "fetch_bulletins started: %s to %s, %d day(s), commit=%s, force=%s",
+            "fetch_bulletins started: %s to %s, %d day(s), "
+            "commit=%s, force=%s, start_source=%s",
             start,
             end,
             days,
             commit,
             force,
+            start_source,
         )
+
+    @staticmethod
+    def _start_source_label(start_source: str) -> str:
+        """Render a human-readable tag for the banner."""
+        if start_source == _START_SOURCE_LATEST_BULLETIN:
+            return "from latest bulletin valid_from day"
+        if start_source == _START_SOURCE_SEASON_BACKSTOP:
+            return "from SEASON_START_DATE backstop (empty DB)"
+        return ""
 
     def _report_outcome(self, run: PipelineRun, days: int, *, commit: bool) -> None:
         """Emit the post-run summary to stdout and the structured log."""

@@ -468,17 +468,21 @@ follows the **Management command design** convention (read-only by
 default; opt in to writes with `--commit`).
 
 ```bash
-# Read-only walk over the whole season so far (SEASON_START_DATE → today).
+# Read-only walk, start date derived from DB:
+#   - populated DB: (latest bulletin valid_from day) → today
+#                   (same-day overlap so morning-updates / prior-evening
+#                    re-issues are refetched; duplicates are ignored)
+#   - empty DB:     SEASON_START_DATE → today (first-run backstop)
 # Useful as a "what would happen?" probe before committing.
 poetry run python manage.py fetch_bulletins
 
-# Persist the season so far.
+# Persist the same gentle-default window.
 poetry run python manage.py fetch_bulletins --commit
 
-# Single day (typical scheduled-run shape).
+# Single day (typical one-off shape).
 poetry run python manage.py fetch_bulletins --date 2024-06-15 --commit
 
-# Explicit window.
+# Explicit window — overrides the smart default.
 poetry run python manage.py fetch_bulletins \
     --start-date 2024-01-01 --end-date 2024-12-31 --commit
 
@@ -486,7 +490,8 @@ poetry run python manage.py fetch_bulletins \
 poetry run python manage.py fetch_bulletins --commit --force
 
 # Flags:
-#   --start-date YYYY-MM-DD  default: settings.SEASON_START_DATE
+#   --start-date YYYY-MM-DD  default: latest DB bulletin's valid_from day,
+#                            or settings.SEASON_START_DATE when the DB is empty.
 #   --end-date   YYYY-MM-DD  default: today (UTC)
 #   --date       YYYY-MM-DD  shortcut for --start-date == --end-date
 #                            (mutually exclusive with the range flags)
@@ -502,9 +507,12 @@ poetry run python manage.py rebuild_render_models --commit  # persist
 ```
 
 `SEASON_START_DATE` is read from the environment in
-`config/settings/base.py` (default: `2025-11-01`) and acts as the
-backstop start date — a bare invocation captures the full snowpack
-build-up.
+`config/settings/base.py` (default: `2025-11-01`) and is the first-run
+backstop: a bare invocation against an empty DB captures the full
+snowpack build-up. Once the DB has bulletins, `fetch_bulletins` prefers
+the gentler default of "start at the latest bulletin's `valid_from` day"
+so scheduled runs only re-walk a small same-day overlap (duplicates are
+ignored downstream — it's the fetch that's being optimised).
 
 ## Frontend
 
