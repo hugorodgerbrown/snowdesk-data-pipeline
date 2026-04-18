@@ -1,10 +1,11 @@
 {% comment %}
 public/templates/public/map.html — Interactive region-choropleth map.
 
-A standalone page (like home.html) rather than an extension of base.html
-so the map can claim the full viewport without fighting the site chrome.
-The body DOM is structured so the ``#frame`` block can later be pulled
-into an include partial and embedded on the homepage.
+Unlike the rest of the public site, this page does NOT extend
+``public/base.html`` — the map needs the full viewport and its own
+MapLibre stylesheet, and ``DO_NOT_ADD/snowdesk_map_preview.html`` has
+locked down the ``#frame`` DOM shape so the block can later be pulled
+into an include partial and embedded on the homepage. Keep standalone.
 
 Three endpoints are resolved server-side and passed through to the
 client via ``data-*`` attributes — that way the JS never hard-codes URLs
