@@ -67,6 +67,10 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
+    # Exposes X-DB-Query-Count on responses when QUERY_COUNT_HEADER_ENABLED
+    # is True (dev + perf). No-op otherwise, so it is safe to leave mounted
+    # in production.
+    "pipeline.middleware.QueryCountMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -147,6 +151,21 @@ SEASON_START_DATE = config(
     "SEASON_START_DATE",
     default="2025-11-01",
     cast=date.fromisoformat,
+)
+
+# ---------------------------------------------------------------------------
+# Observability
+# ---------------------------------------------------------------------------
+# When True, ``pipeline.middleware.QueryCountMiddleware`` forces the debug
+# cursor and writes an ``X-DB-Query-Count`` header on every response. Off
+# by default so production pays no cost; development.py and perf.py turn
+# it on so local pages and the ``monitor_query_counts`` command can see
+# the numbers.
+
+QUERY_COUNT_HEADER_ENABLED = config(
+    "QUERY_COUNT_HEADER_ENABLED",
+    default=False,
+    cast=bool,
 )
 
 # ---------------------------------------------------------------------------

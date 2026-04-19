@@ -32,3 +32,7 @@ DATABASES = {
 # Disable rate limiting in development and tests so that rapid local requests
 # (including the full test suite) are never throttled.
 RATELIMIT_ENABLE = False
+
+# Expose X-DB-Query-Count so local pages show the per-request SQL query
+# count in DevTools; also needed for `monitor_query_counts` locally.
+QUERY_COUNT_HEADER_ENABLED = True
