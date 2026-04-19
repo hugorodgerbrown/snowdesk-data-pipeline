@@ -41,3 +41,7 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+
+# Mirror dev: expose the X-DB-Query-Count header so Lighthouse/perf runs
+# and the monitor_query_counts command can observe per-page query counts.
+QUERY_COUNT_HEADER_ENABLED = True

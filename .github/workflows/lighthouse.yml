@@ -60,6 +60,9 @@ jobs:
           poetry run python manage.py loaddata regions resorts bulletins region_bulletins
           poetry run python manage.py rebuild_render_models --commit
 
+      - name: Check query-count baseline (SNOW-13)
+        run: poetry run python manage.py monitor_query_counts
+
       - name: Collect static files (perf settings — ManifestStaticFilesStorage)
         env:
           DJANGO_SETTINGS_MODULE: config.settings.perf

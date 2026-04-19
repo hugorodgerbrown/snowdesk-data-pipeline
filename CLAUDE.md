@@ -545,6 +545,11 @@ poetry run python manage.py rebuild_render_models           # read-only
 poetry run python manage.py rebuild_render_models --commit  # persist
 
 # Flags: --commit, --all (every row), --bulletin-id <id> (single row), --batch-size N
+
+# Compare SQL query counts against the committed baseline (SNOW-13).
+# Read-only by default — --commit rewrites perf/query_counts.txt.
+poetry run python manage.py monitor_query_counts           # CI / local gate
+poetry run python manage.py monitor_query_counts --commit  # accept new counts
 ```
 
 `SEASON_START_DATE` is read from the environment in
@@ -721,6 +726,36 @@ config URLs. Reports upload as a 14-day GitHub Actions artifact.
 
 **Before opening a PR**: run `npm run lh` alongside `poetry run tox`
 and clear both. The reviewer agent runs lh as part of its checklist.
+
+## Query-count monitoring (SNOW-13)
+
+Per-page SQL query counts are tracked in `perf/query_counts.txt` — a
+committed plain-text file with one `<name> <count>` pair per monitored
+URL. The Lighthouse CI workflow runs `manage.py monitor_query_counts`
+(read-only) after loading fixtures; any mismatch against the baseline
+fails the check, so a reviewer sees the delta in the PR diff the same
+way they see a Lighthouse-score delta.
+
+**Two surfaces**:
+
+- `pipeline.middleware.QueryCountMiddleware` attaches an
+  `X-DB-Query-Count` header to every response when
+  `settings.QUERY_COUNT_HEADER_ENABLED` is truthy — on in
+  `development` and `perf`, off in `production`. Useful for ad-hoc
+  measurement: open DevTools → Network and read the header.
+- `manage.py monitor_query_counts` measures the same counts for a
+  fixed URL list via the Django test client and compares / writes the
+  `perf/query_counts.txt` baseline.
+
+**Adding a new monitored URL**: append a `(name, url)` tuple to
+`MONITORED_URLS` in `pipeline/management/commands/monitor_query_counts.py`,
+then run `poetry run python manage.py monitor_query_counts --commit` to
+seed the new baseline row.
+
+**When the count legitimately changes** (new feature touches more of
+the DB, new prefetch, etc.): run `--commit` and include the
+`perf/query_counts.txt` delta in the same PR so reviewers can sanity-
+check the new number.
 
 ## Django coding rules
 
