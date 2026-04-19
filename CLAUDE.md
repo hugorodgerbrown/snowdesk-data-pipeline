@@ -207,7 +207,8 @@ into `main`. No manual action required.
 ### When Code should stop and ask
 
 - Scoping comment missing on the ticket → ask the user to scope in Chat
-  first. Do not invent a scope.
+  first. Propose the scope if possible, and ask the user to confirm or
+  amend.
 - Tests fail after implementation and the fix isn't obvious → report
   the failure and stop, don't paper over it.
 - The implementation reveals the scope was wrong → post a comment on
