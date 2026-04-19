@@ -8,6 +8,121 @@ It exists so that a new design-focused conversation can pick up where the previo
 
 ---
 
+## Design tokens
+
+The canonical source of truth for all tokens is [`src/css/main.css`](src/css/main.css), which declares them in a Tailwind v4 `@theme` block. Tokens below are mirrored here for Claude Design import; when the CSS and this document disagree, the CSS wins.
+
+### Typography
+
+- **Sans (body, UI):** `DM Sans`, system-ui fallback. Weights 400 / 500 / 600.
+- **Mono (metadata, codes):** `DM Mono`, ui-monospace fallback. Weights 400 / 500.
+- **Serif (reserved):** not yet chosen. Phase 3 restyling may introduce a serif for page titles, section headers, and rating names. Until then, sans is the only family in use.
+- **Scale:** matches Tailwind defaults; prefer utility classes (`text-sm`, `text-base`, `text-lg`, `text-xl`) in templates rather than hard-coded sizes.
+
+### Colour — surfaces and text (light mode)
+
+| Token | Value | Purpose |
+|---|---|---|
+| `--color-bg` | `#f2f0ec` | Warm off-white page background |
+| `--color-card` | `#ffffff` | Card surface |
+| `--color-card-subtle` | `#fafaf8` | Card footer, admin strip |
+| `--color-tag` | `#f5f3ef` | Problem tag / inner chip background |
+| `--color-text-1` | `#1a1916` | Headings, primary labels |
+| `--color-text-2` | `#6b6860` | Body, descriptions |
+| `--color-text-3` | `#6e6b65` | Tertiary: dates, eyebrows, meta (4.67:1 on `--color-bg`, WCAG AA boundary — do not dim further) |
+| `--color-border` | `rgba(0,0,0,0.09)` | Default border |
+| `--color-border-strong` | `rgba(0,0,0,0.16)` | Emphasised border |
+
+### Colour — dark mode overrides
+
+Applied when `.dark` is present on `<html>`. EAWS danger colours intentionally do **not** change — they are a regulated international standard.
+
+| Token | Light | Dark |
+|---|---|---|
+| `--color-bg` | `#f2f0ec` | `#1c1b19` |
+| `--color-card` | `#ffffff` | `#2a2825` |
+| `--color-card-subtle` | `#fafaf8` | `#23211f` |
+| `--color-tag` | `#f5f3ef` | `#302e2a` |
+| `--color-text-1` | `#1a1916` | `#edece8` |
+| `--color-text-2` | `#6b6860` | `#a8a49c` |
+| `--color-text-3` | `#6e6b65` | `#8a867e` |
+| `--color-border` | `rgba(0,0,0,0.09)` | `rgba(255,255,255,0.09)` |
+
+### Colour — interactive accent
+
+| Token | Light | Dark | Purpose |
+|---|---|---|---|
+| `--color-accent` | `#2563eb` | `#3b82f6` | Primary action / focus ring |
+| `--color-accent-hover` | `#1d4ed8` | `#60a5fa` | Button hover |
+| `--color-accent-text` | `#ffffff` | `#ffffff` | Text on accent backgrounds |
+| `--color-ring-selected` | `#3b82f6` | `#60a5fa` | Calendar selected-date ring |
+
+### Colour — EAWS danger scale (theme-invariant)
+
+Exact EAWS specification colours. Do not adjust for brand reasons — these are a recognised international standard. Each level has three variants: the saturated indicator, a muted tint for band backgrounds, and readable text colours for each surface.
+
+| Level | Indicator | Tint | Text on tint | FG on saturated |
+|---|---|---|---|---|
+| Low | `#ccff66` | `#e8ffb8` | `#3a5a00` | `#1a1916` |
+| Moderate | `#ffff00` | `#fff7b8` | `#4d4500` | `#1a1916` |
+| Considerable | `#ff9900` | `#ffe5c2` | `#5c3000` | `#1a1916` |
+| High | `#ff0000` | `#ffd9d9` | `#6b0000` | `#ffffff` |
+| Very high | `#ff0000` | `#1a0000` (inverted) | `#ffffff` | `#ffffff` |
+
+### Colour — status feedback
+
+| Token | Light BG / text | Dark BG / text | Purpose |
+|---|---|---|---|
+| `--color-status-error-*` | `#fee2e2` / `#991b1b` | `#451a1a` / `#fca5a5` | Error flash / badge |
+| `--color-status-warning-*` | `#fef3c7` / `#92400e` | `#452a0a` / `#fcd34d` | Warning flash / badge |
+| `--color-status-success-*` | `#d1fae5` / `#065f46` | `#14332a` / `#6ee7b7` | Success flash / badge |
+| `--color-status-info-*` | `#dbeafe` / `#1e40af` | `#1e2a4a` / `#93c5fd` | Info flash / badge |
+
+A dedicated warning-callout ramp (`--color-callout-warning-*`) exists for render-model error banners — see `src/css/main.css` for the full set.
+
+### Radii
+
+| Token | Value | Purpose |
+|---|---|---|
+| `--radius-card` | `16px` | Outer card shell |
+| `--radius-tag` | `8px` | Problem tag, inner chips |
+| `--radius-pill` | `4px` | Timing badge, period pill |
+
+### Layout
+
+| Token | Value | Purpose |
+|---|---|---|
+| `--breakpoint-tablet` | `600px` | Single-column → two-column |
+| `--breakpoint-desktop` | `960px` | Two-column → grid |
+| `--width-card-mobile` | `390px` | Single-column mobile max-width |
+| `--width-grid-max` | `1200px` | Multi-column grid max-width |
+
+Content column inside `<nav>` and primary body copy: **640px max-width**, centred (see `templates/includes/nav.html`).
+
+### Token rules
+
+- Never hard-code hex values in templates or new CSS. Reference the token.
+- Use Tailwind utility classes (`text-text-1`, `bg-card`, `rounded-card`, etc.) in templates; custom CSS lives in `src/css/main.css` only when a utility can't express it (generated content, data-attribute selectors, HTML resets).
+- When contrast matters, use `text-text-1`, `text-text-2`, or the `--color-eaws-*-text` tokens. `text-text-3` sits on the WCAG AA boundary — never dim it further with `opacity-*`.
+- EAWS tokens are theme-invariant by design: their saturated backgrounds don't change in dark mode, so their foreground text mustn't either (`--color-eaws-*-fg`).
+
+## Design direction (for Claude Design)
+
+A condensed brief of the editorial character. Expanded reasoning is in "What SnowDesk's design has to do" and "Editorial principles for the page" below.
+
+- **Character:** calm, confident, quietly expert. Closer to a well-edited publication than a software dashboard. Treat the reader as a thoughtful adult making real decisions.
+- **Voice:** direct, unpatronising, no extreme-sports energy, no emojis, no cheerful disclaimers hiding uncertainty. Content should survive being pasted into a WhatsApp group without feeling out of place.
+- **Mission lens:** SnowDesk is an **on-ramp** to the official SLF bulletin. Success = graduation. The visual language must respect the reader's time and expertise.
+- **Hierarchy:** SLF source content is primary; SnowDesk-added content (day-character labels, field guidance) is visually distinguishable and deferential.
+- **Restraint as a rule:** new features arrive in the same restrained idiom — small, quiet, deferential to the existing hierarchy. Do not add visual weight or accent colours to make additions feel "important".
+- **Asymmetry is honest:** uneven CAAML data should produce visibly uneven blocks. Do not fabricate structure for symmetry.
+- **Never recommend behaviour:** characterise, explain, do not tell users to go or stay.
+- **Conservatism:** when in doubt on characterising a borderline day, be cautious. The cost of the opposite error is not comparable.
+
+The editorial test for any addition: look at the page and ask whether it still feels like editorial content or whether it's drifted toward dashboard. If the latter, rework.
+
+---
+
 ## What SnowDesk's design has to do
 
 Before diving into specifics, the design exists to support a particular product framing that should shape every visual decision:
