@@ -49,6 +49,7 @@ MONITORED_URLS: list[tuple[str, str]] = [
     ("api_today_summaries", "/api/today-summaries/"),
     ("api_resorts_by_region", "/api/resorts-by-region/"),
     ("api_regions_geojson", "/api/regions.geojson"),
+    ("api_offline_manifest_map", "/api/offline-manifest/map/"),
     ("region_redirect", "/CH-4115/"),
     ("bulletin_historic", "/CH-4115/martigny-verbier/2026-04-01/"),
 ]

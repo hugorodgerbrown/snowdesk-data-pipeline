@@ -7,5 +7,6 @@ map 0
 api_today_summaries 1
 api_resorts_by_region 2
 api_regions_geojson 1
+api_offline_manifest_map 0
 region_redirect 1
 bulletin_historic 8

@@ -4,9 +4,10 @@ public/api.py — JSON endpoints for the interactive map.
 Three lightweight endpoints consumed by ``static/js/map.js`` to render the
 Swiss region choropleth:
 
-* ``/api/today-summaries/``  — per-region danger summary for today.
-* ``/api/resorts-by-region/`` — ``{region_id: [resort_name, ...]}``.
-* ``/api/regions.geojson``   — FeatureCollection of region polygons.
+* ``/api/today-summaries/``      — per-region danger summary for today.
+* ``/api/resorts-by-region/``    — ``{region_id: [resort_name, ...]}``.
+* ``/api/regions.geojson``       — FeatureCollection of region polygons.
+* ``/api/offline-manifest/map/`` — precache manifest for the offline CTA.
 
 Plain Django ``JsonResponse`` views — no DRF. The map page fetches the
 three in parallel at load time; switching data sources later is a matter
@@ -16,9 +17,13 @@ of changing the URL in ``map.js``.
 from __future__ import annotations
 
 import logging
+import math
+import urllib.parse
 from typing import Any
 
 from django.http import HttpRequest, JsonResponse
+from django.templatetags.static import static
+from django.urls import reverse
 from django.utils import timezone
 
 from pipeline.models import Bulletin, Region, RegionBulletin
@@ -27,6 +32,113 @@ from .views import _PROBLEM_LABELS, _select_default_issue
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Offline manifest constants
+# ---------------------------------------------------------------------------
+
+_OFFLINE_MANIFEST_VERSION = "map-shell-v1"
+
+# Swiss bounding box (west, south, east, north) in decimal degrees.
+_SWISS_BBOX: tuple[float, float, float, float] = (5.9, 45.8, 10.5, 47.8)
+
+# Vector tile zoom levels z5–z10 give good coverage without excessive tile counts.
+_VECTOR_TILE_ZOOM: range = range(5, 11)
+
+# Natural Earth raster at z5–z6 only (low zoom, small file count).
+_RASTER_TILE_ZOOM: range = range(5, 7)
+
+_OFM_BASE = "https://tiles.openfreemap.org"
+_OFM_VECTOR_TEMPLATE = _OFM_BASE + "/planet/{z}/{x}/{y}.pbf"
+_OFM_RASTER_TEMPLATE = _OFM_BASE + "/natural_earth/ne2sr/{z}/{x}/{y}.png"
+_OFM_SPRITE_BASE = _OFM_BASE + "/sprites/ofm_f384"
+
+# MapLibre version loaded from CDN in public/templates/public/map.html.
+# Must stay in sync with the <script> and <link> tags in that template.
+_MAPLIBRE_VERSION = "4.7.1"
+_MAPLIBRE_CDN = f"https://unpkg.com/maplibre-gl@{_MAPLIBRE_VERSION}/dist"
+
+# Latin + Latin-1 Supplement glyph ranges — sufficient for Swiss place names.
+_GLYPH_RANGES = ["0-255", "256-511"]
+_GLYPH_FONTSTACKS = [
+    "Noto Sans Regular",
+    "Noto Sans Bold",
+    "Noto Sans Italic",
+]
+
+# ---------------------------------------------------------------------------
+# Tile-URL helpers (module-private)
+# ---------------------------------------------------------------------------
+
+
+def _lon_to_tile_x(lon_deg: float, zoom: int) -> int:
+    """Convert longitude in degrees to a slippy-map tile X coordinate.
+
+    Args:
+        lon_deg: Longitude in decimal degrees (−180 … +180).
+        zoom: Tile zoom level (0 … 22).
+
+    Returns:
+        Integer X tile coordinate.
+
+    """
+    return math.floor((lon_deg + 180.0) / 360.0 * (2**zoom))
+
+
+def _lat_to_tile_y(lat_deg: float, zoom: int) -> int:
+    """Convert latitude in degrees to a slippy-map tile Y coordinate.
+
+    The slippy-map Y axis is inverted relative to latitude: higher
+    latitudes yield lower Y numbers.
+
+    Args:
+        lat_deg: Latitude in decimal degrees (−85 … +85).
+        zoom: Tile zoom level (0 … 22).
+
+    Returns:
+        Integer Y tile coordinate.
+
+    """
+    lat_rad = math.radians(lat_deg)
+    return math.floor(
+        (1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi)
+        / 2.0
+        * (2**zoom)
+    )
+
+
+def _generate_tile_urls(
+    url_template: str,
+    bbox: tuple[float, float, float, float],
+    zoom_range: range,
+) -> list[str]:
+    """Enumerate slippy-map tile URLs covering a bounding box.
+
+    Args:
+        url_template: URL with ``{z}``, ``{x}``, ``{y}`` placeholders.
+        bbox: ``(west, south, east, north)`` in decimal degrees.
+        zoom_range: Python ``range`` of zoom levels to enumerate.
+
+    Returns:
+        Flat list of fully-resolved tile URLs, one per covered tile.
+
+    """
+    west, south, east, north = bbox
+    urls: list[str] = []
+    for z in zoom_range:
+        x_min = _lon_to_tile_x(west, z)
+        x_max = _lon_to_tile_x(east, z)
+        # North gives the *lower* Y because the Y axis is inverted.
+        y_min = _lat_to_tile_y(north, z)
+        y_max = _lat_to_tile_y(south, z)
+        for x in range(x_min, x_max + 1):
+            for y in range(y_min, y_max + 1):
+                urls.append(url_template.format(z=z, x=x, y=y))
+    return urls
+
+
+# ---------------------------------------------------------------------------
+# Existing helpers
+# ---------------------------------------------------------------------------
 
 _ASPECT_JOIN = ", "
 
@@ -268,3 +380,69 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
             "features": features,
         }
     )
+
+
+def offline_manifest_map(request: HttpRequest) -> JsonResponse:
+    """
+    Return the precache manifest for the offline /map/ feature.
+
+    The response is consumed by ``static/js/sw.js`` when the user taps
+    "Save offline". It lists every URL the service worker should store in
+    the versioned ``map-shell-v1`` cache so the map renders without a
+    network connection.
+
+    The list covers:
+    * Django-served shell assets (HTML, CSS, JS, favicon).
+    * The three existing JSON API endpoints.
+    * MapLibre GL JS + CSS from the same CDN version loaded by the template.
+    * OpenFreeMap style JSON, TileJSON, sprites, glyphs, and vector/raster
+      tiles for the Swiss bounding box at the configured zoom ranges.
+
+    This view makes zero database queries — all URLs are either ``reverse()``
+    / ``static()`` calls or derived from module-level constants.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with ``version`` and ``urls`` keys.
+
+    """
+    urls: list[str] = [
+        # Shell page.
+        reverse("public:map"),
+        # Static assets.
+        static("css/output.css"),
+        static("css/map.css"),
+        static("js/map.js"),
+        static("js/offline.js"),
+        static("favicon.svg"),
+        # JSON API endpoints.
+        reverse("api:regions_geojson"),
+        reverse("api:today_summaries"),
+        reverse("api:resorts_by_region"),
+        # MapLibre GL JS + CSS from CDN (version must match the template).
+        f"{_MAPLIBRE_CDN}/maplibre-gl.js",
+        f"{_MAPLIBRE_CDN}/maplibre-gl.css",
+        # OpenFreeMap style and TileJSON.
+        f"{_OFM_BASE}/styles/liberty",
+        f"{_OFM_BASE}/planet",
+        # Vector tiles (z5–z10) over the Swiss bounding box.
+        *_generate_tile_urls(_OFM_VECTOR_TEMPLATE, _SWISS_BBOX, _VECTOR_TILE_ZOOM),
+        # Natural Earth raster tiles (z5–z6) over the Swiss bounding box.
+        *_generate_tile_urls(_OFM_RASTER_TEMPLATE, _SWISS_BBOX, _RASTER_TILE_ZOOM),
+        # Sprite sheets (standard + high-DPI).
+        f"{_OFM_SPRITE_BASE}/ofm.json",
+        f"{_OFM_SPRITE_BASE}/ofm.png",
+        f"{_OFM_SPRITE_BASE}/ofm@2x.json",
+        f"{_OFM_SPRITE_BASE}/ofm@2x.png",
+    ]
+
+    # Glyph PBFs: one URL per (fontstack × range) combination.
+    # urllib.parse.quote encodes spaces in fontstack names (e.g. "Noto Sans Regular").
+    for fontstack in _GLYPH_FONTSTACKS:
+        encoded = urllib.parse.quote(fontstack)
+        for glyph_range in _GLYPH_RANGES:
+            urls.append(f"{_OFM_BASE}/fonts/{encoded}/{glyph_range}.pbf")
+
+    return JsonResponse({"version": _OFFLINE_MANIFEST_VERSION, "urls": urls})
