@@ -17,4 +17,9 @@ urlpatterns = [
     path("today-summaries/", api.today_summaries, name="today_summaries"),
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
     path("regions.geojson", api.regions_geojson, name="regions_geojson"),
+    path(
+        "offline-manifest/map/",
+        api.offline_manifest_map,
+        name="offline_manifest_map",
+    ),
 ]

@@ -39,6 +39,7 @@ from typing import Any, cast
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.contrib.staticfiles import finders
 from django.core.cache import cache
 from django.db.models import Max
 from django.http import Http404, HttpRequest, HttpResponse
@@ -824,6 +825,38 @@ def map_view(request: HttpRequest) -> HttpResponse:
 
     """
     return render(request, "public/map.html")
+
+
+def serve_sw(request: HttpRequest) -> HttpResponse:
+    """
+    Serve the service worker script from the root URL path (``/sw.js``).
+
+    Service workers control the scope they are served from. Serving from
+    ``/sw.js`` lets the SW control ``/`` (the whole site). The
+    ``Service-Worker-Allowed`` header makes that scope explicit, and
+    ``Cache-Control: no-cache`` ensures the browser re-validates on every
+    page load so SW updates take effect promptly.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        An ``HttpResponse`` with the SW script body and the required
+        ``Service-Worker-Allowed`` / ``Cache-Control`` headers.
+
+    Raises:
+        Http404: If ``js/sw.js`` is not found by staticfiles finders.
+
+    """
+    path = finders.find("js/sw.js")
+    if path is None:
+        raise Http404("Service worker script not found.")
+    with open(path, encoding="utf-8") as fh:
+        content = fh.read()
+    response = HttpResponse(content, content_type="application/javascript")
+    response["Service-Worker-Allowed"] = "/"
+    response["Cache-Control"] = "no-cache"
+    return response
 
 
 def random_redirect(request: HttpRequest) -> HttpResponse:

@@ -25,6 +25,7 @@ This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
             content="{% trans "Interactive map of Swiss avalanche regions — tap a region to see today's danger rating, headline problem, and nearby resorts." %}"
         >
         <title>{% trans "Snowdesk — Avalanche map" %}</title>
+        <link rel="manifest" href="{% static 'manifest.webmanifest' %}">
         <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
         <link rel="stylesheet" href="{% static 'css/map.css' %}">
@@ -61,12 +62,21 @@ This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
                     >
                 </label>
                 <ul id="search-results" class="search-results" role="listbox" hidden></ul>
+                <button
+                    id="offline-cta"
+                    type="button"
+                    class="offline-cta"
+                    aria-live="polite"
+                >
+                    {% trans "Save offline" %}
+                </button>
             </header>
             <div
                 id="map"
                 data-regions-url="{% url 'api:regions_geojson' %}"
                 data-summaries-url="{% url 'api:today_summaries' %}"
                 data-resorts-url="{% url 'api:resorts_by_region' %}"
+                data-offline-manifest-url="{% url 'api:offline_manifest_map' %}"
             >
                 <div class="legend">
                     <div class="legend-title">{% trans "Today" %}</div>
@@ -125,5 +135,6 @@ This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
         </div>
         <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
         <script src="{% static 'js/map.js' %}"></script>
+        <script src="{% static 'js/offline.js' %}"></script>
     </body>
 </html>
