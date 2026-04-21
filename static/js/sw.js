@@ -56,11 +56,14 @@ self.addEventListener('activate', (event) => {
 // Fetch — cache-first with graceful offline tile fallback
 // ---------------------------------------------------------------------------
 
-// OpenFreeMap vector + raster XYZ tile URLs. Used to recognise tile
-// requests in the fetch handler so we can return a synthetic 204 when
-// the network is unavailable instead of propagating the raw error.
-const TILE_URL_PATTERN =
-  /^https:\/\/tiles\.openfreemap\.org\/(?:planet|natural_earth\/ne2sr)\/\d+\/\d+\/\d+\.(?:pbf|png)$/;
+// Any URL served from the OpenFreeMap origin: vector tiles, raster
+// tiles, style JSON, TileJSON, sprites, and glyph PBFs. Used in the
+// fetch handler to turn cache-miss-plus-network-fail into a synthetic
+// 204 when offline, so MapLibre renders gracefully (parent-tile
+// upscale for missing tiles; no-op for missing sprites/glyphs) instead
+// of bubbling a TypeError out of ``event.respondWith`` as an
+// "Uncaught (in promise)" console error.
+const OFM_URL_PATTERN = /^https:\/\/tiles\.openfreemap\.org\//;
 
 self.addEventListener('fetch', (event) => {
   event.respondWith(
@@ -72,16 +75,13 @@ self.addEventListener('fetch', (event) => {
       try {
         return await fetch(event.request);
       } catch (err) {
-        // For basemap tiles that miss the cache AND the network (typical
-        // when offline and zoomed past z10 or panned outside the cached
-        // Swiss bbox), return a synthetic 204 No Content. MapLibre treats
-        // 204 as "no data for this tile" and keeps the parent tile
-        // rendered upscaled — the same visual outcome as the raw network
-        // failure, but without flooding DevTools with red
-        // ERR_INTERNET_DISCONNECTED / ERR_FAILED rows.
-        //
-        // Non-tile URLs re-throw so other failures stay visible.
-        if (TILE_URL_PATTERN.test(event.request.url)) {
+        // Offline and the network fetch failed. For OpenFreeMap URLs,
+        // return a synthetic 204 so MapLibre keeps rendering (it treats
+        // 204 as "no data at this URL" and falls back to parent-tile
+        // upscale / skips missing sprites + glyphs). Non-OFM URLs (our
+        // own API, third-party CDN, etc.) re-throw so genuine bugs stay
+        // visible in DevTools.
+        if (OFM_URL_PATTERN.test(event.request.url)) {
           return new Response(null, { status: 204, statusText: 'No Content' });
         }
         throw err;
