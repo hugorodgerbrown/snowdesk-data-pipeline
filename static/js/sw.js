@@ -53,14 +53,40 @@ self.addEventListener('activate', (event) => {
 });
 
 // ---------------------------------------------------------------------------
-// Fetch — cache-first
+// Fetch — cache-first with graceful offline tile fallback
 // ---------------------------------------------------------------------------
+
+// OpenFreeMap vector + raster XYZ tile URLs. Used to recognise tile
+// requests in the fetch handler so we can return a synthetic 204 when
+// the network is unavailable instead of propagating the raw error.
+const TILE_URL_PATTERN =
+  /^https:\/\/tiles\.openfreemap\.org\/(?:planet|natural_earth\/ne2sr)\/\d+\/\d+\/\d+\.(?:pbf|png)$/;
 
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches
-      .match(event.request)
-      .then((cached) => cached || fetch(event.request)),
+    (async () => {
+      const cached = await caches.match(event.request);
+      if (cached) {
+        return cached;
+      }
+      try {
+        return await fetch(event.request);
+      } catch (err) {
+        // For basemap tiles that miss the cache AND the network (typical
+        // when offline and zoomed past z10 or panned outside the cached
+        // Swiss bbox), return a synthetic 204 No Content. MapLibre treats
+        // 204 as "no data for this tile" and keeps the parent tile
+        // rendered upscaled — the same visual outcome as the raw network
+        // failure, but without flooding DevTools with red
+        // ERR_INTERNET_DISCONNECTED / ERR_FAILED rows.
+        //
+        // Non-tile URLs re-throw so other failures stay visible.
+        if (TILE_URL_PATTERN.test(event.request.url)) {
+          return new Response(null, { status: 204, statusText: 'No Content' });
+        }
+        throw err;
+      }
+    })(),
   );
 });
 
