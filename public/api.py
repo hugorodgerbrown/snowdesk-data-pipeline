@@ -21,6 +21,7 @@ import math
 import urllib.parse
 from typing import Any
 
+import requests
 from django.http import HttpRequest, JsonResponse
 from django.templatetags.static import static
 from django.urls import reverse
@@ -48,9 +49,14 @@ _VECTOR_TILE_ZOOM: range = range(5, 11)
 _RASTER_TILE_ZOOM: range = range(5, 7)
 
 _OFM_BASE = "https://tiles.openfreemap.org"
-_OFM_VECTOR_TEMPLATE = _OFM_BASE + "/planet/{z}/{x}/{y}.pbf"
+_OFM_VECTOR_TILEJSON = _OFM_BASE + "/planet"
+_OFM_VECTOR_FALLBACK_TEMPLATE = _OFM_BASE + "/planet/{z}/{x}/{y}.pbf"
 _OFM_RASTER_TEMPLATE = _OFM_BASE + "/natural_earth/ne2sr/{z}/{x}/{y}.png"
 _OFM_SPRITE_BASE = _OFM_BASE + "/sprites/ofm_f384"
+
+# TileJSON fetch timeout in seconds — tight enough to keep the manifest
+# endpoint responsive when OFM is slow, loose enough for a healthy round-trip.
+_OFM_TILEJSON_TIMEOUT = 3.0
 
 # MapLibre version loaded from CDN in public/templates/public/map.html.
 # Must stay in sync with the <script> and <link> tags in that template.
@@ -141,6 +147,45 @@ def _generate_tile_urls(
             for y in range(y_min, y_max + 1):
                 urls.append(url_template.format(z=z, x=x, y=y))
     return urls
+
+
+def _fetch_vector_tile_template() -> str:
+    """Resolve the current OpenFreeMap vector-tile URL template.
+
+    OpenFreeMap embeds a build-version segment into the vector-tile URL
+    template exposed by its TileJSON endpoint (e.g. ``planet/20260415_001001_pt
+    /{z}/{x}/{y}.pbf``). MapLibre requests tiles via that versioned URL
+    at runtime, so our precache manifest must match it exactly — otherwise
+    cached tiles live under URLs the browser never requests and the offline
+    cache is effectively empty for vector tiles.
+
+    The fallback (unversioned ``/planet/{z}/{x}/{y}.pbf``) is deliberately
+    kept as a safety net: if OpenFreeMap is temporarily unreachable the
+    manifest endpoint still responds, and the fallback URL still resolves
+    to a valid tile when fetched directly (OFM serves both paths with the
+    same content).
+
+    Returns:
+        The fully-qualified tile URL template with ``{z}``, ``{x}``, ``{y}``
+        placeholders, as published by OFM's TileJSON.
+
+    """
+    try:
+        resp = requests.get(_OFM_VECTOR_TILEJSON, timeout=_OFM_TILEJSON_TIMEOUT)
+        resp.raise_for_status()
+        tiles = resp.json().get("tiles")
+        if isinstance(tiles, list) and tiles and isinstance(tiles[0], str):
+            return tiles[0]
+        logger.warning(
+            "OFM TileJSON returned an unexpected shape; "
+            "falling back to the unversioned template"
+        )
+    except (requests.RequestException, ValueError) as exc:
+        logger.warning(
+            "OFM TileJSON fetch failed (%s); falling back to the unversioned template",
+            exc,
+        )
+    return _OFM_VECTOR_FALLBACK_TEMPLATE
 
 
 # ---------------------------------------------------------------------------
@@ -405,8 +450,10 @@ def offline_manifest_map(request: HttpRequest) -> JsonResponse:
     * OpenFreeMap style JSON, TileJSON, sprites, glyphs, and vector/raster
       tiles for the Swiss bounding box at the configured zoom ranges.
 
-    This view makes zero database queries — all URLs are either ``reverse()``
-    / ``static()`` calls or derived from module-level constants.
+    This view makes zero database queries. It does make a single outbound
+    HTTP call to OpenFreeMap's TileJSON endpoint to resolve the current
+    versioned vector-tile URL template — see ``_fetch_vector_tile_template``
+    for why that is necessary and how failures degrade gracefully.
 
     Args:
         request: The incoming HTTP request.
@@ -415,6 +462,10 @@ def offline_manifest_map(request: HttpRequest) -> JsonResponse:
         A JsonResponse with ``version`` and ``urls`` keys.
 
     """
+    # Resolve OFM's current vector-tile URL template so the precache keys
+    # match the versioned URLs MapLibre actually requests at runtime.
+    vector_template = _fetch_vector_tile_template()
+
     urls: list[str] = [
         # Shell page.
         reverse("public:map"),
@@ -433,9 +484,9 @@ def offline_manifest_map(request: HttpRequest) -> JsonResponse:
         f"{_MAPLIBRE_CDN}/maplibre-gl.css",
         # OpenFreeMap style and TileJSON.
         f"{_OFM_BASE}/styles/liberty",
-        f"{_OFM_BASE}/planet",
+        _OFM_VECTOR_TILEJSON,
         # Vector tiles (z5–z10) over the Swiss bounding box.
-        *_generate_tile_urls(_OFM_VECTOR_TEMPLATE, _SWISS_BBOX, _VECTOR_TILE_ZOOM),
+        *_generate_tile_urls(vector_template, _SWISS_BBOX, _VECTOR_TILE_ZOOM),
         # Natural Earth raster tiles (z5–z6) over the Swiss bounding box.
         *_generate_tile_urls(_OFM_RASTER_TEMPLATE, _SWISS_BBOX, _RASTER_TILE_ZOOM),
         # Sprite sheets (standard + high-DPI).

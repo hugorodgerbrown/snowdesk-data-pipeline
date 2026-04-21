@@ -9,11 +9,42 @@ Covers:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from unittest.mock import MagicMock, patch
+
 import pytest
+import requests
 from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+# Sentinel matching the shape of OpenFreeMap's real TileJSON response. Kept
+# deliberately minimal — the manifest endpoint only reads ``tiles[0]``.
+_FAKE_TILEJSON_VERSION = "20260415_001001_pt"
+_FAKE_TILE_TEMPLATE = f"https://tiles.openfreemap.org/planet/{_FAKE_TILEJSON_VERSION}/{{z}}/{{x}}/{{y}}.pbf"
+
+
+@pytest.fixture(autouse=True)
+def _stub_ofm_tilejson() -> Iterator[MagicMock]:
+    """Stub the OpenFreeMap TileJSON fetch so tests never touch the network.
+
+    The real endpoint returns a small JSON document with a versioned tile
+    URL template; we reproduce just enough of that shape for the manifest
+    view to build its URL list deterministically.
+    """
+    fake_response = MagicMock(spec=requests.Response)
+    fake_response.status_code = 200
+    fake_response.raise_for_status.return_value = None
+    fake_response.json.return_value = {"tiles": [_FAKE_TILE_TEMPLATE]}
+
+    with patch("public.api.requests.get", return_value=fake_response) as mock_get:
+        yield mock_get
+
 
 # ---------------------------------------------------------------------------
 # offline_manifest_map
@@ -99,6 +130,45 @@ def test_offline_manifest_zero_db_queries() -> None:
         response = client.get(reverse("api:offline_manifest_map"))
     assert response.status_code == 200
     assert len(ctx.captured_queries) == 0
+
+
+@pytest.mark.django_db
+def test_offline_manifest_uses_versioned_vector_template_from_tilejson() -> None:
+    """Vector-tile URLs include the version segment from OFM's TileJSON.
+
+    This prevents the regression where the precache stores URLs MapLibre
+    never requests (cache effectively empty for vector tiles offline).
+    """
+    client = Client()
+    data = client.get(reverse("api:offline_manifest_map")).json()
+    vector_tiles = [u for u in data["urls"] if u.endswith(".pbf") and "/planet/" in u]
+
+    assert vector_tiles, "expected at least one vector tile URL"
+    # Every vector tile URL must embed the version segment returned by TileJSON.
+    assert all(_FAKE_TILEJSON_VERSION in u for u in vector_tiles)
+
+
+@pytest.mark.django_db
+def test_offline_manifest_falls_back_when_tilejson_unreachable(
+    _stub_ofm_tilejson: MagicMock,
+) -> None:
+    """When OFM is unreachable, the manifest falls back to the unversioned template.
+
+    The manifest endpoint must keep responding (200) so the user sees a
+    clear "Save offline" failure rather than a 500 from the SW worker.
+    """
+    _stub_ofm_tilejson.side_effect = requests.ConnectionError("boom")
+
+    client = Client()
+    response = client.get(reverse("api:offline_manifest_map"))
+    assert response.status_code == 200
+
+    vector_tiles = [
+        u for u in response.json()["urls"] if u.endswith(".pbf") and "/planet/" in u
+    ]
+    # Fallback keeps the unversioned template shape: ``/planet/{z}/{x}/{y}.pbf``.
+    assert all(_FAKE_TILEJSON_VERSION not in u for u in vector_tiles)
+    assert len(vector_tiles) == 193
 
 
 # ---------------------------------------------------------------------------
