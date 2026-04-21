@@ -81,7 +81,11 @@ def _lon_to_tile_x(lon_deg: float, zoom: int) -> int:
         Integer X tile coordinate.
 
     """
-    return math.floor((lon_deg + 180.0) / 360.0 * (2**zoom))
+    # ``2**zoom`` is typed ``Any`` by mypy (the result type depends on the
+    # sign of the exponent at type-check time), which propagates through the
+    # expression and makes ``math.floor`` return ``Any``. ``int(...)`` pins
+    # the result back to ``int``.
+    return int(math.floor((lon_deg + 180.0) / 360.0 * (2**zoom)))
 
 
 def _lat_to_tile_y(lat_deg: float, zoom: int) -> int:
@@ -99,10 +103,13 @@ def _lat_to_tile_y(lat_deg: float, zoom: int) -> int:
 
     """
     lat_rad = math.radians(lat_deg)
-    return math.floor(
-        (1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi)
-        / 2.0
-        * (2**zoom)
+    # See ``_lon_to_tile_x`` for why the ``int(...)`` wrap is needed.
+    return int(
+        math.floor(
+            (1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi)
+            / 2.0
+            * (2**zoom)
+        )
     )
 
 
