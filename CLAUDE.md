@@ -313,7 +313,10 @@ The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`
 | `/subscribe/` | `subscribe` | POST | HTMX inline subscribe form |
 | `/subscribe/account/<token>/` | `account` | GET | Verify token; activate subscriber |
 | `/subscribe/manage/` | `manage` | GET + POST | Email entry (unauth) or region management (auth) |
+| `/subscribe/manage/remove/<region_id>/` | `remove_region` | POST | HTMX — remove one region from the authenticated subscriber |
+| `/subscribe/manage/delete/` | `delete_account` | POST | HTMX — hard-delete the authenticated subscriber and cascade subscriptions |
 | `/subscribe/unsubscribe/<token>/` | `unsubscribe` | GET + POST | One-click region unsubscribe |
+| `/subscribe/unsubscribe-done/` | `unsubscribe_done` | GET | Post-unsubscribe confirmation page |
 
 **Models**:
 - `Subscriber(email, status, confirmed_at)` — `status` is a `TextChoices` with `pending` (address captured, not yet confirmed) and `active` (confirmed; receives emails). `confirmed_at` is stamped on first account-link click.
@@ -358,17 +361,25 @@ Production uses `DatabaseCache` (`LOCATION = "django_cache"`) so rate-limit coun
 
 All public pages include a shared top nav partial at
 `templates/includes/nav.html`. It renders the "Snowdesk" wordmark (always
-linking home) plus an optional chevron-back link controlled by two include
-parameters:
+linking home), an optional chevron-back link, and — on bulletin pages
+only — a right-aligned calendar glyph that loads the monthly calendar
+fragment via HTMX:
 
 ```django
 {# logo only — home, map #}
 {% include "includes/nav.html" %}
 
-{# logo + back link — bulletin, random_bulletins, season_bulletins #}
+{# logo + back link — random_bulletins, season_bulletins #}
 {% url 'public:map' as map_url %}
 {% include "includes/nav.html" with back_url=map_url back_label="Map" %}
+
+{# bulletin page — back link + calendar toggle #}
+{% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=region.region_id calendar_partial_url=calendar_partial_url %}
 ```
+
+`calendar_region_id` and `calendar_partial_url` must be passed together.
+The button issues an `hx-get` against `calendar_partial_url` and swaps the
+response into `#bulletin-calendar-host` in the bulletin template.
 
 The `<nav>` spans full viewport width so its bottom border forms an
 edge-to-edge rule; inner content sits in a 640px max-width container that
@@ -410,12 +421,63 @@ appeared first.
 | `GET /api/today-summaries/` | `api:today_summaries` | `{region_id: {rating, subdivision, problem, elevation, aspects, valid_from, valid_to, name}}` |
 | `GET /api/resorts-by-region/` | `api:resorts_by_region` | `{region_id: [resort_name, …]}` — alphabetical; regions without resorts omitted |
 | `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary`; each feature has `properties.id` + `properties.name` |
+| `GET /api/offline-manifest/map/` | `api:offline_manifest_map` | `{version, urls[]}` — precache manifest consumed by `static/js/sw.js` (see **Offline map** below) |
 
 `today-summaries` uses the same `_select_default_issue` helper as the bulletin
 page (morning-update-wins-over-previous-evening), so the map and bulletin views
 always agree on which issue to show. Regions with no covering bulletin today are
 absent from the response; the map fill layer treats absence as `no_rating`.
 Stale/errored render models (`version: 0`) resolve to `rating: "no_rating"`.
+
+## Offline map (SNOW-15)
+
+The map page ships with a "Save offline" CTA that registers a service
+worker and precaches everything needed to render `/map/` without a
+network connection. POC status — the UX (progress chip, failure count,
+cache management) will harden under follow-up tickets.
+
+**Pieces**:
+- `static/js/sw.js` — the service worker. Cache-first fetch, chunked
+  precache driven by `postMessage`, versioned-cache cleanup on activate,
+  synthetic 204 fallback for uncached tile requests while offline.
+- `static/js/offline.js` — the client controller. Registers the SW,
+  fetches the precache manifest, forwards it to the SW, relays progress
+  back into the DOM.
+- `public/views.py::serve_sw` — serves `/sw.js` from the root URL path
+  (required for a root-scoped SW) with
+  `Service-Worker-Allowed: /` and `Cache-Control: no-cache`.
+  Route registered at the project root (`config/urls.py`), not under
+  `public/urls.py`, since `/sw.js` must be a sibling of `/`.
+- `public/api.py::offline_manifest_map` — builds the precache manifest.
+  Zero DB queries. One outbound HTTP call to OpenFreeMap's TileJSON
+  endpoint (`_fetch_vector_tile_template`) to resolve the current
+  versioned vector-tile URL template — without this the precached keys
+  wouldn't match the URLs MapLibre actually requests at runtime and the
+  cache would be silently useless. Degrades to a hard-coded fallback
+  template on OFM failure so the manifest always returns something.
+
+**Cache version** — `_OFFLINE_MANIFEST_VERSION = "map-shell-v1"`. Bump
+the suffix when the manifest contents change in a way that requires
+clients to re-precache; the SW's `activate` handler deletes any cache
+whose name starts with `map-shell-` and doesn't match the current
+version.
+
+**Manifest contents**:
+- Django shell assets — `/map/` HTML, `output.css`, `map.css`, `map.js`,
+  `offline.js`, favicon.
+- The three map JSON endpoints (`today-summaries`, `resorts-by-region`,
+  `regions.geojson`).
+- MapLibre GL JS + CSS from CDN (version pinned to `_MAPLIBRE_VERSION`
+  in `api.py` — must match `public/templates/public/map.html`).
+- OpenFreeMap style JSON, TileJSON, sprites (1x + 2x), glyph PBFs for
+  the Noto Sans fontstacks, plus vector tiles (z5–z10) and Natural
+  Earth raster tiles (z5–z6) covering the Swiss bounding box
+  `_SWISS_BBOX`.
+
+**i18n** — `sw.js` has no translatable strings (never renders UI).
+`offline.js` strings are flagged with `// i18n: translatable` comments
+for the future JS-i18n phase; do not wrap them yet (same convention as
+`map.js`).
 
 ## Render model
 
@@ -446,6 +508,69 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
 **Services**:
 - `pipeline/services/render_model.py` — `build_render_model()`, `compute_day_character()`, `RenderModelBuildError`, `RENDER_MODEL_VERSION`.
 - `pipeline/services/data_fetcher.py` — `upsert_bulletin` calls `build_render_model` inline (never via a signal); increments `run.records_failed` on `RenderModelBuildError`.
+
+## Calendar and RegionDayRating
+
+The bulletin page hosts a month-grid calendar, opened from the calendar
+glyph in the top nav (see **Navigation**). The calendar is a
+server-rendered HTMX fragment backed by a denormalised per-(region,
+date) rating table — no JSON API, no per-day render-model reads at
+request time.
+
+**Model**: `pipeline.models.RegionDayRating` — one row per
+`(region, calendar day)` with:
+- `min_rating` / `max_rating` — `Rating` `TextChoices`
+  (`no_rating`, `low`, `moderate`, `considerable`, `high`, `very_high`).
+  Equal on uniform days, unequal on variable days — the calendar tile
+  renders a diagonal split fill when they differ.
+- `min_subdivision` / `max_subdivision` — the `+` / `-` / `=` suffix
+  from the source bulletin's aggregate `danger.subdivision`, or `""`.
+- `source_bulletin` — FK to the chosen `Bulletin` (nullable on
+  `no_rating` days).
+- `version` — `DAY_RATING_VERSION` at compute time; bump the service
+  constant when the aggregation policy changes.
+- `unique_together = (region, date)`; ordering `["-date", "region__region_id"]`.
+
+**Aggregation policy** (see `pipeline/services/day_rating.py`):
+- For day X, pick the single bulletin whose `_target_day` equals X with
+  the latest `valid_from`. Morning-of-X (hour < 12) naturally wins over
+  prior-evening-of-(X−1) (hour ≥ 12) because its `valid_from` is later.
+  Evening-of-X (hour ≥ 12) targets X+1 and is excluded.
+- Aggregate *within* that bulletin's `render_model["traits"]`: map each
+  trait's `danger_level` (1–5) to a rating key; `max_rating` is the
+  highest, `min_rating` the lowest.
+- Empty traits (quiet day) → both fall back to
+  `render_model["danger"]["key"]`.
+- Malformed render model (empty dict; neither `danger` nor `traits`) →
+  `no_rating`.
+- Only qualifying bulletins are considered: `render_model_version >=
+  RENDER_MODEL_VERSION` (v0 error sentinels excluded).
+
+**Ingest hook**: `upsert_bulletin` calls
+`apply_bulletin_day_ratings(bulletin)` inline after the render model is
+built — never via `post_save`. Failures are logged and ingest continues
+(the bulletin is still stored; the calendar tile picks up on the next
+rebuild).
+
+**Rebuild**: `rebuild_render_models` recomputes day ratings for every
+`(region, day)` covered by the rebuilt bulletins as a trailing step.
+Pass `--skip-day-ratings` to suppress that step when you only want to
+refresh the render models (e.g. debugging a render-model bug without
+touching the calendar).
+
+**Calendar partial**: `public.views.calendar_partial` at
+`/partials/calendar/<region_id>/<year>/<month>/` (name:
+`public:calendar_partial`). HTMX-only — non-HTMX requests get 400. The
+fragment wraps itself in `<div id="bulletin-calendar">` so prev/next
+navigation swaps the outer element with
+`hx-target="#bulletin-calendar" hx-swap="outerHTML"`. Year/month are
+clamped to `[SEASON_START_DATE, today]` — out-of-range navigations
+degrade silently rather than 404. An optional `?date=YYYY-MM-DD`
+selects a specific tile for highlight rendering.
+
+**Route ordering**: `partials/calendar/...` is registered before
+`<str:region_id>/` in [`public/urls.py`](public/urls.py). Same
+top-to-bottom concern as `/map/` — don't reorder.
 
 ## Data source
 
@@ -542,10 +667,17 @@ poetry run python manage.py fetch_bulletins --commit --force
 
 # Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
 # Read-only by default — pass --commit to persist (same convention as fetch_bulletins).
+# On --commit, also refreshes RegionDayRating rows for every (region, day)
+# covered by the rebuilt bulletins — pass --skip-day-ratings to suppress.
 poetry run python manage.py rebuild_render_models           # read-only
-poetry run python manage.py rebuild_render_models --commit  # persist
+poetry run python manage.py rebuild_render_models --commit  # persist (+ day ratings)
 
-# Flags: --commit, --all (every row), --bulletin-id <id> (single row), --batch-size N
+# Flags:
+#   --commit                 persist; omit for a read-only run
+#   --all                    rebuild every row regardless of version
+#   --bulletin-id <id>       rebuild a single bulletin
+#   --batch-size N           override default batch size (500)
+#   --skip-day-ratings       skip the trailing RegionDayRating refresh
 
 # Compare SQL query counts against the committed baseline (SNOW-13).
 # Read-only by default — --commit rewrites perf/query_counts.txt.
