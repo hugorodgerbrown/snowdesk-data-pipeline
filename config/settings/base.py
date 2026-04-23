@@ -71,6 +71,10 @@ MIDDLEWARE = [
     # is True (dev + perf). No-op otherwise, so it is safe to leave mounted
     # in production.
     "pipeline.middleware.QueryCountMiddleware",
+    # Sets Referrer-Policy and Permissions-Policy on every response.
+    # Per-view overrides (e.g. no-referrer on token-bearing views) are
+    # applied by the view itself before this middleware runs.
+    "pipeline.middleware.SecurityHeadersMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
