@@ -107,8 +107,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Poetry and pip-audit
-        run: pip install poetry pip-audit
+      - name: Install Poetry, export plugin, and pip-audit
+        run: pip install poetry poetry-plugin-export pip-audit
 
       - name: Export locked dependencies
         run: >-
