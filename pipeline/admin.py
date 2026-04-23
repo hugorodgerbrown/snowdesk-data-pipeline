@@ -10,11 +10,11 @@ import json
 import logging
 from datetime import date
 
+import bleach
 from django.contrib import admin, messages
 from django.http import HttpRequest, HttpResponseRedirect
 from django.urls import URLPattern, path, reverse
-from django.utils.html import format_html
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html, format_html_join
 
 from .models import (
     Bulletin,
@@ -304,29 +304,42 @@ class BulletinAdmin(admin.ModelAdmin):
             period = r.get("validTimePeriod", "all_day")
             elevation = r.get("elevation")
             bg, fg = self._DANGER_COLOURS.get(level, ("#f3f4f6", "#374151"))
+            badge = format_html(
+                '<span style="background:{};color:{};padding:2px 8px;'
+                "border-radius:4px;font-weight:600;"
+                'text-transform:uppercase">{}</span>',
+                bg,
+                fg,
+                self._format_danger_level(level),
+            )
             rows.append(
-                f"<tr>"
-                f'<td style="padding:6px 12px">'
-                f'<span style="background:{bg};color:{fg};padding:2px 8px;'
-                f"border-radius:4px;font-weight:600;"
-                f'text-transform:uppercase">{self._format_danger_level(level)}</span>'
-                f"</td>"
-                f'<td style="padding:6px 12px">{self._format_time_period(period)}</td>'
-                f'<td style="padding:6px 12px">{self._format_elevation(elevation)}</td>'
-                f"</tr>"
+                (
+                    badge,
+                    self._format_time_period(period),
+                    self._format_elevation(elevation),
+                )
             )
 
-        table = (
+        body = format_html_join(
+            "",
+            "<tr>"
+            '<td style="padding:6px 12px">{}</td>'
+            '<td style="padding:6px 12px">{}</td>'
+            '<td style="padding:6px 12px">{}</td>'
+            "</tr>",
+            rows,
+        )
+        return format_html(
             '<table style="border-collapse:collapse;">'
             '<thead><tr style="border-bottom:2px solid #d1d5db">'
             '<th style="padding:6px 12px;text-align:left">Level</th>'
             '<th style="padding:6px 12px;text-align:left">Period</th>'
             '<th style="padding:6px 12px;text-align:left">Elevation</th>'
             "</tr></thead>"
-            f"<tbody>{''.join(rows)}</tbody>"
-            "</table>"
+            "<tbody>{}</tbody>"
+            "</table>",
+            body,
         )
-        return mark_safe(table)  # noqa: S308 — content is built from escaped data
 
     @admin.display(description="Avalanche problems")
     def avalanche_problems(self, obj: Bulletin) -> str:
@@ -354,33 +367,52 @@ class BulletinAdmin(admin.ModelAdmin):
 
             bg, fg = self._DANGER_COLOURS.get(level, ("#f3f4f6", "#374151"))
             level_badge = (
-                f'<span style="background:{bg};color:{fg};padding:2px 8px;'
-                f"border-radius:4px;font-weight:600;"
-                f'text-transform:uppercase">{self._format_danger_level(level)}</span>'
+                format_html(
+                    '<span style="background:{};color:{};padding:2px 8px;'
+                    "border-radius:4px;font-weight:600;"
+                    'text-transform:uppercase">{}</span>',
+                    bg,
+                    fg,
+                    self._format_danger_level(level),
+                )
                 if level
                 else "—"
             )
 
-            comment_html = ""
+            comment_cell: str = "—"
             if comment:
-                md = html_to_markdown(comment)
+                # bleach.clean strips any residual HTML tags from the converted
+                # markdown before it is inserted into the admin table cell.
+                md = bleach.clean(html_to_markdown(comment), tags=[], strip=True)
                 if md:
-                    comment_html = (
-                        f'<div style="margin-top:4px;color:#6b7280">{md}</div>'
+                    comment_cell = format_html(
+                        '<div style="margin-top:4px;color:#6b7280">{}</div>', md
                     )
 
             rows.append(
-                f'<tr style="border-bottom:1px solid #e5e7eb;vertical-align:top">'
-                f'<td style="padding:8px 12px;font-weight:600">{problem_type}</td>'
-                f'<td style="padding:8px 12px">{level_badge}</td>'
-                f'<td style="padding:8px 12px">{self._format_time_period(period)}</td>'
-                f'<td style="padding:8px 12px">{self._format_elevation(elevation)}</td>'
-                f'<td style="padding:8px 12px">{aspects or "—"}</td>'
-                f'<td style="padding:8px 12px">{comment_html or "—"}</td>'
-                f"</tr>"
+                (
+                    problem_type,
+                    level_badge,
+                    self._format_time_period(period),
+                    self._format_elevation(elevation),
+                    aspects or "—",
+                    comment_cell,
+                )
             )
 
-        table = (
+        body = format_html_join(
+            "",
+            '<tr style="border-bottom:1px solid #e5e7eb;vertical-align:top">'
+            '<td style="padding:8px 12px;font-weight:600">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            "</tr>",
+            rows,
+        )
+        return format_html(
             '<table style="border-collapse:collapse;width:100%">'
             '<thead><tr style="border-bottom:2px solid #d1d5db">'
             '<th style="padding:6px 12px;text-align:left">Problem</th>'
@@ -390,10 +422,10 @@ class BulletinAdmin(admin.ModelAdmin):
             '<th style="padding:6px 12px;text-align:left">Aspects</th>'
             '<th style="padding:6px 12px;text-align:left">Comment</th>'
             "</tr></thead>"
-            f"<tbody>{''.join(rows)}</tbody>"
-            "</table>"
+            "<tbody>{}</tbody>"
+            "</table>",
+            body,
         )
-        return mark_safe(table)  # noqa: S308 — content is built from escaped data
 
     @admin.display(description="Aggregation (customData.CH)")
     def aggregation(self, obj: Bulletin) -> str:
@@ -417,17 +449,26 @@ class BulletinAdmin(admin.ModelAdmin):
                 pt.replace("_", " ") for pt in entry.get("problemTypes", [])
             )
             rows.append(
-                f'<tr style="border-bottom:1px solid #e5e7eb;vertical-align:top">'
-                f'<td style="padding:8px 12px;font-weight:600;'
-                f'text-transform:uppercase">{category or "—"}</td>'
-                f'<td style="padding:8px 12px">'
-                f"{self._format_time_period(period) if period else '—'}</td>"
-                f'<td style="padding:8px 12px">{title or "—"}</td>'
-                f'<td style="padding:8px 12px">{problem_types or "—"}</td>'
-                f"</tr>"
+                (
+                    category or "—",
+                    self._format_time_period(period) if period else "—",
+                    title or "—",
+                    problem_types or "—",
+                )
             )
 
-        table = (
+        body = format_html_join(
+            "",
+            '<tr style="border-bottom:1px solid #e5e7eb;vertical-align:top">'
+            '<td style="padding:8px 12px;font-weight:600;'
+            'text-transform:uppercase">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            '<td style="padding:8px 12px">{}</td>'
+            "</tr>",
+            rows,
+        )
+        return format_html(
             '<table style="border-collapse:collapse;width:100%">'
             '<thead><tr style="border-bottom:2px solid #d1d5db">'
             '<th style="padding:6px 12px;text-align:left">Category</th>'
@@ -435,10 +476,10 @@ class BulletinAdmin(admin.ModelAdmin):
             '<th style="padding:6px 12px;text-align:left">Title</th>'
             '<th style="padding:6px 12px;text-align:left">Problem types</th>'
             "</tr></thead>"
-            f"<tbody>{''.join(rows)}</tbody>"
-            "</table>"
+            "<tbody>{}</tbody>"
+            "</table>",
+            body,
         )
-        return mark_safe(table)  # noqa: S308 — content is built from escaped data
 
     @admin.display(description="Weather forecast")
     def weather_forecast(self, obj: Bulletin) -> str:
