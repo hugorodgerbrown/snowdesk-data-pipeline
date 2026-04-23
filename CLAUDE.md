@@ -7,214 +7,6 @@ Avalanche Research) avalanche bulletins from the CAAML API, stores them,
 and renders them on a dashboard. The frontend uses HTMX for dynamic
 updates without a full JavaScript framework.
 
-## Linear workflow
-
-Linear (team prefix `SNOW-`) is the issue source of truth. The Linear MCP
-server is connected in both Claude Chat and Claude Code — the same
-workspace, just different surfaces. **Nothing of substance lives only in
-a chat window.** If it matters, it lives in the Linear issue.
-
-### Status lifecycle
-
-Every ticket ends up passing through these states. A ticket may enter
-the lifecycle at `Backlog`, `Todo`, or `Ready for dev` depending on
-which entry point produced it (see **Entry points** below). Each
-transition is tied to a concrete event so status reflects reality
-without manual nudging:
-
-| Status         | Transition trigger                                        | Who moves it |
-|----------------|-----------------------------------------------------------|--------------|
-| `Backlog`      | Issue created, not yet triaged                            | Human / Chat (MCP) |
-| `Todo`         | Ready to be picked up, not yet scoped                     | Human / Chat (MCP) |
-| `Ready for dev`| Scoping comment posted; approach settled                  | Chat (MCP)   |
-| `In Progress`  | Feature branch pushed to GitHub                           | GitHub integration |
-| `In Review`    | PR opened against `main`                                  | GitHub integration |
-| `Done`         | PR merged                                                 | GitHub integration |
-
-The GitHub–Linear integration handles `In Progress`, `In Review`, and
-`Done` automatically when the branch name or PR body references
-`SNOW-xxx`. Chat writes to Linear via MCP when creating tickets, posting
-scoping comments, and moving status up to `Ready for dev`; it does not
-touch the post-commit states.
-
-### Entry points
-
-There are two ways a ticket reaches `Ready for dev`. Both end with a
-scoped Linear issue — which is what Code consumes. Code doesn't care
-which path produced it.
-
-#### Path A — Ticket first, then scope
-
-The ticket already exists in Linear (you created it from the UI, or it
-came out of a planning session, or a previous Chat spawned it). Open a
-Chat session and pull it:
-
-> "Pull SNOW-42 and let's scope it."
-
-Discuss the approach — data model changes, edge cases, the Django view
-vs HTMX partial split, service boundaries, test shape. When the
-approach is settled:
-
-> "Post the scope as a comment on SNOW-42 and move it to Ready for dev."
-
-Chat appends the scoping comment via MCP (see **Scoping comment
-contract** below) and moves status.
-
-#### Path B — Chat first, then tickets
-
-A conversation exposes work that should become one or more tickets.
-This is common: you're discussing a page redesign, a refactor, or a
-bug you just noticed, and the discussion naturally decomposes into
-distinct pieces of work. In this mode Chat creates the tickets *in
-Linear* — not in a bulleted list in the chat window — so they enter
-the same system with the same shape as every other ticket.
-
-Two sub-patterns:
-
-1. **Single ticket from a single discussion.** When scope is already
-   clear from the conversation:
-
-   > "Create a Linear ticket for this — title: 'Add region search
-   > autocomplete'. Scope it directly into Ready for dev using what
-   > we've just discussed."
-
-   Chat creates the issue *and* posts the scoping comment in one go,
-   then moves it to `Ready for dev`. No intermediate `Todo` stop.
-
-2. **Multiple tickets from one discussion.** When the conversation
-   decomposes into several pieces of work:
-
-   > "Emit Linear tickets for the work we just scoped. One per
-   > independently-shippable unit. Scope each one and set status:
-   > anything with a settled approach goes to Ready for dev, anything
-   > still fuzzy goes to Todo with a note on what's missing."
-
-   Chat creates each issue via MCP, assigns labels and priority,
-   writes the scoping comment on the ones with settled approach, and
-   reports back a summary:
-
-   > Created SNOW-102 (Ready for dev), SNOW-103 (Ready for dev),
-   > SNOW-104 (Todo — needs decision on cache strategy).
-
-**Rules for chat-spawned tickets:**
-
-- One ticket per independently-shippable unit of work. Don't bundle
-  "add feature + refactor the surrounding module" into one ticket —
-  that's two.
-- Title, label, priority, and a one-paragraph description are
-  mandatory at creation time. The scoping comment goes on top, not
-  instead.
-- If the approach for a given ticket isn't settled in the discussion,
-  create it at `Todo` with a note naming the open question. Don't
-  promote it to `Ready for dev` just because the adjacent tickets are
-  ready — that's how underspecified work leaks into implementation.
-- After Chat reports the list of created tickets, **verify in Linear**
-  that they look right before handing any of them to Code. The chat
-  window is not the source of truth; Linear is.
-
-### Scoping comment contract
-
-Whichever entry point produced the ticket, the scoping comment Chat
-writes to Linear has the same shape. This is the handoff artefact —
-Code reads it on pickup and inherits full context without re-scoping.
-
-- **Approach** — 2–4 sentences on the chosen solution.
-- **Touch list** — files/modules expected to change.
-- **Tests** — what will be covered.
-- **Open questions** — anything still undecided. If non-empty, the
-  ticket stays at `Todo`; only a clean scoping comment (no open
-  questions) moves the ticket to `Ready for dev`.
-
-### Implement in Claude Code
-
-In the Snowdesk repo, open Claude Code and say:
-
-> "Implement SNOW-42."
-
-Code's expected sequence:
-
-1. **Fetch** the issue and all comments via the Linear MCP server —
-   including the scoping comment. Do not start work without reading
-   the scoping comment; if it's missing, stop and ask the user to
-   scope in Chat first.
-2. **Create a branch** named `feature/SNOW-42-short-kebab-description`
-   off the latest `main`. Keep the slug under ~40 chars; it appears in
-   the branch list and PR title.
-3. **Push the branch** to GitHub immediately (empty or with a first
-   commit). Pushing a branch whose name contains `SNOW-42` is what
-   triggers the Linear integration to move the ticket to `In Progress`
-   — do this early so status reflects "work has started" accurately.
-4. **Implement** the work on that branch, following the conventions in
-   this file (render-model shape, management-command design, i18n
-   rules, test structure, etc.).
-5. **Run `poetry run tox`** and fix every failure before opening the PR
-   (see the "Local CI — always run tox" section). Run `npm run lh` for
-   any change touching a public page.
-6. **Open a PR** (see next section).
-
-### Open the PR
-
-PR title format: `SNOW-42: short imperative summary` (matches the
-branch, minus the slug fluff — e.g. `SNOW-42: Add region search
-autocomplete`).
-
-PR body must include:
-
-```markdown
-Closes SNOW-42
-
-## What
-One-paragraph summary of the change.
-
-## Why
-Link back to the scoping comment on the Linear issue. One line on the
-motivation if not obvious from the title.
-
-## How
-Bullet list of the notable implementation choices — anything a reviewer
-would otherwise have to reverse-engineer from the diff.
-
-## Testing
-- What was added/changed in tests.
-- Any manual verification done (URLs hit, management commands run).
-
-## Screenshots / Lighthouse
-For any change touching a public page: before/after screenshots and a
-note on the latest `npm run lh` scores.
-```
-
-The `Closes SNOW-42` magic comment in the PR body is what closes the
-Linear ticket on merge — do not omit it. The `In Review` transition is
-triggered by opening the PR (Linear watches for `SNOW-xxx` in the
-branch name or PR body).
-
-### After merge
-
-The Linear integration moves the ticket to `Done` when the PR merges
-into `main`. No manual action required.
-
-### Branch and commit conventions
-
-- Branch name: `feature/SNOW-xxx-short-description` for features,
-  `fix/SNOW-xxx-short-description` for bug fixes,
-  `chore/SNOW-xxx-short-description` for tooling/infra.
-- Commit subject prefix: `SNOW-xxx:` — keeps the ticket reference in
-  the git log even after squash-merge rewrites the PR title.
-- One ticket per branch. If implementation reveals work that needs
-  its own ticket (newly discovered, not originally scoped), create
-  it via Path B from Chat — don't piggyback onto the current branch.
-
-### When Code should stop and ask
-
-- Scoping comment missing on the ticket → ask the user to scope in Chat
-  first. Propose the scope if possible, and ask the user to confirm or
-  amend.
-- Tests fail after implementation and the fix isn't obvious → report
-  the failure and stop, don't paper over it.
-- The implementation reveals the scope was wrong → post a comment on
-  the Linear issue explaining what changed and why, then ask the user
-  whether to proceed, re-scope, or split into a follow-up ticket.
-
 ## Architecture
 
 ```
@@ -223,9 +15,7 @@ pipeline/        Core app: models, views, services, management commands
   services/      Pure-function modules for fetching and processing SLF bulletins
   management/    Django management commands (fetch_bulletins, rebuild_render_models)
   templates/     Django templates; partials/ holds HTMX fragment responses
-subscriptions/   Signed-token subscription flow: Subscriber and Subscription models
-  services/      token.py (TimestampSigner) and email.py (account-access sending)
-  templates/     Subscription flow pages and email templates
+subscriptions/   Signed-token subscription flow (see docs/subscriptions.md)
 public/          Public-facing bulletin site
   api.py         Plain JsonResponse endpoints consumed by the map page
   api_urls.py    URL routing for /api/ (namespace: api:)
@@ -233,27 +23,6 @@ src/             Tailwind CSS source (main.css — not served directly)
 static/          CSS/JS assets (includes compiled output.css)
 logs/            Log files (gitignored except .gitkeep)
 ```
-
-## Conventions
-
-- **Header comment block** on every module describing its purpose.
-- **Docstring** on every function and class.
-- **Composition over inheritance** — favour passing service objects as arguments
-  over deep class hierarchies.
-- **Simple over complex** — no abstractions until they are needed by at least two
-  callers.
-- Settings are split: `config/settings/base.py`, `development.py`, `production.py`.
-  Set `DJANGO_SETTINGS_MODULE` in the environment.
-- Use `python-decouple` for secrets; never hard-code credentials.
-- Logging is configured in `base.py` under `LOGGING`. Use `logging.getLogger(__name__)`
-  in every module.
-- Management commands live in `pipeline/management/commands/`. See the
-  **Management command design** section below for the full convention
-  (sensible defaults, dry-run-by-default, confirmation prompts).
-- **No Django signals for side effects** — side effects triggered at save time
-  (e.g. building the render model) are called inline from the relevant service
-  function, not via `post_save` signals. This keeps data flow explicit and
-  testable.
 
 ## Running locally
 
@@ -290,6 +59,10 @@ GUI git clients (SublimeMerge, Tower, Fork, etc.) which launch git with
 a minimal environment and don't inherit the user's shell PATH. Don't
 change the venv location without also updating the mypy hook entry.
 
+When a runtime dependency is added via `poetry add`, **also add it to the
+relevant `deps =` block in `tox.ini`** (`test`, `django-checks`, and
+`mypy` all need it; `fmt` and `lint` almost never do). Tox will not pick
+up `pyproject.toml` dependencies automatically.
 ## Subscriptions
 
 Users subscribe to bulletin alerts via a signed-token flow — no passwords, no third-party auth library. An inline HTMX form on bulletin pages (or the landing page) captures an email address; an account-access link is sent by email. Clicking the link activates the subscriber and opens the account page where they manage their regions. Every outbound bulletin email carries a per-region unsubscribe token so subscribers can opt out without logging in.
@@ -503,11 +276,23 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
 
 **Safety net**: `_get_render_model` in `public/views.py` detects a stale `render_model_version` at render time, rebuilds on the fly, and logs a warning. On `RenderModelBuildError` during the rebuild it returns an error sentinel dict (does NOT write to DB); the template renders an error card. This keeps the page functional during a backfill; the warning is the signal to run the rebuild command.
 
-**Day character**: `compute_day_character(render_model)` is a pure function that classifies a render model into one of five labels (`"Stable day"`, `"Manageable day"`, `"Hard-to-read day"`, `"Widespread danger"`, `"Dangerous conditions"`). Empty `traits` → `"Stable day"` immediately.
+## Conventions
 
-**Services**:
-- `pipeline/services/render_model.py` — `build_render_model()`, `compute_day_character()`, `RenderModelBuildError`, `RENDER_MODEL_VERSION`.
-- `pipeline/services/data_fetcher.py` — `upsert_bulletin` calls `build_render_model` inline (never via a signal); increments `run.records_failed` on `RenderModelBuildError`.
+- **Header comment block** on every module describing its purpose.
+- **Docstring** on every function and class.
+- **Composition over inheritance** — favour passing service objects as arguments
+  over deep class hierarchies.
+- **Simple over complex** — no abstractions until they are needed by at least two
+  callers.
+- Settings are split: `config/settings/base.py`, `development.py`, `production.py`.
+  Set `DJANGO_SETTINGS_MODULE` in the environment.
+- Use `python-decouple` for secrets; never hard-code credentials.
+- Logging is configured in `base.py` under `LOGGING`. Use `logging.getLogger(__name__)`
+  in every module.
+- **No Django signals for side effects** — side effects triggered at save time
+  (e.g. building the render model) are called inline from the relevant service
+  function, not via `post_save` signals. This keeps data flow explicit and
+  testable.
 
 ## Calendar and RegionDayRating
 
@@ -592,33 +377,28 @@ copy their old shape when adding new ones.
 
 1. **Sensible defaults — runs with no arguments.** The bare invocation
    (`poetry run python manage.py <name>`) must do the most useful thing
-   for the common case (e.g. `fetch_bulletins` defaults to a read-only
-   walk from `SEASON_START_DATE` to today). Required
-   positional arguments are a smell — prefer optional flags with
-   defaults derived from context (current date, settings, etc.).
+   for the common case. Required positional arguments are a smell —
+   prefer optional flags with defaults derived from context (current
+   date, settings, etc.).
 
 2. **Never alter data by default — dry-run is the default.** A command
    invoked with no arguments must not write to the database, send mail,
    or call out to a paid/rate-limited external service. The user (or a
    script) must take an **explicit** step to commit changes.
 
-3. **Pick one of the two safe shapes** — be consistent within a command,
-   and ideally across the project:
+3. **Pick one of the two safe shapes** — be consistent within a command:
 
    **Option A (preferred for new commands): explicit `--commit`.**
    Drop `--dry-run` entirely. The command is read-only by default;
-   passing `--commit` is the only way to persist changes. This makes
-   the safe path the short path and the destructive path the verbose one.
+   passing `--commit` is the only way to persist changes.
 
    **Option B: keep `--dry-run`, but require confirmation when absent.**
-   If you keep the existing `--dry-run` flag, the command must prompt
-   the user (`Proceed? [y/N]`) before writing when `--dry-run` is not
-   passed. For unattended runs (cron, APScheduler, CI), accept a
-   `--no-input` flag that skips the prompt. Production callers must
+   Prompt the user (`Proceed? [y/N]`) before writing when `--dry-run`
+   is not passed. For unattended runs (cron, APScheduler, CI), accept
+   a `--no-input` flag that skips the prompt. Production callers must
    pass `--no-input` explicitly — never default it on.
 
-   Don't mix shapes within one command (e.g. `--commit` *and*
-   `--dry-run`) — pick one and document it in the command's `help`.
+   Don't mix shapes within one command.
 
 4. **Always implement `--verbosity`** (Django gives this for free via
    `BaseCommand` — just respect it in log calls).
@@ -627,71 +407,7 @@ copy their old shape when adding new ones.
    failed batch (`records_failed > 0`), must surface as a non-zero exit
    so cron/CI can detect it.
 
-## Management commands
-
-`fetch_bulletins` is the single entry point for fetching SLF bulletins —
-it supersedes the old `fetch_data` and `backfill_data` commands and
-follows the **Management command design** convention (read-only by
-default; opt in to writes with `--commit`).
-
-```bash
-# Read-only walk, start date derived from DB:
-#   - populated DB: (latest bulletin valid_from day) → today
-#                   (same-day overlap so morning-updates / prior-evening
-#                    re-issues are refetched; duplicates are ignored)
-#   - empty DB:     SEASON_START_DATE → today (first-run backstop)
-# Useful as a "what would happen?" probe before committing.
-poetry run python manage.py fetch_bulletins
-
-# Persist the same gentle-default window.
-poetry run python manage.py fetch_bulletins --commit
-
-# Single day (typical one-off shape).
-poetry run python manage.py fetch_bulletins --date 2024-06-15 --commit
-
-# Explicit window — overrides the smart default.
-poetry run python manage.py fetch_bulletins \
-    --start-date 2024-01-01 --end-date 2024-12-31 --commit
-
-# Re-pull existing rows.
-poetry run python manage.py fetch_bulletins --commit --force
-
-# Flags:
-#   --start-date YYYY-MM-DD  default: latest DB bulletin's valid_from day,
-#                            or settings.SEASON_START_DATE when the DB is empty.
-#   --end-date   YYYY-MM-DD  default: today (UTC)
-#   --date       YYYY-MM-DD  shortcut for --start-date == --end-date
-#                            (mutually exclusive with the range flags)
-#   --commit                 persist; omit for a read-only run
-#   --force                  upsert existing bulletins instead of skipping
-
-# Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
-# Read-only by default — pass --commit to persist (same convention as fetch_bulletins).
-# On --commit, also refreshes RegionDayRating rows for every (region, day)
-# covered by the rebuilt bulletins — pass --skip-day-ratings to suppress.
-poetry run python manage.py rebuild_render_models           # read-only
-poetry run python manage.py rebuild_render_models --commit  # persist (+ day ratings)
-
-# Flags:
-#   --commit                 persist; omit for a read-only run
-#   --all                    rebuild every row regardless of version
-#   --bulletin-id <id>       rebuild a single bulletin
-#   --batch-size N           override default batch size (500)
-#   --skip-day-ratings       skip the trailing RegionDayRating refresh
-
-# Compare SQL query counts against the committed baseline (SNOW-13).
-# Read-only by default — --commit rewrites perf/query_counts.txt.
-poetry run python manage.py monitor_query_counts           # CI / local gate
-poetry run python manage.py monitor_query_counts --commit  # accept new counts
-```
-
-`SEASON_START_DATE` is read from the environment in
-`config/settings/base.py` (default: `2025-11-01`) and is the first-run
-backstop: a bare invocation against an empty DB captures the full
-snowpack build-up. Once the DB has bulletins, `fetch_bulletins` prefers
-the gentler default of "start at the latest bulletin's `valid_from` day"
-so scheduled runs only re-walk a small same-day overlap (duplicates are
-ignored downstream — it's the fetch that's being optimised).
+Command catalogue and flag reference: [`docs/management-commands.md`](docs/management-commands.md).
 
 ## Frontend
 
@@ -720,83 +436,15 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 - Use `hx-target`, `hx-swap="innerHTML"`, and `hx-indicator` for all dynamic
   requests.
 
-## Internationalisation
-
-Settings (`config/settings/base.py`):
-- `LANGUAGE_CODE = "en-gb"` — British English, matching the project spelling convention.
-- `LANGUAGES = [("en", "English")]` — single-language catalogue for now.
-- `LOCALE_PATHS = [BASE_DIR / "locale"]` — `.po` / `.mo` files live under `locale/en/LC_MESSAGES/`.
-
-**Template strings**: use `{% load i18n %}` at the top of every template that wraps strings.
-- `{% trans "string" %}` for short single-line strings without variables.
-- `{% blocktrans with var=value %}...{{ var }}...{% endblocktrans %}` for strings with
-  template variables.
-- `{% blocktrans trimmed %}` when spanning multiple lines.
-
-**Python strings**:
-- `from django.utils.translation import gettext_lazy as _` at module scope for import-time
-  strings (dict values, `TextChoices` labels, render model labels).
-- `from django.utils.translation import gettext as _` inside functions for request-time
-  strings (view helpers, template tag filters).
-- Always use `%`-formatting with named placeholders for translatable strings that
-  contain variables: `_("above %(bound)s") % {"bound": lower_fmt}`. Never f-strings —
-  `xgettext` cannot extract them.
-
-**Do NOT wrap**:
-- SLF bulletin prose (`|snowdesk_html` / `|safe` content arriving from the API).
-- Logging messages — these are operator-facing, not user-facing.
-- `_TITLE_FALLBACK` values in `render_model.py` — persisted to the DB JSON field as plain strings.
-- `pipeline/templates/pipeline/*` — staff-only ops UI, English-only by design.
-- `static/js/map.js` strings — flagged with `// i18n: translatable` comments for a future
-  JS-i18n phase; do not wrap them yet.
-
-**Adding new strings**: after adding any user-facing string, run:
-```bash
-poetry run python manage.py makemessages -l en --no-location
-```
-
-**File tracking**: `.po` files are checked in; `.mo` files are gitignored. We do **not**
-run `compilemessages` in CI or on deploy while the catalogue is English-only — every
-`msgstr` is empty, so Django falls back to the `msgid` at render time and no compiled
-binary is needed. Re-enable the compile step (and install `gettext` on the build
-container) when DE/FR/IT translations are added.
-
-**System requirement**: the `gettext` system package is only needed locally for
-`makemessages` / `compilemessages` (`brew install gettext` on macOS). Not required for
-deploy.
-
 ## Code style
 
 - `ruff` for linting and formatting (includes import sorting).
 - `pre-commit` hooks enforce these on commit.
 - Do not suppress linting warnings with `# noqa` unless there is a good reason,
   and always leave a comment explaining why.
-- Ensure that all function arguments are typed, except *args and **kwargs
-
-### The Zen of Python
-
-Guiding principles for writing Python in this codebase (Tim Peters,
-`import this`):
-
-- Beautiful is better than ugly.
-- Explicit is better than implicit.
-- Simple is better than complex.
-- Complex is better than complicated.
-- Flat is better than nested.
-- Sparse is better than dense.
-- Readability counts.
-- Special cases aren't special enough to break the rules.
-- Although practicality beats purity.
-- Errors should never pass silently.
-- Unless explicitly silenced.
-- In the face of ambiguity, refuse the temptation to guess.
-- There should be one — and preferably only one — obvious way to do it.
-- Although that way may not be obvious at first unless you're Dutch.
-- Now is better than never.
-- Although never is often better than *right* now.
-- If the implementation is hard to explain, it's a bad idea.
-- If the implementation is easy to explain, it may be a good idea.
-- Namespaces are one honking great idea — let's do more of those!
+- Ensure that all function arguments are typed, except `*args` and `**kwargs`.
+- British English spellings (colour, behaviour, organise) — except third-party
+  identifiers.
 
 ## Local CI — always run tox
 
@@ -816,130 +464,76 @@ poetry run tox -e lint            # ruff check
 poetry run tox --recreate         # rebuild envs from scratch after a deps change
 ```
 
-When a runtime dependency is added via `poetry add`, **also add it to the
-relevant `deps =` block in `tox.ini`** (`test`, `django-checks`, and
-`mypy` all need it; `fmt` and `lint` almost never do). Tox will not pick
-up `pyproject.toml` dependencies automatically.
-
 Template formatting is enforced by `djangofmt`, which runs as a pre-commit
-hook. Always run `pre-commit run djangofmt --files <path>` (or just `pre-commit
-run --all-files`) after editing templates so the hook doesn't reformat on commit.
+hook. Always run `pre-commit run djangofmt --files <path>` after editing
+templates so the hook doesn't reformat on commit.
 
-**Before opening a pull request**, run `poetry run tox` and fix every failure.
-Do not rely on CI to surface issues that tox would have caught locally.
-
-## Lighthouse CI — accessibility, SEO, performance, best-practices
-
-Lighthouse audits the public site on every PR and blocks merge on
-regressions. Both local and CI invocations read
-[`lighthouserc.json`](lighthouserc.json) for URLs, thresholds, and
-assertions — keep it the single source of truth.
-
-**Budgets** (error = blocks merge, warn = report only):
-- `categories:accessibility` ≥ 0.95 — error
-- `categories:seo` ≥ 0.95 — error
-- `categories:performance` ≥ 0.85 — warn
-- `categories:best-practices` ≥ 0.9 — warn
-
-Mobile preset by default (no desktop override), 3 runs per URL.
-
-**Run locally — `npm run lh`**
-
-Requires Chrome/Chromium on the host. The script:
-
-1. Runs `collectstatic --noinput` under `DJANGO_SETTINGS_MODULE=config.settings.perf`
-   so the ManifestStaticFilesStorage manifest is populated.
-2. Starts a Django server on `:8765` using `config.settings.perf` — the
-   same WhiteNoise + `CompressedManifestStaticFilesStorage` + `GZipMiddleware`
-   stack as production, so hashed filenames, pre-compressed assets, and
-   cache headers match reality.
-3. Audits the URLs in `lighthouserc.json` and writes HTML + JSON reports
-   to `.lighthouseci/` (gitignored).
-
-```bash
-npm run lh          # full audit — ~90s
-npm run lh:open     # opens the representative HTML report per URL (macOS)
-```
-
-**`config/settings/perf.py` is Lighthouse-only** — extends `development`,
-flips `DEBUG=False`, adds WhiteNoise + GZip. Not a deploy target;
-`production.py` remains the production source of truth.
-
-**CI** — [`.github/workflows/lighthouse.yml`](.github/workflows/lighthouse.yml)
-runs on every PR: loads regions/resorts/bulletin fixtures, rebuilds
-render models, runs `collectstatic` under perf settings, then
-`lhci autorun` with the CH-4115 bulletin URL added on top of the
-config URLs. Reports upload as a 14-day GitHub Actions artifact.
-
-**When adding a new public page**, check all of:
-
-- `<meta name="description" content="…">` — fail-fast for SEO.
-- `<link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">` —
-  otherwise browsers probe `/favicon.ico` and log a 404 to the console.
-- Use `text-text-1`, `text-text-2`, or the `--color-eaws-*-text` tokens
-  when contrast matters; `text-text-3` sits on the WCAG AA boundary
-  (4.67:1 on `--color-bg`) — never dim it further with `opacity-*`.
-- Keep heading order sequential (`h1 → h2 → h3`); do not skip levels.
-  The reviewer agent will run `npm run lh` and flag regressions.
-
-**Before opening a PR**: run `npm run lh` alongside `poetry run tox`
-and clear both. The reviewer agent runs lh as part of its checklist.
-
-## Query-count monitoring (SNOW-13)
-
-Per-page SQL query counts are tracked in `perf/query_counts.txt` — a
-committed plain-text file with one `<name> <count>` pair per monitored
-URL. The Lighthouse CI workflow runs `manage.py monitor_query_counts`
-(read-only) after loading fixtures; any mismatch against the baseline
-fails the check, so a reviewer sees the delta in the PR diff the same
-way they see a Lighthouse-score delta.
-
-**Two surfaces**:
-
-- `pipeline.middleware.QueryCountMiddleware` attaches an
-  `X-DB-Query-Count` header to every response when
-  `settings.QUERY_COUNT_HEADER_ENABLED` is truthy — on in
-  `development` and `perf`, off in `production`. Useful for ad-hoc
-  measurement: open DevTools → Network and read the header.
-- `manage.py monitor_query_counts` measures the same counts for a
-  fixed URL list via the Django test client and compares / writes the
-  `perf/query_counts.txt` baseline.
-
-**Adding a new monitored URL**: append a `(name, url)` tuple to
-`MONITORED_URLS` in `pipeline/management/commands/monitor_query_counts.py`,
-then run `poetry run python manage.py monitor_query_counts --commit` to
-seed the new baseline row.
-
-**When the count legitimately changes** (new feature touches more of
-the DB, new prefetch, etc.): run `--commit` and include the
-`perf/query_counts.txt` delta in the same PR so reviewers can sanity-
-check the new number.
+**Before opening a PR**, run `poetry run tox` and fix every failure. For any
+change touching a public page, also run `npm run lh` (see
+[`docs/lighthouse.md`](docs/lighthouse.md)).
 
 ## Django coding rules
 
-- All models to inherit from `BaseModel` abstract model
-- All models to have an explicit AdminModel
-- All models to have an explicit `to_string()` method
-- All models to have an explicit test Factory representation
-- All models to have test coverage (see Testing section)
-- All models to have an explicit `order_by` (`created_at` by default)
-- All models to have a custom queryset
-
+- All models inherit from `BaseModel` abstract model.
+- All models have an explicit `AdminModel`.
+- All models have an explicit `to_string()` method.
+- All models have an explicit test Factory representation.
+- All models have test coverage.
+- All models have an explicit `order_by` (`created_at` by default).
+- All models have a custom queryset.
 
 ### Testing
 
-- Tests to use pytest
-- Tests to use FactoryBoy
-- Tests in a top level directory called "tests" that then mirrors the strucuture of the source files it's testing. Each Django module should have a
-corresponding test_{module_name}.py that contains the tests.
-- All new code must have covering tests
-- Always run tests after code changes and ensure 100% pass rate and 90% coverage.
-- **Run tests via `poetry run tox -e test`** (not via a bare `pytest` call).
-  The tox env mirrors CI; running pytest directly may succeed against the
-  Poetry venv while CI fails on missing deps in the tox env.
-- See the "Local CI — always run tox" section above for the full command set
-  and the dependency-sync rule.
-- All datetime objects must have tzinfo
-- Always call factories with `.create()` (e.g. `RegionFactory.create(...)`) — never
-  use direct instantiation (`RegionFactory(...)`). The `.create()` classmethod is
-  properly typed and lets mypy infer the correct model return type.
+- Tests use pytest.
+- Tests use FactoryBoy.
+- Tests live in a top-level `tests/` directory that mirrors the source
+  tree. Each module has a corresponding `test_{module_name}.py`.
+- All new code must have covering tests.
+- Always run tests via `poetry run tox -e test` (not a bare `pytest` call) —
+  the tox env mirrors CI.
+- Target 100% pass rate and 90% coverage.
+- All datetime objects must have `tzinfo`.
+- Always call factories with `.create()` (e.g. `RegionFactory.create(...)`) —
+  never use direct instantiation (`RegionFactory(...)`). The `.create()`
+  classmethod is properly typed and lets mypy infer the correct model
+  return type.
+
+## Linear workflow (summary)
+
+Linear (team prefix `SNOW-`) is the issue source of truth. The Linear MCP
+server handles ticket read/write; GitHub integration handles status
+transitions once a branch is pushed.
+
+**Branch and commit conventions:**
+- Branch: `feature/SNOW-xxx-short-description` (features), `fix/SNOW-xxx-…`
+  (bugs), `chore/SNOW-xxx-…` (tooling/infra).
+- Commit subject prefix: `SNOW-xxx:` — keeps the ticket reference in the git
+  log after squash-merge.
+- One ticket per branch.
+
+**PR title:** `SNOW-42: short imperative summary`. The body must start with
+`Closes SNOW-42` — that magic comment closes the Linear ticket on merge.
+
+**When Code should stop and ask:**
+- Scoping comment missing on the ticket → ask the user to scope in Chat first.
+- Tests fail after implementation and the fix isn't obvious → report and stop.
+- Implementation reveals the scope was wrong → post a comment on the Linear
+  issue and ask the user how to proceed.
+
+Full lifecycle, entry points, scoping-comment contract, and PR body template:
+[`docs/linear-workflow.md`](docs/linear-workflow.md).
+
+## Feature-specific reference
+
+Read these when working in the relevant area:
+
+| Area | Doc |
+|------|-----|
+| Subscriptions (signed tokens, rate limits, email) | [`docs/subscriptions.md`](docs/subscriptions.md) |
+| Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
+| Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
+| Internationalisation | [`docs/i18n.md`](docs/i18n.md) |
+| Lighthouse CI (budgets, perf settings) | [`docs/lighthouse.md`](docs/lighthouse.md) |
+| Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
+| Management command catalogue | [`docs/management-commands.md`](docs/management-commands.md) |
+| Nav partial implementation spec | [`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) |
