@@ -93,3 +93,29 @@ jobs:
         run: |
           pip install tox
           tox
+
+  security-audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python (3.12)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry and pip-audit
+        run: pip install poetry pip-audit
+
+      - name: Export locked dependencies
+        run: >-
+          poetry export
+          --without-hashes
+          --format=requirements.txt
+          --output=/tmp/requirements-audit.txt
+
+      - name: Audit dependencies for known CVEs
+        run: pip-audit -r /tmp/requirements-audit.txt
