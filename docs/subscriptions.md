@@ -21,7 +21,10 @@ The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`
 | `/subscribe/` | `subscribe` | POST | HTMX inline subscribe form |
 | `/subscribe/account/<token>/` | `account` | GET | Verify token; activate subscriber |
 | `/subscribe/manage/` | `manage` | GET + POST | Email entry (unauth) or region management (auth) |
+| `/subscribe/manage/remove/<region_id>/` | `remove_region` | POST | HTMX — remove one region from the authenticated subscriber |
+| `/subscribe/manage/delete/` | `delete_account` | POST | HTMX — hard-delete the authenticated subscriber and cascade subscriptions |
 | `/subscribe/unsubscribe/<token>/` | `unsubscribe` | GET + POST | One-click region unsubscribe |
+| `/subscribe/unsubscribe-done/` | `unsubscribe_done` | GET | Post-unsubscribe confirmation page |
 
 **Models**:
 - `Subscriber(email, status, confirmed_at)` — `status` is a `TextChoices` with `pending` (address captured, not yet confirmed) and `active` (confirmed; receives emails). `confirmed_at` is stamped on first account-link click.
@@ -59,3 +62,5 @@ Production uses `DatabaseCache` (`LOCATION = "django_cache"`) so rate-limit coun
 - `SITE_BASE_URL` — base URL for absolute links when no request is available (e.g. management commands).
 - `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` / `EMAIL_USE_TLS` — standard Django SMTP settings.
 - `DEFAULT_FROM_EMAIL` — sender address for outbound mail.
+
+**Dropped settings** — `MAGIC_LINK_SECRET_KEY`, `MAGIC_LINK_EXPIRY_SECONDS`, `MAGIC_LINK_BASE_URL`, and `RESEND_API_KEY` are no longer referenced anywhere in the codebase. Do not look for them.

@@ -32,6 +32,7 @@ appeared first.
 | `GET /api/today-summaries/` | `api:today_summaries` | `{region_id: {rating, subdivision, problem, elevation, aspects, valid_from, valid_to, name}}` |
 | `GET /api/resorts-by-region/` | `api:resorts_by_region` | `{region_id: [resort_name, …]}` — alphabetical; regions without resorts omitted |
 | `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary`; each feature has `properties.id` + `properties.name` |
+| `GET /api/offline-manifest/map/` | `api:offline_manifest_map` | `{version, urls[]}` — precache manifest consumed by `static/js/sw.js` (see [`offline-map.md`](offline-map.md)) |
 
 `today-summaries` uses the same `_select_default_issue` helper as the bulletin
 page (morning-update-wins-over-previous-evening), so the map and bulletin views
@@ -39,23 +40,5 @@ always agree on which issue to show. Regions with no covering bulletin today are
 absent from the response; the map fill layer treats absence as `no_rating`.
 Stale/errored render models (`version: 0`) resolve to `rating: "no_rating"`.
 
-## Navigation partial
-
-All public pages include a shared top nav partial at
-`templates/includes/nav.html`. It renders the "Snowdesk" wordmark (always
-linking home) plus an optional chevron-back link controlled by two include
-parameters:
-
-```django
-{# logo only — home, map #}
-{% include "includes/nav.html" %}
-
-{# logo + back link — bulletin, random_bulletins, season_bulletins #}
-{% url 'public:map' as map_url %}
-{% include "includes/nav.html" with back_url=map_url back_label="Map" %}
-```
-
-The `<nav>` spans full viewport width so its bottom border forms an
-edge-to-edge rule; inner content sits in a 640px max-width container that
-aligns with the bulletin body copy. See
-[`nav_implementation_spec.md`](nav_implementation_spec.md) for the full spec.
+The shared top-nav partial used on the map and other public pages is
+documented separately in [`nav_implementation_spec.md`](nav_implementation_spec.md).
