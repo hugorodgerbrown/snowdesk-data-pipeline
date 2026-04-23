@@ -954,3 +954,99 @@ class TestUnsubscribeDoneView:
         response = client.get(reverse("subscriptions:unsubscribe_done"))
         assert response.status_code == 200
         assert b"unsubscribed" in response.content.lower()
+
+
+# ---------------------------------------------------------------------------
+# Email normalisation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestEmailNormalisation:
+    """Tests for email normalisation at the form boundary.
+
+    Verifies that case variants and whitespace are collapsed before the
+    subscriber lookup so duplicate accounts cannot be created via case
+    differences.
+    """
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings):
+        """Use in-memory email backend so mail.outbox is populated."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def _subscribe(self, email: str, region_id: str) -> None:
+        """POST the subscribe_partial endpoint with HTMX headers."""
+        client = Client()
+        client.post(
+            reverse("subscriptions:subscribe"),
+            data={"email": email, "region_id": region_id},
+            HTTP_HX_REQUEST="true",
+        )
+
+    def test_uppercase_and_lowercase_same_address_creates_one_subscriber(self):
+        """Two POSTs for the same address in different case create one Subscriber."""
+        region = RegionFactory.create()
+        self._subscribe("User@Example.com", region.region_id)
+        self._subscribe("user@example.com", region.region_id)
+        assert Subscriber.objects.filter(email="user@example.com").count() == 1
+        assert Subscriber.objects.count() == 1
+
+    def test_mixed_case_address_is_stored_lowercase(self):
+        """The stored email address is the lowercase-normalised form."""
+        region = RegionFactory.create()
+        self._subscribe("ALICE@EXAMPLE.COM", region.region_id)
+        assert Subscriber.objects.filter(email="alice@example.com").exists()
+
+    def test_manage_view_post_looks_up_normalised_email(self):
+        """manage_view POST for a mixed-case address finds the lowercase subscriber."""
+        subscriber = SubscriberFactory.create(
+            email="bob@example.com", status=Subscriber.Status.ACTIVE
+        )
+        client = Client()
+        with patch("subscriptions.views.send_account_access_email") as mock_send:
+            client.post(
+                reverse("subscriptions:manage"),
+                data={"email": "BOB@EXAMPLE.COM"},
+            )
+        mock_send.assert_called_once_with(
+            subscriber.email, request=mock_send.call_args[1]["request"]
+        )
+
+
+class TestEmailFormNormalisation:
+    """Unit tests for SubscribeForm and EmailForm clean_email."""
+
+    def test_subscribe_form_lowercases_email(self):
+        """SubscribeForm.clean_email returns a lowercased address."""
+        from subscriptions.forms import SubscribeForm
+
+        form = SubscribeForm(data={"email": "TEST@EXAMPLE.COM", "region_id": "CH-0001"})
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["email"] == "test@example.com"
+
+    def test_subscribe_form_strips_whitespace(self):
+        """SubscribeForm.clean_email strips leading and trailing whitespace."""
+        from subscriptions.forms import SubscribeForm
+
+        form = SubscribeForm(
+            data={"email": "  user@example.com  ", "region_id": "CH-0001"}
+        )
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["email"] == "user@example.com"
+
+    def test_email_form_lowercases_email(self):
+        """EmailForm.clean_email returns a lowercased address."""
+        from subscriptions.forms import EmailForm
+
+        form = EmailForm(data={"email": "TEST@EXAMPLE.COM"})
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["email"] == "test@example.com"
+
+    def test_email_form_strips_whitespace(self):
+        """EmailForm.clean_email strips leading and trailing whitespace."""
+        from subscriptions.forms import EmailForm
+
+        form = EmailForm(data={"email": "  user@example.com  "})
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["email"] == "user@example.com"

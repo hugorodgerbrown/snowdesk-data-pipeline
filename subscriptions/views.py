@@ -174,8 +174,8 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
         )
 
     subscriber, subscriber_created = Subscriber.objects.get_or_create(
-        email__iexact=email,
-        defaults={"email": email, "status": Subscriber.Status.PENDING},
+        email=email,
+        defaults={"status": Subscriber.Status.PENDING},
     )
 
     # Persist the region subscription idempotently; capture whether it's new.
@@ -260,7 +260,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
         return render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
 
     try:
-        subscriber = Subscriber.objects.get(email__iexact=email)
+        subscriber = Subscriber.objects.get(email=email)
     except Subscriber.DoesNotExist:
         # Token was valid but the subscriber was deleted — treat as expired.
         logger.warning("account_view: valid token for unknown email %s", email)
@@ -361,7 +361,7 @@ def _manage_unauthenticated(request: HttpRequest) -> HttpResponse:
     email: str = form.cleaned_data["email"]
 
     try:
-        Subscriber.objects.get(email__iexact=email)
+        Subscriber.objects.get(email=email)
         send_account_access_email(email, request=request)
         logger.info("Account-access email sent to existing subscriber %s", email)
     except Subscriber.DoesNotExist:
@@ -588,7 +588,7 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
 
     # POST — execute unsubscribe.
     try:
-        subscriber = Subscriber.objects.get(email__iexact=email)
+        subscriber = Subscriber.objects.get(email=email)
     except Subscriber.DoesNotExist:
         # Already unsubscribed (perhaps from a different link) — idempotent.
         logger.info(
