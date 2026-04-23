@@ -1,5 +1,5 @@
 """
-pipeline/middleware.py — Lightweight observability middleware.
+pipeline/middleware.py — Lightweight observability and security middleware.
 
 ``QueryCountMiddleware`` attaches an ``X-DB-Query-Count`` response header
 recording the number of SQL statements executed while servicing the
@@ -8,6 +8,11 @@ truthy, which keeps the debug-cursor cost out of production while still
 giving the header to dev / perf environments and to the
 ``monitor_query_counts`` management command (which reads the header to
 track per-page query counts in ``perf/query_counts.txt``).
+
+``SecurityHeadersMiddleware`` adds ``Referrer-Policy`` and
+``Permissions-Policy`` headers to every response.  Per-view overrides
+(e.g. ``no-referrer`` on token-bearing views) take precedence because
+the middleware sets its value only when the header is absent.
 """
 
 from __future__ import annotations
@@ -51,4 +56,37 @@ class QueryCountMiddleware:
             connection.force_debug_cursor = previous
 
         response[self.header_name] = str(len(connection.queries_log) - start)
+        return response
+
+
+class SecurityHeadersMiddleware:
+    """Set Referrer-Policy and Permissions-Policy on every response.
+
+    Uses ``strict-origin-when-cross-origin`` as the global Referrer-Policy
+    default.  Views that carry tokens in their URL paths (account_view,
+    unsubscribe_view) set ``no-referrer`` themselves; this middleware
+    honours that by only writing the header when it is absent.
+    """
+
+    _REFERRER_POLICY_HEADER = "Referrer-Policy"
+    _REFERRER_POLICY_DEFAULT = "strict-origin-when-cross-origin"
+    _PERMISSIONS_POLICY_HEADER = "Permissions-Policy"
+    _PERMISSIONS_POLICY_VALUE = (
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    )
+
+    def __init__(
+        self,
+        get_response: Callable[[HttpRequest], HttpResponse],
+    ) -> None:
+        """Bind the next middleware callable."""
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        """Stamp security headers on the outgoing response."""
+        response = self.get_response(request)
+        if self._REFERRER_POLICY_HEADER not in response:
+            response[self._REFERRER_POLICY_HEADER] = self._REFERRER_POLICY_DEFAULT
+        if self._PERMISSIONS_POLICY_HEADER not in response:
+            response[self._PERMISSIONS_POLICY_HEADER] = self._PERMISSIONS_POLICY_VALUE
         return response

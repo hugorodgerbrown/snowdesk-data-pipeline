@@ -257,24 +257,26 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
 
     if email is None:
         logger.debug("account_view received an invalid/expired token")
-        return render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
+        response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
+    else:
+        try:
+            subscriber = Subscriber.objects.get(email__iexact=email)
+        except Subscriber.DoesNotExist:
+            # Token was valid but the subscriber was deleted — treat as expired.
+            logger.warning("account_view: valid token for unknown email %s", email)
+            response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
+        else:
+            if subscriber.status == Subscriber.Status.PENDING:
+                subscriber.status = Subscriber.Status.ACTIVE
+                subscriber.confirmed_at = timezone.now()
+                subscriber.save(update_fields=["status", "confirmed_at", "updated_at"])
+                logger.info("Subscriber %s activated via account link", email)
+            request.session[_SESSION_KEY] = str(subscriber.uuid)
+            response = redirect(f"{_MANAGE_URL}?just_confirmed=1")
 
-    try:
-        subscriber = Subscriber.objects.get(email=email)
-    except Subscriber.DoesNotExist:
-        # Token was valid but the subscriber was deleted — treat as expired.
-        logger.warning("account_view: valid token for unknown email %s", email)
-        return render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
-
-    if subscriber.status == Subscriber.Status.PENDING:
-        subscriber.status = Subscriber.Status.ACTIVE
-        subscriber.confirmed_at = timezone.now()
-        subscriber.save(update_fields=["status", "confirmed_at", "updated_at"])
-        logger.info("Subscriber %s activated via account link", email)
-
-    request.session[_SESSION_KEY] = str(subscriber.uuid)
-
-    return redirect(f"{_MANAGE_URL}?just_confirmed=1")
+    # Tokens appear in this view's URL path — suppress Referer leakage.
+    response["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -572,7 +574,9 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
     result = verify_unsubscribe_token(token)
     if result is None:
         logger.debug("unsubscribe_view received an invalid token")
-        return render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
+        response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
+        response["Referrer-Policy"] = "no-referrer"
+        return response
 
     email, region_id = result
 
@@ -580,11 +584,13 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
     region = get_object_or_404(Region, region_id=region_id)
 
     if request.method == "GET":
-        return render(
+        response = render(
             request,
             "subscriptions/unsubscribe.html",
             {"email": email, "region": region, "token": token},
         )
+        response["Referrer-Policy"] = "no-referrer"
+        return response
 
     # POST — execute unsubscribe.
     try:
@@ -594,7 +600,9 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
         logger.info(
             "unsubscribe_view: subscriber %s not found — already deleted", email
         )
-        return render(request, "subscriptions/unsubscribe_done.html", {})
+        response = render(request, "subscriptions/unsubscribe_done.html", {})
+        response["Referrer-Policy"] = "no-referrer"
+        return response
 
     # Delete the specific subscription.
     Subscription.objects.filter(subscriber=subscriber, region=region).delete()
@@ -608,7 +616,9 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
             email,
         )
 
-    return render(request, "subscriptions/unsubscribe_done.html", {})
+    response = render(request, "subscriptions/unsubscribe_done.html", {})
+    response["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 # ---------------------------------------------------------------------------
