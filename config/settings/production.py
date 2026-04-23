@@ -76,3 +76,15 @@ SECURE_HSTS_PRELOAD = True
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
+
+# Render.com terminates TLS at the proxy and forwards requests to Django over
+# HTTP. Without this header Django sees every request as plain HTTP, causing
+# SECURE_SSL_REDIRECT redirect loops and http:// absolute URLs in emails.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Trusted origins for CSRF — must match the production hostname(s).
+# Comma-separated, e.g. "https://snowdesk.info,https://www.snowdesk.info".
+CSRF_TRUSTED_ORIGINS = config(
+    "CSRF_TRUSTED_ORIGINS",
+    cast=lambda v: [s.strip() for s in v.split(",") if s.strip()],
+)
