@@ -37,6 +37,11 @@ class SubscribeForm(forms.Form):
         widget=forms.HiddenInput(),
     )
 
+    def clean_email(self) -> str:
+        """Normalise the email address to lowercase with whitespace stripped."""
+        email: str = self.cleaned_data["email"]
+        return email.lower().strip()
+
 
 class EmailForm(forms.Form):
     """Form for capturing the subscriber's email address on the manage page."""
@@ -55,3 +60,8 @@ class EmailForm(forms.Form):
             }
         ),
     )
+
+    def clean_email(self) -> str:
+        """Normalise the email address to lowercase with whitespace stripped."""
+        email: str = self.cleaned_data["email"]
+        return email.lower().strip()
