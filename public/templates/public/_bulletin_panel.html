@@ -9,7 +9,7 @@ by CSS rules in main.css.
 
 The admin link is only rendered for authenticated staff users.
 {% endcomment %}
-{% load i18n card_tags hazard_icons static %}
+{% load i18n card_tags hazard_icons snowdesk_html static %}
 <div class="bg-card rounded-[16px] overflow-hidden border border-border">
     {# ── Danger band ─────────────────────────────────────────────────── #}
     <div
@@ -115,7 +115,7 @@ The admin link is only rendered for authenticated staff users.
                     {% if trait.geography.source == "prose_only" %}
                         {% if trait.prose %}
                             <div class="slf-prose mt-1.5 px-1 text-sm leading-[1.55] text-text-2">
-                                {{ trait.prose|safe }}
+                                {{ trait.prose|snowdesk_html }}
                             </div>
                             <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
                                 {% trans "SLF Bulletin" %}
@@ -172,7 +172,7 @@ The admin link is only rendered for authenticated staff users.
                                         </p>
                                         {% if p.comment_html and not p.hide_comment %}
                                             <div class="slf-prose mt-1.5 px-1 text-sm leading-[1.55] text-text-2">
-                                                {{ p.comment_html|safe }}
+                                                {{ p.comment_html|snowdesk_html }}
                                             </div>
                                             <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
                                                 {% trans "SLF Bulletin" %}
@@ -222,7 +222,7 @@ The admin link is only rendered for authenticated staff users.
                                     </p>
                                     {% if p.comment_html and not p.hide_comment %}
                                         <div class="slf-prose mt-1.5 px-1 text-sm leading-[1.55] text-text-2">
-                                            {{ p.comment_html|safe }}
+                                            {{ p.comment_html|snowdesk_html }}
                                         </div>
                                         <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">
                                             {% trans "SLF Bulletin" %}
@@ -239,7 +239,7 @@ The admin link is only rendered for authenticated staff users.
         {% if panel.snowpack_structure %}
             <div class="mt-2.5 pt-2.5 border-t border-border">
                 <div class="slf-prose text-sm leading-[1.55] text-text-2">
-                    {{ panel.snowpack_structure|safe }}
+                    {{ panel.snowpack_structure|snowdesk_html }}
                 </div>
                 <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">{% trans "SLF Bulletin" %}</p>
             </div>

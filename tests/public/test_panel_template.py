@@ -391,3 +391,163 @@ class TestProblemLevelDataAttribute:
         content = response.content.decode()
         # The problem wrapper should carry data-level="" (empty → neutral grey border).
         assert 'data-level=""' in content
+
+
+# ── XSS injection prevention ─────────────────────────────────────────────────
+#
+# _bulletin_panel.html is rendered by the random_bulletins view
+# (/<region_id>/history/), not by bulletin_date.  Tests below use that URL.
+
+
+_XSS_INNER = "alert('xss_snow20')"
+_SCRIPT_PAYLOAD = f"<script>{_XSS_INNER}</script>"
+_SAFE_HTML = "<p>safe content</p>"
+
+
+def _history_url(region_id: str = "CH-7777") -> str:
+    """Build the random_bulletins (history) URL for a region."""
+    return reverse("public:random_bulletins", kwargs={"region_id": region_id})
+
+
+@pytest.mark.django_db
+class TestXssInjectionPrevention:
+    """
+    Regression tests for SNOW-20: all four SLF prose render sites in
+    _bulletin_panel.html must strip <script> tags via |snowdesk_html.
+    """
+
+    def _make_panel_bulletin(self, region, day, render_model, raw_data=None):
+        """Create a bulletin linked to region, using the given render_model."""
+        from pipeline.services.render_model import RENDER_MODEL_VERSION
+
+        bulletin = BulletinFactory.create(
+            issued_at=datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC),
+            valid_from=datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC),
+            valid_to=datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC),
+            render_model={**render_model, "version": RENDER_MODEL_VERSION},
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data=raw_data
+            or {"properties": {"dangerRatings": [{"mainValue": "low"}]}},
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin, region=region, region_name_at_time=region.name
+        )
+        return bulletin
+
+    def test_trait_prose_strips_script(self, anon_client: Client, region):
+        """trait.prose with a <script> payload must not appear in the rendered panel."""
+        from pipeline.services.render_model import RENDER_MODEL_VERSION
+
+        self._make_panel_bulletin(
+            region,
+            date(2026, 7, 1),
+            render_model={
+                "version": RENDER_MODEL_VERSION,
+                "traits": [
+                    {
+                        "title": "Dry avalanches",
+                        "category": "dry",
+                        "time_period": "all_day",
+                        "problems": [],
+                        "geography": {"source": "prose_only"},
+                        "prose": _SCRIPT_PAYLOAD + _SAFE_HTML,
+                    }
+                ],
+                "danger": {},
+            },
+        )
+        response = anon_client.get(_history_url())
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert _SCRIPT_PAYLOAD not in content
+        assert "safe content" in content
+
+    def test_problem_comment_html_strips_script(self, anon_client: Client, region):
+        """p.comment_html with a <script> payload must not appear in the rendered panel."""
+        from pipeline.services.render_model import RENDER_MODEL_VERSION
+
+        self._make_panel_bulletin(
+            region,
+            date(2026, 7, 2),
+            render_model={
+                "version": RENDER_MODEL_VERSION,
+                "traits": [
+                    {
+                        "title": "Wet avalanches",
+                        "category": "wet",
+                        "time_period": "all_day",
+                        "problems": [
+                            {
+                                "problem_type": "wet_snow",
+                                "danger_rating_value": "low",
+                                "time_period": "all_day",
+                                "elevation": None,
+                                "aspects": [],
+                                "core_zone_text": "",
+                                "comment_html": _SCRIPT_PAYLOAD + _SAFE_HTML,
+                            }
+                        ],
+                        "geography": {"source": "structured"},
+                        "prose": "",
+                    }
+                ],
+                "danger": {},
+            },
+        )
+        response = anon_client.get(_history_url())
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert _SCRIPT_PAYLOAD not in content
+        assert "safe content" in content
+
+    def test_snowpack_structure_strips_script(self, anon_client: Client, region):
+        """panel.snowpack_structure with a <script> payload must be stripped."""
+        from pipeline.services.render_model import RENDER_MODEL_VERSION
+
+        self._make_panel_bulletin(
+            region,
+            date(2026, 7, 3),
+            render_model={
+                "version": RENDER_MODEL_VERSION,
+                "traits": [],
+                "danger": {},
+            },
+            raw_data={
+                "properties": {
+                    "dangerRatings": [{"mainValue": "low"}],
+                    "snowpackStructure": {"comment": _SCRIPT_PAYLOAD + _SAFE_HTML},
+                }
+            },
+        )
+        response = anon_client.get(_history_url())
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert _SCRIPT_PAYLOAD not in content
+        assert "safe content" in content
+
+    def test_allowed_tags_survive_sanitisation(self, anon_client: Client, region):
+        """Benign allowed tags (<strong>) still render inside trait.prose."""
+        from pipeline.services.render_model import RENDER_MODEL_VERSION
+
+        self._make_panel_bulletin(
+            region,
+            date(2026, 7, 4),
+            render_model={
+                "version": RENDER_MODEL_VERSION,
+                "traits": [
+                    {
+                        "title": "Dry avalanches",
+                        "category": "dry",
+                        "time_period": "all_day",
+                        "problems": [],
+                        "geography": {"source": "prose_only"},
+                        "prose": "<p><strong>snow20_marker</strong> note.</p>",
+                    }
+                ],
+                "danger": {},
+            },
+        )
+        response = anon_client.get(_history_url())
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "<strong>snow20_marker</strong>" in content
