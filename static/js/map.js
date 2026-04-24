@@ -25,6 +25,7 @@
   const REGIONS_URL   = mapEl.dataset.regionsUrl;
   const SUMMARIES_URL = mapEl.dataset.summariesUrl;
   const RESORTS_URL   = mapEl.dataset.resortsUrl;
+  const BASEMAP_STYLE = mapEl.dataset.basemapStyle;
 
   const BULLETIN_SUMMARIES = {};
   const RESORTS_BY_REGION  = {};
@@ -39,11 +40,13 @@
     no_rating:    '#e0e0e0',
   };
 
-  // OpenFreeMap gives us a free, attribution-compliant basemap with no
-  // API key. Swap for MapTiler / Mapbox later if a custom style is wanted.
+  // Basemap style JSON URL is rendered server-side from
+  // ``settings.BASEMAP_STYLE_URL`` onto the #map element. Default is
+  // OpenFreeMap; swapping candidates (Swisstopo winter / light, MapTiler,
+  // Mapbox, etc.) is a one-line settings change with no code edit.
   const map = new maplibregl.Map({
     container: 'map',
-    style: 'https://tiles.openfreemap.org/styles/liberty',
+    style: BASEMAP_STYLE,
     center: [8.23, 46.5],
     zoom: 6.4,
     minZoom: 5,

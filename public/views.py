@@ -817,6 +817,11 @@ def map_view(request: HttpRequest) -> HttpResponse:
     DOM is structured so it can be embedded inside the marketing
     homepage later.
 
+    The basemap style JSON URL is pulled from ``settings.BASEMAP_STYLE_URL``
+    and surfaced to the JS via a ``data-basemap-style`` attribute on the
+    ``#map`` element — swapping basemap candidates is a one-line settings
+    change with no template or JS edit.
+
     Args:
         request: The incoming HTTP request.
 
@@ -824,7 +829,11 @@ def map_view(request: HttpRequest) -> HttpResponse:
         The rendered map page.
 
     """
-    return render(request, "public/map.html")
+    return render(
+        request,
+        "public/map.html",
+        {"basemap_style_url": settings.BASEMAP_STYLE_URL},
+    )
 
 
 def serve_sw(request: HttpRequest) -> HttpResponse:
