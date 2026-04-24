@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import Path
 
 from decouple import config
+from django.core.exceptions import ImproperlyConfigured
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -269,16 +270,35 @@ DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@snowdesk.ch")
 # ---------------------------------------------------------------------------
 # Map — basemap style JSON URL consumed by MapLibre on /map/
 # ---------------------------------------------------------------------------
-# The URL is passed through ``public.views.map_view`` context and rendered
-# onto the ``#map`` element as ``data-basemap-style``; ``static/js/map.js``
-# reads it from ``mapEl.dataset.basemapStyle``. Swapping candidates (e.g.
-# Swisstopo Base Map Winter / Light Base Map) is a one-line settings change
-# with no template or JS edit required. Default preserves OpenFreeMap.
+# Changing basemap is a rare, deliberate event, so the vendor URLs live
+# in this catalogue and the env picks a key rather than a raw URL. The
+# resolved URL is passed through ``public.views.map_view`` context and
+# rendered onto the ``#map`` element as ``data-basemap-style``;
+# ``static/js/map.js`` reads it from ``mapEl.dataset.basemapStyle``. To
+# add a candidate: drop a new ``{key: url}`` entry here and set
+# ``BASEMAP=<key>`` in ``.env``. An unknown key raises at startup.
 
-BASEMAP_STYLE_URL = config(
-    "BASEMAP_STYLE_URL",
-    default="https://tiles.openfreemap.org/styles/liberty",
-)
+BASEMAP_STYLES = {
+    "openfreemap_liberty": "https://tiles.openfreemap.org/styles/liberty",
+    "swisstopo_winter": (
+        "https://vectortiles.geo.admin.ch/styles/"
+        "ch.swisstopo.basemap-winter.vt/style.json"
+    ),
+    "swisstopo_light": (
+        "https://vectortiles.geo.admin.ch/styles/"
+        "ch.swisstopo.leichte-basiskarte.vt/style.json"
+    ),
+}
+
+BASEMAP = config("BASEMAP", default="openfreemap_liberty")
+
+try:
+    BASEMAP_STYLE_URL = BASEMAP_STYLES[BASEMAP]
+except KeyError as exc:
+    raise ImproperlyConfigured(
+        f"BASEMAP={BASEMAP!r} is not a known basemap. "
+        f"Valid keys: {sorted(BASEMAP_STYLES)}"
+    ) from exc
 
 # ---------------------------------------------------------------------------
 # Logging
