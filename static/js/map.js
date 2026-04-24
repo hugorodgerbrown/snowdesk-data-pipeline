@@ -44,11 +44,16 @@
   // ``settings.BASEMAP_STYLE_URL`` onto the #map element. Default is
   // OpenFreeMap; swapping candidates (Swisstopo winter / light, MapTiler,
   // Mapbox, etc.) is a one-line settings change with no code edit.
+  //
+  // Initial view is framed via `bounds` around Switzerland rather than a
+  // hand-tuned center/zoom pair — `bounds` adapts to viewport aspect
+  // ratio automatically, which matters now that SNOW-35 made the map
+  // full-bleed (previously the frame was a fixed 390px phone mock).
   const map = new maplibregl.Map({
     container: 'map',
     style: BASEMAP_STYLE,
-    center: [8.23, 46.5],
-    zoom: 6.4,
+    bounds: [[5.9, 45.8], [10.5, 47.9]],
+    fitBoundsOptions: { padding: 20 },
     minZoom: 5,
     maxZoom: 12,
     maxBounds: [[3.5, 43.5], [13.0, 49.5]],

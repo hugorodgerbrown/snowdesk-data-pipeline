@@ -1,141 +1,134 @@
-{% comment %}
-public/templates/public/map.html — Interactive region-choropleth map.
-
-Unlike the rest of the public site, this page does NOT extend
-``public/base.html`` — the map needs the full viewport and its own
-MapLibre stylesheet, and ``DO_NOT_ADD/snowdesk_map_preview.html`` has
-locked down the ``#frame`` DOM shape so the block can later be pulled
-into an include partial and embedded on the homepage. Keep standalone.
-
-Three endpoints are resolved server-side and passed through to the
-client via ``data-*`` attributes — that way the JS never hard-codes URLs
-and ``{% url %}`` remains the single source of truth.
-
-This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
-{% endcomment %}
+{% extends "public/base.html" %}
 {% load i18n static %}
-<!DOCTYPE html>
-<html lang="{{ LANGUAGE_CODE }}">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-        <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
-        <meta
-            name="description"
-            content="{% trans "Interactive map of Swiss avalanche regions — tap a region to see today's danger rating, headline problem, and nearby resorts." %}"
+{% comment %}
+    public/templates/public/map.html — Interactive region-choropleth map.
+
+    Endpoint URLs and the basemap style URL are resolved server-side and
+    passed to the client via ``data-*`` attributes on #map, so the JS
+    never hard-codes URLs and ``{% url %}`` / settings stays the single
+    source of truth.
+
+    Historic note (SNOW-35): this page used to declare its own doctype
+    and wrap everything in a phone-mock ``#frame`` whose DOM was kept in
+    sync with ``DO_NOT_ADD/snowdesk_map_preview.html`` for a future
+    homepage embed. That preview file is now stale — any future
+    homepage preview will be rebuilt against the post-redesign partial.
+{% endcomment %}
+
+{% block title %}{% trans "Snowdesk — Avalanche map" %}{% endblock %}
+{% block meta_description %}{% trans "Interactive map of Swiss avalanche regions — tap a region to see today's danger rating, headline problem, and nearby resorts." %}{% endblock %}
+
+{% block extra_head %}
+    <link rel="manifest" href="{% static 'manifest.webmanifest' %}">
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+    <link rel="stylesheet" href="{% static 'css/map.css' %}">
+{% endblock %}
+
+{% block content %}
+    {% comment %}
+        Chrome temporarily hidden by SNOW-35. Reintroduced as floating
+        overlays by SNOW-36 (top bar / search / save-offline) and
+        SNOW-38 (legend). Markup preserved here, not in git history
+        alone, so those tickets have exact strings/attributes to hand
+        to their new overlay partials.
+
+        --- SNOW-36: brand + search + save-offline ---
+        <header>
+            <label class="search" for="search-input">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m20 20-3-3" />
+                </svg>
+                <input
+                    id="search-input"
+                    class="search-input"
+                    type="search"
+                    placeholder='{% trans "Find a region or resort" %}'
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label='{% trans "Find a region or resort" %}'
+                    aria-autocomplete="list"
+                    aria-controls="search-results"
+                    aria-expanded="false"
+                    role="combobox"
+                >
+            </label>
+            <ul id="search-results" class="search-results" role="listbox" hidden></ul>
+            <button id="offline-cta" type="button" class="offline-cta" aria-live="polite">
+                {% trans "Save offline" %}
+            </button>
+        </header>
+
+        --- SNOW-38: danger-scale legend ---
+        <div class="legend">
+            <div class="legend-title">{% trans "Today" %}</div>
+            <div class="legend-row">
+                <span class="legend-swatch" style="background: #ccff66"></span>{% trans "Low (1)" %}
+            </div>
+            <div class="legend-row">
+                <span class="legend-swatch" style="background: #ffff00"></span>{% trans "Moderate (2)" %}
+            </div>
+            <div class="legend-row">
+                <span class="legend-swatch" style="background: #ff9900"></span>{% trans "Considerable (3)" %}
+            </div>
+            <div class="legend-row">
+                <span class="legend-swatch" style="background: #ff0000"></span>{% trans "High (4)" %}
+            </div>
+        </div>
+
+        --- Footer hint (reintroduce only if SNOW-34 still wants it) ---
+        <div class="hint" aria-hidden="true">{% trans "Pinch to zoom · tap a region" %}</div>
+    {% endcomment %}
+    <div
+        id="map"
+        data-regions-url="{% url 'api:regions_geojson' %}"
+        data-summaries-url="{% url 'api:today_summaries' %}"
+        data-resorts-url="{% url 'api:resorts_by_region' %}"
+        data-offline-manifest-url="{% url 'api:offline_manifest_map' %}"
+        data-basemap-style="{{ basemap_style_url }}"
+    >
+        <div
+            id="debug-pill"
+            style="display: none; position: absolute; top: 10px; right: 10px; z-index: 2; background: #1a1a1a; color: #fff; font-size: 10px; padding: 4px 7px; border-radius: 3px; font-family: ui-monospace, monospace"
         >
-        <title>{% trans "Snowdesk — Avalanche map" %}</title>
-        <link rel="manifest" href="{% static 'manifest.webmanifest' %}">
-        <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-        <link rel="stylesheet" href="{% static 'css/output.css' %}">
-        <link rel="stylesheet" href="{% static 'css/map.css' %}">
-    </head>
-    <body>
-        <div id="frame">
-            {% include "includes/nav.html" %}
-            <header>
-                <label class="search" for="search-input">
+            debug &middot; press d
+        </div>
+        <div id="sheet" class="sheet">
+            <div id="sheet-grab" class="sheet-grab">
+                <div class="sheet-handle"></div>
+                <button id="sheet-close" class="sheet-close" aria-label='{% trans "Close" %}'>
                     <svg
-                        width="13"
-                        height="13"
+                        width="14"
+                        height="14"
                         viewBox="0 0 24 24"
                         fill="none"
                         stroke="currentColor"
                         stroke-width="2"
+                        stroke-linecap="round"
                         aria-hidden="true"
                     >
-                        <circle cx="11" cy="11" r="7" />
-                        <path d="m20 20-3-3" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                        <line x1="6" y1="18" x2="18" y2="6" />
                     </svg>
-                    <input
-                        id="search-input"
-                        class="search-input"
-                        type="search"
-                        placeholder='{% trans "Find a region or resort" %}'
-                        autocomplete="off"
-                        spellcheck="false"
-                        aria-label='{% trans "Find a region or resort" %}'
-                        aria-autocomplete="list"
-                        aria-controls="search-results"
-                        aria-expanded="false"
-                        role="combobox"
-                    >
-                </label>
-                <ul id="search-results" class="search-results" role="listbox" hidden></ul>
-                <button
-                    id="offline-cta"
-                    type="button"
-                    class="offline-cta"
-                    aria-live="polite"
-                >
-                    {% trans "Save offline" %}
                 </button>
-            </header>
-            <div
-                id="map"
-                data-regions-url="{% url 'api:regions_geojson' %}"
-                data-summaries-url="{% url 'api:today_summaries' %}"
-                data-resorts-url="{% url 'api:resorts_by_region' %}"
-                data-offline-manifest-url="{% url 'api:offline_manifest_map' %}"
-                data-basemap-style="{{ basemap_style_url }}"
-            >
-                <div class="legend">
-                    <div class="legend-title">{% trans "Today" %}</div>
-                    <div class="legend-row">
-                        <span class="legend-swatch" style="background: #ccff66"></span>{% trans "Low (1)" %}
-                    </div>
-                    <div class="legend-row">
-                        <span class="legend-swatch" style="background: #ffff00"></span>{% trans "Moderate (2)" %}
-                    </div>
-                    <div class="legend-row">
-                        <span class="legend-swatch" style="background: #ff9900"></span>{% trans "Considerable (3)" %}
-                    </div>
-                    <div class="legend-row">
-                        <span class="legend-swatch" style="background: #ff0000"></span>{% trans "High (4)" %}
-                    </div>
-                </div>
-                <div
-                    id="debug-pill"
-                    style="display: none; position: absolute; top: 10px; right: 10px; z-index: 2; background: #1a1a1a; color: #fff; font-size: 10px; padding: 4px 7px; border-radius: 3px; font-family: ui-monospace, monospace"
-                >
-                    debug &middot; press d
-                </div>
-                <div id="sheet" class="sheet">
-                    <div id="sheet-grab" class="sheet-grab">
-                        <div class="sheet-handle"></div>
-                        <button id="sheet-close" class="sheet-close" aria-label='{% trans "Close" %}'>
-                            <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                stroke-linecap="round"
-                                aria-hidden="true"
-                            >
-                                <line x1="6" y1="6" x2="18" y2="18" />
-                                <line x1="6" y1="18" x2="18" y2="6" />
-                            </svg>
-                        </button>
-                    </div>
-                    <div class="sheet-body-wrap">
-                        <div class="sheet-title" id="sheet-title">&mdash;</div>
-                        <div
-                            id="sheet-debug-id"
-                            style="display: none; font-family: ui-monospace, monospace; font-size: 10px; color: #8a8880; margin-top: 2px"
-                        >
-                            &mdash;
-                        </div>
-                        <div id="sheet-body"></div>
-                        <a class="sheet-cta" id="sheet-cta" href="#">{% trans "Read today's bulletin →" %}</a>
-                    </div>
-                </div>
             </div>
-            <div class="hint" aria-hidden="true">{% trans "Pinch to zoom · tap a region" %}</div>
+            <div class="sheet-body-wrap">
+                <div class="sheet-title" id="sheet-title">&mdash;</div>
+                <div
+                    id="sheet-debug-id"
+                    style="display: none; font-family: ui-monospace, monospace; font-size: 10px; color: #8a8880; margin-top: 2px"
+                >
+                    &mdash;
+                </div>
+                <div id="sheet-body"></div>
+                <a class="sheet-cta" id="sheet-cta" href="#">{% trans "Read today's bulletin →" %}</a>
+            </div>
         </div>
-        <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-        <script src="{% static 'js/map.js' %}"></script>
-        <script src="{% static 'js/offline.js' %}"></script>
-    </body>
-</html>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script src="{% static 'js/map.js' %}"></script>
+    <script src="{% static 'js/offline.js' %}"></script>
+{% endblock %}
