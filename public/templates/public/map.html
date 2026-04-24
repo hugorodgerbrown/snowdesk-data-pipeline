@@ -53,11 +53,16 @@
         --- Footer hint (reintroduce only if SNOW-34 still wants it) ---
         <div class="hint" aria-hidden="true">{% trans "Pinch to zoom · tap a region" %}</div>
     {% endcomment %}
+    {# data-region-summary-url carries the literal placeholder __REGION__   #}
+    {# which static/js/map.js substitutes for the tapped region's region_id #}
+    {# at fetch time. Keeping the URL in {% url %} preserves a single      #}
+    {# source of truth for the route name.                                  #}
     <div
         id="map"
         data-regions-url="{% url 'api:regions_geojson' %}"
         data-summaries-url="{% url 'api:today_summaries' %}"
         data-resorts-url="{% url 'api:resorts_by_region' %}"
+        data-region-summary-url="{% url 'api:region_summary' '__REGION__' %}"
         data-offline-manifest-url="{% url 'api:offline_manifest_map' %}"
         data-basemap-style="{{ basemap_style_url }}"
     >
@@ -131,6 +136,9 @@
         >
             debug &middot; press d
         </div>
+        {# Bottom sheet — two snap states (peek / expanded) populated on   #}
+        {# region tap by static/js/map.js. The peek + expanded containers  #}
+        {# receive server-rendered HTML from /api/region/<id>/summary/.   #}
         <div id="sheet" class="sheet">
             <div id="sheet-grab" class="sheet-grab">
                 <div class="sheet-handle"></div>
@@ -150,16 +158,12 @@
                     </svg>
                 </button>
             </div>
+            {# Both partials are always present in the DOM; in peek state the #}
+            {# expanded body sits below the visible fold and bleeds in as a   #}
+            {# small tease so the user can see there's more to swipe up to.   #}
             <div class="sheet-body-wrap">
-                <div class="sheet-title" id="sheet-title">&mdash;</div>
-                <div
-                    id="sheet-debug-id"
-                    style="display: none; font-family: ui-monospace, monospace; font-size: 10px; color: #8a8880; margin-top: 2px"
-                >
-                    &mdash;
-                </div>
-                <div id="sheet-body"></div>
-                <a class="sheet-cta" id="sheet-cta" href="#">{% trans "Read today's bulletin →" %}</a>
+                <div id="sheet-peek" class="sheet-peek"></div>
+                <div id="sheet-expanded" class="sheet-expanded"></div>
             </div>
         </div>
         <div

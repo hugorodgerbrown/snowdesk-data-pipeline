@@ -312,6 +312,19 @@
 .danger-tile[data-level="high"]         { background: var(--color-eaws-high);         color: var(--color-eaws-high-fg); }
 .danger-tile[data-level="very_high"]    { background: var(--color-eaws-very-high);    color: var(--color-eaws-very-high-fg); }
 
+/* Small inline variant of .danger-tile for use in running text —
+ * e.g. the region-peek subtitle prefixes each trait title with a
+ * level chip. Inherits the [data-level] colour rules above. */
+.danger-tile--inline {
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.3rem;
+  border-radius: 4px;
+  font-size: 0.66rem;
+  vertical-align: 1px;
+  margin-right: 2px;
+}
+
 
 /* —— Field guidance <details> chevron ——————
    The animated chevron on the <summary> trigger

@@ -1,0 +1,30 @@
+{% comment %}
+public/templates/public/_region_expanded.html — Expanded-state body for
+the region sheet on /map/.
+
+Rendered server-side by ``public.api.region_summary`` and injected into
+the sheet's expanded container by ``static/js/map.js``. Composes the
+shared ``_rating_block.html`` partial per render-model trait so the
+map sheet and the bulletin page render hazard blocks through the same
+code path — future tweaks to the partial propagate automatically.
+
+Expects the following variables in scope:
+  rm            — the bulletin's render_model dict.
+  bulletin_url  — pre-resolved URL for the full bulletin page.
+{% endcomment %}
+{% load i18n %}
+
+<div class="region-expanded">
+    {% if rm.traits %}
+        {% for trait in rm.traits %}
+            {% include "public/_rating_block.html" with trait=trait %}
+        {% endfor %}
+    {% else %}
+        <p class="region-expanded-empty">
+            {% trans "No avalanche problems reported." %}
+        </p>
+    {% endif %}
+    <a class="sheet-cta" href="{{ bulletin_url }}">
+        {% trans "Open full bulletin →" %}
+    </a>
+</div>
