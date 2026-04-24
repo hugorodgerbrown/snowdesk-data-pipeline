@@ -26,38 +26,12 @@
 
 {% block content %}
     {% comment %}
-        Chrome temporarily hidden by SNOW-35. Reintroduced as floating
-        overlays by SNOW-36 (top bar / search / save-offline) and
-        SNOW-38 (legend). Markup preserved here, not in git history
-        alone, so those tickets have exact strings/attributes to hand
-        to their new overlay partials.
-
-        --- SNOW-36: brand + search + save-offline ---
-        <header>
-            <label class="search" for="search-input">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="m20 20-3-3" />
-                </svg>
-                <input
-                    id="search-input"
-                    class="search-input"
-                    type="search"
-                    placeholder='{% trans "Find a region or resort" %}'
-                    autocomplete="off"
-                    spellcheck="false"
-                    aria-label='{% trans "Find a region or resort" %}'
-                    aria-autocomplete="list"
-                    aria-controls="search-results"
-                    aria-expanded="false"
-                    role="combobox"
-                >
-            </label>
-            <ul id="search-results" class="search-results" role="listbox" hidden></ul>
-            <button id="offline-cta" type="button" class="offline-cta" aria-live="polite">
-                {% trans "Save offline" %}
-            </button>
-        </header>
+        Chrome still awaiting reintroduction as floating overlays —
+        SNOW-38 (legend) and, if SNOW-34 still wants it, the footer
+        hint. Markup preserved here, not in git history alone, so
+        those tickets have exact strings/attributes to hand to their
+        new overlay partials. The SNOW-36 block (top-right utility
+        cluster) has landed and is live above the map below.
 
         --- SNOW-38: danger-scale legend ---
         <div class="legend">
@@ -87,6 +61,70 @@
         data-offline-manifest-url="{% url 'api:offline_manifest_map' %}"
         data-basemap-style="{{ basemap_style_url }}"
     >
+        <div class="map-utility-cluster" id="map-utility-cluster">
+            <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">
+                <button
+                    id="search-toggle"
+                    type="button"
+                    class="map-utility-button"
+                    aria-label='{% trans "Find a region or resort" %}'
+                    aria-expanded="false"
+                    aria-controls="search-input"
+                >
+                    <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        aria-hidden="true"
+                    >
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="m20 20-3-3" />
+                    </svg>
+                </button>
+                <input
+                    id="search-input"
+                    class="search-input"
+                    type="search"
+                    placeholder='{% trans "Find a region or resort" %}'
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label='{% trans "Find a region or resort" %}'
+                    aria-autocomplete="list"
+                    aria-controls="search-results"
+                    aria-expanded="false"
+                    role="combobox"
+                >
+            </div>
+            <button
+                id="offline-toggle"
+                type="button"
+                class="map-utility-pill map-utility-pill--button"
+                aria-label='{% trans "Save offline" %}'
+                aria-live="polite"
+                data-state="idle"
+            >
+                <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M12 3v12" />
+                    <path d="m7 10 5 5 5-5" />
+                    <path d="M5 21h14" />
+                </svg>
+            </button>
+            <ul id="search-results" class="search-results" role="listbox" hidden></ul>
+        </div>
         <div
             id="debug-pill"
             style="display: none; position: absolute; top: 10px; right: 10px; z-index: 2; background: #1a1a1a; color: #fff; font-size: 10px; padding: 4px 7px; border-radius: 3px; font-family: ui-monospace, monospace"
