@@ -174,3 +174,19 @@ class TestRegionsFixture:
         assert abs(region.centre["lat"] - 46.470737) < 1e-6
         assert region.boundary is not None
         assert region.boundary["type"] == "Polygon"
+
+    def test_fixture_polygon_rings_are_closed(self) -> None:
+        """Every fixture polygon's linear rings satisfy RFC 7946 §3.1.6.
+
+        An open ring renders as a visible gap on the map boundary layer
+        even though MapLibre auto-closes the fill. This assertion guards
+        the CSV source from regressing to unclosed rings.
+        """
+        call_command("loaddata", "regions", verbosity=0)
+        offenders: list[str] = []
+        for region in Region.objects.all():
+            assert region.boundary is not None
+            for ring_idx, ring in enumerate(region.boundary["coordinates"]):
+                if ring[0] != ring[-1]:
+                    offenders.append(f"{region.region_id}[ring {ring_idx}]")
+        assert offenders == [], f"Unclosed rings: {offenders}"

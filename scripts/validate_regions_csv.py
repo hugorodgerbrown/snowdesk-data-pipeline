@@ -101,6 +101,14 @@ def _validate_ring(ring: object, ring_idx: int, row_num: int) -> list[str]:
             continue
         errors += _validate_lon_lat(pt[0], f"{loc} lon", row_num, -180, 180)
         errors += _validate_lon_lat(pt[1], f"{loc} lat", row_num, -90, 90)
+    # RFC 7946 §3.1.6: a linear ring is a closed LineString with four or more
+    # positions, and the first and last positions must be identical. An open
+    # ring renders as a gap on the map's boundary line layer.
+    if not errors and len(ring) >= 2 and ring[0] != ring[-1]:
+        errors.append(
+            f"Row {row_num}: boundary.coordinates[{ring_idx}] is not closed "
+            f"(first {ring[0]} != last {ring[-1]})"
+        )
     return errors
 
 
