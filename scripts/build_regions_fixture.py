@@ -5,12 +5,17 @@ Reads docs/eaws_regions_ch.csv and produces a Django fixture file for the
 pipeline.Region model. Each record omits pk and uuid (so Django assigns them)
 and sets created_at/updated_at to 2026-04-13T00:00:00Z to match the existing
 resorts.json fixture pattern.
+
+Boundary polygon rings are defensively closed (first position appended as
+last if missing) so the fixture always satisfies RFC 7946 §3.1.6, even if
+a hand-edited CSV row forgets the closing vertex.
 """
 
 import csv
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -21,6 +26,35 @@ FIXTURE_PATH = REPO_ROOT / "pipeline" / "fixtures" / "regions.json"
 
 CREATED_AT = "2026-04-13T00:00:00Z"
 UPDATED_AT = "2026-04-13T00:00:00Z"
+
+
+def _close_polygon_rings(boundary: dict[str, Any]) -> dict[str, Any]:
+    """
+    Return a copy of ``boundary`` with every linear ring closed.
+
+    GeoJSON (RFC 7946 §3.1.6) requires each ring's first and last positions
+    to be identical. If the CSV row is missing the closing vertex, this
+    helper appends a copy of the first coordinate so the downstream map
+    line layer draws the full outline without a visible gap.
+
+    Args:
+        boundary: A GeoJSON Polygon geometry object.
+
+    Returns:
+        A new boundary dict with closed rings; non-polygon input is
+        returned unchanged.
+
+    """
+    if boundary.get("type") != "Polygon":
+        return boundary
+    rings = boundary.get("coordinates", [])
+    closed_rings: list[list[list[float]]] = []
+    for ring in rings:
+        if isinstance(ring, list) and len(ring) >= 2 and ring[0] != ring[-1]:
+            closed_rings.append([*ring, ring[0]])
+        else:
+            closed_rings.append(ring)
+    return {**boundary, "coordinates": closed_rings}
 
 
 def build_fixture(csv_path: Path, fixture_path: Path) -> None:
@@ -38,7 +72,7 @@ def build_fixture(csv_path: Path, fixture_path: Path) -> None:
         reader = csv.DictReader(fh)
         for row in reader:
             centre = json.loads(row["centre"])
-            boundary = json.loads(row["boundary"])
+            boundary = _close_polygon_rings(json.loads(row["boundary"]))
             region_id = row["region_id"].strip()
             records.append(
                 {
