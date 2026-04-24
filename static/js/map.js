@@ -747,3 +747,45 @@
     });
   });
 })();
+
+// SNOW-37: Season-scrubber thumb drag shim. Visually draggable but snaps
+// back to today — time-travel behaviour is a future ticket.
+(function seasonScrubberInit() {
+  const scrubber = document.getElementById('season-scrubber');
+  if (!scrubber) return;
+  const track = scrubber.querySelector('.season-scrubber-track');
+  const thumb = scrubber.querySelector('.season-scrubber-thumb');
+  const todayPct = parseFloat(scrubber.dataset.todayPct);
+
+  let dragging = false;
+  let pointerId = null;
+
+  thumb.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    pointerId = e.pointerId;
+    track.classList.add('dragging');
+    track.classList.remove('animating');
+    e.preventDefault();
+  });
+
+  // pointermove / pointerup bind to `document` (not `thumb`) so the drag
+  // keeps tracking once the cursor leaves the 14px thumb hit target.
+  document.addEventListener('pointermove', (e) => {
+    if (!dragging || e.pointerId !== pointerId) return;
+    const rect = track.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+    thumb.style.left = pct + '%';
+  });
+
+  function release(e) {
+    if (!dragging || (e && e.pointerId !== pointerId)) return;
+    dragging = false;
+    pointerId = null;
+    track.classList.remove('dragging');
+    track.classList.add('animating');
+    thumb.style.left = todayPct + '%';
+    setTimeout(() => track.classList.remove('animating'), 220);
+  }
+  document.addEventListener('pointerup', release);
+  document.addEventListener('pointercancel', release);
+})();
