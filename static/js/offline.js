@@ -1,10 +1,11 @@
 /*
- * static/js/offline.js — "Save offline" CTA controller for the /map/ page.
+ * static/js/offline.js — "Save offline" icon-button controller for /map/.
  *
- * Registers the service worker at /sw.js, then listens for a button click
- * on #offline-cta to trigger a precache pass. Progress and completion
- * messages from the SW are reflected in the button's label so the user
- * can see saving in progress.
+ * Registers the service worker at /sw.js, then listens for a click on
+ * the #offline-toggle icon pill (SNOW-36) to trigger a precache pass.
+ * Progress and completion messages from the SW are reflected in the
+ * button's aria-label / title / data-state so the SR announcement
+ * still fires and the icon can tint/spin via CSS on state changes.
  *
  * The offline-manifest URL is read from data-offline-manifest-url on #map
  * so the Django template remains the single source of truth for all API
@@ -21,21 +22,30 @@
 (function () {
   'use strict';
 
-  const ctaEl = document.getElementById('offline-cta');
+  const btnEl = document.getElementById('offline-toggle');
   const mapEl = document.getElementById('map');
 
-  // Guard: if the CTA element is absent (e.g. template variant without it),
-  // do nothing.
-  if (!ctaEl || !mapEl) {
+  // Guard: if the button element is absent (e.g. template variant without
+  // the utility cluster), do nothing.
+  if (!btnEl || !mapEl) {
     return;
   }
 
-  // Guard: if the browser does not support service workers, hide the CTA so
-  // the user is not presented with a button that can never work.
+  // Guard: if the browser does not support service workers, hide the button
+  // so the user is not presented with an icon that can never work.
   if (!('serviceWorker' in navigator)) {
-    ctaEl.style.display = 'none';
+    btnEl.style.display = 'none';
     return;
   }
+
+  // The icon pill has an inner <svg>; textContent writes would wipe it.
+  // Instead, this helper routes user-facing state through aria-label +
+  // title (hover tooltip) and data-state (CSS hook for tint/spin).
+  const setState = (stateName, label) => {
+    btnEl.dataset.state = stateName;
+    btnEl.setAttribute('aria-label', label);
+    btnEl.setAttribute('title', label);
+  };
 
   // -------------------------------------------------------------------------
   // Service-worker registration
@@ -52,14 +62,14 @@
   // -------------------------------------------------------------------------
 
   if (localStorage.getItem('offline-map-saved')) {
-    ctaEl.textContent = 'Saved — tap to update'; // i18n: translatable
+    setState('saved', 'Saved — tap to update'); // i18n: translatable
   }
 
   // -------------------------------------------------------------------------
-  // CTA click — trigger precache via SW message
+  // Click — trigger precache via SW message
   // -------------------------------------------------------------------------
 
-  ctaEl.addEventListener('click', async () => {
+  btnEl.addEventListener('click', async () => {
     const manifestUrl = mapEl.dataset.offlineManifestUrl;
     if (!manifestUrl) {
       console.error('[offline] No data-offline-manifest-url on #map');
@@ -81,12 +91,12 @@
 
     reg.active.postMessage({ type: 'precache', manifestUrl });
 
-    ctaEl.disabled = true;
-    ctaEl.textContent = 'Saving…'; // i18n: translatable
+    btnEl.disabled = true;
+    setState('saving', 'Saving…'); // i18n: translatable
   });
 
   // -------------------------------------------------------------------------
-  // Message handler — reflect progress back into the button label
+  // Message handler — reflect progress back into the button state
   // -------------------------------------------------------------------------
 
   navigator.serviceWorker.addEventListener('message', (ev) => {
@@ -95,21 +105,21 @@
     switch (ev.data.type) {
       case 'progress': {
         const { cached, total } = ev.data;
-        ctaEl.textContent = `Saving… (${cached} of ${total})`; // i18n: translatable
-        ctaEl.disabled = true;
+        setState('saving', `Saving… (${cached} of ${total})`); // i18n: translatable
+        btnEl.disabled = true;
         break;
       }
 
       case 'complete': {
-        ctaEl.textContent = 'Saved — tap to update'; // i18n: translatable
-        ctaEl.disabled = false;
+        setState('saved', 'Saved — tap to update'); // i18n: translatable
+        btnEl.disabled = false;
         localStorage.setItem('offline-map-saved', new Date().toISOString());
         break;
       }
 
       case 'error': {
-        ctaEl.textContent = 'Save failed — tap to retry'; // i18n: translatable
-        ctaEl.disabled = false;
+        setState('error', 'Save failed — tap to retry'); // i18n: translatable
+        btnEl.disabled = false;
         console.error('[offline] Precache error:', ev.data);
         break;
       }
