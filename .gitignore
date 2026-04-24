@@ -8,6 +8,7 @@ dist/
 DO_NOT_ADD/
 build/
 .eggs/
+.claude/settings.local.json
 
 # Environments
 .env
