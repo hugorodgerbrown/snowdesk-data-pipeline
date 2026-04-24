@@ -88,3 +88,12 @@ CSRF_TRUSTED_ORIGINS = config(
     "CSRF_TRUSTED_ORIGINS",
     cast=lambda v: [s.strip() for s in v.split(",") if s.strip()],
 )
+
+# ---------------------------------------------------------------------------
+# Content Security Policy — enabled, report-only initially
+# ---------------------------------------------------------------------------
+# Flip CSP_REPORT_ONLY=False to enforce once violation reports stabilise.
+# Both flags are environment-overridable for a zero-redeploy kill switch
+# if the enforcing policy causes an unexpected regression.
+CSP_ENABLED = config("CSP_ENABLED", default=True, cast=bool)
+CSP_REPORT_ONLY = config("CSP_REPORT_ONLY", default=True, cast=bool)

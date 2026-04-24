@@ -2,11 +2,11 @@
 # Do not edit by hand; regenerate with:
 #   poetry run python manage.py monitor_query_counts --commit
 # Format: <name> <count>
-home 0
-map 0
+home 1
+map 1
 api_today_summaries 1
 api_resorts_by_region 2
 api_regions_geojson 1
 api_offline_manifest_map 0
-region_redirect 1
-bulletin_historic 8
+region_redirect 2
+bulletin_historic 9

@@ -36,3 +36,15 @@ RATELIMIT_ENABLE = False
 # Expose X-DB-Query-Count so local pages show the per-request SQL query
 # count in DevTools; also needed for `monitor_query_counts` locally.
 QUERY_COUNT_HEADER_ENABLED = True
+
+# ---------------------------------------------------------------------------
+# Content Security Policy — on in report-only mode locally
+# ---------------------------------------------------------------------------
+# django-csp-plus wires CSP_ENABLED at middleware __init__ (raising
+# MiddlewareNotUsed when disabled), so we can't toggle it per-test via
+# override_settings. Turning it on in dev (and therefore tests) mirrors
+# production behaviour and lets local browsers surface real violations.
+# Report-only means nothing is actually blocked — DEBUG error pages, etc.
+# still render untouched.
+CSP_ENABLED = True
+CSP_REPORT_ONLY = True

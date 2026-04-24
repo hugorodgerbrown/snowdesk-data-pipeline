@@ -23,6 +23,7 @@ gunicorn = "^25.3.0"
 pyyaml = "^6.0.3"
 bleach = "^6.3.0"
 django-ratelimit = "^4.1.0"
+django-csp-plus = "^3.3.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.9.10"

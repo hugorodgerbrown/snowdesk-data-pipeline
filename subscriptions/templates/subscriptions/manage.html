@@ -76,7 +76,7 @@ authenticated=True (session present):
                     <h1 class="text-2xl font-semibold text-text-1 mb-6">
                         {% blocktrans count count=subscriptions|length trimmed %}
                             Your subscription
-                            {% plural %}
+                        {% plural %}
                             Your subscriptions
                         {% endblocktrans %}
                     </h1>
@@ -153,7 +153,7 @@ authenticated=True (session present):
                     via hx-on::response-error would need one per button; a
                     single document-level listener is cleaner.
                 {% endcomment %}
-                <script>
+                <script nonce="{{ request.csp_nonce }}">
                     (function () {
                         var banner = document.getElementById("htmx-error-banner");
                         if (!banner) return;
