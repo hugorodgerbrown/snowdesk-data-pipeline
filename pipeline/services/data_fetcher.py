@@ -121,30 +121,44 @@ def _parse_dt(value: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
-def _get_or_create_region(region_id: str, name: str) -> Region:
-    """
-    Look up or create a Region record.
+class UnknownRegionError(LookupError):
+    """Raised when an ingested bulletin references an unseeded region_id.
 
-    If the region already exists but the name has changed, update it.
+    Regions are fixture-backed reference data, not auto-created. If a
+    CAAML bulletin arrives with a ``region_id`` that isn't in the
+    ``pipeline_region`` table, we want that to fail loudly so a human
+    can investigate (new EAWS region published? typo in the feed?) and
+    update the fixture deliberately.
+    """
+
+
+def _get_region(region_id: str) -> Region:
+    """
+    Look up the Region for an ingested bulletin entry.
+
+    Regions are fixture-backed; unseen identifiers raise
+    ``UnknownRegionError`` rather than being silently auto-created.
 
     Args:
         region_id: SLF region identifier, e.g. "CH-4115".
-        name: Human-readable region name.
 
     Returns:
-        The Region instance (created or existing).
+        The matching Region instance.
+
+    Raises:
+        UnknownRegionError: The region_id does not correspond to any
+            seeded Region row.
 
     """
-    region, created = Region.objects.get_or_create(
-        region_id=region_id,
-        defaults={"name": name},
-    )
-
-    if not created and region.name != name:
-        region.name = name
-        region.save(update_fields=["name", "updated_at"])
-
-    return region
+    try:
+        return Region.objects.get(region_id=region_id)
+    except Region.DoesNotExist as exc:
+        raise UnknownRegionError(
+            f"Bulletin references unknown region_id={region_id!r} — "
+            "add it to pipeline/fixtures/regions.json (and rerun "
+            "refresh_eaws_fixtures if the EAWS source has changed) before "
+            "re-ingesting."
+        ) from exc
 
 
 def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
@@ -215,7 +229,7 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
         RegionBulletin.objects.filter(bulletin=bulletin).delete()
 
     for raw_region in raw_regions:
-        region = _get_or_create_region(raw_region["regionID"], raw_region["name"])
+        region = _get_region(raw_region["regionID"])
         RegionBulletin.objects.create(
             bulletin=bulletin,
             region=region,

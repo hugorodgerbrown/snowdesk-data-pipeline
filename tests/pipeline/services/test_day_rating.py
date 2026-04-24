@@ -575,6 +575,8 @@ class TestUpsertBulletinSwallowsException:
         from pipeline.services.data_fetcher import upsert_bulletin
 
         run = PipelineRunFactory.create()
+        # Seed the region first — regions are fixture-backed (no auto-create).
+        RegionFactory.create(region_id="CH-9999", name="Test Region")
 
         raw = {
             "bulletinID": "test-exc-001",

@@ -9,7 +9,7 @@ import pytest
 from django.core.management import call_command
 
 from pipeline.models import Region
-from tests.factories import RegionFactory
+from tests.factories import EawsSubRegionFactory, RegionFactory
 
 
 @pytest.mark.django_db
@@ -41,7 +41,8 @@ class TestRegionSlug:
 
     def test_slug_auto_generated_from_region_id(self) -> None:
         """When no slug is provided, save() derives it from region_id."""
-        region = Region(region_id="CH-4115", name="Val Ferret")
+        sub = EawsSubRegionFactory.create(prefix="CH-41")
+        region = Region(region_id="CH-4115", name="Val Ferret", subregion=sub)
         region.save()
         assert region.slug == "ch-4115"
 
