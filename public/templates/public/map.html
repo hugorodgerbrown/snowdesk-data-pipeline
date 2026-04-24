@@ -162,6 +162,25 @@
                 <a class="sheet-cta" id="sheet-cta" href="#">{% trans "Read today's bulletin →" %}</a>
             </div>
         </div>
+        <div
+            id="season-scrubber"
+            class="season-scrubber"
+            role="slider"
+            aria-label='{% trans "Season scrubber" %}'
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="{{ today_pct }}"
+            data-season-start="{{ season_start|date:'Y-m-d' }}"
+            data-season-end="{{ season_end|date:'Y-m-d' }}"
+            data-today="{{ today|date:'Y-m-d' }}"
+            data-today-pct="{{ today_pct }}"
+        >
+            <span class="season-scrubber-bound">{{ season_start|date:'M j'|upper }}</span>
+            <div class="season-scrubber-track" aria-hidden="true">
+                <div class="season-scrubber-thumb" style="left: {{ today_pct }}%"></div>
+            </div>
+            <span class="season-scrubber-bound">{{ season_end|date:'M j'|upper }}</span>
+        </div>
     </div>
 {% endblock %}
 

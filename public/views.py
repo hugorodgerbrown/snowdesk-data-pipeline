@@ -829,10 +829,24 @@ def map_view(request: HttpRequest) -> HttpResponse:
         The rendered map page.
 
     """
+    today = datetime.date.today()
+    season_start, season_end = _season_date_range(today)
+    # Clamp so the thumb stays inside the track if the user loads the page
+    # outside the nominal season window (e.g. mid-summer development).
+    span = (season_end - season_start).days
+    elapsed = max(0, min((today - season_start).days, span))
+    today_pct = round(elapsed / span * 100, 2) if span else 100.0
+
     return render(
         request,
         "public/map.html",
-        {"basemap_style_url": settings.BASEMAP_STYLE_URL},
+        {
+            "basemap_style_url": settings.BASEMAP_STYLE_URL,
+            "season_start": season_start,
+            "season_end": season_end,
+            "today": today,
+            "today_pct": today_pct,
+        },
     )
 
 

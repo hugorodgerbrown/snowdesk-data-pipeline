@@ -428,3 +428,92 @@
     font-weight: 500;
     text-decoration: none;
 }
+
+/* "Save offline" CTA — sits below the search field in the header. */
+
+.offline-cta {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 7px 12px;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--muted);
+    background: transparent;
+    border: 0.5px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: center;
+}
+
+.offline-cta:hover {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.offline-cta:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+/* Season scrubber — floating bottom-pinned pill (SNOW-37).
+   The pill sits above MapLibre's attribution control (which stays pinned at
+   bottom: 0 — legally required to remain visible). 44px is the height of the
+   expanded attribution box; 12px is the gap between the two. */
+
+.season-scrubber {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 0.5px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    user-select: none;
+}
+
+.season-scrubber-bound {
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    color: var(--muted);
+}
+
+.season-scrubber-track {
+    flex: 1 1 auto;
+    height: 3px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 2px;
+    position: relative;
+    cursor: grab;
+}
+
+.season-scrubber-thumb {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--ink);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    touch-action: none;
+}
+
+.season-scrubber-track.dragging {
+    cursor: grabbing;
+}
+
+.season-scrubber-track.animating .season-scrubber-thumb {
+    transition: left 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
