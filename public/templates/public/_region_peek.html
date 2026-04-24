@@ -4,15 +4,19 @@ region sheet on /map/.
 
 Rendered server-side by ``public.api.region_summary`` and injected into
 the sheet's peek container by ``static/js/map.js``. Holds only what's
-visible at the ~30 vh peek snap-point: region name, today's danger
-chip, and a single subtitle line summarising the dominant trait.
+visible at the peek snap-point: region name, today's danger chip, and
+a one-line subtitle composed of one small coloured chip + trait title
+per render-model trait, joined with a middle-dot separator.
+
+The per-trait chips share the same EAWS palette as the main danger
+tile in the header, so users can see at a glance which trait carries
+which level — the header chip shows only the *highest* level overall.
 
 Expects the following variables in scope:
-  region        — the Region instance (for ``region.name``).
-  rm            — the bulletin's render_model dict.
-  summary_line  — pre-composed one-line subtitle (may be empty).
+  region — the Region instance (for ``region.name``).
+  rm     — the bulletin's render_model dict.
 {% endcomment %}
-{% load i18n %}
+{% load i18n snowdesk_time %}
 
 <div class="region-peek" data-region-id="{{ region.region_id }}">
     <div class="region-peek-header">
@@ -21,8 +25,23 @@ Expects the following variables in scope:
             {{ rm.danger.number }}{{ rm.danger.subdivision|default_if_none:'' }}
         </span>
     </div>
-    {% if summary_line %}
-        <p class="region-peek-summary">{{ summary_line }}</p>
+    {% if rm.traits %}
+        <p class="region-peek-summary">
+            {% for trait in rm.traits %}
+                {% if trait.title %}
+                    {% if not forloop.first %}<span class="region-peek-summary-sep" aria-hidden="true">
+                            ·
+                        </span>{% endif %}
+                    <span class="region-peek-summary-trait">
+                        <span
+                            class="danger-tile danger-tile--inline"
+                            data-level="{{ trait.danger_level|danger_level_key }}"
+                        >{{ trait.danger_level }}</span>
+                        {{ trait.title }}
+                    </span>
+                {% endif %}
+            {% endfor %}
+        </p>
     {% endif %}
     {# Debug region-ID readout — only visible when the sheet carries .debug. #}
     <small class="region-peek-debug-id">{{ region.region_id }}</small>

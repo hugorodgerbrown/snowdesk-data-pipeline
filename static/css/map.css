@@ -492,7 +492,19 @@
 .region-peek-summary {
     margin: 0;
     font-size: 13px;
-    line-height: 1.4;
+    line-height: 1.6;
+    color: var(--muted);
+}
+
+/* Each "<chip> trait-title" pair stays together on one line; only the
+ * middle-dot separator may break. Keeps level numbers stuck to their
+ * scope line so they never end up orphaned at the start of a wrap. */
+.region-peek-summary-trait {
+    display: inline;
+    white-space: nowrap;
+}
+
+.region-peek-summary-sep {
     color: var(--muted);
 }
 

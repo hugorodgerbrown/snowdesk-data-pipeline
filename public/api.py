@@ -438,34 +438,6 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
     )
 
 
-def _summary_line(rm: dict[str, Any]) -> str:
-    """
-    Compose the one-line subtitle shown in the region sheet's peek state.
-
-    Joins the bulletin's trait titles (e.g. ``"Dry avalanches, whole day"``
-    / ``"Wet-snow avalanches, as the day progresses"``) with a middle-dot
-    separator. Trait titles are the canonical SLF scope lines — already
-    human-readable and informative — and are preferred over the raw
-    problem labels, which for generic-hazard days read as ``"No distinct
-    problem"`` and mislead a glancing user about whether there's anything
-    to worry about.
-
-    Titles may be lazy-translation proxies (``_()`` / ``gettext_lazy``)
-    so each is coerced to ``str`` before the join.
-
-    Args:
-        rm: The bulletin's ``render_model`` dict.
-
-    Returns:
-        The composed summary string. Empty when the bulletin has no
-        traits (e.g. a stable day with no reported hazard).
-
-    """
-    traits = rm.get("traits") or []
-    titles = [str(t.get("title") or "").strip() for t in traits]
-    return " · ".join(t for t in titles if t)
-
-
 def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     """
     Return pre-rendered peek + expanded HTML for a region's current bulletin.
@@ -505,7 +477,6 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     ctx = {
         "region": region,
         "rm": rm,
-        "summary_line": _summary_line(rm),
         "bulletin_url": bulletin_url,
     }
     return JsonResponse(
