@@ -619,8 +619,41 @@
 
     const inputEl = document.getElementById('search-input');
     const resultsEl = document.getElementById('search-results');
+    const pillEl = document.getElementById('search-pill');
+    const toggleEl = document.getElementById('search-toggle');
     let currentResults = [];
     let activeIdx = -1;
+
+    // Pill expansion — the collapsed default shows only the icon toggle.
+    // Tapping it switches the pill into the expanded state, which reveals
+    // the input (CSS transition) and moves focus. The pill stays expanded
+    // as long as the user is interacting with it; Escape or an outside
+    // pointerdown collapses it back (see handlers below).
+    const openSearch = () => {
+      pillEl.setAttribute('data-state', 'expanded');
+      toggleEl.setAttribute('aria-expanded', 'true');
+      // Defer focus one frame so the width transition starts before the
+      // caret appears — avoids a flash of the input at width 0.
+      window.requestAnimationFrame(() => inputEl.focus());
+      if (inputEl.value) renderResults(runSearch(inputEl.value));
+    };
+
+    const collapseSearch = () => {
+      pillEl.setAttribute('data-state', 'collapsed');
+      toggleEl.setAttribute('aria-expanded', 'false');
+      closeResults();
+      inputEl.blur();
+    };
+
+    toggleEl.addEventListener('click', (e) => {
+      // When already expanded, the toggle is just the leading icon of a
+      // live search input — swallow the click so users don't accidentally
+      // collapse mid-query. Escape or an outside pointerdown is the
+      // deliberate collapse path.
+      if (pillEl.getAttribute('data-state') === 'expanded') return;
+      e.preventDefault();
+      openSearch();
+    });
 
     const closeResults = () => {
       resultsEl.hidden = true;
@@ -694,8 +727,7 @@
       const feature = FEATURE_BY_REGION_ID[item.regionID];
       if (!feature) return;
       inputEl.value = item.primary;
-      closeResults();
-      inputEl.blur();
+      collapseSearch();
       // Force a fresh open even if the region is already the selected one —
       // the user clearly wants to see it, not toggle it off.
       selectFeature(feature.id, { toggle: false });
@@ -732,18 +764,19 @@
           inputEl.value = '';
           closeResults();
         } else {
-          inputEl.blur();
+          collapseSearch();
         }
       }
     });
 
-    // Close the dropdown on outside pointer interaction. Use pointerdown
-    // (before focus changes) and ignore clicks inside the results list
-    // so ``li`` mousedown handlers still fire.
+    // Collapse the pill and close the dropdown on outside pointer
+    // interaction. Use pointerdown (before focus changes) and ignore
+    // clicks inside the pill itself or the results list so li and
+    // toggle handlers still fire.
     document.addEventListener('pointerdown', (e) => {
-      if (e.target === inputEl) return;
+      if (pillEl.contains(e.target)) return;
       if (resultsEl.contains(e.target)) return;
-      closeResults();
+      collapseSearch();
     });
   });
 })();

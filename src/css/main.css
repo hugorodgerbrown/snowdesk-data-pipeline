@@ -86,6 +86,11 @@
   --color-card-hover:     #eeeae2;   /* subtle card footer hover            */
   --color-ring-selected:  #3b82f6;   /* calendar selected-date ring (blue-500) */
 
+  /* Floating overlays — frosted glass surface used by the map utility
+     cluster (SNOW-36) and any future overlay pinned above content. */
+  --color-glass:          rgba(255, 255, 255, 0.85);
+  --shadow-glass:         0 2px 14px rgba(0, 0, 0, 0.08);
+
   /* —— EAWS danger scale ————————————————————
      Exact EAWS specification colours. Do not
      adjust for brand reasons — these are a
@@ -202,6 +207,11 @@
   /* Misc interactive */
   --color-card-hover:     #353330;
   --color-ring-selected:  #60a5fa;
+
+  /* Floating overlays — inverted glass so pills read against dark
+     basemaps / dark UI (SNOW-36). */
+  --color-glass:          rgba(20, 22, 26, 0.78);
+  --shadow-glass:         0 2px 14px rgba(0, 0, 0, 0.35);
 }
 
 
