@@ -19,9 +19,10 @@ registered before the generic ``<str:region_id>/<slug:slug>/`` pattern so
 Django's URL resolver matches the literal suffixes first.
 """
 
+from django.conf import settings
 from django.urls import path
 
-from . import views
+from . import debug_views, views
 
 app_name = "public"
 
@@ -34,6 +35,23 @@ urlpatterns = [
         views.calendar_partial,
         name="calendar_partial",
     ),
+]
+
+# SNOW-45 scrubber perf spike — DEBUG-only harness page. Registered BEFORE
+# the generic ``<str:region_id>/<slug>/`` patterns below, otherwise the
+# URL resolver would match ``/debug/scrubber-perf/`` as a bulletin lookup
+# (region_id="debug", slug="scrubber-perf") and 404 it. View also
+# inline-gates on ``settings.DEBUG`` as a belt-and-braces fallback.
+if settings.DEBUG:
+    urlpatterns += [
+        path(
+            "debug/scrubber-perf/",
+            debug_views.scrubber_perf,
+            name="debug_scrubber_perf",
+        ),
+    ]
+
+urlpatterns += [
     # Examples — sample bulletin links
     path("examples/random/", views.examples_random, name="examples_random"),
     path(
