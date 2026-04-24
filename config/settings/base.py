@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third-party
     "django_htmx",
+    "csp",
     # Local
     "pipeline",
     "public",
@@ -75,6 +76,12 @@ MIDDLEWARE = [
     # Per-view overrides (e.g. no-referrer on token-bearing views) are
     # applied by the view itself before this middleware runs.
     "pipeline.middleware.SecurityHeadersMiddleware",
+    # django-csp-plus. NonceMiddleware populates request.csp_nonce (used by
+    # inline <script nonce="…"> tags in templates); HeaderMiddleware emits
+    # the Content-Security-Policy(-Report-Only) header. The nonce middleware
+    # must run before any view that reads request.csp_nonce.
+    "csp.middleware.CspNonceMiddleware",
+    "csp.middleware.CspHeaderMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -171,6 +178,67 @@ QUERY_COUNT_HEADER_ENABLED = config(
     default=False,
     cast=bool,
 )
+
+# ---------------------------------------------------------------------------
+# Content Security Policy (django-csp-plus)
+# ---------------------------------------------------------------------------
+# Off by default — production.py flips CSP_ENABLED=True and initially runs
+# in report-only mode so violations surface via the CspRule admin without
+# breaking the page. Flip CSP_REPORT_ONLY=False once reports stabilise.
+#
+# The /admin/ surface is exempted: Django admin relies on many inline
+# scripts and styles that would need per-tag nonces, and hardening admin
+# is outside the scope of this change. Staff-only URL — low blast radius.
+#
+# The {report_uri} placeholder is replaced at request time with the local
+# CSP report endpoint mounted under /csp/ in config/urls.py.
+
+CSP_ENABLED = False
+CSP_REPORT_ONLY = True
+CSP_DEFAULTS = {
+    "default-src": ["'none'"],
+    "base-uri": ["'self'"],
+    "form-action": ["'self'"],
+    "frame-ancestors": ["'none'"],
+    "script-src": [
+        "'self'",
+        "'nonce-{nonce}'",
+        "https://unpkg.com",
+    ],
+    # 'unsafe-inline' is required because (a) map.html uses inline style=""
+    # attributes on legend swatches and the debug pill, and (b) map.js +
+    # MapLibre GL set element.style programmatically, which CSP treats as
+    # inline-style. Refactoring these into CSS classes is tracked as a
+    # follow-up and is out of scope for the initial policy.
+    "style-src": [
+        "'self'",
+        "'unsafe-inline'",
+        "https://unpkg.com",
+    ],
+    "img-src": ["'self'", "data:"],
+    "font-src": ["'self'", "data:"],
+    # MapLibre creates its tile-parser workers from blob: URLs; /sw.js is
+    # our own service worker (served from /).
+    "worker-src": ["'self'", "blob:"],
+    # MapLibre fetches the Liberty style + vector tiles from
+    # tiles.openfreemap.org via fetch(); leave self in for XHRs issued
+    # against our own API endpoints.
+    "connect-src": [
+        "'self'",
+        "https://tiles.openfreemap.org",
+    ],
+    "manifest-src": ["'self'"],
+    "report-uri": ["{report_uri}"],
+}
+
+
+def _csp_filter_request(request):  # type: ignore[no-untyped-def]
+    """Skip CSP header emission for /admin/ — see note above."""
+    return not request.path.startswith("/admin/")
+
+
+CSP_FILTER_REQUEST_FUNC = _csp_filter_request
+
 
 # ---------------------------------------------------------------------------
 # Account-access token

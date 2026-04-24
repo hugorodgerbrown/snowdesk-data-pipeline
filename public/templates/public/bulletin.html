@@ -47,7 +47,7 @@ Six structural sections, top to bottom:
     {% if raw_data_json %}
         {# DEBUG-only: raw CAAML payload embedded for source-level inspection. #}
         {# Not rendered visibly; removed in production where DEBUG=False.     #}
-        <script type="application/json" id="bulletin-raw-data">
+        <script type="application/json" id="bulletin-raw-data" nonce="{{ request.csp_nonce }}">
         {{ raw_data_json|safe }}
         </script>
     {% endif %}

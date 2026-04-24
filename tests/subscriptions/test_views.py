@@ -527,7 +527,16 @@ class TestManageViewUnauthenticated:
             reverse("subscriptions:manage"),
             data={"email": "nosuchuser@example.com"},
         )
-        assert resp_known.content == resp_unknown.content
+        # CSP nonces are request-scoped, so every response embeds a unique
+        # random value — strip nonce="…" attributes before comparing, so
+        # the email-enumeration check stays tight without falsely tripping
+        # on the per-request CSP noise.
+        import re
+
+        nonce_re = re.compile(rb'\s?nonce="[^"]+"')
+        assert nonce_re.sub(b"", resp_known.content) == nonce_re.sub(
+            b"", resp_unknown.content
+        )
 
     def test_post_invalid_email_rerenders_form(self):
         """Invalid email on unauthenticated POST re-renders the form with errors."""

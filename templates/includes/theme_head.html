@@ -11,7 +11,7 @@ Also exposes window.__setTheme(mode) for the toggle button:
   __setTheme('light')  — force light
   __setTheme('system') — follow OS preference
 {% endcomment %}
-<script>
+<script nonce="{{ request.csp_nonce }}">
     (function () {
       var stored = localStorage.getItem('theme');
       var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;

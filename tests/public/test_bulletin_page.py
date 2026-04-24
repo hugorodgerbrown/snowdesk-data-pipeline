@@ -714,7 +714,10 @@ class TestDebuggingAids:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert '<script type="application/json" id="bulletin-raw-data">' in content
+        # The raw-data block now carries a CSP nonce attribute, so match
+        # on the stable id= marker rather than the full opening tag.
+        assert 'id="bulletin-raw-data"' in content
+        assert 'type="application/json"' in content
         assert "sentinel-uuid-12345" in content
         # Header still present.
         assert response["X-Bulletin-Id"] == str(bulletin.bulletin_id)
@@ -746,8 +749,11 @@ class TestDebuggingAids:
         response = client.get(url)
         content = response.content.decode()
         # The literal ``</script>`` must not appear inside the raw-data
-        # block — it must be escaped as ``<\/script>``.
-        start = content.index('id="bulletin-raw-data">')
+        # block — it must be escaped as ``<\/script>``. The block carries
+        # a CSP nonce so start from the id= marker and find the end of
+        # that specific opening tag.
+        id_pos = content.index('id="bulletin-raw-data"')
+        start = content.index(">", id_pos) + 1
         end = content.index("</script>", start)
         embedded = content[start:end]
         assert "</script>" not in embedded
