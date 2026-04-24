@@ -1,0 +1,200 @@
+[
+  {
+    "model": "pipeline.eawsmajorregion",
+    "fields": {
+      "prefix": "CH-1",
+      "country": "CH",
+      "name_native": "Westliche Voralpen und Berner Oberland",
+      "name_en": "Western Prealps and Bernese Oberland",
+      "centre": {
+        "lon": 7.576552333333334,
+        "lat": 46.5526319
+      },
+      "bbox": [
+        6.771083,
+        46.120382,
+        8.454698,
+        47.006193
+      ],
+      "boundary": null,
+      "created_at": "2026-04-24T00:00:00Z",
+      "updated_at": "2026-04-24T00:00:00Z"
+    }
+  },
+  {
+    "model": "pipeline.eawsmajorregion",
+    "fields": {
+      "prefix": "CH-2",
+      "country": "CH",
+      "name_native": "Zentrale Voralpen und Alpennordhang",
+      "name_en": "Central Prealps and Northern Alps",
+      "centre": {
+        "lon": 8.5319863125,
+        "lat": 46.8765298125
+      },
+      "bbox": [
+        7.91527,
+        46.526625,
+        8.967477,
+        47.178101
+      ],
+      "boundary": null,
+      "created_at": "2026-04-24T00:00:00Z",
+      "updated_at": "2026-04-24T00:00:00Z"
+    }
+  },
+  {
+    "model": "pipeline.eawsmajorregion",
+    "fields": {
+      "prefix": "CH-3",
+      "country": "CH",
+      "name_native": "Östliche Voralpen",
+      "name_en": "Eastern Prealps",
+      "centre": {
+        "lon": 9.220431999999999,
+        "lat": 47.089452
+      },
+      "bbox": [
+        8.773863,
+        46.797194,
+        9.6734,
+        47.449272
+      ],
+      "boundary": null,
+      "created_at": "2026-04-24T00:00:00Z",
+      "updated_at": "2026-04-24T00:00:00Z"
+    }
+  },
+  {
+    "model": "pipeline.eawsmajorregion",
+    "fields": {
+      "prefix": "CH-4",
+      "country": "CH",
+      "name_native": "Wallis",
+      "name_en": "Valais",
+      "centre": {
+        "lon": 7.716655777777778,
+        "lat": 46.21186592592593
+      },
+      "bbox": [
+        6.870244,
+        45.858137,
+        8.475366,
+        46.655017
+      ],
+      "boundary": null,
+      "created_at": "2026-04-24T00:00:00Z",
+      "updated_at": "2026-04-24T00:00:00Z"
+    }
+  },
+  {
+    "model": "pipeline.eawsmajorregion",
+    "fields": {
+      "prefix": "CH-5",
+      "country": "CH",
+      "name_native": "Nord- und Mittelbünden",
+      "name_en": "Northern and Central Grisons",
+      "centre": {
+        "lon": 9.436396842105262,
+        "lat": 46.70257084210526
+      },
+      "bbox": [
+        8.651342,
+        46.365434,
+        10.096758,
+        47.064378
+      ],
+      "boundary": null,
+      "created_at": "2026-04-24T00:00:00Z",
+      "updated_at": "2026-04-24T00:00:00Z"
+    }
+  },
+  {
+    "model": "pipeline.eawsmajorregion",
+    "fields": {
+      "prefix": "CH-6",
+      "country": "CH",
+      "name_native": "Tessin",
+      "name_en": "Ticino",
+      "centre": {
+        "lon": 8.868186181818182,
+        "lat": 46.31216190909091
+      },
+      "bbox": [
+        8.386567,
+        45.818475,
+        9.300137,
+        46.621249
+      ],
+      "boundary": null,
+      "created_at": "2026-04-24T00:00:00Z",
+      "updated_at": "2026-04-24T00:00:00Z"
+    }
+  },
+  {
+    "model": "pipeline.eawsmajorregion",
+    "fields": {
+      "prefix": "CH-7",
+      "country": "CH",
+      "name_native": "Engadin und Südbünden",
+      "name_en": "Engadine and Southern Grisons",
+      "centre": {
+        "lon": 10.086702133333334,
+        "lat": 46.587666066666664
+      },
+      "bbox": [
+        9.491697,
+        46.21739,
+        10.494136,
+        46.999153
+      ],
+      "boundary": null,
+      "created_at": "2026-04-24T00:00:00Z",
+      "updated_at": "2026-04-24T00:00:00Z"
+    }
+  },
+  {
+    "model": "pipeline.eawsmajorregion",
+    "fields": {
+      "prefix": "CH-8",
+      "country": "CH",
+      "name_native": "Jura und Mittelland",
+      "name_en": "Jura and Mittelland",
+      "centre": {
+        "lon": 7.132425,
+        "lat": 47.17409955555556
+      },
+      "bbox": [
+        6.060353,
+        46.376985,
+        8.068582,
+        47.600395
+      ],
+      "boundary": null,
+      "created_at": "2026-04-24T00:00:00Z",
+      "updated_at": "2026-04-24T00:00:00Z"
+    }
+  },
+  {
+    "model": "pipeline.eawsmajorregion",
+    "fields": {
+      "prefix": "CH-9",
+      "country": "CH",
+      "name_native": "Flachland",
+      "name_en": "Lowlands",
+      "centre": {
+        "lon": 7.779891666666667,
+        "lat": 47.11869766666666
+      },
+      "bbox": [
+        5.953662,
+        46.128023,
+        9.659887,
+        47.807613
+      ],
+      "boundary": null,
+      "created_at": "2026-04-24T00:00:00Z",
+      "updated_at": "2026-04-24T00:00:00Z"
+    }
+  }
+]

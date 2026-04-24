@@ -18,6 +18,8 @@ from django.utils.html import format_html, format_html_join
 
 from .models import (
     Bulletin,
+    EawsMajorRegion,
+    EawsSubRegion,
     PipelineRun,
     Region,
     RegionBulletin,
@@ -55,12 +57,50 @@ class PipelineRunAdmin(admin.ModelAdmin):
     ordering = ["-started_at"]
 
 
+@admin.register(EawsMajorRegion)
+class EawsMajorRegionAdmin(admin.ModelAdmin):
+    """Admin view for EawsMajorRegion (L1)."""
+
+    list_display = ["prefix", "name_native", "name_en", "country", "updated_at"]
+    list_filter = ["country"]
+    search_fields = ["prefix", "name_native", "name_en"]
+    ordering = ["prefix"]
+    readonly_fields = [
+        "id",
+        "uuid",
+        "centre",
+        "bbox",
+        "boundary",
+        "created_at",
+        "updated_at",
+    ]
+
+
+@admin.register(EawsSubRegion)
+class EawsSubRegionAdmin(admin.ModelAdmin):
+    """Admin view for EawsSubRegion (L2)."""
+
+    list_display = ["prefix", "name_native", "name_en", "major", "updated_at"]
+    list_filter = ["major"]
+    search_fields = ["prefix", "name_native", "name_en"]
+    ordering = ["prefix"]
+    readonly_fields = [
+        "id",
+        "uuid",
+        "centre",
+        "bbox",
+        "boundary",
+        "created_at",
+        "updated_at",
+    ]
+
+
 @admin.register(Region)
 class RegionAdmin(admin.ModelAdmin):
-    """Admin view for Region."""
+    """Admin view for Region (L4 EAWS micro-region)."""
 
-    list_display = ["region_id", "name", "slug", "updated_at"]
-    list_filter = []
+    list_display = ["region_id", "name", "subregion", "slug", "updated_at"]
+    list_filter = ["subregion__major", "subregion"]
     search_fields = ["region_id", "name"]
     ordering = ["region_id"]
     readonly_fields = ["id", "slug", "centre", "boundary", "created_at", "updated_at"]

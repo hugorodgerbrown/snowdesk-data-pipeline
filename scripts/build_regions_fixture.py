@@ -39,13 +39,18 @@ def build_fixture(csv_path: Path, fixture_path: Path) -> None:
         for row in reader:
             centre = json.loads(row["centre"])
             boundary = json.loads(row["boundary"])
+            region_id = row["region_id"].strip()
             records.append(
                 {
                     "model": "pipeline.region",
                     "fields": {
-                        "region_id": row["region_id"].strip(),
+                        "region_id": region_id,
                         "name": row["region_name"].strip(),
                         "slug": row["slug"].strip(),
+                        # Parent L2 sub-region natural key (region_id[:5]).
+                        # The referenced EawsSubRegion must exist in
+                        # pipeline/fixtures/eaws_sub_regions.json.
+                        "subregion": [region_id[:5]],
                         "centre": centre,
                         "boundary": boundary,
                         "created_at": CREATED_AT,

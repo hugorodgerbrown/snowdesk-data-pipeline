@@ -17,6 +17,8 @@ import factory
 
 from pipeline.models import (
     Bulletin,
+    EawsMajorRegion,
+    EawsSubRegion,
     PipelineRun,
     Region,
     RegionBulletin,
@@ -39,8 +41,41 @@ class PipelineRunFactory(factory.django.DjangoModelFactory[PipelineRun]):
     status = PipelineRun.Status.PENDING
 
 
+class EawsMajorRegionFactory(factory.django.DjangoModelFactory[EawsMajorRegion]):
+    """Factory for EawsMajorRegion (L1) instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = EawsMajorRegion
+        django_get_or_create = ("prefix",)
+
+    prefix = factory.Sequence(lambda n: f"CH-{n % 9 + 1}")
+    country = "CH"
+    name_native = factory.LazyAttribute(lambda obj: f"Major {obj.prefix}")
+    name_en = factory.LazyAttribute(lambda obj: f"Major {obj.prefix}")
+
+
+class EawsSubRegionFactory(factory.django.DjangoModelFactory[EawsSubRegion]):
+    """Factory for EawsSubRegion (L2) instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = EawsSubRegion
+        django_get_or_create = ("prefix",)
+
+    prefix = factory.Sequence(lambda n: f"CH-{n % 9 + 1}{n % 3 + 1}")
+    major = factory.SubFactory(
+        EawsMajorRegionFactory,
+        prefix=factory.LazyAttribute(lambda obj: obj.factory_parent.prefix[:4]),
+    )
+    name_native = factory.LazyAttribute(lambda obj: f"Sub {obj.prefix}")
+    name_en = factory.LazyAttribute(lambda obj: f"Sub {obj.prefix}")
+
+
 class RegionFactory(factory.django.DjangoModelFactory[Region]):
-    """Factory for Region instances."""
+    """Factory for Region (L4 EAWS micro-region) instances."""
 
     class Meta:
         """Factory metadata."""
@@ -50,6 +85,10 @@ class RegionFactory(factory.django.DjangoModelFactory[Region]):
     region_id = factory.Sequence(lambda n: f"CH-{1000 + n}")
     name = factory.LazyAttribute(lambda obj: f"Region {obj.region_id}")
     slug = factory.LazyAttribute(lambda obj: obj.region_id.lower().replace("-", "-"))
+    subregion = factory.SubFactory(
+        EawsSubRegionFactory,
+        prefix=factory.LazyAttribute(lambda obj: obj.factory_parent.region_id[:5]),
+    )
     centre = factory.LazyFunction(lambda: {"lon": 7.5, "lat": 46.8})
     boundary = None
 

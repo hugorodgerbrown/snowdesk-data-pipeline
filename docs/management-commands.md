@@ -47,6 +47,13 @@ poetry run python manage.py rebuild_render_models --commit  # persist
 # Read-only by default — --commit rewrites perf/query_counts.txt.
 poetry run python manage.py monitor_query_counts           # CI / local gate
 poetry run python manage.py monitor_query_counts --commit  # accept new counts
+
+# Recompute the derived centre + bbox on L1/L2 EAWS fixtures from the
+# union of their L4 children. Run after editing pipeline/fixtures/regions.json
+# (e.g. when EAWS publishes a new season). Read-only by default; --commit
+# to write the L1/L2 fixtures.
+poetry run python manage.py refresh_eaws_fixtures           # diff-only
+poetry run python manage.py refresh_eaws_fixtures --commit  # persist
 ```
 
 `SEASON_START_DATE` is read from the environment in

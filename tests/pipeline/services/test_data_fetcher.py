@@ -4,7 +4,7 @@ tests/pipeline/services/test_data_fetcher.py — Tests for the data_fetcher serv
 Covers:
   - _normalise_response: all three API response shapes + empty cases
   - _parse_dt: ISO-8601 parsing
-  - _get_or_create_region: creation, idempotency, name updates
+  - _get_region: returns seeded Region, raises UnknownRegionError otherwise
   - upsert_bulletin: creation, update, region linking
   - fetch_bulletin_page: HTTP call with mocked responses
   - run_pipeline: full orchestration with mocked API pages
@@ -25,7 +25,8 @@ from pipeline.models import (
     RegionDayRating,
 )
 from pipeline.services.data_fetcher import (
-    _get_or_create_region,
+    UnknownRegionError,
+    _get_region,
     _normalise_response,
     _parse_dt,
     fetch_bulletin_page,
@@ -33,7 +34,7 @@ from pipeline.services.data_fetcher import (
     upsert_bulletin,
 )
 from pipeline.services.render_model import RENDER_MODEL_VERSION, RenderModelBuildError
-from tests.factories import PipelineRunFactory
+from tests.factories import PipelineRunFactory, RegionFactory
 
 
 def _make_raw_bulletin(
@@ -152,35 +153,41 @@ class TestParseDt:
 
 
 # ---------------------------------------------------------------------------
-# _get_or_create_region
+# _get_region
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestGetOrCreateRegion:
-    """Tests for _get_or_create_region."""
+class TestGetRegion:
+    """Tests for _get_region (fixture-backed lookup)."""
 
-    def test_creates_new_region(self):
-        """Creates a Region when it doesn't exist."""
-        region = _get_or_create_region("CH-4115", "Piz Buin")
-        assert region.region_id == "CH-4115"
-        assert region.name == "Piz Buin"
-        assert region.slug == "ch-4115"
-        assert Region.objects.count() == 1
+    def test_returns_seeded_region(self):
+        """Returns the Region when it exists."""
+        seeded = RegionFactory.create(region_id="CH-4115", name="Martigny-Verbier")
+        found = _get_region("CH-4115")
+        assert found.pk == seeded.pk
 
-    def test_returns_existing_region(self):
-        """Returns the existing Region on second call."""
-        r1 = _get_or_create_region("CH-4115", "Piz Buin")
-        r2 = _get_or_create_region("CH-4115", "Piz Buin")
-        assert r1.pk == r2.pk
-        assert Region.objects.count() == 1
+    def test_raises_unknown_region_error(self):
+        """Unseeded region_id raises UnknownRegionError."""
+        with pytest.raises(UnknownRegionError) as exc_info:
+            _get_region("CH-9999")
+        assert "CH-9999" in str(exc_info.value)
 
-    def test_updates_name_if_changed(self):
-        """Updates the name when the region exists but name differs."""
-        _get_or_create_region("CH-4115", "Old Name")
-        region = _get_or_create_region("CH-4115", "New Name")
-        assert region.name == "New Name"
-        assert Region.objects.count() == 1
+    def test_unknown_region_error_chains_does_not_exist(self):
+        """The underlying Region.DoesNotExist is chained as __cause__."""
+        try:
+            _get_region("CH-0000")
+        except UnknownRegionError as exc:
+            assert isinstance(exc.__cause__, Region.DoesNotExist)
+        else:
+            pytest.fail("UnknownRegionError was not raised")
+
+    def test_is_read_only(self):
+        """_get_region does not create any Region rows."""
+        assert Region.objects.count() == 0
+        with pytest.raises(UnknownRegionError):
+            _get_region("CH-4115")
+        assert Region.objects.count() == 0
 
 
 # ---------------------------------------------------------------------------
@@ -188,9 +195,23 @@ class TestGetOrCreateRegion:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture
+def _seed_test_regions(db: Any) -> None:
+    """Seed the regions referenced by ``_make_raw_bulletin`` defaults.
+
+    The standard test bulletin covers ``CH-4115`` and ``CH-7111``; other
+    tests add ``CH-9999``. Regions are now fixture-backed (no
+    auto-creation), so the test must pre-create them.
+    """
+    for rid in ("CH-4115", "CH-7111", "CH-9999"):
+        RegionFactory.create(region_id=rid, name=f"Test {rid}")
+
+
 @pytest.mark.django_db
 class TestUpsertBulletin:
     """Tests for upsert_bulletin."""
+
+    pytestmark = pytest.mark.usefixtures("_seed_test_regions")
 
     def test_creates_bulletin(self):
         """Creates a new Bulletin and returns True."""
@@ -238,13 +259,12 @@ class TestUpsertBulletin:
         assert bulletin.raw_data["geometry"] is None
         assert bulletin.raw_data["properties"]["bulletinID"] == "test-001"
 
-    def test_creates_regions(self):
-        """Creates Region and RegionBulletin records for each region."""
+    def test_creates_region_links(self):
+        """Creates RegionBulletin rows for each seeded region covered."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
         upsert_bulletin(raw, run)
 
-        assert Region.objects.count() == 2
         assert RegionBulletin.objects.count() == 2
 
         bulletin = Bulletin.objects.get(bulletin_id="test-001")
@@ -252,6 +272,16 @@ class TestUpsertBulletin:
             bulletin.regions.order_by("region_id").values_list("region_id", flat=True)
         )
         assert region_ids == ["CH-4115", "CH-7111"]
+
+    def test_raises_on_unknown_region(self):
+        """upsert_bulletin raises UnknownRegionError for unseeded region_ids."""
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin(
+            regions=[{"regionID": "CH-XXXX", "name": "Nonexistent"}],
+        )
+        with pytest.raises(UnknownRegionError) as exc_info:
+            upsert_bulletin(raw, run)
+        assert "CH-XXXX" in str(exc_info.value)
 
     def test_stores_region_name_at_time(self):
         """RegionBulletin records store the name from the bulletin."""
@@ -435,6 +465,8 @@ class TestFetchBulletinPage:
 @pytest.mark.django_db
 class TestRunPipeline:
     """Tests for run_pipeline."""
+
+    pytestmark = pytest.mark.usefixtures("_seed_test_regions")
 
     @patch("pipeline.services.data_fetcher.fetch_bulletin_page")
     def test_creates_bulletins_in_date_range(self, mock_fetch: MagicMock):
