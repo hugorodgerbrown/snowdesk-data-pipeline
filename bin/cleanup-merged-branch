@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# bin/cleanup-merged-branch — Post-merge cleanup for a feature branch.
+#
+# Removes the worktree (if one exists for the branch), deletes the local
+# branch, and prunes stale remote tracking refs. Idempotent — rerunning
+# is safe. Refuses if the caller's shell is sitting on the branch being
+# deleted (the removal itself would succeed, but every subsequent command
+# in that shell fails because cwd is dangling).
+#
+# Usage: bin/cleanup-merged-branch <branch-name>
+#
+# Example:
+#   bin/cleanup-merged-branch feature/SNOW-41-parametrise-basemap-style
+
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <branch-name>" >&2
+    exit 64  # EX_USAGE
+fi
+
+BRANCH="$1"
+
+# Refuse if the shell is currently on the branch being deleted. If that
+# checkout is a worktree, removing it would invalidate the shell's cwd.
+CURRENT_BRANCH="$(git branch --show-current 2>/dev/null || true)"
+if [[ "$CURRENT_BRANCH" == "$BRANCH" ]]; then
+    echo "Refusing: current shell is on '$BRANCH'." >&2
+    echo "cd to the main repo (not a worktree of this branch) and rerun." >&2
+    exit 2
+fi
+
+# Operate from the primary worktree so the script never stands inside
+# the directory it's about to remove.
+MAIN_REPO="$(git worktree list --porcelain | awk '/^worktree / {print $2; exit}')"
+cd "$MAIN_REPO"
+
+# Locate the worktree (if any) that points at $BRANCH.
+WORKTREE_PATH="$(git worktree list --porcelain | awk -v ref="refs/heads/$BRANCH" '
+    /^worktree / { path = $2 }
+    /^branch /   { if ($2 == ref) print path }
+')"
+
+if [[ -n "$WORKTREE_PATH" ]]; then
+    echo "Removing worktree at $WORKTREE_PATH"
+    git worktree remove --force "$WORKTREE_PATH"
+fi
+
+# Delete the local branch. -D (not -d) because GitHub squash-merges do
+# not register as merged in the local history.
+if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    echo "Deleting local branch $BRANCH"
+    git branch -D "$BRANCH"
+fi
+
+# Prune stale remote tracking refs (e.g. origin/feature/SNOW-xxx after
+# GitHub's auto-delete-on-merge removes the remote branch).
+echo "Pruning remote tracking refs"
+git fetch --prune --quiet
+
+echo "Done."
