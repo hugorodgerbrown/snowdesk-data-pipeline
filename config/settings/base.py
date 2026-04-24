@@ -267,6 +267,20 @@ EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=False, cast=bool)
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@snowdesk.ch")
 
 # ---------------------------------------------------------------------------
+# Map — basemap style JSON URL consumed by MapLibre on /map/
+# ---------------------------------------------------------------------------
+# The URL is passed through ``public.views.map_view`` context and rendered
+# onto the ``#map`` element as ``data-basemap-style``; ``static/js/map.js``
+# reads it from ``mapEl.dataset.basemapStyle``. Swapping candidates (e.g.
+# Swisstopo Base Map Winter / Light Base Map) is a one-line settings change
+# with no template or JS edit required. Default preserves OpenFreeMap.
+
+BASEMAP_STYLE_URL = config(
+    "BASEMAP_STYLE_URL",
+    default="https://tiles.openfreemap.org/styles/liberty",
+)
+
+# ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 

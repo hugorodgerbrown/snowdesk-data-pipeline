@@ -77,6 +77,7 @@ This is the dynamic-data counterpart to DO_NOT_ADD/snowdesk_map_preview.html.
                 data-summaries-url="{% url 'api:today_summaries' %}"
                 data-resorts-url="{% url 'api:resorts_by_region' %}"
                 data-offline-manifest-url="{% url 'api:offline_manifest_map' %}"
+                data-basemap-style="{{ basemap_style_url }}"
             >
                 <div class="legend">
                     <div class="legend-title">{% trans "Today" %}</div>

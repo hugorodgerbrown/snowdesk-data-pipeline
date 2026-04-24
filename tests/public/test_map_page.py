@@ -11,7 +11,7 @@ own integration tests in ``test_map_api.py``.
 from __future__ import annotations
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 from django.urls import reverse
 
 
@@ -49,3 +49,33 @@ def test_map_page_loads_assets():
     assert "maplibre-gl" in content
     assert "/static/css/map.css" in content
     assert "/static/js/map.js" in content
+
+
+@pytest.mark.django_db
+@override_settings(
+    BASEMAP_STYLE_URL="https://vectortiles.geo.admin.ch/styles/ch.swisstopo.basemap-winter.vt/style.json",
+)
+def test_map_page_injects_basemap_style_url():
+    """
+    ``settings.BASEMAP_STYLE_URL`` is rendered onto the #map element as
+    ``data-basemap-style`` so the JS can swap basemap candidates with no
+    template or code edit.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert (
+        'data-basemap-style="https://vectortiles.geo.admin.ch/styles/'
+        'ch.swisstopo.basemap-winter.vt/style.json"'
+    ) in content
+
+
+@pytest.mark.django_db
+def test_map_page_uses_default_basemap_style_url():
+    """The default basemap style URL is OpenFreeMap Liberty."""
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert (
+        'data-basemap-style="https://tiles.openfreemap.org/styles/liberty"' in content
+    )
