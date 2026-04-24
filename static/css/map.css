@@ -315,19 +315,23 @@
  * The sheet is always rendered at full ``--sheet-expanded-height``;
  * the visible state is selected via ``data-snap`` on the root element.
  *
- *   data-snap unset    → dismissed (translateY(100%) — fully off-screen)
- *   data-snap="peek"   → ~30 vh visible (region name + chip + summary)
+ *   data-snap unset      → dismissed (translateY(100%) — fully off-screen)
+ *   data-snap="peek"     → peek partial + a short tease of expanded body
  *   data-snap="expanded" → full body visible (hazard blocks + CTA)
  *
- * JS reads the two height tokens via getComputedStyle so the snap
- * targets in the drag controller stay in sync with whatever the CSS
- * says. ``.dragging`` / ``.animating`` disable the CSS transition so
- * the JS controller can drive transform directly during gestures and
- * release animations.
+ * The peek snap height is set dynamically by JS once the peek partial
+ * has been measured (peek content height + a small "tease" so a slice
+ * of the first hazard block bleeds into the visible area — a genuine
+ * peek at what's below). ``--sheet-peek-height`` is the fallback used
+ * before content is loaded; JS overrides it on the sheet element.
+ *
+ * ``.dragging`` / ``.animating`` disable the CSS transition so the JS
+ * controller can drive transform directly during gestures and release
+ * animations.
  */
 
 :root {
-    --sheet-peek-height: 30vh;
+    --sheet-peek-height: 22vh;
     --sheet-expanded-height: 80vh;
 }
 

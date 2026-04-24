@@ -454,10 +454,13 @@ def _summary_line(summary: dict[str, Any]) -> str:
         is available (e.g. prose-only bulletin or no rating).
 
     """
+    # ``problem`` comes from ``_PROBLEM_LABELS`` which uses ``gettext_lazy``,
+    # so its values are lazy translation proxies — coerce to str before
+    # joining or ``" · ".join`` raises ``TypeError: expected str instance``.
     parts = [
-        summary.get("problem") or "",
-        summary.get("elevation") or "",
-        summary.get("aspects") or "",
+        str(summary.get("problem") or ""),
+        str(summary.get("elevation") or ""),
+        str(summary.get("aspects") or ""),
     ]
     return " · ".join(part for part in parts if part)
 

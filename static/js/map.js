@@ -179,25 +179,38 @@
     //
     // The sheet has three states managed via ``data-snap`` on #sheet:
     //   no attribute  → dismissed
-    //   "peek"        → ~30 vh visible
-    //   "expanded"    → ~80 vh visible
+    //   "peek"        → peek partial + a small tease of the expanded body
+    //   "expanded"    → full body visible
     //
-    // The two height tokens are read from CSS (``--sheet-peek-height`` /
-    // ``--sheet-expanded-height``) so the snap targets in the drag
-    // controller stay in sync with whatever map.css declares. The CSS
-    // values are assumed to be in ``vh`` units; if either is changed to
-    // a different unit the parser below needs an update.
+    // ``--sheet-expanded-height`` is read from CSS once at init and is
+    // assumed to be in ``vh`` units. ``--sheet-peek-height`` is set
+    // dynamically per region (after the peek partial is measured) so the
+    // peek snap matches the actual rendered content height plus a small
+    // tease — a slice of the first hazard block deliberately bleeds into
+    // the visible area so users see there's content to swipe up to.
 
     const _rootStyle = getComputedStyle(document.documentElement);
-    const SHEET_PEEK_VH = parseFloat(
-      _rootStyle.getPropertyValue('--sheet-peek-height'),
-    ) || 30;
     const SHEET_EXPANDED_VH = parseFloat(
       _rootStyle.getPropertyValue('--sheet-expanded-height'),
     ) || 80;
 
+    // Pixels of expanded-body content allowed to show through the peek
+    // visible area — the "peek at more below" affordance. Tweakable.
+    const PEEK_TEASE_PX = 56;
+
     const expandedHeightPx = () => SHEET_EXPANDED_VH * window.innerHeight / 100;
-    const peekHeightPx = () => SHEET_PEEK_VH * window.innerHeight / 100;
+
+    // Read the *current* peek visible height from CSS, in pixels. The
+    // peek-height variable is overridden inline on #sheet by setSnap
+    // once content is measured; before that it falls back to the CSS
+    // root default.
+    const peekHeightPx = () => {
+      const cs = getComputedStyle(sheet);
+      const raw = cs.getPropertyValue('--sheet-peek-height').trim();
+      if (raw.endsWith('px')) return parseFloat(raw);
+      if (raw.endsWith('vh')) return parseFloat(raw) * window.innerHeight / 100;
+      return parseFloat(raw) || expandedHeightPx() * 0.3;
+    };
 
     // translateY pixel value for each snap state — used as the start
     // baseline for drags and the target for release animations.
@@ -208,13 +221,24 @@
     };
 
     // Apply a snap state to the sheet: clears any inline transform so
-    // CSS takes back control, toggles the expanded body's [hidden]
-    // attribute (so its tab-order disappears at peek), and writes the
-    // ``data-snap`` attribute that drives the CSS transform selector.
+    // CSS takes back control, and writes the ``data-snap`` attribute
+    // that drives the CSS transform selector. When entering peek state,
+    // the peek-height custom property is updated to fit the actual
+    // rendered peek content + a tease of the expanded body so the
+    // visible cutoff lands inside real content rather than dead white.
     const setSnap = (state) => {
+      if (state === 'peek') {
+        const peekContentH = sheetPeek.offsetHeight;
+        // sheet-body-wrap has its own padding; include it so the peek
+        // partial isn't visually flush against the cutoff line.
+        const bodyWrapPad = parseFloat(
+          getComputedStyle(bodyWrap).paddingTop,
+        ) || 0;
+        const total = bodyWrapPad + peekContentH + PEEK_TEASE_PX;
+        sheet.style.setProperty('--sheet-peek-height', `${total}px`);
+      }
       sheet.style.transform = '';
       sheet.dataset.snap = state;
-      sheetExpanded.hidden = state !== 'expanded';
     };
 
     // Canonical SLF region-ID shape (e.g. "CH-4115"). Anything else is rejected
@@ -256,8 +280,8 @@
       }
       summarySeq++;  // invalidate any inflight fetch so it can't reopen the sheet
       sheet.style.transform = '';
+      sheet.style.removeProperty('--sheet-peek-height');
       delete sheet.dataset.snap;
-      sheetExpanded.hidden = true;
       sheetPeek.replaceChildren();
       sheetExpanded.replaceChildren();
     };

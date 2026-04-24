@@ -158,9 +158,12 @@
                     </svg>
                 </button>
             </div>
+            {# Both partials are always present in the DOM; in peek state the #}
+            {# expanded body sits below the visible fold and bleeds in as a   #}
+            {# small tease so the user can see there's more to swipe up to.   #}
             <div class="sheet-body-wrap">
                 <div id="sheet-peek" class="sheet-peek"></div>
-                <div id="sheet-expanded" class="sheet-expanded" hidden></div>
+                <div id="sheet-expanded" class="sheet-expanded"></div>
             </div>
         </div>
         <div
