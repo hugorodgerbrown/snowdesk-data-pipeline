@@ -286,7 +286,7 @@ BASEMAP_STYLES = {
     ),
     "swisstopo_light": (
         "https://vectortiles.geo.admin.ch/styles/"
-        "ch.swisstopo.leichte-basiskarte.vt/style.json"
+        "ch.swisstopo.lightbasemap.vt/style.json"
     ),
 }
 
