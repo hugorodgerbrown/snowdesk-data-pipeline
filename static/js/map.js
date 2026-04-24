@@ -25,6 +25,11 @@
   const REGIONS_URL   = mapEl.dataset.regionsUrl;
   const SUMMARIES_URL = mapEl.dataset.summariesUrl;
   const RESORTS_URL   = mapEl.dataset.resortsUrl;
+  // The summary URL carries the literal placeholder __REGION__ which is
+  // substituted with the tapped region's region_id at fetch time. Server
+  // renders this via {% url 'api:region_summary' '__REGION__' %} so the
+  // route name stays the single source of truth.
+  const REGION_SUMMARY_URL_TEMPLATE = mapEl.dataset.regionSummaryUrl;
   const BASEMAP_STYLE = mapEl.dataset.basemapStyle;
 
   const BULLETIN_SUMMARIES = {};
@@ -162,17 +167,54 @@
 
     // Interaction
     let selectedId = null;
+    // Tracks the most recent inflight summary fetch so a slow tap-A
+    // followed by a fast tap-B never lets A's response overwrite B's.
+    let summarySeq = 0;
 
-    const ratingLabel = (r, sub) => {
-      // i18n: translatable — danger level labels
-      const names = {
-        low: 'Low (1)', moderate: 'Moderate (2)', considerable: 'Considerable (3)',
-        high: 'High (4)', very_high: 'Very high (5)', no_rating: 'No rating',
-      };
-      const base = names[r] || r;
-      return sub === 'plus' ? base.replace(/\)$/, '+)')
-           : sub === 'minus' ? base.replace(/\)$/, '\u2212)')
-           : base;
+    const sheet = document.getElementById('sheet');
+    const sheetPeek = document.getElementById('sheet-peek');
+    const sheetExpanded = document.getElementById('sheet-expanded');
+
+    // ---- Snap-state helpers (SNOW-43) ----
+    //
+    // The sheet has three states managed via ``data-snap`` on #sheet:
+    //   no attribute  → dismissed
+    //   "peek"        → ~30 vh visible
+    //   "expanded"    → ~80 vh visible
+    //
+    // The two height tokens are read from CSS (``--sheet-peek-height`` /
+    // ``--sheet-expanded-height``) so the snap targets in the drag
+    // controller stay in sync with whatever map.css declares. The CSS
+    // values are assumed to be in ``vh`` units; if either is changed to
+    // a different unit the parser below needs an update.
+
+    const _rootStyle = getComputedStyle(document.documentElement);
+    const SHEET_PEEK_VH = parseFloat(
+      _rootStyle.getPropertyValue('--sheet-peek-height'),
+    ) || 30;
+    const SHEET_EXPANDED_VH = parseFloat(
+      _rootStyle.getPropertyValue('--sheet-expanded-height'),
+    ) || 80;
+
+    const expandedHeightPx = () => SHEET_EXPANDED_VH * window.innerHeight / 100;
+    const peekHeightPx = () => SHEET_PEEK_VH * window.innerHeight / 100;
+
+    // translateY pixel value for each snap state — used as the start
+    // baseline for drags and the target for release animations.
+    const snapY = (state) => {
+      if (state === 'expanded') return 0;
+      if (state === 'peek') return expandedHeightPx() - peekHeightPx();
+      return expandedHeightPx();
+    };
+
+    // Apply a snap state to the sheet: clears any inline transform so
+    // CSS takes back control, toggles the expanded body's [hidden]
+    // attribute (so its tab-order disappears at peek), and writes the
+    // ``data-snap`` attribute that drives the CSS transform selector.
+    const setSnap = (state) => {
+      sheet.style.transform = '';
+      sheet.dataset.snap = state;
+      sheetExpanded.hidden = state !== 'expanded';
     };
 
     // Canonical SLF region-ID shape (e.g. "CH-4115"). Anything else is rejected
@@ -180,79 +222,31 @@
     // turning into an open-redirect / javascript: URL on the client.
     const REGION_ID_RE = /^[A-Za-z]{2}-[A-Za-z0-9]+$/;
 
-    const el = (tag, attrs, text) => {
-      const node = document.createElement(tag);
-      if (attrs && attrs.style) node.style.cssText = attrs.style;
-      if (text !== undefined) node.textContent = text;
-      return node;
-    };
-
-    const renderSheet = (props) => {
-      const regionID = props.regionID;
-      const summary = BULLETIN_SUMMARIES[regionID];
-      // Region name — prefer GeoJSON, fall back to summary, then to the ID.
-      const name = props.name || props.name_en || props.NAME
-                   || (summary && summary.name)
-                   || regionID;
-
-      const $ = (id) => document.getElementById(id);
-      $('sheet-title').textContent = name;
-      $('sheet-cta').href = REGION_ID_RE.test(regionID) ? `/${regionID}/` : '#';
-
-      // Debug region-ID readout — visible only in debug mode.
-      const debugEl = $('sheet-debug-id');
-      debugEl.textContent = regionID;
-      debugEl.style.display = DEBUG ? 'block' : 'none';
-
-      // Rebuild the sheet body. Every text node is set via textContent or
-      // the ``el()`` helper so that region names / resort names from the
-      // API are never interpreted as HTML — preventing XSS on any value
-      // containing <, >, &, or quotes.
-      const body = $('sheet-body');
-      body.replaceChildren();
-
-      if (!summary) {
-        body.append(el(
-          'div',
-          { style: 'padding: 8px 0; color: #8a8880; font-size: 12px;' },
-          // i18n: translatable
-          'No bulletin data available for this region today.',
-        ));
-      } else {
-        const colour = RATING_COLOURS[summary.rating] || RATING_COLOURS.no_rating;
-        const textCol = summary.rating === 'high' || summary.rating === 'very_high' ? '#fff' : '#2a1f00';
-
-        const ratingBox = el('div', {
-          style: `margin-top: 10px; padding: 8px 10px; border-radius: 4px; background: ${colour}; color: ${textCol};`,
-        });
-        ratingBox.append(el(
-          'div',
-          { style: 'font-size: 12px; font-weight: 500;' },
-          ratingLabel(summary.rating, summary.subdivision),
-        ));
-        body.append(ratingBox);
-
-        const resorts = RESORTS_BY_REGION[regionID] || [];
-        if (resorts.length) {
-          const wrap = el('div', { style: 'margin-top: 10px;' });
-          const line = el('div', { style: 'font-size: 12px;' });
-          line.append(el(
-            // i18n: translatable
-            'span', { style: 'color: #8a8880;' }, 'Resorts',
-          ));
-          line.append(document.createTextNode(' \u00b7 '));
-          line.append(el('span', null, resorts.join(', ')));
-          const note = el(
-            'div',
-            { style: 'font-size: 11px; color: #8a8880; margin-top: 4px; font-style: italic;' },
-            // i18n: translatable
-            'Resorts & ski areas may span multiple regions.',
-          );
-          wrap.append(line, note);
-          body.append(wrap);
-        }
+    // Fetch + inject the server-rendered peek + expanded HTML for a region.
+    // Returns true on success, false on 404 / network error. The summarySeq
+    // guard discards stale responses if the user has tapped a different
+    // region while this fetch was in flight.
+    const loadRegionSummary = async (regionID) => {
+      if (!REGION_ID_RE.test(regionID)) return false;
+      const url = REGION_SUMMARY_URL_TEMPLATE.replace(
+        '__REGION__', encodeURIComponent(regionID),
+      );
+      const seq = ++summarySeq;
+      try {
+        const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        if (seq !== summarySeq) return false;  // a newer tap won the race
+        if (!resp.ok) return false;
+        const data = await resp.json();
+        if (seq !== summarySeq) return false;
+        // Server-trusted HTML: rendered by the same Django templates that
+        // render the rest of the site, with all user-supplied values escaped
+        // by Django's autoescape — safe to assign as innerHTML.
+        sheetPeek.innerHTML = data.peek || '';
+        sheetExpanded.innerHTML = data.expanded || '';
+        return true;
+      } catch (_err) {
+        return false;
       }
-      $('sheet').classList.add('open');
     };
 
     const clearSelection = () => {
@@ -260,7 +254,12 @@
         map.setFeatureState({ source: 'regions', id: selectedId }, { selected: false });
         selectedId = null;
       }
-      document.getElementById('sheet').classList.remove('open');
+      summarySeq++;  // invalidate any inflight fetch so it can't reopen the sheet
+      sheet.style.transform = '';
+      delete sheet.dataset.snap;
+      sheetExpanded.hidden = true;
+      sheetPeek.replaceChildren();
+      sheetExpanded.replaceChildren();
     };
 
     // Compute the lng/lat bounding box of a GeoJSON Polygon or MultiPolygon.
@@ -281,15 +280,20 @@
       return [[w, s], [e, n]];
     };
 
-    // Pan/zoom so the region is centred in the visible portion of the map —
-    // i.e. the slice above the bottom sheet. We pass the sheet's height as
-    // bottom padding so fitBounds treats the drawer area as off-limits.
+    // Pan/zoom so the region sits in the visible portion of the map.
+    // The sheet is always rendered at full ``--sheet-expanded-height``
+    // but only ``peekHeightPx`` is actually visible after a tap, so we
+    // reserve the visible portion (not the full sheet height) as bottom
+    // padding for fitBounds.
     const panToRegionAboveSheet = (feature) => {
       const bbox = featureBBox(feature);
-      const sheet = document.getElementById('sheet');
-      const sheetHeight = sheet.offsetHeight || 0;
+      const visible = sheet.dataset.snap === 'expanded'
+        ? expandedHeightPx()
+        : sheet.dataset.snap === 'peek'
+          ? peekHeightPx()
+          : 0;
       map.fitBounds(bbox, {
-        padding: { top: 60, right: 40, bottom: sheetHeight + 40, left: 40 },
+        padding: { top: 60, right: 40, bottom: visible + 40, left: 40 },
         maxZoom: 10,   // don't zoom in past neighbourhood detail even for tiny regions
         duration: 400,
       });
@@ -301,7 +305,7 @@
     // second click on the already-selected region dismisses the sheet;
     // search callers pass ``toggle: false`` so selecting a result always
     // opens it, never toggles it off.
-    const selectFeature = (numericId, { toggle = true } = {}) => {
+    const selectFeature = async (numericId, { toggle = true } = {}) => {
       if (numericId === selectedId) {
         if (toggle) clearSelection();
         return;
@@ -312,11 +316,24 @@
       selectedId = numericId;
       map.setFeatureState({ source: 'regions', id: selectedId }, { selected: true });
 
-      renderSheet(REGION_LOOKUP[numericId]);
+      const props = REGION_LOOKUP[numericId];
+      const ok = await loadRegionSummary(props.regionID);
+      // If the user dismissed the sheet (or selected a different region)
+      // while the fetch was in flight, selectedId may no longer match.
+      // loadRegionSummary already discards stale data; here we just bail
+      // out without snapping the sheet open.
+      if (selectedId !== numericId) return;
+      if (!ok) {
+        // No bulletin (404) or network failure — leave sheet closed.
+        clearSelection();
+        return;
+      }
+      setSnap('peek');
 
-      // Wait for the sheet to measure itself (it just became .open). One frame
-      // is enough — the CSS transition hasn't finished but offsetHeight is already
-      // the final height because the transform, not height, is animating.
+      // One frame after setSnap so getBoundingClientRect reflects the
+      // new visible height (the CSS transform hasn't finished animating
+      // but the snap state is set, so panToRegionAboveSheet uses the
+      // correct visible-height value).
       const feature = FEATURE_BY_ID[numericId];
       requestAnimationFrame(() => panToRegionAboveSheet(feature));
     };
@@ -338,8 +355,8 @@
     // Sheet dismissal: close button, Esc key, and a drag gesture that can
     // start anywhere on the sheet (handle OR body).
 
-    const sheet = document.getElementById('sheet');
     const bodyWrap = document.querySelector('.sheet-body-wrap');
+    const sheetGrab = document.getElementById('sheet-grab');
     const closeBtn = document.getElementById('sheet-close');
 
     closeBtn.addEventListener('click', (e) => {
@@ -348,18 +365,22 @@
     });
 
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && sheet.classList.contains('open')) clearSelection();
+      if (e.key === 'Escape' && sheet.dataset.snap) clearSelection();
       // Toggle debug mode; ignore when typing in an input/textarea.
       if (e.key === 'd' && !e.target.matches('input, textarea')) {
         DEBUG = !DEBUG;
-        const debugEl = document.getElementById('sheet-debug-id');
-        if (debugEl) debugEl.style.display = (DEBUG && sheet.classList.contains('open')) ? 'block' : 'none';
+        sheet.classList.toggle('debug', DEBUG);
         const pill = document.getElementById('debug-pill');
         if (pill) pill.style.display = DEBUG ? 'block' : 'none';
       }
     });
 
-    // --- Drag controller ---
+    // --- Drag controller (three-position snap machine, SNOW-43) ---
+    //
+    // The sheet has three resting positions: dismissed, peek, expanded.
+    // Each gesture starts from the current snap state's translateY
+    // baseline; on release we pick the nearest of the three states based
+    // on drag distance + flick velocity.
     //
     // Design goals:
     //   1. Drag can begin anywhere on the sheet, including over body text.
@@ -368,15 +389,18 @@
     //   3. Respects inner scroll: if the body is scrolled down, downward drag
     //      scrolls the body instead of dragging the sheet. Only when scrollTop
     //      is 0 AND the gesture is downward do we take over.
-    //   4. Upward drags at rest get rubber-band resistance.
+    //   4. Upward drags past the expanded state get rubber-band resistance.
     //   5. Release animation is driven by JS, not CSS, so speed matches the
-    //      flick velocity — a hard flick dismisses fast, a gentle let-go settles
+    //      flick velocity — a hard flick completes fast, a gentle let-go settles
     //      smoothly.
+    //   6. A non-claimed pointerup on the grab zone counts as a tap and
+    //      expands a peek-state sheet (does nothing when already expanded).
 
     const GESTURE_CLAIM_PX = 6;            // pixels of vertical movement before we claim the gesture
-    const DISMISS_DISTANCE_RATIO = 0.33;   // drag past 33% of sheet height → dismiss on release
-    const DISMISS_VELOCITY_PX_MS = 0.6;    // flick faster than this → dismiss regardless of distance
-    const RUBBER_BAND_DIVISOR = 4;         // upward drag resistance (higher = stiffer)
+    const PEEK_DISMISS_VELOCITY_PX_MS = 0.6;  // downward flick from peek that always dismisses
+    const EXPAND_VELOCITY_PX_MS = 0.6;     // upward flick from peek that always expands
+    const COLLAPSE_VELOCITY_PX_MS = 0.4;   // gentle downward flick from expanded → peek
+    const RUBBER_BAND_DIVISOR = 4;         // upward drag resistance past expanded (higher = stiffer)
     const VELOCITY_SAMPLE_WINDOW_MS = 60;  // only the last N ms of samples count for release velocity
     const MIN_ANIM_DURATION_MS = 120;      // animation clamp — below this feels twitchy
     const MAX_ANIM_DURATION_MS = 400;      // above this feels sluggish
@@ -385,7 +409,7 @@
     let animFrame = null;
 
     const pointerDown = (e) => {
-      if (!sheet.classList.contains('open')) return;
+      if (!sheet.dataset.snap) return;
       // Don't start a drag on the close button — let its click handler fire.
       if (e.target.closest('.sheet-close')) return;
       // Don't start a drag on the CTA link — taps on it should navigate, not drag.
@@ -402,8 +426,10 @@
         startY: e.clientY,
         currentY: e.clientY,
         offset: 0,
-        sheetHeight: sheet.offsetHeight,
+        baselineY: snapY(sheet.dataset.snap),
+        startSnap: sheet.dataset.snap,
         startedInBody: bodyWrap.contains(e.target),
+        startedInGrab: sheetGrab.contains(e.target),
         bodyScrollAtStart: bodyWrap.scrollTop,
         samples: [{ t: performance.now(), y: e.clientY }],
         pointerId: e.pointerId,
@@ -421,18 +447,20 @@
       if (!drag.claimed) {
         if (Math.abs(delta) < GESTURE_CLAIM_PX) return;  // not enough movement yet
 
-        // If the drag started inside the scrollable body AND the body was
-        // scrolled down AND the gesture is downward (delta > 0), let the body
-        // scroll instead of dragging the sheet. The user is scrolling content,
-        // not trying to dismiss.
-        if (drag.startedInBody && drag.bodyScrollAtStart > 0 && delta > 0) {
+        // Body-scroll deference (only relevant in the expanded state, where the
+        // body actually has scrollable content): if the gesture started inside
+        // the scrollable body AND the body was scrolled down AND the gesture is
+        // downward, let the body scroll instead of dragging the sheet.
+        if (drag.startSnap === 'expanded'
+            && drag.startedInBody
+            && drag.bodyScrollAtStart > 0
+            && delta > 0) {
           drag = null;
           return;
         }
-        // Likewise, if it's an upward gesture that started in a scrollable body
-        // that has room to scroll down further, let it scroll normally. (Our
-        // sheet doesn't grow upward, so upward-in-body always means scroll.)
-        if (drag.startedInBody && delta < 0) {
+        // Likewise, an upward gesture in a scrollable body in the expanded
+        // state means scroll content, not lift the sheet (it's already up).
+        if (drag.startSnap === 'expanded' && drag.startedInBody && delta < 0) {
           drag = null;
           return;
         }
@@ -443,10 +471,18 @@
         sheet.setPointerCapture(e.pointerId);
       }
 
-      // Phase 2: claimed. Apply rubber-band on upward movement and set transform.
-      if (delta < 0) delta = delta / RUBBER_BAND_DIVISOR;
+      // Phase 2: claimed. The transform value is baseline + delta, with
+      // rubber-band resistance applied if the user is dragging *above* the
+      // expanded state (currentY < 0). The peek-state baseline is positive,
+      // so dragging upward from peek toward expanded is unrestricted — the
+      // rubber-band only kicks in past the expanded snap.
+      const intendedY = drag.baselineY + delta;
+      let renderedY = intendedY;
+      if (intendedY < 0) {
+        renderedY = intendedY / RUBBER_BAND_DIVISOR;
+      }
       drag.offset = delta;
-      sheet.style.transform = `translateY(${delta}px)`;
+      sheet.style.transform = `translateY(${renderedY}px)`;
 
       // Velocity samples — pruned to the recent window.
       const now = performance.now();
@@ -461,10 +497,24 @@
 
     const pointerUp = (e) => {
       if (!drag || e.pointerId !== drag.pointerId) return;
-      if (!drag.claimed) { drag = null; return; }
+
+      // Tap (not a drag) on the grab zone → expand a peek-state sheet.
+      // Tap when expanded is intentionally a no-op (see SNOW-43 plan
+      // open question; easy to flip later if it feels wrong).
+      if (!drag.claimed) {
+        const wasGrabTap = drag.startedInGrab
+          && !e.target.closest('.sheet-close');
+        const fromState = drag.startSnap;
+        drag = null;
+        if (wasGrabTap && fromState === 'peek') {
+          animateToSnap(snapY('peek'), 'expanded', 0);
+        }
+        return;
+      }
 
       const offset = drag.offset;
-      const sheetHeight = drag.sheetHeight;
+      const fromState = drag.startSnap;
+      const fromY = drag.baselineY + offset;
 
       const first = drag.samples[0];
       const last = drag.samples[drag.samples.length - 1];
@@ -477,46 +527,55 @@
       sheet.classList.remove('dragging');
       drag = null;
 
-      const draggedFarEnough = offset > sheetHeight * DISMISS_DISTANCE_RATIO;
-      const flickedDownFast  = velocity > DISMISS_VELOCITY_PX_MS;
+      const peekH = peekHeightPx();
+      const expandedH = expandedHeightPx();
 
-      if (draggedFarEnough || flickedDownFast) {
-        animateDismiss(offset, sheetHeight, velocity);
-      } else {
-        animateSnapBack(offset, velocity);
+      let target;
+      if (fromState === 'peek') {
+        if (offset > peekH * 0.5 || velocity > PEEK_DISMISS_VELOCITY_PX_MS) {
+          target = 'dismissed';
+        } else if (offset < -peekH * 0.5 || velocity < -EXPAND_VELOCITY_PX_MS) {
+          target = 'expanded';
+        } else {
+          target = 'peek';
+        }
+      } else {  // expanded
+        // Halfway between expanded and dismissed (i.e. dragged past the peek
+        // threshold) OR a hard downward flick → dismiss outright.
+        if (offset > (expandedH - peekH) + peekH * 0.5
+            || velocity > PEEK_DISMISS_VELOCITY_PX_MS) {
+          target = 'dismissed';
+        } else if (offset > peekH * 0.5 || velocity > COLLAPSE_VELOCITY_PX_MS) {
+          target = 'peek';
+        } else {
+          target = 'expanded';
+        }
       }
+
+      animateToSnap(fromY, target, velocity);
     };
 
-    // Velocity-matched dismiss: target is translateY(sheetHeight), duration is
-    // derived from the distance remaining and the release velocity, so a hard
-    // flick completes fast and a slow drag completes at a natural speed.
-    const animateDismiss = (fromOffset, sheetHeight, velocity) => {
-      const distance = sheetHeight - fromOffset;
+    // Animate from the current pixel transform value to the target snap
+    // state. Reuses ``animateTransform`` for the actual rAF loop; this
+    // wrapper just picks the duration and the settle callback.
+    const animateToSnap = (fromY, targetState, velocity) => {
+      const toY = snapY(targetState);
+      const distance = Math.abs(toY - fromY);
       // If the release had momentum, use it; otherwise fall back to a median speed.
-      const effectiveVelocity = Math.max(velocity, 0.5);  // px/ms floor
+      const effectiveVelocity = Math.max(Math.abs(velocity), 0.5);  // px/ms floor
       const rawDuration = distance / effectiveVelocity;
-      const duration = Math.max(MIN_ANIM_DURATION_MS, Math.min(MAX_ANIM_DURATION_MS, rawDuration));
+      const duration = Math.max(
+        MIN_ANIM_DURATION_MS,
+        Math.min(MAX_ANIM_DURATION_MS, rawDuration),
+      );
 
-      animateTransform(fromOffset, sheetHeight, duration, () => {
-        // Settle: return control to CSS by clearing inline transform and the .open class.
+      animateTransform(fromY, toY, duration, () => {
         sheet.classList.remove('animating');
-        sheet.style.transform = '';
-        clearSelection();  // removes .open class; resets selection state
-      });
-    };
-
-    // Velocity-aware snap-back: if the user was still moving down when they let
-    // go but didn't flick hard enough to dismiss, honour that residual motion
-    // briefly before the snap. Otherwise, a simple ease back to 0.
-    const animateSnapBack = (fromOffset, _velocity) => {
-      const distance = Math.abs(fromOffset);
-      // Snap-back is always a similar time regardless of distance — that's what
-      // makes it feel springy rather than tired.
-      const duration = Math.max(180, Math.min(280, distance * 1.2));
-
-      animateTransform(fromOffset, 0, duration, () => {
-        sheet.classList.remove('animating');
-        sheet.style.transform = '';  // .open keeps it at translateY(0)
+        if (targetState === 'dismissed') {
+          clearSelection();
+        } else {
+          setSnap(targetState);
+        }
       });
     };
 

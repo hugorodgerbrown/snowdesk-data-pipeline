@@ -1,0 +1,29 @@
+{% comment %}
+public/templates/public/_region_peek.html — Peek-state body for the
+region sheet on /map/.
+
+Rendered server-side by ``public.api.region_summary`` and injected into
+the sheet's peek container by ``static/js/map.js``. Holds only what's
+visible at the ~30 vh peek snap-point: region name, today's danger
+chip, and a single subtitle line summarising the dominant trait.
+
+Expects the following variables in scope:
+  region        — the Region instance (for ``region.name``).
+  rm            — the bulletin's render_model dict.
+  summary_line  — pre-composed one-line subtitle (may be empty).
+{% endcomment %}
+{% load i18n %}
+
+<div class="region-peek" data-region-id="{{ region.region_id }}">
+    <div class="region-peek-header">
+        <h2 class="region-peek-name">{{ region.name }}</h2>
+        <span class="danger-tile" data-level="{{ rm.danger.key|default:'no_rating' }}">
+            {{ rm.danger.number }}{{ rm.danger.subdivision|default_if_none:'' }}
+        </span>
+    </div>
+    {% if summary_line %}
+        <p class="region-peek-summary">{{ summary_line }}</p>
+    {% endif %}
+    {# Debug region-ID readout — only visible when the sheet carries .debug. #}
+    <small class="region-peek-debug-id">{{ region.region_id }}</small>
+</div>

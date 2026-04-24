@@ -310,7 +310,26 @@
     font-size: 9px !important;
 }
 
-/* Bottom sheet — iOS-style drawer that slides up on region tap. */
+/* Bottom sheet — iOS-style drawer with two snap states (SNOW-43).
+ *
+ * The sheet is always rendered at full ``--sheet-expanded-height``;
+ * the visible state is selected via ``data-snap`` on the root element.
+ *
+ *   data-snap unset    → dismissed (translateY(100%) — fully off-screen)
+ *   data-snap="peek"   → ~30 vh visible (region name + chip + summary)
+ *   data-snap="expanded" → full body visible (hazard blocks + CTA)
+ *
+ * JS reads the two height tokens via getComputedStyle so the snap
+ * targets in the drag controller stay in sync with whatever the CSS
+ * says. ``.dragging`` / ``.animating`` disable the CSS transition so
+ * the JS controller can drive transform directly during gestures and
+ * release animations.
+ */
+
+:root {
+    --sheet-peek-height: 30vh;
+    --sheet-expanded-height: 80vh;
+}
 
 .sheet {
     position: absolute;
@@ -323,11 +342,11 @@
     border-top-right-radius: 14px;
     border-top: 0.5px solid var(--border);
     padding: 0;
+    height: var(--sheet-expanded-height);
     transform: translateY(100%);
     transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
     will-change: transform;
     user-select: none;
-    max-height: 70%;
     display: flex;
     flex-direction: column;
     /*
@@ -337,7 +356,13 @@
     touch-action: none;
 }
 
-.sheet.open {
+.sheet[data-snap="peek"] {
+    transform: translateY(
+        calc(var(--sheet-expanded-height) - var(--sheet-peek-height))
+    );
+}
+
+.sheet[data-snap="expanded"] {
     transform: translateY(0);
 }
 
@@ -427,6 +452,79 @@
     font-size: 15px;
     font-weight: 500;
     text-decoration: none;
+}
+
+/* Region peek partial — the always-visible head shown at the peek
+ * snap-point. Region name + danger chip on one row, optional one-line
+ * summary below. The .danger-tile class comes from the global theme
+ * (src/css/main.css) so the chip matches the rest of the bulletin UI.
+ */
+
+.region-peek {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.region-peek-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    /* Reserve space for the close button so the title doesn't run under it. */
+    padding-right: 36px;
+}
+
+.region-peek-name {
+    font-family: var(--serif);
+    font-size: 19px;
+    font-weight: 500;
+    line-height: 1.2;
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.region-peek-summary {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--muted);
+}
+
+/* Debug-only readout — hidden unless the sheet carries .debug. */
+.region-peek-debug-id {
+    display: none;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10px;
+    color: #8a8880;
+}
+
+.sheet.debug .region-peek-debug-id {
+    display: block;
+}
+
+/* Region expanded partial — full hazard blocks (one .rating-block per
+ * trait, supplied by public/_rating_block.html) plus the open-bulletin
+ * CTA. The .rating-block styling comes from the global theme.
+ */
+
+.region-expanded {
+    display: flex;
+    flex-direction: column;
+    /* Tiny top margin separates the expanded body from the peek head when
+     * both are visible at the expanded snap. */
+    margin-top: 12px;
+}
+
+.region-expanded-empty {
+    margin: 0 0 12px;
+    padding: 14px;
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
 }
 
 /* "Save offline" CTA — sits below the search field in the header. */

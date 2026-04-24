@@ -1,17 +1,19 @@
 """
 public/api.py — JSON endpoints for the interactive map.
 
-Three lightweight endpoints consumed by ``static/js/map.js`` to render the
-Swiss region choropleth:
+Lightweight endpoints consumed by ``static/js/map.js`` to render the
+Swiss region choropleth and back the per-region bottom sheet:
 
-* ``/api/today-summaries/``      — per-region danger summary for today.
-* ``/api/resorts-by-region/``    — ``{region_id: [resort_name, ...]}``.
-* ``/api/regions.geojson``       — FeatureCollection of region polygons.
-* ``/api/offline-manifest/map/`` — precache manifest for the offline CTA.
+* ``/api/today-summaries/``                — per-region danger summary for today.
+* ``/api/resorts-by-region/``              — ``{region_id: [resort_name, ...]}``.
+* ``/api/regions.geojson``                 — FeatureCollection of region polygons.
+* ``/api/region/<region_id>/summary/``     — pre-rendered peek + expanded HTML
+  for the region's current bulletin (consumed by the bottom sheet).
+* ``/api/offline-manifest/map/``           — precache manifest for the offline CTA.
 
-Plain Django ``JsonResponse`` views — no DRF. The map page fetches the
-three in parallel at load time; switching data sources later is a matter
-of changing the URL in ``map.js``.
+Plain Django ``JsonResponse`` views — no DRF. The choropleth fetches its
+three data endpoints in parallel at load time; the per-region summary
+endpoint is hit on demand when the user taps a region.
 """
 
 from __future__ import annotations
@@ -23,13 +25,15 @@ from typing import Any
 
 import requests
 from django.http import HttpRequest, JsonResponse
+from django.shortcuts import get_object_or_404
+from django.template.loader import render_to_string
 from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
 
 from pipeline.models import Bulletin, Region, RegionBulletin
 
-from .views import _PROBLEM_LABELS, _select_default_issue
+from .views import _PROBLEM_LABELS, _select_bulletin_for_date, _select_default_issue
 
 logger = logging.getLogger(__name__)
 
@@ -430,6 +434,82 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
         {
             "type": "FeatureCollection",
             "features": features,
+        }
+    )
+
+
+def _summary_line(summary: dict[str, Any]) -> str:
+    """
+    Compose the one-line subtitle shown in the region sheet's peek state.
+
+    Joins the summary dict's ``problem``, ``elevation``, and ``aspects``
+    fields with a middle-dot separator, dropping empty parts so the line
+    reads naturally on quiet days.
+
+    Args:
+        summary: A summary dict produced by :func:`_summary_for_bulletin`.
+
+    Returns:
+        The composed summary string. Empty when no structured trait data
+        is available (e.g. prose-only bulletin or no rating).
+
+    """
+    parts = [
+        summary.get("problem") or "",
+        summary.get("elevation") or "",
+        summary.get("aspects") or "",
+    ]
+    return " · ".join(part for part in parts if part)
+
+
+def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
+    """
+    Return pre-rendered peek + expanded HTML for a region's current bulletin.
+
+    Response shape::
+
+        {"peek": "<...>", "expanded": "<...>"}
+
+    Both fragments are server-rendered so the bottom sheet on ``/map/``
+    can inject them as opaque HTML and let the existing drag controller
+    manage transitions. The expanded fragment composes
+    ``public/_rating_block.html`` per render-model trait, which means
+    the map sheet and the bulletin page share a single rendering path
+    for hazard blocks.
+
+    Returns 404 when the region exists but has no bulletin covering today.
+    Returns 404 when the region_id is unknown.
+
+    Args:
+        request: The incoming HTTP request.
+        region_id: SLF region identifier (e.g. ``"CH-4115"``).
+
+    Returns:
+        A JsonResponse with ``peek`` and ``expanded`` HTML strings, or
+        a 404 ``{"error": "no_bulletin"}`` payload when no bulletin is
+        available.
+
+    """
+    region = get_object_or_404(Region, region_id__iexact=region_id)
+    bulletin = _select_bulletin_for_date(region, timezone.localdate())
+    if bulletin is None:
+        return JsonResponse({"error": "no_bulletin"}, status=404)
+
+    summary = _summary_for_bulletin(bulletin, region.name)
+    bulletin_url = reverse("public:bulletin", args=[region.region_id, region.slug])
+
+    ctx = {
+        "region": region,
+        "rm": bulletin.render_model or {},
+        "summary_line": _summary_line(summary),
+        "bulletin_url": bulletin_url,
+    }
+    return JsonResponse(
+        {
+            "peek": render_to_string("public/_region_peek.html", ctx, request=request),
+            "expanded": render_to_string(
+                "public/_region_expanded.html", ctx, request=request
+            ),
         }
     )
 
