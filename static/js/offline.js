@@ -47,6 +47,16 @@
     btnEl.setAttribute('title', label);
   };
 
+  // Build the "saved"-state CTA label. If any tiles failed during the last
+  // precache pass we suffix the count so the user can see the bundle is
+  // partial; otherwise the label is the unadorned "tap to update".
+  // i18n: translatable
+  const savedLabel = (failed) => {
+    if (!failed || failed <= 0) return 'Saved — tap to update';
+    const noun = failed === 1 ? 'tile' : 'tiles';
+    return `Saved — ${failed} ${noun} missed, tap to retry`;
+  };
+
   // -------------------------------------------------------------------------
   // Service-worker registration
   // -------------------------------------------------------------------------
@@ -62,7 +72,9 @@
   // -------------------------------------------------------------------------
 
   if (localStorage.getItem('offline-map-saved')) {
-    setState('saved', 'Saved — tap to update'); // i18n: translatable
+    const storedFailed =
+      parseInt(localStorage.getItem('offline-map-failed-count'), 10) || 0;
+    setState('saved', savedLabel(storedFailed));
   }
 
   // -------------------------------------------------------------------------
@@ -104,16 +116,23 @@
 
     switch (ev.data.type) {
       case 'progress': {
-        const { cached, total } = ev.data;
-        setState('saving', `Saving… (${cached} of ${total})`); // i18n: translatable
+        const { cached, total, failed } = ev.data;
+        const suffix = failed > 0 ? `, ${failed} missed` : '';
+        setState('saving', `Saving… (${cached} of ${total}${suffix})`); // i18n: translatable
         btnEl.disabled = true;
         break;
       }
 
       case 'complete': {
-        setState('saved', 'Saved — tap to update'); // i18n: translatable
+        const failed = ev.data.failed | 0;
+        setState('saved', savedLabel(failed));
         btnEl.disabled = false;
         localStorage.setItem('offline-map-saved', new Date().toISOString());
+        if (failed > 0) {
+          localStorage.setItem('offline-map-failed-count', String(failed));
+        } else {
+          localStorage.removeItem('offline-map-failed-count');
+        }
         break;
       }
 
