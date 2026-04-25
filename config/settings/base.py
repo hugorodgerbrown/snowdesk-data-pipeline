@@ -253,6 +253,16 @@ ACCOUNT_TOKEN_MAX_AGE = config("ACCOUNT_TOKEN_MAX_AGE", default=86400, cast=int)
 # context (e.g. from management commands or background tasks).
 SITE_BASE_URL = config("SITE_BASE_URL", default="http://localhost:8000")
 
+# Run outbound email on a background daemon thread so SMTP round-trip does not
+# block the request thread (closes the timing-side-channel on
+# POST /subscribe/manage/, SNOW-26).  Tests force this False in
+# tests/conftest.py so existing locmem mail.outbox assertions stay synchronous.
+SUBSCRIPTIONS_EMAIL_ASYNC = config(
+    "SUBSCRIPTIONS_EMAIL_ASYNC",
+    default=True,
+    cast=bool,
+)
+
 # ---------------------------------------------------------------------------
 # Email — SMTP everywhere.  Dev uses Mailhog (localhost:1025, no auth, no
 # TLS); prod uses Resend's SMTP relay (smtp.resend.com:587, STARTTLS).

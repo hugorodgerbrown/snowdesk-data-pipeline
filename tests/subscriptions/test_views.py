@@ -21,13 +21,15 @@ Covers:
   unsubscribe_done_view — GET renders done page.
 """
 
+import time
 from datetime import UTC, datetime, timedelta
+from statistics import median
 from unittest.mock import patch
 
 import pytest
 from django.conf import settings
 from django.core import mail
-from django.test import Client, RequestFactory
+from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
 
@@ -564,6 +566,49 @@ class TestManageViewUnauthenticated:
         ):
             response = _manage_unauthenticated(request)
         assert response.status_code == 429
+
+
+@pytest.mark.django_db
+class TestManagePostTimingSideChannel:
+    """SNOW-26: known vs unknown email POST must not leak via response time."""
+
+    @override_settings(
+        SUBSCRIPTIONS_EMAIL_ASYNC=True,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    )
+    def test_known_and_unknown_response_time_within_bound(self):
+        """With async dispatch on, the known and unknown branches converge."""
+        SubscriberFactory.create(email="known@example.com")
+        client = Client()
+        # Warm-up — first request pays template-cache and DB-connection cost.
+        client.post(
+            reverse("subscriptions:manage"),
+            data={"email": "warm@example.com"},
+        )
+
+        n = 5
+        known_times: list[float] = []
+        unknown_times: list[float] = []
+        for i in range(n):
+            t0 = time.perf_counter()
+            client.post(
+                reverse("subscriptions:manage"),
+                data={"email": "known@example.com"},
+            )
+            known_times.append(time.perf_counter() - t0)
+            t0 = time.perf_counter()
+            client.post(
+                reverse("subscriptions:manage"),
+                data={"email": f"u{i}@example.com"},
+            )
+            unknown_times.append(time.perf_counter() - t0)
+
+        delta = abs(median(known_times) - median(unknown_times))
+        assert delta < 0.050, (
+            f"Timing delta {delta * 1000:.1f}ms exceeds 50ms bound "
+            f"(known median {median(known_times) * 1000:.1f}ms, "
+            f"unknown median {median(unknown_times) * 1000:.1f}ms)"
+        )
 
 
 # ---------------------------------------------------------------------------
