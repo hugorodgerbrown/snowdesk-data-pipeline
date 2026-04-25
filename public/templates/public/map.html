@@ -229,6 +229,11 @@
                 <div class="season-scrubber-thumb" style="left: {{ today_pct }}%"></div>
             </div>
             <span class="season-scrubber-bound">{{ season_end|date:'M j'|upper }}</span>
+            {# SNOW-47: filled by JS with the selected date when the user has #}
+            {# scrubbed off today; hidden otherwise via CSS data-attr selector #}
+            <span class="season-scrubber-bound season-scrubber-bound-selected" aria-hidden="true"></span>
+            {# SNOW-47: live "Apr 24 2026" overlay shown only while dragging #}
+            <span class="season-scrubber-date-pill" aria-hidden="true"></span>
         </div>
     </div>
 {% endblock %}
