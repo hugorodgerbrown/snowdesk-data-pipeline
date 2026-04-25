@@ -187,6 +187,21 @@ const FEATURE_BY_REGION_ID = {};
     const sheetPeek = document.getElementById('sheet-peek');
     const sheetExpanded = document.getElementById('sheet-expanded');
 
+    // ---- URL fragment state (SNOW-39) ----
+    //
+    // The currently-selected region is mirrored in ``location.hash`` as
+    // ``#CH-xxxx`` so the back button dismisses the sheet (instead of
+    // leaving the page) and so a deep link reopens the sheet on load.
+    //
+    // ``sheetHistoryOpen`` tracks whether our hash is currently the top
+    // history entry — drives push-vs-replace on the next open and tells
+    // ``clearSelection`` whether to ``history.back()`` or just dismiss
+    // the DOM directly. ``popstateInProgress`` blocks the recursive
+    // ``clearSelection -> history.back -> popstate -> clearSelection``
+    // path during back-button dismissal.
+    let sheetHistoryOpen = false;
+    let popstateInProgress = false;
+
     // ---- Snap-state helpers (SNOW-43) ----
     //
     // The sheet has three states managed via ``data-snap`` on #sheet:
@@ -285,7 +300,12 @@ const FEATURE_BY_REGION_ID = {};
       }
     };
 
-    const clearSelection = () => {
+    // DOM-only sheet teardown. The user-facing dismiss path goes through
+    // ``clearSelection`` below, which routes via ``history.back()`` so the
+    // URL stays in sync — but the popstate handler (and any caller already
+    // running inside a popstate) needs a way to clean up the DOM without
+    // pushing more history operations, so it calls this directly.
+    const clearSheetDom = () => {
       if (selectedId !== null) {
         map.setFeatureState({ source: 'regions', id: selectedId }, { selected: false });
         selectedId = null;
@@ -296,6 +316,35 @@ const FEATURE_BY_REGION_ID = {};
       delete sheet.dataset.snap;
       sheetPeek.replaceChildren();
       sheetExpanded.replaceChildren();
+    };
+
+    const clearSelection = () => {
+      // If our hash is the top history entry and we're not already
+      // running inside a popstate, pop it. The popstate listener will
+      // run ``clearSheetDom`` and reset ``sheetHistoryOpen``. This keeps
+      // the URL and the DOM in lockstep regardless of whether the user
+      // dismissed via close button, Esc, swipe-down, outside-tap, or the
+      // browser's own back button.
+      if (sheetHistoryOpen && !popstateInProgress) {
+        history.back();
+        return;
+      }
+      clearSheetDom();
+    };
+
+    // Push or replace the URL hash to point at ``regionID``. First open
+    // of a session pushes a single entry; subsequent region taps replace
+    // it so the back stack grows by exactly one no matter how many
+    // regions the user sweeps through.
+    const syncUrlForRegion = (regionID) => {
+      const hash = '#' + regionID;
+      const state = { sheet: regionID };
+      if (!sheetHistoryOpen) {
+        history.pushState(state, '', hash);
+        sheetHistoryOpen = true;
+      } else {
+        history.replaceState(state, '', hash);
+      }
     };
 
     // Compute the lng/lat bounding box of a GeoJSON Polygon or MultiPolygon.
@@ -340,8 +389,13 @@ const FEATURE_BY_REGION_ID = {};
     // a single definition. ``toggle`` mirrors the map-click UX where a
     // second click on the already-selected region dismisses the sheet;
     // search callers pass ``toggle: false`` so selecting a result always
-    // opens it, never toggles it off.
-    const selectFeature = async (numericId, { toggle = true } = {}) => {
+    // opens it, never toggles it off. ``urlMode`` controls how the URL
+    // hash is reconciled after the sheet opens: ``'push'`` (default,
+    // user-initiated) writes the hash via push/replaceState; ``'mark'``
+    // skips the write because the URL already matches (popstate,
+    // hashchange, initial load) and just records that our hash is now
+    // the active history entry.
+    const selectFeature = async (numericId, { toggle = true, urlMode = 'push' } = {}) => {
       if (numericId === selectedId) {
         if (toggle) clearSelection();
         return;
@@ -366,6 +420,12 @@ const FEATURE_BY_REGION_ID = {};
       }
       setSnap('peek');
 
+      if (urlMode === 'push') {
+        syncUrlForRegion(props.regionID);
+      } else if (urlMode === 'mark') {
+        sheetHistoryOpen = true;
+      }
+
       // One frame after setSnap so getBoundingClientRect reflects the
       // new visible height (the CSS transform hasn't finished animating
       // but the snap state is set, so panToRegionAboveSheet uses the
@@ -387,6 +447,55 @@ const FEATURE_BY_REGION_ID = {};
 
     map.on('mouseenter', 'regions-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'regions-fill', () => { map.getCanvas().style.cursor = ''; });
+
+    // ---- History wiring (SNOW-39) ----
+    //
+    // Resolve the current ``location.hash`` against ``FEATURE_BY_REGION_ID``.
+    // Returns the numeric feature id when the hash names a known region,
+    // ``null`` when the hash is absent or names a region we don't have.
+    // Reuses ``REGION_ID_RE`` so the hash, the GeoJSON-id check, and the
+    // CTA href validation all share one definition of "a valid region id".
+    const featureIdFromHash = () => {
+      const regionID = location.hash.slice(1);
+      if (!regionID || !REGION_ID_RE.test(regionID)) return null;
+      const feature = FEATURE_BY_REGION_ID[regionID];
+      return feature ? feature.id : null;
+    };
+
+    // popstate fires on browser back/forward. We do not push during this
+    // handler (selectFeature is called with urlMode='mark' so it just
+    // records that our hash is the active entry), and ``clearSelection``
+    // takes the ``popstateInProgress`` branch so it doesn't re-pop.
+    window.addEventListener('popstate', () => {
+      popstateInProgress = true;
+      try {
+        const numericId = featureIdFromHash();
+        if (numericId !== null) {
+          selectFeature(numericId, { toggle: false, urlMode: 'mark' });
+        } else {
+          sheetHistoryOpen = false;
+          clearSheetDom();
+        }
+      } finally {
+        popstateInProgress = false;
+      }
+    });
+
+    // hashchange fires when the user edits the fragment in the URL bar.
+    // (popstate also fires for back/forward — both events fire for that
+    // case and the second one is a harmless no-op because selectFeature
+    // returns early when numericId === selectedId, and clearSheetDom is
+    // idempotent.)
+    window.addEventListener('hashchange', () => {
+      const numericId = featureIdFromHash();
+      if (numericId !== null) {
+        sheetHistoryOpen = true;
+        selectFeature(numericId, { toggle: false, urlMode: 'mark' });
+      } else if (location.hash === '' || location.hash === '#') {
+        sheetHistoryOpen = false;
+        clearSheetDom();
+      }
+    });
 
     // Sheet dismissal: close button, Esc key, and a drag gesture that can
     // start anywhere on the sheet (handle OR body).
@@ -873,6 +982,18 @@ const FEATURE_BY_REGION_ID = {};
       if (resultsEl.contains(e.target)) return;
       collapseSearch();
     });
+
+    // ---- Initial-load hash → sheet (SNOW-39) ----
+    //
+    // If the user landed on ``/map/#CH-xxxx``, open the sheet for that
+    // region at peek. ``urlMode: 'mark'`` because the URL already
+    // matches — selectFeature just needs to record that our hash is the
+    // active history entry. Unknown / malformed hashes are silently
+    // ignored (sheet stays closed, no console error).
+    const initialFeatureId = featureIdFromHash();
+    if (initialFeatureId !== null) {
+      selectFeature(initialFeatureId, { toggle: false, urlMode: 'mark' });
+    }
   });
 })();
 
