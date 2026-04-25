@@ -11,8 +11,13 @@ code path — future tweaks to the partial propagate automatically.
 Expects the following variables in scope:
   rm            — the bulletin's render_model dict.
   bulletin_url  — pre-resolved URL for the full bulletin page.
+
+The SLF source/feedback line at the bottom is required by the SLF
+data licence — see SNOW-30. Rendered on every map-sheet expansion
+so the data credit is visible at the surface where users consume
+bulletin content.
 {% endcomment %}
-{% load i18n %}
+{% load i18n snowdesk_time %}
 
 <div class="region-expanded">
     {% if rm.traits %}
@@ -27,4 +32,20 @@ Expects the following variables in scope:
     <a class="sheet-cta" href="{{ bulletin_url }}">
         {% trans "Open full bulletin →" %}
     </a>
+    <div class="region-expanded-attribution" data-testid="expanded-slf-attribution">
+        <span>
+            {% trans "Source:" %}
+            <a href="https://www.slf.ch" target="_blank" rel="noopener">{% trans "SLF" %}</a>
+            {% if rm.metadata.publication_time %}
+                &middot; {% blocktrans with t=rm.metadata.publication_time|parse_iso|date:"j M H:i" trimmed %}Published
+                    {{ t }} UTC{% endblocktrans %}
+            {% endif %}
+        </span>
+        <a
+            href="https://pro.slf.ch/reply/public/#/"
+            target="_blank"
+            rel="noopener"
+            data-testid="slf-feedback-link"
+        >{% trans "Report observations ↗" %}</a>
+    </div>
 </div>

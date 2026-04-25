@@ -543,6 +543,33 @@
     color: var(--muted);
 }
 
+/* SLF data-licence attribution — required by SNOW-30 on every surface
+ * that renders bulletin content. Sits below the "Open full bulletin"
+ * CTA so it never competes with the primary action; visible whenever
+ * the sheet is at the expanded snap.
+ */
+.region-expanded-attribution {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 0.5px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.region-expanded-attribution a {
+    color: var(--muted);
+    text-decoration: underline;
+}
+
+.region-expanded-attribution a:hover {
+    color: var(--ink);
+}
+
 /* "Save offline" CTA — sits below the search field in the header. */
 
 .offline-cta {

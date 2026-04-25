@@ -24,12 +24,18 @@ body_class      : Tailwind classes on <body>. Default gives background,
 nav             : top navigation. Default = the plain wordmark variant;
                   pages that want a back-chevron override this block.
 content         : the page body.
+site_footer     : the global site footer. Default = the small SLF
+                  attribution + Terms link partial introduced in
+                  SNOW-30 to satisfy the SLF CC BY 4.0 licence.
+                  Pages with a richer per-page footer (bulletin.html)
+                  still inherit this line below the rich one — the
+                  rich footer is page-content; this is the site
+                  licence line. Override with {% block site_footer %}{% endblock %}
+                  only if a page needs to reposition the licence
+                  line (e.g. into a floating overlay), not to remove
+                  it.
 extra_js        : scripts loaded at end of <body>. Used by
                   subscriptions/base.html to inject HTMX.
-
-No global footer — the canonical bulletin page owns a rich per-page
-footer rather than a site-wide one, and home/map/random/season all
-omit a footer too. Pages render their own if they need one.
 {% endcomment %}
 {% load i18n static %}
 <!DOCTYPE html>
@@ -51,6 +57,9 @@ omit a footer too. Pages render their own if they need one.
             {% include "includes/nav.html" %}
         {% endblock %}
         {% block content %}{% endblock %}
+        {% block site_footer %}
+            {% include "public/_site_footer.html" %}
+        {% endblock %}
         {% block extra_js %}{% endblock %}
     </body>
 </html>
