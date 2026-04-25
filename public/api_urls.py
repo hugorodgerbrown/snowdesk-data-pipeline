@@ -16,6 +16,7 @@ app_name = "api"
 
 urlpatterns = [
     path("today-summaries/", api.today_summaries, name="today_summaries"),
+    path("season-ratings/", api.season_ratings, name="season_ratings"),
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
     path("regions.geojson", api.regions_geojson, name="regions_geojson"),
     path(
@@ -39,10 +40,5 @@ if settings.DEBUG:
             "debug/day-ratings/",
             debug_views.day_ratings_debug,
             name="debug_day_ratings",
-        ),
-        path(
-            "debug/season-ratings/",
-            debug_views.season_ratings_debug,
-            name="debug_season_ratings",
         ),
     ]

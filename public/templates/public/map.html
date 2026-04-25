@@ -43,6 +43,7 @@
         data-regions-url="{% url 'api:regions_geojson' %}"
         data-summaries-url="{% url 'api:today_summaries' %}"
         data-resorts-url="{% url 'api:resorts_by_region' %}"
+        data-season-ratings-url="{% url 'api:season_ratings' %}"
         data-region-summary-url="{% url 'api:region_summary' '__REGION__' %}"
         data-offline-manifest-url="{% url 'api:offline_manifest_map' %}"
         data-basemap-style="{{ basemap_style_url }}"
@@ -111,12 +112,14 @@
             </button>
             <ul id="search-results" class="search-results" role="listbox" hidden></ul>
         </div>
-        <div
-            id="debug-pill"
-            style="display: none; position: absolute; top: 10px; right: 10px; z-index: 2; background: #1a1a1a; color: #fff; font-size: 10px; padding: 4px 7px; border-radius: 3px; font-family: ui-monospace, monospace"
-        >
-            debug &middot; press d
+        <div id="debug-pill" class="debug-pill">
+            <button id="timelapse-toggle" type="button" class="debug-pill-button">
+                Play timelapse
+            </button>
         </div>
+        {# SNOW-46: pinned date overlay shown only while the timelapse is #}
+        {# playing. Toggled via .playing on #map by static/js/map.js. #}
+        <div id="timelapse-date" class="timelapse-overlay" aria-hidden="true"></div>
         {# Bottom sheet — two snap states (peek / expanded) populated on   #}
         {# region tap by static/js/map.js. The peek + expanded containers  #}
         {# receive server-rendered HTML from /api/region/<id>/summary/.   #}

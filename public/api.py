@@ -5,6 +5,9 @@ Lightweight endpoints consumed by ``static/js/map.js`` to render the
 Swiss region choropleth and back the per-region bottom sheet:
 
 * ``/api/today-summaries/``                — per-region danger summary for today.
+* ``/api/season-ratings/``                 — ``{date: {region_id: rating_int}}``
+  for the entire stored dataset (consumed by the timelapse debug button and,
+  later, the season scrubber).
 * ``/api/resorts-by-region/``              — ``{region_id: [resort_name, ...]}``.
 * ``/api/regions.geojson``                 — FeatureCollection of region polygons.
 * ``/api/region/<region_id>/summary/``     — pre-rendered peek + expanded HTML
@@ -31,7 +34,7 @@ from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
 
-from pipeline.models import Bulletin, Region, RegionBulletin
+from pipeline.models import Bulletin, Region, RegionBulletin, RegionDayRating
 
 from .views import _PROBLEM_LABELS, _select_bulletin_for_date, _select_default_issue
 
@@ -367,6 +370,60 @@ def today_summaries(request: HttpRequest) -> JsonResponse:
         )
 
     return JsonResponse(summaries)
+
+
+# Compact int encoding for the season-ratings choropleth. Order matches the
+# danger scale so the value can also be used directly as a sort key. Promoted
+# from SNOW-45's perf spike harness.
+_RATING_TO_INT: dict[str, int] = {
+    RegionDayRating.Rating.NO_RATING: 0,
+    RegionDayRating.Rating.LOW: 1,
+    RegionDayRating.Rating.MODERATE: 2,
+    RegionDayRating.Rating.CONSIDERABLE: 3,
+    RegionDayRating.Rating.HIGH: 4,
+    RegionDayRating.Rating.VERY_HIGH: 5,
+}
+
+
+def season_ratings(request: HttpRequest) -> JsonResponse:
+    """
+    Return the whole-season bundle of per-region danger ratings.
+
+    Response shape::
+
+        {
+          "2026-01-15": {"CH-4115": 3, "CH-4116": 2, ...},
+          "2026-01-16": {"CH-4115": 4, ...},
+          ...
+        }
+
+    Each rating is encoded as an int on the danger scale (0–5) via
+    ``_RATING_TO_INT`` to keep the payload small — the timelapse and
+    scrubber consumers only need the tile colour, not the prose summary.
+    Regions with no row for a given date are simply absent from that
+    date's inner dict.
+
+    The handler iterates ``.values_list`` to avoid instantiating model
+    objects; the JSON encoder still materialises the dict in memory but
+    that matches what a real ``WholeSeasonResponse`` would look like on
+    the wire.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse mapping ISO date → {region_id: rating_int}.
+
+    """
+    rows = (
+        RegionDayRating.objects.all()
+        .values_list("date", "region__region_id", "max_rating")
+        .order_by("date", "region__region_id")
+    )
+    payload: dict[str, dict[str, int]] = {}
+    for date, region_id, rating in rows:
+        payload.setdefault(date.isoformat(), {})[region_id] = _RATING_TO_INT[rating]
+    return JsonResponse(payload)
 
 
 def resorts_by_region(request: HttpRequest) -> JsonResponse:

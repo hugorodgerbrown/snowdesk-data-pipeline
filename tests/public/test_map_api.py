@@ -1,15 +1,17 @@
 """
 tests/public/test_map_api.py — Tests for the /api/ JSON endpoints.
 
-Covers the three endpoints consumed by the /map/ page:
+Covers the endpoints consumed by the /map/ page:
 
 * ``api:today_summaries``     — today's danger summaries per region.
+* ``api:season_ratings``      — whole-season ``{date: {region_id: int}}``.
 * ``api:resorts_by_region``   — resort list per region.
 * ``api:regions_geojson``     — FeatureCollection of region polygons.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -18,9 +20,11 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+from pipeline.models import RegionDayRating
 from tests.factories import (
     BulletinFactory,
     RegionBulletinFactory,
+    RegionDayRatingFactory,
     RegionFactory,
     ResortFactory,
 )
@@ -376,16 +380,65 @@ def test_regions_geojson_returns_feature_collection():
 
 
 # ---------------------------------------------------------------------------
+# season-ratings
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_season_ratings_empty_when_no_day_ratings():
+    """No RegionDayRating rows → empty dict."""
+    client = Client()
+    response = client.get(reverse("api:season_ratings"))
+    assert response.status_code == 200
+    assert response.json() == {}
+
+
+@pytest.mark.django_db
+def test_season_ratings_returns_expected_shape():
+    """Top-level keys are ISO dates; inner dicts map region_id → rating int."""
+    region_a = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region_b = RegionFactory.create(region_id="CH-4116", slug="ch-4116")
+    day_one = dt.date(2026, 1, 15)
+    day_two = dt.date(2026, 1, 16)
+
+    RegionDayRatingFactory.create(
+        region=region_a,
+        date=day_one,
+        max_rating=RegionDayRating.Rating.CONSIDERABLE,
+    )
+    RegionDayRatingFactory.create(
+        region=region_b,
+        date=day_one,
+        max_rating=RegionDayRating.Rating.MODERATE,
+    )
+    RegionDayRatingFactory.create(
+        region=region_a,
+        date=day_two,
+        max_rating=RegionDayRating.Rating.HIGH,
+    )
+
+    response = Client().get(reverse("api:season_ratings"))
+    assert response.status_code == 200
+    data = response.json()
+
+    assert set(data.keys()) == {"2026-01-15", "2026-01-16"}
+    # Considerable=3, moderate=2, high=4 — see _RATING_TO_INT.
+    assert data["2026-01-15"] == {"CH-4115": 3, "CH-4116": 2}
+    assert data["2026-01-16"] == {"CH-4115": 4}
+
+
+# ---------------------------------------------------------------------------
 # Content type
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 def test_endpoints_return_json_content_type():
-    """All three endpoints advertise application/json."""
+    """All map-page endpoints advertise application/json."""
     client = Client()
     for name in (
         "api:today_summaries",
+        "api:season_ratings",
         "api:resorts_by_region",
         "api:regions_geojson",
     ):
