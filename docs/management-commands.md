@@ -54,6 +54,18 @@ poetry run python manage.py monitor_query_counts --commit  # accept new counts
 # to write the L1/L2 fixtures.
 poetry run python manage.py refresh_eaws_fixtures           # diff-only
 poetry run python manage.py refresh_eaws_fixtures --commit  # persist
+
+# Diagnose RegionDayRating coverage gaps (SNOW-48). Pure SELECT — never
+# writes. Partitions every fixture region into A/B/C buckets:
+#   A: has at least one RegionDayRating row
+#   B: appears in a raw bulletin's properties.regions but has no rating row
+#      (local-bug suspect)
+#   C: never appears in any raw bulletin (upstream-gap suspect)
+poetry run python manage.py diagnose_region_coverage                       # whole archive
+poetry run python manage.py diagnose_region_coverage --date 2026-04-15     # single day
+poetry run python manage.py diagnose_region_coverage --verbose-table       # add per-region table
+
+# Flags: --date YYYY-MM-DD (single day), --verbose-table (per-region table)
 ```
 
 `SEASON_START_DATE` is read from the environment in
