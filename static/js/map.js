@@ -33,6 +33,16 @@ const MAP_READY_PROMISE = new Promise((r) => { resolveMapReady = r; });
 // Hoisted so the timelapse and the scrubber share one definition.
 const INT_TO_RATING = ['no_rating', 'low', 'moderate', 'considerable', 'high', 'very_high'];
 
+// "2026-04-25" → "APR 25 2026". Locale-friendly, unambiguous (avoids the
+// 04/05 day-vs-month confusion of all-numeric formats). Uppercase to
+// match the season-bookend labels and the server-rendered date pill.
+const SCRUBBER_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                         'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const formatDateLong = (dateKey) => {
+  const [y, m, d] = dateKey.split('-');
+  return `${SCRUBBER_MONTHS[parseInt(m, 10) - 1]} ${parseInt(d, 10)} ${y}`;
+};
+
 // Lazily-fetched, cached payload from /api/season-ratings/. Shape:
 // { date_iso: { region_id: rating_int } }. Both timelapse (SNOW-46) and
 // the scrubber (SNOW-47) consume the same dataset; sharing one fetch
@@ -149,9 +159,6 @@ const clearRegionRepaint = () => {
     // Derive RATINGS from summaries — single source of truth for the choropleth.
     for (const [id, s] of Object.entries(summaries)) RATINGS[id] = s.rating;
 
-    // Apply initial debug state (for ?debug=1 URL param).
-    if (DEBUG) document.getElementById('debug-pill').style.display = 'block';
-
     // Assign a numeric id to every feature and build the lookup.
     // MapLibre's feature-state API requires numeric ids; regionID is a string
     // ("CH-4115") so we can't use it directly.
@@ -243,6 +250,10 @@ const clearRegionRepaint = () => {
     const sheet = document.getElementById('sheet');
     const sheetPeek = document.getElementById('sheet-peek');
     const sheetExpanded = document.getElementById('sheet-expanded');
+
+    // Apply boot-time debug state (?debug=1) to the sheet so the
+    // region-id readout in the peek partial is visible on first paint.
+    if (DEBUG) sheet.classList.add('debug');
 
     // ---- URL fragment state (SNOW-39) ----
     //
@@ -577,11 +588,11 @@ const clearRegionRepaint = () => {
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && sheet.dataset.snap) clearSelection();
       // Toggle debug mode; ignore when typing in an input/textarea.
+      // Now only gates the region-id readout in the sheet's peek partial
+      // (the timelapse button moved into the always-visible scrubber).
       if (e.key === 'd' && !e.target.matches('input, textarea')) {
         DEBUG = !DEBUG;
         sheet.classList.toggle('debug', DEBUG);
-        const pill = document.getElementById('debug-pill');
-        if (pill) pill.style.display = DEBUG ? 'block' : 'none';
       }
     });
 
@@ -1095,23 +1106,11 @@ const clearRegionRepaint = () => {
   if (!scrubber) return;
   const track = scrubber.querySelector('.season-scrubber-track');
   const thumb = scrubber.querySelector('.season-scrubber-thumb');
-  const datePill = scrubber.querySelector('.season-scrubber-date-pill');
-  const selectedBound = scrubber.querySelector('.season-scrubber-bound-selected');
   const todayKey = scrubber.dataset.today;
   const todayPct = parseFloat(scrubber.dataset.todayPct);
   const seasonStartMs = Date.parse(scrubber.dataset.seasonStart);
   const seasonEndMs = Date.parse(scrubber.dataset.seasonEnd);
   const seasonSpanMs = seasonEndMs - seasonStartMs;
-
-  // Format an ISO date as "Apr 24 2026" — month-name month-number is
-  // locale-friendly and unambiguous (avoids the 04/05 day-vs-month
-  // confusion of all-numeric formats).
-  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const formatDateLong = (dateKey) => {
-    const [y, m, d] = dateKey.split('-');
-    return `${MONTHS[parseInt(m, 10) - 1]} ${parseInt(d, 10)} ${y}`;
-  };
 
   // Convert between a thumb percentage (0..100 along the track) and an
   // ISO date string. Both use the season bounds parsed above and round
@@ -1157,36 +1156,16 @@ const clearRegionRepaint = () => {
     return best;
   };
 
-  // Tracks the date the user has committed to — drives URL state, the
-  // selected-bound label, and event payloads. ``null`` means "showing
-  // today, no time-travel"; this stays distinct from ``todayKey`` so the
-  // selected-bound chrome only appears when the user has explicitly
-  // scrubbed off today.
-  let currentDate = null;
-
-  const renderSelectedBound = () => {
-    if (!selectedBound) return;
-    if (currentDate && currentDate !== todayKey) {
-      selectedBound.textContent = formatDateLong(currentDate);
-      scrubber.dataset.hasSelection = 'true';
-    } else {
-      selectedBound.textContent = '';
-      delete scrubber.dataset.hasSelection;
-    }
-  };
-
   // The single commit point. Updates the thumb, repaints regions, syncs
   // the URL, and notifies the rest of the page. ``opts.silent`` skips
   // the URL write — used by the popstate handler so re-applying a
   // browser-back-restored ``?d=`` doesn't re-write history.
   const commitDate = (dateKey, opts = {}) => {
     const isToday = dateKey === todayKey;
-    currentDate = isToday ? null : dateKey;
     const pct = dateKeyToPct(dateKey);
     thumb.style.left = pct + '%';
     scrubber.setAttribute('aria-valuenow', String(Math.round(pct)));
     if (ratingsCache) repaintRegionsForDate(dateKey, ratingsCache);
-    renderSelectedBound();
     if (!opts.silent) {
       // ``replaceState`` (never push) so a long scrub doesn't bury the
       // back button under dozens of intermediate dates. Today clears the
@@ -1202,20 +1181,24 @@ const clearRegionRepaint = () => {
   // ---- Pointer drag ----
   let dragging = false;
   let pointerId = null;
-  let liveDate = null;  // tracked during drag, used by the pill overlay
+  let liveDate = null;  // tracked during drag, used by the date-preview event
 
   const updateDragVisuals = (clientX) => {
     const rect = track.getBoundingClientRect();
     const pct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
     thumb.style.left = pct + '%';
     liveDate = pctToDateKey(pct);
-    if (datePill) datePill.textContent = formatDateLong(liveDate);
+    // Lightweight UI hint — no URL write, no region repaint. The
+    // map-date-pill listens and updates live; commitDate (on release)
+    // overrides with the snapped data day.
+    document.dispatchEvent(new CustomEvent('snowdesk:date-preview', {
+      detail: { date: liveDate, source: 'scrubber' },
+    }));
   };
 
   thumb.addEventListener('pointerdown', (e) => {
     dragging = true;
     pointerId = e.pointerId;
-    scrubber.classList.add('dragging');
     track.classList.add('dragging');
     track.classList.remove('animating');
     updateDragVisuals(e.clientX);
@@ -1231,7 +1214,6 @@ const clearRegionRepaint = () => {
     if (!dragging || (e && e.pointerId !== pointerId)) return;
     dragging = false;
     pointerId = null;
-    scrubber.classList.remove('dragging');
     track.classList.remove('dragging');
     const snapped = snapToNearestDataDay(liveDate || todayKey);
     commitDate(snapped);
@@ -1308,28 +1290,25 @@ const clearRegionRepaint = () => {
   });
 })();
 
-// SNOW-46: Timelapse debug button. Rendered inside #debug-pill (which is
-// itself hidden until the user presses 'd'); a click iterates through
-// every date in the dataset, repainting region colours via feature-state
-// at ~10 fps with a top-centre date overlay. A second click stops and
-// reverts to today's bulletins by clearing the per-region feature-state.
+// Season timelapse — the play button on the scrubber cycles through
+// every dated frame in the season at ~10 fps. Each frame repaints
+// region colours via feature-state and announces a snowdesk:date-changed
+// event so the date pill (and any open sheet) stays in sync. A second
+// click — or any user scrub — stops playback and reverts to today.
 (function timelapseInit() {
-  const button = document.getElementById('timelapse-toggle');
+  const button = document.getElementById('scrubber-play');
   if (!button) return;
 
-  const mapEl = document.getElementById('map');
-  const overlay = document.getElementById('timelapse-date');
   const FRAME_MS = 100;  // 10 fps
 
-  // Season-scrubber sync — drive the existing thumb so the operator
-  // sees the playback position on the same control they will eventually
-  // use to drag-scrub. The bounds and today-snap come from the same
-  // data-* attributes the season-scrubber IIFE reads.
+  // Drive the existing scrubber thumb so the playback position is
+  // visible on the same control the user can drag.
   const scrubber = document.getElementById('season-scrubber');
   const scrubberThumb = scrubber ? scrubber.querySelector('.season-scrubber-thumb') : null;
   const seasonStartMs = scrubber ? Date.parse(scrubber.dataset.seasonStart) : NaN;
   const seasonEndMs = scrubber ? Date.parse(scrubber.dataset.seasonEnd) : NaN;
   const todayPct = scrubber ? parseFloat(scrubber.dataset.todayPct) : NaN;
+  const todayKey = scrubber ? scrubber.dataset.today : null;
   const seasonSpanMs = seasonEndMs - seasonStartMs;
 
   const moveScrubber = (dateKey) => {
@@ -1345,12 +1324,16 @@ const clearRegionRepaint = () => {
   let frameIdx = 0;
   let timer = null;
 
-  const setOverlay = (text) => { overlay.textContent = text; };
+  const announce = (dateKey) => {
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+      detail: { date: dateKey, source: 'timelapse' },
+    }));
+  };
 
   const applyFrame = (dateKey) => {
     repaintRegionsForDate(dateKey, cache);
-    setOverlay(dateKey);
     moveScrubber(dateKey);
+    announce(dateKey);
   };
 
   const stop = () => {
@@ -1358,16 +1341,16 @@ const clearRegionRepaint = () => {
       clearInterval(timer);
       timer = null;
     }
-    mapEl.classList.remove('playing');
-    button.textContent = 'Play timelapse';
+    button.dataset.state = 'stopped';
+    button.setAttribute('aria-label', 'Play season timelapse');
     // Revert to today's colours — clearing feature-state lets the
     // ``coalesce`` fall through to the property-based ``rating`` that
     // was written at page load.
     if (cache) clearRegionRepaint();
-    setOverlay('');
     if (scrubberThumb && Number.isFinite(todayPct)) {
       scrubberThumb.style.left = todayPct + '%';
     }
+    if (todayKey) announce(todayKey);
   };
 
   const start = async () => {
@@ -1382,15 +1365,15 @@ const clearRegionRepaint = () => {
     }
     if (sortedDates.length === 0) return;
     frameIdx = 0;
-    mapEl.classList.add('playing');
-    button.textContent = 'Stop timelapse';
+    button.dataset.state = 'playing';
+    button.setAttribute('aria-label', 'Stop season timelapse');
     applyFrame(sortedDates[frameIdx]);
     timer = setInterval(() => {
       frameIdx += 1;
       if (frameIdx >= sortedDates.length) {
         // Last frame already painted on the previous tick — stop here so
-        // the date overlay leaves the final value visible just long
-        // enough to register before the regions snap back to today.
+        // the final value sits long enough to register before regions
+        // snap back to today.
         stop();
         return;
       }
@@ -1398,9 +1381,9 @@ const clearRegionRepaint = () => {
     }, FRAME_MS);
   };
 
-  // SNOW-47: when the scrubber commits a new date, the timelapse must
-  // surrender control — both consumers paint via feature-state on the
-  // same source, so a running timer would fight any user scrub.
+  // When the scrubber commits a new date, the timelapse must surrender
+  // control — both consumers paint via feature-state on the same source,
+  // so a running timer would fight any user scrub.
   document.addEventListener('snowdesk:date-changed', (e) => {
     if (timer !== null && (!e.detail || e.detail.source !== 'timelapse')) {
       stop();
@@ -1411,4 +1394,21 @@ const clearRegionRepaint = () => {
     if (timer !== null) stop();
     else start();
   });
+})();
+
+// Always-visible date pill anchored next to the (i) legend toggle.
+// Server-rendered with today's date for first-paint correctness; this
+// IIFE keeps it in sync as the user scrubs or watches the timelapse.
+(function mapDatePillInit() {
+  const pill = document.getElementById('map-date-pill');
+  if (!pill) return;
+  const setFrom = (e) => {
+    const dk = e.detail && e.detail.date;
+    if (dk) pill.textContent = formatDateLong(dk);
+  };
+  // Both events carry the same shape; date-changed fires on commit
+  // (scrubber release, timelapse frame, popstate), date-preview fires
+  // continuously during a drag so the pill follows the thumb live.
+  document.addEventListener('snowdesk:date-changed', setFrom);
+  document.addEventListener('snowdesk:date-preview', setFrom);
 })();

@@ -68,12 +68,20 @@ def test_map_page_injects_basemap_style_url():
 
 
 @pytest.mark.django_db
-def test_map_page_uses_default_basemap_style_url():
-    """The default BASEMAP key resolves to OpenFreeMap Liberty."""
-    client = Client()
-    response = client.get(reverse("public:map"))
-    content = response.content.decode()
+def test_map_page_renders_resolved_basemap_style_url():
+    """The view writes settings.BASEMAP_STYLE_URL into the rendered markup.
+
+    The settings module resolves ``BASEMAP_STYLE_URL`` from the ``BASEMAP``
+    env var at import time, so this test pins it via ``override_settings``
+    rather than relying on the live ``.env`` — otherwise any developer
+    with a non-default ``BASEMAP`` override (a documented dev affordance)
+    would see a spurious failure here.
+    """
     expected = settings.BASEMAP_STYLES["openfreemap_liberty"]
+    with override_settings(BASEMAP_STYLE_URL=expected):
+        client = Client()
+        response = client.get(reverse("public:map"))
+    content = response.content.decode()
     assert f'data-basemap-style="{expected}"' in content
 
 
@@ -97,15 +105,15 @@ def test_map_page_accepts_date_query_param():
 
 
 @pytest.mark.django_db
-def test_map_page_renders_scrubber_overlay_slots():
+def test_map_page_renders_unified_time_controls():
     """
-    SNOW-47: the scrubber template carries an empty selected-bound span
-    (filled by JS when the user scrubs off today) and a date-pill span
-    (shown only while dragging). Both must be rendered server-side so
-    the JS doesn't have to inject DOM nodes.
+    The play button (#scrubber-play) and the always-visible date pill
+    (#map-date-pill) must be rendered server-side so the JS only has to
+    wire behaviour onto pre-existing DOM. Today's date is server-rendered
+    into the pill so the first paint is correct without waiting on JS.
     """
     client = Client()
     response = client.get(reverse("public:map"))
     content = response.content.decode()
-    assert "season-scrubber-bound-selected" in content
-    assert "season-scrubber-date-pill" in content
+    assert 'id="scrubber-play"' in content
+    assert 'id="map-date-pill"' in content

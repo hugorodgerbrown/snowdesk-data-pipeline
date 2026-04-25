@@ -112,14 +112,6 @@
             </button>
             <ul id="search-results" class="search-results" role="listbox" hidden></ul>
         </div>
-        <div id="debug-pill" class="debug-pill">
-            <button id="timelapse-toggle" type="button" class="debug-pill-button">
-                Play timelapse
-            </button>
-        </div>
-        {# SNOW-46: pinned date overlay shown only while the timelapse is #}
-        {# playing. Toggled via .playing on #map by static/js/map.js. #}
-        <div id="timelapse-date" class="timelapse-overlay" aria-hidden="true"></div>
         {# Bottom sheet — two snap states (peek / expanded) populated on   #}
         {# region tap by static/js/map.js. The peek + expanded containers  #}
         {# receive server-rendered HTML from /api/region/<id>/summary/.   #}
@@ -154,6 +146,11 @@
         {# above the season scrubber. Card is absolutely positioned        #}
         {# relative to the container so toggling it never reflows the page.#}
         <div id="map-legend" class="map-legend" data-state="collapsed">
+            {# Always-visible date readout. Server-rendered with today's   #}
+            {# date so it's correct on first paint; static/js/map.js       #}
+            {# updates it on snowdesk:date-changed (scrubber commits +     #}
+            {# timelapse frames) and on snowdesk:date-preview (live drag). #}
+            <span id="map-date-pill" class="map-date-pill" aria-live="polite">{{ today|date:'M j Y'|upper }}</span>
             <div
                 class="map-legend-card"
                 id="map-legend-card"
@@ -224,16 +221,39 @@
             data-today="{{ today|date:'Y-m-d' }}"
             data-today-pct="{{ today_pct }}"
         >
+            <button
+                id="scrubber-play"
+                type="button"
+                class="scrubber-play"
+                aria-label='{% trans "Play season timelapse" %}'
+                data-state="stopped"
+            >
+                <svg
+                    class="scrubber-play-icon"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                >
+                    <path d="M8 5.5v13l11-6.5z" />
+                </svg>
+                <svg
+                    class="scrubber-stop-icon"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                >
+                    <rect x="6" y="6" width="12" height="12" rx="1.5" />
+                </svg>
+            </button>
             <span class="season-scrubber-bound">{{ season_start|date:'M j'|upper }}</span>
             <div class="season-scrubber-track" aria-hidden="true">
                 <div class="season-scrubber-thumb" style="left: {{ today_pct }}%"></div>
             </div>
             <span class="season-scrubber-bound">{{ season_end|date:'M j'|upper }}</span>
-            {# SNOW-47: filled by JS with the selected date when the user has #}
-            {# scrubbed off today; hidden otherwise via CSS data-attr selector #}
-            <span class="season-scrubber-bound season-scrubber-bound-selected" aria-hidden="true"></span>
-            {# SNOW-47: live "Apr 24 2026" overlay shown only while dragging #}
-            <span class="season-scrubber-date-pill" aria-hidden="true"></span>
         </div>
     </div>
 {% endblock %}

@@ -285,6 +285,33 @@
     /* 56px scrubber baseline + ~40px scrubber height + 12px gap */
     bottom: calc(108px + env(safe-area-inset-bottom, 0px));
     z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Always-visible date readout, styled to match the (i) toggle so the
+   pair reads as one grouped control. Updated by static/js/map.js on
+   snowdesk:date-changed (scrubber commits + timelapse frames) and on
+   snowdesk:date-preview (live drag). */
+.map-date-pill {
+    height: 32px;
+    padding: 0 12px;
+    display: inline-flex;
+    align-items: center;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    user-select: none;
 }
 
 .map-legend-toggle {
@@ -306,7 +333,8 @@
 
 .map-legend-card {
     position: absolute;
-    left: 0;
+    /* Anchor above the (i) toggle (the rightmost item in the flex row). */
+    right: 0;
     bottom: 40px;            /* 32px button + 8px gap */
     min-width: 132px;
     padding: 8px 10px;
@@ -319,7 +347,7 @@
     font-size: 11px;
     line-height: 1.5;
     color: var(--color-text-1);
-    transform-origin: bottom left;
+    transform-origin: bottom right;
     opacity: 0;
     transform: translateY(4px) scale(0.98);
     pointer-events: none;
@@ -710,111 +738,32 @@
     transition: left 200ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* SNOW-47: third bookend slot, populated by JS with the selected date
-   (e.g. "APR 24 2026") whenever the user has scrubbed off today. Hidden
-   until the scrubber's data-has-selection attribute is set so the
-   default state matches the original two-bookend layout. The colour
-   step from --muted to --ink mirrors the active state of the thumb. */
-.season-scrubber-bound-selected {
-    display: none;
-    color: var(--ink);
-}
-
-.season-scrubber[data-has-selection="true"] .season-scrubber-bound-selected {
-    display: inline;
-}
-
-/* SNOW-47: live "Apr 24 2026" overlay shown only while dragging.
-   Absolute-positioned so it floats above the track without affecting
-   layout — the bookend labels stay at their normal x positions and we
-   simply pop the pill on top of them. Visibility (not display) so the
-   pill doesn't reflow when shown/hidden. */
-.season-scrubber-date-pill {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-    padding: 4px 10px;
-    border-radius: 999px;
+/* Inline play / stop button on the scrubber. Sits at the left edge as a
+   filled dark circle echoing the thumb visual, so the scrubber reads as
+   a single unified time-control surface. SVG state is swapped via the
+   data-state attribute set by static/js/map.js. */
+.scrubber-play {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: var(--ink);
     color: #fff;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-    visibility: hidden;
-}
-
-.season-scrubber.dragging .season-scrubber-date-pill {
-    visibility: visible;
-}
-
-.season-scrubber.dragging .season-scrubber-bound,
-.season-scrubber.dragging .season-scrubber-bound-selected {
-    visibility: hidden;
-}
-
-/* ---------------------------------------------------------------------- */
-/* Debug pill (SNOW-46) — moved from inline styles when the timelapse     */
-/* button was added. Hidden by default; map.js toggles `display` inline   */
-/* on press of the `d` key.                                               */
-/* ---------------------------------------------------------------------- */
-
-.debug-pill {
-    display: none;
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    z-index: 2;
-    background: #1a1a1a;
-    color: #fff;
-    font-family: ui-monospace, monospace;
-    font-size: 10px;
-    padding: 4px 7px;
-    border-radius: 3px;
-}
-
-.debug-pill-button {
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    padding: 1px 6px;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    border-radius: 2px;
+    border: none;
+    border-radius: 50%;
     cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.debug-pill-button:hover {
-    background: rgba(255, 255, 255, 0.1);
+.scrubber-play:hover {
+    background: #000;
 }
 
-/* ---------------------------------------------------------------------- */
-/* Timelapse date overlay (SNOW-46). Pinned top-centre of #map, large    */
-/* monospace, only visible while the timelapse is playing.                */
-/* ---------------------------------------------------------------------- */
-
-.timelapse-overlay {
+.scrubber-play[data-state="playing"] .scrubber-play-icon,
+.scrubber-play[data-state="stopped"] .scrubber-stop-icon {
     display: none;
-    position: absolute;
-    top: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 3;
-    color: #fff;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 48px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    /* Strong shadow so the date stays legible over any base map tile or  */
-    /* region fill — the choropleth ranges from pale lemon to deep purple.*/
-    text-shadow:
-        0 0 4px rgba(0, 0, 0, 0.85),
-        0 2px 6px rgba(0, 0, 0, 0.7);
-    pointer-events: none;
-    user-select: none;
-}
-
-#map.playing .timelapse-overlay {
-    display: block;
 }
