@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from django.test import override_settings
 
 from pipeline.models import (
     Bulletin,
@@ -456,6 +457,42 @@ class TestFetchBulletinPage:
         url = mock_get.call_args[0][0]
         assert "/de/json" in url
 
+    @patch("pipeline.services.data_fetcher.requests.get")
+    def test_base_url_override_replaces_default(self, mock_get: MagicMock):
+        """``base_url=`` swaps out the API base for that single call."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = []
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        fetch_bulletin_page(
+            "en",
+            50,
+            0,
+            base_url="http://localhost:8000/dev/slf-mirror/api/bulletin-list/caaml",
+        )
+
+        url = mock_get.call_args[0][0]
+        assert url == (
+            "http://localhost:8000/dev/slf-mirror/api/bulletin-list/caaml/en/json"
+        )
+
+    @override_settings(
+        SLF_API_BASE_URL="https://override.example/api/bulletin-list/caaml"
+    )
+    @patch("pipeline.services.data_fetcher.requests.get")
+    def test_default_base_url_falls_back_to_settings(self, mock_get: MagicMock):
+        """Without ``base_url=``, the call reads ``settings.SLF_API_BASE_URL``."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = []
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        fetch_bulletin_page("en", 50, 0)
+
+        url = mock_get.call_args[0][0]
+        assert url == "https://override.example/api/bulletin-list/caaml/en/json"
+
 
 # ---------------------------------------------------------------------------
 # run_pipeline
@@ -633,3 +670,65 @@ class TestRunPipeline:
         )
 
         assert run.triggered_by == "fetch_bulletins command"
+
+    @patch("pipeline.services.data_fetcher.fetch_bulletin_page")
+    def test_base_url_threads_through_to_fetch(self, mock_fetch: MagicMock):
+        """``base_url=`` is forwarded verbatim to ``fetch_bulletin_page``."""
+        mock_fetch.return_value = []
+
+        run_pipeline(
+            start=date(2025, 3, 15),
+            end=date(2025, 3, 15),
+            triggered_by="test",
+            base_url="http://mirror.test/api/bulletin-list/caaml",
+        )
+
+        assert mock_fetch.call_args.kwargs["base_url"] == (
+            "http://mirror.test/api/bulletin-list/caaml"
+        )
+
+    @patch("pipeline.services.data_fetcher.fetch_bulletin_page")
+    def test_on_fetched_called_for_every_record(self, mock_fetch: MagicMock):
+        """``on_fetched`` fires once per raw record in the page."""
+        mock_fetch.return_value = [
+            _make_raw_bulletin("a", "2025-03-15T08:00:00Z"),
+            _make_raw_bulletin("b", "2025-03-14T08:00:00Z"),
+        ]
+        seen: list[str] = []
+
+        run_pipeline(
+            start=date(2025, 3, 14),
+            end=date(2025, 3, 15),
+            triggered_by="test",
+            on_fetched=lambda raw: seen.append(raw["bulletinID"]),
+        )
+
+        assert seen == ["a", "b"]
+
+    @patch("pipeline.services.data_fetcher.fetch_bulletin_page")
+    def test_on_fetched_fires_for_out_of_range_records(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """``on_fetched`` captures records outside the date window too.
+
+        The stash should mirror everything the API returned, regardless
+        of whether the orchestration loop chose to ingest the record.
+        """
+        mock_fetch.return_value = [
+            _make_raw_bulletin("future", "2025-04-01T08:00:00Z"),  # newer-than-end
+            _make_raw_bulletin("in-range", "2025-03-15T08:00:00Z"),
+            _make_raw_bulletin("too-old", "2025-03-13T08:00:00Z"),  # ends loop
+        ]
+        seen: list[str] = []
+
+        run_pipeline(
+            start=date(2025, 3, 14),
+            end=date(2025, 3, 15),
+            triggered_by="test",
+            on_fetched=lambda raw: seen.append(raw["bulletinID"]),
+        )
+
+        # The "too-old" record IS observed by on_fetched before the
+        # out-of-range branch terminates pagination — the stash captures
+        # the page boundary even though the DB does not.
+        assert seen == ["future", "in-range", "too-old"]

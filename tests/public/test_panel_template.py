@@ -144,15 +144,25 @@ class TestErrorStateCard:
         assert "We are sorry for the inconvenience" in content
 
     def test_anon_does_not_see_admin_link(self, anon_client: Client, region):
-        """The admin change-page link is absent for non-staff visitors."""
+        """The error-card 'Inspect in admin' link is absent for non-staff visitors.
+
+        The bulletin footer also renders an 'Open in admin' shortcut
+        when ``settings.DEBUG`` is truthy, which points to the same
+        admin URL — that one is a dev convenience and is gated on
+        DEBUG rather than user.is_staff. The test scope here is the
+        error-card link in ``_bulletin_panel.html``.
+        """
         day = date(2026, 5, 3)
-        bulletin = self._make_error_bulletin(region, day)
+        self._make_error_bulletin(region, day)
         response = anon_client.get(_bulletin_url(day))
 
         assert response.status_code == 200
         content = response.content.decode()
 
-        assert f"/admin/pipeline/bulletin/{bulletin.pk}/change/" not in content
+        # The panel error card's link reads "Inspect in admin →"; the
+        # DEBUG-only footer link reads "Open in admin". Asserting on
+        # the former keeps this test's contract narrow.
+        assert "Inspect in admin" not in content
 
 
 # ── Trait header semantics ────────────────────────────────────────────────────

@@ -48,3 +48,16 @@ QUERY_COUNT_HEADER_ENABLED = True
 # still render untouched.
 CSP_ENABLED = True
 CSP_REPORT_ONLY = True
+
+# ---------------------------------------------------------------------------
+# Local SLF mirror (dev only)
+# ---------------------------------------------------------------------------
+# URL of the development-only view at ``pipeline.dev_views.slf_mirror``,
+# which replays ``sample_data/slf_archive.ndjson`` with the same
+# limit/offset paging contract as the upstream SLF API. Only defined in
+# development.py so that ``fetch_bulletins --source local-mirror`` errors
+# loudly if anyone tries to run it against a production-like environment.
+SLF_API_LOCAL_MIRROR_URL = config(
+    "SLF_API_LOCAL_MIRROR_URL",
+    default="http://localhost:8000/dev/slf-mirror/api/bulletin-list/caaml",
+)

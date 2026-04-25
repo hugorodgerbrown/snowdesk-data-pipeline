@@ -27,6 +27,19 @@ poetry run python manage.py fetch_bulletins \
 # Re-pull existing rows.
 poetry run python manage.py fetch_bulletins --commit --force
 
+# Capture every fetched bulletin into sample_data/slf_archive.ndjson
+# (deduped by bulletinID, sorted ascending by validTime.startTime).
+# Independent of --commit: combine for full-fidelity capture, or use
+# --stash alone to refresh the archive without DB writes.
+poetry run python manage.py fetch_bulletins --stash
+poetry run python manage.py fetch_bulletins --commit --stash
+
+# Bootstrap an empty local DB end-to-end against the on-disk archive
+# instead of the live SLF API. Requires the dev server to be running
+# (the mirror view at /dev/slf-mirror/… is served by Django) and
+# settings.SLF_API_LOCAL_MIRROR_URL to be configured (development.py).
+poetry run python manage.py fetch_bulletins --source local-mirror --commit
+
 # Flags:
 #   --start-date YYYY-MM-DD  default: latest DB bulletin's valid_from day,
 #                            or settings.SEASON_START_DATE when the DB is empty.
@@ -35,6 +48,12 @@ poetry run python manage.py fetch_bulletins --commit --force
 #                            (mutually exclusive with the range flags)
 #   --commit                 persist; omit for a read-only run
 #   --force                  upsert existing bulletins instead of skipping
+#   --source {live,local-mirror}
+#                            default 'live' (real SLF API). 'local-mirror'
+#                            replays sample_data/slf_archive.ndjson via the
+#                            dev-only view; errors out if the mirror URL
+#                            setting is not configured.
+#   --stash                  append fetched bulletins to the on-disk archive
 
 # Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
 # Read-only by default — pass --commit to persist (same convention as fetch_bulletins).

@@ -165,6 +165,20 @@ SEASON_START_DATE = config(
     cast=date.fromisoformat,
 )
 
+# Base URL for the SLF CAAML bulletin-list endpoint. Promoted from a
+# module constant so the ``fetch_bulletins`` command can flip between
+# the live API and a local mirror that replays a stored archive.
+SLF_API_BASE_URL = config(
+    "SLF_API_BASE_URL",
+    default="https://aws.slf.ch/api/bulletin-list/caaml",
+)
+
+# On-disk archive of every bulletin captured by ``fetch_bulletins
+# --stash`` runs. NDJSON: one un-wrapped CAAML record per line, sorted
+# ascending by ``validTime.startTime``, deduped by ``bulletinID``. Both
+# the stash writer and the local mirror view read from this path.
+SLF_ARCHIVE_PATH = BASE_DIR / "sample_data" / "slf_archive.ndjson"
+
 # ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------

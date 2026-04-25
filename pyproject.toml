@@ -85,6 +85,13 @@ DJANGO_SETTINGS_MODULE = "config.settings.development"
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "--cov=pipeline --cov=public --cov=subscriptions"
+# pytest-django defaults to DEBUG=False at test time, which silently
+# drops URL-conf entries gated on ``if settings.DEBUG:`` (the dev-only
+# SLF mirror in config/urls.py, the scrubber-perf debug page in
+# public/urls.py). ``keep`` honours the value from the settings module
+# (DEBUG=True under config.settings.development) so those routes stay
+# registered and their test client GETs resolve.
+django_debug_mode = "keep"
 
 [tool.coverage.run]
 source = ["pipeline", "public", "subscriptions"]

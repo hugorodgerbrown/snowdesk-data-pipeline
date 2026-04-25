@@ -14,6 +14,15 @@ Defaults are tuned for the unattended scheduled-run case:
     to settings.SEASON_START_DATE as a first-run backstop.
   * --end-date defaults to today (UTC).
   * No writes happen unless --commit is passed (read-only by default).
+  * --source picks the upstream: ``live`` (default, real SLF API) or
+    ``local-mirror`` (the dev-only view at ``/dev/slf-mirror/…`` that
+    replays ``sample_data/slf_archive.ndjson``). The mirror lets an
+    empty DB be re-populated end-to-end through the production fetch
+    path against deterministic input — invaluable for tests and
+    reproducible local environments.
+  * --stash captures every fetched bulletin into the on-disk archive
+    (independent of --commit; both ``--commit --stash`` and bare
+    ``--stash`` are valid).
 
 Usage:
     # Read-only walk over the whole season so far — the "what would happen?" probe.
@@ -28,6 +37,12 @@ Usage:
 
     # Re-pull existing rows.
     python manage.py fetch_bulletins --commit --force
+
+    # Capture the season into the on-disk archive without DB writes.
+    python manage.py fetch_bulletins --stash
+
+    # Bootstrap an empty DB end-to-end against the local mirror.
+    python manage.py fetch_bulletins --source local-mirror --commit
 """
 
 import logging
@@ -41,12 +56,17 @@ from django.utils import timezone
 
 from pipeline.models import Bulletin, PipelineRun
 from pipeline.services.data_fetcher import run_pipeline
+from pipeline.services.slf_archive import merge, read_archive, write_archive
 
 logger = logging.getLogger(__name__)
 
 _START_SOURCE_EXPLICIT = "explicit"
 _START_SOURCE_LATEST_BULLETIN = "latest_bulletin"
 _START_SOURCE_SEASON_BACKSTOP = "season_backstop"
+
+_SOURCE_LIVE = "live"
+_SOURCE_LOCAL_MIRROR = "local-mirror"
+_SOURCE_CHOICES = (_SOURCE_LIVE, _SOURCE_LOCAL_MIRROR)
 
 
 class Command(BaseCommand):
@@ -102,17 +122,53 @@ class Command(BaseCommand):
             action="store_true",
             help="Upsert existing bulletins instead of skipping them.",
         )
+        parser.add_argument(
+            "--source",
+            choices=_SOURCE_CHOICES,
+            default=_SOURCE_LIVE,
+            help=(
+                "Where to fetch from. 'live' (default) hits the real SLF "
+                "CAAML API; 'local-mirror' hits the development-only view "
+                "that replays sample_data/slf_archive.ndjson. The mirror "
+                "is only available when settings.SLF_API_LOCAL_MIRROR_URL "
+                "is configured (development.py)."
+            ),
+        )
+        parser.add_argument(
+            "--stash",
+            action="store_true",
+            help=(
+                "Append every fetched bulletin to "
+                "sample_data/slf_archive.ndjson (deduped by bulletinID, "
+                "sorted by validTime.startTime). Independent of --commit "
+                "— combine them for a full-fidelity capture, or use "
+                "--stash alone for a read-only archive refresh."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
         start, end, start_source = self._resolve_dates(options)
         commit: bool = options["commit"]
         force: bool = options["force"]
+        stash: bool = options["stash"]
+        source: str = options["source"]
+        base_url = self._resolve_source(source)
         days = (end - start).days + 1
 
         self._announce(
-            start, end, days, commit=commit, force=force, start_source=start_source
+            start,
+            end,
+            days,
+            commit=commit,
+            force=force,
+            start_source=start_source,
+            source=source,
+            stash=stash,
         )
+
+        collected: list[dict[str, Any]] = []
+        on_fetched = collected.append if stash else None
 
         try:
             run = run_pipeline(
@@ -121,12 +177,17 @@ class Command(BaseCommand):
                 triggered_by="fetch_bulletins command",
                 dry_run=not commit,
                 force=force,
+                base_url=base_url,
+                on_fetched=on_fetched,
             )
         except Exception as exc:
             raise CommandError(f"Pipeline failed: {exc}") from exc
 
         if run.status == "failed":
             raise CommandError(f"Pipeline run {run.pk} failed: {run.error_message}")
+
+        if stash:
+            self._flush_stash(collected)
 
         self._report_outcome(run, days, commit=commit)
 
@@ -136,6 +197,57 @@ class Command(BaseCommand):
                 f"failure(s). Bulletins were stored with version=0 error sentinels. "
                 f"Run 'rebuild_render_models' after fixing the issue."
             )
+
+    @staticmethod
+    def _resolve_source(source: str) -> str | None:
+        """
+        Map a ``--source`` choice to a base URL (or ``None`` for live).
+
+        Returning ``None`` for the live source lets ``run_pipeline``
+        fall back to ``settings.SLF_API_BASE_URL``, keeping the live
+        path identical to its pre-flag behaviour.
+
+        Raises:
+            CommandError: ``--source local-mirror`` was requested but
+                ``settings.SLF_API_LOCAL_MIRROR_URL`` is not configured
+                (i.e. running outside development.py).
+
+        """
+        if source == _SOURCE_LIVE:
+            return None
+        mirror_url: str | None = getattr(settings, "SLF_API_LOCAL_MIRROR_URL", None)
+        if not mirror_url:
+            raise CommandError(
+                "--source local-mirror requires settings.SLF_API_LOCAL_MIRROR_URL "
+                "to be configured. The mirror is only available in development.py."
+            )
+        return mirror_url
+
+    def _flush_stash(self, collected: list[dict[str, Any]]) -> None:
+        """
+        Merge collected bulletins into the on-disk archive.
+
+        Reads the existing archive, overlays the freshly-collected
+        records (later wins by ``bulletinID``), sorts by
+        ``validTime.startTime``, and atomically writes the result back
+        to ``settings.SLF_ARCHIVE_PATH``.
+        """
+        path = settings.SLF_ARCHIVE_PATH
+        existing = list(read_archive(path))
+        merged = merge(existing, collected)
+        write_archive(path, merged)
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Stashed {len(collected)} fetched bulletin(s) to {path}; "
+                f"archive now contains {len(merged)} record(s)."
+            )
+        )
+        logger.info(
+            "fetch_bulletins stash flush: collected=%d archive_total=%d path=%s",
+            len(collected),
+            len(merged),
+            path,
+        )
 
     def _resolve_dates(self, options: dict[str, Any]) -> tuple[date, date, str]:
         """
@@ -214,6 +326,8 @@ class Command(BaseCommand):
         commit: bool,
         force: bool,
         start_source: str,
+        source: str,
+        stash: bool,
     ) -> None:
         """Write the start-of-run banner and matching log line."""
         flags: list[str] = []
@@ -221,25 +335,31 @@ class Command(BaseCommand):
             flags.append("READ-ONLY")
         if force:
             flags.append("FORCE")
+        if stash:
+            flags.append("STASH")
+        if source != _SOURCE_LIVE:
+            flags.append(f"SOURCE={source.upper()}")
         flag_label = " [" + ", ".join(flags) + "]" if flags else ""
 
-        source_label = self._start_source_label(start_source)
-        source_suffix = f" — start {source_label}" if source_label else ""
+        start_label = self._start_source_label(start_source)
+        start_suffix = f" — start {start_label}" if start_label else ""
 
         self.stdout.write(
             self.style.MIGRATE_HEADING(
                 f"Fetching bulletins from {start} to {end} "
-                f"({days} day(s)){flag_label}{source_suffix}"
+                f"({days} day(s)){flag_label}{start_suffix}"
             )
         )
         logger.info(
             "fetch_bulletins started: %s to %s, %d day(s), "
-            "commit=%s, force=%s, start_source=%s",
+            "commit=%s, force=%s, stash=%s, source=%s, start_source=%s",
             start,
             end,
             days,
             commit,
             force,
+            stash,
+            source,
             start_source,
         )
 
