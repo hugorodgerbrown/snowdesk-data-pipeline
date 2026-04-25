@@ -48,10 +48,14 @@ if [ "$current_branch" = "$DEFAULT_BRANCH" ]; then
     exit 0
 fi
 
-# Working tree must be fully clean — no staged, unstaged, or untracked
-# changes. ``git status --porcelain`` lists every modification; an empty
-# output means we're good.
-if [ -n "$(git status --porcelain)" ]; then
+# Working tree must be clean — no staged or unstaged changes to tracked
+# files. ``--untracked-files=no`` deliberately ignores untracked entries
+# because every worktree using bin/init-worktree carries at least .env,
+# .venv, and db.sqlite3 as build artefacts that aren't user work; the
+# .gitignore catches most but not all setups (e.g. the symlink is only
+# gitignored after SNOW-56 merges). Genuine work-in-progress lands as a
+# tracked modification (or a deliberate add) and is caught here.
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     exit 0
 fi
 
