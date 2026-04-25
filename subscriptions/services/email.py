@@ -4,7 +4,7 @@
 """
 subscriptions/services/email.py — Email delivery for the subscription flow.
 
-Provides two public functions:
+Provides three public functions:
 
 ``send_account_access_email(email, *, request=None)``
     Generates an account-access token, builds an absolute URL pointing at
@@ -23,11 +23,17 @@ Provides two public functions:
     on the unknown-email branch of ``POST /subscribe/manage/`` so the CPU
     timing profile roughly matches the real send path — a mitigation against
     enumeration timing attacks against the re-auth endpoint.
+
+All three are dispatched through ``_dispatch_async`` so the SMTP round-trip
+runs on a daemon thread and the request handler returns immediately, closing
+the timing-side-channel on the manage POST endpoint (SNOW-26).
 """
 
 from __future__ import annotations
 
 import logging
+import threading
+from collections.abc import Callable
 
 from django.conf import settings
 from django.core.mail import send_mail
@@ -74,6 +80,39 @@ def _build_account_url(token: str, request: HttpRequest | None) -> str:
     return f"{base}{path}"
 
 
+def _dispatch_async(callable_: Callable[[], None]) -> None:
+    """
+    Dispatch a zero-arg callable on a background daemon thread.
+
+    Runs the callable synchronously instead when
+    ``settings.SUBSCRIPTIONS_EMAIL_ASYNC`` is False.
+
+    Used to keep SMTP I/O off the request-handling thread so that response
+    timing does not leak SMTP round-trip cost on ``POST /subscribe/manage/``
+    (SNOW-26).
+
+    Exceptions raised inside the background thread are caught and logged
+    through this module's logger; they would otherwise vanish silently when
+    the daemon thread exits.
+
+    Args:
+        callable_: Zero-argument callable, typically a closure that calls
+            ``send_mail`` or performs equivalent CPU-bound work.
+
+    """
+    if not getattr(settings, "SUBSCRIPTIONS_EMAIL_ASYNC", True):
+        callable_()
+        return
+
+    def _run_safe() -> None:
+        try:
+            callable_()
+        except Exception:
+            logger.exception("Background email dispatch raised")
+
+    threading.Thread(target=_run_safe, daemon=True).start()
+
+
 def send_account_access_email(
     email: str,
     *,
@@ -106,14 +145,17 @@ def send_account_access_email(
 
     logger.info("Sending account-access email to %s", email)
 
-    send_mail(
-        subject=subject,
-        message=plain_body,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[email],
-        html_message=html_body,
-        fail_silently=False,
-    )
+    def _send() -> None:
+        send_mail(
+            subject=subject,
+            message=plain_body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            html_message=html_body,
+            fail_silently=False,
+        )
+
+    _dispatch_async(_send)
 
 
 def send_subscription_confirmation_email(
@@ -160,14 +202,17 @@ def send_subscription_confirmation_email(
         region.name,
     )
 
-    send_mail(
-        subject=subject,
-        message=plain_body,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[email],
-        html_message=html_body,
-        fail_silently=False,
-    )
+    def _send() -> None:
+        send_mail(
+            subject=subject,
+            message=plain_body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            html_message=html_body,
+            fail_silently=False,
+        )
+
+    _dispatch_async(_send)
 
 
 def simulate_account_access_work(email: str) -> None:
@@ -175,29 +220,31 @@ def simulate_account_access_work(email: str) -> None:
     Perform the CPU work of ``send_account_access_email`` without sending.
 
     Generates a token and renders both email templates but skips the
-    ``send_mail`` call.  This narrows the timing side-channel on the
-    ``POST /subscribe/manage/`` unknown-email branch, where an attacker
-    probing whether an address is registered would otherwise see a
-    measurably faster response on unknown emails.
-
-    Not a perfect equaliser — the real path still pays the SMTP round-trip
-    cost.  Good enough given the 3/min rate limit on the endpoint.
+    ``send_mail`` call.  Used on the unknown-email branch of
+    ``POST /subscribe/manage/`` so the response timing profile matches the
+    real send path — both branches dispatch through ``_dispatch_async`` and
+    return to the client immediately, leaving any residual CPU work to
+    happen off-thread.
 
     Args:
         email: The email address to use for token generation (not sent to).
 
     """
-    token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
-    account_url = _build_account_url(token, None)
-    expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
 
-    context = {
-        "account_url": account_url,
-        "expiry_hours": expiry_hours,
-    }
+    def _do_simulated_work() -> None:
+        token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
+        account_url = _build_account_url(token, None)
+        expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
 
-    # Render both templates to mirror the real code path's CPU cost.
-    render_to_string("subscriptions/emails/account_access.txt", context)
-    render_to_string("subscriptions/emails/account_access.html", context)
+        context = {
+            "account_url": account_url,
+            "expiry_hours": expiry_hours,
+        }
 
-    logger.debug("Simulated account-access work for %s (no message sent)", email)
+        # Render both templates to mirror the real code path's CPU cost.
+        render_to_string("subscriptions/emails/account_access.txt", context)
+        render_to_string("subscriptions/emails/account_access.html", context)
+
+        logger.debug("Simulated account-access work for %s (no message sent)", email)
+
+    _dispatch_async(_do_simulated_work)
