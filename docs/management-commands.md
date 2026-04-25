@@ -66,6 +66,25 @@ poetry run python manage.py diagnose_region_coverage --date 2026-04-15     # sin
 poetry run python manage.py diagnose_region_coverage --verbose-table       # add per-region table
 
 # Flags: --date YYYY-MM-DD (single day), --verbose-table (per-region table)
+
+# Extract bulletin test fixtures (SNOW-51). Pure SELECT — reads the local
+# Bulletin table and writes a JSON array of CAAML Feature envelopes
+# (one per matching row) under sample_data/test_fixtures/, plus appends a
+# manifest row to the sibling README.md so the source/extracted-at stay
+# reproducible. Two modes:
+#   season: one region across a 6-month window starting at YYYY-MM-01 UTC.
+#   day:    every bulletin valid on one calendar day (UTC).
+poetry run python manage.py extract_bulletin_fixture --mode season --region CH-4115 --season 2025-11
+poetry run python manage.py extract_bulletin_fixture --mode day --date 2026-04-15
+poetry run python manage.py extract_bulletin_fixture --mode day --date 2026-04-15 --force  # re-extract
+
+# Flags:
+#   --mode season|day        required.
+#   --region CH-xxxx         required for --mode=season; rejected with --mode=day.
+#   --season YYYY-MM         required for --mode=season; window start month, +6 months.
+#   --date   YYYY-MM-DD      required for --mode=day; rejected with --mode=season.
+#   --output-dir PATH        default: sample_data/test_fixtures/
+#   --force                  overwrite an existing output file (default: refuse).
 ```
 
 `SEASON_START_DATE` is read from the environment in
