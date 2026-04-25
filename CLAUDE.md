@@ -223,6 +223,21 @@ change touching a public page, also run `npm run lh` (see
   classmethod is properly typed and lets mypy infer the correct model
   return type.
 
+## Cleanup tooling
+
+Two scripts under `bin/` keep local git state in sync with origin. Both
+must be run from the primary worktree (on `main`); both refuse to run
+from inside a worktree they might delete.
+
+- [`bin/cleanup-merged-branch <branch>`](bin/cleanup-merged-branch) —
+  per-branch post-merge cleanup. Removes the worktree for `<branch>`,
+  deletes the local branch, and prunes remote tracking refs.
+- [`bin/sync-with-origin`](bin/sync-with-origin) — bulk cleanup. Lists
+  every redundant worktree and branch in one pass; default mode is
+  dry-run. Pass `--commit` to actually delete. Sweeps worktrees whose
+  upstream is `: gone`, plus dangling local branches that are either
+  `: gone` or fully reachable from `origin/main`.
+
 ## Linear workflow (summary)
 
 Linear (team prefix `SNOW-`) is the issue source of truth. The Linear MCP
