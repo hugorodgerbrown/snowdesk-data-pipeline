@@ -1,10 +1,15 @@
 """
 public/debug_views.py — SNOW-45 scrubber perf spike harness.
 
-Throwaway debug page + two experimental JSON endpoints that let us
-measure the cost of swapping per-date state on the /map/ choropleth at
-drag speed. Lives on ``feature/SNOW-45-scrubber-perf-spike`` and is
+Throwaway debug page + an experimental per-date JSON endpoint that let
+us measure the cost of swapping per-date state on the /map/ choropleth
+at drag speed. Lives on ``feature/SNOW-45-scrubber-perf-spike`` and is
 deleted once the findings comment is posted on the Linear ticket.
+
+The whole-season bundle endpoint that started life here was promoted
+into ``public/api.py`` as ``api:season_ratings`` (SNOW-46) — the
+timelapse debug button and the future scrubber both depend on it, so
+it is no longer DEBUG-only.
 
 Every view in this module is gated on ``settings.DEBUG`` — in production
 they raise ``Http404`` before any query runs. Matches the inline-DEBUG
@@ -15,8 +20,6 @@ Endpoints exposed while DEBUG is on::
     GET /debug/scrubber-perf/          — harness page (MapLibre + controls)
     GET /api/debug/day-ratings/?date=YYYY-MM-DD
                                         — {region_id: rating_int} for a date
-    GET /api/debug/season-ratings/     — {date_iso: {region_id: rating_int}}
-                                          for every RegionDayRating row
 """
 
 from __future__ import annotations
@@ -33,9 +36,10 @@ from pipeline.models import RegionDayRating
 
 logger = logging.getLogger(__name__)
 
-# Compact int encoding for the choropleth. Keeps bulk payloads small —
-# one byte per rating on the wire vs. 4–12 for the string form. Order
-# matches the danger scale so it can also be used directly as a sort key.
+# Compact int encoding for the choropleth. Duplicated from
+# ``public/api.py`` rather than imported because that module's copy is
+# the long-lived one — this whole module gets deleted with the perf
+# spike and the duplication keeps that teardown clean.
 _RATING_TO_INT: dict[str, int] = {
     RegionDayRating.Rating.NO_RATING: 0,
     RegionDayRating.Rating.LOW: 1,
@@ -67,7 +71,7 @@ def scrubber_perf(request: HttpRequest) -> HttpResponse:
         {
             "regions_url": reverse("api:regions_geojson"),
             "day_ratings_url": reverse("api:debug_day_ratings"),
-            "season_ratings_url": reverse("api:debug_season_ratings"),
+            "season_ratings_url": reverse("api:season_ratings"),
             "basemap_style_url": settings.BASEMAP_STYLE_URL,
         },
     )
@@ -99,26 +103,4 @@ def day_ratings_debug(request: HttpRequest) -> JsonResponse:
         "region__region_id", "max_rating"
     )
     payload = {region_id: _RATING_TO_INT[rating] for region_id, rating in rows}
-    return JsonResponse(payload)
-
-
-def season_ratings_debug(request: HttpRequest) -> JsonResponse:
-    """
-    Return the whole-season bundle: ``{date_iso: {region_id: rating_int}}``.
-
-    No pagination, no filter — we want to measure the full blob. The
-    handler streams via ``.values_list`` to avoid instantiating model
-    objects; the JSON encoder still materialises the dict in memory
-    but that is closer to what a real ``WholeSeasonResponse`` would look
-    like on the wire.
-    """
-    _require_debug()
-    rows = (
-        RegionDayRating.objects.all()
-        .values_list("date", "region__region_id", "max_rating")
-        .order_by("date", "region__region_id")
-    )
-    payload: dict[str, dict[str, int]] = {}
-    for date, region_id, rating in rows:
-        payload.setdefault(date.isoformat(), {})[region_id] = _RATING_TO_INT[rating]
     return JsonResponse(payload)

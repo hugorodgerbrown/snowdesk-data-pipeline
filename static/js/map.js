@@ -14,6 +14,13 @@
  *   4. Wire up click + drag-sheet interactions.
  */
 
+// Module-scope handles shared between this file's IIFEs (main init,
+// season scrubber, timelapse). Populated by the main IIFE; sibling
+// IIFEs read MAP / FEATURE_BY_REGION_ID once the user triggers them.
+let MAP = null;
+const FEATURE_BY_ID = {};
+const FEATURE_BY_REGION_ID = {};
+
 (function () {
   'use strict';
 
@@ -64,16 +71,13 @@
     maxBounds: [[3.5, 43.5], [13.0, 49.5]],
     attributionControl: { compact: true },
   });
+  // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
+  // and FEATURE_BY_REGION_ID are at module scope and get populated below.
+  MAP = map;
 
   // In-memory lookup from numeric feature id -> region properties.
   // Numeric because setFeatureState requires a numeric (or numeric-coerceable) id.
   const REGION_LOOKUP = {};
-
-  // Parallel lookups used by the search box — FEATURE_BY_ID keeps the full
-  // (un-clipped) feature for panning, FEATURE_BY_REGION_ID lets the search
-  // resolve a user-typed match back to the feature it points at.
-  const FEATURE_BY_ID = {};
-  const FEATURE_BY_REGION_ID = {};
 
   map.on('load', async () => {
     // Fetch everything in parallel. The three requests are independent —
@@ -109,13 +113,21 @@
     map.addSource('regions', { type: 'geojson', data: geojson });
 
     // Fill layer — the choropleth.
+    //
+    // Colour resolution prefers a feature-state ``rating`` if one is set
+    // (used by the SNOW-46 timelapse to recolour regions per frame
+    // without re-uploading the source) and falls back to the
+    // property-based ``rating`` written at load time. Removing the
+    // feature-state on stop reverts to the property colour, i.e. today's
+    // bulletins.
     map.addLayer({
       id: 'regions-fill',
       type: 'fill',
       source: 'regions',
       paint: {
         'fill-color': [
-          'match', ['get', 'rating'],
+          'match',
+          ['coalesce', ['feature-state', 'rating'], ['get', 'rating']],
           'low',          RATING_COLOURS.low,
           'moderate',     RATING_COLOURS.moderate,
           'considerable', RATING_COLOURS.considerable,
@@ -943,5 +955,121 @@
     if (root.contains(e.target)) return;
     applyState('collapsed');
     try { localStorage.setItem(STORAGE_KEY, 'collapsed'); } catch (_) {}
+  });
+})();
+
+// SNOW-46: Timelapse debug button. Rendered inside #debug-pill (which is
+// itself hidden until the user presses 'd'); a click iterates through
+// every date in the dataset, repainting region colours via feature-state
+// at ~10 fps with a top-centre date overlay. A second click stops and
+// reverts to today's bulletins by clearing the per-region feature-state.
+(function timelapseInit() {
+  const button = document.getElementById('timelapse-toggle');
+  if (!button) return;
+
+  const mapEl = document.getElementById('map');
+  const overlay = document.getElementById('timelapse-date');
+  const SEASON_RATINGS_URL = mapEl.dataset.seasonRatingsUrl;
+  const FRAME_MS = 100;  // 10 fps
+
+  // Inverse of public/api.py::_RATING_TO_INT. Index into this with the
+  // wire-format int to recover the rating string the fill expression
+  // expects.
+  const INT_TO_RATING = ['no_rating', 'low', 'moderate', 'considerable', 'high', 'very_high'];
+
+  // Season-scrubber sync — drive the existing thumb so the operator
+  // sees the playback position on the same control they will eventually
+  // use to drag-scrub. The bounds and today-snap come from the same
+  // data-* attributes the season-scrubber IIFE reads.
+  const scrubber = document.getElementById('season-scrubber');
+  const scrubberThumb = scrubber ? scrubber.querySelector('.season-scrubber-thumb') : null;
+  const seasonStartMs = scrubber ? Date.parse(scrubber.dataset.seasonStart) : NaN;
+  const seasonEndMs = scrubber ? Date.parse(scrubber.dataset.seasonEnd) : NaN;
+  const todayPct = scrubber ? parseFloat(scrubber.dataset.todayPct) : NaN;
+  const seasonSpanMs = seasonEndMs - seasonStartMs;
+
+  const moveScrubber = (dateKey) => {
+    if (!scrubberThumb || !Number.isFinite(seasonSpanMs) || seasonSpanMs <= 0) return;
+    const dateMs = Date.parse(dateKey);
+    if (Number.isNaN(dateMs)) return;
+    const pct = Math.max(0, Math.min(100, ((dateMs - seasonStartMs) / seasonSpanMs) * 100));
+    scrubberThumb.style.left = pct + '%';
+  };
+
+  let cache = null;        // {date_iso: {region_id: int}}
+  let sortedDates = null;  // ascending list of date keys
+  let frameIdx = 0;
+  let timer = null;
+
+  const setOverlay = (text) => { overlay.textContent = text; };
+
+  const applyFrame = (dateKey) => {
+    const frame = cache[dateKey] || {};
+    // For every region we know about, write a feature-state rating —
+    // missing region_ids in this frame fall back to no_rating so old
+    // colours from a previous frame don't leak through.
+    for (const [regionID, feature] of Object.entries(FEATURE_BY_REGION_ID)) {
+      const ratingInt = frame[regionID];
+      const rating = ratingInt == null ? 'no_rating' : INT_TO_RATING[ratingInt];
+      MAP.setFeatureState({ source: 'regions', id: feature.id }, { rating });
+    }
+    setOverlay(dateKey);
+    moveScrubber(dateKey);
+  };
+
+  const stop = () => {
+    if (timer !== null) {
+      clearInterval(timer);
+      timer = null;
+    }
+    mapEl.classList.remove('playing');
+    button.textContent = 'Play timelapse';
+    // Revert to today's colours — clearing feature-state lets the
+    // ``coalesce`` fall through to the property-based ``rating`` that
+    // was written at page load.
+    if (cache) {
+      for (const feature of Object.values(FEATURE_BY_REGION_ID)) {
+        MAP.removeFeatureState({ source: 'regions', id: feature.id }, 'rating');
+      }
+    }
+    setOverlay('');
+    if (scrubberThumb && Number.isFinite(todayPct)) {
+      scrubberThumb.style.left = todayPct + '%';
+    }
+  };
+
+  const start = async () => {
+    if (!MAP || !MAP.isStyleLoaded()) return;
+    if (cache === null) {
+      try {
+        const resp = await fetch(SEASON_RATINGS_URL);
+        if (!resp.ok) return;
+        cache = await resp.json();
+        sortedDates = Object.keys(cache).sort();
+      } catch (_err) {
+        return;
+      }
+    }
+    if (sortedDates.length === 0) return;
+    frameIdx = 0;
+    mapEl.classList.add('playing');
+    button.textContent = 'Stop timelapse';
+    applyFrame(sortedDates[frameIdx]);
+    timer = setInterval(() => {
+      frameIdx += 1;
+      if (frameIdx >= sortedDates.length) {
+        // Last frame already painted on the previous tick — stop here so
+        // the date overlay leaves the final value visible just long
+        // enough to register before the regions snap back to today.
+        stop();
+        return;
+      }
+      applyFrame(sortedDates[frameIdx]);
+    }, FRAME_MS);
+  };
+
+  button.addEventListener('click', () => {
+    if (timer !== null) stop();
+    else start();
   });
 })();
