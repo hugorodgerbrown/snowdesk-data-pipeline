@@ -1,23 +1,28 @@
 """refresh_eaws_fixtures — derive L1/L2 geometry from L4 children.
 
-Regenerates the ``centre`` and ``bbox`` fields on the L1/L2 EAWS fixtures
-from the union of their L4 children stored in
+Regenerates the ``centre``, ``bbox`` and ``boundary`` fields on the
+L1/L2 EAWS fixtures from the union of their L4 children stored in
 ``pipeline/fixtures/regions.json``.
 
 The L4 (``regions.json``) data is the authoritative geographic source —
 one polygon per SLF warning region. L1/L2 don't have independently
-published geometry; their centre and bounding box are derived from their
-descendants. Pre-computing avoids runtime geometry math (per the
-project's pre-compute-over-runtime preference).
+published geometry; their centre, bounding box and outer boundary are
+derived from their descendants. Pre-computing avoids runtime geometry
+math (per the project's pre-compute-over-runtime preference).
+
+Boundary computation uses ``shapely.ops.unary_union`` to merge L4
+polygons into a single Polygon (or MultiPolygon if disjoint). Shapely
+is a **dev-only** dependency — fixtures are always rebuilt locally and
+committed, so the runtime never imports it. The import lives inside
+the helper that needs it; running this command in an environment that
+lacks shapely raises a friendly RuntimeError pointing at
+``poetry install --with dev``.
 
 This command does NOT:
   * Fetch from ``regions.avalanches.org`` — the authoritative dataset is
     already snapshotted under ``docs/`` and materialised in
     ``pipeline/fixtures/regions.json``. Refreshing the L4 snapshot is a
     separate, manual step handled by ``scripts/build_regions_fixture.py``.
-  * Recompute the L1/L2 ``boundary`` MultiPolygon — true polygon union
-    needs ``shapely`` (not yet a dependency). Left as a follow-up; for
-    now L1/L2 ``boundary`` stays null.
   * Edit the L1/L2 ``name_native`` / ``name_en`` labels — those are
     hand-maintained and outside this command's remit.
 
@@ -130,7 +135,7 @@ def _update_geometry_inplace(
     *,
     key: str,
 ) -> int:
-    """Recompute centre + bbox on each entry; return the number of changes."""
+    """Recompute centre + bbox + boundary on each entry; return change count."""
     changes = 0
     for entry in entries:
         fields = entry["fields"]
@@ -144,9 +149,15 @@ def _update_geometry_inplace(
             continue
         centre = _centre_from_children(children)
         bbox = _bbox_from_children(children)
-        if fields.get("centre") != centre or fields.get("bbox") != bbox:
+        boundary = _boundary_from_children(children)
+        if (
+            fields.get("centre") != centre
+            or fields.get("bbox") != bbox
+            or fields.get("boundary") != boundary
+        ):
             fields["centre"] = centre
             fields["bbox"] = bbox
+            fields["boundary"] = boundary
             changes += 1
     return changes
 
@@ -177,3 +188,32 @@ def _bbox_from_children(children: list[dict[str, Any]]) -> list[float]:
     """Return [min_lon, min_lat, max_lon, max_lat] over the union of L4 bboxes."""
     lons, lats = zip(*_iter_coords(children), strict=False)
     return [min(lons), min(lats), max(lons), max(lats)]
+
+
+def _boundary_from_children(children: list[dict[str, Any]]) -> dict[str, Any]:
+    """Merge L4 child polygons into a single GeoJSON Polygon/MultiPolygon.
+
+    Imports ``shapely`` lazily so the runtime (which never calls this
+    helper) doesn't need the package installed. If shapely is missing,
+    raises a RuntimeError pointing at the dev install command.
+
+    Returns a plain ``dict`` (GeoJSON shape) ready to be written to the
+    fixture's ``boundary`` field.
+    """
+    try:
+        from shapely.geometry import mapping, shape
+        from shapely.ops import unary_union
+    except ImportError as exc:  # pragma: no cover — dev-only dependency
+        raise RuntimeError(
+            "refresh_eaws_fixtures requires the dev-only `shapely` "
+            "dependency. Install it with `poetry install --with dev`."
+        ) from exc
+
+    polys = [shape(child["boundary"]) for child in children if child.get("boundary")]
+    union = unary_union(polys)
+    # ``shapely.geometry.mapping`` emits coordinate tuples (``(lon, lat)``).
+    # Round-tripping through json normalises them to lists, so the
+    # idempotence diff check in ``_update_geometry_inplace`` compares
+    # like-for-like against the previously-written (lists-of-lists)
+    # fixture and a second --commit reports "0 change(s)".
+    return json.loads(json.dumps(mapping(union)))  # type: ignore[no-any-return]

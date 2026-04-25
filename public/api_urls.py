@@ -20,6 +20,16 @@ urlpatterns = [
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
     path("regions.geojson", api.regions_geojson, name="regions_geojson"),
     path(
+        "major-regions.geojson",
+        api.major_regions_geojson,
+        name="major_regions_geojson",
+    ),
+    path(
+        "sub-regions.geojson",
+        api.sub_regions_geojson,
+        name="sub_regions_geojson",
+    ),
+    path(
         "region/<str:region_id>/summary/",
         api.region_summary,
         name="region_summary",

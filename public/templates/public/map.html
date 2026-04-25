@@ -41,6 +41,8 @@
     <div
         id="map"
         data-regions-url="{% url 'api:regions_geojson' %}"
+        data-major-regions-url="{% url 'api:major_regions_geojson' %}"
+        data-sub-regions-url="{% url 'api:sub_regions_geojson' %}"
         data-summaries-url="{% url 'api:today_summaries' %}"
         data-resorts-url="{% url 'api:resorts_by_region' %}"
         data-season-ratings-url="{% url 'api:season_ratings' %}"
@@ -121,6 +123,9 @@
                     </svg>
                 </button>
                 <ul id="basemap-menu" class="basemap-menu" role="menu" hidden>
+                    <li role="none" class="basemap-menu-section-label">
+                        {% trans "Base map" %}
+                    </li>
                     {% for bm in basemaps %}
                         <li role="none">
                             <button
@@ -135,6 +140,53 @@
                             </button>
                         </li>
                     {% endfor %}
+                    {# SNOW-59: EAWS region overlays. menuitemcheckbox toggles    #}
+                    {# add/remove visibility on outline-only line layers stacked  #}
+                    {# above the L4 choropleth. State persists in localStorage    #}
+                    {# under snowdesk.map.overlay.l1 / .l2 / .l4. Micro regions   #}
+                    {# is checked-and-disabled because the danger-rating          #}
+                    {# choropleth is rendered on the L4 layer — hiding it would   #}
+                    {# leave the map empty.                                       #}
+                    <li role="separator" class="basemap-menu-separator"></li>
+                    <li role="none" class="basemap-menu-section-label">
+                        {% trans "Overlays" %}
+                    </li>
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            data-overlay-key="l1"
+                            aria-checked="false"
+                        >
+                            {% trans "Major regions" %}
+                        </button>
+                    </li>
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            data-overlay-key="l2"
+                            aria-checked="false"
+                        >
+                            {% trans "Sub regions" %}
+                        </button>
+                    </li>
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            data-overlay-key="l4"
+                            aria-checked="true"
+                            aria-disabled="true"
+                            disabled
+                            title='{% trans "Micro regions carry the avalanche danger ratings — required" %}'
+                        >
+                            {% trans "Micro regions" %}
+                        </button>
+                    </li>
                 </ul>
             </div>
             <button
