@@ -47,3 +47,12 @@ version.
 `offline.js` strings are flagged with `// i18n: translatable` comments
 for the future JS-i18n phase; do not wrap them yet (same convention as
 `map.js`).
+
+**Basemap picker × offline (SNOW-58)** — the precache manifest covers
+only OpenFreeMap (style + sprites + glyphs + Swiss-bbox vector and
+raster tiles). The runtime layer picker can swap to Swisstopo Winter or
+Light, but those aren't in the manifest: a user who picks a non-OFM
+basemap and goes offline will see blank tiles until they switch back to
+the standard OFM basemap. The picker is online-only by design; the
+choropleth, sheet, search, and scrubber all keep working regardless of
+basemap.

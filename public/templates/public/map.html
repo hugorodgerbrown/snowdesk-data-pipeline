@@ -46,7 +46,7 @@
         data-season-ratings-url="{% url 'api:season_ratings' %}"
         data-region-summary-url="{% url 'api:region_summary' '__REGION__' %}"
         data-offline-manifest-url="{% url 'api:offline_manifest_map' %}"
-        data-basemap-style="{{ basemap_style_url }}"
+        data-default-basemap-key="{{ default_basemap_key }}"
     >
         <div class="map-utility-cluster" id="map-utility-cluster">
             <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">
@@ -85,6 +85,57 @@
                     aria-expanded="false"
                     role="combobox"
                 >
+            </div>
+            {# SNOW-58: basemap layer picker — Google-Maps-style stacked-layers   #}
+            {# pill that opens a popover of basemap options. Choice persists in   #}
+            {# localStorage; selecting a value calls maplibre setStyle() and JS   #}
+            {# re-installs the regions source + layers on style.load.             #}
+            <div
+                class="map-utility-pill map-utility-pill--basemap"
+                id="basemap-pill"
+                data-state="collapsed"
+            >
+                <button
+                    id="basemap-toggle"
+                    type="button"
+                    class="map-utility-button"
+                    aria-label='{% trans "Choose basemap" %}'
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                    aria-controls="basemap-menu"
+                >
+                    <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M12 2 2 7l10 5 10-5-10-5Z" />
+                        <path d="m2 12 10 5 10-5" />
+                        <path d="m2 17 10 5 10-5" />
+                    </svg>
+                </button>
+                <ul id="basemap-menu" class="basemap-menu" role="menu" hidden>
+                    {% for bm in basemaps %}
+                        <li role="none">
+                            <button
+                                type="button"
+                                role="menuitemradio"
+                                class="basemap-menu-item"
+                                data-basemap-key="{{ bm.key }}"
+                                data-basemap-url="{{ bm.url }}"
+                                aria-checked="false"
+                            >
+                                {{ bm.label }}
+                            </button>
+                        </li>
+                    {% endfor %}
+                </ul>
             </div>
             <button
                 id="offline-toggle"

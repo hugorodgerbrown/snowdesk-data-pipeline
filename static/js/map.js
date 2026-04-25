@@ -100,11 +100,48 @@ const clearRegionRepaint = () => {
   // renders this via {% url 'api:region_summary' '__REGION__' %} so the
   // route name stays the single source of truth.
   const REGION_SUMMARY_URL_TEMPLATE = mapEl.dataset.regionSummaryUrl;
-  const BASEMAP_STYLE = mapEl.dataset.basemapStyle;
   // Hand the season-ratings URL to module scope so the timelapse and
   // scrubber IIFEs (defined further down in this file) can share one
   // fetch via getSeasonRatings().
   SEASON_RATINGS_URL = mapEl.dataset.seasonRatingsUrl;
+
+  // SNOW-58: Basemap layer picker — resolve the active style URL.
+  //
+  // The catalogue is rendered server-side as an in-DOM <ul role="menu">
+  // of menuitemradio buttons, each carrying ``data-basemap-key`` and
+  // ``data-basemap-url``. The user's last choice is persisted under
+  // localStorage[BASEMAP_STORAGE_KEY]; if it names a key still in the
+  // catalogue we use it, otherwise we fall back to data-default-basemap-key
+  // (env-resolved server-side from settings.BASEMAP). The popover wiring
+  // lives in basemapPickerInit() at the bottom of this file; the
+  // ``style.load`` handler inside the main IIFE re-installs the regions
+  // source + layers when MAP.setStyle() loads a new style.
+  const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
+  const basemapMenu = document.getElementById('basemap-menu');
+  const BASEMAP_OPTIONS = {};
+  if (basemapMenu) {
+    for (const btn of basemapMenu.querySelectorAll('.basemap-menu-item')) {
+      BASEMAP_OPTIONS[btn.dataset.basemapKey] = btn.dataset.basemapUrl;
+    }
+  }
+  const DEFAULT_BASEMAP_KEY = mapEl.dataset.defaultBasemapKey;
+  let storedBasemapKey = null;
+  try { storedBasemapKey = localStorage.getItem(BASEMAP_STORAGE_KEY); }
+  catch (_) { /* private mode / disabled storage — fall through */ }
+  const initialBasemapKey = (storedBasemapKey && BASEMAP_OPTIONS[storedBasemapKey])
+    ? storedBasemapKey
+    : DEFAULT_BASEMAP_KEY;
+  const initialBasemapUrl = BASEMAP_OPTIONS[initialBasemapKey];
+  // Mark the active radio so the popover renders in the right state on
+  // first paint, before basemapPickerInit binds its click handlers.
+  if (basemapMenu) {
+    for (const btn of basemapMenu.querySelectorAll('.basemap-menu-item')) {
+      btn.setAttribute(
+        'aria-checked',
+        btn.dataset.basemapKey === initialBasemapKey ? 'true' : 'false',
+      );
+    }
+  }
 
   const BULLETIN_SUMMARIES = {};
   const RESORTS_BY_REGION  = {};
@@ -119,10 +156,11 @@ const clearRegionRepaint = () => {
     no_rating:    '#e0e0e0',
   };
 
-  // Basemap style JSON URL is rendered server-side from
-  // ``settings.BASEMAP_STYLE_URL`` onto the #map element. Default is
-  // OpenFreeMap; swapping candidates (Swisstopo winter / light, MapTiler,
-  // Mapbox, etc.) is a one-line settings change with no code edit.
+  // Basemap style JSON URL is resolved above from settings.BASEMAP_STYLES
+  // × localStorage × the env-resolved default. The picker (SNOW-58) lets
+  // the user pick at runtime via MAP.setStyle(); the style.load handler
+  // registered inside map.on('load') re-installs our source + layers
+  // when the new style finishes loading.
   //
   // Initial view is framed via `bounds` around Switzerland rather than a
   // hand-tuned center/zoom pair — `bounds` adapts to viewport aspect
@@ -130,7 +168,7 @@ const clearRegionRepaint = () => {
   // full-bleed (previously the frame was a fixed 390px phone mock).
   const map = new maplibregl.Map({
     container: 'map',
-    style: BASEMAP_STYLE,
+    style: initialBasemapUrl,
     bounds: [[5.9, 45.8], [10.5, 47.9]],
     fitBoundsOptions: { padding: 20 },
     minZoom: 5,
@@ -146,34 +184,13 @@ const clearRegionRepaint = () => {
   // Numeric because setFeatureState requires a numeric (or numeric-coerceable) id.
   const REGION_LOOKUP = {};
 
-  map.on('load', async () => {
-    // Fetch everything in parallel. The three requests are independent —
-    // geometry, bulletin summaries, resort lists — so they can all fly at once.
-    const [geojson, summaries, resorts] = await Promise.all([
-      fetch(REGIONS_URL).then(r => r.json()),
-      fetch(SUMMARIES_URL).then(r => r.json()),
-      fetch(RESORTS_URL).then(r => r.json()),
-    ]);
-    Object.assign(BULLETIN_SUMMARIES, summaries);
-    Object.assign(RESORTS_BY_REGION, resorts);
-    // Derive RATINGS from summaries — single source of truth for the choropleth.
-    for (const [id, s] of Object.entries(summaries)) RATINGS[id] = s.rating;
-
-    // Assign a numeric id to every feature and build the lookup.
-    // MapLibre's feature-state API requires numeric ids; regionID is a string
-    // ("CH-4115") so we can't use it directly.
-    geojson.features.forEach((f, i) => {
-      f.id = i;
-      // The API emits the region identifier as properties.id. Normalise to
-      // properties.regionID so the rest of the code has a stable name.
-      const regionID = f.properties.id;
-      f.properties.regionID = regionID;
-      f.properties.rating = RATINGS[regionID] || 'no_rating';
-      REGION_LOOKUP[i] = f.properties;
-      FEATURE_BY_ID[i] = f;
-      FEATURE_BY_REGION_ID[regionID] = f;
-    });
-
+  // SNOW-58: source + layer install, factored out so it can be re-applied
+  // after MAP.setStyle() wipes the style. Idempotent — refuses to re-add
+  // if the source is still around (defensive, MapLibre normally drops
+  // sources during setStyle but this lets a future ``diff`` setStyle
+  // strategy land without breaking us).
+  const installRegionsLayers = (geojson) => {
+    if (map.getSource('regions')) return;
     map.addSource('regions', { type: 'geojson', data: geojson });
 
     // Fill layer — the choropleth.
@@ -240,6 +257,43 @@ const clearRegionRepaint = () => {
         'text-halo-width': 1.2,
       },
     });
+  };
+
+  // Cached at IIFE scope so the style.load handler (registered inside
+  // map.on('load') below) can re-install layers without a refetch when
+  // the user picks a new basemap.
+  let geojsonCache = null;
+
+  map.on('load', async () => {
+    // Fetch everything in parallel. The three requests are independent —
+    // geometry, bulletin summaries, resort lists — so they can all fly at once.
+    const [geojson, summaries, resorts] = await Promise.all([
+      fetch(REGIONS_URL).then(r => r.json()),
+      fetch(SUMMARIES_URL).then(r => r.json()),
+      fetch(RESORTS_URL).then(r => r.json()),
+    ]);
+    Object.assign(BULLETIN_SUMMARIES, summaries);
+    Object.assign(RESORTS_BY_REGION, resorts);
+    // Derive RATINGS from summaries — single source of truth for the choropleth.
+    for (const [id, s] of Object.entries(summaries)) RATINGS[id] = s.rating;
+
+    // Assign a numeric id to every feature and build the lookup.
+    // MapLibre's feature-state API requires numeric ids; regionID is a string
+    // ("CH-4115") so we can't use it directly.
+    geojson.features.forEach((f, i) => {
+      f.id = i;
+      // The API emits the region identifier as properties.id. Normalise to
+      // properties.regionID so the rest of the code has a stable name.
+      const regionID = f.properties.id;
+      f.properties.regionID = regionID;
+      f.properties.rating = RATINGS[regionID] || 'no_rating';
+      REGION_LOOKUP[i] = f.properties;
+      FEATURE_BY_ID[i] = f;
+      FEATURE_BY_REGION_ID[regionID] = f;
+    });
+
+    geojsonCache = geojson;
+    installRegionsLayers(geojson);
 
     // Interaction
     let selectedId = null;
@@ -1083,6 +1137,39 @@ const clearRegionRepaint = () => {
       selectFeature(initialFeatureId, { toggle: false, urlMode: 'mark' });
     }
 
+    // SNOW-58: re-install our source + layers when a new basemap style
+    // finishes loading. ``style.load`` only fires reliably for the
+    // initial style; ``setStyle()`` doesn't always re-emit it (known
+    // quirk in MapLibre 4.x). ``styledata`` is the dependable signal —
+    // it fires multiple times during setStyle, so the install function
+    // is idempotent (early-returns when the source is already present)
+    // and we gate the rest on whether the source needs re-adding.
+    //
+    // setStyle wipes all sources, layers, and feature-state added on
+    // top of the previous style. Layer-bound event handlers (the click
+    // / mouseenter / mouseleave wires above) survive because they're
+    // bound by layer id — re-adding a layer with the same id revives
+    // them. Feature-state does not survive: we restore the selection
+    // outline here, and any non-today date paint via the URL-resident
+    // ``?d=`` and the shared ratings cache.
+    map.on('styledata', () => {
+      if (!geojsonCache) return;          // initial load — handled above
+      if (map.getSource('regions')) return;  // still installed on this style
+      installRegionsLayers(geojsonCache);
+      if (selectedId !== null) {
+        map.setFeatureState(
+          { source: 'regions', id: selectedId },
+          { selected: true },
+        );
+      }
+      const dateKey = new URL(location.href).searchParams.get('d');
+      if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+        getSeasonRatings()
+          .then((ratings) => repaintRegionsForDate(dateKey, ratings))
+          .catch(() => { /* network fail → leave today's colours */ });
+      }
+    });
+
     // Signal to sibling IIFEs (scrubber) that the map style + regions
     // source are ready and setFeatureState calls will now stick. The
     // scrubber awaits this before painting the boot-time ?d= state.
@@ -1390,6 +1477,14 @@ const clearRegionRepaint = () => {
     }
   });
 
+  // SNOW-58: a basemap swap wipes the regions source mid-frame — the
+  // setInterval would keep firing repaintRegionsForDate() against a
+  // source that doesn't exist yet during the style.load gap. Stop here
+  // and let the user re-press play after the new basemap settles.
+  document.addEventListener('snowdesk:basemap-changing', () => {
+    if (timer !== null) stop();
+  });
+
   button.addEventListener('click', () => {
     if (timer !== null) stop();
     else start();
@@ -1411,4 +1506,81 @@ const clearRegionRepaint = () => {
   // continuously during a drag so the pill follows the thumb live.
   document.addEventListener('snowdesk:date-changed', setFrom);
   document.addEventListener('snowdesk:date-preview', setFrom);
+})();
+
+// SNOW-58: basemap layer picker — opens a popover of basemap radio
+// buttons and swaps the MapLibre style on selection. Persistence and
+// initial aria-checked state are handled by the main IIFE before the
+// map is constructed so the popover renders correctly on first paint.
+//
+// Style swapping itself happens via MAP.setStyle(); the regions source
+// + layers are re-installed by a style.load handler inside the main
+// IIFE. Active timelapse playback (if any) is stopped first via the
+// snowdesk:basemap-changing event so its setInterval doesn't paint
+// into a half-loaded style.
+(function basemapPickerInit() {
+  const pill = document.getElementById('basemap-pill');
+  if (!pill) return;
+  const toggle = document.getElementById('basemap-toggle');
+  const menu = document.getElementById('basemap-menu');
+  if (!toggle || !menu) return;
+  const items = Array.from(menu.querySelectorAll('.basemap-menu-item'));
+  if (items.length === 0) return;
+
+  const STORAGE_KEY = 'snowdesk.map.basemap';
+
+  const setMenuOpen = (open) => {
+    pill.dataset.state = open ? 'expanded' : 'collapsed';
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    menu.hidden = !open;
+  };
+
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setMenuOpen(menu.hidden);
+  });
+
+  // Outside-click dismiss. Use click (not pointerdown) so an item
+  // selection inside the menu fires before this handler can close.
+  document.addEventListener('click', (e) => {
+    if (menu.hidden) return;
+    if (pill.contains(e.target)) return;
+    setMenuOpen(false);
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menu.hidden) {
+      setMenuOpen(false);
+      toggle.focus();
+    }
+  });
+
+  for (const item of items) {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const url = item.dataset.basemapUrl;
+      const key = item.dataset.basemapKey;
+      if (!url || !key || !MAP) return;
+      // No-op if this option is already active — just close the popover.
+      if (item.getAttribute('aria-checked') === 'true') {
+        setMenuOpen(false);
+        return;
+      }
+      // Notify other consumers (timelapse) to surrender control before
+      // we tear down the current style.
+      document.dispatchEvent(new CustomEvent('snowdesk:basemap-changing', {
+        detail: { key, url },
+      }));
+      try { localStorage.setItem(STORAGE_KEY, key); }
+      catch (_) { /* private mode — choice still applies for this session */ }
+      for (const other of items) {
+        other.setAttribute(
+          'aria-checked',
+          other === item ? 'true' : 'false',
+        );
+      }
+      setMenuOpen(false);
+      MAP.setStyle(url);
+    });
+  }
 })();
