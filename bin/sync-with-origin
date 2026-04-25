@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# bin/sync-with-origin — Bring the local repo back into sync with origin.
+#
+# Prunes remote tracking refs, then in a single pass removes redundant
+# worktrees and deletes redundant local branches.
+#
+# A worktree is redundant only when its branch's upstream is `: gone`
+# (i.e. the PR was merged and the remote branch is deleted). Active
+# Claude session worktrees on local-only `claude/*` branches are left
+# alone — an existing worktree is the signal that the session is live.
+#
+# A branch is redundant if either:
+#   - its upstream is `: gone`; or
+#   - it has no worktree AND zero commits ahead of `origin/main`
+#     (covers stale `claude/*` session branches whose worktree is
+#     already gone, plus any orphaned local pointer).
+#
+# `main` and the current branch are always preserved; branches with
+# unpushed commits ahead of `origin/main` are also preserved.
+#
+# Default mode is dry-run; pass `--commit` to actually delete anything.
+# Idempotent — rerunning is safe.
+#
+# Usage: bin/sync-with-origin [--commit]
+
+set -euo pipefail
+
+DEFAULT_BRANCH="main"
+COMMIT=0
+
+for arg in "$@"; do
+    case "$arg" in
+        --commit) COMMIT=1 ;;
+        -h|--help)
+            sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $arg" >&2
+            echo "Usage: $0 [--commit]" >&2
+            exit 64  # EX_USAGE
+            ;;
+    esac
+done
+
+# Refuse if the shell is on a non-default branch — likely inside a
+# worktree that may itself be removed. The caller should cd to the
+# primary worktree (on main) first.
+CURRENT_BRANCH="$(git branch --show-current 2>/dev/null || true)"
+if [[ "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" ]]; then
+    echo "Refusing: current shell is on '$CURRENT_BRANCH', not '$DEFAULT_BRANCH'." >&2
+    echo "cd to the primary worktree (on '$DEFAULT_BRANCH') and rerun." >&2
+    exit 2
+fi
+
+# Operate from the primary worktree so the script never stands inside
+# the directory it might remove.
+MAIN_REPO="$(git worktree list --porcelain | awk '/^worktree / {print $2; exit}')"
+cd "$MAIN_REPO"
+
+# Drop stale worktree records (directories deleted on disk) and refresh
+# remote tracking refs so the `: gone` annotations are accurate. Tolerate
+# fetch failure (e.g. offline) and fall back to cached refs.
+git worktree prune
+if ! git fetch --prune --quiet; then
+    echo "Warning: git fetch failed; continuing with cached refs." >&2
+fi
+
+# Map each local branch to the worktree path that has it checked out
+# (if any). Worktrees not on a branch (detached HEAD) are skipped.
+declare -A WORKTREE_OF_BRANCH=()
+wt_path=""
+while IFS= read -r line; do
+    if [[ "$line" == worktree\ * ]]; then
+        wt_path="${line#worktree }"
+    elif [[ "$line" == branch\ refs/heads/* ]]; then
+        WORKTREE_OF_BRANCH["${line#branch refs/heads/}"]="$wt_path"
+    fi
+done < <(git worktree list --porcelain)
+
+ORIGIN_DEFAULT="origin/$DEFAULT_BRANCH"
+
+WORKTREES_TO_REMOVE=()
+WORKTREE_LABELS=()
+BRANCHES_TO_DELETE=()
+BRANCH_LABELS=()
+
+# Walk every local branch and decide whether it's redundant.
+#   %(refname:short)  -> branch name
+#   %(upstream:track) -> "[gone]" / "[behind N]" / "[ahead N]" / ""
+#   %(upstream)       -> "refs/remotes/origin/foo" or empty
+while IFS=$'\t' read -r branch track upstream; do
+    [[ -z "$branch" ]] && continue
+    [[ "$branch" == "$DEFAULT_BRANCH" ]] && continue
+    [[ "$branch" == "$CURRENT_BRANCH" ]] && continue
+
+    has_worktree=0
+    [[ -n "${WORKTREE_OF_BRANCH[$branch]:-}" ]] && has_worktree=1
+
+    reason=""
+    if [[ "$track" == "[gone]" ]]; then
+        # Strong "PR merged, remote deleted" signal — sweep both the
+        # branch and (if any) its worktree.
+        reason="upstream gone"
+    elif [[ "$has_worktree" -eq 0 ]]; then
+        # No worktree means no live session. Sweep when reachable from
+        # origin/main; anything ahead might be unpushed local work.
+        ahead="$(git rev-list --count "$ORIGIN_DEFAULT..$branch" 2>/dev/null || echo "?")"
+        if [[ "$ahead" == "0" ]]; then
+            reason="reachable from $ORIGIN_DEFAULT"
+        fi
+    fi
+    # If we got here with a worktree but no `: gone`, it's a live
+    # session — leave it alone.
+
+    [[ -z "$reason" ]] && continue
+
+    # Worktree (if any) must be removed before its branch — otherwise
+    # `git branch -D` is blocked.
+    if [[ "$has_worktree" -eq 1 ]]; then
+        WORKTREES_TO_REMOVE+=("${WORKTREE_OF_BRANCH[$branch]}")
+        WORKTREE_LABELS+=("$branch ($reason)")
+    fi
+    BRANCHES_TO_DELETE+=("$branch")
+    BRANCH_LABELS+=("$reason")
+done < <(git for-each-ref --format='%(refname:short)%09%(upstream:track)%09%(upstream)' refs/heads)
+
+if [[ ${#WORKTREES_TO_REMOVE[@]} -eq 0 && ${#BRANCHES_TO_DELETE[@]} -eq 0 ]]; then
+    echo "Nothing to do."
+    exit 0
+fi
+
+if [[ ${#WORKTREES_TO_REMOVE[@]} -gt 0 ]]; then
+    echo "Worktrees to remove:"
+    for i in "${!WORKTREES_TO_REMOVE[@]}"; do
+        printf "  %s\n      %s\n" "${WORKTREES_TO_REMOVE[$i]}" "${WORKTREE_LABELS[$i]}"
+    done
+    echo
+fi
+
+if [[ ${#BRANCHES_TO_DELETE[@]} -gt 0 ]]; then
+    echo "Branches to delete:"
+    for i in "${!BRANCHES_TO_DELETE[@]}"; do
+        printf "  %-50s (%s)\n" "${BRANCHES_TO_DELETE[$i]}" "${BRANCH_LABELS[$i]}"
+    done
+    echo
+fi
+
+if [[ "$COMMIT" -eq 0 ]]; then
+    echo "Run with --commit to apply."
+    exit 0
+fi
+
+# --commit path: execute the plan. Collect failures rather than
+# aborting on the first one (partial cleanup is still useful).
+FAILURES=0
+
+for path in "${WORKTREES_TO_REMOVE[@]}"; do
+    echo "Removing worktree at $path"
+    if ! git worktree remove --force "$path"; then
+        echo "  failed to remove $path" >&2
+        FAILURES=$((FAILURES + 1))
+    fi
+done
+
+# -D (not -d) because GitHub squash-merges don't register as merged in
+# local history; matches bin/cleanup-merged-branch:53.
+for branch in "${BRANCHES_TO_DELETE[@]}"; do
+    if git show-ref --verify --quiet "refs/heads/$branch"; then
+        echo "Deleting branch $branch"
+        if ! git branch -D "$branch"; then
+            echo "  failed to delete $branch" >&2
+            FAILURES=$((FAILURES + 1))
+        fi
+    fi
+done
+
+# One more prune to drop any tracking refs that reappeared during the run.
+git fetch --prune --quiet || true
+
+if [[ "$FAILURES" -gt 0 ]]; then
+    echo "Done with $FAILURES failure(s)." >&2
+    exit 1
+fi
+
+echo "Done."
