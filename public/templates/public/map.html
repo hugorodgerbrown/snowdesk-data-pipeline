@@ -26,29 +26,10 @@
 
 {% block content %}
     {% comment %}
-        Chrome still awaiting reintroduction as floating overlays —
-        SNOW-38 (legend) and, if SNOW-34 still wants it, the footer
-        hint. Markup preserved here, not in git history alone, so
-        those tickets have exact strings/attributes to hand to their
-        new overlay partials. The SNOW-36 block (top-right utility
-        cluster) has landed and is live above the map below.
-
-        --- SNOW-38: danger-scale legend ---
-        <div class="legend">
-            <div class="legend-title">{% trans "Today" %}</div>
-            <div class="legend-row">
-                <span class="legend-swatch" style="background: #ccff66"></span>{% trans "Low (1)" %}
-            </div>
-            <div class="legend-row">
-                <span class="legend-swatch" style="background: #ffff00"></span>{% trans "Moderate (2)" %}
-            </div>
-            <div class="legend-row">
-                <span class="legend-swatch" style="background: #ff9900"></span>{% trans "Considerable (3)" %}
-            </div>
-            <div class="legend-row">
-                <span class="legend-swatch" style="background: #ff0000"></span>{% trans "High (4)" %}
-            </div>
-        </div>
+        Footer hint markup preserved for possible reintroduction under
+        SNOW-34. The SNOW-36 (top-right utility cluster) and SNOW-38
+        (bottom-left collapsible legend) overlays have both landed and
+        are rendered live below.
 
         --- Footer hint (reintroduce only if SNOW-34 still wants it) ---
         <div class="hint" aria-hidden="true">{% trans "Pinch to zoom · tap a region" %}</div>
@@ -165,6 +146,67 @@
                 <div id="sheet-peek" class="sheet-peek"></div>
                 <div id="sheet-expanded" class="sheet-expanded"></div>
             </div>
+        </div>
+        {# Collapsible danger-scale legend (SNOW-38). Anchored bottom-left, #}
+        {# above the season scrubber. Card is absolutely positioned        #}
+        {# relative to the container so toggling it never reflows the page.#}
+        <div id="map-legend" class="map-legend" data-state="collapsed">
+            <div
+                class="map-legend-card"
+                id="map-legend-card"
+                role="region"
+                aria-label='{% trans "Avalanche danger legend" %}'
+            >
+                <div class="map-legend-title">{% trans "Today" %}</div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--low"
+                        aria-hidden="true"
+                    ></span>{% trans "Low (1)" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--moderate"
+                        aria-hidden="true"
+                    ></span>{% trans "Moderate (2)" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--considerable"
+                        aria-hidden="true"
+                    ></span>{% trans "Considerable (3)" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--high"
+                        aria-hidden="true"
+                    ></span>{% trans "High (4)" %}
+                </div>
+            </div>
+            <button
+                id="map-legend-toggle"
+                type="button"
+                class="map-legend-toggle"
+                aria-label='{% trans "Show avalanche danger legend" %}'
+                aria-expanded="false"
+                aria-controls="map-legend-card"
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="16" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+            </button>
         </div>
         <div
             id="season-scrubber"
