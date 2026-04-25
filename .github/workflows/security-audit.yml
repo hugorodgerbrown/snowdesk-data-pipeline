@@ -1,0 +1,47 @@
+# .github/workflows/security-audit.yml — Audit locked Python dependencies
+# for known CVEs on every push/PR and on a weekly cron, so newly-published
+# advisories surface even when the lockfile has not changed.
+
+name: Security audit
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python (3.12)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry, export plugin, and pip-audit
+        run: pip install poetry poetry-plugin-export pip-audit
+
+      - name: Export locked dependencies
+        run: >-
+          poetry export
+          --without-hashes
+          --format=requirements.txt
+          --output=/tmp/requirements-audit.txt
+
+      - name: Audit dependencies for known CVEs
+        run: pip-audit -r /tmp/requirements-audit.txt
