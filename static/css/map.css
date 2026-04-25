@@ -168,6 +168,51 @@
     outline-offset: 2px;
 }
 
+/* SNOW-59: overlay section appended to the basemap popover. The
+   separator + section label divide overlay checkboxes from the
+   basemap radios above; checkbox glyphs are square rather than the
+   round radio dot so the role distinction reads at a glance. */
+.basemap-menu-separator {
+    height: 1px;
+    margin: 6px 8px;
+    background: var(--color-border);
+}
+
+.basemap-menu-section-label {
+    padding: 4px 12px 2px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-2, var(--color-text-1));
+    pointer-events: none;
+}
+
+.basemap-menu-item--overlay::before {
+    border-radius: 3px;
+}
+
+.basemap-menu-item--overlay[aria-checked="true"]::before {
+    background: var(--color-accent, #0c447c);
+    border-color: var(--color-accent, #0c447c);
+    box-shadow: inset 0 0 0 2px var(--color-card);
+}
+
+/* Disabled overlay (Micro regions — required, can't be toggled). The
+   tick still reads as "on" but the row signals it isn't actionable:
+   not-allowed cursor, dimmed text, no hover highlight. */
+.basemap-menu-item[disabled],
+.basemap-menu-item[aria-disabled="true"] {
+    color: var(--color-text-2, var(--color-text-1));
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.basemap-menu-item[disabled]:hover,
+.basemap-menu-item[aria-disabled="true"]:hover {
+    background: transparent;
+}
+
 /* Search pill — collapsed to a round 40×40 by default; on expansion
    grows to reveal the input beside the icon. */
 .map-utility-pill--search {

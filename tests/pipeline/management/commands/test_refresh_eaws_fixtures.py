@@ -3,8 +3,11 @@ tests/pipeline/management/commands/test_refresh_eaws_fixtures.py
 
 Covers the ``refresh_eaws_fixtures`` command:
   - Read-only by default (no --commit → no file writes).
-  - --commit writes updated geometry.
+  - --commit writes updated geometry (centre, bbox, boundary).
   - Idempotent: re-running after a --commit produces no further changes.
+  - The SNOW-59 ``_boundary_from_children`` helper: adjacent L4 polygons
+    collapse to one Polygon; disjoint ones produce a MultiPolygon;
+    output is json-safe (lists, not tuples).
 """
 
 from __future__ import annotations
@@ -54,7 +57,7 @@ class TestRefreshEawsFixtures:
     def test_commit_writes_geometry(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """--commit updates centre and bbox on L1 and L2 fixtures."""
+        """--commit updates centre, bbox and boundary on L1 and L2 fixtures."""
         tmp_regions = _seed_tmp_regions_fixture(tmp_path)
         tmp_major = _seed_tmp_fixture(
             tmp_path / "eaws_major_regions.json",
@@ -74,6 +77,124 @@ class TestRefreshEawsFixtures:
         assert major[0]["fields"]["bbox"] is not None
         assert sub[0]["fields"]["centre"] is not None
         assert sub[0]["fields"]["bbox"] is not None
+        # SNOW-59: boundary populated as a GeoJSON Polygon (the two L4
+        # children share an edge, so unary_union collapses them to one
+        # contiguous Polygon rather than a MultiPolygon).
+        assert major[0]["fields"]["boundary"]["type"] == "Polygon"
+        assert sub[0]["fields"]["boundary"]["type"] == "Polygon"
+
+
+class TestBoundaryFromChildren:
+    """Direct tests for the SNOW-59 boundary-union helper."""
+
+    def test_adjacent_polygons_collapse_to_single_polygon(self) -> None:
+        """Two L4 children sharing an edge produce one Polygon, not a Multi."""
+        from pipeline.management.commands.refresh_eaws_fixtures import (
+            _boundary_from_children,
+        )
+
+        children = [
+            {
+                "boundary": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [0.0, 0.0],
+                            [1.0, 0.0],
+                            [1.0, 1.0],
+                            [0.0, 1.0],
+                            [0.0, 0.0],
+                        ]
+                    ],
+                }
+            },
+            {
+                "boundary": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [1.0, 0.0],
+                            [2.0, 0.0],
+                            [2.0, 1.0],
+                            [1.0, 1.0],
+                            [1.0, 0.0],
+                        ]
+                    ],
+                }
+            },
+        ]
+        boundary = _boundary_from_children(children)
+        assert boundary["type"] == "Polygon"
+
+    def test_disjoint_polygons_yield_multipolygon(self) -> None:
+        """Two L4 children with no shared edge yield a MultiPolygon."""
+        from pipeline.management.commands.refresh_eaws_fixtures import (
+            _boundary_from_children,
+        )
+
+        children = [
+            {
+                "boundary": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [0.0, 0.0],
+                            [1.0, 0.0],
+                            [1.0, 1.0],
+                            [0.0, 1.0],
+                            [0.0, 0.0],
+                        ]
+                    ],
+                }
+            },
+            {
+                "boundary": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [5.0, 5.0],
+                            [6.0, 5.0],
+                            [6.0, 6.0],
+                            [5.0, 6.0],
+                            [5.0, 5.0],
+                        ]
+                    ],
+                }
+            },
+        ]
+        boundary = _boundary_from_children(children)
+        assert boundary["type"] == "MultiPolygon"
+        assert len(boundary["coordinates"]) == 2
+
+    def test_returns_json_safe_lists(self) -> None:
+        """Coordinates round-trip through json — no shapely tuple residue."""
+        from pipeline.management.commands.refresh_eaws_fixtures import (
+            _boundary_from_children,
+        )
+
+        children = [
+            {
+                "boundary": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [0.0, 0.0],
+                            [1.0, 0.0],
+                            [1.0, 1.0],
+                            [0.0, 1.0],
+                            [0.0, 0.0],
+                        ]
+                    ],
+                }
+            }
+        ]
+        boundary = _boundary_from_children(children)
+        # Every coord in the ring is a plain list, not a tuple — required
+        # for fixture-diff idempotence (lists from JSON read-back must
+        # equal what we just wrote).
+        for ring in boundary["coordinates"]:
+            for coord in ring:
+                assert isinstance(coord, list)
 
     def test_second_commit_is_idempotent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

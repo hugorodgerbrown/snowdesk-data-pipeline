@@ -9,7 +9,9 @@ Swiss region choropleth and back the per-region bottom sheet:
   for the entire stored dataset (consumed by the timelapse debug button and,
   later, the season scrubber).
 * ``/api/resorts-by-region/``              — ``{region_id: [resort_name, ...]}``.
-* ``/api/regions.geojson``                 — FeatureCollection of region polygons.
+* ``/api/regions.geojson``                 — FeatureCollection of L4 region polygons.
+* ``/api/major-regions.geojson``           — FeatureCollection of L1 region polygons.
+* ``/api/sub-regions.geojson``             — FeatureCollection of L2 region polygons.
 * ``/api/region/<region_id>/summary/``     — pre-rendered peek + expanded HTML
   for the region's current bulletin (consumed by the bottom sheet).
 * ``/api/offline-manifest/map/``           — precache manifest for the offline CTA.
@@ -35,7 +37,14 @@ from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
 
-from pipeline.models import Bulletin, Region, RegionBulletin, RegionDayRating
+from pipeline.models import (
+    Bulletin,
+    EawsMajorRegion,
+    EawsSubRegion,
+    Region,
+    RegionBulletin,
+    RegionDayRating,
+)
 
 from .views import _PROBLEM_LABELS, _select_bulletin_for_date, _select_default_issue
 
@@ -485,6 +494,76 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": {
                     "id": region.region_id,
                     "name": region.name,
+                },
+            }
+        )
+    return JsonResponse(
+        {
+            "type": "FeatureCollection",
+            "features": features,
+        }
+    )
+
+
+def major_regions_geojson(request: HttpRequest) -> JsonResponse:
+    """
+    Return a FeatureCollection of L1 EAWS major regions with boundaries.
+
+    Each feature carries ``properties.prefix`` (e.g. ``CH-4``) and
+    ``properties.name_en`` alongside the boundary geometry computed by
+    ``refresh_eaws_fixtures`` from the union of L4 children. Entries
+    without a boundary are skipped.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with a FeatureCollection payload.
+
+    """
+    features: list[dict[str, Any]] = []
+    for major in EawsMajorRegion.objects.exclude(boundary__isnull=True).iterator():
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": major.boundary,
+                "properties": {
+                    "prefix": major.prefix,
+                    "name_en": major.name_en,
+                },
+            }
+        )
+    return JsonResponse(
+        {
+            "type": "FeatureCollection",
+            "features": features,
+        }
+    )
+
+
+def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
+    """
+    Return a FeatureCollection of L2 EAWS sub-regions with boundaries.
+
+    Same shape as :func:`major_regions_geojson` — properties expose
+    ``prefix`` (e.g. ``CH-41``) and ``name_en``.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with a FeatureCollection payload.
+
+    """
+    features: list[dict[str, Any]] = []
+    for sub in EawsSubRegion.objects.exclude(boundary__isnull=True).iterator():
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": sub.boundary,
+                "properties": {
+                    "prefix": sub.prefix,
+                    "name_en": sub.name_en,
                 },
             }
         )

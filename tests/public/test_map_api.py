@@ -6,7 +6,9 @@ Covers the endpoints consumed by the /map/ page:
 * ``api:today_summaries``     — today's danger summaries per region.
 * ``api:season_ratings``      — whole-season ``{date: {region_id: int}}``.
 * ``api:resorts_by_region``   — resort list per region.
-* ``api:regions_geojson``     — FeatureCollection of region polygons.
+* ``api:regions_geojson``     — FeatureCollection of L4 region polygons.
+* ``api:major_regions_geojson`` — FeatureCollection of L1 region polygons (SNOW-59).
+* ``api:sub_regions_geojson``   — FeatureCollection of L2 region polygons (SNOW-59).
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ from django.utils import timezone
 from pipeline.models import RegionDayRating
 from tests.factories import (
     BulletinFactory,
+    EawsMajorRegionFactory,
+    EawsSubRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
     RegionFactory,
@@ -380,6 +384,93 @@ def test_regions_geojson_returns_feature_collection():
 
 
 # ---------------------------------------------------------------------------
+# major-regions.geojson / sub-regions.geojson  (SNOW-59)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_major_regions_geojson_returns_feature_collection():
+    """L1 majors with a non-null boundary become Features; null boundary skipped.
+
+    Note: migration 0012 pre-loads the real CH-1..CH-9 fixtures, so this
+    test works with non-CH prefixes to keep its assertions independent
+    of fixture state.
+    """
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+        ],
+    }
+    EawsMajorRegionFactory.create(
+        prefix="AT-1", country="AT", name_en="Vorarlberg", boundary=boundary
+    )
+    # Major without boundary — should be skipped.
+    EawsMajorRegionFactory.create(
+        prefix="AT-2", country="AT", name_en="Tirol", boundary=None
+    )
+
+    client = Client()
+    response = client.get(reverse("api:major_regions_geojson"))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["type"] == "FeatureCollection"
+
+    # Find our fixture among any pre-loaded CH-* features.
+    by_prefix = {f["properties"]["prefix"]: f for f in data["features"]}
+    assert "AT-1" in by_prefix
+    assert "AT-2" not in by_prefix  # boundary=None → skipped
+
+    feature = by_prefix["AT-1"]
+    assert feature["type"] == "Feature"
+    assert feature["properties"] == {"prefix": "AT-1", "name_en": "Vorarlberg"}
+    assert feature["geometry"] == boundary
+
+
+@pytest.mark.django_db
+def test_sub_regions_geojson_returns_feature_collection():
+    """L2 subs with a non-null boundary become Features; null boundary skipped."""
+    major = EawsMajorRegionFactory.create(
+        prefix="AT-1", country="AT", name_en="Vorarlberg"
+    )
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+        ],
+    }
+    EawsSubRegionFactory.create(
+        prefix="AT-11",
+        major=major,
+        name_en="Vorarlberg North",
+        boundary=boundary,
+    )
+    EawsSubRegionFactory.create(
+        prefix="AT-12",
+        major=major,
+        name_en="Vorarlberg South",
+        boundary=None,
+    )
+
+    client = Client()
+    response = client.get(reverse("api:sub_regions_geojson"))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["type"] == "FeatureCollection"
+
+    by_prefix = {f["properties"]["prefix"]: f for f in data["features"]}
+    assert "AT-11" in by_prefix
+    assert "AT-12" not in by_prefix  # boundary=None → skipped
+
+    feature = by_prefix["AT-11"]
+    assert feature["properties"] == {
+        "prefix": "AT-11",
+        "name_en": "Vorarlberg North",
+    }
+    assert feature["geometry"] == boundary
+
+
+# ---------------------------------------------------------------------------
 # season-ratings
 # ---------------------------------------------------------------------------
 
@@ -527,6 +618,8 @@ def test_endpoints_return_json_content_type():
         "api:season_ratings",
         "api:resorts_by_region",
         "api:regions_geojson",
+        "api:major_regions_geojson",
+        "api:sub_regions_geojson",
     ):
         response = client.get(reverse(name))
         assert response.status_code == 200

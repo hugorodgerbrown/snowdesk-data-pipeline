@@ -92,9 +92,11 @@ const clearRegionRepaint = () => {
   let DEBUG = new URLSearchParams(location.search).has('debug');
 
   const mapEl = document.getElementById('map');
-  const REGIONS_URL   = mapEl.dataset.regionsUrl;
-  const SUMMARIES_URL = mapEl.dataset.summariesUrl;
-  const RESORTS_URL   = mapEl.dataset.resortsUrl;
+  const REGIONS_URL       = mapEl.dataset.regionsUrl;
+  const MAJOR_REGIONS_URL = mapEl.dataset.majorRegionsUrl;
+  const SUB_REGIONS_URL   = mapEl.dataset.subRegionsUrl;
+  const SUMMARIES_URL     = mapEl.dataset.summariesUrl;
+  const RESORTS_URL       = mapEl.dataset.resortsUrl;
   // The summary URL carries the literal placeholder __REGION__ which is
   // substituted with the tapped region's region_id at fetch time. Server
   // renders this via {% url 'api:region_summary' '__REGION__' %} so the
@@ -134,11 +136,58 @@ const clearRegionRepaint = () => {
   const initialBasemapUrl = BASEMAP_OPTIONS[initialBasemapKey];
   // Mark the active radio so the popover renders in the right state on
   // first paint, before basemapPickerInit binds its click handlers.
+  // The selector deliberately excludes the SNOW-59 overlay checkboxes —
+  // they own their own aria-checked state, applied below from
+  // ``overlayState``.
   if (basemapMenu) {
-    for (const btn of basemapMenu.querySelectorAll('.basemap-menu-item')) {
+    for (const btn of basemapMenu.querySelectorAll(
+      '.basemap-menu-item:not(.basemap-menu-item--overlay)',
+    )) {
       btn.setAttribute(
         'aria-checked',
         btn.dataset.basemapKey === initialBasemapKey ? 'true' : 'false',
+      );
+    }
+  }
+
+  // SNOW-59: EAWS region overlay layers — three tiers stacked above
+  // the basemap. L1 (Major) and L2 (Sub) are outline-only line layers;
+  // L4 (Micro) is the data-bearing choropleth and stays on permanently
+  // (the user-facing checkbox is rendered checked-and-disabled).
+  // Visibility is user-driven via the basemap picker popover and
+  // persisted in localStorage; the ``style.load`` handler re-applies
+  // it after a basemap swap.
+  const OVERLAY_STORAGE_KEY = {
+    l1: 'snowdesk.map.overlay.l1',
+    l2: 'snowdesk.map.overlay.l2',
+    l4: 'snowdesk.map.overlay.l4',
+  };
+  // L4 defaults to true and is force-locked below — the choropleth is
+  // the entire point of the page, so toggling it off would leave the
+  // map empty.
+  const overlayState = { l1: false, l2: false, l4: true };
+  for (const key of ['l1', 'l2']) {
+    try {
+      overlayState[key] =
+        localStorage.getItem(OVERLAY_STORAGE_KEY[key]) === 'true';
+    } catch (_) { /* private mode — default off */ }
+  }
+  // Persist the L4 default once so localStorage shows a complete
+  // picture of the popover's state to anyone debugging.
+  try { localStorage.setItem(OVERLAY_STORAGE_KEY.l4, 'true'); }
+  catch (_) { /* private mode — fall through */ }
+  // Reflect the persisted overlay state on first paint so the popover
+  // matches reality before the click handler at the bottom of the file
+  // takes over. The L4 button is disabled in markup, so we just
+  // confirm aria-checked="true" without making it clickable.
+  if (basemapMenu) {
+    for (const btn of basemapMenu.querySelectorAll(
+      '.basemap-menu-item--overlay',
+    )) {
+      const key = btn.dataset.overlayKey;
+      btn.setAttribute(
+        'aria-checked',
+        overlayState[key] ? 'true' : 'false',
       );
     }
   }
@@ -259,19 +308,125 @@ const clearRegionRepaint = () => {
     });
   };
 
+  // SNOW-59: install the L1 / L2 outline overlays plus their labels.
+  //
+  // Outline-only (no fill) so the L4 choropleth underneath stays
+  // visible. Each tier also has a symbol layer; the three label tiers
+  // (L1 / L2 / L4) hand off to each other based on map zoom so only
+  // one set of names is ever painted at a time:
+  //
+  //   zoom 5  → 7    L1 (major) labels
+  //   zoom 7  → 8.5  L2 (sub) labels
+  //   zoom 8.5 → max L4 (regions-label, declared in installRegionsLayers)
+  //
+  // Outlines themselves don't band by zoom — once the user toggles a
+  // tier on it stays drawn at all zooms. Only the labels rotate, which
+  // keeps the map readable while the outlines preserve the spatial
+  // hierarchy across zooms.
+  //
+  // Visibility on the line + label layers is controlled per-tier by
+  // ``overlayState`` and applied at install time; toggle clicks call
+  // ``setLayoutProperty`` on both layer ids.
+  const installOverlayLayers = (majorGeojson, subGeojson) => {
+    if (subGeojson && !map.getSource('sub-regions')) {
+      map.addSource('sub-regions', { type: 'geojson', data: subGeojson });
+      map.addLayer({
+        id: 'sub-regions-line',
+        type: 'line',
+        source: 'sub-regions',
+        layout: {
+          visibility: overlayState.l2 ? 'visible' : 'none',
+        },
+        paint: {
+          'line-color': '#0c447c',
+          'line-width': 1.4,
+          'line-opacity': 0.9,
+        },
+      });
+      map.addLayer({
+        id: 'sub-regions-label',
+        type: 'symbol',
+        source: 'sub-regions',
+        minzoom: 7,
+        maxzoom: 8.5,
+        layout: {
+          visibility: overlayState.l2 ? 'visible' : 'none',
+          'text-field': ['get', 'name_en'],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 12,
+          'text-allow-overlap': false,
+          'text-padding': 4,
+        },
+        paint: {
+          'text-color': '#0c447c',
+          'text-halo-color': 'rgba(255,255,255,0.92)',
+          'text-halo-width': 1.4,
+        },
+      });
+    }
+    if (majorGeojson && !map.getSource('major-regions')) {
+      map.addSource('major-regions', { type: 'geojson', data: majorGeojson });
+      map.addLayer({
+        id: 'major-regions-line',
+        type: 'line',
+        source: 'major-regions',
+        layout: {
+          visibility: overlayState.l1 ? 'visible' : 'none',
+        },
+        paint: {
+          'line-color': '#7a1f1f',
+          'line-width': 2.4,
+          'line-opacity': 0.95,
+        },
+      });
+      map.addLayer({
+        id: 'major-regions-label',
+        type: 'symbol',
+        source: 'major-regions',
+        minzoom: 5,
+        maxzoom: 7,
+        layout: {
+          visibility: overlayState.l1 ? 'visible' : 'none',
+          'text-field': ['get', 'name_en'],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 14,
+          'text-allow-overlap': false,
+          'text-padding': 6,
+        },
+        paint: {
+          'text-color': '#7a1f1f',
+          'text-halo-color': 'rgba(255,255,255,0.92)',
+          'text-halo-width': 1.6,
+        },
+      });
+    }
+  };
+
   // Cached at IIFE scope so the style.load handler (registered inside
   // map.on('load') below) can re-install layers without a refetch when
   // the user picks a new basemap.
   let geojsonCache = null;
+  let majorGeojsonCache = null;
+  let subGeojsonCache = null;
 
   map.on('load', async () => {
-    // Fetch everything in parallel. The three requests are independent —
-    // geometry, bulletin summaries, resort lists — so they can all fly at once.
-    const [geojson, summaries, resorts] = await Promise.all([
-      fetch(REGIONS_URL).then(r => r.json()),
-      fetch(SUMMARIES_URL).then(r => r.json()),
-      fetch(RESORTS_URL).then(r => r.json()),
-    ]);
+    // Fetch everything in parallel. All requests are independent —
+    // geometry, bulletin summaries, resort lists, and the L1/L2 overlay
+    // geometry (SNOW-59) — so they can all fly at once. The overlay
+    // fetches degrade gracefully on failure: a missing payload just
+    // skips that layer install.
+    const [geojson, summaries, resorts, majorGeojson, subGeojson] =
+      await Promise.all([
+        fetch(REGIONS_URL).then(r => r.json()),
+        fetch(SUMMARIES_URL).then(r => r.json()),
+        fetch(RESORTS_URL).then(r => r.json()),
+        MAJOR_REGIONS_URL
+          ? fetch(MAJOR_REGIONS_URL).then(r => r.json()).catch(() => null)
+          : Promise.resolve(null),
+        SUB_REGIONS_URL
+          ? fetch(SUB_REGIONS_URL).then(r => r.json()).catch(() => null)
+          : Promise.resolve(null),
+      ]);
     Object.assign(BULLETIN_SUMMARIES, summaries);
     Object.assign(RESORTS_BY_REGION, resorts);
     // Derive RATINGS from summaries — single source of truth for the choropleth.
@@ -293,7 +448,10 @@ const clearRegionRepaint = () => {
     });
 
     geojsonCache = geojson;
+    majorGeojsonCache = majorGeojson;
+    subGeojsonCache = subGeojson;
     installRegionsLayers(geojson);
+    installOverlayLayers(majorGeojson, subGeojson);
 
     // Interaction
     let selectedId = null;
@@ -1156,6 +1314,10 @@ const clearRegionRepaint = () => {
       if (!geojsonCache) return;          // initial load — handled above
       if (map.getSource('regions')) return;  // still installed on this style
       installRegionsLayers(geojsonCache);
+      // SNOW-59: overlays got wiped with the rest of the style. Re-add
+      // them and let the install function re-apply the persisted
+      // visibility from overlayState.
+      installOverlayLayers(majorGeojsonCache, subGeojsonCache);
       if (selectedId !== null) {
         map.setFeatureState(
           { source: 'regions', id: selectedId },
@@ -1555,9 +1717,62 @@ const clearRegionRepaint = () => {
     }
   });
 
+  // SNOW-59 overlay layer ids, mirrored from the main IIFE. Each tier
+  // owns a line layer (the outline, where applicable) and a symbol
+  // layer (the zoom-banded label) — toggling the overlay flips both in
+  // lockstep so a hidden tier never leaves an orphan label floating
+  // with no boundary. L4 is included for completeness even though its
+  // checkbox is disabled — flipping it would also be a no-op against
+  // the disabled-button guard below.
+  //
+  // The picker mutates layer visibility via setLayoutProperty rather
+  // than reaching into the main IIFE's overlayState — the layer state
+  // on the map IS the source of truth, and the localStorage key is
+  // the persistence shadow.
+  const OVERLAY_LAYER_IDS = {
+    l1: ['major-regions-line', 'major-regions-label'],
+    l2: ['sub-regions-line', 'sub-regions-label'],
+    l4: ['regions-fill', 'regions-line', 'regions-label'],
+  };
+  const OVERLAY_STORAGE_KEY = {
+    l1: 'snowdesk.map.overlay.l1',
+    l2: 'snowdesk.map.overlay.l2',
+    l4: 'snowdesk.map.overlay.l4',
+  };
+
   for (const item of items) {
+    // Disabled menu items (currently just the L4 / Micro regions
+    // checkbox) shouldn't dispatch a click in modern browsers, but
+    // skip the wiring entirely as a belt-and-braces guard. Without
+    // this, a future caller calling .click() programmatically could
+    // sneak past the browser's disabled gate.
+    if (item.disabled) continue;
+
     item.addEventListener('click', (e) => {
       e.stopPropagation();
+
+      // SNOW-59: overlay checkbox — toggle visibility on both the line
+      // and the (zoom-banded) label layer for this tier, then persist.
+      // Doesn't close the popover (Google-Maps-style: overlays are
+      // flipped freely while picking a basemap).
+      const overlayKey = item.dataset.overlayKey;
+      if (overlayKey) {
+        const next = item.getAttribute('aria-checked') !== 'true';
+        item.setAttribute('aria-checked', next ? 'true' : 'false');
+        try { localStorage.setItem(OVERLAY_STORAGE_KEY[overlayKey], String(next)); }
+        catch (_) { /* private mode — choice still applies for this session */ }
+        if (MAP) {
+          for (const layerId of OVERLAY_LAYER_IDS[overlayKey]) {
+            if (MAP.getLayer(layerId)) {
+              MAP.setLayoutProperty(
+                layerId, 'visibility', next ? 'visible' : 'none',
+              );
+            }
+          }
+        }
+        return;
+      }
+
       const url = item.dataset.basemapUrl;
       const key = item.dataset.basemapKey;
       if (!url || !key || !MAP) return;
@@ -1573,7 +1788,10 @@ const clearRegionRepaint = () => {
       }));
       try { localStorage.setItem(STORAGE_KEY, key); }
       catch (_) { /* private mode — choice still applies for this session */ }
+      // Only update aria-checked on basemap radios — overlay checkboxes
+      // are independent and shouldn't be cleared when the basemap swaps.
       for (const other of items) {
+        if (other.dataset.overlayKey) continue;
         other.setAttribute(
           'aria-checked',
           other === item ? 'true' : 'false',
