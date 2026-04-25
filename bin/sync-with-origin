@@ -4,10 +4,17 @@
 # Prunes remote tracking refs, then in a single pass removes redundant
 # worktrees and deletes redundant local branches.
 #
-# A worktree is redundant only when its branch's upstream is `: gone`
-# (i.e. the PR was merged and the remote branch is deleted). Active
-# Claude session worktrees on local-only `claude/*` branches are left
-# alone — an existing worktree is the signal that the session is live.
+# A worktree is redundant when one of:
+#   - its branch's upstream is `: gone` (the PR was merged and the
+#     remote branch is deleted);
+#   - it carries a `READY_FOR_CLEANUP` tombstone written by the
+#     SessionEnd hook (`bin/mark-worktree-cleanable`) AND the branch is
+#     fully reachable from `origin/main`. The mergedness check is
+#     re-applied here so a stale tombstone on a worktree where the user
+#     resumed work cannot cause data loss.
+# Active Claude session worktrees on local-only `claude/*` branches are
+# left alone — an existing worktree is the signal that the session is
+# live.
 #
 # A branch is redundant if either:
 #   - its upstream is `: gone`; or
@@ -67,14 +74,22 @@ if ! git fetch --prune --quiet; then
 fi
 
 # Map each local branch to the worktree path that has it checked out
-# (if any). Worktrees not on a branch (detached HEAD) are skipped.
+# (if any), and to whether that worktree carries a tombstone marker
+# under its private git metadata directory. Worktrees not on a branch
+# (detached HEAD) are skipped.
 declare -A WORKTREE_OF_BRANCH=()
+declare -A WORKTREE_HAS_TOMBSTONE=()
 wt_path=""
 while IFS= read -r line; do
     if [[ "$line" == worktree\ * ]]; then
         wt_path="${line#worktree }"
     elif [[ "$line" == branch\ refs/heads/* ]]; then
-        WORKTREE_OF_BRANCH["${line#branch refs/heads/}"]="$wt_path"
+        branch="${line#branch refs/heads/}"
+        WORKTREE_OF_BRANCH["$branch"]="$wt_path"
+        wt_gitdir="$(git -C "$wt_path" rev-parse --git-dir 2>/dev/null || echo "")"
+        if [[ -n "$wt_gitdir" && -e "$wt_gitdir/READY_FOR_CLEANUP" ]]; then
+            WORKTREE_HAS_TOMBSTONE["$branch"]=1
+        fi
     fi
 done < <(git worktree list --porcelain)
 
@@ -97,21 +112,30 @@ while IFS=$'\t' read -r branch track upstream; do
     has_worktree=0
     [[ -n "${WORKTREE_OF_BRANCH[$branch]:-}" ]] && has_worktree=1
 
+    has_tombstone=0
+    [[ -n "${WORKTREE_HAS_TOMBSTONE[$branch]:-}" ]] && has_tombstone=1
+
+    # Cheap; reused below. ``?`` for branches that fail the rev-list
+    # (e.g. shallow clones) so the comparison fails closed.
+    ahead="$(git rev-list --count "$ORIGIN_DEFAULT..$branch" 2>/dev/null || echo "?")"
+
     reason=""
     if [[ "$track" == "[gone]" ]]; then
         # Strong "PR merged, remote deleted" signal — sweep both the
         # branch and (if any) its worktree.
         reason="upstream gone"
-    elif [[ "$has_worktree" -eq 0 ]]; then
+    elif [[ "$has_tombstone" -eq 1 && "$ahead" == "0" ]]; then
+        # SessionEnd hook signed off, and the branch is still fully
+        # reachable from origin/main. Re-checking ahead here defends
+        # against the user resuming work after the marker was written.
+        reason="tombstone (merged into $ORIGIN_DEFAULT)"
+    elif [[ "$has_worktree" -eq 0 && "$ahead" == "0" ]]; then
         # No worktree means no live session. Sweep when reachable from
         # origin/main; anything ahead might be unpushed local work.
-        ahead="$(git rev-list --count "$ORIGIN_DEFAULT..$branch" 2>/dev/null || echo "?")"
-        if [[ "$ahead" == "0" ]]; then
-            reason="reachable from $ORIGIN_DEFAULT"
-        fi
+        reason="reachable from $ORIGIN_DEFAULT"
     fi
-    # If we got here with a worktree but no `: gone`, it's a live
-    # session — leave it alone.
+    # If we got here with a live worktree but no `: gone` and no
+    # tombstone, it's a live session — leave it alone.
 
     [[ -z "$reason" ]] && continue
 

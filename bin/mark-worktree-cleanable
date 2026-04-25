@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+#
+# bin/mark-worktree-cleanable — write a tombstone if this worktree is
+# safe to remove. Designed to run from the SessionEnd hook.
+#
+# The hook fires whenever a Claude Code session ends — including when
+# the user is mid-feature and just stepping away — so unconditional
+# worktree deletion would routinely destroy in-flight work. This script
+# is the gate: it sets a marker only when both
+#
+#   1. the working tree is clean (no staged or unstaged changes), and
+#   2. the current branch is fully reachable from origin/main (i.e.
+#      every commit on the branch is already in origin's main),
+#
+# in which case ``bin/sync-with-origin`` will pick up the marker on its
+# next run and remove the worktree from the main repo. The actual
+# ``git worktree remove`` cannot run from inside the worktree it would
+# delete; the tombstone hands that responsibility off to the caller's
+# next manual sync.
+#
+# Refuses to run from the main worktree. Silent on no-op (the typical
+# session-end case where work is in progress) so it doesn't add chatter
+# to the SessionEnd transcript.
+
+set -euo pipefail
+
+DEFAULT_BRANCH="main"
+
+this_repo=$(git rev-parse --show-toplevel)
+cd "$this_repo"
+
+main_git_dir=$(git rev-parse --git-common-dir)
+main_repo=$(cd "$(dirname "$main_git_dir")" && pwd)
+
+if [ "$main_repo" = "$this_repo" ]; then
+    # The main worktree is never a cleanup target.
+    exit 0
+fi
+
+current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+if [ -z "$current_branch" ] || [ "$current_branch" = "HEAD" ]; then
+    # Detached HEAD — no branch to evaluate.
+    exit 0
+fi
+if [ "$current_branch" = "$DEFAULT_BRANCH" ]; then
+    # On main inside a non-main worktree is an unusual state. Don't
+    # tombstone — let the user sort it out manually.
+    exit 0
+fi
+
+# Working tree must be clean — no staged or unstaged changes to tracked
+# files. ``--untracked-files=no`` deliberately ignores untracked entries
+# because every worktree using bin/init-worktree carries at least .env,
+# .venv, and db.sqlite3 as build artefacts that aren't user work; the
+# .gitignore catches most but not all setups (e.g. the symlink is only
+# gitignored after SNOW-56 merges). Genuine work-in-progress lands as a
+# tracked modification (or a deliberate add) and is caught here.
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    exit 0
+fi
+
+# Branch must be fully merged into origin/main. ``--is-ancestor`` returns
+# 0 when HEAD is reachable from origin/main, i.e. the PR has merged and
+# the branch carries no commits not already in main.
+if ! git merge-base --is-ancestor HEAD "origin/$DEFAULT_BRANCH" 2>/dev/null; then
+    exit 0
+fi
+
+# Per-worktree git metadata directory under the main repo's .git/worktrees/.
+# Removed automatically when the worktree is removed, so no cleanup needed.
+marker="$(git rev-parse --git-dir)/READY_FOR_CLEANUP"
+date -u +"%Y-%m-%dT%H:%M:%SZ" > "$marker"
+echo "mark-worktree-cleanable: tombstoned $this_repo (branch $current_branch)"
