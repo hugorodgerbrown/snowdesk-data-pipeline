@@ -905,3 +905,43 @@
   document.addEventListener('pointerup', release);
   document.addEventListener('pointercancel', release);
 })();
+
+// SNOW-38: Collapsible danger-scale legend. State persists in localStorage
+// under `snowdesk.map.legend` (namespaced — distinct from the legacy flat
+// `offline-map-saved` key, which is intentionally left as-is).
+(function legendInit() {
+  const root = document.getElementById('map-legend');
+  if (!root) return;
+  const toggle = document.getElementById('map-legend-toggle');
+  const STORAGE_KEY = 'snowdesk.map.legend';
+
+  function applyState(state) {
+    const next = state === 'expanded' ? 'expanded' : 'collapsed';
+    root.dataset.state = next;
+    toggle.setAttribute('aria-expanded', next === 'expanded' ? 'true' : 'false');
+  }
+
+  let initial = 'collapsed';
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === 'expanded') initial = 'expanded';
+  } catch (_) { /* private mode / disabled storage — fall through */ }
+  applyState(initial);
+
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const next = root.dataset.state === 'expanded' ? 'collapsed' : 'expanded';
+    applyState(next);
+    try { localStorage.setItem(STORAGE_KEY, next); } catch (_) {}
+  });
+
+  // Outside-tap dismiss: any click outside the legend container collapses
+  // it. Inside-card clicks bubble harmlessly; the toggle stops propagation
+  // above so its own click is not treated as "outside".
+  document.addEventListener('click', (e) => {
+    if (root.dataset.state !== 'expanded') return;
+    if (root.contains(e.target)) return;
+    applyState('collapsed');
+    try { localStorage.setItem(STORAGE_KEY, 'collapsed'); } catch (_) {}
+  });
+})();

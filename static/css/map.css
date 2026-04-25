@@ -274,37 +274,88 @@
     border-top: 0.5px solid var(--border);
 }
 
-.legend {
+/* Collapsible danger-scale legend (SNOW-38) — bottom-left overlay,
+   anchored above the season scrubber. The card is absolutely positioned
+   relative to the container so toggling it does not reflow the page.
+   Stacking: scrubber=2, legend=3, utility cluster=4. */
+
+.map-legend {
     position: absolute;
-    top: 10px;
-    left: 10px;
-    z-index: 2;
-    background: rgba(255, 255, 255, 0.94);
-    border: 0.5px solid var(--border);
-    border-radius: 6px;
-    padding: 7px 9px;
-    font-size: 10px;
+    left: calc(env(safe-area-inset-left, 0px) + 12px);
+    /* 56px scrubber baseline + ~40px scrubber height + 12px gap */
+    bottom: calc(108px + env(safe-area-inset-bottom, 0px));
+    z-index: 3;
+}
+
+.map-legend-toggle {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    cursor: pointer;
+}
+
+.map-legend-card {
+    position: absolute;
+    left: 0;
+    bottom: 40px;            /* 32px button + 8px gap */
+    min-width: 132px;
+    padding: 8px 10px;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 8px;
+    box-shadow: var(--shadow-glass);
+    font-size: 11px;
     line-height: 1.5;
+    color: var(--color-text-1);
+    transform-origin: bottom left;
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+    pointer-events: none;
+    transition: opacity 160ms ease-out, transform 160ms ease-out;
 }
 
-.legend-title {
+.map-legend[data-state="expanded"] .map-legend-card {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+}
+
+.map-legend-title {
     font-weight: 500;
-    color: var(--muted);
-    margin-bottom: 3px;
+    color: var(--color-text-2);
+    margin-bottom: 4px;
 }
 
-.legend-row {
+.map-legend-row {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
 }
 
-.legend-swatch {
+.map-legend-swatch {
     width: 10px;
     height: 10px;
     display: inline-block;
+    border-radius: 2px;
     border: 0.5px solid rgba(0, 0, 0, 0.15);
 }
+
+.map-legend-swatch--low          { background: var(--color-eaws-low); }
+.map-legend-swatch--moderate     { background: var(--color-eaws-moderate); }
+.map-legend-swatch--considerable { background: var(--color-eaws-considerable); }
+.map-legend-swatch--high         { background: var(--color-eaws-high); }
 
 .maplibregl-ctrl-attrib {
     font-size: 9px !important;
