@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Django dev server",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["manage.py", "runserver"],
+      "port": 8000
+    },
+    {
+      "name": "Tailwind CSS watcher",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "@tailwindcss/cli",
+        "-i",
+        "./src/css/main.css",
+        "-o",
+        "./static/css/output.css",
+        "--watch"
+      ]
+    }
+  ]
+}

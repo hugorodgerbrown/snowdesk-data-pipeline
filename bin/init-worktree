@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+#
+# bin/init-worktree — wire a fresh worktree's untracked state to the main repo.
+#
+# Worktrees share git history with the main repo but nothing else: no .env,
+# no .venv, no db.sqlite3, no compiled CSS. Without this script every new
+# worktree means manual setup — copy .env, set up the venv, migrate the DB,
+# load fixtures, run rebuild_render_models — before Django will boot.
+#
+# This script picks the right strategy per asset:
+#   - .env, .venv  → symlink to the main repo (slow-changing, identical
+#                    across worktrees; one source of truth).
+#   - db.sqlite3   → copy from the main repo (mutable per-worktree state;
+#                    SQLite + concurrent writers from multiple Django
+#                    servers would clash, so don't share).
+#
+# Idempotent: skips assets that already exist locally. Safe to invoke on
+# every Claude SessionStart — the no-op path is a few stat() calls.
+#
+# Refuses to run from the main worktree itself.
+
+set -euo pipefail
+
+# Resolve repo root for whichever worktree the caller is in. ``git
+# rev-parse --show-toplevel`` works from a worktree and returns its own
+# top, not the main repo's.
+this_repo=$(git rev-parse --show-toplevel)
+cd "$this_repo"
+
+# The shared .git directory lives inside the main worktree. Its parent
+# is the main repo root.
+main_git_dir=$(git rev-parse --git-common-dir)
+main_repo=$(cd "$(dirname "$main_git_dir")" && pwd)
+
+if [ "$main_repo" = "$this_repo" ]; then
+    echo "init-worktree: refusing to run from the main worktree ($main_repo)" >&2
+    exit 1
+fi
+
+actions=0
+
+link_if_missing() {
+    local name=$1
+    # ``-L`` catches broken symlinks (which ``-e`` would not), so a stale
+    # link doesn't get silently re-created on top.
+    if [ -e "$name" ] || [ -L "$name" ]; then
+        return
+    fi
+    if [ ! -e "$main_repo/$name" ]; then
+        echo "init-worktree: $main_repo/$name does not exist, skipping" >&2
+        return
+    fi
+    ln -s "$main_repo/$name" "$name"
+    echo "init-worktree: linked $name -> $main_repo/$name"
+    actions=$((actions + 1))
+}
+
+copy_if_missing() {
+    local name=$1
+    if [ -e "$name" ]; then
+        return
+    fi
+    if [ ! -e "$main_repo/$name" ]; then
+        echo "init-worktree: $main_repo/$name does not exist, skipping" >&2
+        return
+    fi
+    cp "$main_repo/$name" "$name"
+    echo "init-worktree: copied $name from $main_repo/$name"
+    actions=$((actions + 1))
+}
+
+link_if_missing .env
+link_if_missing .venv
+copy_if_missing db.sqlite3
+
+# Silent on a fully-set-up worktree (the SessionStart hook case); only
+# announces when the worktree actually needed bootstrapping.
+if [ "$actions" -gt 0 ]; then
+    echo "init-worktree: applied $actions action(s)"
+fi
