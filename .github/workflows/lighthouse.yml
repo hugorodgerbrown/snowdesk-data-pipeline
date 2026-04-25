@@ -7,6 +7,17 @@ name: Lighthouse
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.py"
+      - "**/*.html"
+      - "src/css/**"
+      - "static/**"
+      - "package.json"
+      - "package-lock.json"
+      - "lighthouserc.*"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - ".github/workflows/lighthouse.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
