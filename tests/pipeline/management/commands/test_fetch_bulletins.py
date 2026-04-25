@@ -7,6 +7,7 @@ the records_failed exit-code path.
 """
 
 from datetime import UTC, date, datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,6 +16,7 @@ from django.core.management.base import CommandError
 from django.test import override_settings
 
 from pipeline.models import PipelineRun
+from pipeline.services.slf_archive import read_archive, write_archive
 from tests.factories import BulletinFactory, PipelineRunFactory
 
 
@@ -353,3 +355,215 @@ class TestFetchBulletinsCommand:
 
         with pytest.raises(CommandError, match="render-model"):
             call_command("fetch_bulletins", "--date", "2026-03-15", "--commit")
+
+    # ------------------------------------------------------------------
+    # --source / --stash
+    # ------------------------------------------------------------------
+
+    @patch(PATCH_TARGET)
+    def test_default_source_passes_no_base_url(self, mock_run: MagicMock) -> None:
+        """Bare invocation passes ``base_url=None`` so the live setting wins."""
+        mock_run.return_value = _make_successful_run()
+
+        call_command("fetch_bulletins", "--date", "2026-03-15")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["base_url"] is None
+        assert kwargs["on_fetched"] is None
+
+    @override_settings(
+        SLF_API_LOCAL_MIRROR_URL="http://localhost:8000/dev/slf-mirror/api/bulletin-list/caaml"
+    )
+    @patch(PATCH_TARGET)
+    def test_source_local_mirror_forwards_setting_url(
+        self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """``--source local-mirror`` forwards SLF_API_LOCAL_MIRROR_URL."""
+        mock_run.return_value = _make_successful_run()
+
+        call_command(
+            "fetch_bulletins",
+            "--date",
+            "2026-03-15",
+            "--source",
+            "local-mirror",
+        )
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["base_url"] == (
+            "http://localhost:8000/dev/slf-mirror/api/bulletin-list/caaml"
+        )
+        # Banner surfaces the non-default source so it's obvious in logs.
+        assert "SOURCE=LOCAL-MIRROR" in capsys.readouterr().out
+
+    @override_settings(SLF_API_LOCAL_MIRROR_URL="")
+    @patch(PATCH_TARGET)
+    def test_source_local_mirror_without_setting_raises(
+        self, mock_run: MagicMock
+    ) -> None:
+        """Empty/unset SLF_API_LOCAL_MIRROR_URL → CommandError naming the setting.
+
+        Simulates the production-like environment where development.py
+        (which defines the mirror URL) is not loaded. ``--source
+        local-mirror`` must abort before invoking the pipeline.
+        """
+        with pytest.raises(CommandError, match="SLF_API_LOCAL_MIRROR_URL"):
+            call_command(
+                "fetch_bulletins",
+                "--date",
+                "2026-03-15",
+                "--source",
+                "local-mirror",
+            )
+
+        # run_pipeline must not be invoked when the source check fails.
+        mock_run.assert_not_called()
+
+    def test_source_rejects_unknown_value(self) -> None:
+        """argparse rejects --source values outside {live,local-mirror}.
+
+        Django's ``CommandParser`` translates ``argparse.error`` into a
+        ``CommandError`` when invoked via ``call_command`` (rather than
+        the default ``SystemExit`` you'd see on the command line).
+        """
+        with pytest.raises(CommandError, match="invalid choice"):
+            call_command("fetch_bulletins", "--source", "remote-cluster")
+
+    @patch(PATCH_TARGET)
+    def test_stash_off_by_default(self, mock_run: MagicMock) -> None:
+        """Without --stash, no on_fetched callback is wired up."""
+        mock_run.return_value = _make_successful_run()
+
+        call_command("fetch_bulletins", "--date", "2026-03-15")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["on_fetched"] is None
+
+    @patch(PATCH_TARGET)
+    def test_stash_collects_and_writes_archive(
+        self,
+        mock_run: MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """``--stash`` flushes collected records to SLF_ARCHIVE_PATH."""
+        archive_path = tmp_path / "archive.ndjson"
+        # Side effect: simulate run_pipeline pumping records into on_fetched.
+        collected_records = [
+            {
+                "bulletinID": "b1",
+                "publicationTime": "2025-03-15T08:00:00Z",
+                "validTime": {
+                    "startTime": "2025-03-15T17:00:00Z",
+                    "endTime": "2025-03-16T17:00:00Z",
+                },
+            },
+            {
+                "bulletinID": "b2",
+                "publicationTime": "2025-03-16T08:00:00Z",
+                "validTime": {
+                    "startTime": "2025-03-16T17:00:00Z",
+                    "endTime": "2025-03-17T17:00:00Z",
+                },
+            },
+        ]
+
+        def fake_run_pipeline(**kwargs: object) -> PipelineRun:
+            on_fetched = kwargs.get("on_fetched")
+            if on_fetched is not None:
+                for record in collected_records:
+                    on_fetched(record)  # type: ignore[operator]
+            return _make_successful_run()
+
+        mock_run.side_effect = fake_run_pipeline
+
+        with override_settings(SLF_ARCHIVE_PATH=archive_path):
+            call_command("fetch_bulletins", "--date", "2026-03-15", "--stash")
+
+        # Archive was written with both records.
+        archived = list(read_archive(archive_path))
+        assert {r["bulletinID"] for r in archived} == {"b1", "b2"}
+
+        out = capsys.readouterr().out
+        assert "Stashed 2 fetched bulletin(s)" in out
+        assert "STASH" in out  # banner flag
+
+    @patch(PATCH_TARGET)
+    def test_stash_merges_with_existing_archive(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """``--stash`` overlays new records onto the existing archive (later wins)."""
+        archive_path = tmp_path / "archive.ndjson"
+        write_archive(
+            archive_path,
+            [
+                {
+                    "bulletinID": "old",
+                    "publicationTime": "2025-03-10T08:00:00Z",
+                    "validTime": {
+                        "startTime": "2025-03-10T17:00:00Z",
+                        "endTime": "2025-03-11T17:00:00Z",
+                    },
+                    "lang": "en",
+                }
+            ],
+        )
+
+        new_record = {
+            "bulletinID": "new",
+            "publicationTime": "2025-03-15T08:00:00Z",
+            "validTime": {
+                "startTime": "2025-03-15T17:00:00Z",
+                "endTime": "2025-03-16T17:00:00Z",
+            },
+            "lang": "en",
+        }
+
+        def fake_run_pipeline(**kwargs: object) -> PipelineRun:
+            on_fetched = kwargs.get("on_fetched")
+            if on_fetched is not None:
+                on_fetched(new_record)  # type: ignore[operator]
+            return _make_successful_run()
+
+        mock_run.side_effect = fake_run_pipeline
+
+        with override_settings(SLF_ARCHIVE_PATH=archive_path):
+            call_command("fetch_bulletins", "--date", "2026-03-15", "--stash")
+
+        archived = list(read_archive(archive_path))
+        # Archive is sorted ascending by validTime.startTime.
+        assert [r["bulletinID"] for r in archived] == ["old", "new"]
+
+    @patch(PATCH_TARGET)
+    def test_stash_independent_of_commit(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """``--stash`` writes the archive regardless of --commit; both forwarded."""
+        archive_path = tmp_path / "archive.ndjson"
+
+        def fake_run_pipeline(**kwargs: object) -> PipelineRun:
+            on_fetched = kwargs.get("on_fetched")
+            assert on_fetched is not None
+            on_fetched(  # type: ignore[operator]
+                {
+                    "bulletinID": "x",
+                    "publicationTime": "2025-03-15T08:00:00Z",
+                    "validTime": {
+                        "startTime": "2025-03-15T17:00:00Z",
+                        "endTime": "2025-03-16T17:00:00Z",
+                    },
+                    "lang": "en",
+                }
+            )
+            return _make_successful_run()
+
+        mock_run.side_effect = fake_run_pipeline
+
+        with override_settings(SLF_ARCHIVE_PATH=archive_path):
+            # Read-only run + stash: archive still written.
+            call_command("fetch_bulletins", "--date", "2026-03-15", "--stash")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["dry_run"] is True
+        assert archive_path.exists()
+        assert len(list(read_archive(archive_path))) == 1

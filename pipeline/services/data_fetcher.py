@@ -17,10 +17,12 @@ fetch_bulletin_page() and upsert_bulletin() independently.
 """
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import requests
+from django.conf import settings
 
 from pipeline.models import Bulletin, PipelineRun, Region, RegionBulletin
 from pipeline.services.day_rating import apply_bulletin_day_ratings
@@ -32,14 +34,18 @@ from pipeline.services.render_model import (
 
 logger = logging.getLogger(__name__)
 
-SLF_API_BASE_URL = "https://aws.slf.ch/api/bulletin-list/caaml"
 LANG = "en"
 PAGE_SIZE = 50
 REQUEST_TIMEOUT = 30  # seconds
 _ONE_DAY = timedelta(days=1)
 
 
-def fetch_bulletin_page(lang: str, limit: int, offset: int) -> list[dict[str, Any]]:
+def fetch_bulletin_page(
+    lang: str,
+    limit: int,
+    offset: int,
+    base_url: str | None = None,
+) -> list[dict[str, Any]]:
     """
     Fetch a single page of bulletins from the SLF CAAML list API.
 
@@ -47,6 +53,10 @@ def fetch_bulletin_page(lang: str, limit: int, offset: int) -> list[dict[str, An
         lang: Language code ("en", "de", "fr", "it").
         limit: Maximum number of bulletins to return.
         offset: Number of bulletins to skip (for pagination).
+        base_url: Override for the API base URL. Falls back to
+            ``settings.SLF_API_BASE_URL`` when ``None`` so the
+            ``fetch_bulletins`` command can flip between the live API
+            and a local mirror without environment-variable gymnastics.
 
     Returns:
         A list of raw bulletin dicts as returned by the API.
@@ -56,9 +66,14 @@ def fetch_bulletin_page(lang: str, limit: int, offset: int) -> list[dict[str, An
         ValueError: If the response body cannot be parsed as JSON.
 
     """
-    url = f"{SLF_API_BASE_URL}/{lang}/json"
+    resolved_base = base_url if base_url is not None else settings.SLF_API_BASE_URL
+    url = f"{resolved_base}/{lang}/json"
     logger.debug(
-        "Fetching SLF bulletins: lang=%s limit=%d offset=%d", lang, limit, offset
+        "Fetching SLF bulletins: lang=%s limit=%d offset=%d base=%s",
+        lang,
+        limit,
+        offset,
+        resolved_base,
     )
 
     response = requests.get(
@@ -301,12 +316,50 @@ def _process_bulletin(
     return _OUTCOME_CREATED if created else _OUTCOME_UPDATED
 
 
+def _process_page(
+    page: list[dict[str, Any]],
+    run: PipelineRun,
+    counts: dict[str, int],
+    *,
+    range_start: datetime,
+    range_end: datetime,
+    dry_run: bool,
+    force: bool,
+    on_fetched: "Callable[[dict[str, Any]], None] | None",
+) -> bool:
+    """
+    Walk a page of bulletins, mutating counts; return True to stop paging.
+
+    Pulled out of ``run_pipeline`` so the orchestration loop stays
+    under the cyclomatic-complexity limit. The return value collapses
+    the two pagination-termination signals into one: an out-of-range
+    bulletin (``_OUTCOME_OUT_OF_RANGE``) tells the caller to stop.
+    """
+    for raw in page:
+        if on_fetched is not None:
+            on_fetched(raw)
+        outcome = _process_bulletin(
+            raw,
+            run,
+            range_start=range_start,
+            range_end=range_end,
+            dry_run=dry_run,
+            force=force,
+        )
+        if outcome == _OUTCOME_OUT_OF_RANGE:
+            return True
+        counts[outcome] += 1
+    return False
+
+
 def run_pipeline(
     start: date,
     end: date,
     triggered_by: str = "unknown",
     dry_run: bool = False,
     force: bool = False,
+    base_url: str | None = None,
+    on_fetched: Callable[[dict[str, Any]], None] | None = None,
 ) -> PipelineRun:
     """
     Orchestrate a full pipeline run over a date range.
@@ -321,6 +374,15 @@ def run_pipeline(
         triggered_by: Human-readable label for who/what triggered the run.
         dry_run: If True, fetch data but do not write to the database.
         force: If True, upsert existing bulletins instead of skipping them.
+        base_url: Override for the SLF API base URL. ``None`` defers to
+            ``settings.SLF_API_BASE_URL``. ``fetch_bulletins --source
+            local-mirror`` passes the development mirror URL here.
+        on_fetched: Optional per-record callback invoked once for every
+            raw bulletin returned by the fetcher, *before* in-range /
+            dry-run / dedup decisions are made. The ``--stash`` flag
+            wires this to a list collector so the on-disk archive
+            captures everything the fetcher saw — independent of the
+            date window or whether the bulletin was already in the DB.
 
     Returns:
         The completed (or failed) PipelineRun instance.
@@ -352,30 +414,27 @@ def run_pipeline(
             dry_run,
         )
 
-        done = False
-        while not done:
-            page = fetch_bulletin_page(LANG, PAGE_SIZE, offset)
+        while True:
+            page = fetch_bulletin_page(LANG, PAGE_SIZE, offset, base_url=base_url)
             pages_fetched += 1
 
             if not page:
                 break
 
-            for raw in page:
-                outcome = _process_bulletin(
-                    raw,
-                    run,
-                    range_start=range_start,
-                    range_end=range_end,
-                    dry_run=dry_run,
-                    force=force,
-                )
-                if outcome == _OUTCOME_OUT_OF_RANGE:
-                    done = True
-                    break
-                counts[outcome] += 1
+            stop = _process_page(
+                page,
+                run,
+                counts,
+                range_start=range_start,
+                range_end=range_end,
+                dry_run=dry_run,
+                force=force,
+                on_fetched=on_fetched,
+            )
 
-            # Fewer results than requested means last page.
-            if len(page) < PAGE_SIZE:
+            # Stop on either an out-of-range bulletin (``stop`` is True)
+            # or the upstream's "fewer than ``limit``" last-page signal.
+            if stop or len(page) < PAGE_SIZE:
                 break
 
             offset += PAGE_SIZE
