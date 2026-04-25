@@ -53,36 +53,55 @@ def test_map_page_loads_assets():
 
 
 @pytest.mark.django_db
-@override_settings(BASEMAP_STYLE_URL=settings.BASEMAP_STYLES["swisstopo_winter"])
-def test_map_page_injects_basemap_style_url():
+@override_settings(BASEMAP="swisstopo_winter")
+def test_map_page_injects_default_basemap_key():
     """
-    ``settings.BASEMAP_STYLE_URL`` is rendered onto the #map element as
-    ``data-basemap-style`` so the JS can swap basemap candidates with no
-    template or code edit.
+    SNOW-58: ``settings.BASEMAP`` is rendered onto the #map element as
+    ``data-default-basemap-key`` so the JS can fall back to the
+    env-resolved default when localStorage is empty or names a basemap
+    that has since been removed from the catalogue.
     """
     client = Client()
     response = client.get(reverse("public:map"))
     content = response.content.decode()
-    expected = settings.BASEMAP_STYLES["swisstopo_winter"]
-    assert f'data-basemap-style="{expected}"' in content
+    assert 'data-default-basemap-key="swisstopo_winter"' in content
 
 
 @pytest.mark.django_db
-def test_map_page_renders_resolved_basemap_style_url():
-    """The view writes settings.BASEMAP_STYLE_URL into the rendered markup.
-
-    The settings module resolves ``BASEMAP_STYLE_URL`` from the ``BASEMAP``
-    env var at import time, so this test pins it via ``override_settings``
-    rather than relying on the live ``.env`` — otherwise any developer
-    with a non-default ``BASEMAP`` override (a documented dev affordance)
-    would see a spurious failure here.
+def test_map_page_renders_basemap_picker():
     """
-    expected = settings.BASEMAP_STYLES["openfreemap_liberty"]
-    with override_settings(BASEMAP_STYLE_URL=expected):
-        client = Client()
-        response = client.get(reverse("public:map"))
+    SNOW-58: the picker renders one ``menuitemradio`` button per entry
+    in the ``basemaps`` context, each carrying ``data-basemap-key`` and
+    ``data-basemap-url``. Order is curated server-side via
+    ``_BASEMAP_LABELS``; verifying both keys are present is enough to
+    pin the contract — JS resolves the active option at runtime.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
-    assert f'data-basemap-style="{expected}"' in content
+    assert 'id="basemap-pill"' in content
+    assert 'id="basemap-menu"' in content
+    for key in ("openfreemap_liberty", "swisstopo_winter", "swisstopo_light"):
+        assert f'data-basemap-key="{key}"' in content
+        assert f'data-basemap-url="{settings.BASEMAP_STYLES[key]}"' in content
+
+
+@pytest.mark.django_db
+def test_map_view_passes_basemap_catalogue():
+    """
+    The view exposes ``basemaps`` and ``default_basemap_key`` in template
+    context so the template can render the picker without re-deriving
+    the catalogue from settings inline.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    ctx = response.context
+    assert "basemaps" in ctx
+    assert "default_basemap_key" in ctx
+    keys = [bm["key"] for bm in ctx["basemaps"]]
+    assert keys == ["openfreemap_liberty", "swisstopo_winter", "swisstopo_light"]
+    assert all({"key", "label", "url"} <= set(bm) for bm in ctx["basemaps"])
+    assert ctx["default_basemap_key"] == settings.BASEMAP
 
 
 @pytest.mark.django_db

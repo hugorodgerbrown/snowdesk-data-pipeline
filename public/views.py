@@ -826,6 +826,33 @@ def terms(request: HttpRequest) -> HttpResponse:
     return render(request, "public/terms.html")
 
 
+# User-facing labels for the basemap layer picker (SNOW-58). Keyed by the
+# same key as ``settings.BASEMAP_STYLES``; ``gettext_lazy`` so a future
+# i18n pass picks them up. Presentation, not config — lives here rather
+# than in settings so the picker UI stays close to the view that renders it.
+_BASEMAP_LABELS: dict[str, Promise] = {
+    "openfreemap_liberty": _("Standard"),
+    "swisstopo_winter": _("Winter"),
+    "swisstopo_light": _("Light"),
+}
+
+
+def _basemaps_for_picker() -> list[dict[str, Any]]:
+    """Build the ordered ``{key, label, url}`` catalogue for the picker.
+
+    Order follows ``_BASEMAP_LABELS`` (the user-facing intent), not the
+    iteration order of ``settings.BASEMAP_STYLES`` — the labels dict is
+    where the picker's display order is curated. Any key in settings
+    that has no label here is dropped from the picker (still usable as
+    a ``BASEMAP=`` env override on the deployed default).
+    """
+    return [
+        {"key": key, "label": label, "url": settings.BASEMAP_STYLES[key]}
+        for key, label in _BASEMAP_LABELS.items()
+        if key in settings.BASEMAP_STYLES
+    ]
+
+
 def map_view(request: HttpRequest) -> HttpResponse:
     """
     Render the interactive region-choropleth map page.
@@ -837,10 +864,12 @@ def map_view(request: HttpRequest) -> HttpResponse:
     DOM is structured so it can be embedded inside the marketing
     homepage later.
 
-    The basemap style JSON URL is pulled from ``settings.BASEMAP_STYLE_URL``
-    and surfaced to the JS via a ``data-basemap-style`` attribute on the
-    ``#map`` element — swapping basemap candidates is a one-line settings
-    change with no template or JS edit.
+    The basemap layer picker (SNOW-58) is fed two pieces of context:
+    ``basemaps`` — an ordered list of ``{key, label, url}`` dicts built
+    from ``settings.BASEMAP_STYLES`` × ``_BASEMAP_LABELS`` — and
+    ``default_basemap_key`` (``settings.BASEMAP``), the env-resolved
+    fallback used when localStorage is empty or names a basemap that
+    has since been removed from the catalogue.
 
     Args:
         request: The incoming HTTP request.
@@ -861,7 +890,8 @@ def map_view(request: HttpRequest) -> HttpResponse:
         request,
         "public/map.html",
         {
-            "basemap_style_url": settings.BASEMAP_STYLE_URL,
+            "basemaps": _basemaps_for_picker(),
+            "default_basemap_key": settings.BASEMAP,
             "season_start": season_start,
             "season_end": season_end,
             "today": today,

@@ -94,6 +94,80 @@
     }
 }
 
+/* Basemap layer picker (SNOW-58) — round 40×40 pill that anchors a
+   popover of basemap radio options. ``position: relative`` so the
+   absolutely-positioned ``.basemap-menu`` tracks the pill rather than
+   the cluster, which keeps the popover under the pill even after the
+   search pill expands and shifts the layout. */
+.map-utility-pill--basemap {
+    position: relative;
+    width: 40px;
+    flex: 0 0 auto;
+    justify-content: center;
+}
+
+.map-utility-pill--basemap:hover {
+    filter: brightness(1.04);
+}
+
+.basemap-menu {
+    position: absolute;
+    top: 48px;
+    right: 0;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    min-width: 148px;
+    background: var(--color-card);
+    border: 0.5px solid var(--color-border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-glass);
+    z-index: 5;
+}
+
+.basemap-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    color: var(--color-text-1);
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.basemap-menu-item::before {
+    content: "";
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+    border: 1.5px solid var(--color-border);
+    border-radius: 50%;
+    background: transparent;
+    transition: background 120ms ease, border-color 120ms ease;
+}
+
+.basemap-menu-item[aria-checked="true"]::before {
+    background: var(--color-accent, #0c447c);
+    border-color: var(--color-accent, #0c447c);
+    box-shadow: inset 0 0 0 2.5px var(--color-card);
+}
+
+.basemap-menu-item:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.basemap-menu-item:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
 /* Search pill — collapsed to a round 40×40 by default; on expansion
    grows to reveal the input beside the icon. */
 .map-utility-pill--search {

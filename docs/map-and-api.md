@@ -19,6 +19,24 @@ routes through the same `selectFeature` helper used by the map click handler.
 The homepage links to `/map/` via an "Explore the map →" CTA next to the
 existing sample-bulletin button.
 
+**Basemap layer picker (SNOW-58)**: a Google-Maps-style stacked-layers
+pill in the top-right utility cluster opens a popover of basemap radio
+options. The catalogue is `settings.BASEMAP_STYLES` × `_BASEMAP_LABELS`
+(in `public/views.py`); the view passes `basemaps` (ordered list of
+`{key, label, url}`) and `default_basemap_key` (the env-resolved
+fallback) to the template. The user's choice is persisted in
+`localStorage["snowdesk.map.basemap"]`; on boot, the JS uses the stored
+key when it matches a current catalogue entry and otherwise falls back
+to `default_basemap_key`. Selecting a new basemap calls
+`MAP.setStyle(url)`; a `style.load` handler in the main IIFE
+re-installs the `regions` source + `regions-fill` / `regions-line` /
+`regions-label` layers and restores the selected-region outline plus
+any `?d=`-driven scrubber paint. Layer-bound click / mouseenter /
+mouseleave handlers survive the swap because they're bound by layer id.
+A `snowdesk:basemap-changing` event is dispatched before the swap so an
+active timelapse stops cleanly. See [`offline-map.md`](offline-map.md)
+for the picker × offline-precache interaction.
+
 **Route ordering**: `/map/` is registered before `<str:region_id>/` in
 `public/urls.py`. Do not reorder these — Django matches URL patterns
 top-to-bottom and the generic region pattern would swallow `/map/` if it
