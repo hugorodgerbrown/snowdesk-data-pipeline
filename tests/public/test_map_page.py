@@ -75,3 +75,37 @@ def test_map_page_uses_default_basemap_style_url():
     content = response.content.decode()
     expected = settings.BASEMAP_STYLES["openfreemap_liberty"]
     assert f'data-basemap-style="{expected}"' in content
+
+
+@pytest.mark.django_db
+def test_map_page_accepts_date_query_param():
+    """
+    SNOW-47: ``/map/?d=YYYY-MM-DD`` still 200s. The selected date is
+    consumed entirely by JS (which reads ``location.search`` after the
+    page loads), so the only server-side guarantee is that the page
+    doesn't reject or strip the query string. The scrubber data
+    attributes that the JS needs to interpret ``?d=`` must still be
+    present in the rendered markup.
+    """
+    client = Client()
+    response = client.get(reverse("public:map") + "?d=2026-02-15")
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "data-season-start=" in content
+    assert "data-season-end=" in content
+    assert "data-today=" in content
+
+
+@pytest.mark.django_db
+def test_map_page_renders_scrubber_overlay_slots():
+    """
+    SNOW-47: the scrubber template carries an empty selected-bound span
+    (filled by JS when the user scrubs off today) and a date-pill span
+    (shown only while dragging). Both must be rendered server-side so
+    the JS doesn't have to inject DOM nodes.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "season-scrubber-bound-selected" in content
+    assert "season-scrubber-date-pill" in content

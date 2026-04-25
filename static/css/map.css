@@ -710,6 +710,51 @@
     transition: left 200ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* SNOW-47: third bookend slot, populated by JS with the selected date
+   (e.g. "APR 24 2026") whenever the user has scrubbed off today. Hidden
+   until the scrubber's data-has-selection attribute is set so the
+   default state matches the original two-bookend layout. The colour
+   step from --muted to --ink mirrors the active state of the thumb. */
+.season-scrubber-bound-selected {
+    display: none;
+    color: var(--ink);
+}
+
+.season-scrubber[data-has-selection="true"] .season-scrubber-bound-selected {
+    display: inline;
+}
+
+/* SNOW-47: live "Apr 24 2026" overlay shown only while dragging.
+   Absolute-positioned so it floats above the track without affecting
+   layout — the bookend labels stay at their normal x positions and we
+   simply pop the pill on top of them. Visibility (not display) so the
+   pill doesn't reflow when shown/hidden. */
+.season-scrubber-date-pill {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: #fff;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    visibility: hidden;
+}
+
+.season-scrubber.dragging .season-scrubber-date-pill {
+    visibility: visible;
+}
+
+.season-scrubber.dragging .season-scrubber-bound,
+.season-scrubber.dragging .season-scrubber-bound-selected {
+    visibility: hidden;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Debug pill (SNOW-46) — moved from inline styles when the timelapse     */
 /* button was added. Hidden by default; map.js toggles `display` inline   */

@@ -428,6 +428,92 @@ def test_season_ratings_returns_expected_shape():
 
 
 # ---------------------------------------------------------------------------
+# region-summary  (SNOW-47: ?d= date query param)
+# ---------------------------------------------------------------------------
+
+
+def _make_bulletin_for_date(region, day: dt.date, render_model: dict):
+    """Create a bulletin valid for ``day`` in ``region``."""
+    vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
+    vt = datetime(day.year, day.month, day.day, 17, 0, tzinfo=UTC)
+    bulletin = BulletinFactory.create(
+        issued_at=vf - timedelta(minutes=30),
+        valid_from=vf,
+        valid_to=vt,
+        render_model=render_model,
+        render_model_version=render_model.get("version", 3),
+    )
+    RegionBulletinFactory.create(
+        bulletin=bulletin,
+        region=region,
+        region_name_at_time=region.name,
+    )
+    return bulletin
+
+
+@pytest.mark.django_db
+def test_region_summary_accepts_date_query_param():
+    """``?d=YYYY-MM-DD`` returns the bulletin valid for that date, not today."""
+    region = RegionFactory.create(
+        region_id="CH-4115", name="Martigny – Verbier", slug="ch-4115"
+    )
+    # Today's bulletin: HIGH. Past date's bulletin: MODERATE. The ?d=
+    # query must select the past one.
+    _make_today_bulletin(region, _render_model(rating="high"))
+    past_day = timezone.localdate() - timedelta(days=30)
+    _make_bulletin_for_date(region, past_day, _render_model(rating="moderate"))
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=" + past_day.isoformat(),
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # The peek HTML carries the rating word — "moderate" must be there
+    # (from the past-date bulletin), and "high" must NOT (from today's).
+    assert "moderate" in data["peek"].lower()
+    assert "high" not in data["peek"].lower()
+
+
+@pytest.mark.django_db
+def test_region_summary_rejects_bad_date():
+    """An unparseable ``?d=`` returns 400 with a clear error code."""
+    RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=not-a-date",
+    )
+    assert response.status_code == 400
+    assert response.json() == {"error": "bad_date"}
+
+
+@pytest.mark.django_db
+def test_region_summary_404_when_no_bulletin_for_target_date():
+    """A valid date with no bulletin coverage returns 404."""
+    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    # Bulletin only covers today; the past date has no coverage.
+    _make_today_bulletin(region, _render_model())
+    past_day = timezone.localdate() - timedelta(days=180)
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=" + past_day.isoformat(),
+    )
+    assert response.status_code == 404
+    assert response.json() == {"error": "no_bulletin"}
+
+
+@pytest.mark.django_db
+def test_region_summary_defaults_to_today_when_no_date_param():
+    """Without ``?d=`` the endpoint returns today's bulletin (legacy behaviour)."""
+    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    _make_today_bulletin(region, _render_model(rating="considerable"))
+    client = Client()
+    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    assert response.status_code == 200
+    assert "considerable" in response.json()["peek"].lower()
+
+
+# ---------------------------------------------------------------------------
 # Content type
 # ---------------------------------------------------------------------------
 

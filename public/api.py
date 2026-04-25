@@ -21,6 +21,7 @@ endpoint is hit on demand when the user taps a region.
 
 from __future__ import annotations
 
+import datetime
 import logging
 import math
 import urllib.parse
@@ -497,7 +498,7 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
 
 def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     """
-    Return pre-rendered peek + expanded HTML for a region's current bulletin.
+    Return pre-rendered peek + expanded HTML for a region's bulletin.
 
     Response shape::
 
@@ -510,7 +511,14 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     the map sheet and the bulletin page share a single rendering path
     for hazard blocks.
 
-    Returns 404 when the region exists but has no bulletin covering today.
+    Accepts an optional ``?d=YYYY-MM-DD`` query parameter to fetch the
+    bulletin for a specific past or future date — used by the season
+    scrubber on ``/map/`` to refresh the open sheet when the displayed
+    date changes. Defaults to today.
+
+    Returns 400 when ``?d=`` is present but unparseable.
+    Returns 404 when the region exists but has no bulletin covering the
+    requested date.
     Returns 404 when the region_id is unknown.
 
     Args:
@@ -519,12 +527,21 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
 
     Returns:
         A JsonResponse with ``peek`` and ``expanded`` HTML strings, or
-        a 404 ``{"error": "no_bulletin"}`` payload when no bulletin is
-        available.
+        a 400 ``{"error": "bad_date"}`` payload for an unparseable
+        ``?d=``, or a 404 ``{"error": "no_bulletin"}`` payload when no
+        bulletin covers the target date.
 
     """
     region = get_object_or_404(Region, region_id__iexact=region_id)
-    bulletin = _select_bulletin_for_date(region, timezone.localdate())
+    raw_date = request.GET.get("d")
+    if raw_date:
+        try:
+            target_date = datetime.date.fromisoformat(raw_date)
+        except ValueError:
+            return JsonResponse({"error": "bad_date"}, status=400)
+    else:
+        target_date = timezone.localdate()
+    bulletin = _select_bulletin_for_date(region, target_date)
     if bulletin is None:
         return JsonResponse({"error": "no_bulletin"}, status=404)
 

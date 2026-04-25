@@ -21,6 +21,59 @@ let MAP = null;
 const FEATURE_BY_ID = {};
 const FEATURE_BY_REGION_ID = {};
 
+// Resolved by the main IIFE once the MapLibre style has loaded and the
+// regions source has been added. Sibling IIFEs that need to call
+// setFeatureState during boot (e.g. the scrubber on /map/?d=...) await
+// this before painting; user-triggered IIFEs (timelapse) don't need to,
+// since the user can't click before the map is up.
+let resolveMapReady = null;
+const MAP_READY_PROMISE = new Promise((r) => { resolveMapReady = r; });
+
+// Wire-format int → rating string. Inverse of public/api.py::_RATING_TO_INT.
+// Hoisted so the timelapse and the scrubber share one definition.
+const INT_TO_RATING = ['no_rating', 'low', 'moderate', 'considerable', 'high', 'very_high'];
+
+// Lazily-fetched, cached payload from /api/season-ratings/. Shape:
+// { date_iso: { region_id: rating_int } }. Both timelapse (SNOW-46) and
+// the scrubber (SNOW-47) consume the same dataset; sharing one fetch
+// keeps the payload off the wire twice.
+let SEASON_RATINGS_URL = null;
+let SEASON_RATINGS_PROMISE = null;
+
+const getSeasonRatings = () => {
+  if (SEASON_RATINGS_PROMISE !== null) return SEASON_RATINGS_PROMISE;
+  if (!SEASON_RATINGS_URL) {
+    return Promise.reject(new Error('season-ratings URL not set'));
+  }
+  SEASON_RATINGS_PROMISE = fetch(SEASON_RATINGS_URL).then((resp) => {
+    if (!resp.ok) throw new Error('season-ratings fetch failed');
+    return resp.json();
+  });
+  return SEASON_RATINGS_PROMISE;
+};
+
+// Repaint every known region's choropleth fill via MapLibre feature-state
+// for the supplied date. Missing regions in the frame fall back to
+// no_rating so colours from a previous frame don't leak through.
+const repaintRegionsForDate = (dateKey, cache) => {
+  if (!MAP) return;
+  const frame = (cache && cache[dateKey]) || {};
+  for (const [regionID, feature] of Object.entries(FEATURE_BY_REGION_ID)) {
+    const ratingInt = frame[regionID];
+    const rating = ratingInt == null ? 'no_rating' : INT_TO_RATING[ratingInt];
+    MAP.setFeatureState({ source: 'regions', id: feature.id }, { rating });
+  }
+};
+
+// Clear per-feature rating state, reverting the choropleth to the
+// property-based ``rating`` written at page load (today's bulletins).
+const clearRegionRepaint = () => {
+  if (!MAP) return;
+  for (const feature of Object.values(FEATURE_BY_REGION_ID)) {
+    MAP.removeFeatureState({ source: 'regions', id: feature.id }, 'rating');
+  }
+};
+
 (function () {
   'use strict';
 
@@ -38,6 +91,10 @@ const FEATURE_BY_REGION_ID = {};
   // route name stays the single source of truth.
   const REGION_SUMMARY_URL_TEMPLATE = mapEl.dataset.regionSummaryUrl;
   const BASEMAP_STYLE = mapEl.dataset.basemapStyle;
+  // Hand the season-ratings URL to module scope so the timelapse and
+  // scrubber IIFEs (defined further down in this file) can share one
+  // fetch via getSeasonRatings().
+  SEASON_RATINGS_URL = mapEl.dataset.seasonRatingsUrl;
 
   const BULLETIN_SUMMARIES = {};
   const RESORTS_BY_REGION  = {};
@@ -262,11 +319,19 @@ const FEATURE_BY_REGION_ID = {};
     // Returns true on success, false on 404 / network error. The summarySeq
     // guard discards stale responses if the user has tapped a different
     // region while this fetch was in flight.
-    const loadRegionSummary = async (regionID) => {
+    // ``dateKey`` (optional, ``YYYY-MM-DD``) selects the bulletin for a
+    // specific past or future date — passed through as ``?d=`` to the
+    // region-summary API and used by the season scrubber to refresh the
+    // open sheet when the displayed date changes (SNOW-47). Omit to get
+    // today's bulletin, the default.
+    const loadRegionSummary = async (regionID, dateKey) => {
       if (!REGION_ID_RE.test(regionID)) return false;
-      const url = REGION_SUMMARY_URL_TEMPLATE.replace(
+      let url = REGION_SUMMARY_URL_TEMPLATE.replace(
         '__REGION__', encodeURIComponent(regionID),
       );
+      if (dateKey) {
+        url += (url.includes('?') ? '&' : '?') + 'd=' + encodeURIComponent(dateKey);
+      }
       const seq = ++summarySeq;
       try {
         const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
@@ -873,49 +938,213 @@ const FEATURE_BY_REGION_ID = {};
       if (resultsEl.contains(e.target)) return;
       collapseSearch();
     });
+
+    // SNOW-47: when the season scrubber (or any other consumer) commits
+    // a new displayed date, refresh the open sheet so the user sees that
+    // date's bulletin for the currently-selected region. ``selectedId``
+    // and ``REGION_LOOKUP`` are closures over the main IIFE; the
+    // scrubber doesn't see them, so the bridge is an event.
+    document.addEventListener('snowdesk:date-changed', (e) => {
+      if (selectedId === null) return;
+      const props = REGION_LOOKUP[selectedId];
+      if (!props) return;
+      loadRegionSummary(props.regionID, e.detail && e.detail.date);
+    });
+
+    // Signal to sibling IIFEs (scrubber) that the map style + regions
+    // source are ready and setFeatureState calls will now stick. The
+    // scrubber awaits this before painting the boot-time ?d= state.
+    if (resolveMapReady) resolveMapReady();
   });
 })();
 
-// SNOW-37: Season-scrubber thumb drag shim. Visually draggable but snaps
-// back to today — time-travel behaviour is a future ticket.
+// SNOW-47: Season-scrubber wires. Drag the thumb → release commits a
+// date. The map repaints region colours for that date, the open sheet
+// (if any) refreshes via the region-summary API, and the URL gets a
+// ``?d=YYYY-MM-DD`` so the page is linkable. Loading ``/map/?d=…`` on
+// page boot drops the thumb on that date.
+//
+// The scrubber owns no data of its own — it consumes the same
+// season-ratings payload as the timelapse via getSeasonRatings(), and
+// announces date commits via the ``snowdesk:date-changed`` CustomEvent
+// so the main IIFE (sheet) and the timelapse IIFE (stop on grab) can
+// react without seeing each other.
 (function seasonScrubberInit() {
   const scrubber = document.getElementById('season-scrubber');
   if (!scrubber) return;
   const track = scrubber.querySelector('.season-scrubber-track');
   const thumb = scrubber.querySelector('.season-scrubber-thumb');
+  const datePill = scrubber.querySelector('.season-scrubber-date-pill');
+  const selectedBound = scrubber.querySelector('.season-scrubber-bound-selected');
+  const todayKey = scrubber.dataset.today;
   const todayPct = parseFloat(scrubber.dataset.todayPct);
+  const seasonStartMs = Date.parse(scrubber.dataset.seasonStart);
+  const seasonEndMs = Date.parse(scrubber.dataset.seasonEnd);
+  const seasonSpanMs = seasonEndMs - seasonStartMs;
 
+  // Format an ISO date as "Apr 24 2026" — month-name month-number is
+  // locale-friendly and unambiguous (avoids the 04/05 day-vs-month
+  // confusion of all-numeric formats).
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const formatDateLong = (dateKey) => {
+    const [y, m, d] = dateKey.split('-');
+    return `${MONTHS[parseInt(m, 10) - 1]} ${parseInt(d, 10)} ${y}`;
+  };
+
+  // Convert between a thumb percentage (0..100 along the track) and an
+  // ISO date string. Both use the season bounds parsed above and round
+  // to the nearest day — the scrubber is intentionally single-day
+  // resolution (intraday is a future ticket).
+  const pctToDateKey = (pct) => {
+    const ms = seasonStartMs + (pct / 100) * seasonSpanMs;
+    const day = new Date(ms);
+    // Snap to UTC midnight to dodge DST edges, then format.
+    const y = day.getUTCFullYear();
+    const m = String(day.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(day.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+  const dateKeyToPct = (dateKey) => {
+    const ms = Date.parse(dateKey);
+    if (Number.isNaN(ms) || !Number.isFinite(seasonSpanMs) || seasonSpanMs <= 0) {
+      return todayPct;
+    }
+    return Math.max(0, Math.min(100, ((ms - seasonStartMs) / seasonSpanMs) * 100));
+  };
+
+  // Cache + sorted-keys, populated lazily by the shared promise below.
+  // Used both for repaint and for snap-to-data-day on release. Until the
+  // fetch resolves, drag still works — it just won't snap to a real day
+  // boundary, which is fine; the next release after the fetch resolves
+  // will snap.
+  let ratingsCache = null;
+  let sortedDates = null;
+  getSeasonRatings().then((data) => {
+    ratingsCache = data;
+    sortedDates = Object.keys(data).sort();
+  }).catch(() => { /* network fail → leave snap disabled, drag still works */ });
+
+  const snapToNearestDataDay = (dateKey) => {
+    if (!sortedDates || sortedDates.length === 0) return dateKey;
+    let best = sortedDates[0];
+    let bestDelta = Math.abs(Date.parse(best) - Date.parse(dateKey));
+    for (const d of sortedDates) {
+      const delta = Math.abs(Date.parse(d) - Date.parse(dateKey));
+      if (delta < bestDelta) { best = d; bestDelta = delta; }
+    }
+    return best;
+  };
+
+  // Tracks the date the user has committed to — drives URL state, the
+  // selected-bound label, and event payloads. ``null`` means "showing
+  // today, no time-travel"; this stays distinct from ``todayKey`` so the
+  // selected-bound chrome only appears when the user has explicitly
+  // scrubbed off today.
+  let currentDate = null;
+
+  const renderSelectedBound = () => {
+    if (!selectedBound) return;
+    if (currentDate && currentDate !== todayKey) {
+      selectedBound.textContent = formatDateLong(currentDate);
+      scrubber.dataset.hasSelection = 'true';
+    } else {
+      selectedBound.textContent = '';
+      delete scrubber.dataset.hasSelection;
+    }
+  };
+
+  // The single commit point. Updates the thumb, repaints regions, syncs
+  // the URL, and notifies the rest of the page. ``opts.silent`` skips
+  // the URL write — used by the popstate handler so re-applying a
+  // browser-back-restored ``?d=`` doesn't re-write history.
+  const commitDate = (dateKey, opts = {}) => {
+    const isToday = dateKey === todayKey;
+    currentDate = isToday ? null : dateKey;
+    const pct = dateKeyToPct(dateKey);
+    thumb.style.left = pct + '%';
+    scrubber.setAttribute('aria-valuenow', String(Math.round(pct)));
+    if (ratingsCache) repaintRegionsForDate(dateKey, ratingsCache);
+    renderSelectedBound();
+    if (!opts.silent) {
+      // ``replaceState`` (never push) so a long scrub doesn't bury the
+      // back button under dozens of intermediate dates. Today clears the
+      // ``?d=`` param entirely, matching the canonical /map/ URL.
+      const search = isToday ? '' : '?d=' + dateKey;
+      history.replaceState(null, '', '/map/' + search + location.hash);
+    }
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+      detail: { date: dateKey, source: 'scrubber' },
+    }));
+  };
+
+  // ---- Pointer drag ----
   let dragging = false;
   let pointerId = null;
+  let liveDate = null;  // tracked during drag, used by the pill overlay
+
+  const updateDragVisuals = (clientX) => {
+    const rect = track.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    thumb.style.left = pct + '%';
+    liveDate = pctToDateKey(pct);
+    if (datePill) datePill.textContent = formatDateLong(liveDate);
+  };
 
   thumb.addEventListener('pointerdown', (e) => {
     dragging = true;
     pointerId = e.pointerId;
+    scrubber.classList.add('dragging');
     track.classList.add('dragging');
     track.classList.remove('animating');
+    updateDragVisuals(e.clientX);
     e.preventDefault();
   });
 
-  // pointermove / pointerup bind to `document` (not `thumb`) so the drag
-  // keeps tracking once the cursor leaves the 14px thumb hit target.
   document.addEventListener('pointermove', (e) => {
     if (!dragging || e.pointerId !== pointerId) return;
-    const rect = track.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-    thumb.style.left = pct + '%';
+    updateDragVisuals(e.clientX);
   });
 
-  function release(e) {
+  const release = (e) => {
     if (!dragging || (e && e.pointerId !== pointerId)) return;
     dragging = false;
     pointerId = null;
+    scrubber.classList.remove('dragging');
     track.classList.remove('dragging');
-    track.classList.add('animating');
-    thumb.style.left = todayPct + '%';
-    setTimeout(() => track.classList.remove('animating'), 220);
-  }
+    const snapped = snapToNearestDataDay(liveDate || todayKey);
+    commitDate(snapped);
+    liveDate = null;
+  };
   document.addEventListener('pointerup', release);
   document.addEventListener('pointercancel', release);
+
+  // ---- Boot from URL ----
+  // Read ?d= once on init. If parseable and inside the season window,
+  // commit it (which positions the thumb + queues the repaint once the
+  // ratings cache resolves). Otherwise leave the thumb at today's pct.
+  const isInSeason = (dateKey) => {
+    const ms = Date.parse(dateKey);
+    return Number.isFinite(ms) && ms >= seasonStartMs && ms <= seasonEndMs;
+  };
+  const bootDate = new URL(location.href).searchParams.get('d');
+  if (bootDate && /^\d{4}-\d{2}-\d{2}$/.test(bootDate) && isInSeason(bootDate)) {
+    // Defer until both the map style and the ratings cache are ready —
+    // commitDate calls repaintRegionsForDate which needs MAP and the
+    // regions source up. The thumb position can be set immediately so
+    // the boot UI is correct even before paint.
+    thumb.style.left = dateKeyToPct(bootDate) + '%';
+    Promise.all([MAP_READY_PROMISE, getSeasonRatings().catch(() => null)]).then(() => {
+      commitDate(bootDate, { silent: true });
+    });
+  }
+
+  // ---- Browser back/forward ----
+  window.addEventListener('popstate', () => {
+    const d = new URL(location.href).searchParams.get('d');
+    const target = d && /^\d{4}-\d{2}-\d{2}$/.test(d) && isInSeason(d) ? d : todayKey;
+    commitDate(target, { silent: true });
+  });
 })();
 
 // SNOW-38: Collapsible danger-scale legend. State persists in localStorage
@@ -969,13 +1198,7 @@ const FEATURE_BY_REGION_ID = {};
 
   const mapEl = document.getElementById('map');
   const overlay = document.getElementById('timelapse-date');
-  const SEASON_RATINGS_URL = mapEl.dataset.seasonRatingsUrl;
   const FRAME_MS = 100;  // 10 fps
-
-  // Inverse of public/api.py::_RATING_TO_INT. Index into this with the
-  // wire-format int to recover the rating string the fill expression
-  // expects.
-  const INT_TO_RATING = ['no_rating', 'low', 'moderate', 'considerable', 'high', 'very_high'];
 
   // Season-scrubber sync — drive the existing thumb so the operator
   // sees the playback position on the same control they will eventually
@@ -1004,15 +1227,7 @@ const FEATURE_BY_REGION_ID = {};
   const setOverlay = (text) => { overlay.textContent = text; };
 
   const applyFrame = (dateKey) => {
-    const frame = cache[dateKey] || {};
-    // For every region we know about, write a feature-state rating —
-    // missing region_ids in this frame fall back to no_rating so old
-    // colours from a previous frame don't leak through.
-    for (const [regionID, feature] of Object.entries(FEATURE_BY_REGION_ID)) {
-      const ratingInt = frame[regionID];
-      const rating = ratingInt == null ? 'no_rating' : INT_TO_RATING[ratingInt];
-      MAP.setFeatureState({ source: 'regions', id: feature.id }, { rating });
-    }
+    repaintRegionsForDate(dateKey, cache);
     setOverlay(dateKey);
     moveScrubber(dateKey);
   };
@@ -1027,11 +1242,7 @@ const FEATURE_BY_REGION_ID = {};
     // Revert to today's colours — clearing feature-state lets the
     // ``coalesce`` fall through to the property-based ``rating`` that
     // was written at page load.
-    if (cache) {
-      for (const feature of Object.values(FEATURE_BY_REGION_ID)) {
-        MAP.removeFeatureState({ source: 'regions', id: feature.id }, 'rating');
-      }
-    }
+    if (cache) clearRegionRepaint();
     setOverlay('');
     if (scrubberThumb && Number.isFinite(todayPct)) {
       scrubberThumb.style.left = todayPct + '%';
@@ -1042,9 +1253,7 @@ const FEATURE_BY_REGION_ID = {};
     if (!MAP || !MAP.isStyleLoaded()) return;
     if (cache === null) {
       try {
-        const resp = await fetch(SEASON_RATINGS_URL);
-        if (!resp.ok) return;
-        cache = await resp.json();
+        cache = await getSeasonRatings();
         sortedDates = Object.keys(cache).sort();
       } catch (_err) {
         return;
@@ -1067,6 +1276,15 @@ const FEATURE_BY_REGION_ID = {};
       applyFrame(sortedDates[frameIdx]);
     }, FRAME_MS);
   };
+
+  // SNOW-47: when the scrubber commits a new date, the timelapse must
+  // surrender control — both consumers paint via feature-state on the
+  // same source, so a running timer would fight any user scrub.
+  document.addEventListener('snowdesk:date-changed', (e) => {
+    if (timer !== null && (!e.detail || e.detail.source !== 'timelapse')) {
+      stop();
+    }
+  });
 
   button.addEventListener('click', () => {
     if (timer !== null) stop();
