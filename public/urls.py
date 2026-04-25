@@ -4,6 +4,8 @@ public/urls.py — URL routing for the public bulletin site.
 URL structure:
   /                                            Marketing homepage.
   /map/                                        Interactive region-choropleth map.
+  /terms/                                      SLF data-licence acknowledgement
+                                               + Snowdesk liability disclaimer.
   /examples/random/                            Redirects to a random bulletin.
   /examples/category/<danger_level>/           Redirects to a random bulletin
                                                matching the given danger level.
@@ -14,9 +16,9 @@ URL structure:
   /<region_id>/<slug>/                         Today's bulletin for a region.
   /<region_id>/<slug>/<date>/                  Bulletin for a specific date.
 
-The ``/map/``, ``/examples/`` and ``/<region_id>/season/`` routes are
-registered before the generic ``<str:region_id>/<slug:slug>/`` pattern so
-Django's URL resolver matches the literal suffixes first.
+The ``/map/``, ``/terms/``, ``/examples/`` and ``/<region_id>/season/``
+routes are registered before the generic ``<str:region_id>/<slug:slug>/``
+pattern so Django's URL resolver matches the literal suffixes first.
 """
 
 from django.conf import settings
@@ -29,6 +31,9 @@ app_name = "public"
 urlpatterns = [
     path("", views.home, name="home"),
     path("map/", views.map_view, name="map"),
+    # SLF data-licence acknowledgement page — registered before generic
+    # <str:region_id>/ patterns so "terms" never resolves as a region_id.
+    path("terms/", views.terms, name="terms"),
     # Calendar partial — registered before generic <str:region_id>/ patterns.
     path(
         "partials/calendar/<str:region_id>/<int:year>/<int:month>/",

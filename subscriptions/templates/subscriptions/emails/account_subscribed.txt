@@ -15,3 +15,4 @@ This link expires in {{ hours }} hours.
 
 ---
 {% trans "Snowdesk — Swiss Avalanche Bulletins" %}
+{% trans "Avalanche data: WSL Institute for Snow and Avalanche Research SLF (slf.ch) · Licensed under CC BY 4.0" %}

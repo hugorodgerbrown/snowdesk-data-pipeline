@@ -95,6 +95,21 @@ class TestSendAccountAccessEmail:
         _, mimetype = mail.outbox[0].alternatives[0]
         assert mimetype == "text/html"
 
+    def test_text_body_includes_slf_attribution(self):
+        """SLF licence credit appears in the plain-text body (SNOW-30)."""
+        send_account_access_email("alice@example.com")
+        body = mail.outbox[0].body
+        assert "WSL Institute for Snow and Avalanche Research SLF" in body
+        assert "CC BY 4.0" in body
+
+    def test_html_body_includes_slf_attribution(self):
+        """SLF licence credit appears in the HTML alternative (SNOW-30)."""
+        send_account_access_email("alice@example.com")
+        html, _ = mail.outbox[0].alternatives[0]
+        assert "WSL Institute for Snow and Avalanche Research SLF" in html
+        assert "https://www.slf.ch" in html
+        assert "CC BY 4.0" in html
+
 
 @pytest.mark.django_db
 class TestSendSubscriptionConfirmationEmail:
@@ -179,6 +194,23 @@ class TestSendSubscriptionConfirmationEmail:
             "alice@example.com", region=region, request=request
         )
         assert "/subscribe/account/" in mail.outbox[0].body
+
+    def test_text_body_includes_slf_attribution(self):
+        """SLF licence credit appears in the plain-text body (SNOW-30)."""
+        region = RegionFactory.create(name="Engelberg Region")
+        send_subscription_confirmation_email("alice@example.com", region=region)
+        body = mail.outbox[0].body
+        assert "WSL Institute for Snow and Avalanche Research SLF" in body
+        assert "CC BY 4.0" in body
+
+    def test_html_body_includes_slf_attribution(self):
+        """SLF licence credit appears in the HTML alternative (SNOW-30)."""
+        region = RegionFactory.create(name="Engelberg Region")
+        send_subscription_confirmation_email("alice@example.com", region=region)
+        html, _ = mail.outbox[0].alternatives[0]
+        assert "WSL Institute for Snow and Avalanche Research SLF" in html
+        assert "https://www.slf.ch" in html
+        assert "CC BY 4.0" in html
 
 
 @pytest.mark.django_db

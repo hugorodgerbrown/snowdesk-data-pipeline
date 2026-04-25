@@ -1,0 +1,35 @@
+{% comment %}
+public/templates/public/_site_footer.html — Global site footer.
+
+Renders SLF data-licence attribution on every page that extends
+public/base.html (per the SLF CC BY 4.0 obligation tracked in SNOW-30).
+Pages that already carry a richer per-page footer (e.g. bulletin.html)
+still render this small line below — the rich page footer is content
+context, this is the site licence line.
+
+Kept deliberately minimal: one line of attribution + a /terms link.
+Visual weight should not compete with page content.
+{% endcomment %}
+{% load i18n %}
+<footer
+    class="border-t border-border text-xs text-text-3 px-4 py-3 text-center"
+    data-testid="site-footer"
+>
+    <p>
+        {% url 'public:terms' as terms_url %}
+        {% blocktrans trimmed %}
+            Avalanche data:
+            <a class="underline hover:text-text-2" href="https://www.slf.ch" target="_blank" rel="noopener"
+            >WSL Institute for Snow and Avalanche Research SLF</a>
+            &middot; Licensed under
+            <a
+                class="underline hover:text-text-2"
+                href="https://creativecommons.org/licenses/by/4.0/"
+                target="_blank"
+                rel="noopener"
+            >CC BY 4.0</a>
+            &middot;
+            <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms</a>
+        {% endblocktrans %}
+    </p>
+</footer>

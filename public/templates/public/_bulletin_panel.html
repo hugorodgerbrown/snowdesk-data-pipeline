@@ -244,6 +244,35 @@ The admin link is only rendered for authenticated staff users.
                 <p class="text-[0.7rem] tracking-[0.04em] text-text-3 mt-1 text-right">{% trans "SLF Bulletin" %}</p>
             </div>
         {% endif %}
+
+        {# SLF source attribution + field-observation feedback link.       #}
+        {# Required by the SLF data licence — see SNOW-30. Rendered on    #}
+        {# every bulletin panel (season view, history view, and any other #}
+        {# surface that includes _bulletin_panel.html).                    #}
+        <div
+            class="mt-3 pt-2.5 border-t border-border text-[0.7rem] text-text-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1"
+            data-testid="panel-slf-attribution"
+        >
+            <span>
+                {% trans "Source:" %}
+                <a
+                    class="underline hover:text-text-2"
+                    href="https://www.slf.ch"
+                    target="_blank"
+                    rel="noopener"
+                >{% trans "SLF" %}</a>
+                {% if panel.bulletin.issued_at %}
+                    &middot; {% blocktrans with t=panel.bulletin.issued_at|date:"j M H:i" trimmed %}Published {{ t }} UTC{% endblocktrans %}
+                {% endif %}
+            </span>
+            <a
+                class="underline hover:text-text-2"
+                href="https://pro.slf.ch/reply/public/#/"
+                target="_blank"
+                rel="noopener"
+                data-testid="slf-feedback-link"
+            >{% trans "Report observations ↗" %}</a>
+        </div>
     </div>
 
     {# ── Debug: day character label ──────────────────────────────── #}

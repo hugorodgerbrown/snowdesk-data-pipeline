@@ -806,6 +806,26 @@ def home(request: HttpRequest) -> HttpResponse:
     return render(request, "public/home.html")
 
 
+def terms(request: HttpRequest) -> HttpResponse:
+    """
+    Render the /terms page.
+
+    Holds the SLF data-licence acknowledgement and Snowdesk's liability
+    disclaimer. Introduced for SLF data-licence compliance (SNOW-30);
+    the actual legal copy is authored by Hugo separately and edited
+    directly into ``public/templates/public/terms.html``. This view
+    is purely a static-template render — no context required.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered terms page.
+
+    """
+    return render(request, "public/terms.html")
+
+
 def map_view(request: HttpRequest) -> HttpResponse:
     """
     Render the interactive region-choropleth map page.

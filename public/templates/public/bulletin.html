@@ -519,6 +519,18 @@ Six structural sections, top to bottom:
                 >{% trans "SLF — WSL Institute for Snow and Avalanche Research" %}</a>.
                 {% trans "Rendered by Snowdesk." %}
             </p>
+            {# SLF requests data consumers surface a link to their public  #}
+            {# field-observation reporting tool. Required by the data     #}
+            {# licence terms — see SNOW-30.                                #}
+            <p class="mt-1">
+                <a
+                    class="underline hover:text-text-2"
+                    href="https://pro.slf.ch/reply/public/#/"
+                    target="_blank"
+                    rel="noopener"
+                    data-testid="slf-feedback-link"
+                >{% trans "Report field observations to SLF ↗" %}</a>
+            </p>
         </footer>
 
         {# ── Subscribe CTA (always visible) ────────────────────────── #}
