@@ -8,7 +8,7 @@ and a confirmation email has been sent.
 {% endcomment %}
 <div class="bg-card rounded-[12px] border border-text-3/10 shadow-sm p-6">
     <h2 class="text-base font-semibold text-text-1 mb-1">
-        {% blocktrans with region=region_name trimmed %}
+        {% blocktrans with region=region_name|force_escape trimmed %}
             Added <strong>{{ region }}</strong> to your alerts
         {% endblocktrans %}
     </h2>
