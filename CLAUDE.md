@@ -186,6 +186,8 @@ poetry run tox -e mypy
 poetry run tox -e django-checks
 poetry run tox -e fmt             # ruff format --check
 poetry run tox -e lint            # ruff check
+poetry run tox -e audit           # pip-audit on the locked dependency set
+poetry run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
 poetry run tox --recreate         # rebuild envs from scratch after a deps change
 ```
 
