@@ -239,6 +239,11 @@ const clearRegionRepaint = () => {
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
 
+  // SNOW-68: log zoom level on each zoom gesture when debug mode is active.
+  map.on('zoomend', () => {
+    if (DEBUG) console.log('[map] zoom:', map.getZoom().toFixed(2));
+  });
+
   // In-memory lookup from numeric feature id -> region properties.
   // Numeric because setFeatureState requires a numeric (or numeric-coerceable) id.
   const REGION_LOOKUP = {};
