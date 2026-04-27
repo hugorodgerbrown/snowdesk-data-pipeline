@@ -1232,12 +1232,232 @@ def _bulletin_page_etag(
     if latest is None:
         return None
     issue = request.GET.get("issue") or ""
+    masthead = request.GET.get("masthead") or ""
     return (
         f'W/"{int(latest.timestamp())}'
         f"-{issue}"
+        f"-m{masthead}"
         f"-{RENDER_MODEL_VERSION}"
         f'-{settings.RELEASE_VERSION}"'
     )
+
+
+# Day-of-week abbreviations for the v2 masthead day-strip. Hard-coded
+# (not locale-derived) because the design freeze specifies "Mon Tue Wed …"
+# and the soft-launch is English-only per project_language_scope memory.
+_MASTHEAD_DOW_ABBR: tuple[str, ...] = (
+    "Mon",
+    "Tue",
+    "Wed",
+    "Thu",
+    "Fri",
+    "Sat",
+    "Sun",
+)
+
+
+def _build_masthead_days(
+    region: Region,
+    focal_date: datetime.date,
+) -> list[dict[str, Any]]:
+    """
+    Build the calendar-week (Mon–Sun) day-strip for the v2 masthead.
+
+    The strip is **static**: it always renders the seven days of the
+    calendar week that contains ``focal_date``, with the focal cell
+    highlighted. Navigating between days within the same week does not
+    shift the strip; jumping to a different week is the calendar
+    control's job (top-right of the page chrome).
+
+    Each entry carries the data the masthead partial needs to render one
+    ``.bm-day``: the day-of-week abbreviation, the day-of-month number,
+    an absolute href (with ``?masthead=v2`` preserved so the strip stays
+    in v2 mode), and the EAWS keys for the split swatch.
+
+    Per-period (earlier / later) keys are derived from the source
+    bulletin's CAAML ``dangerRatings`` via :func:`_resolve_period_danger`,
+    so the swatch reflects the same morning/afternoon split the headline
+    band uses. A day with no :class:`RegionDayRating` row — or one whose
+    rating is ``NO_RATING`` — renders empty (dashed swatch, span instead
+    of anchor so it's non-navigable). When ``source_bulletin`` is missing
+    (`SET_NULL` after deletion) we fall back to the row's stored
+    ``min_rating`` / ``max_rating``.
+    """
+    # Monday of the calendar week containing focal_date. ``weekday()``
+    # returns 0 for Monday, 6 for Sunday — so subtracting it normalises
+    # any focal day to that week's Monday regardless of which day we're
+    # looking at.
+    monday = focal_date - datetime.timedelta(days=focal_date.weekday())
+    sunday = monday + datetime.timedelta(days=6)
+    rows = RegionDayRating.objects.filter(
+        region=region,
+        date__gte=monday,
+        date__lte=sunday,
+    ).select_related("source_bulletin")
+    rows_by_date = {row.date: row for row in rows}
+    region_slug = slugify(region.name)
+    days: list[dict[str, Any]] = []
+    for offset in range(7):
+        d = monday + datetime.timedelta(days=offset)
+        href = "{}?masthead=v2".format(
+            reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": region.region_id,
+                    "slug": region_slug,
+                    "date_str": d.isoformat(),
+                },
+            )
+        )
+        cell: dict[str, Any] = {
+            "date": d,
+            "dow": _MASTHEAD_DOW_ABBR[d.weekday()],
+            "day_num": d.day,
+            "is_focal": d == focal_date,
+            "href": href,
+        }
+        row = rows_by_date.get(d)
+        if row is None or row.max_rating == RegionDayRating.Rating.NO_RATING:
+            cell.update(
+                is_empty=True,
+                earlier_css="",
+                later_css="",
+                is_all_day=True,
+            )
+            days.append(cell)
+            continue
+
+        earlier_key = row.min_rating
+        later_key = row.max_rating
+        if row.source_bulletin is not None:
+            props = _get_properties(row.source_bulletin)
+            ratings = props.get("dangerRatings") or []
+            traits = (row.source_bulletin.render_model or {}).get("traits") or []
+            earlier_key, _ = _resolve_period_danger(ratings, traits, _MORNING_PERIODS)
+            later_key, _ = _resolve_period_danger(ratings, traits, _AFTERNOON_PERIODS)
+
+        cell.update(
+            is_empty=False,
+            earlier_css=earlier_key.replace("_", "-"),
+            later_css=later_key.replace("_", "-"),
+            is_all_day=earlier_key == later_key,
+        )
+        days.append(cell)
+    return days
+
+
+# Order in which day-window rows appear on the new masthead's day-windows
+# panel. CAAML's ``validTimePeriod`` doesn't impose an ordering; the design
+# handoff fixes this as chronological-with-all-day-in-the-middle so rare
+# three-window days (earlier + all_day + later) read top-to-bottom.
+_DAY_WINDOW_ORDER: tuple[str, ...] = ("earlier", "all_day", "later")
+
+# Pill copy for each window type — see design_handoff_day_windows/README.md.
+# Wrapped in ``gettext_lazy`` so the strings stay translatable for any
+# future i18n pass even though the soft launch is English-only.
+_DAY_WINDOW_PILL_LABELS: dict[str, Promise] = {
+    "earlier": _("Earlier"),
+    "all_day": _("All day"),
+    "later": _("Later"),
+}
+
+
+def _resolve_window_level(
+    period_ratings: list[dict[str, Any]],
+    period_traits: list[dict[str, Any]],
+) -> str | None:
+    """
+    Pick the level key for one day-window row.
+
+    Primary source is the CAAML ``dangerRatings`` filtered to this period;
+    fallback path derives from ``traits[].danger_level`` for fixtures that
+    only populate the render model. Returns ``None`` when neither source
+    yields a usable level — the caller skips the window in that case.
+    """
+    if period_ratings:
+        level_key, _subdivision = _highest_danger_key(period_ratings)
+        return level_key
+    levels = [
+        t["danger_level"]
+        for t in period_traits
+        if isinstance(t.get("danger_level"), int) and 1 <= t["danger_level"] <= 5
+    ]
+    if not levels:
+        return None
+    return cast("str", _DANGER_ORDER[max(levels) - 1])
+
+
+def _resolve_window_caption(period_traits: list[dict[str, Any]]) -> str:
+    """
+    Pick the editorial caption for one day-window row.
+
+    The trait with the highest ``danger_level`` wins; same-level traits
+    fall back to render-model order (first occurrence). Returns an empty
+    string when no covering trait carries a title — the panel renders the
+    row without a caption rather than inventing copy.
+    """
+    if not period_traits:
+        return ""
+    scored = [
+        (t.get("danger_level") or 0, idx, t) for idx, t in enumerate(period_traits)
+    ]
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return scored[0][2].get("title") or ""
+
+
+def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
+    """
+    Return the list[Window] consumed by the day-windows panel partial.
+
+    One row per ``validTimePeriod`` present on the bulletin. The level is
+    the highest CAAML ``mainValue`` seen for that period; the caption is
+    the title of the highest-``danger_level`` render-model trait scoped to
+    the same period (an empty string when no covering trait carries a
+    title).
+
+    The CAAML ``dangerRatings`` list is the primary source — when it is
+    absent (test fixtures populate ``render_model`` only), the helper
+    falls back to grouping ``render_model.traits`` by ``time_period`` and
+    deriving the level from ``danger_level``. Both paths yield the same
+    output shape.
+
+    Returns an empty list when the bulletin has neither dangerRatings nor
+    traits — the template hides the panel in that case rather than
+    rendering an empty card.
+    """
+    props = _get_properties(bulletin)
+    ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
+    traits: list[dict[str, Any]] = (bulletin.render_model or {}).get("traits") or []
+
+    ratings_by_period: dict[str, list[dict[str, Any]]] = {}
+    for r in ratings:
+        period = r.get("validTimePeriod") or "all_day"
+        ratings_by_period.setdefault(period, []).append(r)
+
+    traits_by_period: dict[str, list[dict[str, Any]]] = {}
+    for t in traits:
+        period = t.get("time_period") or "all_day"
+        traits_by_period.setdefault(period, []).append(t)
+
+    windows: list[dict[str, Any]] = []
+    for period in _DAY_WINDOW_ORDER:
+        period_ratings = ratings_by_period.get(period, [])
+        period_traits = traits_by_period.get(period, [])
+        level_key = _resolve_window_level(period_ratings, period_traits)
+        if level_key is None:
+            continue
+        windows.append(
+            {
+                "type": period,
+                "level_key": level_key,
+                "level_css": level_key.replace("_", "-"),
+                "level_label": _DANGER_PANEL_META[level_key]["label"],
+                "level_number": _DANGER_PANEL_META[level_key]["number"],
+                "caption": _resolve_window_caption(period_traits),
+                "pill_label": _DAY_WINDOW_PILL_LABELS[period],
+            }
+        )
+    return windows
 
 
 @condition(
@@ -1373,6 +1593,18 @@ def bulletin_detail(
         urlencode({"date": page_date.isoformat()}),
     )
 
+    # v2 masthead opt-in (SNOW-70). Gated on ``?masthead=v2`` so the
+    # existing inline masthead remains the default while the redesign is
+    # iterated on. Only build the 7-day window when the new masthead is
+    # actually being rendered — otherwise it's an unused query per pageview.
+    use_new_masthead = request.GET.get("masthead") == "v2"
+    masthead_days: list[dict[str, Any]] = (
+        _build_masthead_days(region, page_date) if use_new_masthead else []
+    )
+    day_windows: list[dict[str, Any]] = (
+        _build_day_windows(selected) if use_new_masthead else []
+    )
+
     context = {
         "region": region,
         "region_name": region_name,
@@ -1392,6 +1624,10 @@ def bulletin_detail(
         "calendar_region_id": region.region_id,
         "calendar_partial_url": calendar_partial_url,
         "calendar_current_date": page_date,
+        # v2 masthead.
+        "use_new_masthead": use_new_masthead,
+        "masthead_days": masthead_days,
+        "day_windows": day_windows,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 

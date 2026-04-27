@@ -1,0 +1,28 @@
+{% load i18n %}
+{% comment %}
+templates/includes/day_windows.html — Day Windows panel (SNOW-70).
+
+Frozen design from design_handoff_day_windows/components-day-windows.html.
+Sits between the bulletin masthead's day strip and the first rating
+block. One row per validTimePeriod (earlier / all_day / later); pure
+type + colour, no problem icons (those are the rating blocks' job).
+
+Required context:
+  day_windows — list[dict] built by _build_day_windows() in views.py;
+                each entry carries type, level_key, level_css,
+                level_label, level_number, caption, pill_label.
+{% endcomment %}
+{% if day_windows %}
+    <section class="dw-panel" aria-label="{% trans 'Avalanche conditions by window' %}" data-testid="day-windows-panel">
+        {% for w in day_windows %}
+            <div class="dw-row" data-testid="day-window-row" data-window="{{ w.type }}">
+                <div class="dw-tile lv-{{ w.level_css }}" aria-hidden="true">{{ w.level_number }}</div>
+                <div class="dw-body">
+                    <div class="dw-level">{{ w.level_label }}</div>
+                    {% if w.caption %}<div class="dw-caption">{{ w.caption }}</div>{% endif %}
+                </div>
+                <span class="dw-pill" data-testid="day-window-pill">{{ w.pill_label }}</span>
+            </div>
+        {% endfor %}
+    </section>
+{% endif %}
