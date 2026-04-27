@@ -105,7 +105,7 @@ def _problem(
     """
     Build a raw render-model problem dict (as stored in DB, pre-enrichment).
 
-    The view's ``_enrich_render_model`` converts these to the richer shape
+    ``public.views.enrich_render_model`` converts these to the richer shape
     expected by templates at render time.  Tests must store only JSON-safe
     structures in the DB.
     """

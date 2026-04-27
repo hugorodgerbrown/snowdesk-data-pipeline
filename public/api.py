@@ -46,7 +46,12 @@ from pipeline.models import (
     RegionDayRating,
 )
 
-from .views import _PROBLEM_LABELS, _select_bulletin_for_date, _select_default_issue
+from .views import (
+    _PROBLEM_LABELS,
+    _select_bulletin_for_date,
+    _select_default_issue,
+    enrich_render_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -588,7 +593,10 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     manage transitions. The expanded fragment composes
     ``public/_rating_block.html`` per render-model trait, which means
     the map sheet and the bulletin page share a single rendering path
-    for hazard blocks.
+    for hazard blocks. The render model is fed through
+    :func:`public.views.enrich_render_model` first so the partial sees
+    the same presentation-ready shape (labels, ``ElevationBounds``,
+    period labels) it gets on the bulletin page.
 
     Accepts an optional ``?d=YYYY-MM-DD`` query parameter to fetch the
     bulletin for a specific past or future date — used by the season
@@ -624,7 +632,10 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     if bulletin is None:
         return JsonResponse({"error": "no_bulletin"}, status=404)
 
-    rm = bulletin.render_model or {}
+    # _rating_block.html requires presentation-ready fields (label,
+    # time_period_label, ElevationBounds); without enrichment those rows
+    # silently disappear via the partial's {% if %} guards.
+    rm = enrich_render_model(bulletin.render_model or {})
     bulletin_url = reverse("public:bulletin", args=[region.region_id, region.slug])
 
     ctx = {

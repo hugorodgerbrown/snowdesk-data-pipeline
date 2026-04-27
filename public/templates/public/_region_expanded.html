@@ -9,7 +9,8 @@ map sheet and the bulletin page render hazard blocks through the same
 code path — future tweaks to the partial propagate automatically.
 
 Expects the following variables in scope:
-  rm            — the bulletin's render_model dict.
+  rm            — the bulletin's render_model dict, post-enrichment
+                  (see ``public.views.enrich_render_model``).
   bulletin_url  — pre-resolved URL for the full bulletin page.
 
 The SLF source/feedback line at the bottom is required by the SLF

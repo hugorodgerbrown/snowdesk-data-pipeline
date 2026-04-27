@@ -604,6 +604,58 @@ def test_region_summary_defaults_to_today_when_no_date_param():
     assert "considerable" in response.json()["peek"].lower()
 
 
+@pytest.mark.django_db
+def test_region_summary_expanded_html_includes_enriched_fields():
+    """
+    The drawer's ``expanded`` HTML must contain the same enriched fields the
+    bulletin page renders: a humanised problem-type label, the period pill
+    text, and the formatted elevation string. Regression guard for SNOW-69
+    where the drawer was passing the raw ``render_model`` straight through
+    and the partial silently skipped these rows.
+    """
+    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    rm = _render_model(
+        problem_type="wet_snow",
+        elevation={"lower": 2400, "upper": None, "treeline": False},
+    )
+    # _render_model defaults to time_period="all_day"; flip the problem to
+    # "later" so we exercise the time_period_label path too.
+    rm["traits"][0]["problems"][0]["time_period"] = "later"
+    _make_today_bulletin(region, rm)
+
+    client = Client()
+    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    assert response.status_code == 200
+    expanded = response.json()["expanded"]
+
+    # Humanised problem-type label (from _PROBLEM_LABELS).
+    assert "Wet snow" in expanded
+    # ValidTimePeriod label for "later". The partial uppercases it via CSS,
+    # so the underlying string is rendered as-is.
+    assert "Later (afternoon)" in expanded
+    # Formatted elevation string from ElevationBounds.display.
+    assert "above 2400" in expanded
+
+
+@pytest.mark.django_db
+def test_region_summary_expanded_html_renders_aspect_elevation_row():
+    """
+    The aspect/elevation row only renders when the partial sees structured
+    data (``geography.source == "problems"`` plus aspects or an
+    ``ElevationBounds`` truthy) — this exercises the drawer end-to-end and
+    fails if the drawer ever drops the enrichment step again.
+    """
+    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    _make_today_bulletin(region, _render_model())
+
+    client = Client()
+    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    assert response.status_code == 200
+    expanded = response.json()["expanded"]
+
+    assert 'data-testid="aspect-elevation-row"' in expanded
+
+
 # ---------------------------------------------------------------------------
 # Content type
 # ---------------------------------------------------------------------------

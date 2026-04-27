@@ -366,7 +366,7 @@ print("Done. 6 bulletins loaded.")
 
 - `pipeline/services/render_model.py` — builder + `compute_day_character` + `RenderModelBuildError`
 - `pipeline/management/commands/rebuild_render_models.py` — management command
-- `public/views.py` — `_build_panel_context`, `_get_render_model`, `_enrich_render_model`, safety net
+- `public/views.py` — `_build_panel_context`, `_get_render_model`, `enrich_render_model`, safety net
 - `public/templates/public/_bulletin_panel.html` — trait rendering, error card, empty-traits card, prose-only branch
 - `pipeline/admin.py` — BulletinAdmin (render_model_version is editable, not read-only)
 - `sample_data/sample_variable_day.json`, `sample_stable_day.json`, `sample_subdivision_3plus_day.json`, `sample_prose_only_day.json`, `sample_no_aggregation_day.json`, `sample_unknown_problem_type.json`
