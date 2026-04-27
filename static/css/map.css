@@ -80,9 +80,6 @@
     animation: map-utility-spin 1.1s linear infinite;
 }
 
-.map-utility-pill--button[aria-pressed="true"] {
-    color: var(--color-accent, #0c447c);
-}
 
 .map-utility-pill--button[data-state="saved"] {
     color: var(--color-eaws-low-text);

@@ -1833,8 +1833,8 @@ const clearRegionRepaint = () => {
   }
 })();
 
-// SNOW-63: auto-zoom toggle — a standalone button that persists the
-// AUTOZOOM flag and keeps its aria-pressed state in sync.
+// SNOW-65: auto-zoom toggle — now a menuitemcheckbox inside the layers
+// menu rather than a standalone icon button.
 (function autozoomToggleInit() {
   const btn = document.getElementById('autozoom-toggle');
   if (!btn) return;
@@ -1842,7 +1842,7 @@ const clearRegionRepaint = () => {
   const STORAGE_KEY = 'snowdesk.map.autozoom';
 
   const sync = () => {
-    btn.setAttribute('aria-pressed', AUTOZOOM ? 'true' : 'false');
+    btn.setAttribute('aria-checked', AUTOZOOM ? 'true' : 'false');
   };
 
   sync(); // Reflect the value already set by the main IIFE from localStorage.
