@@ -25,11 +25,22 @@ cache management) will harden under follow-up tickets.
   cache would be silently useless. Degrades to a hard-coded fallback
   template on OFM failure so the manifest always returns something.
 
-**Cache version** — `_OFFLINE_MANIFEST_VERSION = "map-shell-v1"`. Bump
-the suffix when the manifest contents change in a way that requires
-clients to re-precache; the SW's `activate` handler deletes any cache
-whose name starts with `map-shell-` and doesn't match the current
-version.
+**Cache version** — `_OFFLINE_MANIFEST_VERSION = "map-shell-v2"` (in
+`public/api.py`). Bump the suffix whenever deploying a change that affects
+cached shell assets (JS, CSS, HTML, or the API responses in the manifest).
+The SW's `activate` handler deletes any `map-shell-*` cache that doesn't
+match the current version, and `offline.js` reloads all open tabs via a
+`controllerchange` listener so they pick up fresh assets immediately.
+
+**Deploy procedure when shell assets change:**
+1. Bump `_OFFLINE_MANIFEST_VERSION` (e.g. `map-shell-v2` → `map-shell-v3`).
+2. Deploy. The new `sw.js` is served with `Cache-Control: no-cache` so
+   browsers fetch it immediately on next page load.
+3. The new SW installs, calls `skipWaiting()`, and claims all tabs.
+4. `controllerchange` fires in every open tab → `location.reload()` →
+   stale in-memory JS/HTML is replaced with fresh assets.
+5. On activate the old `map-shell-*` cache is deleted; users who had
+   enabled offline mode will need to re-trigger a precache pass.
 
 **Manifest contents**:
 - Django shell assets — `/map/` HTML, `output.css`, `map.css`, `map.js`,

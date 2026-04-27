@@ -21,6 +21,12 @@ let MAP = null;
 const FEATURE_BY_ID = {};
 const FEATURE_BY_REGION_ID = {};
 
+// Whether a single click on a region auto-pans/zooms to fit it above the
+// sheet. Off by default; persisted in localStorage under
+// 'snowdesk.map.autozoom'. The autozoomToggleInit IIFE at the bottom of
+// this file owns the button wiring; selectFeature reads this flag.
+let AUTOZOOM = false;
+
 // Resolved by the main IIFE once the MapLibre style has loaded and the
 // regions source has been added. Sibling IIFEs that need to call
 // setFeatureState during boot (e.g. the scrubber on /map/?d=...) await
@@ -176,6 +182,10 @@ const clearRegionRepaint = () => {
   // picture of the popover's state to anyone debugging.
   try { localStorage.setItem(OVERLAY_STORAGE_KEY.l4, 'true'); }
   catch (_) { /* private mode — fall through */ }
+
+  // SNOW-63: restore auto-zoom preference from localStorage.
+  try { AUTOZOOM = localStorage.getItem('snowdesk.map.autozoom') === 'true'; }
+  catch (_) { /* private mode — default off */ }
   // Reflect the persisted overlay state on first paint so the popover
   // matches reality before the click handler at the bottom of the file
   // takes over. The L4 button is disabled in markup, so we just
@@ -229,6 +239,11 @@ const clearRegionRepaint = () => {
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
 
+  // SNOW-68: log zoom level on each zoom gesture when debug mode is active.
+  map.on('zoomend', () => {
+    if (DEBUG) console.log('[map] zoom:', map.getZoom().toFixed(2));
+  });
+
   // In-memory lookup from numeric feature id -> region properties.
   // Numeric because setFeatureState requires a numeric (or numeric-coerceable) id.
   const REGION_LOOKUP = {};
@@ -280,10 +295,12 @@ const clearRegionRepaint = () => {
           ['boolean', ['feature-state', 'selected'], false], '#0c447c',
           'rgba(0,0,0,0.25)',
         ],
+        // zoom must be the input to a top-level interpolate — it cannot be
+        // nested inside case. Invert: interpolate at top level, case as stops.
         'line-width': [
-          'case',
-          ['boolean', ['feature-state', 'selected'], false], 2,
-          0.6,
+          'interpolate', ['linear'], ['zoom'],
+          5, ['case', ['boolean', ['feature-state', 'selected'], false], 2, 1.2],
+          9, ['case', ['boolean', ['feature-state', 'selected'], false], 2, 0.6],
         ],
       },
     });
@@ -462,6 +479,7 @@ const clearRegionRepaint = () => {
     const sheet = document.getElementById('sheet');
     const sheetPeek = document.getElementById('sheet-peek');
     const sheetExpanded = document.getElementById('sheet-expanded');
+    const legendEl = document.getElementById('map-legend');
 
     // Apply boot-time debug state (?debug=1) to the sheet so the
     // region-id readout in the peek partial is visible on first paint.
@@ -543,6 +561,14 @@ const clearRegionRepaint = () => {
         ) || 0;
         const total = bodyWrapPad + peekContentH + PEEK_TEASE_PX;
         sheet.style.setProperty('--sheet-peek-height', `${total}px`);
+        // --sheet-offset is added on top of the CSS 108px base. Subtract
+        // the base and add a 12px gap so the legend clears the sheet top
+        // without overshooting.
+        if (legendEl) legendEl.style.setProperty('--sheet-offset', `${Math.max(0, total - 96)}px`);
+      } else if (state === 'expanded') {
+        if (legendEl) legendEl.style.setProperty('--sheet-offset', `${Math.max(0, expandedHeightPx() - 96)}px`);
+      } else {
+        if (legendEl) legendEl.style.setProperty('--sheet-offset', '0px');
       }
       sheet.style.transform = '';
       sheet.dataset.snap = state;
@@ -602,6 +628,7 @@ const clearRegionRepaint = () => {
       sheet.style.transform = '';
       sheet.style.removeProperty('--sheet-peek-height');
       delete sheet.dataset.snap;
+      if (legendEl) legendEl.style.setProperty('--sheet-offset', '0px');
       sheetPeek.replaceChildren();
       sheetExpanded.replaceChildren();
     };
@@ -718,13 +745,24 @@ const clearRegionRepaint = () => {
       // new visible height (the CSS transform hasn't finished animating
       // but the snap state is set, so panToRegionAboveSheet uses the
       // correct visible-height value).
-      const feature = FEATURE_BY_ID[numericId];
-      requestAnimationFrame(() => panToRegionAboveSheet(feature));
+      if (AUTOZOOM) {
+        const feature = FEATURE_BY_ID[numericId];
+        requestAnimationFrame(() => panToRegionAboveSheet(feature));
+      }
     };
 
     map.on('click', 'regions-fill', (e) => {
       if (!e.features.length) return;
       selectFeature(e.features[0].id);
+    });
+
+    // Double-click always zooms to the region regardless of AUTOZOOM setting,
+    // and prevents the default map double-click zoom so we control the target.
+    map.on('dblclick', 'regions-fill', (e) => {
+      e.preventDefault();
+      if (!e.features.length) return;
+      const feature = FEATURE_BY_ID[e.features[0].id];
+      if (feature) panToRegionAboveSheet(feature);
     });
 
     // Dismiss sheet on map tap outside a region
@@ -1801,4 +1839,26 @@ const clearRegionRepaint = () => {
       MAP.setStyle(url);
     });
   }
+})();
+
+// SNOW-65: auto-zoom toggle — now a menuitemcheckbox inside the layers
+// menu rather than a standalone icon button.
+(function autozoomToggleInit() {
+  const btn = document.getElementById('autozoom-toggle');
+  if (!btn) return;
+
+  const STORAGE_KEY = 'snowdesk.map.autozoom';
+
+  const sync = () => {
+    btn.setAttribute('aria-checked', AUTOZOOM ? 'true' : 'false');
+  };
+
+  sync(); // Reflect the value already set by the main IIFE from localStorage.
+
+  btn.addEventListener('click', () => {
+    AUTOZOOM = !AUTOZOOM;
+    try { localStorage.setItem(STORAGE_KEY, String(AUTOZOOM)); }
+    catch (_) { /* private mode — apply for session only */ }
+    sync();
+  });
 })();

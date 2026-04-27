@@ -187,6 +187,24 @@
                             {% trans "Micro regions" %}
                         </button>
                     </li>
+                    {# SNOW-65: Options section — behaviours that modify interaction   #}
+                    {# rather than visual layers. Uses the same checkbox affordance   #}
+                    {# as the overlay items.                                          #}
+                    <li role="separator" class="basemap-menu-separator"></li>
+                    <li role="none" class="basemap-menu-section-label">
+                        {% trans "Options" %}
+                    </li>
+                    <li role="none">
+                        <button
+                            id="autozoom-toggle"
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            aria-checked="false"
+                        >
+                            {% trans "Auto-zoom" %}
+                        </button>
+                    </li>
                 </ul>
             </div>
             <button

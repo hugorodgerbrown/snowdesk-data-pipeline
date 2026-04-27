@@ -265,6 +265,22 @@ transitions once a branch is pushed.
 Full lifecycle, entry points, scoping-comment contract, and PR body template:
 [`docs/linear-workflow.md`](docs/linear-workflow.md).
 
+## Invariants
+
+These must hold at all times. The QA agent and security-auditor check for
+drift against this list on every PR.
+
+1. **No `mark_safe()` on user-supplied content** — never bypass Django's
+   auto-escaping for data that originates outside the codebase.
+2. **Email addresses normalised to lowercase** before storage and lookup —
+   `email = email.lower()` at every entry point.
+3. **Resend calls are always async** — never block the request cycle with a
+   synchronous email send; use `async_to_sync` only in management commands.
+4. **HTMX partial views guarded by `require_htmx`** — every fragment endpoint
+   must reject plain HTTP requests with a 400.
+5. **No secrets in source** — all credentials via `python-decouple`; `.env`
+   is gitignored and never committed.
+
 ## Feature-specific reference
 
 Read these when working in the relevant area:

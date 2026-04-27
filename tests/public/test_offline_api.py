@@ -19,6 +19,8 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
+from public.api import _OFFLINE_MANIFEST_VERSION
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -59,7 +61,7 @@ def test_offline_manifest_returns_200_with_version() -> None:
     assert response.status_code == 200
     assert response["Content-Type"].startswith("application/json")
     data = response.json()
-    assert data["version"] == "map-shell-v1"
+    assert data["version"] == _OFFLINE_MANIFEST_VERSION
 
 
 @pytest.mark.django_db
