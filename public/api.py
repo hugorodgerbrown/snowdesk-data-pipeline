@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # Offline manifest constants
 # ---------------------------------------------------------------------------
 
-_OFFLINE_MANIFEST_VERSION = "map-shell-v1"
+_OFFLINE_MANIFEST_VERSION = "map-shell-v2"
 
 # Swiss bounding box (west, south, east, north) in decimal degrees.
 _SWISS_BBOX: tuple[float, float, float, float] = (5.9, 45.8, 10.5, 47.8)

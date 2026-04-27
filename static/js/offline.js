@@ -67,6 +67,17 @@
       console.error('[offline] SW registration failed:', err);
     });
 
+  // When a new SW skips waiting and claims this page, reload so in-flight
+  // pages pick up the fresh shell rather than running stale JS/HTML.
+  // Guard on initialController so a first-time registration (no previous
+  // SW) does not trigger a reload — only genuine updates do.
+  const initialController = navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (initialController) {
+      location.reload();
+    }
+  });
+
   // -------------------------------------------------------------------------
   // Restore saved state across page loads
   // -------------------------------------------------------------------------
