@@ -462,6 +462,7 @@ const clearRegionRepaint = () => {
     const sheet = document.getElementById('sheet');
     const sheetPeek = document.getElementById('sheet-peek');
     const sheetExpanded = document.getElementById('sheet-expanded');
+    const legendEl = document.getElementById('map-legend');
 
     // Apply boot-time debug state (?debug=1) to the sheet so the
     // region-id readout in the peek partial is visible on first paint.
@@ -543,6 +544,11 @@ const clearRegionRepaint = () => {
         ) || 0;
         const total = bodyWrapPad + peekContentH + PEEK_TEASE_PX;
         sheet.style.setProperty('--sheet-peek-height', `${total}px`);
+        if (legendEl) legendEl.style.setProperty('--sheet-offset', `${total}px`);
+      } else if (state === 'expanded') {
+        if (legendEl) legendEl.style.setProperty('--sheet-offset', `${expandedHeightPx()}px`);
+      } else {
+        if (legendEl) legendEl.style.setProperty('--sheet-offset', '0px');
       }
       sheet.style.transform = '';
       sheet.dataset.snap = state;
@@ -602,6 +608,7 @@ const clearRegionRepaint = () => {
       sheet.style.transform = '';
       sheet.style.removeProperty('--sheet-peek-height');
       delete sheet.dataset.snap;
+      if (legendEl) legendEl.style.setProperty('--sheet-offset', '0px');
       sheetPeek.replaceChildren();
       sheetExpanded.replaceChildren();
     };

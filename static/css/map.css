@@ -401,12 +401,15 @@
 .map-legend {
     position: absolute;
     left: calc(env(safe-area-inset-left, 0px) + 12px);
-    /* 56px scrubber baseline + ~40px scrubber height + 12px gap */
-    bottom: calc(108px + env(safe-area-inset-bottom, 0px));
+    /* 56px scrubber baseline + ~40px scrubber height + 12px gap.
+       --sheet-offset is written by setSnap() / clearSheetDom() in map.js
+       so the legend rises with the sheet rather than being covered by it. */
+    bottom: calc(108px + env(safe-area-inset-bottom, 0px) + var(--sheet-offset, 0px));
     z-index: 3;
     display: flex;
     align-items: center;
     gap: 8px;
+    transition: bottom 260ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* Always-visible date readout, styled to match the (i) toggle so the
