@@ -8,6 +8,12 @@
       "port": 8000
     },
     {
+      "name": "Django dev server (preview)",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["manage.py", "runserver", "8765"],
+      "port": 8765
+    },
+    {
       "name": "Tailwind CSS watcher",
       "runtimeExecutable": "npx",
       "runtimeArgs": [

@@ -1,0 +1,53 @@
+{% load i18n %}
+{% comment %}
+templates/includes/bulletin_masthead.html — v2 bulletin-page masthead (SNOW-70).
+
+Frozen design from design_handoff_bulletin_masthead/components-bulletin-masthead.html:
+a date eyebrow, region H1 headline, and a horizontal Mon–Sun calendar week
+in which each cell carries a split EAWS swatch (earlier / later halves)
+inside a flat neutral 1px border. Cells are anchors that navigate to that
+day's bulletin while preserving the ?masthead=v2 query param; cells with
+no bulletin render as non-navigable spans with a dashed swatch.
+
+Required context:
+  page_date      — datetime.date for the focal day (eyebrow)
+  region_name    — display name for the H1
+  masthead_days  — list[dict] built by _build_masthead_days() in views.py;
+                   each entry carries dow, day_num, href, is_focal, is_empty,
+                   is_all_day, earlier_css, later_css.
+{% endcomment %}
+<header class="bm-header" data-testid="bulletin-masthead">
+    <p class="bm-eyebrow">{{ page_date|date:"D j M Y" }}</p>
+    <h1 class="bm-region">{{ region_name }}</h1>
+</header>
+
+<nav class="bm-strip" aria-label="{% trans 'This week' %}" data-testid="bulletin-masthead-strip">
+    {% for day in masthead_days %}
+        {% if day.is_empty %}
+            <span class="bm-day bm-empty" aria-disabled="true" data-testid="masthead-day" data-empty="true">
+                <div class="bm-dow">{{ day.dow }}</div>
+                <div class="bm-num">{{ day.day_num }}</div>
+                <div class="bm-swatch bm-empty">
+                    <span class="bm-swatch-half"></span>
+                    <span class="bm-swatch-half"></span>
+                </div>
+            </span>
+        {% else %}
+            <a
+                class="bm-day{% if day.is_focal %} bm-focal{% endif %}"
+                href="{{ day.href }}"
+                data-testid="masthead-day"
+                {% if day.is_focal %}
+                    aria-current="date"
+                {% endif %}
+            >
+                <div class="bm-dow">{{ day.dow }}</div>
+                <div class="bm-num">{{ day.day_num }}</div>
+                <div class="bm-swatch{% if day.is_all_day %} bm-allday{% endif %}">
+                    <span class="bm-swatch-half lv-{{ day.earlier_css }}"></span>
+                    <span class="bm-swatch-half lv-{{ day.later_css }}"></span>
+                </div>
+            </a>
+        {% endif %}
+    {% endfor %}
+</nav>
