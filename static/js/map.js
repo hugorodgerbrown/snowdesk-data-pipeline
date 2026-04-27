@@ -283,7 +283,9 @@ const clearRegionRepaint = () => {
         'line-width': [
           'case',
           ['boolean', ['feature-state', 'selected'], false], 2,
-          0.6,
+          // Interpolate width by zoom so borders remain visible at low zoom
+          // levels where sub-pixel rendering would otherwise drop the line.
+          ['interpolate', ['linear'], ['zoom'], 5, 1.2, 9, 0.6],
         ],
       },
     });
