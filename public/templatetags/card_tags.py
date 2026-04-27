@@ -105,6 +105,7 @@ def aspect_rose(aspects: list[str] | None, size: int = 36) -> str:
         f'<circle cx="{cx}" cy="{cy}" r="{r * 0.18:.1f}" fill="{_FILL_CENTRE}"/>'
     )
 
+    # nosemgrep: python.django.security.audit.avoid-mark-safe.avoid-mark-safe
     return mark_safe(  # noqa: S308 — output is fully constructed from numeric values
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'width="{size}" height="{size}" '
