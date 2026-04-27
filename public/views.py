@@ -1826,15 +1826,17 @@ def _enrich_render_model_problem(
     }
 
 
-def _enrich_render_model(
+def enrich_render_model(
     render_model: dict[str, Any],
 ) -> dict[str, Any]:
     """
     Add presentation-ready fields to the render model's traits and problems.
 
     Converts raw render model problem dicts (int elevation bounds) into the
-    richer shape the panel template expects, adding labels, ElevationBounds,
-    field_guidance, and hide_comment.
+    richer shape ``_rating_block.html`` expects, adding labels, ElevationBounds,
+    field_guidance, and hide_comment. Called from both the bulletin page view
+    and the map drawer endpoint (``public.api.region_summary``) so the two
+    rendering paths share a single data shape.
 
     Args:
         render_model: A render model dict as produced by
@@ -1962,7 +1964,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
 
     # Enrich the render model with presentation-ready fields (labels,
     # ElevationBounds, field_guidance, hide_comment per trait).
-    render_model = _enrich_render_model(raw_render_model)
+    render_model = enrich_render_model(raw_render_model)
 
     traits: list[dict[str, Any]] = render_model.get("traits") or []
 
