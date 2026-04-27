@@ -290,12 +290,12 @@ const clearRegionRepaint = () => {
           ['boolean', ['feature-state', 'selected'], false], '#0c447c',
           'rgba(0,0,0,0.25)',
         ],
+        // zoom must be the input to a top-level interpolate — it cannot be
+        // nested inside case. Invert: interpolate at top level, case as stops.
         'line-width': [
-          'case',
-          ['boolean', ['feature-state', 'selected'], false], 2,
-          // Interpolate width by zoom so borders remain visible at low zoom
-          // levels where sub-pixel rendering would otherwise drop the line.
-          ['interpolate', ['linear'], ['zoom'], 5, 1.2, 9, 0.6],
+          'interpolate', ['linear'], ['zoom'],
+          5, ['case', ['boolean', ['feature-state', 'selected'], false], 2, 1.2],
+          9, ['case', ['boolean', ['feature-state', 'selected'], false], 2, 0.6],
         ],
       },
     });
