@@ -58,6 +58,8 @@ Renders:
                 >
                     {% if first_problem.aspects %}
                         <div class="flex items-center gap-1.5 shrink-0">
+                            {# aspect_rose returns a fixed SVG built from numeric values; safe to render unescaped. #}
+                            <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
                             {{ first_problem.aspects|aspect_rose:32|safe }}
                             <span class="text-xs text-text-2">
                                 {{ first_problem.aspects|join:", " }}
@@ -66,6 +68,8 @@ Renders:
                     {% endif %}
                     {% if first_problem.elevation %}
                         <div class="flex items-center gap-1.5 shrink-0">
+                            {# elevation_icon returns a fixed SVG built from numeric values; safe to render unescaped. #}
+                            <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
                             {{ first_problem.elevation|elevation_icon:20|safe }}
                             <span class="text-xs text-text-2">{{ first_problem.elevation.display }}</span>
                         </div>

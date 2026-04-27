@@ -145,11 +145,15 @@ The admin link is only rendered for authenticated staff users.
                                             {% endwith %}
                                             {% if p.aspects %}
                                                 <div class="flex items-center shrink-0">
+                                                    {# aspect_rose returns a fixed SVG built from numeric values; safe to render unescaped. #}
+                                                    <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
                                                     {{ p.aspects|aspect_rose|safe }}
                                                 </div>
                                             {% endif %}
                                             {% if p.elevation %}
                                                 <div class="flex items-center shrink-0">
+                                                    {# elevation_icon returns a fixed SVG built from numeric values; safe to render unescaped. #}
+                                                    <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
                                                     {{ p.elevation|elevation_icon|safe }}
                                                 </div>
                                             {% endif %}
@@ -200,11 +204,15 @@ The admin link is only rendered for authenticated staff users.
                                         {% endwith %}
                                         {% if p.aspects %}
                                             <div class="flex items-center shrink-0">
+                                                {# aspect_rose returns a fixed SVG built from numeric values; safe to render unescaped. #}
+                                                <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
                                                 {{ p.aspects|aspect_rose|safe }}
                                             </div>
                                         {% endif %}
                                         {% if p.elevation %}
                                             <div class="flex items-center shrink-0">
+                                                {# elevation_icon returns a fixed SVG built from numeric values; safe to render unescaped. #}
+                                                <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
                                                 {{ p.elevation|elevation_icon|safe }}
                                             </div>
                                         {% endif %}

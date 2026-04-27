@@ -41,6 +41,7 @@ djangofmt = "^0.2.6"
 freezegun = "^1.5.5"
 types-bleach = "^6.3.0.20260408"
 shapely = "^2.1.2"
+semgrep = "^1.95"
 
 [build-system]
 requires = ["poetry-core"]

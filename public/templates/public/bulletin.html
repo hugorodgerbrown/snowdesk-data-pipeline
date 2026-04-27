@@ -47,7 +47,11 @@ Six structural sections, top to bottom:
     {% if raw_data_json %}
         {# DEBUG-only: raw CAAML payload embedded for source-level inspection. #}
         {# Not rendered visibly; removed in production where DEBUG=False.     #}
+        {# raw_data_json is server-built via json.dumps + a "</" → "<\/" escape pass #}
+        {# (see public/views.py:_render_with_meta) so it's safe to render unescaped  #}
+        {# inside a <script type="application/json"> data block.                     #}
         <script type="application/json" id="bulletin-raw-data" nonce="{{ request.csp_nonce }}">
+        <!-- nosemgrep: generic.html-templates.security.var-in-script-tag.var-in-script-tag,python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
         {{ raw_data_json|safe }}
         </script>
     {% endif %}

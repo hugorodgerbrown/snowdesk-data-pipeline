@@ -14,6 +14,11 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
 
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
   # Local hooks pointing directly at the in-project venv's binaries.
   # Using `.venv/bin/<tool>` (rather than `poetry run <tool>`) avoids
   # depending on PATH, so the hooks work identically from the CLI and

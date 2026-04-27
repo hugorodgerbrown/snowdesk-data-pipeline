@@ -17,7 +17,7 @@ POST: the view performs the deletion; this template is only for GET.
             <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10 text-center">
                 <h1 class="text-2xl font-semibold text-text-1 mb-3">{% trans "Unsubscribe" %}</h1>
                 <p class="text-text-2 text-sm leading-relaxed mb-2">
-                    {% blocktrans with email=email trimmed %}
+                    {% blocktrans with email=email|force_escape trimmed %}
                         You are about to unsubscribe <strong>{{ email }}</strong> from:
                     {% endblocktrans %}
                 </p>

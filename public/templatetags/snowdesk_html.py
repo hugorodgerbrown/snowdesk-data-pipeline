@@ -80,6 +80,7 @@ def snowdesk_html(value: str | None) -> SafeString:
         protocols=_ALLOWED_PROTOCOLS,
         strip=True,
     )
+    # nosemgrep: python.django.security.audit.avoid-mark-safe.avoid-mark-safe
     return mark_safe(cleaned)  # noqa: S308 — content has been sanitised by bleach above
 
 
