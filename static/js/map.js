@@ -21,6 +21,12 @@ let MAP = null;
 const FEATURE_BY_ID = {};
 const FEATURE_BY_REGION_ID = {};
 
+// Whether a single click on a region auto-pans/zooms to fit it above the
+// sheet. Off by default; persisted in localStorage under
+// 'snowdesk.map.autozoom'. The autozoomToggleInit IIFE at the bottom of
+// this file owns the button wiring; selectFeature reads this flag.
+let AUTOZOOM = false;
+
 // Resolved by the main IIFE once the MapLibre style has loaded and the
 // regions source has been added. Sibling IIFEs that need to call
 // setFeatureState during boot (e.g. the scrubber on /map/?d=...) await
@@ -176,6 +182,10 @@ const clearRegionRepaint = () => {
   // picture of the popover's state to anyone debugging.
   try { localStorage.setItem(OVERLAY_STORAGE_KEY.l4, 'true'); }
   catch (_) { /* private mode — fall through */ }
+
+  // SNOW-63: restore auto-zoom preference from localStorage.
+  try { AUTOZOOM = localStorage.getItem('snowdesk.map.autozoom') === 'true'; }
+  catch (_) { /* private mode — default off */ }
   // Reflect the persisted overlay state on first paint so the popover
   // matches reality before the click handler at the bottom of the file
   // takes over. The L4 button is disabled in markup, so we just
@@ -727,13 +737,24 @@ const clearRegionRepaint = () => {
       // new visible height (the CSS transform hasn't finished animating
       // but the snap state is set, so panToRegionAboveSheet uses the
       // correct visible-height value).
-      const feature = FEATURE_BY_ID[numericId];
-      requestAnimationFrame(() => panToRegionAboveSheet(feature));
+      if (AUTOZOOM) {
+        const feature = FEATURE_BY_ID[numericId];
+        requestAnimationFrame(() => panToRegionAboveSheet(feature));
+      }
     };
 
     map.on('click', 'regions-fill', (e) => {
       if (!e.features.length) return;
       selectFeature(e.features[0].id);
+    });
+
+    // Double-click always zooms to the region regardless of AUTOZOOM setting,
+    // and prevents the default map double-click zoom so we control the target.
+    map.on('dblclick', 'regions-fill', (e) => {
+      e.preventDefault();
+      if (!e.features.length) return;
+      const feature = FEATURE_BY_ID[e.features[0].id];
+      if (feature) panToRegionAboveSheet(feature);
     });
 
     // Dismiss sheet on map tap outside a region
@@ -1810,4 +1831,26 @@ const clearRegionRepaint = () => {
       MAP.setStyle(url);
     });
   }
+})();
+
+// SNOW-63: auto-zoom toggle — a standalone button that persists the
+// AUTOZOOM flag and keeps its aria-pressed state in sync.
+(function autozoomToggleInit() {
+  const btn = document.getElementById('autozoom-toggle');
+  if (!btn) return;
+
+  const STORAGE_KEY = 'snowdesk.map.autozoom';
+
+  const sync = () => {
+    btn.setAttribute('aria-pressed', AUTOZOOM ? 'true' : 'false');
+  };
+
+  sync(); // Reflect the value already set by the main IIFE from localStorage.
+
+  btn.addEventListener('click', () => {
+    AUTOZOOM = !AUTOZOOM;
+    try { localStorage.setItem(STORAGE_KEY, String(AUTOZOOM)); }
+    catch (_) { /* private mode — apply for session only */ }
+    sync();
+  });
 })();
