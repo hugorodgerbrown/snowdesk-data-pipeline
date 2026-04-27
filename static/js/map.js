@@ -556,9 +556,12 @@ const clearRegionRepaint = () => {
         ) || 0;
         const total = bodyWrapPad + peekContentH + PEEK_TEASE_PX;
         sheet.style.setProperty('--sheet-peek-height', `${total}px`);
-        if (legendEl) legendEl.style.setProperty('--sheet-offset', `${total}px`);
+        // --sheet-offset is added on top of the CSS 108px base. Subtract
+        // the base and add a 12px gap so the legend clears the sheet top
+        // without overshooting.
+        if (legendEl) legendEl.style.setProperty('--sheet-offset', `${Math.max(0, total - 96)}px`);
       } else if (state === 'expanded') {
-        if (legendEl) legendEl.style.setProperty('--sheet-offset', `${expandedHeightPx()}px`);
+        if (legendEl) legendEl.style.setProperty('--sheet-offset', `${Math.max(0, expandedHeightPx() - 96)}px`);
       } else {
         if (legendEl) legendEl.style.setProperty('--sheet-offset', '0px');
       }
