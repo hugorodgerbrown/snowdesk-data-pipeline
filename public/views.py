@@ -1581,6 +1581,30 @@ def bulletin_detail(
 
     panel = _build_panel_context(selected)
 
+    # New-masthead opt-in (SNOW-70). Gated on ``?masthead=v2`` (calendar-
+    # week day-strip + day-windows panel) or ``?masthead=v3`` (region-led
+    # masthead with the calendar trigger inline; no day-strip). The v1
+    # inline header remains the default while the redesign is iterated on.
+    raw_masthead = request.GET.get("masthead") or ""
+    masthead_version: str | None = (
+        raw_masthead if raw_masthead in {"v2", "v3"} else None
+    )
+    use_new_masthead = masthead_version is not None
+    # v3 drops the day-strip — only v2 needs the seven-day window built.
+    masthead_days: list[dict[str, Any]] = (
+        _build_masthead_days(region, page_date) if masthead_version == "v2" else []
+    )
+    day_windows: list[dict[str, Any]] = (
+        _build_day_windows(selected) if use_new_masthead else []
+    )
+
+    # The calendar partial needs the focal date so it can highlight the
+    # selected day, and the masthead version so cell links can preserve
+    # ``?masthead=v3`` (etc.) — otherwise navigating from the calendar
+    # would drop the user back to v1 mid-iteration.
+    calendar_qs: dict[str, str] = {"date": page_date.isoformat()}
+    if masthead_version:
+        calendar_qs["masthead"] = masthead_version
     calendar_partial_url = "{}?{}".format(
         reverse(
             "public:calendar_partial",
@@ -1590,19 +1614,7 @@ def bulletin_detail(
                 "month": page_date.month,
             },
         ),
-        urlencode({"date": page_date.isoformat()}),
-    )
-
-    # v2 masthead opt-in (SNOW-70). Gated on ``?masthead=v2`` so the
-    # existing inline masthead remains the default while the redesign is
-    # iterated on. Only build the 7-day window when the new masthead is
-    # actually being rendered — otherwise it's an unused query per pageview.
-    use_new_masthead = request.GET.get("masthead") == "v2"
-    masthead_days: list[dict[str, Any]] = (
-        _build_masthead_days(region, page_date) if use_new_masthead else []
-    )
-    day_windows: list[dict[str, Any]] = (
-        _build_day_windows(selected) if use_new_masthead else []
+        urlencode(calendar_qs),
     )
 
     context = {
@@ -1624,8 +1636,9 @@ def bulletin_detail(
         "calendar_region_id": region.region_id,
         "calendar_partial_url": calendar_partial_url,
         "calendar_current_date": page_date,
-        # v2 masthead.
+        # v2 / v3 masthead.
         "use_new_masthead": use_new_masthead,
+        "masthead_version": masthead_version,
         "masthead_days": masthead_days,
         "day_windows": day_windows,
     }
@@ -2583,6 +2596,38 @@ def _build_calendar_grid(
     return grid
 
 
+def _parse_selected_date(request: HttpRequest) -> datetime.date | None:
+    """Parse ``?date=YYYY-MM-DD`` from the query string.
+
+    Returns ``None`` when the param is absent or malformed.
+    """
+    raw_date = request.GET.get("date")
+    if not raw_date:
+        return None
+    try:
+        return datetime.datetime.strptime(raw_date, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _calendar_nav_query(
+    selected_date: datetime.date | None,
+    raw_masthead: str,
+) -> str:
+    """
+    Re-encode the calendar partial's nav query (``?date=…&masthead=…``).
+
+    Used for prev/next-month links so a calendar drawer opened in v3
+    keeps the masthead version when the user pages between months.
+    """
+    nav_qs: dict[str, str] = {}
+    if selected_date is not None:
+        nav_qs["date"] = selected_date.isoformat()
+    if raw_masthead in {"v2", "v3"}:
+        nav_qs["masthead"] = raw_masthead
+    return f"?{urlencode(nav_qs)}" if nav_qs else ""
+
+
 @require_htmx
 def calendar_partial(
     request: HttpRequest,
@@ -2634,14 +2679,11 @@ def calendar_partial(
     year = requested.year
     month = requested.month
 
-    # Parse optional selected date from query string (e.g. ?date=2026-04-15).
-    selected_date: datetime.date | None = None
-    raw_date = request.GET.get("date")
-    if raw_date:
-        try:
-            selected_date = datetime.datetime.strptime(raw_date, "%Y-%m-%d").date()
-        except ValueError:
-            selected_date = None
+    selected_date = _parse_selected_date(request)
+    raw_masthead = request.GET.get("masthead") or ""
+    # Cell links must preserve ``?masthead=v2|v3`` so navigating from the
+    # calendar drawer doesn't drop the user back to v1 mid-iteration.
+    masthead_query = f"?masthead={raw_masthead}" if raw_masthead in {"v2", "v3"} else ""
 
     # Fetch ratings for the month.
     rating_qs = RegionDayRating.objects.for_region_month(region, year, month)
@@ -2651,18 +2693,24 @@ def calendar_partial(
         ratings, year, month, today, selected_date=selected_date
     )
 
-    # Prev/next URLs — None when at the boundary.
+    # Re-apply the same query string the partial was loaded with (date +
+    # masthead) so prev/next-month renders keep both context params in scope.
+    nav_query = _calendar_nav_query(selected_date, raw_masthead)
+
     prev_month = requested - datetime.timedelta(days=1)
     prev_month = datetime.date(prev_month.year, prev_month.month, 1)
     prev_url: str | None = None
     if prev_month >= min_month:
-        prev_url = reverse(
-            "public:calendar_partial",
-            kwargs={
-                "region_id": region.region_id,
-                "year": prev_month.year,
-                "month": prev_month.month,
-            },
+        prev_url = (
+            reverse(
+                "public:calendar_partial",
+                kwargs={
+                    "region_id": region.region_id,
+                    "year": prev_month.year,
+                    "month": prev_month.month,
+                },
+            )
+            + nav_query
         )
 
     next_month_day = _calendar_module.monthrange(year, month)[1]
@@ -2670,13 +2718,16 @@ def calendar_partial(
     next_month = datetime.date(next_month.year, next_month.month, 1)
     next_url: str | None = None
     if next_month <= max_month:
-        next_url = reverse(
-            "public:calendar_partial",
-            kwargs={
-                "region_id": region.region_id,
-                "year": next_month.year,
-                "month": next_month.month,
-            },
+        next_url = (
+            reverse(
+                "public:calendar_partial",
+                kwargs={
+                    "region_id": region.region_id,
+                    "year": next_month.year,
+                    "month": next_month.month,
+                },
+            )
+            + nav_query
         )
 
     context: dict[str, Any] = {
@@ -2689,5 +2740,6 @@ def calendar_partial(
         "prev_url": prev_url,
         "next_url": next_url,
         "calendar_current_date": selected_date,
+        "masthead_query": masthead_query,
     }
     return render(request, "public/partials/calendar.html", context)

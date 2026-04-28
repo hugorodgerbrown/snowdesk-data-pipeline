@@ -541,6 +541,50 @@ span.bm-day.bm-empty             { cursor: default; }
 .bm-swatch-half.lv-very-high                 { background: var(--color-eaws-very-high); }
 
 
+/* —— v3 bulletin masthead — region first, calendar inline ——————
+   Region H1 leads, then a single date-trigger button: tapping the
+   date string opens the monthly calendar drawer (same HTMX target as
+   the v1/v2 nav-bar calendar button — moved here so date navigation
+   is co-located with the date itself). The static day-strip is gone
+   in v3; the calendar is the only date picker. */
+
+.bm-v3-header {
+  padding-top: 16px;
+  margin-bottom: 1rem;
+}
+.bm-v3-header .bm-region {
+  margin: 0 0 6px;
+}
+.bm-v3-date-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-3);
+  font: inherit;
+  transition: color 80ms;
+}
+.bm-v3-date-trigger:hover {
+  color: var(--color-text-1);
+}
+.bm-v3-date-trigger .bm-eyebrow {
+  margin: 0;
+  /* Inherit the trigger's hover colour so the eyebrow + icon track
+     together rather than fighting each other on hover. */
+  color: inherit;
+}
+.bm-v3-cal-icon {
+  display: inline-block;
+  /* Slight optical lift so the calendar glyph baseline matches the
+     uppercase eyebrow's cap height. */
+  margin-bottom: 1px;
+  color: inherit;
+}
+
+
 /* —— v2 day-windows panel — earlier / all-day / later summary —
    Frozen design from design_handoff_day_windows/. Sits between the
    masthead's day-strip and the rating blocks. Quiet by design — white

@@ -59,12 +59,27 @@ Six structural sections, top to bottom:
 
 {% block nav %}
     {% url 'public:map' as map_url %}
-    {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=calendar_region_id calendar_partial_url=calendar_partial_url %}
+    {% if masthead_version == "v3" %}
+        {# v3 promotes the calendar trigger out of the top nav and into  #}
+        {# the masthead body, next to the date eyebrow. The top bar      #}
+        {# becomes pure wayfinding (back link + wordmark only).          #}
+        {# Explicit ``calendar_*=None`` shadows the values the view      #}
+        {# always passes — ``{% include with %}`` only adds to context,  #}
+        {# it doesn't isolate it.                                        #}
+        {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=None calendar_partial_url=None %}
+    {% else %}
+        {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=calendar_region_id calendar_partial_url=calendar_partial_url %}
+    {% endif %}
 {% endblock %}
 
 {% block content %}
     {# ── Calendar popover host — swapped in by the nav calendar button ── #}
-    <div class="relative mx-auto max-w-[640px] px-4">
+    {# w-full is load-bearing: this div is a flex item under <body class= #}
+    {# "flex flex-col"> with mx-auto and no flow content (only the        #}
+    {# absolute child below). Without w-full it collapses to its padding, #}
+    {# anchoring `right-4` against an ~0-width box and pushing the        #}
+    {# 288px-wide host off-screen to the left on narrow viewports.        #}
+    <div class="relative mx-auto w-full max-w-[640px] px-4">
         <div
             id="bulletin-calendar-host"
             class="absolute top-0 right-4 z-10 w-72"
@@ -79,7 +94,13 @@ Six structural sections, top to bottom:
            No Close button — artefact of WR's modal-over-map architecture,
            removed per DESIGN.md confirmed subtractions.
         {% endcomment %}
-        {% if use_new_masthead %}
+        {% if masthead_version == "v3" %}
+            {# v3 masthead (SNOW-70) — region promoted to the top, date     #}
+            {# eyebrow below with the calendar trigger inline. No day-strip #}
+            {# and no « / » nav row — date navigation lives entirely in    #}
+            {# the calendar drawer.                                         #}
+            {% include "includes/bulletin_masthead_v3.html" %}
+        {% elif use_new_masthead %}
             {# v2 masthead (SNOW-70) — gated on ?masthead=v2 so the design   #}
             {# can be A/B compared against the inline v1 masthead during    #}
             {# iteration. The day-character zone (variants I.1/I.2/I.3) is  #}

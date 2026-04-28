@@ -1343,3 +1343,133 @@ class TestDayWindowsPanel:
         assert content.count('data-testid="day-window-row"') == 1
         assert "dw-tile lv-considerable" in content
         assert "Wet-snow avalanches" in content
+
+
+# ---------------------------------------------------------------------------
+# Test: v3 masthead (region first, calendar inline, no day-strip)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestV3Masthead:
+    """
+    v3 masthead — region promoted to the top, date eyebrow + calendar
+    trigger inline, no day-strip and no « / » nav row. The calendar is
+    moved out of the top nav and becomes the only date picker.
+    """
+
+    def test_v3_renders_v3_masthead_partial_only(
+        self, client: Client, simple_bulletin, region
+    ):
+        """``?masthead=v3`` swaps in the v3 partial; v1 + v2 mastheads are absent."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bulletin-masthead-v3"' in content
+        # v2 strip and v1 nav row must NOT render alongside v3.
+        assert 'data-testid="bulletin-masthead-strip"' not in content
+        assert 'data-testid="bulletin-nav"' not in content
+
+    def test_v3_region_h1_precedes_date_eyebrow(
+        self, client: Client, simple_bulletin, region
+    ):
+        """Region is the lead headline; date eyebrow follows it in the DOM."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        region_idx = content.index('class="bm-region"')
+        eyebrow_idx = content.index('class="bm-eyebrow"')
+        assert region_idx < eyebrow_idx
+
+    def test_v3_has_no_day_strip(self, client: Client, simple_bulletin, region):
+        """v3 explicitly drops the day-strip — the calendar is the only picker."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bulletin-masthead-strip"' not in content
+        assert 'data-testid="masthead-day"' not in content
+
+    def test_v3_calendar_trigger_inline_in_masthead(
+        self, client: Client, simple_bulletin, region
+    ):
+        """The calendar HTMX button sits in the masthead, not the top nav."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bm-v3-calendar-trigger"' in content
+        # And the trigger sits inside the masthead landmark.
+        masthead_idx = content.index('data-testid="bulletin-masthead-v3"')
+        trigger_idx = content.index('data-testid="bm-v3-calendar-trigger"')
+        assert masthead_idx < trigger_idx
+
+    def test_v3_top_nav_omits_calendar_button(
+        self, client: Client, simple_bulletin, region
+    ):
+        """The top nav under v3 is wayfinding-only — no calendar button."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        # Only one calendar button on the page (in the masthead, not the nav).
+        assert content.count("Show monthly calendar") == 1
+        # Confirm it's the masthead one.
+        nav_block_end = content.index("</nav>")
+        assert "Show monthly calendar" not in content[:nav_block_end]
+
+    def test_v3_still_renders_day_risk_profile_panel(
+        self, client: Client, variable_bulletin, region
+    ):
+        """v3 keeps the Day Risk Profile heading + day-windows panel below."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="day-risk-profile-heading"' in content
+        assert 'data-testid="day-windows-panel"' in content
+        # v1 headline band must still be absent.
+        assert 'data-testid="headline-band"' not in content
+
+    def test_v3_calendar_partial_url_carries_masthead_query(
+        self, client: Client, simple_bulletin, region
+    ):
+        """Calendar fetch URL includes ?masthead=v3 so the partial inherits it."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        # ``urlencode`` will escape & as &amp; inside HTML attributes; both
+        # forms are valid — accept whichever the template emits.
+        assert ("masthead=v3" in content) and ("date=2026-03-15" in content)
+
+    def test_calendar_partial_propagates_masthead_query_to_cell_links(self, region):
+        """Cell hrefs in the calendar fragment carry ``?masthead=v3``."""
+        # Build a bulletin so the focal day has a clickable cell.
+        focal = date(2026, 3, 18)
+        rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
+        bulletin = _make_am_bulletin(
+            region, focal, render_model=rm, render_model_version=3
+        )
+        RegionDayRatingFactory.create(
+            region=region,
+            date=focal,
+            min_rating=RegionDayRating.Rating.MODERATE,
+            max_rating=RegionDayRating.Rating.MODERATE,
+            source_bulletin=bulletin,
+            version=1,
+        )
+        # HTMX-only endpoint — must include the HX-Request header.
+        c = Client(HTTP_HX_REQUEST="true")
+        partial_url = (
+            reverse(
+                "public:calendar_partial",
+                kwargs={
+                    "region_id": "CH-4115",
+                    "year": 2026,
+                    "month": 3,
+                },
+            )
+            + "?date=2026-03-18&masthead=v3"
+        )
+        response = c.get(partial_url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        # The clickable cell href must keep the masthead query so navigation
+        # stays in v3 mode.
+        assert "/2026-03-18/?masthead=v3" in content
