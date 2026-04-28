@@ -585,6 +585,55 @@ span.bm-day.bm-empty             { cursor: default; }
 }
 
 
+/* —— v4 bulletin masthead — date+calendar above region —————————
+   Iteration on v3: the eyebrow + calendar trigger move above the H1,
+   and the parent EAWS L2 sub-region becomes a quiet H2 below the
+   region name. Same calendar plumbing as v3 — the trigger is just
+   relocated. */
+
+.bm-v4-header {
+  /* padding-top: 16px; */
+  margin-bottom: 1.25rem;
+}
+.bm-v4-header .bm-region {
+  margin: 4px 0 4px;
+}
+.bm-v4-subregion {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--color-text-2);
+  margin: 0;
+  text-wrap: balance;
+}
+.bm-v4-date-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  margin-bottom: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-3);
+  font: inherit;
+  transition: color 80ms;
+}
+.bm-v4-date-trigger:hover {
+  color: var(--color-text-1);
+}
+.bm-v4-date-trigger .bm-eyebrow {
+  margin: 0;
+  /* Inherit the trigger's hover colour so eyebrow + glyph track together. */
+  color: inherit;
+}
+.bm-v4-cal-icon {
+  display: inline-block;
+  margin-bottom: 1px;
+  color: inherit;
+}
+
+
 /* —— v2 day-windows panel — earlier / all-day / later summary —
    Frozen design from design_handoff_day_windows/. Sits between the
    masthead's day-strip and the rating blocks. Quiet by design — white

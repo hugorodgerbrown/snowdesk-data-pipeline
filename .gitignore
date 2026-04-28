@@ -1,14 +1,15 @@
 __pycache__/
-*.py[cod]
-*.pyo
-*.pyd
+.claude/settings.local.json
+.eggs/
 .Python
 *.egg-info/
+*.py[cod]
+*.pyd
+*.pyo
+build/
+design_handoff_*
 dist/
 DO_NOT_ADD/
-build/
-.eggs/
-.claude/settings.local.json
 
 # Environments
 .env

@@ -59,13 +59,12 @@ Six structural sections, top to bottom:
 
 {% block nav %}
     {% url 'public:map' as map_url %}
-    {% if masthead_version == "v3" %}
-        {# v3 promotes the calendar trigger out of the top nav and into  #}
-        {# the masthead body, next to the date eyebrow. The top bar      #}
-        {# becomes pure wayfinding (back link + wordmark only).          #}
-        {# Explicit ``calendar_*=None`` shadows the values the view      #}
-        {# always passes — ``{% include with %}`` only adds to context,  #}
-        {# it doesn't isolate it.                                        #}
+    {% if masthead_version == "v3" or masthead_version == "v4" %}
+        {# v3 / v4 promote the calendar trigger out of the top nav and    #}
+        {# into the masthead body. The top bar becomes pure wayfinding    #}
+        {# (back link + wordmark only). Explicit ``calendar_*=None``      #}
+        {# shadows the values the view always passes — ``{% include with #}
+        {# %}`` only adds to context, it doesn't isolate it.              #}
         {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=None calendar_partial_url=None %}
     {% else %}
         {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=calendar_region_id calendar_partial_url=calendar_partial_url %}
@@ -86,15 +85,38 @@ Six structural sections, top to bottom:
         >
         </div>
     </div>
+    {# ── Outside-click dismiss for the calendar drawer ───────────────── #}
+    {# The drawer is a one-element popover; without an outside-click     #}
+    {# listener it stays open until the user clicks a date or navigates  #}
+    {# months. This listens at the document level and clears the host    #}
+    {# whenever a click lands outside both the drawer itself and any     #}
+    {# trigger that targets it (matched by [hx-target] so v1/v2/v3/v4    #}
+    {# triggers all qualify). Inline + nonced so it satisfies CSP.       #}
+    <script nonce="{{ request.csp_nonce }}">
+        (function () {
+            document.addEventListener('click', function (e) {
+                var host = document.getElementById('bulletin-calendar-host');
+                if (!host || !host.firstElementChild) return;
+                if (host.contains(e.target)) return;
+                if (e.target.closest('[hx-target="#bulletin-calendar-host"]')) return;
+                host.innerHTML = '';
+            });
+        })();
+    </script>
     {# ── Outermost container: font-sans overrides any serif from @theme ── #}
-    <div class="font-sans max-w-[640px] mx-auto px-4 py-6">
+    <div class="font-sans max-w-[640px] mx-auto px-4 py-4">
         {% comment %}
            SECTION 1 — Page chrome
            Region name, date/validity, prev/next navigation.
            No Close button — artefact of WR's modal-over-map architecture,
            removed per DESIGN.md confirmed subtractions.
         {% endcomment %}
-        {% if masthead_version == "v3" %}
+        {% if masthead_version == "v4" %}
+            {# v4 masthead (SNOW-71) — date eyebrow + calendar trigger     #}
+            {# above the H1 region; parent EAWS L2 sub-region as a quiet   #}
+            {# H2 below. No day-strip, calendar drawer is the only picker. #}
+            {% include "includes/bulletin_masthead_v4.html" %}
+        {% elif masthead_version == "v3" %}
             {# v3 masthead (SNOW-70) — region promoted to the top, date     #}
             {# eyebrow below with the calendar trigger inline. No day-strip #}
             {# and no « / » nav row — date navigation lives entirely in    #}

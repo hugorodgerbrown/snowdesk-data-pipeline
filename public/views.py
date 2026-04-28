@@ -1389,20 +1389,34 @@ def _resolve_window_level(
 
 def _resolve_window_caption(period_traits: list[dict[str, Any]]) -> str:
     """
-    Pick the editorial caption for one day-window row.
+    Concatenate problem-type labels for the period's covering traits.
 
-    The trait with the highest ``danger_level`` wins; same-level traits
-    fall back to render-model order (first occurrence). Returns an empty
-    string when no covering trait carries a title — the panel renders the
-    row without a caption rather than inventing copy.
+    The caption answers "what kinds of avalanche are in play during this
+    window" rather than echoing the trait's editorial title. Problem
+    types are deduplicated and joined in render-model order so a trait
+    list of [persistent_weak_layers, wet_snow] reads as
+    "Persistent weak layers, Wet snow".
+
+    Returns an empty string when no covering trait carries any problems —
+    the panel renders the row without a caption rather than inventing
+    copy.
     """
     if not period_traits:
         return ""
-    scored = [
-        (t.get("danger_level") or 0, idx, t) for idx, t in enumerate(period_traits)
-    ]
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    return scored[0][2].get("title") or ""
+    seen: set[str] = set()
+    labels: list[str] = []
+    for trait in period_traits:
+        for problem in trait.get("problems") or []:
+            ptype = problem.get("problem_type") or ""
+            if not ptype or ptype in seen:
+                continue
+            seen.add(ptype)
+            label = _PROBLEM_LABELS.get(ptype) or ptype.replace("_", " ").capitalize()
+            # Resolve gettext_lazy proxies eagerly — the soft launch is
+            # English-only (project_language_scope memory) so we can flatten
+            # to str at view time and revisit if/when i18n lands.
+            labels.append(str(label))
+    return ", ".join(labels)
 
 
 def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
@@ -1457,6 +1471,20 @@ def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
                 "pill_label": _DAY_WINDOW_PILL_LABELS[period],
             }
         )
+
+    # Rebadge pills by row count so the panel reads naturally regardless
+    # of the underlying CAAML period mix:
+    #   1 row  → "All day"
+    #   2 rows → "Earlier" + "Later" (chronological brackets, even when
+    #            the data is e.g. (all_day, later))
+    #   3 rows → leave as-is — the natural _DAY_WINDOW_ORDER already
+    #            yields "Earlier" / "All day" / "Later"
+    if len(windows) == 1:
+        windows[0]["pill_label"] = _DAY_WINDOW_PILL_LABELS["all_day"]
+    elif len(windows) == 2:
+        windows[0]["pill_label"] = _DAY_WINDOW_PILL_LABELS["earlier"]
+        windows[1]["pill_label"] = _DAY_WINDOW_PILL_LABELS["later"]
+
     return windows
 
 
@@ -1581,21 +1609,32 @@ def bulletin_detail(
 
     panel = _build_panel_context(selected)
 
-    # New-masthead opt-in (SNOW-70). Gated on ``?masthead=v2`` (calendar-
-    # week day-strip + day-windows panel) or ``?masthead=v3`` (region-led
-    # masthead with the calendar trigger inline; no day-strip). The v1
-    # inline header remains the default while the redesign is iterated on.
+    # New-masthead opt-in (SNOW-70 / SNOW-71). Gated on ``?masthead=v2``
+    # (calendar-week day-strip + day-windows panel), ``?masthead=v3``
+    # (region-led masthead with the calendar trigger inline; no day-strip)
+    # or ``?masthead=v4`` (date+calendar promoted above the H1, parent
+    # subregion as an H2 below it). The v1 inline header remains the
+    # default while the redesign is iterated on.
     raw_masthead = request.GET.get("masthead") or ""
     masthead_version: str | None = (
-        raw_masthead if raw_masthead in {"v2", "v3"} else None
+        raw_masthead if raw_masthead in {"v2", "v3", "v4"} else None
     )
     use_new_masthead = masthead_version is not None
-    # v3 drops the day-strip — only v2 needs the seven-day window built.
+    # v3 / v4 drop the day-strip — only v2 needs the seven-day window built.
     masthead_days: list[dict[str, Any]] = (
         _build_masthead_days(region, page_date) if masthead_version == "v2" else []
     )
     day_windows: list[dict[str, Any]] = (
         _build_day_windows(selected) if use_new_masthead else []
+    )
+    # v4 subtitles the H1 with the parent EAWS L2 sub-region. Prefer the
+    # English name where SLF publishes one, otherwise fall back to the
+    # locally-dominant native name. ``Region.subregion`` is non-nullable
+    # so this lookup is always safe.
+    subregion_name = (
+        region.subregion.name_en or region.subregion.name_native
+        if region.subregion
+        else ""
     )
 
     # The calendar partial needs the focal date so it can highlight the
@@ -1636,11 +1675,12 @@ def bulletin_detail(
         "calendar_region_id": region.region_id,
         "calendar_partial_url": calendar_partial_url,
         "calendar_current_date": page_date,
-        # v2 / v3 masthead.
+        # v2 / v3 / v4 masthead.
         "use_new_masthead": use_new_masthead,
         "masthead_version": masthead_version,
         "masthead_days": masthead_days,
         "day_windows": day_windows,
+        "subregion_name": subregion_name,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 
