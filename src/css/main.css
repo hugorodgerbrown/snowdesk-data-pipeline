@@ -423,28 +423,19 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 .calendar-cell[data-rating-min="high"][data-rating-max="very_high"]          { background: linear-gradient(to top right, var(--color-eaws-high-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
 
 
-/* —— v2 bulletin masthead — date eyebrow, region H1, day-strip ————
-   Frozen design from design_handoff_bulletin_masthead/. Gated in the
-   template behind ?masthead=v2 (SNOW-70). All colours come from the
-   existing surface and EAWS tokens so the component tracks light /
-   dark mode without bespoke variants — the EAWS scale itself is
-   intentionally theme-invariant per the international standard.
-
-   The split-half divider is `rgba(0,0,0,0.05)` — a deliberately
-   sub-token hairline that sits over saturated EAWS tints and would
-   read as too strong if promoted to --color-border (which is calibrated
-   for surface-on-surface boundaries, not coloured-on-coloured).
+/* —— Bulletin masthead — date + calendar above region (SNOW-72) ————
+   Date eyebrow + calendar trigger sit above the region H1, with the
+   parent EAWS L2 sub-region rendered as a quiet H2 below it. Same
+   calendar plumbing as the rest of the page — tapping the date opens
+   the monthly calendar drawer; the calendar is the only date picker.
    ————————————————————————————————————————— */
 
 .bm-header {
-  /* Horizontal padding intentionally omitted: the page wrapper above
-     (.font-sans.max-w-[640px].px-4) already supplies the 16px gutter,
-     so the eyebrow + region H1 align flush with the day-windows panel
-     and rating blocks below. The handoff's literal `16px 18px 0` is
-     for a standalone artboard with no surrounding page padding. */
-  padding-top: 16px;
+  margin-bottom: 1.25rem;
 }
-
+.bm-header .bm-region {
+  margin: 4px 0 4px;
+}
 .bm-eyebrow {
   font-size: 11px;
   font-family: var(--font-mono);
@@ -453,9 +444,7 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   letter-spacing: 0.06em;
   margin: 0;
 }
-
 .bm-region {
-  margin: 4px 0 0;
   font-size: 24px;
   font-weight: 700;
   line-height: 1.15;
@@ -463,142 +452,7 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   color: var(--color-text-1);
   text-wrap: balance;
 }
-
-.bm-strip {
-  display: flex;
-  gap: 4px;
-  /* Horizontal padding intentionally omitted: see .bm-header above —
-     the strip aligns its left edge to the page gutter and its right
-     edge to the day-windows panel below. The strip is static — seven
-     equal-width cells, Mon–Sun — so no horizontal scroll is possible. */
-  padding: 12px 0 8px;
-  margin: 0 0 1.5rem;
-}
-
-.bm-day {
-  /* flex: 1 1 0 + min-width: 0 makes all seven cells share the column
-     width equally, so the strip never overflows regardless of viewport
-     width. The focal cell is highlighted in place — selecting another
-     day in the same week does not shift the strip. */
-  flex: 1 1 0;
-  min-width: 0;
-  text-align: center;
-  padding: 8px 0;
-  border-radius: var(--radius-tag);
-  border: 1px solid transparent;
-  background: transparent;
-  text-decoration: none;
-  color: inherit;
-  cursor: pointer;
-  transition: border-color 80ms;
-}
-.bm-day:hover                    { border-color: var(--color-border); }
-.bm-day.bm-focal {
-  background: var(--color-card);
-  border-color: var(--color-border-strong);
-}
-span.bm-day.bm-empty             { cursor: default; }
-
-.bm-dow {
-  font-size: 10px;
-  font-family: var(--font-mono);
-  color: var(--color-text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.bm-num {
-  font-size: 16px;
-  font-weight: 500;
-  margin-top: 3px;
-  color: var(--color-text-1);
-}
-.bm-day.bm-focal .bm-num         { font-weight: 700; }
-.bm-day.bm-empty .bm-num         { color: var(--color-text-3); font-weight: 400; }
-
-.bm-swatch {
-  margin: 7px auto 0;
-  width: 30px;
-  height: 9px;
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-  display: flex;
-  border: 1px solid var(--color-border);
-}
-.bm-swatch-half                              { flex: 1; background: transparent; }
-.bm-swatch-half + .bm-swatch-half            { border-left: 1px solid rgba(0, 0, 0, 0.05); }
-.bm-swatch.bm-allday .bm-swatch-half + .bm-swatch-half { border-left: none; }
-.bm-swatch.bm-empty {
-  border: 1px dashed var(--color-border);
-}
-
-/* Half fills — saturated EAWS scale (theme-invariant). The flat neutral
-   wrapper border above frames the swatch the same way regardless of
-   level; level identity comes from the saturated fill, not the border. */
-.bm-swatch-half.lv-low                       { background: var(--color-eaws-low); }
-.bm-swatch-half.lv-moderate                  { background: var(--color-eaws-moderate); }
-.bm-swatch-half.lv-considerable              { background: var(--color-eaws-considerable); }
-.bm-swatch-half.lv-high                      { background: var(--color-eaws-high); }
-.bm-swatch-half.lv-very-high                 { background: var(--color-eaws-very-high); }
-
-
-/* —— v3 bulletin masthead — region first, calendar inline ——————
-   Region H1 leads, then a single date-trigger button: tapping the
-   date string opens the monthly calendar drawer (same HTMX target as
-   the v1/v2 nav-bar calendar button — moved here so date navigation
-   is co-located with the date itself). The static day-strip is gone
-   in v3; the calendar is the only date picker. */
-
-.bm-v3-header {
-  padding-top: 16px;
-  margin-bottom: 1rem;
-}
-.bm-v3-header .bm-region {
-  margin: 0 0 6px;
-}
-.bm-v3-date-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--color-text-3);
-  font: inherit;
-  transition: color 80ms;
-}
-.bm-v3-date-trigger:hover {
-  color: var(--color-text-1);
-}
-.bm-v3-date-trigger .bm-eyebrow {
-  margin: 0;
-  /* Inherit the trigger's hover colour so the eyebrow + icon track
-     together rather than fighting each other on hover. */
-  color: inherit;
-}
-.bm-v3-cal-icon {
-  display: inline-block;
-  /* Slight optical lift so the calendar glyph baseline matches the
-     uppercase eyebrow's cap height. */
-  margin-bottom: 1px;
-  color: inherit;
-}
-
-
-/* —— v4 bulletin masthead — date+calendar above region —————————
-   Iteration on v3: the eyebrow + calendar trigger move above the H1,
-   and the parent EAWS L2 sub-region becomes a quiet H2 below the
-   region name. Same calendar plumbing as v3 — the trigger is just
-   relocated. */
-
-.bm-v4-header {
-  /* padding-top: 16px; */
-  margin-bottom: 1.25rem;
-}
-.bm-v4-header .bm-region {
-  margin: 4px 0 4px;
-}
-.bm-v4-subregion {
+.bm-subregion {
   font-size: 14px;
   font-weight: 400;
   line-height: 1.25;
@@ -606,7 +460,7 @@ span.bm-day.bm-empty             { cursor: default; }
   margin: 0;
   text-wrap: balance;
 }
-.bm-v4-date-trigger {
+.bm-date-trigger {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -619,22 +473,24 @@ span.bm-day.bm-empty             { cursor: default; }
   font: inherit;
   transition: color 80ms;
 }
-.bm-v4-date-trigger:hover {
+.bm-date-trigger:hover {
   color: var(--color-text-1);
 }
-.bm-v4-date-trigger .bm-eyebrow {
+.bm-date-trigger .bm-eyebrow {
   margin: 0;
   /* Inherit the trigger's hover colour so eyebrow + glyph track together. */
   color: inherit;
 }
-.bm-v4-cal-icon {
+.bm-cal-icon {
   display: inline-block;
+  /* Slight optical lift so the calendar glyph baseline matches the
+     uppercase eyebrow's cap height. */
   margin-bottom: 1px;
   color: inherit;
 }
 
 
-/* —— v2 day-windows panel — earlier / all-day / later summary —
+/* —— Day-windows panel — earlier / all-day / later summary ————
    Frozen design from design_handoff_day_windows/. Sits between the
    masthead's day-strip and the rating blocks. Quiet by design — white
    card surface, hairline dividers; EAWS colour appears only inside

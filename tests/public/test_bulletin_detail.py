@@ -20,7 +20,6 @@ from django.test import Client
 from django.urls import reverse
 
 from public.views import (
-    _build_issue_tabs,
     _get_nav_dates,
     _issues_for_date,
     _resolve_selected_issue,
@@ -270,8 +269,8 @@ class TestBulletinDetailView:
         assert response.status_code == 200
         assert response.context["bulletin"] is None
 
-    def test_nav_links_use_dates(self, client: Client, region):
-        """Prev/next navigation passes dates, not bulletin IDs."""
+    def test_prev_next_dates_in_context(self, client: Client, region):
+        """Prev/next navigation context exposes the adjacent calendar days."""
         _make_am_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
         _make_am_bulletin(region, date(2026, 3, 16))
@@ -289,12 +288,9 @@ class TestBulletinDetailView:
 
         assert response.context["prev_date"] == date(2026, 3, 14)
         assert response.context["next_date"] == date(2026, 3, 16)
-        content = response.content.decode()
-        assert "2026-03-14" in content
-        assert "2026-03-16" in content
 
-    def test_current_date_shown_in_nav(self, client: Client, region):
-        """The current page date appears in the nav."""
+    def test_today_label_in_page_title(self, client: Client, region):
+        """Today's bulletin renders the ``Today`` label in the page title."""
         _make_am_bulletin(region, date(2026, 3, 15))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
@@ -308,7 +304,7 @@ class TestBulletinDetailView:
         assert "Today" in content
 
     def test_past_date_shown_in_eyebrow(self, client: Client, region):
-        """A past page date appears as a full date in the page eyebrow."""
+        """A past page date appears in the masthead eyebrow."""
         _make_am_bulletin(region, date(2026, 3, 14))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
@@ -323,9 +319,8 @@ class TestBulletinDetailView:
             response = client.get(url)
 
         content = response.content.decode()
-        # The eyebrow renders the full ``l j F Y`` format, not the short
-        # ``D j M`` form used by the prev/next day arrows.
-        assert "Saturday 14 March 2026" in content
+        # The masthead eyebrow uses the ``D j M Y`` format.
+        assert "Sat 14 Mar 2026" in content
 
     def test_next_update_context_populated_today_before_due(
         self, client: Client, region
@@ -541,88 +536,8 @@ class TestResolveSelectedIssue:
 
 
 @pytest.mark.django_db
-class TestIssueTabLabels:
-    """Issue tabs carry chronological labels and the correct ``is_active`` flag."""
-
-    def test_three_issue_day_morning_active(self, region):
-        """
-        On a three-issue day with the morning update active: the active
-        chip shows morning's own window; the previous-evening chip has
-        a ``< 06:00`` cutoff (where morning takes over) and the
-        same-day-evening chip has a ``> 15:00`` cutoff (where it takes
-        over from morning).
-        """
-        # Fixture times — all helpers share the same 15:00 rollover:
-        # * _make_pm_bulletin(D-1): valid 14 Mar 15:00 → 15 Mar 15:00
-        # * _make_am_bulletin(D):   valid 15 Mar 06:00 → 15 Mar 15:00
-        # * _make_pm_bulletin(D):   valid 15 Mar 15:00 → 16 Mar 15:00
-        _make_pm_bulletin(region, date(2026, 3, 14))
-        am = _make_am_bulletin(region, date(2026, 3, 15))
-        _make_pm_bulletin(region, date(2026, 3, 15))
-        issues = _issues_for_date(region, date(2026, 3, 15))
-
-        tabs = _build_issue_tabs(issues, am, date(2026, 3, 15))
-
-        assert [t["role"] for t in tabs] == [
-            "Previous evening",
-            "Morning",
-            "Evening",
-        ]
-        assert [t["is_active"] for t in tabs] == [False, True, False]
-        # Time-window labels use the authority-window model: each
-        # chip points toward the active one with a `<` / `>` cutoff.
-        assert tabs[0]["short_label"] == "< 06:00"
-        assert tabs[1]["short_label"] == "06:00 - 15:00"
-        assert tabs[2]["short_label"] == "> 15:00"
-        # Long labels carry the role + concrete issuance time +
-        # clipped authority window for screen readers.
-        assert tabs[1]["long_label"].startswith("Morning: issued ")
-        assert "15 March 06:00 UTC" in tabs[1]["long_label"]
-        assert "authoritative 06:00 - 15:00" in tabs[1]["long_label"]
-
-    def test_two_issue_day_prev_evening_active(self, region):
-        """
-        On a two-issue day (no morning update) with the previous-day
-        evening active, its chip shows the full day-D authority window
-        ``00:00 - HH:MM`` (clipped to the start of day D), and the
-        same-day-evening chip shows ``> HH:MM``.
-        """
-        # Authority partition on day D:
-        # * previous-evening:   [D 00:00, D 15:00]  (clipped at D 00:00,
-        #   ends where same-day evening takes over)
-        # * same-day evening:   [D 15:00, D 24:00]  (clipped at D 24:00)
-        prev = _make_pm_bulletin(region, date(2026, 3, 14))
-        _make_pm_bulletin(region, date(2026, 3, 15))
-        issues = _issues_for_date(region, date(2026, 3, 15))
-
-        tabs = _build_issue_tabs(issues, prev, date(2026, 3, 15))
-
-        assert [t["role"] for t in tabs] == ["Previous evening", "Evening"]
-        assert [t["is_active"] for t in tabs] == [True, False]
-        # Active chip uses the full clipped window; ``00:00`` marks a
-        # window that reaches back into D-1 and ``24:00`` one that
-        # extends into D+1.
-        assert tabs[0]["short_label"] == "00:00 - 15:00"
-        assert tabs[1]["short_label"] == "> 15:00"
-
-    def test_same_day_evening_active_clips_to_24_00(self, region):
-        """
-        The same-day evening chip, when active, clips its end to 24:00
-        (since its actual validity spills into D+1).
-        """
-        _make_pm_bulletin(region, date(2026, 3, 14))
-        same_evening = _make_pm_bulletin(region, date(2026, 3, 15))
-        issues = _issues_for_date(region, date(2026, 3, 15))
-
-        tabs = _build_issue_tabs(issues, same_evening, date(2026, 3, 15))
-
-        assert tabs[1]["short_label"] == "15:00 - 24:00"
-        assert tabs[0]["short_label"] == "< 15:00"
-
-
-@pytest.mark.django_db
-class TestBulletinDetailIssueTabs:
-    """The bulletin page renders an issue-tab strip when >1 issue touches the day."""
+class TestBulletinDetailIssueParam:
+    """``?issue=<uuid>`` selects which issue renders on multi-issue days."""
 
     def _url(self, region, date_str):
         return reverse(
@@ -633,35 +548,6 @@ class TestBulletinDetailIssueTabs:
                 "date_str": date_str,
             },
         )
-
-    def test_tabs_rendered_when_multiple_issues(self, client: Client, region):
-        """With three issues touching a day, three tabs render inside the nav."""
-        _make_pm_bulletin(region, date(2026, 3, 14))
-        _make_am_bulletin(region, date(2026, 3, 15))
-        _make_pm_bulletin(region, date(2026, 3, 15))
-
-        with _freeze("2026-03-20T12:00:00+00:00"):
-            response = client.get(self._url(region, "2026-03-15"))
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="bulletin-nav"' in content
-        assert content.count('data-testid="issue-tab"') == 3
-
-    def test_single_issue_still_renders_one_tab(self, client: Client, region):
-        """
-        A one-issue day renders a single chip carrying its authority
-        window — it still functions as the page's "what am I reading"
-        indicator even without siblings to switch to.
-        """
-        _make_am_bulletin(region, date(2026, 3, 15))
-
-        with _freeze("2026-03-20T12:00:00+00:00"):
-            response = client.get(self._url(region, "2026-03-15"))
-
-        content = response.content.decode()
-        assert 'data-testid="bulletin-nav"' in content
-        assert content.count('data-testid="issue-tab"') == 1
 
     def test_query_param_switches_rendered_issue(self, client: Client, region):
         """``?issue=<uuid>`` renders that specific issue (via X-Bulletin-Id)."""

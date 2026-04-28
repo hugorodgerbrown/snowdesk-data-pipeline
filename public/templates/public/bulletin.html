@@ -58,17 +58,12 @@ Six structural sections, top to bottom:
 {% endblock %}
 
 {% block nav %}
+    {# The masthead promotes the calendar trigger into its own body, so   #}
+    {# the top bar is wayfinding-only (back link + wordmark). Explicit    #}
+    {# ``calendar_*=None`` shadows the values the view always passes —    #}
+    {# ``{% include with %}`` only adds to context, it doesn't isolate it. #}
     {% url 'public:map' as map_url %}
-    {% if masthead_version == "v3" or masthead_version == "v4" %}
-        {# v3 / v4 promote the calendar trigger out of the top nav and    #}
-        {# into the masthead body. The top bar becomes pure wayfinding    #}
-        {# (back link + wordmark only). Explicit ``calendar_*=None``      #}
-        {# shadows the values the view always passes — ``{% include with #}
-        {# %}`` only adds to context, it doesn't isolate it.              #}
-        {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=None calendar_partial_url=None %}
-    {% else %}
-        {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=calendar_region_id calendar_partial_url=calendar_partial_url %}
-    {% endif %}
+    {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=None calendar_partial_url=None %}
 {% endblock %}
 
 {% block content %}
@@ -89,9 +84,9 @@ Six structural sections, top to bottom:
     {# The drawer is a one-element popover; without an outside-click     #}
     {# listener it stays open until the user clicks a date or navigates  #}
     {# months. This listens at the document level and clears the host    #}
-    {# whenever a click lands outside both the drawer itself and any     #}
-    {# trigger that targets it (matched by [hx-target] so v1/v2/v3/v4    #}
-    {# triggers all qualify). Inline + nonced so it satisfies CSP.       #}
+    {# whenever a click lands outside both the drawer itself and the     #}
+    {# masthead's calendar trigger (matched by [hx-target]). Inline +    #}
+    {# nonced so it satisfies CSP.                                        #}
     <script nonce="{{ request.csp_nonce }}">
         (function () {
             document.addEventListener('click', function (e) {
@@ -107,103 +102,11 @@ Six structural sections, top to bottom:
     <div class="font-sans max-w-[640px] mx-auto px-4 py-4">
         {% comment %}
            SECTION 1 — Page chrome
-           Region name, date/validity, prev/next navigation.
+           Region name, date/validity, calendar trigger.
            No Close button — artefact of WR's modal-over-map architecture,
            removed per DESIGN.md confirmed subtractions.
         {% endcomment %}
-        {% if masthead_version == "v4" %}
-            {# v4 masthead (SNOW-71) — date eyebrow + calendar trigger     #}
-            {# above the H1 region; parent EAWS L2 sub-region as a quiet   #}
-            {# H2 below. No day-strip, calendar drawer is the only picker. #}
-            {% include "includes/bulletin_masthead_v4.html" %}
-        {% elif masthead_version == "v3" %}
-            {# v3 masthead (SNOW-70) — region promoted to the top, date     #}
-            {# eyebrow below with the calendar trigger inline. No day-strip #}
-            {# and no « / » nav row — date navigation lives entirely in    #}
-            {# the calendar drawer.                                         #}
-            {% include "includes/bulletin_masthead_v3.html" %}
-        {% elif use_new_masthead %}
-            {# v2 masthead (SNOW-70) — gated on ?masthead=v2 so the design   #}
-            {# can be A/B compared against the inline v1 masthead during    #}
-            {# iteration. The day-character zone (variants I.1/I.2/I.3) is  #}
-            {# a separate ticket; v2 still uses the headline band below.    #}
-            {% include "includes/bulletin_masthead.html" %}
-        {% else %}
-            <header class="mb-5">
-                <h1 class="text-2xl font-semibold text-center leading-tight tracking-tight">
-                    {{ region_name }}
-                </h1>
-                <p class="text-xs text-text-3 text-center mt-1 uppercase tracking-widest font-mono">
-                    {% if is_today %}{% trans "Today" %}{% else %}{{ page_date|date:"l j F Y" }}{% endif %}
-                </p>
-            </header>
-
-            {# ── Unified navigation row ──────────────────────────────────── #}
-            {# Media-player-style controls: outer «« / »» skip to the previous #}
-            {# or next calendar day; inner chips are the issues that touched   #}
-            {# today, labelled by the window during which each issue is the   #}
-            {# authoritative forecast.  The active chip shows its full        #}
-            {# authority window on day D; inactive chips point towards the    #}
-            {# active one with a ``<`` or ``>`` cutoff.                        #}
-            {% if bulletin %}
-                {# Day-nav arrows are pinned to the panel edges via         #}
-                {# justify-between so they hold position regardless of how  #}
-                {# many issue tabs sit between them; tabs stay centred.     #}
-                <nav
-                    class="flex items-center justify-between mb-6 text-[11px] font-mono"
-                    aria-label='{% trans "Bulletin navigation" %}'
-                    data-testid="bulletin-nav"
-                >
-                    {% if prev_date %}
-                        <a
-                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2"
-                            href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
-                            aria-label="{% blocktrans with date=prev_date|date:'l j F Y' %}Previous day: {{ date }}{% endblocktrans %}"
-                            data-testid="nav-prev-day"
-                        >
-                            &laquo;
-                        </a>
-                    {% else %}
-                        <span
-                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-3 border-border opacity-40"
-                            aria-hidden="true"
-                        >&laquo;</span>
-                    {% endif %}
-
-                    <div class="flex items-center gap-1">
-                        {% for tab in issue_tabs %}
-                            <a
-                                class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap {% if tab.is_active %}bg-text-1 text-bg border-text-1{% else %}bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2{% endif %}"
-                                href="?issue={{ tab.bulletin_id }}"
-                                aria-label="{{ tab.long_label }}"
-                                {% if tab.is_active %}
-                                    aria-current="page"
-                                {% endif %}
-                                data-testid="issue-tab"
-                            >
-                                {{ tab.short_label }}
-                            </a>
-                        {% endfor %}
-                    </div>
-
-                    {% if next_date %}
-                        <a
-                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-2 border-border hover:text-text-1 hover:border-text-2"
-                            href="{% url 'public:bulletin_date' region_id=region_id slug=slug date_str=next_date|date:'Y-m-d' %}"
-                            aria-label="{% blocktrans with date=next_date|date:'l j F Y' %}Next day: {{ date }}{% endblocktrans %}"
-                            data-testid="nav-next-day"
-                        >
-                            &raquo;
-                        </a>
-                    {% else %}
-                        <span
-                            class="rounded-[6px] px-3 py-1.5 border whitespace-nowrap bg-card text-text-3 border-border opacity-40"
-                            aria-hidden="true"
-                        >&raquo;</span>
-                    {% endif %}
-                </nav>
-            {% endif %}
-        {% endif %}
+        {% include "includes/bulletin_masthead.html" %}
 
         {% if not bulletin %}
             {# ── Empty state ─────────────────────────────────────────── #}
@@ -239,78 +142,18 @@ Six structural sections, top to bottom:
             {% else %}
                 {% with rm=panel.render_model %}
                     {% comment %}
-                       SECTION 2 — Bulletin headline band
-                       Full-width panel split into AM/PM halves.  Mirrors
-                       WhiteRisk's "Morning" + "As the day progresses"
-                       maps: every day shows both halves, even when they
-                       share a level, so the user never has to infer the
-                       second value.  Each half is tinted with its half's
-                       EAWS colour via the ``.danger-band[data-level=…]``
-                       rule.  The ``is_time_variable`` caption below adds
-                       the problem-mix-changes signal for same-level days
-                       where the evolution is only visible in the rating
-                       blocks (e.g. dry all day + wet afternoon at L3/L3).
+                       SECTION 2 — Day Risk Profile panel
+                       One row per validTimePeriod (earlier / all_day /
+                       later) summarising the day's hazard windows. The
+                       rating blocks below carry the full per-trait detail.
                     {% endcomment %}
-                    {% if use_new_masthead %}
-                        {# v2 day-windows panel (SNOW-70) — replaces the inline   #}
-                        {# Morning/Later tiles. One row per validTimePeriod;      #}
-                        {# the rating blocks below carry the full per-trait       #}
-                        {# detail and remain unchanged.                            #}
-                        <h2
-                            class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3"
-                            data-testid="day-risk-profile-heading"
-                        >
-                            {% trans "Day Risk Profile" %}
-                        </h2>
-                        {% include "includes/day_windows.html" %}
-                    {% else %}
-                        {# When AM and PM resolve to the same danger key AND the  #}
-                        {# same subdivision, the display collapses to a single    #}
-                        {# "All day" tile so we don't render two identical values. #}
-                        {% if panel.morning_key == panel.afternoon_key and panel.morning_subdivision == panel.afternoon_subdivision %}
-                            <div
-                                class="mb-4"
-                                data-testid="headline-band"
-                            >
-                                <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
-                                    {% trans "All day" %}
-                                </div>
-                                <span
-                                    class="danger-tile text-base"
-                                    data-level="{{ panel.morning_key }}"
-                                >{{ panel.morning_number }}{{ panel.morning_subdivision }}</span>
-                            </div>
-                        {% else %}
-                            <div
-                                class="flex items-end gap-3 mb-4"
-                                data-testid="headline-band"
-                            >
-                                <div data-testid="headline-segment-first">
-                                    <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
-                                        {% trans "Morning" %}
-                                    </div>
-                                    <span
-                                        class="danger-tile text-base"
-                                        data-level="{{ panel.morning_key }}"
-                                    >{{ panel.morning_number }}{{ panel.morning_subdivision }}</span>
-                                </div>
-                                <span
-                                    class="text-text-3 text-lg leading-none pb-3"
-                                    data-testid="transition-arrow"
-                                    aria-hidden="true"
-                                >&#8594;</span>
-                                <div data-testid="headline-segment-second">
-                                    <div class="text-[10px] font-mono uppercase tracking-widest text-text-3 mb-2">
-                                        {% trans "Later" %}
-                                    </div>
-                                    <span
-                                        class="danger-tile text-base"
-                                        data-level="{{ panel.afternoon_key }}"
-                                    >{{ panel.afternoon_number }}{{ panel.afternoon_subdivision }}</span>
-                                </div>
-                            </div>
-                        {% endif %}
-                    {% endif %}
+                    <h2
+                        class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3"
+                        data-testid="day-risk-profile-heading"
+                    >
+                        {% trans "Day Risk Profile" %}
+                    </h2>
+                    {% include "includes/day_windows.html" %}
 
                     {% comment %}
                        SECTION 3 — Rating block(s)

@@ -472,135 +472,6 @@ def _select_bulletin_for_date(
     return _select_default_issue(_issues_for_date(region, target_date), target_date)
 
 
-def _authority_windows(
-    issues: list[Bulletin],
-    day_start: datetime.datetime,
-    day_end: datetime.datetime,
-) -> list[tuple[datetime.datetime, datetime.datetime]]:
-    """
-    Partition a chronologically-sorted list of issues into day-D windows.
-
-    Each issue's authority runs from its own ``valid_from`` until the
-    next issue's ``valid_from`` takes over (the last issue runs to its
-    own ``valid_to``), clipped to the day-D boundary.
-
-    Args:
-        issues: Chronologically-sorted bulletins touching day D.
-        day_start: Start-of-day (00:00) instant for day D (tz-aware).
-        day_end: End-of-day (next 00:00) instant for day D (tz-aware).
-
-    Returns:
-        A list of ``(start, end)`` tuples in the same order as ``issues``.
-
-    """
-    windows: list[tuple[datetime.datetime, datetime.datetime]] = []
-    for i, b in enumerate(issues):
-        start = max(b.valid_from, day_start)
-        if i + 1 < len(issues):
-            end = min(issues[i + 1].valid_from, day_end)
-        else:
-            end = min(b.valid_to, day_end)
-        windows.append((start, end))
-    return windows
-
-
-def _format_time_on_day(dt: datetime.datetime, day_end: datetime.datetime) -> str:
-    """Render a datetime as HH:MM, or "24:00" when it sits exactly at day end."""
-    if dt == day_end:
-        return "24:00"
-    return dt.strftime("%H:%M")
-
-
-def _classify_issue_role(b: Bulletin, target_date: datetime.date) -> str:
-    """Classify an issue by its ``valid_from`` relative to day D."""
-    vf: datetime.datetime = b.valid_from
-    if vf.date() < target_date:
-        return _gettext("Previous evening")
-    if vf.hour < 12:
-        return _gettext("Morning")
-    return _gettext("Evening")
-
-
-def _build_issue_tabs(
-    issues: list[Bulletin],
-    selected: Bulletin,
-    target_date: datetime.date,
-) -> list[dict[str, Any]]:
-    """
-    Build the per-issue tab entries displayed above the bulletin body.
-
-    The tabs partition day D into non-overlapping *authority* windows
-    (see :func:`_authority_windows`).  Label shape depends on whether
-    the tab is the active one:
-
-    * **Active** tab → full clipped window ``"HH:MM - HH:MM"``.  This
-      is the canonical "what am I reading" indicator on the page.
-    * **Inactive** tabs carry a directional stub pointing towards the
-      active selection:
-
-      * position before the active tab → ``"< HH:MM"`` — the
-        authority-end time on day D (when the following issue takes
-        over);
-      * position after the active tab → ``"> HH:MM"`` — the
-        authority-start time on day D (when it begins to supersede
-        the previous issue).
-
-    The long / aria label always carries role + concrete issuance
-    time + authority window for screen readers.
-
-    Args:
-        issues: All bulletins overlapping ``target_date``, chronological.
-        selected: The issue currently being rendered.
-        target_date: Calendar date identifying the day on display.
-
-    Returns:
-        A list of dicts with ``bulletin_id``, ``short_label``,
-        ``long_label``, ``role``, and ``is_active`` keys.
-
-    """
-    if not issues:
-        return []
-
-    day_start = datetime.datetime.combine(
-        target_date, datetime.time(0, 0), tzinfo=datetime.UTC
-    )
-    day_end = day_start + datetime.timedelta(days=1)
-    windows = _authority_windows(issues, day_start, day_end)
-
-    try:
-        active_index = next(i for i, b in enumerate(issues) if b.pk == selected.pk)
-    except StopIteration:
-        active_index = 0
-
-    tabs: list[dict[str, Any]] = []
-    for i, b in enumerate(issues):
-        start, end = windows[i]
-        start_txt = _format_time_on_day(start, day_end)
-        end_txt = _format_time_on_day(end, day_end)
-        window_text = f"{start_txt} - {end_txt}"
-        if i == active_index:
-            short_label = window_text
-        elif i < active_index:
-            short_label = f"< {end_txt}"
-        else:
-            short_label = f"> {start_txt}"
-        role = _classify_issue_role(b, target_date)
-        long_label = (
-            f"{role}: issued {b.valid_from.strftime('%-d %B %H:%M')} UTC "
-            f"(authoritative {window_text})"
-        )
-        tabs.append(
-            {
-                "bulletin_id": str(b.bulletin_id),
-                "short_label": short_label,
-                "long_label": long_label,
-                "role": role,
-                "is_active": i == active_index,
-            }
-        )
-    return tabs
-
-
 def _resolve_selected_issue(
     issues: list[Bulletin],
     target_date: datetime.date,
@@ -1016,7 +887,6 @@ def examples_random(request: HttpRequest) -> HttpResponse:
         )
 
     page_date = today
-    issue_tabs = _build_issue_tabs(issues, selected, today)
 
     link = (
         RegionBulletin.objects.filter(bulletin=selected, region=region)
@@ -1054,6 +924,24 @@ def examples_random(request: HttpRequest) -> HttpResponse:
 
     panel = _build_panel_context(selected)
 
+    day_windows: list[dict[str, Any]] = _build_day_windows(selected)
+    subregion_name = (
+        region.subregion.name_en or region.subregion.name_native
+        if region.subregion
+        else ""
+    )
+    calendar_partial_url = "{}?{}".format(
+        reverse(
+            "public:calendar_partial",
+            kwargs={
+                "region_id": region.region_id,
+                "year": page_date.year,
+                "month": page_date.month,
+            },
+        ),
+        urlencode({"date": page_date.isoformat()}),
+    )
+
     context = {
         "region": region,
         "region_name": region_name,
@@ -1068,7 +956,13 @@ def examples_random(request: HttpRequest) -> HttpResponse:
         "next_update_time": next_update_time,
         "related_regions": related_regions,
         "year": today.year,
-        "issue_tabs": issue_tabs,
+        # Calendar widget context.
+        "calendar_region_id": region.region_id,
+        "calendar_partial_url": calendar_partial_url,
+        "calendar_current_date": page_date,
+        # Masthead context.
+        "day_windows": day_windows,
+        "subregion_name": subregion_name,
     }
     return _render_bulletin_page(request, context, bulletin=selected)
 
@@ -1232,121 +1126,15 @@ def _bulletin_page_etag(
     if latest is None:
         return None
     issue = request.GET.get("issue") or ""
-    masthead = request.GET.get("masthead") or ""
     return (
         f'W/"{int(latest.timestamp())}'
         f"-{issue}"
-        f"-m{masthead}"
         f"-{RENDER_MODEL_VERSION}"
         f'-{settings.RELEASE_VERSION}"'
     )
 
 
-# Day-of-week abbreviations for the v2 masthead day-strip. Hard-coded
-# (not locale-derived) because the design freeze specifies "Mon Tue Wed …"
-# and the soft-launch is English-only per project_language_scope memory.
-_MASTHEAD_DOW_ABBR: tuple[str, ...] = (
-    "Mon",
-    "Tue",
-    "Wed",
-    "Thu",
-    "Fri",
-    "Sat",
-    "Sun",
-)
-
-
-def _build_masthead_days(
-    region: Region,
-    focal_date: datetime.date,
-) -> list[dict[str, Any]]:
-    """
-    Build the calendar-week (Mon–Sun) day-strip for the v2 masthead.
-
-    The strip is **static**: it always renders the seven days of the
-    calendar week that contains ``focal_date``, with the focal cell
-    highlighted. Navigating between days within the same week does not
-    shift the strip; jumping to a different week is the calendar
-    control's job (top-right of the page chrome).
-
-    Each entry carries the data the masthead partial needs to render one
-    ``.bm-day``: the day-of-week abbreviation, the day-of-month number,
-    an absolute href (with ``?masthead=v2`` preserved so the strip stays
-    in v2 mode), and the EAWS keys for the split swatch.
-
-    Per-period (earlier / later) keys are derived from the source
-    bulletin's CAAML ``dangerRatings`` via :func:`_resolve_period_danger`,
-    so the swatch reflects the same morning/afternoon split the headline
-    band uses. A day with no :class:`RegionDayRating` row — or one whose
-    rating is ``NO_RATING`` — renders empty (dashed swatch, span instead
-    of anchor so it's non-navigable). When ``source_bulletin`` is missing
-    (`SET_NULL` after deletion) we fall back to the row's stored
-    ``min_rating`` / ``max_rating``.
-    """
-    # Monday of the calendar week containing focal_date. ``weekday()``
-    # returns 0 for Monday, 6 for Sunday — so subtracting it normalises
-    # any focal day to that week's Monday regardless of which day we're
-    # looking at.
-    monday = focal_date - datetime.timedelta(days=focal_date.weekday())
-    sunday = monday + datetime.timedelta(days=6)
-    rows = RegionDayRating.objects.filter(
-        region=region,
-        date__gte=monday,
-        date__lte=sunday,
-    ).select_related("source_bulletin")
-    rows_by_date = {row.date: row for row in rows}
-    region_slug = slugify(region.name)
-    days: list[dict[str, Any]] = []
-    for offset in range(7):
-        d = monday + datetime.timedelta(days=offset)
-        href = "{}?masthead=v2".format(
-            reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": region.region_id,
-                    "slug": region_slug,
-                    "date_str": d.isoformat(),
-                },
-            )
-        )
-        cell: dict[str, Any] = {
-            "date": d,
-            "dow": _MASTHEAD_DOW_ABBR[d.weekday()],
-            "day_num": d.day,
-            "is_focal": d == focal_date,
-            "href": href,
-        }
-        row = rows_by_date.get(d)
-        if row is None or row.max_rating == RegionDayRating.Rating.NO_RATING:
-            cell.update(
-                is_empty=True,
-                earlier_css="",
-                later_css="",
-                is_all_day=True,
-            )
-            days.append(cell)
-            continue
-
-        earlier_key = row.min_rating
-        later_key = row.max_rating
-        if row.source_bulletin is not None:
-            props = _get_properties(row.source_bulletin)
-            ratings = props.get("dangerRatings") or []
-            traits = (row.source_bulletin.render_model or {}).get("traits") or []
-            earlier_key, _ = _resolve_period_danger(ratings, traits, _MORNING_PERIODS)
-            later_key, _ = _resolve_period_danger(ratings, traits, _AFTERNOON_PERIODS)
-
-        cell.update(
-            is_empty=False,
-            earlier_css=earlier_key.replace("_", "-"),
-            later_css=later_key.replace("_", "-"),
-            is_all_day=earlier_key == later_key,
-        )
-        days.append(cell)
-    return days
-
-
-# Order in which day-window rows appear on the new masthead's day-windows
+# Order in which day-window rows appear on the masthead's day-windows
 # panel. CAAML's ``validTimePeriod`` doesn't impose an ordering; the design
 # handoff fixes this as chronological-with-all-day-in-the-middle so rare
 # three-window days (earlier + all_day + later) read top-to-bottom.
@@ -1522,10 +1310,10 @@ def bulletin_detail(
 
     """
     # ``select_related("subregion")`` pre-loads the parent EAWS L2 row
-    # the v4 masthead's H2 reads (and any future caller that touches
+    # the masthead's H2 reads (and any future caller that touches
     # ``region.subregion``) — without it, the subregion lookup adds a
-    # second SELECT on every bulletin pageview regardless of masthead
-    # version. SNOW-13 query-count monitor caught the +1 regression.
+    # second SELECT on every bulletin pageview. SNOW-13 query-count
+    # monitor caught the +1 regression.
     region = get_object_or_404(
         Region.objects.select_related("subregion"),
         region_id__iexact=region_id,
@@ -1549,9 +1337,8 @@ def bulletin_detail(
 
     # Collect every issue that touches the target day and pick the one
     # the user asked for via ``?issue=<uuid>``; otherwise fall back to
-    # the 10:00-rule default.  Keeping the full list lets the template
-    # render an issue-tab strip so readers can swap between the
-    # evening / morning / evening issues without losing the URL date.
+    # the 10:00-rule default. Multi-issue days render the user-selected
+    # issue (or the default) as the page body.
     issues = _issues_for_date(region, target_date)
     requested_issue_id = request.GET.get("issue") or None
     selected = _resolve_selected_issue(issues, target_date, requested_issue_id)
@@ -1576,7 +1363,6 @@ def bulletin_detail(
     # of which issue the viewer has selected — otherwise flipping to the
     # same-day-evening issue would silently bump the header to D+1.
     page_date = target_date
-    issue_tabs = _build_issue_tabs(issues, selected, target_date)
 
     # Region name as it appeared in this bulletin.
     link = (
@@ -1617,28 +1403,11 @@ def bulletin_detail(
 
     panel = _build_panel_context(selected)
 
-    # New-masthead opt-in (SNOW-70 / SNOW-71). Gated on ``?masthead=v2``
-    # (calendar-week day-strip + day-windows panel), ``?masthead=v3``
-    # (region-led masthead with the calendar trigger inline; no day-strip)
-    # or ``?masthead=v4`` (date+calendar promoted above the H1, parent
-    # subregion as an H2 below it). The v1 inline header remains the
-    # default while the redesign is iterated on.
-    raw_masthead = request.GET.get("masthead") or ""
-    masthead_version: str | None = (
-        raw_masthead if raw_masthead in {"v2", "v3", "v4"} else None
-    )
-    use_new_masthead = masthead_version is not None
-    # v3 / v4 drop the day-strip — only v2 needs the seven-day window built.
-    masthead_days: list[dict[str, Any]] = (
-        _build_masthead_days(region, page_date) if masthead_version == "v2" else []
-    )
-    day_windows: list[dict[str, Any]] = (
-        _build_day_windows(selected) if use_new_masthead else []
-    )
-    # v4 subtitles the H1 with the parent EAWS L2 sub-region. Prefer the
-    # English name where SLF publishes one, otherwise fall back to the
-    # locally-dominant native name. ``Region.subregion`` is non-nullable
-    # so this lookup is always safe.
+    day_windows: list[dict[str, Any]] = _build_day_windows(selected)
+    # The masthead subtitles the H1 with the parent EAWS L2 sub-region.
+    # Prefer the English name where SLF publishes one, otherwise fall back
+    # to the locally-dominant native name. ``Region.subregion`` is
+    # non-nullable so this lookup is always safe.
     subregion_name = (
         region.subregion.name_en or region.subregion.name_native
         if region.subregion
@@ -1646,12 +1415,7 @@ def bulletin_detail(
     )
 
     # The calendar partial needs the focal date so it can highlight the
-    # selected day, and the masthead version so cell links can preserve
-    # ``?masthead=v3`` (etc.) — otherwise navigating from the calendar
-    # would drop the user back to v1 mid-iteration.
-    calendar_qs: dict[str, str] = {"date": page_date.isoformat()}
-    if masthead_version:
-        calendar_qs["masthead"] = masthead_version
+    # selected day.
     calendar_partial_url = "{}?{}".format(
         reverse(
             "public:calendar_partial",
@@ -1661,7 +1425,7 @@ def bulletin_detail(
                 "month": page_date.month,
             },
         ),
-        urlencode(calendar_qs),
+        urlencode({"date": page_date.isoformat()}),
     )
 
     context = {
@@ -1678,15 +1442,11 @@ def bulletin_detail(
         "next_update_time": next_update_time,
         "related_regions": related_regions,
         "year": today.year,
-        "issue_tabs": issue_tabs,
         # Calendar widget context.
         "calendar_region_id": region.region_id,
         "calendar_partial_url": calendar_partial_url,
         "calendar_current_date": page_date,
-        # v2 / v3 / v4 masthead.
-        "use_new_masthead": use_new_masthead,
-        "masthead_version": masthead_version,
-        "masthead_days": masthead_days,
+        # Masthead context.
         "day_windows": day_windows,
         "subregion_name": subregion_name,
     }
@@ -2658,22 +2418,16 @@ def _parse_selected_date(request: HttpRequest) -> datetime.date | None:
         return None
 
 
-def _calendar_nav_query(
-    selected_date: datetime.date | None,
-    raw_masthead: str,
-) -> str:
+def _calendar_nav_query(selected_date: datetime.date | None) -> str:
     """
-    Re-encode the calendar partial's nav query (``?date=…&masthead=…``).
+    Re-encode the calendar partial's nav query (``?date=…``).
 
-    Used for prev/next-month links so a calendar drawer opened in v3
-    keeps the masthead version when the user pages between months.
+    Used for prev/next-month links so the focal day is preserved when the
+    user pages between months.
     """
-    nav_qs: dict[str, str] = {}
-    if selected_date is not None:
-        nav_qs["date"] = selected_date.isoformat()
-    if raw_masthead in {"v2", "v3"}:
-        nav_qs["masthead"] = raw_masthead
-    return f"?{urlencode(nav_qs)}" if nav_qs else ""
+    if selected_date is None:
+        return ""
+    return f"?{urlencode({'date': selected_date.isoformat()})}"
 
 
 @require_htmx
@@ -2728,10 +2482,6 @@ def calendar_partial(
     month = requested.month
 
     selected_date = _parse_selected_date(request)
-    raw_masthead = request.GET.get("masthead") or ""
-    # Cell links must preserve ``?masthead=v2|v3`` so navigating from the
-    # calendar drawer doesn't drop the user back to v1 mid-iteration.
-    masthead_query = f"?masthead={raw_masthead}" if raw_masthead in {"v2", "v3"} else ""
 
     # Fetch ratings for the month.
     rating_qs = RegionDayRating.objects.for_region_month(region, year, month)
@@ -2741,9 +2491,9 @@ def calendar_partial(
         ratings, year, month, today, selected_date=selected_date
     )
 
-    # Re-apply the same query string the partial was loaded with (date +
-    # masthead) so prev/next-month renders keep both context params in scope.
-    nav_query = _calendar_nav_query(selected_date, raw_masthead)
+    # Re-apply the focal-day query string so prev/next-month renders keep
+    # the same selected date highlighted.
+    nav_query = _calendar_nav_query(selected_date)
 
     prev_month = requested - datetime.timedelta(days=1)
     prev_month = datetime.date(prev_month.year, prev_month.month, 1)
@@ -2788,6 +2538,5 @@ def calendar_partial(
         "prev_url": prev_url,
         "next_url": next_url,
         "calendar_current_date": selected_date,
-        "masthead_query": masthead_query,
     }
     return render(request, "public/partials/calendar.html", context)
