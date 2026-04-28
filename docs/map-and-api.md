@@ -49,6 +49,7 @@ appeared first.
 |-----|------|----------|
 | `GET /api/today-summaries/` | `api:today_summaries` | `{region_id: {rating, subdivision, problem, elevation, aspects, valid_from, valid_to, name}}` |
 | `GET /api/resorts-by-region/` | `api:resorts_by_region` | `{region_id: [resort_name, …]}` — alphabetical; regions without resorts omitted |
+| `GET /api/resorts.geojson` | `api:resorts_geojson` | GeoJSON FeatureCollection of geocoded resorts (Points; `[lon, lat]` per RFC 7946); properties `id`, `name`, `region_id`, `needs_review` |
 | `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary`; each feature has `properties.id` + `properties.name` |
 | `GET /api/offline-manifest/map/` | `api:offline_manifest_map` | `{version, urls[]}` — precache manifest consumed by `static/js/sw.js` (see [`offline-map.md`](offline-map.md)) |
 
@@ -60,3 +61,52 @@ Stale/errored render models (`version: 0`) resolve to `rating: "no_rating"`.
 
 The shared top-nav partial used on the map and other public pages is
 documented separately in [`nav_implementation_spec.md`](nav_implementation_spec.md).
+
+## Edit-resorts mode (SNOW-74) — DEBUG only
+
+`/map/?edit=resorts` enters resort-coordinate-edit mode when
+`settings.DEBUG` is `True`. The page renders a right-hand panel with a
+queue of resorts that need geocoding (`Resort.objects.needs_geocoding()`
+— missing coords or `needs_review=True`) plus a search box across all
+resorts. Clicking the map drops a draggable orange pin; drag to refine,
+then **Save**. Behind the scenes the panel POSTs `{latitude, longitude}`
+to the save endpoint, which sets `geocode_source="manual"`,
+`geocode_confidence=1.0`, `geocoded_at=now()`, clears `needs_review`,
+and returns the next queue entry so the panel auto-advances. Click an
+existing resort point to re-position it.
+
+| URL | Name | Method | Notes |
+|-----|------|--------|-------|
+| `/api/edit/resorts/queue/` | `api:edit_resorts_queue` | GET | DEBUG-only. Returns `{queue, all_resorts}` — queue ordered `region_id ASC, name ASC` so the panel can group rows by L1 area (e.g. `CH-4`). `needs_review` rows still surface a ⚠ in the panel; they are no longer a sort key. |
+| `/api/edit/resorts/<int:resort_id>/coords/` | `api:edit_resort_save_coords` | POST | DEBUG-only. JSON body `{latitude, longitude}`; coordinates outside `_SWISS_BBOX` are hard-rejected with 400. |
+
+Both endpoints 404 when `DEBUG=False` (URL-level guard plus inline
+`_require_debug()` — belt-and-braces). The page itself silently falls
+back to the normal map when `?edit=resorts` is set without DEBUG, so
+the URL is safe to bookmark.
+
+Coordinate-ordering pitfall (called out in `static/js/map_edit_resorts.js`):
+
+- DB columns: `latitude`, `longitude`.
+- JSON wire format: `{"latitude": …, "longitude": …}` (keyed by name — unambiguous).
+- GeoJSON: `coordinates: [longitude, latitude]` per RFC 7946.
+- MapLibre marker: `marker.getLngLat()` returns `{lng, lat}` (note `lng`).
+
+### Persisting edits — `dump_resorts_fixture`
+
+Edits land in the local SQLite, not the source-of-truth fixture in git.
+Run the dump command after a session of placements to regenerate
+`pipeline/fixtures/resorts.json`:
+
+```bash
+poetry run python manage.py dump_resorts_fixture          # dry-run, prints diff
+poetry run python manage.py dump_resorts_fixture --commit # writes the file
+git diff pipeline/fixtures/resorts.json                   # review
+```
+
+The dump uses `use_natural_foreign_keys=True` (so `region` round-trips
+as `["CH-4115"]` not a numeric pk), pretty-prints with `indent=2`, and
+orders by pk — the same shape as the existing fixture. Without the
+dump step, edits live only on the operator's laptop and silently
+disappear on `loaddata` re-runs. Mirrors `refresh_eaws_fixtures`'s
+safe-by-default convention (read-only without `--commit`).

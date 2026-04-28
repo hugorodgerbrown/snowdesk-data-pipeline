@@ -742,6 +742,13 @@ def map_view(request: HttpRequest) -> HttpResponse:
     fallback used when localStorage is empty or names a basemap that
     has since been removed from the catalogue.
 
+    SNOW-74 — when ``?edit=resorts`` is on the URL **and**
+    ``settings.DEBUG`` is True, the page boots into resort-edit mode:
+    the side panel is rendered, ``static/js/map_edit_resorts.js`` is
+    loaded, and the API URLs powering it are passed through context.
+    With ``DEBUG=False`` the query string is silently ignored — the
+    DEBUG guard lives at the API endpoints themselves.
+
     Args:
         request: The incoming HTTP request.
 
@@ -757,6 +764,23 @@ def map_view(request: HttpRequest) -> HttpResponse:
     elapsed = max(0, min((today - season_start).days, span))
     today_pct = round(elapsed / span * 100, 2) if span else 100.0
 
+    edit_mode = request.GET.get("edit") == "resorts" and settings.DEBUG
+    edit_context: dict[str, Any] = {"edit_mode": edit_mode}
+    if edit_mode:
+        # The save URL contains an :resort_id placeholder — same trick as
+        # the region_summary URL in static/js/map.js: reverse with a
+        # dummy id, then string-replace at runtime in the JS.
+        save_url_template = reverse("api:edit_resort_save_coords", args=[0]).replace(
+            "/0/", "/__ID__/"
+        )
+        edit_context.update(
+            {
+                "edit_queue_url": reverse("api:edit_resorts_queue"),
+                "edit_save_url_template": save_url_template,
+                "edit_resorts_geojson_url": reverse("api:resorts_geojson"),
+            }
+        )
+
     return render(
         request,
         "public/map.html",
@@ -767,6 +791,7 @@ def map_view(request: HttpRequest) -> HttpResponse:
             "season_end": season_end,
             "today": today,
             "today_pct": today_pct,
+            **edit_context,
         },
     )
 

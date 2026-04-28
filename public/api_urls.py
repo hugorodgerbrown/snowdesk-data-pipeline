@@ -18,6 +18,7 @@ urlpatterns = [
     path("today-summaries/", api.today_summaries, name="today_summaries"),
     path("season-ratings/", api.season_ratings, name="season_ratings"),
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
+    path("resorts.geojson", api.resorts_geojson, name="resorts_geojson"),
     path("regions.geojson", api.regions_geojson, name="regions_geojson"),
     path(
         "major-regions.geojson",
@@ -50,5 +51,18 @@ if settings.DEBUG:
             "debug/day-ratings/",
             debug_views.day_ratings_debug,
             name="debug_day_ratings",
+        ),
+        # SNOW-74 — edit-resorts mode endpoints. Views also inline-gate
+        # on ``settings.DEBUG`` via ``_require_debug()``; the URL-level
+        # ``if`` keeps them out of the resolver when DEBUG is off.
+        path(
+            "edit/resorts/queue/",
+            api.edit_resorts_queue,
+            name="edit_resorts_queue",
+        ),
+        path(
+            "edit/resorts/<int:resort_id>/coords/",
+            api.edit_resort_save_coords,
+            name="edit_resort_save_coords",
         ),
     ]

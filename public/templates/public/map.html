@@ -376,6 +376,7 @@
             </div>
             <span class="season-scrubber-bound">{{ season_end|date:'M j'|upper }}</span>
         </div>
+        {% if edit_mode %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
     </div>
 {% endblock %}
 
@@ -383,4 +384,5 @@
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="{% static 'js/map.js' %}"></script>
     <script src="{% static 'js/offline.js' %}"></script>
+    {% if edit_mode %}<script src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
 {% endblock %}

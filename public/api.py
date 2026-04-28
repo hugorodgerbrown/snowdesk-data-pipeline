@@ -9,12 +9,19 @@ Swiss region choropleth and back the per-region bottom sheet:
   for the entire stored dataset (consumed by the timelapse debug button and,
   later, the season scrubber).
 * ``/api/resorts-by-region/``              — ``{region_id: [resort_name, ...]}``.
+* ``/api/resorts.geojson``                 — FeatureCollection of geocoded resorts.
 * ``/api/regions.geojson``                 — FeatureCollection of L4 region polygons.
 * ``/api/major-regions.geojson``           — FeatureCollection of L1 region polygons.
 * ``/api/sub-regions.geojson``             — FeatureCollection of L2 region polygons.
 * ``/api/region/<region_id>/summary/``     — pre-rendered peek + expanded HTML
   for the region's current bulletin (consumed by the bottom sheet).
 * ``/api/offline-manifest/map/``           — precache manifest for the offline CTA.
+
+DEBUG-only endpoints powering the in-map resort editor (SNOW-74,
+``?edit=resorts`` on /map/):
+
+* ``GET  /api/edit/resorts/queue/``                — queue + catalogue payload.
+* ``POST /api/edit/resorts/<int:resort_id>/coords/`` — persist clicked lat/lon.
 
 Plain Django ``JsonResponse`` views — no DRF. The choropleth fetches its
 three data endpoints in parallel at load time; the per-region summary
@@ -24,18 +31,21 @@ endpoint is hit on demand when the user taps a region.
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 import math
 import urllib.parse
 from typing import Any
 
 import requests
-from django.http import HttpRequest, JsonResponse
+from django.conf import settings
+from django.http import Http404, HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.http import require_GET, require_POST
 
 from pipeline.models import (
     Bulletin,
@@ -44,6 +54,7 @@ from pipeline.models import (
     Region,
     RegionBulletin,
     RegionDayRating,
+    Resort,
 )
 
 from .views import (
@@ -475,6 +486,52 @@ def resorts_by_region(request: HttpRequest) -> JsonResponse:
     return JsonResponse(result)
 
 
+def resorts_geojson(request: HttpRequest) -> JsonResponse:
+    """
+    Return a FeatureCollection of all geocoded resorts.
+
+    Each feature is a Point with GeoJSON-ordered ``coordinates: [lon, lat]``
+    (RFC 7946) and properties ``id``, ``name``, ``region_id``,
+    ``needs_review``. Resorts missing latitude or longitude are skipped.
+
+    Always available (not DEBUG-gated) — the public map will use this
+    layer once enough resorts are placed to be worth showing.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with a FeatureCollection payload.
+
+    """
+    features: list[dict[str, Any]] = []
+    for resort in (
+        Resort.objects.geocoded().select_related("region").order_by("name").iterator()
+    ):
+        # GeoJSON ordering: [longitude, latitude] per RFC 7946.
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [resort.longitude, resort.latitude],
+                },
+                "properties": {
+                    "id": resort.pk,
+                    "name": resort.name,
+                    "region_id": resort.region.region_id,
+                    "needs_review": resort.needs_review,
+                },
+            }
+        )
+    return JsonResponse(
+        {
+            "type": "FeatureCollection",
+            "features": features,
+        }
+    )
+
+
 def regions_geojson(request: HttpRequest) -> JsonResponse:
     """
     Return a FeatureCollection of all regions with populated boundaries.
@@ -649,6 +706,217 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
             "expanded": render_to_string(
                 "public/_region_expanded.html", ctx, request=request
             ),
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Edit-resorts mode (SNOW-74) — DEBUG-only
+# ---------------------------------------------------------------------------
+
+
+def _require_debug() -> None:
+    """Raise Http404 unless ``settings.DEBUG`` is on."""
+    if not settings.DEBUG:
+        raise Http404("Edit mode is only available when DEBUG=True.")
+
+
+def _validate_swiss_coords(lat: float, lon: float) -> str | None:
+    """
+    Return an error message if (lat, lon) is outside ``_SWISS_BBOX``.
+
+    Returns ``None`` for valid coordinates. Boundary values are accepted.
+    """
+    west, south, east, north = _SWISS_BBOX
+    if not (south <= lat <= north):
+        return f"Latitude {lat} outside Swiss bbox {south}–{north}"
+    if not (west <= lon <= east):
+        return f"Longitude {lon} outside Swiss bbox {west}–{east}"
+    return None
+
+
+def _serialise_queue_entry(resort: Resort) -> dict[str, Any]:
+    """Serialise a Resort to the queue payload shape."""
+    return {
+        "id": resort.pk,
+        "name": resort.name,
+        "name_alt": resort.name_alt,
+        "region_id": resort.region.region_id,
+        "region_name": resort.region.name,
+        "canton": resort.canton,
+        "latitude": resort.latitude,
+        "longitude": resort.longitude,
+        "needs_review": resort.needs_review,
+    }
+
+
+def _next_queue_entry(skip_pk: int) -> dict[str, Any] | None:
+    """
+    Return the next queue entry after ``skip_pk``, or ``None`` if empty.
+
+    Reads the queue afresh — the caller has just saved a row that may
+    or may not still match ``needs_geocoding()`` (it shouldn't, but the
+    filter is the source of truth).
+    """
+    nxt = (
+        Resort.objects.needs_geocoding()
+        .exclude(pk=skip_pk)
+        .select_related("region")
+        .order_by("region__region_id", "name")
+        .first()
+    )
+    if nxt is None:
+        return None
+    return _serialise_queue_entry(nxt)
+
+
+@require_GET
+def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
+    """
+    Return the resort-edit queue + flat catalogue (DEBUG-only).
+
+    Response shape::
+
+        {
+          "queue":       [{queue-entry}, ...],     # needs_geocoding()
+          "all_resorts": [{catalogue-entry}, ...]  # everything, lightweight
+        }
+
+    Queue order: ``region__region_id ASC, name ASC`` — groups resorts by
+    their parent region so the operator can sweep through one geographic
+    area at a time. The L1 prefix (first 4 chars, e.g. ``CH-4``) is the
+    natural break between sections in the panel UI.
+
+    Returns 404 when ``settings.DEBUG`` is off.
+    """
+    _require_debug()
+    queue = [
+        _serialise_queue_entry(r)
+        for r in (
+            Resort.objects.needs_geocoding()
+            .select_related("region")
+            .order_by("region__region_id", "name")
+        )
+    ]
+    all_resorts = [
+        {
+            "id": pk,
+            "name": name,
+            "region_id": region_id,
+            "has_coords": lat is not None and lon is not None,
+            "needs_review": needs_review,
+        }
+        for pk, name, region_id, lat, lon, needs_review in (
+            Resort.objects.select_related("region")
+            .order_by("name")
+            .values_list(
+                "pk",
+                "name",
+                "region__region_id",
+                "latitude",
+                "longitude",
+                "needs_review",
+            )
+        )
+    ]
+    return JsonResponse({"queue": queue, "all_resorts": all_resorts})
+
+
+@require_POST
+def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonResponse:
+    """
+    Persist clicked latitude/longitude for a resort (DEBUG-only).
+
+    Request body (JSON)::
+
+        {"latitude": <float>, "longitude": <float>}
+
+    On success, sets ``geocode_source="manual"``,
+    ``geocode_confidence=1.0``, ``geocoded_at=now()``, and clears
+    ``needs_review``. Returns the updated resort plus the next queue
+    entry so the panel can advance without a follow-up GET.
+
+    Errors:
+        404 — DEBUG=False, or unknown ``resort_id``.
+        400 — invalid JSON; missing or non-float lat/lon; coordinates
+              outside the Swiss bounding box.
+    """
+    _require_debug()
+
+    try:
+        payload = json.loads(request.body or b"")
+    except (ValueError, json.JSONDecodeError):
+        return JsonResponse({"error": "invalid_json"}, status=400)
+
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "invalid_json"}, status=400)
+
+    raw_lat = payload.get("latitude")
+    raw_lon = payload.get("longitude")
+    if raw_lat is None or raw_lon is None:
+        return JsonResponse(
+            {
+                "error": "invalid_coords",
+                "detail": "latitude and longitude are required",
+            },
+            status=400,
+        )
+    try:
+        lat = float(raw_lat)
+        lon = float(raw_lon)
+    except (TypeError, ValueError):
+        return JsonResponse(
+            {
+                "error": "invalid_coords",
+                "detail": "latitude and longitude must be numbers",
+            },
+            status=400,
+        )
+
+    bbox_error = _validate_swiss_coords(lat, lon)
+    if bbox_error:
+        return JsonResponse(
+            {"error": "out_of_bounds", "detail": bbox_error},
+            status=400,
+        )
+
+    resort = get_object_or_404(
+        Resort.objects.select_related("region"),
+        pk=resort_id,
+    )
+
+    resort.latitude = lat
+    resort.longitude = lon
+    resort.geocode_source = "manual"
+    resort.geocode_confidence = 1.0
+    resort.geocoded_at = timezone.now()
+    resort.needs_review = False
+    resort.save(
+        update_fields=[
+            "latitude",
+            "longitude",
+            "geocode_source",
+            "geocode_confidence",
+            "geocoded_at",
+            "needs_review",
+            "updated_at",
+        ]
+    )
+
+    return JsonResponse(
+        {
+            "id": resort.pk,
+            "name": resort.name,
+            "region_id": resort.region.region_id,
+            "latitude": resort.latitude,
+            "longitude": resort.longitude,
+            "geocode_source": resort.geocode_source,
+            "geocode_confidence": resort.geocode_confidence,
+            "geocoded_at": resort.geocoded_at.isoformat()
+            if resort.geocoded_at
+            else None,
+            "needs_review": resort.needs_review,
+            "next_in_queue": _next_queue_entry(skip_pk=resort.pk),
         }
     )
 
