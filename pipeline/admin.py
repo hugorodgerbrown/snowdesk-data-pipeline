@@ -110,11 +110,48 @@ class RegionAdmin(admin.ModelAdmin):
 class ResortAdmin(admin.ModelAdmin):
     """Admin view for Resort."""
 
-    list_display = ["name", "name_alt", "region", "canton"]
-    list_filter = ["canton"]
+    list_display = [
+        "name",
+        "name_alt",
+        "region",
+        "canton",
+        "latitude",
+        "longitude",
+        "geocode_source",
+        "needs_review",
+    ]
+    list_filter = ["canton", "geocode_source", "needs_review"]
     search_fields = ["name", "name_alt", "region__region_id"]
     ordering = ["name"]
-    readonly_fields = ["id", "uuid", "created_at", "updated_at"]
+    readonly_fields = ["id", "uuid", "geocoded_at", "created_at", "updated_at"]
+    fieldsets = (
+        (None, {"fields": ("name", "name_alt", "region", "canton", "notes")}),
+        (
+            "Geocoding",
+            {
+                "fields": (
+                    "latitude",
+                    "longitude",
+                    "geocode_source",
+                    "geocode_confidence",
+                    "geocoded_at",
+                    "needs_review",
+                ),
+                "description": (
+                    "Edit coordinates here as a fallback. The preferred way to "
+                    "set lat/lon is the in-map editor at /map/?edit=resorts "
+                    "(DEBUG only)."
+                ),
+            },
+        ),
+        (
+            "Audit",
+            {
+                "classes": ("collapse",),
+                "fields": ("id", "uuid", "created_at", "updated_at"),
+            },
+        ),
+    )
 
 
 class RegionBulletinInline(admin.TabularInline):

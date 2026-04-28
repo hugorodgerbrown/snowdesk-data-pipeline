@@ -57,6 +57,56 @@ class TestResortModel:
 
 
 @pytest.mark.django_db
+class TestResortQueryset:
+    """Tests for the custom ResortQuerySet methods (SNOW-74)."""
+
+    def test_geocoded_excludes_resort_missing_latitude(self) -> None:
+        """A resort with longitude but no latitude is not geocoded()."""
+        ResortFactory.create(name="A", latitude=None, longitude=7.0)
+        assert Resort.objects.geocoded().count() == 0
+
+    def test_geocoded_excludes_resort_missing_longitude(self) -> None:
+        """A resort with latitude but no longitude is not geocoded()."""
+        ResortFactory.create(name="A", latitude=46.0, longitude=None)
+        assert Resort.objects.geocoded().count() == 0
+
+    def test_geocoded_includes_fully_set_resort(self) -> None:
+        """A resort with both latitude and longitude is geocoded()."""
+        resort = ResortFactory.create(name="A", latitude=46.0, longitude=7.0)
+        assert list(Resort.objects.geocoded()) == [resort]
+
+    def test_geocoded_ignores_needs_review_flag(self) -> None:
+        """needs_review does not gate the geocoded() result."""
+        ResortFactory.create(
+            name="A",
+            latitude=46.0,
+            longitude=7.0,
+            needs_review=True,
+        )
+        assert Resort.objects.geocoded().count() == 1
+
+    def test_needs_geocoding_includes_unset_resort(self) -> None:
+        """A resort missing coords appears in needs_geocoding()."""
+        resort = ResortFactory.create(name="A")
+        assert list(Resort.objects.needs_geocoding()) == [resort]
+
+    def test_needs_geocoding_includes_review_flagged_resort(self) -> None:
+        """A geocoded resort flagged for review is in needs_geocoding()."""
+        resort = ResortFactory.create(
+            name="A",
+            latitude=46.0,
+            longitude=7.0,
+            needs_review=True,
+        )
+        assert list(Resort.objects.needs_geocoding()) == [resort]
+
+    def test_needs_geocoding_excludes_clean_geocoded_resort(self) -> None:
+        """A geocoded resort with needs_review=False is excluded."""
+        ResortFactory.create(name="A", latitude=46.0, longitude=7.0)
+        assert Resort.objects.needs_geocoding().count() == 0
+
+
+@pytest.mark.django_db
 class TestRegionNaturalKey:
     """Tests for Region natural key support (used by fixture loading)."""
 

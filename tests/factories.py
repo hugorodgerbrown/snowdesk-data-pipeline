@@ -106,6 +106,12 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     region = factory.SubFactory(RegionFactory)
     canton = "VS"
     notes = ""
+    latitude = None
+    longitude = None
+    geocode_source = ""
+    geocode_confidence = None
+    geocoded_at = None
+    needs_review = False
 
 
 class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):

@@ -478,7 +478,17 @@ class Region(BaseModel):
 class ResortQuerySet(models.QuerySet):
     """Custom queryset for Resort."""
 
-    pass
+    def geocoded(self) -> "ResortQuerySet":
+        """Return only resorts with both latitude and longitude set."""
+        return self.filter(latitude__isnull=False, longitude__isnull=False)
+
+    def needs_geocoding(self) -> "ResortQuerySet":
+        """Return resorts missing coords or flagged for review."""
+        return self.filter(
+            models.Q(latitude__isnull=True)
+            | models.Q(longitude__isnull=True)
+            | models.Q(needs_review=True)
+        )
 
 
 class Resort(BaseModel):
@@ -488,7 +498,19 @@ class Resort(BaseModel):
     Static reference data loaded from a fixture; not populated by the
     data pipeline. Allows users to look up bulletins by well-known resort
     names (e.g. "Crans-Montana") rather than official region identifiers.
+
+    Geocoding fields (latitude/longitude/etc.) are populated by the
+    edit-resorts mode on the public map (``?edit=resorts`` in DEBUG only).
+    The fixture in ``pipeline/fixtures/resorts.json`` is the source of truth
+    in git; run ``manage.py dump_resorts_fixture --commit`` after a session
+    of edits to persist them.
     """
+
+    GEOCODE_SOURCES = [
+        ("manual", "Manual"),
+        ("auto", "Auto"),
+        ("import", "Import"),
+    ]
 
     name = models.CharField(max_length=255)
     name_alt = models.CharField(
@@ -506,6 +528,18 @@ class Resort(BaseModel):
         help_text="Swiss canton abbreviation, e.g. 'VS', 'GR'.",
     )
     notes = models.TextField(blank=True)
+
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    geocode_source = models.CharField(
+        max_length=16,
+        choices=GEOCODE_SOURCES,
+        blank=True,
+        default="",
+    )
+    geocode_confidence = models.FloatField(null=True, blank=True)
+    geocoded_at = models.DateTimeField(null=True, blank=True)
+    needs_review = models.BooleanField(default=False)
 
     objects = ResortQuerySet.as_manager()
 
