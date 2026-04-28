@@ -1185,14 +1185,16 @@ class TestDayWindowsPanel:
         self, client: Client, region
     ):
         """A day with earlier+later traits renders two rows in that order."""
-        # Mirror the variable_bulletin fixture but with explicit time periods.
+        # Mirror the variable_bulletin fixture but with explicit time periods
+        # and one problem each so the panel caption (concatenated problem-type
+        # labels) is populated.
         day = date(2026, 3, 18)
         earlier_trait: dict = {
             "category": "dry",
             "time_period": "earlier",
             "title": "Dry avalanches, morning",
             "geography": {"source": "problems"},
-            "problems": [],
+            "problems": [_problem(problem_type="wind_slab")],
             "prose": None,
             "danger_level": 2,
         }
@@ -1201,7 +1203,7 @@ class TestDayWindowsPanel:
             "time_period": "later",
             "title": "Wet-snow avalanches, as the day progresses",
             "geography": {"source": "problems"},
-            "problems": [],
+            "problems": [_problem(problem_type="wet_snow")],
             "prose": None,
             "danger_level": 3,
         }
@@ -1216,9 +1218,10 @@ class TestDayWindowsPanel:
         earlier_idx = content.index('data-window="earlier"')
         later_idx = content.index('data-window="later"')
         assert earlier_idx < later_idx
-        # Each row carries its caption from the matching trait's title.
-        assert "Dry avalanches, morning" in content
-        assert "Wet-snow avalanches, as the day progresses" in content
+        # Each row's caption is the problem-type label for that period —
+        # not the trait's editorial title.
+        assert "Wind slab" in content
+        assert "Wet snow" in content
 
     def test_all_day_only_renders_single_row(self, client: Client, region):
         """An all_day-only bulletin collapses to one row labelled ``All day``."""
@@ -1233,6 +1236,103 @@ class TestDayWindowsPanel:
         assert 'data-window="all_day"' in content
         # Pill copy comes from _DAY_WINDOW_PILL_LABELS.
         assert ">All day<" in content
+
+    def test_two_row_bulletin_pills_read_earlier_then_later(
+        self, client: Client, region
+    ):
+        """
+        When two rows render (any combination of underlying periods), the
+        pills are re-labelled as "Earlier" + "Later" in DOM order so the
+        panel reads as chronological brackets even when the underlying
+        data is something like (all_day, later).
+        """
+        day = date(2026, 3, 23)
+        all_day_trait: dict = {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Persistent weak layers",
+            "geography": {"source": "problems"},
+            "problems": [_problem(problem_type="persistent_weak_layers")],
+            "prose": None,
+            "danger_level": 2,
+        }
+        later_trait: dict = {
+            "category": "wet",
+            "time_period": "later",
+            "title": "Wet snow",
+            "geography": {"source": "problems"},
+            "problems": [_problem(problem_type="wet_snow")],
+            "prose": None,
+            "danger_level": 3,
+        }
+        rm = _render_model_with_traits([all_day_trait, later_trait])
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+
+        url = _url("CH-4115", "valais", "2026-03-23") + "?masthead=v2"
+        response = client.get(url)
+        content = response.content.decode()
+        # Two rows, ordered: the all_day row sits first, the later row second.
+        assert content.count('data-testid="day-window-row"') == 2
+        all_day_idx = content.index('data-window="all_day"')
+        later_idx = content.index('data-window="later"')
+        assert all_day_idx < later_idx
+        # The all_day row's pill is rebadged to "Earlier"; the later row's
+        # pill stays "Later". "All day" must NOT appear inside the panel.
+        panel_start = content.index('data-testid="day-windows-panel"')
+        panel_end = content.index('data-testid="avalanche-problems-heading"')
+        panel_html = content[panel_start:panel_end]
+        assert ">Earlier<" in panel_html
+        assert ">Later<" in panel_html
+        assert ">All day<" not in panel_html
+
+    def test_three_row_bulletin_pills_read_earlier_all_day_later(
+        self, client: Client, region
+    ):
+        """Three rows keep the natural Earlier / All day / Later sequence."""
+        day = date(2026, 3, 24)
+        rm = _render_model_with_traits(
+            [
+                {
+                    "category": "dry",
+                    "time_period": "earlier",
+                    "title": "Wind slab, morning",
+                    "geography": {"source": "problems"},
+                    "problems": [_problem(problem_type="wind_slab")],
+                    "prose": None,
+                    "danger_level": 2,
+                },
+                {
+                    "category": "dry",
+                    "time_period": "all_day",
+                    "title": "Persistent weak layer",
+                    "geography": {"source": "problems"},
+                    "problems": [_problem(problem_type="persistent_weak_layers")],
+                    "prose": None,
+                    "danger_level": 2,
+                },
+                {
+                    "category": "wet",
+                    "time_period": "later",
+                    "title": "Wet snow",
+                    "geography": {"source": "problems"},
+                    "problems": [_problem(problem_type="wet_snow")],
+                    "prose": None,
+                    "danger_level": 3,
+                },
+            ]
+        )
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+
+        url = _url("CH-4115", "valais", "2026-03-24") + "?masthead=v2"
+        response = client.get(url)
+        content = response.content.decode()
+        panel_start = content.index('data-testid="day-windows-panel"')
+        panel_end = content.index('data-testid="avalanche-problems-heading"')
+        panel_html = content[panel_start:panel_end]
+        # All three pill labels must render with three rows.
+        assert ">Earlier<" in panel_html
+        assert ">All day<" in panel_html
+        assert ">Later<" in panel_html
 
     def test_three_window_day_renders_three_rows_chronological(
         self, client: Client, region
@@ -1307,8 +1407,8 @@ class TestDayWindowsPanel:
         # Level label rendered.
         assert "Considerable" in content
 
-    def test_caption_uses_highest_level_trait_in_period(self, client: Client, region):
-        """When two traits share a period, the higher-level one drives the caption."""
+    def test_caption_concatenates_problem_type_labels(self, client: Client, region):
+        """Caption joins every covering trait's problem-type labels (deduped)."""
         day = date(2026, 3, 22)
         rm = _render_model_with_traits(
             [
@@ -1317,7 +1417,7 @@ class TestDayWindowsPanel:
                     "time_period": "all_day",
                     "title": "Wind slab",
                     "geography": {"source": "problems"},
-                    "problems": [],
+                    "problems": [_problem(problem_type="wind_slab")],
                     "prose": None,
                     "danger_level": 1,
                 },
@@ -1326,7 +1426,7 @@ class TestDayWindowsPanel:
                     "time_period": "all_day",
                     "title": "Wet-snow avalanches",
                     "geography": {"source": "problems"},
-                    "problems": [],
+                    "problems": [_problem(problem_type="wet_snow")],
                     "prose": None,
                     "danger_level": 3,
                 },
@@ -1337,9 +1437,284 @@ class TestDayWindowsPanel:
         url = _url("CH-4115", "valais", "2026-03-22") + "?masthead=v2"
         response = client.get(url)
         content = response.content.decode()
-        # Single all_day row at the higher level (3 / Considerable) with the
-        # higher-level trait's title as caption — Wind slab (L1) stays in
-        # the rating blocks below but does not drive the panel.
+        # Single all_day row at the higher level (3 / Considerable). Caption
+        # lists every problem type from all covering traits in render-model
+        # order: Wind slab (from the dry L1 trait) then Wet snow (from the
+        # wet L3 trait). The trait titles themselves are not used.
         assert content.count('data-testid="day-window-row"') == 1
         assert "dw-tile lv-considerable" in content
-        assert "Wet-snow avalanches" in content
+        assert "Wind slab, Wet snow" in content
+
+
+# ---------------------------------------------------------------------------
+# Test: v3 masthead (region first, calendar inline, no day-strip)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestV3Masthead:
+    """
+    v3 masthead — region promoted to the top, date eyebrow + calendar
+    trigger inline, no day-strip and no « / » nav row. The calendar is
+    moved out of the top nav and becomes the only date picker.
+    """
+
+    def test_v3_renders_v3_masthead_partial_only(
+        self, client: Client, simple_bulletin, region
+    ):
+        """``?masthead=v3`` swaps in the v3 partial; v1 + v2 mastheads are absent."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bulletin-masthead-v3"' in content
+        # v2 strip and v1 nav row must NOT render alongside v3.
+        assert 'data-testid="bulletin-masthead-strip"' not in content
+        assert 'data-testid="bulletin-nav"' not in content
+
+    def test_v3_region_h1_precedes_date_eyebrow(
+        self, client: Client, simple_bulletin, region
+    ):
+        """Region is the lead headline; date eyebrow follows it in the DOM."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        region_idx = content.index('class="bm-region"')
+        eyebrow_idx = content.index('class="bm-eyebrow"')
+        assert region_idx < eyebrow_idx
+
+    def test_v3_has_no_day_strip(self, client: Client, simple_bulletin, region):
+        """v3 explicitly drops the day-strip — the calendar is the only picker."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bulletin-masthead-strip"' not in content
+        assert 'data-testid="masthead-day"' not in content
+
+    def test_v3_calendar_trigger_inline_in_masthead(
+        self, client: Client, simple_bulletin, region
+    ):
+        """The calendar HTMX button sits in the masthead, not the top nav."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bm-v3-calendar-trigger"' in content
+        # And the trigger sits inside the masthead landmark.
+        masthead_idx = content.index('data-testid="bulletin-masthead-v3"')
+        trigger_idx = content.index('data-testid="bm-v3-calendar-trigger"')
+        assert masthead_idx < trigger_idx
+
+    def test_v3_top_nav_omits_calendar_button(
+        self, client: Client, simple_bulletin, region
+    ):
+        """The top nav under v3 is wayfinding-only — no calendar button."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        # Only one calendar button on the page (in the masthead, not the nav).
+        assert content.count("Show monthly calendar") == 1
+        # Confirm it's the masthead one.
+        nav_block_end = content.index("</nav>")
+        assert "Show monthly calendar" not in content[:nav_block_end]
+
+    def test_v3_still_renders_day_risk_profile_panel(
+        self, client: Client, variable_bulletin, region
+    ):
+        """v3 keeps the Day Risk Profile heading + day-windows panel below."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="day-risk-profile-heading"' in content
+        assert 'data-testid="day-windows-panel"' in content
+        # v1 headline band must still be absent.
+        assert 'data-testid="headline-band"' not in content
+
+    def test_v3_calendar_partial_url_carries_masthead_query(
+        self, client: Client, simple_bulletin, region
+    ):
+        """Calendar fetch URL includes ?masthead=v3 so the partial inherits it."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
+        response = client.get(url)
+        content = response.content.decode()
+        # ``urlencode`` will escape & as &amp; inside HTML attributes; both
+        # forms are valid — accept whichever the template emits.
+        assert ("masthead=v3" in content) and ("date=2026-03-15" in content)
+
+    def test_calendar_partial_propagates_masthead_query_to_cell_links(self, region):
+        """Cell hrefs in the calendar fragment carry ``?masthead=v3``."""
+        # Build a bulletin so the focal day has a clickable cell.
+        focal = date(2026, 3, 18)
+        rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
+        bulletin = _make_am_bulletin(
+            region, focal, render_model=rm, render_model_version=3
+        )
+        RegionDayRatingFactory.create(
+            region=region,
+            date=focal,
+            min_rating=RegionDayRating.Rating.MODERATE,
+            max_rating=RegionDayRating.Rating.MODERATE,
+            source_bulletin=bulletin,
+            version=1,
+        )
+        # HTMX-only endpoint — must include the HX-Request header.
+        c = Client(HTTP_HX_REQUEST="true")
+        partial_url = (
+            reverse(
+                "public:calendar_partial",
+                kwargs={
+                    "region_id": "CH-4115",
+                    "year": 2026,
+                    "month": 3,
+                },
+            )
+            + "?date=2026-03-18&masthead=v3"
+        )
+        response = c.get(partial_url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        # The clickable cell href must keep the masthead query so navigation
+        # stays in v3 mode.
+        assert "/2026-03-18/?masthead=v3" in content
+
+
+# ---------------------------------------------------------------------------
+# Test: v4 masthead (date+calendar above region, subregion h2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestV4Masthead:
+    """
+    v4 masthead — date eyebrow + calendar trigger sit ABOVE the region
+    H1, and the parent EAWS L2 sub-region appears as a quiet H2 below
+    the H1. Otherwise identical plumbing to v3 (no day-strip, calendar
+    drawer is the only date picker).
+    """
+
+    def test_v4_renders_v4_masthead_partial_only(
+        self, client: Client, simple_bulletin, region
+    ):
+        """``?masthead=v4`` swaps in the v4 partial; v1/v2/v3 mastheads are absent."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bulletin-masthead-v4"' in content
+        assert 'data-testid="bulletin-masthead-v3"' not in content
+        assert 'data-testid="bulletin-masthead-strip"' not in content
+        assert 'data-testid="bulletin-nav"' not in content
+
+    def test_v4_eyebrow_precedes_region_h1(
+        self, client: Client, simple_bulletin, region
+    ):
+        """Date eyebrow + calendar trigger sit above the region H1 in DOM order."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        response = client.get(url)
+        content = response.content.decode()
+        eyebrow_idx = content.index('class="bm-eyebrow"')
+        region_idx = content.index('class="bm-region"')
+        assert eyebrow_idx < region_idx
+
+    def test_v4_renders_subregion_h2_below_h1(
+        self, client: Client, simple_bulletin, region
+    ):
+        """Parent EAWS L2 sub-region renders as an H2 below the region H1."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bulletin-masthead-v4-subregion"' in content
+        # Region H1 precedes the subregion H2.
+        region_idx = content.index('class="bm-region"')
+        subregion_idx = content.index('data-testid="bulletin-masthead-v4-subregion"')
+        assert region_idx < subregion_idx
+
+    def test_v4_subregion_uses_english_name_when_present(self, simple_bulletin, region):
+        """``EawsSubRegion.name_en`` wins over native when SLF publishes one."""
+        sub = region.subregion
+        sub.name_en = "Lower Valais"
+        sub.name_native = "Bas-Valais"
+        sub.save(update_fields=["name_en", "name_native"])
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        response = Client().get(url)
+        content = response.content.decode()
+        assert "Lower Valais" in content
+
+    def test_v4_subregion_falls_back_to_native_when_english_blank(
+        self, simple_bulletin, region
+    ):
+        """When ``name_en`` is blank the H2 uses ``name_native``."""
+        sub = region.subregion
+        sub.name_en = ""
+        sub.name_native = "Bas-Valais"
+        sub.save(update_fields=["name_en", "name_native"])
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        response = Client().get(url)
+        content = response.content.decode()
+        assert "Bas-Valais" in content
+
+    def test_v4_has_no_day_strip(self, client: Client, simple_bulletin, region):
+        """v4 inherits v3's no-day-strip rule — calendar is the only picker."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bulletin-masthead-strip"' not in content
+        assert 'data-testid="masthead-day"' not in content
+
+    def test_v4_calendar_trigger_inline_in_masthead(
+        self, client: Client, simple_bulletin, region
+    ):
+        """The calendar HTMX button sits in the masthead, not the top nav."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bm-v4-calendar-trigger"' in content
+        # And the trigger sits inside the masthead landmark.
+        masthead_idx = content.index('data-testid="bulletin-masthead-v4"')
+        trigger_idx = content.index('data-testid="bm-v4-calendar-trigger"')
+        assert masthead_idx < trigger_idx
+
+    def test_v4_top_nav_omits_calendar_button(
+        self, client: Client, simple_bulletin, region
+    ):
+        """The top nav under v4 is wayfinding-only — no calendar button."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count("Show monthly calendar") == 1
+        nav_block_end = content.index("</nav>")
+        assert "Show monthly calendar" not in content[:nav_block_end]
+
+    def test_v4_still_renders_day_risk_profile_panel(
+        self, client: Client, variable_bulletin, region
+    ):
+        """v4 keeps the Day Risk Profile heading + day-windows panel below."""
+        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="day-risk-profile-heading"' in content
+        assert 'data-testid="day-windows-panel"' in content
+
+
+# ---------------------------------------------------------------------------
+# Test: calendar drawer outside-click dismissal
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestCalendarDismissScript:
+    """
+    The bulletin page mounts a small inline script that closes the
+    calendar drawer (``#bulletin-calendar-host``) when the user clicks
+    anywhere outside the drawer or its trigger button. The script lives
+    in the page chrome so v1/v2/v3/v4 all benefit from the same dismiss.
+    """
+
+    def test_dismiss_script_is_present(self, client: Client, simple_bulletin, region):
+        """The dismiss listener is rendered on the bulletin page."""
+        url = _url("CH-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        # The listener targets the calendar host and matches any trigger
+        # by its hx-target attribute.
+        assert "bulletin-calendar-host" in content
+        assert "hx-target=&quot;#bulletin-calendar-host&quot;" in content or (
+            'hx-target="#bulletin-calendar-host"' in content
+        )
