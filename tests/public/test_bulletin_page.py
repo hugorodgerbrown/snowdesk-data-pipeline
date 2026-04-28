@@ -16,11 +16,9 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
-from pipeline.models import RegionDayRating
 from tests.factories import (
     BulletinFactory,
     RegionBulletinFactory,
-    RegionDayRatingFactory,
     RegionFactory,
 )
 
@@ -206,92 +204,6 @@ class TestTemplateName:
         response = client.get(url)
         assert response.status_code == 200
         assert "public/bulletin.html" in [t.name for t in response.templates]
-
-
-# ---------------------------------------------------------------------------
-# Test: headline band
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestHeadlineBand:
-    """Bulletin headline band renders correctly for simple and variable days."""
-
-    def test_simple_day_single_rating(self, client: Client, simple_bulletin, region):
-        """A bulletin with 1 trait shows a single rating in the headline band."""
-        url = _url("CH-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        assert response.status_code == 200
-        content = response.content.decode()
-        # Panel danger label comes from _build_panel_context's danger_meta
-        assert "Moderate" in content
-        # No transition arrow for simple days
-        assert 'data-testid="transition-arrow"' not in content
-
-    def test_variable_day_two_ratings_with_arrow(
-        self, client: Client, variable_bulletin, region
-    ):
-        """A bulletin with 2 traits shows both ratings and a → arrow."""
-        url = _url("CH-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        assert response.status_code == 200
-        content = response.content.decode()
-        # Both labels should appear
-        assert "Moderate" in content
-        assert "Considerable" in content
-        # Transition arrow via data-testid
-        assert 'data-testid="transition-arrow"' in content
-        # The HTML entity for →
-        assert "&#8594;" in content or "→" in content
-
-    def test_two_traits_same_time_period_collapses_to_single(
-        self, client: Client, region
-    ):
-        """
-        When both traits share the same ``time_period`` they overlap 100%
-        in time, so the headline must collapse to a single rating (the
-        highest) — showing a split "L1 → L3" would misrepresent the
-        hazard as time-varying when both problems are present together.
-        The lower trait still appears in the rating blocks below.
-        """
-        day = date(2026, 3, 20)
-        low_dry = {
-            "category": "dry",
-            "time_period": "all_day",
-            "title": "Dry avalanches, whole day",
-            "geography": {"source": "problems"},
-            "problems": [_problem_no_geo(problem_type="no_distinct_avalanche_problem")],
-            "prose": None,
-            "danger_level": 1,
-        }
-        considerable_wet = {
-            "category": "wet",
-            "time_period": "all_day",
-            "title": "Wet avalanches, whole day",
-            "geography": {"source": "problems"},
-            "problems": [_problem(problem_type="wet_snow")],
-            "prose": None,
-            "danger_level": 3,
-        }
-        rm = _render_model_with_traits([low_dry, considerable_wet])
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
-
-        url = _url("CH-4115", "valais", "2026-03-20")
-        response = client.get(url)
-        assert response.status_code == 200
-        content = response.content.decode()
-        # No transition arrow — not a time-variable day.
-        assert 'data-testid="transition-arrow"' not in content
-        # Headline band is the single-band variant.
-        assert 'data-testid="headline-segment-first"' not in content
-        assert 'data-testid="headline-segment-second"' not in content
-        # Rating blocks still render both traits (lower one remains listed).
-        import re
-
-        positions = [
-            m.start() for m in re.finditer(r'data-testid="rating-block"', content)
-        ]
-        assert len(positions) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -875,253 +787,6 @@ class TestRatingBlockOrder:
 
 
 # ---------------------------------------------------------------------------
-# Test: v2 masthead (SNOW-70)
-# ---------------------------------------------------------------------------
-
-
-def _make_day_rating(
-    region,
-    day,
-    *,
-    min_rating: str,
-    max_rating: str,
-    earlier_level: int | None = None,
-    later_level: int | None = None,
-    all_day_level: int | None = None,
-) -> RegionDayRating:
-    """
-    Create a (RegionDayRating, source Bulletin) pair for the masthead day-strip.
-
-    The source bulletin's render_model is populated with traits keyed on
-    ``time_period`` so :func:`_resolve_period_danger`'s trait fallback path
-    can pick the per-half rating without needing a full CAAML envelope.
-    """
-    traits: list[dict] = []
-    if earlier_level is not None:
-        traits.append(
-            {
-                "category": "dry",
-                "time_period": "earlier",
-                "title": "Dry avalanches, morning",
-                "geography": {"source": "problems"},
-                "problems": [],
-                "prose": None,
-                "danger_level": earlier_level,
-            }
-        )
-    if later_level is not None:
-        traits.append(
-            {
-                "category": "wet",
-                "time_period": "later",
-                "title": "Wet avalanches, afternoon",
-                "geography": {"source": "problems"},
-                "problems": [],
-                "prose": None,
-                "danger_level": later_level,
-            }
-        )
-    if all_day_level is not None:
-        traits.append(
-            {
-                "category": "dry",
-                "time_period": "all_day",
-                "title": "Dry avalanches, all day",
-                "geography": {"source": "problems"},
-                "problems": [],
-                "prose": None,
-                "danger_level": all_day_level,
-            }
-        )
-    rm = _render_model_with_traits(traits or [_dry_trait_problems([_problem()])])
-    bulletin = _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
-    return RegionDayRatingFactory.create(
-        region=region,
-        date=day,
-        min_rating=min_rating,
-        max_rating=max_rating,
-        source_bulletin=bulletin,
-        version=1,
-    )
-
-
-@pytest.mark.django_db
-class TestV2Masthead:
-    """
-    Frozen redesign rendered behind ``?masthead=v2`` (SNOW-70).
-
-    Default requests must keep the existing inline masthead unchanged
-    (regression guard); the v2 masthead is opt-in via the query param so
-    both designs can run side-by-side during iteration.
-    """
-
-    # 2026-03-15 is a Sunday — last cell of the Mon–Sun strip — so the
-    # focal cell is at index 6 and the strip spans Mon 09 → Sun 15.
-    FOCAL = date(2026, 3, 15)
-
-    def _populate_week(self, region) -> None:
-        """Build a focal day + the previous day, leaving the rest of the week empty."""
-        # Focal day — split rating (Moderate morning → Considerable later).
-        _make_day_rating(
-            region,
-            self.FOCAL,
-            min_rating=RegionDayRating.Rating.MODERATE,
-            max_rating=RegionDayRating.Rating.CONSIDERABLE,
-            earlier_level=2,
-            later_level=3,
-        )
-        # Saturday before — uniform Low (all-day swatch).
-        _make_day_rating(
-            region,
-            self.FOCAL - timedelta(days=1),
-            min_rating=RegionDayRating.Rating.LOW,
-            max_rating=RegionDayRating.Rating.LOW,
-            all_day_level=1,
-        )
-        # Mon–Fri have no RegionDayRating row → render empty (dashed swatch,
-        # disabled span). With the calendar-week strip this is the common
-        # shape early in the season.
-
-    def test_default_renders_v1_masthead_no_strip(
-        self, client: Client, simple_bulletin, region
-    ):
-        """Without the query param the existing inline masthead renders."""
-        url = _url("CH-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        assert response.status_code == 200
-        content = response.content.decode()
-        # v2 masthead structure must be absent.
-        assert 'data-testid="bulletin-masthead-strip"' not in content
-        assert 'data-testid="bulletin-masthead"' not in content
-        # v1 nav row must still render (regression guard).
-        assert 'data-testid="bulletin-nav"' in content
-
-    def test_v2_query_param_renders_new_masthead(
-        self, client: Client, simple_bulletin, region
-    ):
-        """``?masthead=v2`` swaps in the redesigned masthead partial."""
-        self._populate_week(region)
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v2"
-        response = client.get(url)
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="bulletin-masthead"' in content
-        assert 'data-testid="bulletin-masthead-strip"' in content
-        # Eyebrow uses the frozen "D j M Y" format ("Sun 15 Mar 2026").
-        assert "Sun 15 Mar 2026" in content
-        # v1 nav must NOT render alongside v2.
-        assert 'data-testid="bulletin-nav"' not in content
-
-    def test_strip_renders_calendar_week_seven_cells(
-        self, client: Client, simple_bulletin, region
-    ):
-        """The strip is the Mon–Sun calendar week of the focal date — 7 cells."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v2"
-        response = client.get(url)
-        content = response.content.decode()
-        # Each cell carries data-testid="masthead-day".
-        assert content.count('data-testid="masthead-day"') == 7
-
-    def test_strip_is_calendar_week_not_centred_window(self, client: Client, region):
-        """
-        For a midweek focal date (Wed 2026-03-18) the strip spans the
-        calendar week Mon 16 → Sun 22 — not focal-3 .. focal+3 — so
-        navigating between days within the same week never shifts the
-        strip and going to a different week is the calendar's job.
-        """
-        # Wed 2026-03-18 → calendar week is Mon 16 → Sun 22. Populate
-        # every day in the week (and the adjacent days that should NOT
-        # appear) so each cell renders as an anchor with a href we can
-        # search for; empty cells are spans with no href.
-        wednesday = date(2026, 3, 18)
-        for day_num in range(15, 24):  # Sun 15 .. Mon 23 inclusive
-            d = date(2026, 3, day_num)
-            _make_day_rating(
-                region,
-                d,
-                min_rating=RegionDayRating.Rating.LOW,
-                max_rating=RegionDayRating.Rating.LOW,
-                all_day_level=1,
-            )
-        url = _url("CH-4115", "valais", wednesday.isoformat()) + "?masthead=v2"
-        response = client.get(url)
-        content = response.content.decode()
-        # The strip starts on Monday and ends on Sunday — adjacent days
-        # outside the focal date's calendar week are excluded.
-        assert "/2026-03-16/?masthead=v2" in content
-        assert "/2026-03-17/?masthead=v2" in content
-        assert "/2026-03-19/?masthead=v2" in content
-        assert "/2026-03-22/?masthead=v2" in content
-        # Sun 15 is in the *previous* calendar week and must NOT appear.
-        assert "/2026-03-15/?masthead=v2" not in content
-        # Mon 23 is in the *next* calendar week and must NOT appear.
-        assert "/2026-03-23/?masthead=v2" not in content
-
-    def test_focal_cell_marked_aria_current_and_focal_class(
-        self, client: Client, simple_bulletin, region
-    ):
-        """Focal cell has ``aria-current="date"`` and the ``bm-focal`` class."""
-        self._populate_week(region)
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v2"
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'aria-current="date"' in content
-        assert "bm-focal" in content
-
-    def test_split_rating_day_renders_two_halves(
-        self, client: Client, simple_bulletin, region
-    ):
-        """Split day: earlier half gets ``lv-moderate``, later ``lv-considerable``."""
-        self._populate_week(region)
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v2"
-        response = client.get(url)
-        content = response.content.decode()
-        # Both fill classes appear on the focal day's swatch halves. The
-        # wrapper has a flat neutral 1px border (no per-level bd-* class).
-        assert "lv-moderate" in content
-        assert "lv-considerable" in content
-        # Per-level border classes were removed — the wrapper is now flat.
-        assert "bd-considerable" not in content
-        assert "bd-low" not in content
-
-    def test_all_day_rating_renders_bm_allday(
-        self, client: Client, simple_bulletin, region
-    ):
-        """Equal earlier/later collapses to a single ``bm-allday`` swatch."""
-        self._populate_week(region)
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v2"
-        response = client.get(url)
-        content = response.content.decode()
-        # Saturday — uniform Low — renders as bm-allday with two lv-low halves
-        # under the flat neutral wrapper border.
-        assert "bm-allday" in content
-        assert "lv-low" in content
-
-    def test_future_day_with_no_rating_renders_empty(
-        self, client: Client, simple_bulletin, region
-    ):
-        """A future day with no RegionDayRating row renders as ``bm-empty``."""
-        self._populate_week(region)
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v2"
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-empty="true"' in content
-        # Two halves wrapped in the dashed-empty swatch must render.
-        assert "bm-swatch bm-empty" in content
-
-    def test_day_cell_hrefs_preserve_masthead_v2_query(
-        self, client: Client, simple_bulletin, region
-    ):
-        """Day cells link forward with ``?masthead=v2`` so navigation stays in v2."""
-        self._populate_week(region)
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v2"
-        response = client.get(url)
-        content = response.content.decode()
-        # Yesterday's link is the all-day cell — must include the v2 query.
-        assert "/2026-03-14/?masthead=v2" in content
-
-
-# ---------------------------------------------------------------------------
 # Test: Day Windows panel (SNOW-70 — design_handoff_day_windows)
 # ---------------------------------------------------------------------------
 
@@ -1129,7 +794,7 @@ class TestV2Masthead:
 @pytest.mark.django_db
 class TestDayWindowsPanel:
     """
-    Day Windows panel — replaces the Morning/Later headline band under v2.
+    Day Windows panel — the day's hazard summary above the rating blocks.
 
     One row per validTimePeriod (earlier / all_day / later); ordered
     chronologically with all_day in the middle when present. Each row
@@ -1137,31 +802,19 @@ class TestDayWindowsPanel:
     derived from the matching trait's title, and a window pill.
     """
 
-    def test_default_renders_headline_band_not_panel(
-        self, client: Client, variable_bulletin, region
-    ):
-        """v1 path: Morning/Later headline band stays, dw-panel absent."""
+    def test_default_renders_panel(self, client: Client, variable_bulletin, region):
+        """The day-windows panel renders by default — no headline band."""
         url = _url("CH-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="headline-band"' in content
-        assert 'data-testid="day-windows-panel"' not in content
-
-    def test_v2_renders_panel_not_headline_band(
-        self, client: Client, variable_bulletin, region
-    ):
-        """v2 path: dw-panel renders, the v1 headline band is absent."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v2"
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="day-windows-panel"' in content
         assert 'data-testid="headline-band"' not in content
 
-    def test_v2_renders_day_risk_profile_heading_above_panel(
+    def test_renders_day_risk_profile_heading_above_panel(
         self, client: Client, variable_bulletin, region
     ):
         """The 'Day Risk Profile' h2 sits above the day-windows panel."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v2"
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="day-risk-profile-heading"' in content
@@ -1170,16 +823,6 @@ class TestDayWindowsPanel:
         heading_idx = content.index('data-testid="day-risk-profile-heading"')
         panel_idx = content.index('data-testid="day-windows-panel"')
         assert heading_idx < panel_idx
-
-    def test_v1_default_does_not_render_day_risk_profile_heading(
-        self, client: Client, variable_bulletin, region
-    ):
-        """The 'Day Risk Profile' heading is gated on v2 — v1 must not show it."""
-        url = _url("CH-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="day-risk-profile-heading"' not in content
-        assert "Day Risk Profile" not in content
 
     def test_split_day_renders_two_rows_earlier_then_later(
         self, client: Client, region
@@ -1210,7 +853,7 @@ class TestDayWindowsPanel:
         rm = _render_model_with_traits([earlier_trait, later_trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-18") + "?masthead=v2"
+        url = _url("CH-4115", "valais", "2026-03-18")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 2
@@ -1229,7 +872,7 @@ class TestDayWindowsPanel:
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-19") + "?masthead=v2"
+        url = _url("CH-4115", "valais", "2026-03-19")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 1
@@ -1268,7 +911,7 @@ class TestDayWindowsPanel:
         rm = _render_model_with_traits([all_day_trait, later_trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-23") + "?masthead=v2"
+        url = _url("CH-4115", "valais", "2026-03-23")
         response = client.get(url)
         content = response.content.decode()
         # Two rows, ordered: the all_day row sits first, the later row second.
@@ -1323,7 +966,7 @@ class TestDayWindowsPanel:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-24") + "?masthead=v2"
+        url = _url("CH-4115", "valais", "2026-03-24")
         response = client.get(url)
         content = response.content.decode()
         panel_start = content.index('data-testid="day-windows-panel"')
@@ -1372,7 +1015,7 @@ class TestDayWindowsPanel:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-20") + "?masthead=v2"
+        url = _url("CH-4115", "valais", "2026-03-20")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 3
@@ -1399,7 +1042,7 @@ class TestDayWindowsPanel:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-21") + "?masthead=v2"
+        url = _url("CH-4115", "valais", "2026-03-21")
         response = client.get(url)
         content = response.content.decode()
         # lv-considerable + the digit 3 inside the tile.
@@ -1434,7 +1077,7 @@ class TestDayWindowsPanel:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-22") + "?masthead=v2"
+        url = _url("CH-4115", "valais", "2026-03-22")
         response = client.get(url)
         content = response.content.decode()
         # Single all_day row at the higher level (3 / Considerable). Caption
@@ -1447,197 +1090,60 @@ class TestDayWindowsPanel:
 
 
 # ---------------------------------------------------------------------------
-# Test: v3 masthead (region first, calendar inline, no day-strip)
+# Test: bulletin masthead (date+calendar above region, subregion H2)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestV3Masthead:
+class TestBulletinMasthead:
     """
-    v3 masthead — region promoted to the top, date eyebrow + calendar
-    trigger inline, no day-strip and no « / » nav row. The calendar is
-    moved out of the top nav and becomes the only date picker.
-    """
-
-    def test_v3_renders_v3_masthead_partial_only(
-        self, client: Client, simple_bulletin, region
-    ):
-        """``?masthead=v3`` swaps in the v3 partial; v1 + v2 mastheads are absent."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="bulletin-masthead-v3"' in content
-        # v2 strip and v1 nav row must NOT render alongside v3.
-        assert 'data-testid="bulletin-masthead-strip"' not in content
-        assert 'data-testid="bulletin-nav"' not in content
-
-    def test_v3_region_h1_precedes_date_eyebrow(
-        self, client: Client, simple_bulletin, region
-    ):
-        """Region is the lead headline; date eyebrow follows it in the DOM."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
-        response = client.get(url)
-        content = response.content.decode()
-        region_idx = content.index('class="bm-region"')
-        eyebrow_idx = content.index('class="bm-eyebrow"')
-        assert region_idx < eyebrow_idx
-
-    def test_v3_has_no_day_strip(self, client: Client, simple_bulletin, region):
-        """v3 explicitly drops the day-strip — the calendar is the only picker."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="bulletin-masthead-strip"' not in content
-        assert 'data-testid="masthead-day"' not in content
-
-    def test_v3_calendar_trigger_inline_in_masthead(
-        self, client: Client, simple_bulletin, region
-    ):
-        """The calendar HTMX button sits in the masthead, not the top nav."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="bm-v3-calendar-trigger"' in content
-        # And the trigger sits inside the masthead landmark.
-        masthead_idx = content.index('data-testid="bulletin-masthead-v3"')
-        trigger_idx = content.index('data-testid="bm-v3-calendar-trigger"')
-        assert masthead_idx < trigger_idx
-
-    def test_v3_top_nav_omits_calendar_button(
-        self, client: Client, simple_bulletin, region
-    ):
-        """The top nav under v3 is wayfinding-only — no calendar button."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
-        response = client.get(url)
-        content = response.content.decode()
-        # Only one calendar button on the page (in the masthead, not the nav).
-        assert content.count("Show monthly calendar") == 1
-        # Confirm it's the masthead one.
-        nav_block_end = content.index("</nav>")
-        assert "Show monthly calendar" not in content[:nav_block_end]
-
-    def test_v3_still_renders_day_risk_profile_panel(
-        self, client: Client, variable_bulletin, region
-    ):
-        """v3 keeps the Day Risk Profile heading + day-windows panel below."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="day-risk-profile-heading"' in content
-        assert 'data-testid="day-windows-panel"' in content
-        # v1 headline band must still be absent.
-        assert 'data-testid="headline-band"' not in content
-
-    def test_v3_calendar_partial_url_carries_masthead_query(
-        self, client: Client, simple_bulletin, region
-    ):
-        """Calendar fetch URL includes ?masthead=v3 so the partial inherits it."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v3"
-        response = client.get(url)
-        content = response.content.decode()
-        # ``urlencode`` will escape & as &amp; inside HTML attributes; both
-        # forms are valid — accept whichever the template emits.
-        assert ("masthead=v3" in content) and ("date=2026-03-15" in content)
-
-    def test_calendar_partial_propagates_masthead_query_to_cell_links(self, region):
-        """Cell hrefs in the calendar fragment carry ``?masthead=v3``."""
-        # Build a bulletin so the focal day has a clickable cell.
-        focal = date(2026, 3, 18)
-        rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
-        bulletin = _make_am_bulletin(
-            region, focal, render_model=rm, render_model_version=3
-        )
-        RegionDayRatingFactory.create(
-            region=region,
-            date=focal,
-            min_rating=RegionDayRating.Rating.MODERATE,
-            max_rating=RegionDayRating.Rating.MODERATE,
-            source_bulletin=bulletin,
-            version=1,
-        )
-        # HTMX-only endpoint — must include the HX-Request header.
-        c = Client(HTTP_HX_REQUEST="true")
-        partial_url = (
-            reverse(
-                "public:calendar_partial",
-                kwargs={
-                    "region_id": "CH-4115",
-                    "year": 2026,
-                    "month": 3,
-                },
-            )
-            + "?date=2026-03-18&masthead=v3"
-        )
-        response = c.get(partial_url)
-        assert response.status_code == 200
-        content = response.content.decode()
-        # The clickable cell href must keep the masthead query so navigation
-        # stays in v3 mode.
-        assert "/2026-03-18/?masthead=v3" in content
-
-
-# ---------------------------------------------------------------------------
-# Test: v4 masthead (date+calendar above region, subregion h2)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestV4Masthead:
-    """
-    v4 masthead — date eyebrow + calendar trigger sit ABOVE the region
-    H1, and the parent EAWS L2 sub-region appears as a quiet H2 below
-    the H1. Otherwise identical plumbing to v3 (no day-strip, calendar
-    drawer is the only date picker).
+    Bulletin masthead — date eyebrow + calendar trigger sit above the
+    region H1, and the parent EAWS L2 sub-region renders as a quiet H2
+    below the H1. The calendar drawer is the only date picker; the top
+    nav is wayfinding-only.
     """
 
-    def test_v4_renders_v4_masthead_partial_only(
-        self, client: Client, simple_bulletin, region
-    ):
-        """``?masthead=v4`` swaps in the v4 partial; v1/v2/v3 mastheads are absent."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+    def test_renders_masthead(self, client: Client, simple_bulletin, region):
+        """The masthead landmark renders on the bulletin page by default."""
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="bulletin-masthead-v4"' in content
-        assert 'data-testid="bulletin-masthead-v3"' not in content
-        assert 'data-testid="bulletin-masthead-strip"' not in content
-        assert 'data-testid="bulletin-nav"' not in content
+        assert 'data-testid="bulletin-masthead"' in content
 
-    def test_v4_eyebrow_precedes_region_h1(
-        self, client: Client, simple_bulletin, region
-    ):
+    def test_eyebrow_precedes_region_h1(self, client: Client, simple_bulletin, region):
         """Date eyebrow + calendar trigger sit above the region H1 in DOM order."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         eyebrow_idx = content.index('class="bm-eyebrow"')
         region_idx = content.index('class="bm-region"')
         assert eyebrow_idx < region_idx
 
-    def test_v4_renders_subregion_h2_below_h1(
+    def test_renders_subregion_h2_below_h1(
         self, client: Client, simple_bulletin, region
     ):
         """Parent EAWS L2 sub-region renders as an H2 below the region H1."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="bulletin-masthead-v4-subregion"' in content
+        assert 'data-testid="bulletin-masthead-subregion"' in content
         # Region H1 precedes the subregion H2.
         region_idx = content.index('class="bm-region"')
-        subregion_idx = content.index('data-testid="bulletin-masthead-v4-subregion"')
+        subregion_idx = content.index('data-testid="bulletin-masthead-subregion"')
         assert region_idx < subregion_idx
 
-    def test_v4_subregion_uses_english_name_when_present(self, simple_bulletin, region):
+    def test_subregion_uses_english_name_when_present(self, simple_bulletin, region):
         """``EawsSubRegion.name_en`` wins over native when SLF publishes one."""
         sub = region.subregion
         sub.name_en = "Lower Valais"
         sub.name_native = "Bas-Valais"
         sub.save(update_fields=["name_en", "name_native"])
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = Client().get(url)
         content = response.content.decode()
         assert "Lower Valais" in content
 
-    def test_v4_subregion_falls_back_to_native_when_english_blank(
+    def test_subregion_falls_back_to_native_when_english_blank(
         self, simple_bulletin, region
     ):
         """When ``name_en`` is blank the H2 uses ``name_native``."""
@@ -1645,48 +1151,41 @@ class TestV4Masthead:
         sub.name_en = ""
         sub.name_native = "Bas-Valais"
         sub.save(update_fields=["name_en", "name_native"])
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = Client().get(url)
         content = response.content.decode()
         assert "Bas-Valais" in content
 
-    def test_v4_has_no_day_strip(self, client: Client, simple_bulletin, region):
-        """v4 inherits v3's no-day-strip rule — calendar is the only picker."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="bulletin-masthead-strip"' not in content
-        assert 'data-testid="masthead-day"' not in content
-
-    def test_v4_calendar_trigger_inline_in_masthead(
+    def test_calendar_trigger_inline_in_masthead(
         self, client: Client, simple_bulletin, region
     ):
         """The calendar HTMX button sits in the masthead, not the top nav."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="bm-v4-calendar-trigger"' in content
+        assert 'data-testid="bm-calendar-trigger"' in content
         # And the trigger sits inside the masthead landmark.
-        masthead_idx = content.index('data-testid="bulletin-masthead-v4"')
-        trigger_idx = content.index('data-testid="bm-v4-calendar-trigger"')
+        masthead_idx = content.index('data-testid="bulletin-masthead"')
+        trigger_idx = content.index('data-testid="bm-calendar-trigger"')
         assert masthead_idx < trigger_idx
 
-    def test_v4_top_nav_omits_calendar_button(
+    def test_top_nav_omits_calendar_button(
         self, client: Client, simple_bulletin, region
     ):
-        """The top nav under v4 is wayfinding-only — no calendar button."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        """The top nav is wayfinding-only — no calendar button."""
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
+        # Only one calendar button on the page (in the masthead, not the nav).
         assert content.count("Show monthly calendar") == 1
         nav_block_end = content.index("</nav>")
         assert "Show monthly calendar" not in content[:nav_block_end]
 
-    def test_v4_still_renders_day_risk_profile_panel(
+    def test_still_renders_day_risk_profile_panel(
         self, client: Client, variable_bulletin, region
     ):
-        """v4 keeps the Day Risk Profile heading + day-windows panel below."""
-        url = _url("CH-4115", "valais", "2026-03-15") + "?masthead=v4"
+        """The Day Risk Profile heading + day-windows panel render below."""
+        url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="day-risk-profile-heading"' in content
