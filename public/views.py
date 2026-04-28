@@ -1521,7 +1521,15 @@ def bulletin_detail(
         The rendered bulletin page.
 
     """
-    region = get_object_or_404(Region, region_id__iexact=region_id)
+    # ``select_related("subregion")`` pre-loads the parent EAWS L2 row
+    # the v4 masthead's H2 reads (and any future caller that touches
+    # ``region.subregion``) — without it, the subregion lookup adds a
+    # second SELECT on every bulletin pageview regardless of masthead
+    # version. SNOW-13 query-count monitor caught the +1 regression.
+    region = get_object_or_404(
+        Region.objects.select_related("subregion"),
+        region_id__iexact=region_id,
+    )
 
     # Warm the cache for future region_redirect lookups.
     cache.set(
