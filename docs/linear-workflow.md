@@ -18,15 +18,17 @@ without manual nudging:
 | `Backlog`      | Issue created, not yet triaged                            | Human / Chat (MCP) |
 | `Todo`         | Ready to be picked up, not yet scoped                     | Human / Chat (MCP) |
 | `Ready for dev`| Scoping comment posted; approach settled                  | Chat (MCP)   |
-| `In Progress`  | Feature branch pushed to GitHub                           | GitHub integration |
+| `In Progress`  | Local branch created at start of implementation           | Code (MCP)   |
 | `In Review`    | PR opened against `main`                                  | GitHub integration |
 | `Done`         | PR merged                                                 | GitHub integration |
 
-The GitHub–Linear integration handles `In Progress`, `In Review`, and
-`Done` automatically when the branch name or PR body references
-`SNOW-xxx`. Chat writes to Linear via MCP when creating tickets, posting
-scoping comments, and moving status up to `Ready for dev`; it does not
-touch the post-commit states.
+Status moves up to and including `In Progress` happen via the Linear
+MCP — Chat creates and scopes tickets through `Ready for dev`, then
+Code moves the ticket to `In Progress` immediately after creating the
+local branch (no push required, and no push happens at that point).
+The GitHub–Linear integration handles only `In Review` (when the PR
+opens) and `Done` (when the PR merges); both of those triggers require
+`SNOW-xxx` in the branch name or PR body.
 
 ## Entry points
 
@@ -130,17 +132,19 @@ Code's expected sequence:
    scope in Chat first.
 2. **Create a branch** named `feature/SNOW-42-short-kebab-description`
    off the latest `main`. Keep the slug under ~40 chars; it appears in
-   the branch list and PR title.
-3. **Push the branch** to GitHub immediately (empty or with a first
-   commit). Pushing a branch whose name contains `SNOW-42` is what
-   triggers the Linear integration to move the ticket to `In Progress`
-   — do this early so status reflects "work has started" accurately.
+   the branch list and PR title. The branch stays local at this point —
+   do not push it.
+3. **Move the ticket to `In Progress`** via the Linear MCP. This is the
+   handshake that signals "work has started"; the branch deliberately
+   has not been pushed yet, so the status move has to happen in MCP.
 4. **Implement** the work on that branch, following the conventions in
    CLAUDE.md (render-model shape, management-command design, i18n
    rules, test structure, etc.).
 5. **Run `poetry run tox`** and fix every failure before opening the PR.
    Run `npm run lh` for any change touching a public page.
-6. **Open a PR** (see next section).
+6. **Push the branch and open a PR** — this is the first push, and is
+   what triggers the GitHub-driven `In Review` transition (see next
+   section).
 
 ## Open the PR
 
@@ -175,8 +179,10 @@ note on the latest `npm run lh` scores.
 
 The `Closes SNOW-42` magic comment in the PR body is what closes the
 Linear ticket on merge — do not omit it. The `In Review` transition is
-triggered by opening the PR (Linear watches for `SNOW-xxx` in the
-branch name or PR body).
+triggered by opening the PR — that is also the point at which the
+branch is first pushed to GitHub, so the integration sees the
+`SNOW-xxx` reference in the branch name and PR body together and moves
+the ticket from `In Progress` → `In Review` automatically.
 
 ## After merge
 

@@ -1,6 +1,6 @@
 ---
 name: linear-ticket-implementer
-description: Use when picking up a scoped Linear ticket to implement it — i.e. the user says "implement SNOW-xxx" or equivalent. Covers the pickup sequence (fetch issue + comments, verify scoping comment exists, stop if missing), branch naming, push-early-to-trigger-In-Progress, PR title/body format including the `Closes SNOW-xxx` magic string, and when to stop and ask rather than push through. Do NOT use when creating or scoping a ticket — use linear-ticket-author for that.
+description: Use when picking up a scoped Linear ticket to implement it — i.e. the user says "implement SNOW-xxx" or equivalent. Covers the pickup sequence (fetch issue + comments, verify scoping comment exists, stop if missing), branch naming, the MCP move to In Progress (no push yet), PR title/body format including the `Closes SNOW-xxx` magic string, and when to stop and ask rather than push through. Do NOT use when creating or scoping a ticket — use linear-ticket-author for that.
 ---
 
 # Linear ticket implementer
@@ -9,11 +9,19 @@ This skill governs how a scoped Linear ticket is **picked up, built, and
 landed**. The full narrative lives in `docs/linear-workflow.md`; this skill
 is the agent-facing rulebook.
 
-Post-commit status transitions (`In Progress`, `In Review`, `Done`) are
-handled by the GitHub–Linear integration automatically, **provided the
-branch name and PR body reference `SNOW-xxx` correctly**. Getting the
-references right is how this skill keeps Linear in sync without manual
-status nudging.
+Status transitions are split between the Linear MCP and the GitHub–Linear
+integration:
+
+- **Code (via Linear MCP)** moves the ticket from `Ready for dev` →
+  `In Progress` at the **start** of implementation, immediately after
+  creating the local branch. The branch is **not** pushed at this
+  point — `In Progress` is a manual MCP move, not a side effect of a
+  push.
+- **GitHub integration** moves the ticket `In Progress` → `In Review`
+  when the PR is opened, and `In Review` → `Done` when the PR is
+  merged. Both triggers require `SNOW-xxx` in the branch name or PR
+  body — get those references right and the post-implementation states
+  stay in sync without manual nudging.
 
 ## When this skill applies
 
@@ -46,26 +54,33 @@ anything else.
   ask the user how to resolve them.
 - **If the scoping comment is clean** → proceed.
 
-### 3. Create the branch
+### 3. Create the branch (locally — do not push)
 
 Naming convention:
 
 - Features: `feature/SNOW-xxx-short-kebab-description`
 - Bug fixes: `fix/SNOW-xxx-short-kebab-description`
-- Tooling/infra: `task/SNOW-xxx-short-kebab-description`
+- Tooling/infra: `chore/SNOW-xxx-short-kebab-description`
 
 Keep the slug under ~40 characters. It appears in the branch list and PR
 title, so brevity matters.
 
 Branch off the latest `main`. Don't branch off a stale local `main` —
-pull first.
+pull first. **The branch stays local at this point**; do not `git push`.
+The branch is pushed for the first time at PR-open (step 7).
 
-### 4. Push the branch to GitHub immediately
+### 4. Move the ticket to `In Progress` via the Linear MCP
 
-Push the branch empty or with a first commit — doesn't matter which.
-**What matters is that a branch whose name contains `SNOW-xxx` exists on
-GitHub.** That push is what triggers the Linear integration to move the
-ticket to `In Progress`. Do this early so status reflects reality.
+Now that the local branch exists, move the ticket from `Ready for dev` →
+`In Progress` using the Linear MCP `save_issue` tool (set
+`state: "In Progress"`). This is the explicit handshake that work has
+started — and the only mechanism that reflects it, since the branch is
+deliberately not on GitHub yet.
+
+Do **not** push the branch as a substitute for this step. The
+GitHub–Linear integration in this workspace does not move tickets on
+push — only on PR open — so an early push would not help and only adds
+noise to the remote.
 
 ### 5. Implement
 
@@ -81,9 +96,12 @@ and tests section are your guide.
 Fix every failure before opening the PR. Don't paper over flaky tests;
 if a test is genuinely flaky, surface it and stop.
 
-### 7. Open the PR
+### 7. Push the branch and open the PR
 
-See the PR format section below.
+This is the first push. Pushing the branch and opening the PR together
+is what triggers the GitHub-driven `In Progress` → `In Review`
+transition (the integration sees `SNOW-xxx` in the branch name and PR
+body). See the PR format section below.
 
 ## Branch and commit conventions
 
@@ -165,8 +183,14 @@ stopping:
 
 ## Anti-patterns
 
-- **Don't manually move Linear status.** The GitHub integration handles
-  `In Progress` → `In Review` → `Done`. Manual nudging causes drift.
+- **Don't move `In Review` or `Done` manually.** Those are GitHub-driven
+  (PR open and PR merge respectively). Manual nudging causes drift.
+  `In Progress` *is* a manual MCP move, made by Code at the start of
+  implementation — that one is expected, not an anti-pattern.
+- **Don't push the branch before opening the PR.** The push is what
+  triggers `In Review`; pushing earlier just creates a "stale Draft"
+  flicker on the remote and doesn't help status. `In Progress` is set
+  by the MCP move in step 4, not by the push.
 - **Don't omit `Closes SNOW-xxx` from the PR body.** The ticket won't
   close on merge.
 - **Don't squash unrelated work onto one branch.** One ticket, one branch,

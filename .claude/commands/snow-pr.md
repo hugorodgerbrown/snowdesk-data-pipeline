@@ -9,7 +9,10 @@ Gate: run the QA agent first. Only open a PR if QA reports the branch ready.
    `feature|fix|chore/SNOW-xxx-…` naming convention, stop and tell the user.
 
 2. **Fetch the Linear ticket** — use the Linear MCP to retrieve the ticket title
-   and confirm it is in `In Progress` or `Ready for dev` status.
+   and confirm it is in `In Progress`. If it is still at `Ready for dev`, that
+   means the move-to-`In Progress` step was skipped at branch creation; warn
+   the user and move it to `In Progress` via MCP before proceeding. Any other
+   status (`Done`, `Canceled`, `Backlog`, etc.) is unexpected — stop and ask.
 
 3. **Run the QA agent** — invoke the `qa` subagent against the current working
    tree. Ask it to cover all features touched by this branch (read the diff from
