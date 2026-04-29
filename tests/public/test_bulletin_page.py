@@ -506,7 +506,7 @@ class TestMetadataStrip:
 
 @pytest.mark.django_db
 class TestFooter:
-    """Footer renders focal region before related regions."""
+    """Footer renders the focal region only (SNOW-80)."""
 
     def test_focal_region_appears_in_footer(
         self, client: Client, simple_bulletin, region
@@ -518,15 +518,21 @@ class TestFooter:
         assert 'data-testid="focal-region"' in content
         assert "Valais" in content
 
-    def test_focal_region_before_related(self, client: Client, region):
-        """Focal region appears before any related regions in the HTML."""
+    def test_sibling_regions_not_listed_in_footer(self, client: Client, region):
+        """SNOW-80: sibling micro-regions are no longer iterated in the footer.
+
+        The related-regions tail was removed because adjacent regions are
+        already discoverable from the map (and reachable in one tap via
+        the SNOW-81 deep-link in the masthead). On a multi-region
+        bulletin, only the focal region must appear in the footer
+        landmark — sibling region names rendered through the page-footer
+        block would re-introduce the visual clutter the ticket removed.
+        """
         day = date(2026, 3, 15)
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
         bulletin = _make_am_bulletin(
             region, day, render_model=rm, render_model_version=3
         )
-
-        # Add a second region linked to the same bulletin
         other_region = RegionFactory.create(name="Münstertal", slug="ch-4116")
         RegionBulletinFactory.create(
             bulletin=bulletin,
@@ -538,13 +544,14 @@ class TestFooter:
         response = client.get(url)
         content = response.content.decode()
 
-        focal_pos = content.find('data-testid="focal-region"')
-        related_pos = content.find("Münstertal")
-        assert focal_pos != -1
-        assert related_pos != -1
-        assert focal_pos < related_pos, (
-            "Focal region should appear before related regions"
-        )
+        # Scope the assertion to the page-footer landmark: a sibling
+        # region's name is allowed to appear elsewhere on the page (e.g.
+        # in bulletin prose), but not in the footer's region row.
+        footer_start = content.index('data-testid="page-footer"')
+        footer_end = content.index("</footer>", footer_start)
+        footer_html = content[footer_start:footer_end]
+        assert "Valais" in footer_html
+        assert "Münstertal" not in footer_html
 
 
 # ---------------------------------------------------------------------------
