@@ -7,9 +7,15 @@ EAWS L2 sub-region is rendered as an H2 below the H1 to give the focal
 region a wayfinding context line. The calendar drawer is the only date
 picker — the page chrome's top nav is wayfinding-only.
 
+A map-pin link sits to the right of the H1 (SNOW-81), deep-linking
+back to the map at /map/#<region_id>. The map's existing hash router
+opens the bottom sheet for that region at peek state on load; auto-zoom
+is governed by the user's saved preference.
+
 Required context:
   page_date            — datetime.date for the focal day (eyebrow text)
   region_name          — display name for the H1
+  region_id            — SLF region id for the map deep-link href
   subregion_name       — parent L2 sub-region name (English where SLF
                          publishes one, native otherwise) for the H2
   calendar_partial_url — HTMX endpoint for the calendar fragment
@@ -54,7 +60,31 @@ Required context:
         <p class="bm-eyebrow">{{ page_date|date:"D j M Y" }}</p>
     {% endif %}
 
-    <h1 class="bm-region">{{ region_name }}</h1>
+    <div class="bm-region-row">
+        <h1 class="bm-region">{{ region_name }}</h1>
+        <a
+            href="{% url 'public:map' %}#{{ region_id }}"
+            class="bm-region-link"
+            aria-label="{% blocktrans with region=region_name %}View {{ region }} on the map{% endblocktrans %}"
+            data-testid="bm-map-link"
+        >
+            <svg
+                class="bm-map-icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+            </svg>
+        </a>
+    </div>
     {% if subregion_name %}
         <h2 class="bm-subregion" data-testid="bulletin-masthead-subregion">{{ subregion_name }}</h2>
     {% endif %}

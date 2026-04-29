@@ -1148,6 +1148,25 @@ class TestBulletinMasthead:
         trigger_idx = content.index('data-testid="bm-calendar-trigger"')
         assert masthead_idx < trigger_idx
 
+    def test_renders_map_deep_link_beside_h1(
+        self, client: Client, simple_bulletin, region
+    ):
+        """A map-pin link to ``/map/#<region_id>`` sits beside the region H1.
+
+        The map's existing hash router opens the bottom sheet for the
+        region at peek state on load (SNOW-81 / SNOW-63 auto-zoom).
+        """
+        url = _url("CH-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bm-map-link"' in content
+        expected_href = f'href="{reverse("public:map")}#CH-4115"'
+        assert expected_href in content
+        # H1 precedes the map link in DOM order; both sit inside the row.
+        region_idx = content.index('class="bm-region"')
+        link_idx = content.index('data-testid="bm-map-link"')
+        assert region_idx < link_idx
+
     def test_top_nav_omits_calendar_button(
         self, client: Client, simple_bulletin, region
     ):
