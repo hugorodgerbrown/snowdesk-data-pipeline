@@ -242,9 +242,13 @@ from inside a worktree they might delete.
 
 ## Linear workflow (summary)
 
-Linear (team prefix `SNOW-`) is the issue source of truth. The Linear MCP
-server handles ticket read/write; GitHub integration handles status
-transitions once a branch is pushed.
+Linear (team prefix `SNOW-`) is the issue source of truth. Status moves
+up to and including `In Progress` happen via the Linear MCP — Chat
+creates and scopes tickets through `Ready for dev`, then Code moves the
+ticket to `In Progress` immediately after creating the local branch
+(no push at that point). The GitHub–Linear integration handles only
+`In Review` (when the PR opens) and `Done` (when the PR merges); both
+require `SNOW-xxx` in the branch name or PR body.
 
 **Branch and commit conventions:**
 - Branch: `feature/SNOW-xxx-short-description` (features), `fix/SNOW-xxx-…`
