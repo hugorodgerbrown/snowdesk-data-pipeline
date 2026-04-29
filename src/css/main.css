@@ -489,6 +489,41 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   color: inherit;
 }
 
+/* Region row — H1 plus the map-pin deep-link to the right (SNOW-81).
+   The link reuses the masthead's text-3 → text-1 hover treatment so it
+   reads as a quiet glyph, not a chrome button. */
+.bm-region-row {
+  display: flex;
+  /* Baseline pins the icon to the H1's first-line baseline so a
+     two-line region name keeps the glyph beside the first line, not
+     centred against the wrapped block. */
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0 4px;
+}
+.bm-region-row .bm-region {
+  margin: 0;
+}
+.bm-region-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Don't let the icon shrink when a long region name forces the H1
+     to wrap. */
+  flex-shrink: 0;
+  color: var(--color-text-3);
+  text-decoration: none;
+  transition: color 80ms;
+}
+.bm-region-link:hover,
+.bm-region-link:focus-visible {
+  color: var(--color-text-1);
+}
+.bm-map-icon {
+  display: inline-block;
+  color: inherit;
+}
+
 
 /* —— Day-windows panel — earlier / all-day / later summary ————
    Frozen design from design_handoff_day_windows/. Sits between the
