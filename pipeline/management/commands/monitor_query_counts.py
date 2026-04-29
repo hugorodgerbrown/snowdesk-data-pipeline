@@ -49,7 +49,10 @@ MONITORED_URLS: list[tuple[str, str]] = [
     ("api_today_summaries", "/api/today-summaries/"),
     ("api_resorts_by_region", "/api/resorts-by-region/"),
     ("api_regions_geojson", "/api/regions.geojson"),
-    ("api_offline_manifest_map", "/api/offline-manifest/map/"),
+    # SNOW-79: ``api_offline_manifest_map`` was retired with the rest of
+    # the precache feature. The route 404s now and the 404 path runs ~4
+    # middleware queries — tracking that against a "0 queries" target
+    # would be monitoring the 404 handler, not a Snowdesk endpoint.
     ("region_redirect", "/CH-4115/"),
     ("bulletin_historic", "/CH-4115/martigny-verbier/2026-04-01/"),
 ]
