@@ -379,56 +379,6 @@ Six structural sections, top to bottom:
         {% endif %}
         {# bulletin #}
 
-        {% comment %}
-           SECTION 6 — Footer
-           Focal region name + SLF attribution. Adjacent micro-regions
-           are discoverable from the map (and reachable in one tap via
-           the SNOW-81 deep-link in the masthead), so the footer no
-           longer iterates them (SNOW-80).
-        {% endcomment %}
-        <footer class="mt-8 pt-4 border-t border-border text-xs text-text-3" data-testid="page-footer">
-            <p class="mb-1">
-                <span class="font-medium text-text-2" data-testid="focal-region">{{ region_name }}</span>
-            </p>
-            {# DEBUG-only shortcut into Django admin for the current   #}
-            {# bulletin record.  Present only when ``settings.DEBUG``  #}
-            {# is truthy and a panel was built (empty-state pages     #}
-            {# have no bulletin to open).  Production omits the link. #}
-            {% if debug and panel.admin_url %}
-                <p class="mb-1">
-                    <a
-                        class="underline hover:text-text-2"
-                        href="{{ panel.admin_url }}"
-                        data-testid="footer-admin-link"
-                    >{% trans "Open in admin" %}</a>
-                </p>
-            {% endif %}
-            <p>
-                {% blocktrans trimmed %}
-                    Avalanche bulletin data &copy;
-                {% endblocktrans %}
-                <a
-                    class="underline hover:text-text-2"
-                    href="https://www.slf.ch"
-                    target="_blank"
-                    rel="noopener"
-                >{% trans "SLF — WSL Institute for Snow and Avalanche Research" %}</a>.
-                {% trans "Rendered by Snowdesk." %}
-            </p>
-            {# SLF requests data consumers surface a link to their public  #}
-            {# field-observation reporting tool. Required by the data     #}
-            {# licence terms — see SNOW-30.                                #}
-            <p class="mt-1">
-                <a
-                    class="underline hover:text-text-2"
-                    href="https://pro.slf.ch/reply/public/#/"
-                    target="_blank"
-                    rel="noopener"
-                    data-testid="slf-feedback-link"
-                >{% trans "Report field observations to SLF ↗" %}</a>
-            </p>
-        </footer>
-
         {# ── Subscribe CTA (always visible) ────────────────────────── #}
         <div class="mt-6">
             {% include "subscriptions/partials/subscribe_form.html" with region_id=region.region_id %}
