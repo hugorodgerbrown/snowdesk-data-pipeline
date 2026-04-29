@@ -48,6 +48,12 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% endblock %}
         <meta name="description" content="{% block meta_description %}{% endblock %}">
         <title>{% block title %}Snowdesk{% endblock %}</title>
+        {# SNOW-79: PWA manifest + theme colour are linked site-wide so the #}
+        {# browser's install affordance is available from any public page,  #}
+        {# not just /map/. The SW registration script runs deferred at the  #}
+        {# end of <body> via {% block extra_js %}.                          #}
+        <link rel="manifest" href="{% static 'manifest.webmanifest' %}">
+        <meta name="theme-color" content="#1a1a1a">
         {% include "includes/theme_head.html" %}
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
         {% block extra_head %}{% endblock %}
@@ -60,6 +66,8 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% block site_footer %}
             {% include "public/_site_footer.html" %}
         {% endblock %}
+        {# SNOW-79: register the PWA shell SW from every public page. #}
+        <script src="{% static 'js/sw_register.js' %}" defer></script>
         {% block extra_js %}{% endblock %}
     </body>
 </html>

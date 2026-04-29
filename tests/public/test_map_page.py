@@ -168,3 +168,33 @@ def test_map_page_renders_unified_time_controls():
     content = response.content.decode()
     assert 'id="scrubber-play"' in content
     assert 'id="map-date-pill"' in content
+
+
+@pytest.mark.django_db
+def test_map_page_no_offline_toggle_or_precache_url():
+    """SNOW-79: the SNOW-9 "Save offline" button and its data-attribute are gone.
+
+    The PWA shell SW now caches assets at runtime via stale-while-
+    revalidate, so an explicit opt-in download UI is no longer needed.
+    The previous ``#offline-toggle`` button + its
+    ``data-offline-manifest-url`` attribute must not be in the rendered
+    map page — keeping them around would re-introduce the "stuck on
+    stale data" reports that motivated this rewrite.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'id="offline-toggle"' not in content
+    assert "data-offline-manifest-url" not in content
+    assert "offline.js" not in content
+
+
+@pytest.mark.django_db
+def test_map_page_inherits_pwa_manifest_link():
+    """SNOW-79: every public page (incl. /map/) links the manifest from base.html."""
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'rel="manifest"' in content
+    assert "manifest.webmanifest" in content
+    assert "sw_register.js" in content

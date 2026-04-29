@@ -294,7 +294,7 @@ Read these when working in the relevant area:
 | Subscriptions (signed tokens, rate limits, email) | [`docs/subscriptions.md`](docs/subscriptions.md) |
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
-| Offline map (service worker, precache manifest) | [`docs/offline-map.md`](docs/offline-map.md) |
+| PWA shell (service worker, manifest icons, cache strategy) | [`docs/offline-map.md`](docs/offline-map.md) |
 | Calendar and RegionDayRating | [`docs/calendar.md`](docs/calendar.md) |
 | Internationalisation | [`docs/i18n.md`](docs/i18n.md) |
 | Lighthouse CI (budgets, perf settings) | [`docs/lighthouse.md`](docs/lighthouse.md) |

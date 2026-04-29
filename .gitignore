@@ -30,7 +30,9 @@ static/css/output.css
 # Django
 db.sqlite3
 *.log
+*.log.*
 logs/*.log
+logs/*.log.*
 staticfiles/
 mediafiles/
 

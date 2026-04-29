@@ -1,0 +1,79 @@
+#!/usr/bin/env node
+/*
+ * bin/build-pwa-icons — Render PWA icon PNGs from static/favicon.svg.
+ *
+ * Outputs three files into static/icons/pwa/:
+ *   - icon-192.png           (192×192, purpose: any)
+ *   - icon-512.png           (512×512, purpose: any)
+ *   - icon-maskable-512.png  (512×512, purpose: maskable)
+ *
+ * Run via ``npm run build:icons`` (see package.json). The output is
+ * gitignored — production deploys regenerate it as part of the
+ * Render build.
+ *
+ * The maskable variant pads the source artwork inside a "safe zone"
+ * (80% of the canvas) so adaptive icon shapes on Android don't crop
+ * the glyph. Background colour matches manifest.background_color so
+ * the rounded SVG corners aren't visible after Android's rounded mask
+ * crops them.
+ */
+
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const sharp = require('sharp');
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const SRC_SVG = path.join(REPO_ROOT, 'static', 'favicon.svg');
+const OUT_DIR = path.join(REPO_ROOT, 'static', 'icons', 'pwa');
+
+// Manifest background_color — used as the maskable padding fill so the
+// icon reads as a solid tile after Android's adaptive-icon mask crops
+// it. Keep in sync with static/manifest.webmanifest.
+const BACKGROUND_COLOUR = '#f4f1e8';
+
+const SAFE_ZONE_RATIO = 0.8;
+
+async function buildAny(size, outName) {
+  const outPath = path.join(OUT_DIR, outName);
+  await sharp(SRC_SVG).resize(size, size).png().toFile(outPath);
+  console.log(`wrote ${path.relative(REPO_ROOT, outPath)} (${size}×${size}, any)`);
+}
+
+async function buildMaskable(size, outName) {
+  const outPath = path.join(OUT_DIR, outName);
+  const inner = Math.round(size * SAFE_ZONE_RATIO);
+  const pad = Math.round((size - inner) / 2);
+  const innerBuffer = await sharp(SRC_SVG).resize(inner, inner).png().toBuffer();
+  await sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 4,
+      background: BACKGROUND_COLOUR,
+    },
+  })
+    .composite([{ input: innerBuffer, top: pad, left: pad }])
+    .png()
+    .toFile(outPath);
+  console.log(
+    `wrote ${path.relative(REPO_ROOT, outPath)} (${size}×${size}, maskable, ${SAFE_ZONE_RATIO * 100}% safe zone)`,
+  );
+}
+
+async function main() {
+  if (!fs.existsSync(SRC_SVG)) {
+    console.error(`source SVG not found: ${SRC_SVG}`);
+    process.exit(1);
+  }
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  await buildAny(192, 'icon-192.png');
+  await buildAny(512, 'icon-512.png');
+  await buildMaskable(512, 'icon-maskable-512.png');
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
