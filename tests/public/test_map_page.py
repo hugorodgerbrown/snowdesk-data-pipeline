@@ -30,8 +30,9 @@ def test_map_page_renders():
 @pytest.mark.django_db
 def test_map_page_injects_api_urls():
     """
-    The three API URLs resolve via ``{% url %}`` and are exposed to JS
-    through data-* attributes on the #map element.
+    The four API URLs resolve via ``{% url %}`` and are exposed to JS
+    through data-* attributes on the #map element. SNOW-78 added the
+    resorts-geojson URL alongside the regions/summaries/resorts trio.
     """
     client = Client()
     response = client.get(reverse("public:map"))
@@ -39,6 +40,37 @@ def test_map_page_injects_api_urls():
     assert f'data-regions-url="{reverse("api:regions_geojson")}"' in content
     assert f'data-summaries-url="{reverse("api:today_summaries")}"' in content
     assert f'data-resorts-url="{reverse("api:resorts_by_region")}"' in content
+    assert f'data-resorts-geojson-url="{reverse("api:resorts_geojson")}"' in content
+
+
+@pytest.mark.django_db
+def test_map_page_renders_resorts_overlay_toggle():
+    """
+    SNOW-78: a Resorts checkbox sits in the basemap-picker overlays
+    section so the user can toggle the geocoded-resort pin layer on/off.
+    Default is ``aria-checked="false"`` — the layer opens hidden.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'data-overlay-key="resorts"' in content
+    assert "Resorts" in content
+    # The toggle starts unchecked so the map opens uncluttered; the JS
+    # reads the persisted preference from localStorage on first paint.
+    resorts_btn_idx = content.index('data-overlay-key="resorts"')
+    aria_idx = content.find('aria-checked="false"', resorts_btn_idx)
+    next_li_idx = content.find("<li ", resorts_btn_idx)
+    assert 0 <= aria_idx < next_li_idx if next_li_idx > 0 else aria_idx >= 0
+
+
+@pytest.mark.django_db
+def test_map_page_renders_resorts_legend_entry():
+    """SNOW-78: the danger-scale legend includes a Resorts entry."""
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'data-testid="map-legend-resorts"' in content
+    assert "map-legend-pin" in content
 
 
 @pytest.mark.django_db

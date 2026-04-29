@@ -98,9 +98,10 @@ const clearRegionRepaint = () => {
   let DEBUG = new URLSearchParams(location.search).has('debug');
 
   const mapEl = document.getElementById('map');
-  const REGIONS_URL       = mapEl.dataset.regionsUrl;
-  const MAJOR_REGIONS_URL = mapEl.dataset.majorRegionsUrl;
-  const SUB_REGIONS_URL   = mapEl.dataset.subRegionsUrl;
+  const REGIONS_URL         = mapEl.dataset.regionsUrl;
+  const MAJOR_REGIONS_URL   = mapEl.dataset.majorRegionsUrl;
+  const SUB_REGIONS_URL     = mapEl.dataset.subRegionsUrl;
+  const RESORTS_GEOJSON_URL = mapEl.dataset.resortsGeojsonUrl;
   const SUMMARIES_URL     = mapEl.dataset.summariesUrl;
   const RESORTS_URL       = mapEl.dataset.resortsUrl;
   // The summary URL carries the literal placeholder __REGION__ which is
@@ -167,12 +168,13 @@ const clearRegionRepaint = () => {
     l1: 'snowdesk.map.overlay.l1',
     l2: 'snowdesk.map.overlay.l2',
     l4: 'snowdesk.map.overlay.l4',
+    resorts: 'snowdesk.map.overlay.resorts',
   };
   // L4 defaults to true and is force-locked below — the choropleth is
   // the entire point of the page, so toggling it off would leave the
-  // map empty.
-  const overlayState = { l1: false, l2: false, l4: true };
-  for (const key of ['l1', 'l2']) {
+  // map empty. SNOW-78 resorts default off so the map opens uncluttered.
+  const overlayState = { l1: false, l2: false, l4: true, resorts: false };
+  for (const key of ['l1', 'l2', 'resorts']) {
     try {
       overlayState[key] =
         localStorage.getItem(OVERLAY_STORAGE_KEY[key]) === 'true';
@@ -419,12 +421,82 @@ const clearRegionRepaint = () => {
     }
   };
 
+  // SNOW-78: install the resorts pin layer. Filled circles above the L4
+  // choropleth so the pins are readable against the colour fill, with a
+  // zoom-banded label layer for resort names at higher zooms.
+  //
+  // Pin colour is a neutral dark token rather than an EAWS rating colour
+  // so resort pins read as a separate layer of information rather than
+  // implying a per-resort danger rating (which we don't have — pins
+  // inherit their parent region's bulletin via click-through). Halo +
+  // white stroke keep the pin readable on every basemap and rating fill.
+  //
+  // Visibility is owned by ``overlayState.resorts`` and applied at
+  // install time; toggle clicks (handled in the basemap-picker IIFE)
+  // call ``setLayoutProperty`` on the pin and label layer ids via
+  // ``OVERLAY_LAYER_IDS.resorts``.
+  const installResortsLayer = (geojson) => {
+    if (!geojson || map.getSource('resorts')) return;
+    map.addSource('resorts', { type: 'geojson', data: geojson });
+    map.addLayer({
+      id: 'resorts-pin',
+      type: 'circle',
+      source: 'resorts',
+      layout: {
+        visibility: overlayState.resorts ? 'visible' : 'none',
+      },
+      paint: {
+        'circle-radius': [
+          'interpolate', ['linear'], ['zoom'],
+          5, 3,
+          9, 5,
+          12, 7,
+        ],
+        'circle-color': '#1a1a1a',
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 1.5,
+        'circle-opacity': 0.95,
+      },
+    });
+    // Resort labels read as a *quieter* layer than the region labels.
+    // At the zooms they overlap, region names are the primary wayfinding
+    // text (11 px, near-black), so resort labels go smaller (10 px),
+    // muted grey, with widened letter-spacing so they read as
+    // points-of-interest annotations rather than competing region names.
+    // Raised minzoom (10) keeps them off-screen until the map is
+    // genuinely zoomed in, avoiding mid-zoom clutter where region
+    // labels are still doing the heavy lifting.
+    map.addLayer({
+      id: 'resorts-label',
+      type: 'symbol',
+      source: 'resorts',
+      minzoom: 10,
+      layout: {
+        visibility: overlayState.resorts ? 'visible' : 'none',
+        'text-field': ['get', 'name'],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 10,
+        'text-letter-spacing': 0.05,
+        'text-allow-overlap': false,
+        'text-offset': [0, 0.9],
+        'text-anchor': 'top',
+        'text-padding': 4,
+      },
+      paint: {
+        'text-color': '#5a5a5a',
+        'text-halo-color': 'rgba(255,255,255,0.95)',
+        'text-halo-width': 1.4,
+      },
+    });
+  };
+
   // Cached at IIFE scope so the style.load handler (registered inside
   // map.on('load') below) can re-install layers without a refetch when
   // the user picks a new basemap.
   let geojsonCache = null;
   let majorGeojsonCache = null;
   let subGeojsonCache = null;
+  let resortsGeojsonCache = null;
 
   map.on('load', async () => {
     // Fetch everything in parallel. All requests are independent —
@@ -432,7 +504,7 @@ const clearRegionRepaint = () => {
     // geometry (SNOW-59) — so they can all fly at once. The overlay
     // fetches degrade gracefully on failure: a missing payload just
     // skips that layer install.
-    const [geojson, summaries, resorts, majorGeojson, subGeojson] =
+    const [geojson, summaries, resorts, majorGeojson, subGeojson, resortsGeojson] =
       await Promise.all([
         fetch(REGIONS_URL).then(r => r.json()),
         fetch(SUMMARIES_URL).then(r => r.json()),
@@ -442,6 +514,9 @@ const clearRegionRepaint = () => {
           : Promise.resolve(null),
         SUB_REGIONS_URL
           ? fetch(SUB_REGIONS_URL).then(r => r.json()).catch(() => null)
+          : Promise.resolve(null),
+        RESORTS_GEOJSON_URL
+          ? fetch(RESORTS_GEOJSON_URL).then(r => r.json()).catch(() => null)
           : Promise.resolve(null),
       ]);
     Object.assign(BULLETIN_SUMMARIES, summaries);
@@ -467,8 +542,10 @@ const clearRegionRepaint = () => {
     geojsonCache = geojson;
     majorGeojsonCache = majorGeojson;
     subGeojsonCache = subGeojson;
+    resortsGeojsonCache = resortsGeojson;
     installRegionsLayers(geojson);
     installOverlayLayers(majorGeojson, subGeojson);
+    installResortsLayer(resortsGeojson);
 
     // Interaction
     let selectedId = null;
@@ -773,6 +850,24 @@ const clearRegionRepaint = () => {
 
     map.on('mouseenter', 'regions-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'regions-fill', () => { map.getCanvas().style.cursor = ''; });
+
+    // SNOW-78: tapping a resort pin opens the bottom sheet for the
+    // resort's parent region — resorts have no own bulletin, so the
+    // closest meaningful surface is the region's full bulletin
+    // summary. ``stopPropagation`` would block the map-level click
+    // dismissal that runs against ``regions-fill``, but that handler
+    // only dismisses the sheet when no region was hit, and a pin
+    // click *is* on top of a region — so the region click fires too
+    // and the chain ends there. We do nothing extra to suppress it.
+    map.on('click', 'resorts-pin', (e) => {
+      if (!e.features.length) return;
+      const regionID = e.features[0].properties.region_id;
+      if (!regionID) return;
+      const feature = FEATURE_BY_REGION_ID[regionID];
+      if (feature) selectFeature(feature.id, { toggle: false });
+    });
+    map.on('mouseenter', 'resorts-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'resorts-pin', () => { map.getCanvas().style.cursor = ''; });
 
     // ---- History wiring (SNOW-39) ----
     //
@@ -1356,6 +1451,8 @@ const clearRegionRepaint = () => {
       // them and let the install function re-apply the persisted
       // visibility from overlayState.
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
+      // SNOW-78: same story for the resorts pin layer.
+      installResortsLayer(resortsGeojsonCache);
       if (selectedId !== null) {
         map.setFeatureState(
           { source: 'regions', id: selectedId },
@@ -1771,11 +1868,13 @@ const clearRegionRepaint = () => {
     l1: ['major-regions-line', 'major-regions-label'],
     l2: ['sub-regions-line', 'sub-regions-label'],
     l4: ['regions-fill', 'regions-line', 'regions-label'],
+    resorts: ['resorts-pin', 'resorts-label'],
   };
   const OVERLAY_STORAGE_KEY = {
     l1: 'snowdesk.map.overlay.l1',
     l2: 'snowdesk.map.overlay.l2',
     l4: 'snowdesk.map.overlay.l4',
+    resorts: 'snowdesk.map.overlay.resorts',
   };
 
   for (const item of items) {
