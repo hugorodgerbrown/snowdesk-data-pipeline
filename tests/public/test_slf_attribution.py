@@ -169,27 +169,15 @@ class TestGlobalSiteFooter:
 
 
 # ---------------------------------------------------------------------------
-# Bulletin page — inline SLF feedback link
+# Bulletin page — historical note
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestBulletinPageAttribution:
-    """The standalone bulletin page surfaces the SLF feedback link.
-
-    The link lives in the page's rich SECTION 6 footer.
-    """
-
-    def test_bulletin_page_includes_slf_feedback_link(self, client, region):
-        _make_today_bulletin(region)
-        url = reverse(
-            "public:bulletin",
-            kwargs={"region_id": region.region_id, "slug": region.slug},
-        )
-        response = client.get(url)
-        assert response.status_code == 200
-        assert b"pro.slf.ch/reply/public" in response.content
-        assert b'data-testid="slf-feedback-link"' in response.content
+#
+# The bulletin page used to carry an inline SLF feedback link in its
+# SECTION 6 footer. SNOW-80 removed that footer entirely (it duplicated
+# the licence row carried by the global ``_site_footer.html``), so the
+# per-page feedback link is gone too. The ``slf-feedback-link`` testid
+# now lives only on the map's expanded sheet — covered by
+# ``TestRegionExpandedAttribution`` below.
 
 
 # ---------------------------------------------------------------------------

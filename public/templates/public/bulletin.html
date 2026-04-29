@@ -4,14 +4,17 @@ public/templates/public/bulletin.html — Single-day bulletin page for a region.
 
 WhiteRisk-replica layout rendered from the bulletin_detail view context.
 
-Six structural sections, top to bottom:
+Five structural sections, top to bottom:
   1. Page chrome — region name, date/validity, prev/next nav. No Close button.
   2. Bulletin headline band — one or two ratings with → on variable days.
   3. Rating block(s) — one per trait via _rating_block.html partial.
   4. Metadata strip — issued / valid until / next update.
   5. Snowpack and weather — four prose sub-blocks rendered via |snowdesk_html.
-  6. Footer — SLF attribution, "View history" and "View full season" links,
-     and (DEBUG only) a subscribe link.
+
+The page-specific footer (focal region label, SLF feedback link, DEBUG
+admin shortcut) was removed in SNOW-80 — the global ``_site_footer.html``
+covers the SLF attribution requirement, and adjacent regions are now
+reachable via the SNOW-81 deep-link in the masthead.
 {% endcomment %}
 {% load i18n static snowdesk_html snowdesk_time %}
 

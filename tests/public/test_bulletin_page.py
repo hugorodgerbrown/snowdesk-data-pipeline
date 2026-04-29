@@ -500,33 +500,44 @@ class TestMetadataStrip:
 
 
 # ---------------------------------------------------------------------------
-# Test: footer focal region first
+# Test: bulletin page no longer renders a per-page footer (SNOW-80)
 # ---------------------------------------------------------------------------
+#
+# The bulletin's section 6 footer (focal region label, SLF feedback link,
+# DEBUG admin shortcut) was removed in SNOW-80 — the global
+# ``_site_footer.html`` already carries the SLF licence attribution, so the
+# per-page footer was duplicating context. Adjacent regions are reachable
+# via the SNOW-81 deep-link in the masthead, so ``related_regions`` no
+# longer needs to be displayed in template chrome either.
+#
+# Global site-footer coverage lives in ``test_slf_attribution.py``.
 
 
 @pytest.mark.django_db
-class TestFooter:
-    """Footer renders the focal region only (SNOW-80)."""
+class TestNoBulletinPageFooter:
+    """SNOW-80: the bulletin page no longer renders its own footer landmark.
 
-    def test_focal_region_appears_in_footer(
-        self, client: Client, simple_bulletin, region
-    ):
-        """The focal region name appears in the footer."""
+    The global ``data-testid="site-footer"`` block from base.html still
+    renders (covered by test_slf_attribution.py); only the page-local
+    section 6 footer was removed.
+    """
+
+    def test_no_page_footer_landmark(self, client: Client, simple_bulletin, region):
+        """The page-local footer landmark is gone."""
         url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="focal-region"' in content
-        assert "Valais" in content
+        assert 'data-testid="page-footer"' not in content
+        assert 'data-testid="focal-region"' not in content
 
-    def test_sibling_regions_not_listed_in_footer(self, client: Client, region):
-        """SNOW-80: sibling micro-regions are no longer iterated in the footer.
+    def test_sibling_regions_not_rendered_anywhere_on_page(
+        self, client: Client, region
+    ):
+        """A sibling region's name does not appear in the rendered HTML.
 
-        The related-regions tail was removed because adjacent regions are
-        already discoverable from the map (and reachable in one tap via
-        the SNOW-81 deep-link in the masthead). On a multi-region
-        bulletin, only the focal region must appear in the footer
-        landmark — sibling region names rendered through the page-footer
-        block would re-introduce the visual clutter the ticket removed.
+        On a multi-region bulletin, the focal region's bulletin page
+        must not name the other regions covered by the same bulletin —
+        adjacent regions are surfaced from the map, not the bulletin.
         """
         day = date(2026, 3, 15)
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
@@ -543,15 +554,7 @@ class TestFooter:
         url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-
-        # Scope the assertion to the page-footer landmark: a sibling
-        # region's name is allowed to appear elsewhere on the page (e.g.
-        # in bulletin prose), but not in the footer's region row.
-        footer_start = content.index('data-testid="page-footer"')
-        footer_end = content.index("</footer>", footer_start)
-        footer_html = content[footer_start:footer_end]
-        assert "Valais" in footer_html
-        assert "Münstertal" not in footer_html
+        assert "Münstertal" not in content
 
 
 # ---------------------------------------------------------------------------
