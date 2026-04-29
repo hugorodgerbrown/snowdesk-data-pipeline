@@ -508,6 +508,20 @@
 .map-legend-swatch--considerable { background: var(--color-eaws-considerable); }
 .map-legend-swatch--high         { background: var(--color-eaws-high); }
 
+/* SNOW-78: legend pin matches the on-map resort circle paint — neutral
+ * dark fill with a thin white stroke so it reads against any basemap or
+ * EAWS rating fill. Smaller than the rating swatches so the pin looks
+ * like a point of interest rather than a coloured area. */
+.map-legend-pin {
+    width: 8px;
+    height: 8px;
+    display: inline-block;
+    border-radius: 50%;
+    background: #1a1a1a;
+    border: 1px solid #ffffff;
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25);
+}
+
 .maplibregl-ctrl-attrib {
     font-size: 9px !important;
 }

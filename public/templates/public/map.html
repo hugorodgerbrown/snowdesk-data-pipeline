@@ -45,6 +45,7 @@
         data-sub-regions-url="{% url 'api:sub_regions_geojson' %}"
         data-summaries-url="{% url 'api:today_summaries' %}"
         data-resorts-url="{% url 'api:resorts_by_region' %}"
+        data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
         data-season-ratings-url="{% url 'api:season_ratings' %}"
         data-region-summary-url="{% url 'api:region_summary' '__REGION__' %}"
         data-offline-manifest-url="{% url 'api:offline_manifest_map' %}"
@@ -187,6 +188,22 @@
                             {% trans "Micro regions" %}
                         </button>
                     </li>
+                    {# SNOW-78: Resorts overlay — geocoded ski resorts as #}
+                    {# circle pins above the L4 choropleth. Off by default;  #}
+                    {# state persists in localStorage under                  #}
+                    {# snowdesk.map.overlay.resorts. Pin click opens the     #}
+                    {# parent region's bottom sheet.                         #}
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            data-overlay-key="resorts"
+                            aria-checked="false"
+                        >
+                            {% trans "Resorts" %}
+                        </button>
+                    </li>
                     {# SNOW-65: Options section — behaviours that modify interaction   #}
                     {# rather than visual layers. Uses the same checkbox affordance   #}
                     {# as the overlay items.                                          #}
@@ -302,6 +319,13 @@
                         class="map-legend-swatch map-legend-swatch--high"
                         aria-hidden="true"
                     ></span>{% trans "High (4)" %}
+                </div>
+                {# SNOW-78: Resorts overlay legend entry — only meaningful   #}
+                {# when the user has enabled the layer in the basemap menu, #}
+                {# but rendered unconditionally so the legend is a complete #}
+                {# key for everything the map can show.                      #}
+                <div class="map-legend-row" data-testid="map-legend-resorts">
+                    <span class="map-legend-pin" aria-hidden="true"></span>{% trans "Resorts" %}
                 </div>
             </div>
             <button
