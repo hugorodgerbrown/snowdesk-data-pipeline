@@ -4,14 +4,17 @@ public/templates/public/bulletin.html — Single-day bulletin page for a region.
 
 WhiteRisk-replica layout rendered from the bulletin_detail view context.
 
-Six structural sections, top to bottom:
+Five structural sections, top to bottom:
   1. Page chrome — region name, date/validity, prev/next nav. No Close button.
   2. Bulletin headline band — one or two ratings with → on variable days.
   3. Rating block(s) — one per trait via _rating_block.html partial.
   4. Metadata strip — issued / valid until / next update.
   5. Snowpack and weather — four prose sub-blocks rendered via |snowdesk_html.
-  6. Footer — SLF attribution, "View history" and "View full season" links,
-     and (DEBUG only) a subscribe link.
+
+The page-specific footer (focal region label, SLF feedback link, DEBUG
+admin shortcut) was removed in SNOW-80 — the global ``_site_footer.html``
+covers the SLF attribution requirement, and adjacent regions are now
+reachable via the SNOW-81 deep-link in the masthead.
 {% endcomment %}
 {% load i18n static snowdesk_html snowdesk_time %}
 
@@ -378,62 +381,6 @@ Six structural sections, top to bottom:
             {% endif %}{# error state else #}
         {% endif %}
         {# bulletin #}
-
-        {% comment %}
-           SECTION 6 — Footer
-           SLF attribution + focal-region-first grouping context.
-           Focal region name first, then related_regions as additional
-           context (e.g. "Val dal Spöl, with adjacent micro-regions").
-        {% endcomment %}
-        <footer class="mt-8 pt-4 border-t border-border text-xs text-text-3" data-testid="page-footer">
-            <p class="mb-1">
-                {# Focal region first #}
-                <span class="font-medium text-text-2" data-testid="focal-region">{{ region_name }}</span>
-                {% if related_regions %}
-                    <span class="text-text-3">, {% trans "with" %} </span>
-                    {% for r in related_regions %}
-                        <span>{{ r.name }}</span>{% if not forloop.last %} &middot; {% endif %}
-                    {% endfor %}
-                {% endif %}
-            </p>
-            {# DEBUG-only shortcut into Django admin for the current   #}
-            {# bulletin record.  Present only when ``settings.DEBUG``  #}
-            {# is truthy and a panel was built (empty-state pages     #}
-            {# have no bulletin to open).  Production omits the link. #}
-            {% if debug and panel.admin_url %}
-                <p class="mb-1">
-                    <a
-                        class="underline hover:text-text-2"
-                        href="{{ panel.admin_url }}"
-                        data-testid="footer-admin-link"
-                    >{% trans "Open in admin" %}</a>
-                </p>
-            {% endif %}
-            <p>
-                {% blocktrans trimmed %}
-                    Avalanche bulletin data &copy;
-                {% endblocktrans %}
-                <a
-                    class="underline hover:text-text-2"
-                    href="https://www.slf.ch"
-                    target="_blank"
-                    rel="noopener"
-                >{% trans "SLF — WSL Institute for Snow and Avalanche Research" %}</a>.
-                {% trans "Rendered by Snowdesk." %}
-            </p>
-            {# SLF requests data consumers surface a link to their public  #}
-            {# field-observation reporting tool. Required by the data     #}
-            {# licence terms — see SNOW-30.                                #}
-            <p class="mt-1">
-                <a
-                    class="underline hover:text-text-2"
-                    href="https://pro.slf.ch/reply/public/#/"
-                    target="_blank"
-                    rel="noopener"
-                    data-testid="slf-feedback-link"
-                >{% trans "Report field observations to SLF ↗" %}</a>
-            </p>
-        </footer>
 
         {# ── Subscribe CTA (always visible) ────────────────────────── #}
         <div class="mt-6">

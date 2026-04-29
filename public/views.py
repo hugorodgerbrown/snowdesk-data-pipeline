@@ -549,83 +549,6 @@ def _get_nav_dates(
     return prev_date, next_date
 
 
-def _build_bulletin_context(
-    bulletin: Bulletin,
-    region: Region,
-    region_name: str,
-    page_date: datetime.date,
-    prev_date: datetime.date | None,
-    next_date: datetime.date | None,
-    related_regions: list[dict[str, str]],
-) -> dict[str, Any]:
-    """
-    Assemble the full template context for a bulletin page.
-
-    Extracts displayable data from the CAAML raw payload and combines it
-    with navigation and region metadata.
-
-    Args:
-        bulletin: The selected Bulletin to display.
-        region: The Region being viewed.
-        region_name: Human-readable region name (from RegionBulletin).
-        page_date: The calendar date this page represents.
-        prev_date: Previous date with bulletins (or None).
-        next_date: Next date with bulletins (or None).
-        related_regions: List of dicts with 'name' and 'slug' keys.
-
-    Returns:
-        Template context dict.
-
-    """
-    props = _get_properties(bulletin)
-    danger = _extract_danger(props)
-
-    now = timezone.now()
-    today = now.date()
-    is_today = page_date == today
-
-    # When viewing today and there is no next date yet, show the time
-    # the next bulletin is due as a disabled placeholder in the nav.
-    next_update_time: datetime.datetime | None = None
-    if (
-        is_today
-        and next_date is None
-        and bulletin.next_update
-        and bulletin.next_update > now
-    ):
-        next_update_time = bulletin.next_update
-
-    return {
-        "region": region,
-        "region_name": region_name,
-        "bulletin": bulletin,
-        "page_date": page_date,
-        "is_today": is_today,
-        "prev_date": prev_date,
-        "next_date": next_date,
-        "next_update_time": next_update_time,
-        "year": datetime.date.today().year,
-        # Danger / verdict (derived from CAAML dangerRatings).
-        "danger_level": danger["danger_level"],
-        "overall_verdict": danger["overall_verdict"],
-        "verdict_colour": danger["verdict_colour"],
-        # Text sections (derived from CAAML comments).
-        "summary": _extract_summary(props),
-        "outlook": _extract_outlook(props),
-        # Activity ratings — requires AI-generated data (not in CAAML).
-        "on_piste": None,
-        "off_piste": None,
-        "ski_touring": None,
-        # Key hazards (derived from CAAML avalanche problems).
-        "key_hazards": _extract_hazards(props),
-        # Weather sections (derived from CAAML comments, Markdown formatted).
-        "weather_review": _extract_weather_review(props),
-        "weather_forecast": _extract_weather_forecast(props),
-        # Related regions covered by the same bulletin.
-        "related_regions": related_regions,
-    }
-
-
 def _cache_key(zone_slug: str) -> str:
     """
     Return the cache key for a zone-slug → name-slug mapping.
@@ -955,20 +878,6 @@ def examples_random(request: HttpRequest) -> HttpResponse:
 
     prev_date, next_date = _get_nav_dates(region, page_date)
 
-    sibling_links = (
-        RegionBulletin.objects.filter(bulletin=selected)
-        .exclude(region=region)
-        .select_related("region")
-    )
-    related_regions = [
-        {
-            "name": sib.region_name_at_time or sib.region.name,
-            "region_id": sib.region.region_id,
-            "slug": sib.region.slug,
-        }
-        for sib in sibling_links
-    ]
-
     is_today = page_date == today
     next_update_time: datetime.datetime | None = None
     now = timezone.now()
@@ -1012,7 +921,6 @@ def examples_random(request: HttpRequest) -> HttpResponse:
         "prev_date": prev_date,
         "next_date": next_date,
         "next_update_time": next_update_time,
-        "related_regions": related_regions,
         "year": today.year,
         # Calendar widget context.
         "calendar_region_id": region.region_id,
@@ -1433,21 +1341,6 @@ def bulletin_detail(
     # Day-based prev/next navigation.
     prev_date, next_date = _get_nav_dates(region, page_date)
 
-    # Related regions — other regions covered by the same bulletin.
-    sibling_links = (
-        RegionBulletin.objects.filter(bulletin=selected)
-        .exclude(region=region)
-        .select_related("region")
-    )
-    related_regions = [
-        {
-            "name": sib.region_name_at_time or sib.region.name,
-            "region_id": sib.region.region_id,
-            "slug": sib.region.slug,
-        }
-        for sib in sibling_links
-    ]
-
     is_today = page_date == today
     next_update_time: datetime.datetime | None = None
     now = timezone.now()
@@ -1498,7 +1391,6 @@ def bulletin_detail(
         "prev_date": prev_date,
         "next_date": next_date,
         "next_update_time": next_update_time,
-        "related_regions": related_regions,
         "year": today.year,
         # Calendar widget context.
         "calendar_region_id": region.region_id,

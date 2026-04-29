@@ -500,33 +500,50 @@ class TestMetadataStrip:
 
 
 # ---------------------------------------------------------------------------
-# Test: footer focal region first
+# Test: bulletin page no longer renders a per-page footer (SNOW-80)
 # ---------------------------------------------------------------------------
+#
+# The bulletin's section 6 footer (focal region label, SLF feedback link,
+# DEBUG admin shortcut) was removed in SNOW-80 — the global
+# ``_site_footer.html`` already carries the SLF licence attribution, so the
+# per-page footer was duplicating context. Adjacent regions are reachable
+# via the SNOW-81 deep-link in the masthead, so ``related_regions`` no
+# longer needs to be displayed in template chrome either.
+#
+# Global site-footer coverage lives in ``test_slf_attribution.py``.
 
 
 @pytest.mark.django_db
-class TestFooter:
-    """Footer renders focal region before related regions."""
+class TestNoBulletinPageFooter:
+    """SNOW-80: the bulletin page no longer renders its own footer landmark.
 
-    def test_focal_region_appears_in_footer(
-        self, client: Client, simple_bulletin, region
-    ):
-        """The focal region name appears in the footer."""
+    The global ``data-testid="site-footer"`` block from base.html still
+    renders (covered by test_slf_attribution.py); only the page-local
+    section 6 footer was removed.
+    """
+
+    def test_no_page_footer_landmark(self, client: Client, simple_bulletin, region):
+        """The page-local footer landmark is gone."""
         url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="focal-region"' in content
-        assert "Valais" in content
+        assert 'data-testid="page-footer"' not in content
+        assert 'data-testid="focal-region"' not in content
 
-    def test_focal_region_before_related(self, client: Client, region):
-        """Focal region appears before any related regions in the HTML."""
+    def test_sibling_regions_not_rendered_anywhere_on_page(
+        self, client: Client, region
+    ):
+        """A sibling region's name does not appear in the rendered HTML.
+
+        On a multi-region bulletin, the focal region's bulletin page
+        must not name the other regions covered by the same bulletin —
+        adjacent regions are surfaced from the map, not the bulletin.
+        """
         day = date(2026, 3, 15)
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
         bulletin = _make_am_bulletin(
             region, day, render_model=rm, render_model_version=3
         )
-
-        # Add a second region linked to the same bulletin
         other_region = RegionFactory.create(name="Münstertal", slug="ch-4116")
         RegionBulletinFactory.create(
             bulletin=bulletin,
@@ -537,14 +554,7 @@ class TestFooter:
         url = _url("CH-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-
-        focal_pos = content.find('data-testid="focal-region"')
-        related_pos = content.find("Münstertal")
-        assert focal_pos != -1
-        assert related_pos != -1
-        assert focal_pos < related_pos, (
-            "Focal region should appear before related regions"
-        )
+        assert "Münstertal" not in content
 
 
 # ---------------------------------------------------------------------------
