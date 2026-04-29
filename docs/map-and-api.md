@@ -37,6 +37,19 @@ A `snowdesk:basemap-changing` event is dispatched before the swap so an
 active timelapse stops cleanly. See [`offline-map.md`](offline-map.md)
 for the picker × offline-precache interaction.
 
+**Season scrubber and timelapse**: a horizontal scrubber sits at the
+bottom of the map. The thumb defaults to today's position within the
+Nov–May window; dragging recolours every region from the
+`/api/season-ratings/` payload to show how danger evolved on the
+selected date, and pressing the play button steps through the season as
+a timelapse. The drawer (when open) follows the scrubber via the
+`snowdesk:date-changed` event, fetching `/api/region/<id>/summary/?d=…`
+so the bulletin shown matches the scrubbed-to date. The season-ratings
+payload is fetched lazily on first interaction and cached for the
+session via `getSeasonRatings()` in `static/js/map.js` — first scrub
+pays the round-trip; subsequent scrubs and timelapse playback render
+from the cache.
+
 **Route ordering**: `/map/` is registered before `<str:region_id>/` in
 `public/urls.py`. Do not reorder these — Django matches URL patterns
 top-to-bottom and the generic region pattern would swallow `/map/` if it
@@ -48,9 +61,13 @@ appeared first.
 | URL | Name | Response |
 |-----|------|----------|
 | `GET /api/today-summaries/` | `api:today_summaries` | `{region_id: {rating, subdivision, problem, elevation, aspects, valid_from, valid_to, name}}` |
+| `GET /api/season-ratings/` | `api:season_ratings` | `{date_iso: {region_id: rating_int}}` — whole-season choropleth source for the scrubber + timelapse on `/map/`. Compact int encoding (`0=no_rating`, `1=low`, … `5=very_high`) keeps the payload small. |
 | `GET /api/resorts-by-region/` | `api:resorts_by_region` | `{region_id: [resort_name, …]}` — alphabetical; regions without resorts omitted |
 | `GET /api/resorts.geojson` | `api:resorts_geojson` | GeoJSON FeatureCollection of geocoded resorts (Points; `[lon, lat]` per RFC 7946); properties `id`, `name`, `region_id`, `needs_review` |
-| `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary`; each feature has `properties.id` + `properties.name` |
+| `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary` (L4 fixture regions); each feature has `properties.id` + `properties.name` |
+| `GET /api/major-regions.geojson` | `api:major_regions_geojson` | GeoJSON FeatureCollection of L1 EAWS major regions (e.g. `CH-4`, `CH-5`) with `properties.id` + `properties.name`. |
+| `GET /api/sub-regions.geojson` | `api:sub_regions_geojson` | GeoJSON FeatureCollection of L2 EAWS sub-regions (e.g. `CH-41`, `CH-42`) with `properties.id` + `properties.name`. |
+| `GET /api/region/<region_id>/summary/` | `api:region_summary` | `{peek, expanded}` — pre-rendered HTML fragments for the map drawer. `peek` is the compact bottom-sheet card; `expanded` is the full bulletin detail. Honours `?d=YYYY-MM-DD` so the drawer can show any scrubbed-to date. |
 | `GET /api/offline-manifest/map/` | `api:offline_manifest_map` | `{version, urls[]}` — precache manifest consumed by `static/js/sw.js` (see [`offline-map.md`](offline-map.md)) |
 
 `today-summaries` uses the same `_select_default_issue` helper as the bulletin

@@ -74,10 +74,6 @@ bar picks up theme changes for free.
 {# Map — logo only, logo links home #}
 {% include "includes/nav.html" %}
 
-{# random_bulletins / season_bulletins — back to map #}
-{% url 'public:map' as map_url %}
-{% include "includes/nav.html" with back_url=map_url back_label="Map" %}
-
 {# Bulletin page — back to map + calendar toggle #}
 {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=region.region_id calendar_partial_url=calendar_partial_url %}
 ```

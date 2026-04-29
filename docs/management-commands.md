@@ -85,6 +85,15 @@ poetry run python manage.py diagnose_region_coverage --date 2026-04-15     # sin
 poetry run python manage.py diagnose_region_coverage --verbose-table       # add per-region table
 
 # Flags: --date YYYY-MM-DD (single day), --verbose-table (per-region table)
+
+# Re-emit pipeline/fixtures/resorts.json from the current DB rows (SNOW-74).
+# Use after a session of placing resort coordinates via the in-map editor
+# at /map/?edit=resorts (DEBUG only) — without this step, edits live only
+# in the local SQLite and disappear on the next loaddata. Read-only by
+# default; --commit writes the file. Uses natural foreign keys so region
+# round-trips as ["CH-4115"] rather than a numeric pk.
+poetry run python manage.py dump_resorts_fixture           # preview diff only
+poetry run python manage.py dump_resorts_fixture --commit  # write the fixture
 ```
 
 `SEASON_START_DATE` is read from the environment in

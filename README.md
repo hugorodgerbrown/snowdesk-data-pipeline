@@ -38,8 +38,22 @@ poetry run python manage.py fetch_bulletins \
 - **Tailwind CSS v4** — compiled via `@tailwindcss/cli` from `src/css/main.css`
   to `static/css/output.css`
 - **HTMX** — dynamic fragments on the public site (bulletin calendar, subscription region search)
+- **MapLibre GL** — interactive choropleth on the public map
+- **Render cron** — runs the `fetch_bulletins` management command on a schedule; the pipeline itself is just Django code, no in-process scheduler
 - **Poetry** — Python dependency management
 - **WhiteNoise** — static file serving in production
+
+## What you'll see
+
+Per-region bulletin pages built around a fixed **masthead** (region name,
+issued date, danger headline) over a **day-windows** panel that splits
+morning and afternoon ratings, with a per-region **calendar** for
+backwards navigation through past bulletins. The interactive `/map/`
+page lets you scrub through the season — drag the bottom-bar slider or
+hit play to watch the choropleth animate from November to May — and
+opens a per-region drawer with today's (or any scrubbed-to date's)
+bulletin on click. Resort markers overlay the choropleth so it's easy
+to find a specific area. All of it sources daily from SLF.
 
 ## Testing
 

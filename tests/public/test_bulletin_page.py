@@ -546,27 +546,6 @@ class TestFooter:
             "Focal region should appear before related regions"
         )
 
-    def test_view_full_season_link_present(
-        self, client: Client, simple_bulletin, region
-    ):
-        """Footer contains a 'View full season' link to season_bulletins."""
-        url = _url("CH-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        content = response.content.decode()
-        assert "View full season" in content
-        assert (
-            "/season/" in content
-            or "season_bulletins" in content
-            or "CH-4115" in content
-        )
-
-    def test_view_history_link_present(self, client: Client, simple_bulletin, region):
-        """Footer contains a 'View history' link to random_bulletins."""
-        url = _url("CH-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        content = response.content.decode()
-        assert "View history" in content
-
 
 # ---------------------------------------------------------------------------
 # Test: font-sans class on outermost container
