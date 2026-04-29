@@ -799,31 +799,9 @@
     color: var(--ink);
 }
 
-/* "Save offline" CTA — sits below the search field in the header. */
-
-.offline-cta {
-    display: block;
-    width: 100%;
-    margin-top: 8px;
-    padding: 7px 12px;
-    font-family: var(--sans);
-    font-size: 12px;
-    color: var(--muted);
-    background: transparent;
-    border: 0.5px solid var(--border);
-    border-radius: 6px;
-    cursor: pointer;
-    text-align: center;
-}
-
-.offline-cta:hover {
-    background: rgba(0, 0, 0, 0.03);
-}
-
-.offline-cta:disabled {
-    opacity: 0.6;
-    cursor: default;
-}
+/* SNOW-79: ``.offline-cta`` (the "Save offline" full-width CTA that
+   sat below the search field) was retired with the rest of the
+   precache feature. Removed wholesale — no remaining call sites. */
 
 /* Season scrubber — floating bottom-pinned pill (SNOW-37).
    The pill sits above MapLibre's attribution control (which stays pinned at
