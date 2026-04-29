@@ -681,14 +681,61 @@
     padding-right: 36px;
 }
 
+/* Wraps the H2 and the bulletin deep-link glyph (SNOW-81) so they
+ * cluster on the left of the peek header while the danger tile floats
+ * to the right via the parent's space-between. */
+.region-peek-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .region-peek-name {
     font-family: var(--serif);
     font-size: 19px;
     font-weight: 500;
     line-height: 1.2;
     margin: 0;
-    flex: 1 1 auto;
+    /* Take only the space the name needs so the bulletin glyph can sit
+     * right next to it. The wrapping ``.region-peek-title`` row is the
+     * one that grows to push the danger tile to the far right. */
+    flex: 0 1 auto;
     min-width: 0;
+    /* Truncate gracefully if a long name would otherwise push the icon
+     * (and the danger tile) past the close-button gutter. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Bulletin deep-link glyph — the reverse of the map-pin link in the
+ * bulletin masthead, so navigation between the two surfaces is one
+ * tap in either direction (SNOW-81). */
+.region-peek-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--muted);
+    text-decoration: none;
+    /* 32px hit-target around the 18px glyph for finger-friendliness. */
+    width: 32px;
+    height: 32px;
+    margin: -7px;
+    border-radius: 6px;
+    transition: color 80ms;
+}
+
+.region-peek-link:hover,
+.region-peek-link:focus-visible {
+    color: var(--ink);
+}
+
+.region-peek-link-icon {
+    display: inline-block;
+    color: inherit;
 }
 
 .region-peek-summary {

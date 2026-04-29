@@ -605,6 +605,24 @@ def test_region_summary_defaults_to_today_when_no_date_param():
 
 
 @pytest.mark.django_db
+def test_region_summary_peek_includes_bulletin_deep_link():
+    """The peek HTML carries a deep-link to the full bulletin (SNOW-81).
+
+    Mirrors the map-pin link on the bulletin masthead so navigation
+    between map and bulletin is one tap in either direction.
+    """
+    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    _make_today_bulletin(region, _render_model(rating="moderate"))
+    client = Client()
+    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    assert response.status_code == 200
+    peek = response.json()["peek"]
+    assert 'data-testid="region-peek-bulletin-link"' in peek
+    expected_href = reverse("public:bulletin", args=["CH-4115", "ch-4115"])
+    assert f'href="{expected_href}"' in peek
+
+
+@pytest.mark.django_db
 def test_region_summary_expanded_html_includes_enriched_fields():
     """
     The drawer's ``expanded`` HTML must contain the same enriched fields the
