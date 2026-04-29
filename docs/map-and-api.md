@@ -34,8 +34,10 @@ re-installs the `regions` source + `regions-fill` / `regions-line` /
 any `?d=`-driven scrubber paint. Layer-bound click / mouseenter /
 mouseleave handlers survive the swap because they're bound by layer id.
 A `snowdesk:basemap-changing` event is dispatched before the swap so an
-active timelapse stops cleanly. See [`offline-map.md`](offline-map.md)
-for the picker × offline-precache interaction.
+active timelapse stops cleanly. The PWA shell service worker
+([`offline-map.md`](offline-map.md)) is **not** involved in basemap
+swaps — tile fetches go straight to the network so a stale basemap
+can never linger in the cache.
 
 **Season scrubber and timelapse**: a horizontal scrubber sits at the
 bottom of the map. The thumb defaults to today's position within the
@@ -68,7 +70,6 @@ appeared first.
 | `GET /api/major-regions.geojson` | `api:major_regions_geojson` | GeoJSON FeatureCollection of L1 EAWS major regions (e.g. `CH-4`, `CH-5`) with `properties.id` + `properties.name`. |
 | `GET /api/sub-regions.geojson` | `api:sub_regions_geojson` | GeoJSON FeatureCollection of L2 EAWS sub-regions (e.g. `CH-41`, `CH-42`) with `properties.id` + `properties.name`. |
 | `GET /api/region/<region_id>/summary/` | `api:region_summary` | `{peek, expanded}` — pre-rendered HTML fragments for the map drawer. `peek` is the compact bottom-sheet card; `expanded` is the full bulletin detail. Honours `?d=YYYY-MM-DD` so the drawer can show any scrubbed-to date. |
-| `GET /api/offline-manifest/map/` | `api:offline_manifest_map` | `{version, urls[]}` — precache manifest consumed by `static/js/sw.js` (see [`offline-map.md`](offline-map.md)) |
 
 `today-summaries` uses the same `_select_default_issue` helper as the bulletin
 page (morning-update-wins-over-previous-evening), so the map and bulletin views

@@ -35,11 +35,6 @@ urlpatterns = [
         api.region_summary,
         name="region_summary",
     ),
-    path(
-        "offline-manifest/map/",
-        api.offline_manifest_map,
-        name="offline_manifest_map",
-    ),
 ]
 
 # SNOW-74 — edit-resorts mode endpoints. Views also inline-gate on

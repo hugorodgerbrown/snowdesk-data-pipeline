@@ -19,7 +19,8 @@
 {% block meta_description %}{% trans "Interactive map of Swiss avalanche regions — tap a region to see today's danger rating, headline problem, and nearby resorts." %}{% endblock %}
 
 {% block extra_head %}
-    <link rel="manifest" href="{% static 'manifest.webmanifest' %}">
+    {# SNOW-79: manifest.webmanifest is now linked from base.html so the #}
+    {# install affordance works site-wide, not just on /map/. #}
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
     <link rel="stylesheet" href="{% static 'css/map.css' %}">
 {% endblock %}
@@ -48,7 +49,6 @@
         data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
         data-season-ratings-url="{% url 'api:season_ratings' %}"
         data-region-summary-url="{% url 'api:region_summary' '__REGION__' %}"
-        data-offline-manifest-url="{% url 'api:offline_manifest_map' %}"
         data-default-basemap-key="{{ default_basemap_key }}"
     >
         <div class="map-utility-cluster" id="map-utility-cluster">
@@ -224,30 +224,11 @@
                     </li>
                 </ul>
             </div>
-            <button
-                id="offline-toggle"
-                type="button"
-                class="map-utility-pill map-utility-pill--button"
-                aria-label='{% trans "Save offline" %}'
-                aria-live="polite"
-                data-state="idle"
-            >
-                <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                >
-                    <path d="M12 3v12" />
-                    <path d="m7 10 5 5 5-5" />
-                    <path d="M5 21h14" />
-                </svg>
-            </button>
+            {# SNOW-79: The "Save offline" download button used to live    #}
+            {# here. The PWA shell now caches assets on first visit via    #}
+            {# stale-while-revalidate, so an explicit opt-in download is   #}
+            {# no longer needed (and was the source of "stuck on stale     #}
+            {# data" reports). Removed wholesale.                          #}
             <ul id="search-results" class="search-results" role="listbox" hidden></ul>
         </div>
         {# Bottom sheet — two snap states (peek / expanded) populated on   #}
@@ -407,6 +388,6 @@
 {% block extra_js %}
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="{% static 'js/map.js' %}"></script>
-    <script src="{% static 'js/offline.js' %}"></script>
+    {# SNOW-79: SW registration moved to base.html; offline.js retired. #}
     {% if edit_mode %}<script src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
 {% endblock %}
