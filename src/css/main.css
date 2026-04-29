@@ -135,7 +135,7 @@
   --radius-tag:    8px;    /* problem tag, inner chips             */
   --radius-pill:   4px;    /* timing badge, period pill            */
 
-  /* Grid breakpoints (matches season_bulletins.css) */
+  /* Grid breakpoints */
   --breakpoint-tablet:   600px;
   --breakpoint-desktop:  960px;
 

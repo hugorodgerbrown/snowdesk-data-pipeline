@@ -458,7 +458,7 @@ def _select_bulletin_for_date(
 
     Thin wrapper over :func:`_issues_for_date` +
     :func:`_select_default_issue`.  Exposed as a named helper because
-    other views (``examples_random``, ``season_bulletins``) depend on
+    other views (``examples_random``, ``calendar_partial``) depend on
     picking a single default without knowing about the full issue list.
 
     Args:
@@ -706,6 +706,39 @@ _BASEMAP_LABELS: dict[str, Promise] = {
     "swisstopo_winter": _("Winter"),
     "swisstopo_light": _("Light"),
 }
+
+
+# Avalanche seasons run roughly Nov → May. The canonical boundary is
+# November 1 — any date on or after Nov 1 belongs to the season that
+# starts in that calendar year; dates before Nov 1 belong to the season
+# that started in the previous calendar year. Used by the map scrubber
+# + timelapse to size the slider track.
+_SEASON_START_MONTH = 11
+_SEASON_START_DAY = 1
+
+
+def _season_date_range(reference: datetime.date) -> tuple[datetime.date, datetime.date]:
+    """
+    Return the date range for the avalanche season containing ``reference``.
+
+    The season runs from November 1 of the start year to May 31 of the
+    following year. Dates before November belong to the season that
+    started the previous November.
+
+    Args:
+        reference: Any date within the desired season.
+
+    Returns:
+        A ``(season_start, season_end)`` tuple of ``datetime.date`` objects.
+
+    """
+    if reference.month >= _SEASON_START_MONTH:
+        start_year = reference.year
+    else:
+        start_year = reference.year - 1
+    season_start = datetime.date(start_year, _SEASON_START_MONTH, _SEASON_START_DAY)
+    season_end = datetime.date(start_year + 1, 5, 31)
+    return season_start, season_end
 
 
 def _basemaps_for_picker() -> list[dict[str, Any]]:
@@ -1577,14 +1610,6 @@ _SUBDIVISION_SUFFIX: dict[str, str] = {
     "plus": "+",
 }
 
-# Default number of bulletins to display on the random_bulletins page when
-# no ``?b=N`` query parameter is supplied.
-_DEFAULT_BULLETIN_COUNT = 10
-
-# Safety cap on the ``?b=N`` query parameter to prevent a crafted request
-# from selecting an unbounded number of bulletins.
-_MAX_BULLETIN_COUNT = 50
-
 
 def _highest_danger_key(ratings: list[dict[str, Any]]) -> tuple[str, str]:
     """
@@ -2108,206 +2133,6 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     }
     panel["day_character"] = compute_day_character(raw_render_model)
     return panel
-
-
-def _parse_bulletin_count(request: HttpRequest) -> int:
-    """
-    Parse the ``?b=N`` query parameter as a bounded positive integer.
-
-    Returns :data:`_DEFAULT_BULLETIN_COUNT` when the parameter is absent or
-    unparseable, and clamps valid values to the closed interval
-    ``[1, _MAX_BULLETIN_COUNT]``.
-    """
-    raw = request.GET.get("b")
-    if raw is None:
-        return _DEFAULT_BULLETIN_COUNT
-    try:
-        value = int(raw)
-    except ValueError:
-        return _DEFAULT_BULLETIN_COUNT
-    return max(1, min(value, _MAX_BULLETIN_COUNT))
-
-
-def _select_recent_bulletins(region: Region, count: int) -> list[Bulletin]:
-    """
-    Return the ``count`` most recent bulletins for a region, one per day.
-
-    Collapses each calendar day (keyed on ``valid_to``) to a single bulletin
-    using the same morning/evening preference logic as the detail view's
-    :func:`_select_bulletin_for_date`, so the list never shows two cards
-    covering the same day.
-
-    Args:
-        region: The Region to list bulletins for.
-        count: Maximum number of bulletins to return.
-
-    Returns:
-        A list of at most ``count`` Bulletins in reverse chronological order.
-
-    """
-    recent_dates = list(
-        Bulletin.objects.filter(regions=region).dates("valid_to", "day", order="DESC")[
-            :count
-        ]
-    )
-    bulletins: list[Bulletin] = []
-    for day in recent_dates:
-        selected = _select_bulletin_for_date(region, day)
-        if selected is not None:
-            bulletins.append(selected)
-    return bulletins
-
-
-def random_bulletins(request: HttpRequest, region_id: str) -> HttpResponse:
-    """
-    Render the most recent bulletins for a single region as compact panels.
-
-    Lists up to ``?b=N`` (default :data:`_DEFAULT_BULLETIN_COUNT`, max
-    :data:`_MAX_BULLETIN_COUNT`) bulletins for ``region_id``, one per
-    calendar day, in reverse chronological order. The region is looked up
-    case-insensitively against ``Region.region_id`` so both ``CH-4115`` and
-    ``ch-4115`` resolve to the same page.
-
-    Args:
-        request: The incoming HTTP request.
-        region_id: SLF region identifier from the URL (e.g. ``"CH-4115"``).
-
-    Returns:
-        The rendered random_bulletins page, or a 404 if the region is
-        unknown.
-
-    """
-    region = get_object_or_404(Region, region_id__iexact=region_id)
-    count = _parse_bulletin_count(request)
-    bulletins = _select_recent_bulletins(region, count)
-    panels = [_build_panel_context(b) for b in bulletins]
-    return render(
-        request,
-        "public/random_bulletins.html",
-        {
-            "region": region,
-            "region_name": region.name,
-            "count": count,
-            "panels": panels,
-            "year": datetime.date.today().year,
-        },
-    )
-
-
-# ---------------------------------------------------------------------------
-# Season test page
-# ---------------------------------------------------------------------------
-
-# Avalanche seasons run roughly Nov → May. The canonical boundary is
-# November 1 — any date on or after Nov 1 belongs to the season that
-# starts in that calendar year; dates before Nov 1 belong to the season
-# that started in the previous calendar year.
-_SEASON_START_MONTH = 11
-_SEASON_START_DAY = 1
-
-# Hard cap on bulletins rendered on the season test page.
-_MAX_SEASON_BULLETINS = 100
-
-
-def _season_date_range(reference: datetime.date) -> tuple[datetime.date, datetime.date]:
-    """
-    Return the date range for the avalanche season containing ``reference``.
-
-    The season runs from November 1 of the start year to May 31 of the
-    following year. Dates before November belong to the season that
-    started the previous November.
-
-    Args:
-        reference: Any date within the desired season.
-
-    Returns:
-        A ``(season_start, season_end)`` tuple of ``datetime.date`` objects.
-
-    """
-    if reference.month >= _SEASON_START_MONTH:
-        start_year = reference.year
-    else:
-        start_year = reference.year - 1
-    season_start = datetime.date(start_year, _SEASON_START_MONTH, _SEASON_START_DAY)
-    season_end = datetime.date(start_year + 1, 5, 31)
-    return season_start, season_end
-
-
-def _select_season_bulletins(
-    region: Region,
-    season_start: datetime.date,
-    season_end: datetime.date,
-) -> list[Bulletin]:
-    """
-    Return up to 100 season bulletins for a region, one per day.
-
-    Filters to the given date range, collapses each calendar day to a
-    single bulletin using the same morning/evening preference logic as the
-    detail view, and returns at most :data:`_MAX_SEASON_BULLETINS` results.
-
-    Args:
-        region: The Region to list bulletins for.
-        season_start: Inclusive start date of the range.
-        season_end: Inclusive end date of the range.
-
-    Returns:
-        A list of Bulletins in reverse chronological order.
-
-    """
-    season_dates = list(
-        Bulletin.objects.filter(
-            regions=region,
-            valid_to__date__gte=season_start,
-            valid_to__date__lte=season_end,
-        ).dates("valid_to", "day", order="DESC")[:_MAX_SEASON_BULLETINS]
-    )
-    bulletins: list[Bulletin] = []
-    for day in season_dates:
-        selected = _select_bulletin_for_date(region, day)
-        if selected is not None:
-            bulletins.append(selected)
-    return bulletins
-
-
-def season_bulletins(request: HttpRequest, region_id: str) -> HttpResponse:
-    """
-    Full-season test page showing up to 100 bulletin panels for a region.
-
-    Renders every bulletin card for the current avalanche season
-    (November → May) in a responsive grid that flows from multiple
-    columns on wide screens to a single column on mobile. Intended as a
-    UI test harness for the bulletin panel, not a production page.
-
-    Args:
-        request: The incoming HTTP request.
-        region_id: SLF region identifier from the URL (e.g. ``"CH-4115"``).
-
-    Returns:
-        The rendered season_bulletins page, or a 404 if the region is
-        unknown.
-
-    """
-    region = get_object_or_404(Region, region_id__iexact=region_id)
-
-    today = timezone.now().date()
-    season_start, season_end = _season_date_range(today)
-    season_label = f"{season_start:%b %Y} – {season_end:%b %Y}"
-
-    bulletins = _select_season_bulletins(region, season_start, season_end)
-    panels = [_build_panel_context(b) for b in bulletins]
-
-    return render(
-        request,
-        "public/season_bulletins.html",
-        {
-            "region": region,
-            "region_name": region.name,
-            "season_label": season_label,
-            "panel_count": len(panels),
-            "panels": panels,
-            "year": today.year,
-        },
-    )
 
 
 # ---------------------------------------------------------------------------

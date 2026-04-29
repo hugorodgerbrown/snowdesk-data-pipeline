@@ -7,10 +7,8 @@ Covers:
   * ``/terms/`` page renders, has the four placeholder sections, and
     is reachable.
   * The global ``_site_footer.html`` partial renders on every public
-    page (home, terms, bulletin, season, history, map) with the SLF
-    licence link and a link to /terms.
-  * ``_bulletin_panel.html`` includes the inline "Source: SLF" line
-    plus the field-observation feedback link.
+    page (home, terms, bulletin, map) with the SLF licence link and a
+    link to /terms.
   * The map ``/api/region/<id>/summary/`` ``expanded`` fragment includes
     the same inline source + feedback line.
 
@@ -165,81 +163,24 @@ class TestGlobalSiteFooter:
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
 
-    def test_season_renders_footer(self, client, region):
-        _make_today_bulletin(region)
-        url = reverse(
-            "public:season_bulletins",
-            kwargs={"region_id": region.region_id},
-        )
-        response = client.get(url)
-        assert response.status_code == 200
-        assert b'data-testid="site-footer"' in response.content
-
-    def test_random_bulletins_renders_footer(self, client, region):
-        _make_today_bulletin(region)
-        url = reverse(
-            "public:random_bulletins",
-            kwargs={"region_id": region.region_id},
-        )
-        response = client.get(url)
-        assert response.status_code == 200
-        assert b'data-testid="site-footer"' in response.content
-
     def test_footer_links_to_terms(self, client):
         response = client.get(reverse("public:home"))
         assert reverse("public:terms").encode() in response.content
 
 
 # ---------------------------------------------------------------------------
-# Bulletin panel — inline source + feedback link
+# Bulletin page — inline SLF feedback link
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestBulletinPanelAttribution:
-    """The compact bulletin panel includes inline SLF attribution.
+class TestBulletinPageAttribution:
+    """The standalone bulletin page surfaces the SLF feedback link.
 
-    ``_bulletin_panel.html`` is included by season + history pages
-    (the standalone bulletin page is a separate WhiteRisk-replica
-    template with its own rich footer). Both panel-rendering pages
-    must surface SLF attribution.
+    The link lives in the page's rich SECTION 6 footer.
     """
 
-    def test_season_panel_includes_slf_source_block(self, client, region):
-        _make_today_bulletin(region)
-        url = reverse(
-            "public:season_bulletins",
-            kwargs={"region_id": region.region_id},
-        )
-        response = client.get(url)
-        assert response.status_code == 200
-        assert b'data-testid="panel-slf-attribution"' in response.content
-
-    def test_season_panel_includes_slf_feedback_link(self, client, region):
-        _make_today_bulletin(region)
-        url = reverse(
-            "public:season_bulletins",
-            kwargs={"region_id": region.region_id},
-        )
-        response = client.get(url)
-        assert b"pro.slf.ch/reply/public" in response.content
-
-    def test_history_panel_includes_slf_source_block(self, client, region):
-        _make_today_bulletin(region)
-        url = reverse(
-            "public:random_bulletins",
-            kwargs={"region_id": region.region_id},
-        )
-        response = client.get(url)
-        assert response.status_code == 200
-        assert b'data-testid="panel-slf-attribution"' in response.content
-
     def test_bulletin_page_includes_slf_feedback_link(self, client, region):
-        """The standalone bulletin page surfaces the SLF feedback link.
-
-        The link lives in the page's rich SECTION 6 footer, not via
-        ``_bulletin_panel.html`` (which this template doesn't include).
-        """
         _make_today_bulletin(region)
         url = reverse(
             "public:bulletin",

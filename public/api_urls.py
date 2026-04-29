@@ -10,7 +10,7 @@ don't share a namespace — ``{% url "api:today_summaries" %}`` vs
 from django.conf import settings
 from django.urls import path
 
-from . import api, debug_views
+from . import api
 
 app_name = "api"
 
@@ -42,19 +42,11 @@ urlpatterns = [
     ),
 ]
 
-# SNOW-45 scrubber perf spike — DEBUG-only experimental endpoints.
-# Views also inline-gate on ``settings.DEBUG``; the URL-level ``if``
+# SNOW-74 — edit-resorts mode endpoints. Views also inline-gate on
+# ``settings.DEBUG`` via ``_require_debug()``; the URL-level ``if``
 # keeps them out of the resolver when DEBUG is off.
 if settings.DEBUG:
     urlpatterns += [
-        path(
-            "debug/day-ratings/",
-            debug_views.day_ratings_debug,
-            name="debug_day_ratings",
-        ),
-        # SNOW-74 — edit-resorts mode endpoints. Views also inline-gate
-        # on ``settings.DEBUG`` via ``_require_debug()``; the URL-level
-        # ``if`` keeps them out of the resolver when DEBUG is off.
         path(
             "edit/resorts/queue/",
             api.edit_resorts_queue,

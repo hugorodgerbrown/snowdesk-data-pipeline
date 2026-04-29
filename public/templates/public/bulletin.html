@@ -396,29 +396,19 @@ Six structural sections, top to bottom:
                     {% endfor %}
                 {% endif %}
             </p>
-            <p class="mb-1">
-                <a
-                    class="underline hover:text-text-2"
-                    href="{% url 'public:random_bulletins' region_id=region_id %}"
-                >{% trans "View history" %}</a>
-                &middot;
-                <a
-                    class="underline hover:text-text-2"
-                    href="{% url 'public:season_bulletins' region_id=region_id %}"
-                >{% trans "View full season" %}</a>
-                {# DEBUG-only shortcut into Django admin for the current   #}
-                {# bulletin record.  Present only when ``settings.DEBUG``  #}
-                {# is truthy and a panel was built (empty-state pages     #}
-                {# have no bulletin to open).  Production omits the link. #}
-                {% if debug and panel.admin_url %}
-                    &middot;
+            {# DEBUG-only shortcut into Django admin for the current   #}
+            {# bulletin record.  Present only when ``settings.DEBUG``  #}
+            {# is truthy and a panel was built (empty-state pages     #}
+            {# have no bulletin to open).  Production omits the link. #}
+            {% if debug and panel.admin_url %}
+                <p class="mb-1">
                     <a
                         class="underline hover:text-text-2"
                         href="{{ panel.admin_url }}"
                         data-testid="footer-admin-link"
                     >{% trans "Open in admin" %}</a>
-                {% endif %}
-            </p>
+                </p>
+            {% endif %}
             <p>
                 {% blocktrans trimmed %}
                     Avalanche bulletin data &copy;
