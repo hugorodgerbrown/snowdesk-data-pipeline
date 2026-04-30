@@ -27,7 +27,7 @@
     "fields": {
       "uuid": "5d64fb14-e65e-4c89-bad0-ffebe0fb8eb4",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T12:48:47.845Z",
       "name": "Nendaz",
       "name_alt": "Les 4 Vallées",
       "region": [
@@ -35,11 +35,11 @@
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.18764501194184,
+      "longitude": 7.2975951924667015,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T12:48:47.845Z",
       "needs_review": false
     }
   },
@@ -49,7 +49,7 @@
     "fields": {
       "uuid": "046c746b-d810-4a94-858d-105f311790d0",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T12:51:08.505Z",
       "name": "Veysonnaz",
       "name_alt": "Les 4 Vallées",
       "region": [
@@ -57,11 +57,11 @@
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.195972284626464,
+      "longitude": 7.337538975193496,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T12:51:08.505Z",
       "needs_review": false
     }
   },
@@ -115,7 +115,7 @@
     "fields": {
       "uuid": "422415af-4477-4222-a370-84f3d95eabdf",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:16:35.693Z",
       "name": "La Fouly",
       "name_alt": "",
       "region": [
@@ -123,11 +123,11 @@
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 45.934912633358095,
+      "longitude": 7.097360893380198,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:16:35.688Z",
       "needs_review": false
     }
   },
@@ -181,7 +181,7 @@
     "fields": {
       "uuid": "1f5470a5-1aae-4577-a8dd-31bef8e7a961",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T12:52:00.303Z",
       "name": "Saas-Fee",
       "name_alt": "Saas Valley",
       "region": [
@@ -189,11 +189,11 @@
       ],
       "canton": "VS",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.1122241063934,
+      "longitude": 7.930089800309247,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T12:52:00.302Z",
       "needs_review": false
     }
   },
@@ -203,7 +203,7 @@
     "fields": {
       "uuid": "4b88a193-bc01-45e9-ba21-29071da163a2",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T12:52:04.003Z",
       "name": "Saas-Grund",
       "name_alt": "Saas Valley",
       "region": [
@@ -211,11 +211,11 @@
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.12459007249922,
+      "longitude": 7.936779696405836,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T12:52:04.002Z",
       "needs_review": false
     }
   },
@@ -225,7 +225,7 @@
     "fields": {
       "uuid": "cb1919a0-e042-4f21-9ae1-b1a47abf8dc6",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T12:52:08.525Z",
       "name": "Saas-Almagell",
       "name_alt": "Saas Valley",
       "region": [
@@ -233,11 +233,11 @@
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.094597809635104,
+      "longitude": 7.958187363912401,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T12:52:08.525Z",
       "needs_review": false
     }
   },
@@ -269,19 +269,19 @@
     "fields": {
       "uuid": "46b0c7c5-2899-4507-9f87-65e36f2c3cde",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:22:13.091Z",
       "name": "Leukerbad",
       "name_alt": "",
       "region": [
-        "CH-4215"
+        "CH-4211"
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.38049119489074,
+      "longitude": 7.629022150507353,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:22:13.086Z",
       "needs_review": false
     }
   },
@@ -357,7 +357,7 @@
     "fields": {
       "uuid": "a5a714f8-1e4e-4e6c-8812-b964f677e3f5",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T15:32:21.579Z",
       "name": "St-Luc",
       "name_alt": "Val d'Anniviers",
       "region": [
@@ -365,11 +365,11 @@
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.22049663949741,
+      "longitude": 7.601252754188806,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T15:32:21.579Z",
       "needs_review": false
     }
   },
@@ -379,7 +379,7 @@
     "fields": {
       "uuid": "74e2b3bc-8e84-4396-81ca-108bd09cd774",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:19:39.281Z",
       "name": "Chandolin",
       "name_alt": "Val d'Anniviers",
       "region": [
@@ -387,11 +387,11 @@
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.25305721661326,
+      "longitude": 7.592159705175902,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:19:39.279Z",
       "needs_review": false
     }
   },
@@ -423,7 +423,7 @@
     "fields": {
       "uuid": "18fbdc9c-531d-41a0-93ac-7ac24b11c99c",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:19:19.923Z",
       "name": "Les Haudères",
       "name_alt": "Val d'Hérens",
       "region": [
@@ -431,11 +431,11 @@
       ],
       "canton": "VS",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.08297616007064,
+      "longitude": 7.509621225251635,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:19:19.919Z",
       "needs_review": false
     }
   },
@@ -445,7 +445,7 @@
     "fields": {
       "uuid": "2a79226c-eeb3-4df1-8bee-54c6fa00618a",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:19:02.047Z",
       "name": "Evolène",
       "name_alt": "Val d'Hérens",
       "region": [
@@ -453,11 +453,11 @@
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.11353839463814,
+      "longitude": 7.496215916457942,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:19:02.042Z",
       "needs_review": false
     }
   },
@@ -489,7 +489,7 @@
     "fields": {
       "uuid": "60794e7d-402d-495b-831d-cc878b7c6477",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T12:56:21.828Z",
       "name": "Bettmeralp",
       "name_alt": "Aletsch Arena",
       "region": [
@@ -497,11 +497,11 @@
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.39123886614695,
+      "longitude": 8.05963044569316,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T12:56:21.828Z",
       "needs_review": false
     }
   },
@@ -533,7 +533,7 @@
     "fields": {
       "uuid": "ef6b7fb9-2000-4069-ad5b-cdff0cf340c8",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:20:35.399Z",
       "name": "Turtmann",
       "name_alt": "Turtmanntal",
       "region": [
@@ -541,11 +541,11 @@
       ],
       "canton": "VS",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.30139633874643,
+      "longitude": 7.703048877697142,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:20:35.396Z",
       "needs_review": false
     }
   },
@@ -555,7 +555,7 @@
     "fields": {
       "uuid": "2cc5cc84-b1c9-4c0d-a75e-7e67954ce5c9",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T12:55:51.914Z",
       "name": "Brig",
       "name_alt": "Simplon north",
       "region": [
@@ -563,11 +563,11 @@
       ],
       "canton": "VS",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.31774239928973,
+      "longitude": 7.990322434284735,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T12:55:51.914Z",
       "needs_review": false
     }
   },
@@ -577,7 +577,7 @@
     "fields": {
       "uuid": "078312df-9387-40f0-9cda-ee228789efd7",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:24:06.678Z",
       "name": "Simplon village",
       "name_alt": "Simplon south",
       "region": [
@@ -585,11 +585,11 @@
       ],
       "canton": "VS",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.19704864522322,
+      "longitude": 8.054807052884968,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:24:06.674Z",
       "needs_review": false
     }
   },
@@ -599,19 +599,19 @@
     "fields": {
       "uuid": "9eb3d919-1c3e-48c1-86d8-cf821f3c213f",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:24:34.395Z",
       "name": "Reckingen",
       "name_alt": "Goms",
       "region": [
-        "CH-4241"
+        "CH-4244"
       ],
       "canton": "VS",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.47029419953208,
+      "longitude": 8.243248219958588,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:24:34.392Z",
       "needs_review": false
     }
   },
@@ -621,19 +621,19 @@
     "fields": {
       "uuid": "36503a41-8ed0-492d-af8a-0a4ce135223e",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:24:44.021Z",
       "name": "Münster",
       "name_alt": "Goms",
       "region": [
-        "CH-4241"
+        "CH-4243"
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.48755281422379,
+      "longitude": 8.264877553467755,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:24:44.018Z",
       "needs_review": false
     }
   },
@@ -643,19 +643,19 @@
     "fields": {
       "uuid": "605263a8-d26e-449a-80f5-335283234d78",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:25:08.610Z",
       "name": "Ulrichen",
       "name_alt": "Goms",
       "region": [
-        "CH-4241"
+        "CH-4244"
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.50699380812114,
+      "longitude": 8.303991842455844,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:25:08.607Z",
       "needs_review": false
     }
   },
@@ -687,7 +687,7 @@
     "fields": {
       "uuid": "b145ab2a-3baf-44f0-b29e-11f4d9fe1fdf",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:45:29.067Z",
       "name": "Binntal",
       "name_alt": "",
       "region": [
@@ -695,11 +695,11 @@
       ],
       "canton": "VS",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.364278261170426,
+      "longitude": 8.162188589612128,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:45:29.062Z",
       "needs_review": false
     }
   },
@@ -731,19 +731,19 @@
     "fields": {
       "uuid": "8fabb954-402d-4c37-90f4-e95eeb704e82",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:43:11.875Z",
       "name": "Morgins",
       "name_alt": "Portes du Soleil",
       "region": [
-        "CH-4111"
+        "CH-1312"
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.237896204405445,
+      "longitude": 6.855991666986881,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:43:11.871Z",
       "needs_review": false
     }
   },
@@ -753,19 +753,19 @@
     "fields": {
       "uuid": "19603044-00c3-4f50-8d52-484d27f52b24",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:43:26.036Z",
       "name": "Torgon",
       "name_alt": "",
       "region": [
-        "CH-4111"
+        "CH-1311"
       ],
       "canton": "VS",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.32125197908826,
+      "longitude": 6.87631553368945,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:43:26.032Z",
       "needs_review": false
     }
   },
@@ -841,7 +841,7 @@
     "fields": {
       "uuid": "d2358429-765b-40be-b998-02c6cfe164df",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:22:25.792Z",
       "name": "Stalden",
       "name_alt": "untere Vispertäler",
       "region": [
@@ -849,11 +849,11 @@
       ],
       "canton": "VS",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.23276554020643,
+      "longitude": 7.869812119619894,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:22:25.787Z",
       "needs_review": false
     }
   },
@@ -907,19 +907,19 @@
     "fields": {
       "uuid": "d939a001-6e76-414b-8487-ed1de9ab8ca5",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:46:18.314Z",
       "name": "Goms",
       "name_alt": "Münster-Goms",
       "region": [
-        "CH-4243"
+        "CH-4242"
       ],
       "canton": "VS",
       "notes": "Münster / upper Goms",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.409420371616164,
+      "longitude": 8.156848878870107,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:46:18.311Z",
       "needs_review": false
     }
   },
@@ -929,7 +929,7 @@
     "fields": {
       "uuid": "bb1be8b8-66a6-42b7-99da-1fd35c1e2a81",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:43:56.340Z",
       "name": "Génépy",
       "name_alt": "",
       "region": [
@@ -937,11 +937,11 @@
       ],
       "canton": "VS",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.026031124649506,
+      "longitude": 7.0439576284728105,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:43:56.338Z",
       "needs_review": false
     }
   },
@@ -1677,19 +1677,19 @@
     "fields": {
       "uuid": "29d58cbc-76ee-4ef7-86fb-fed0be667c82",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:26:22.887Z",
       "name": "Küblis",
       "name_alt": "Prättigau",
       "region": [
-        "CH-5111"
+        "CH-5112"
       ],
       "canton": "GR",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.91545235226101,
+      "longitude": 9.772426226475176,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:26:22.884Z",
       "needs_review": false
     }
   },
@@ -1699,7 +1699,7 @@
     "fields": {
       "uuid": "0eeb9249-1c61-46eb-8db2-e9bab288992c",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:26:44.518Z",
       "name": "Schiers",
       "name_alt": "Prättigau",
       "region": [
@@ -1707,11 +1707,11 @@
       ],
       "canton": "GR",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.97067274754062,
+      "longitude": 9.689016279107193,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:26:44.514Z",
       "needs_review": false
     }
   },
@@ -1765,7 +1765,7 @@
     "fields": {
       "uuid": "34693526-1076-4f89-8a58-06ad1a54d88b",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T13:22:22.701Z",
       "name": "Flims",
       "name_alt": "Flims Laax",
       "region": [
@@ -1773,11 +1773,11 @@
       ],
       "canton": "GR",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.83699739399947,
+      "longitude": 9.283136517169424,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T13:11:47.130Z",
       "needs_review": false
     }
   },
@@ -1787,7 +1787,7 @@
     "fields": {
       "uuid": "4d8ef9bc-8222-4d75-be92-2aff7f444897",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T13:11:51.321Z",
       "name": "Laax",
       "name_alt": "Flims Laax",
       "region": [
@@ -1795,11 +1795,11 @@
       ],
       "canton": "GR",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.80543318721226,
+      "longitude": 9.257115699425214,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T13:11:51.320Z",
       "needs_review": false
     }
   },
@@ -1985,7 +1985,7 @@
     "fields": {
       "uuid": "aa86cfde-2f39-416e-8aa9-8572d4845a7d",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:31:52.517Z",
       "name": "Splügen",
       "name_alt": "Rheinwald",
       "region": [
@@ -1993,11 +1993,11 @@
       ],
       "canton": "GR",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.55524139262022,
+      "longitude": 9.322920167463934,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:31:52.512Z",
       "needs_review": false
     }
   },
@@ -2007,7 +2007,7 @@
     "fields": {
       "uuid": "b7cbb696-32b0-4375-a77f-fbbe99cc4b3a",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:32:07.339Z",
       "name": "Hinterrhein",
       "name_alt": "Rheinwald",
       "region": [
@@ -2015,11 +2015,11 @@
       ],
       "canton": "GR",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.53159650595123,
+      "longitude": 9.19884395941503,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:32:07.336Z",
       "needs_review": false
     }
   },
@@ -2029,7 +2029,7 @@
     "fields": {
       "uuid": "0d1aa0d2-de02-446f-bf0a-cefd87faf7a7",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:32:58.821Z",
       "name": "Bivio",
       "name_alt": "",
       "region": [
@@ -2037,11 +2037,11 @@
       ],
       "canton": "GR",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.46907984261773,
+      "longitude": 9.650129976318766,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:32:58.818Z",
       "needs_review": false
     }
   },
@@ -2051,7 +2051,7 @@
     "fields": {
       "uuid": "cb5977be-952a-463a-84df-a331efafd26a",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:32:50.791Z",
       "name": "Avers",
       "name_alt": "Cresta",
       "region": [
@@ -2059,11 +2059,11 @@
       ],
       "canton": "GR",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.47285545795893,
+      "longitude": 9.514139498030858,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:32:50.789Z",
       "needs_review": false
     }
   },
@@ -2095,7 +2095,7 @@
     "fields": {
       "uuid": "32cf26e9-55a6-41c6-b0c6-5bf21ffbd066",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:32:27.946Z",
       "name": "Bergün",
       "name_alt": "Albulatal",
       "region": [
@@ -2103,11 +2103,11 @@
       ],
       "canton": "GR",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.62900373805513,
+      "longitude": 9.747165373297975,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:32:27.944Z",
       "needs_review": false
     }
   },
@@ -2117,7 +2117,7 @@
     "fields": {
       "uuid": "f9333774-9ffa-439f-9a20-8df4f0539ae3",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:32:20.030Z",
       "name": "Filisur",
       "name_alt": "Albulatal",
       "region": [
@@ -2125,11 +2125,11 @@
       ],
       "canton": "GR",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.672673071763455,
+      "longitude": 9.688693971353672,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:32:20.026Z",
       "needs_review": false
     }
   },
@@ -2161,19 +2161,19 @@
     "fields": {
       "uuid": "d48e011b-ff81-41f1-9985-a6513d1f523c",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:29:04.616Z",
       "name": "Ilanz",
       "name_alt": "Vorderrhein",
       "region": [
-        "CH-5124"
+        "CH-5214"
       ],
       "canton": "GR",
       "notes": "Ilanz / Lugnez",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.773317625588334,
+      "longitude": 9.203645066668543,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:29:04.609Z",
       "needs_review": false
     }
   },
@@ -2645,11 +2645,11 @@
     "fields": {
       "uuid": "958e98c8-d45b-444e-8235-10a1ed07ef3e",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:27:52.872Z",
+      "updated_at": "2026-04-30T15:48:21.784Z",
       "name": "Villars-sur-Ollon",
       "name_alt": "Alpes Vaudoises",
       "region": [
-        "CH-1113"
+        "CH-1114"
       ],
       "canton": "VD",
       "notes": "",
@@ -2657,7 +2657,7 @@
       "longitude": 7.054702503246375,
       "geocode_source": "manual",
       "geocode_confidence": 1.0,
-      "geocoded_at": "2026-04-28T17:27:52.872Z",
+      "geocoded_at": "2026-04-30T15:48:21.780Z",
       "needs_review": false
     }
   },
@@ -2667,11 +2667,11 @@
     "fields": {
       "uuid": "14ebed62-2769-4918-ad7e-e45392487515",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:31:07.028Z",
+      "updated_at": "2026-04-30T15:49:33.365Z",
       "name": "Gryon",
       "name_alt": "Alpes Vaudoises",
       "region": [
-        "CH-1113"
+        "CH-1114"
       ],
       "canton": "VD",
       "notes": "",
@@ -2679,7 +2679,7 @@
       "longitude": 7.105047,
       "geocode_source": "manual",
       "geocode_confidence": 1.0,
-      "geocoded_at": "2026-04-28T17:31:07.027Z",
+      "geocoded_at": "2026-04-30T15:49:33.363Z",
       "needs_review": false
     }
   },
@@ -3085,7 +3085,7 @@
     "fields": {
       "uuid": "d0407dac-5400-4864-8667-36fe6ac042f6",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T15:26:46.690Z",
       "name": "Flumserberg",
       "name_alt": "",
       "region": [
@@ -3093,11 +3093,11 @@
       ],
       "canton": "SG",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 47.09128286829167,
+      "longitude": 9.343194985956245,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T15:26:46.690Z",
       "needs_review": false
     }
   },
@@ -3151,7 +3151,7 @@
     "fields": {
       "uuid": "740a7437-4d07-42c0-b225-b9566ed1ae06",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:33:23.529Z",
       "name": "Bedretto",
       "name_alt": "Valle Bedretto",
       "region": [
@@ -3159,11 +3159,11 @@
       ],
       "canton": "TI",
       "notes": "confirmed from bulletin",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.51025700310905,
+      "longitude": 8.52415236784583,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:33:23.525Z",
       "needs_review": false
     }
   },
@@ -3195,7 +3195,7 @@
     "fields": {
       "uuid": "08759426-8006-4202-bbb4-9df8ee2571a9",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:33:56.318Z",
       "name": "Blenio",
       "name_alt": "Lucomagno",
       "region": [
@@ -3203,11 +3203,11 @@
       ],
       "canton": "TI",
       "notes": "",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.42819240047473,
+      "longitude": 8.971151702064418,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:33:56.314Z",
       "needs_review": false
     }
   },
@@ -3239,7 +3239,7 @@
     "fields": {
       "uuid": "6555f088-e308-4487-a08d-5210bb0cc4c1",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-30T16:35:34.242Z",
       "name": "San Bernardino",
       "name_alt": "Mesolcina",
       "region": [
@@ -3247,11 +3247,11 @@
       ],
       "canton": "GR/TI",
       "notes": "pass area",
-      "latitude": null,
-      "longitude": null,
-      "geocode_source": "",
-      "geocode_confidence": null,
-      "geocoded_at": null,
+      "latitude": 46.462685768281204,
+      "longitude": 9.191864680708932,
+      "geocode_source": "manual",
+      "geocode_confidence": 1.0,
+      "geocoded_at": "2026-04-30T16:35:34.239Z",
       "needs_review": false
     }
   }
