@@ -382,6 +382,39 @@ reachable via the SNOW-81 deep-link in the masthead.
         {% endif %}
         {# bulletin #}
 
+        {% comment %}
+           Adjoining regions — geographic neighbours of the focal region.
+           Computed from boundary polygons at fixture-build time and
+           rehydrated via the symmetric Region.neighbours M2M (SNOW-82).
+           Hidden when the focal region has no neighbours seeded.
+        {% endcomment %}
+        {% if adjoining_regions %}
+            <section
+                class="mt-8 pt-4 border-t border-border"
+                data-testid="adjoining-regions"
+                aria-labelledby="adjoining-regions-heading"
+            >
+                <h2
+                    id="adjoining-regions-heading"
+                    class="font-mono uppercase tracking-wider text-[9px] text-text-3 mb-2"
+                >
+                    {% trans "Adjoining regions" %}
+                </h2>
+                <ul class="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+                    {% for r in adjoining_regions %}
+                        <li>
+                            <a
+                                class="text-text-2 underline hover:text-text-1"
+                                href="{% url 'public:bulletin' region_id=r.region_id slug=r.slug %}"
+                            >
+                                {{ r.name }}
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
+
         {# ── Subscribe CTA (always visible) ────────────────────────── #}
         <div class="mt-6">
             {% include "subscriptions/partials/subscribe_form.html" with region_id=region.region_id %}

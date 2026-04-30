@@ -148,6 +148,46 @@ class TestRegionFactory:
 
 
 @pytest.mark.django_db
+class TestRegionNeighbours:
+    """Tests for the Region.neighbours self-referential symmetric M2M."""
+
+    def test_neighbours_default_is_empty(self) -> None:
+        """A freshly-created region has no neighbours."""
+        region = RegionFactory.create()
+        assert list(region.neighbours.all()) == []
+
+    def test_adding_a_neighbour_is_visible_from_both_sides(self) -> None:
+        """The relation is symmetric — adding B to A's neighbours lists A in B's neighbours."""
+        a = RegionFactory.create(region_id="CH-9001")
+        b = RegionFactory.create(region_id="CH-9002")
+        a.neighbours.add(b)
+        assert b in a.neighbours.all()
+        assert a in b.neighbours.all()
+
+    def test_clearing_one_side_clears_the_other(self) -> None:
+        """clear() on one endpoint removes the symmetric link."""
+        a = RegionFactory.create(region_id="CH-9003")
+        b = RegionFactory.create(region_id="CH-9004")
+        a.neighbours.add(b)
+        a.neighbours.clear()
+        assert list(a.neighbours.all()) == []
+        assert list(b.neighbours.all()) == []
+
+    def test_set_replaces_neighbour_membership(self) -> None:
+        """set() replaces the full neighbour set on both endpoints."""
+        a = RegionFactory.create(region_id="CH-9005")
+        b = RegionFactory.create(region_id="CH-9006")
+        c = RegionFactory.create(region_id="CH-9007")
+        a.neighbours.set([b])
+        assert list(a.neighbours.all()) == [b]
+        a.neighbours.set([c])
+        assert list(a.neighbours.all()) == [c]
+        # b is no longer a neighbour of a, so a should not be in b's neighbours.
+        assert a not in b.neighbours.all()
+        assert a in c.neighbours.all()
+
+
+@pytest.mark.django_db
 class TestRegionsFixture:
     """Tests for the regions.json fixture."""
 
@@ -174,6 +214,38 @@ class TestRegionsFixture:
         assert abs(region.centre["lat"] - 46.470737) < 1e-6
         assert region.boundary is not None
         assert region.boundary["type"] == "Polygon"
+
+    def test_fixture_loads_neighbour_pairs(self) -> None:
+        """The fixture rehydrates Region.neighbours via natural-key M2M."""
+        call_command("loaddata", "regions", verbosity=0)
+        # Every region should have at least one neighbour — SLF micro-regions
+        # tessellate a contiguous country, so isolated nodes would indicate a
+        # bug in the build script.
+        isolated = [
+            r.region_id
+            for r in Region.objects.prefetch_related("neighbours")
+            if r.neighbours.count() == 0
+        ]
+        assert isolated == [], f"Regions with no neighbours: {isolated}"
+
+    def test_fixture_neighbour_graph_is_symmetric(self) -> None:
+        """For every (A, B) edge, A appears in B.neighbours and vice versa."""
+        call_command("loaddata", "regions", verbosity=0)
+        for region in Region.objects.prefetch_related("neighbours"):
+            for neighbour in region.neighbours.all():
+                back_edge = neighbour.neighbours.filter(pk=region.pk).exists()
+                assert back_edge, (
+                    f"Asymmetric edge: {region.region_id} -> "
+                    f"{neighbour.region_id} but not the other way"
+                )
+
+    def test_fixture_known_neighbour_pair(self) -> None:
+        """CH-4115 (Martigny-Verbier) borders CH-4116 (Haut Val de Bagnes)."""
+        call_command("loaddata", "regions", verbosity=0)
+        a = Region.objects.get(region_id="CH-4115")
+        b = Region.objects.get(region_id="CH-4116")
+        assert b in a.neighbours.all()
+        assert a in b.neighbours.all()
 
     def test_fixture_polygon_rings_are_closed(self) -> None:
         """Every fixture polygon's linear rings satisfy RFC 7946 §3.1.6.

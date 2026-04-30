@@ -442,6 +442,17 @@ class Region(BaseModel):
             "Stored as JSON rather than a PostGIS geometry type."
         ),
     )
+    neighbours = models.ManyToManyField(
+        "self",
+        symmetrical=True,
+        blank=True,
+        help_text=(
+            "Geographic neighbours — other regions whose polygons share "
+            "a border with this one. Computed at fixture-build time from "
+            "the boundary geometry (see scripts/build_regions_fixture.py); "
+            "not maintained at runtime."
+        ),
+    )
 
     objects = RegionQuerySet.as_manager()
 
