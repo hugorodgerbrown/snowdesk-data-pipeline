@@ -786,6 +786,23 @@ class RegionDayRatingQuerySet(models.QuerySet["RegionDayRating"]):
             date__lte=_date(year, month, last_day),
         )
 
+    def for_region_range(
+        self, region: "Region", start: _date, end: _date
+    ) -> "RegionDayRatingQuerySet":
+        """
+        Return all RegionDayRating rows for a region within an inclusive date range.
+
+        Args:
+            region: The Region to filter by.
+            start: First date to include (inclusive).
+            end: Last date to include (inclusive).
+
+        Returns:
+            A filtered queryset covering ``[start, end]``.
+
+        """
+        return self.filter(region=region, date__gte=start, date__lte=end)
+
 
 class RegionDayRating(BaseModel):
     """

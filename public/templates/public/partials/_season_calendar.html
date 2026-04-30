@@ -1,0 +1,60 @@
+{% load i18n %}
+{% comment %}
+   Season-long heatmap calendar (SNOW-83) — one tile per day from
+   SEASON_START_DATE through today + 1, weeks-as-columns, Mon..Sun
+   rows. Tile colours come from the existing .calendar-cell EAWS
+   tokens; this partial only fixes the smaller per-tile dimensions.
+
+   Underscore prefix marks this as a plain include (not an HTMX
+   response). Static for a given page load — no partial route.
+{% endcomment %}
+<section
+    class="mt-8 pt-4 border-t border-border"
+    data-testid="season-calendar"
+    aria-labelledby="season-calendar-heading"
+>
+    <h2
+        id="season-calendar-heading"
+        class="font-mono uppercase tracking-wider text-[9px] text-text-3 mb-2"
+    >
+        {% trans "This season" %}
+    </h2>
+    <div class="overflow-x-auto">
+        <div class="inline-block">
+            {# Month labels row — one cell per column, parallel to the grid below. #}
+            <div class="flex gap-0.5 mb-1">
+                {% for label in season_calendar.month_labels %}
+                    <div class="text-[9px] text-text-3 calendar-cell">{{ label }}</div>
+                {% endfor %}
+            </div>
+            {# Grid — one flex column per week, 7 cells per column (Mon..Sun). #}
+            <div class="flex gap-0.5">
+                {% for column in season_calendar.columns %}
+                    <div class="flex flex-col gap-0.5 shrink-0">
+                        {% for cell in column %}
+                            {% if cell is None %}
+                                <div class="calendar-cell"></div>
+                            {% elif cell.has_bulletin %}
+                                <a
+                                    href="{% url 'public:bulletin_date' region.region_id region.slug cell.date|date:'Y-m-d' %}"
+                                    class="rounded calendar-cell{% if cell.is_today %} ring-2 ring-offset-2 ring-text-1{% endif %}{% if cell.is_selected %} ring-2 ring-ring-selected{% endif %}"
+                                    data-rating-min="{{ cell.min_rating_key }}"
+                                    data-rating-max="{{ cell.max_rating_key }}"
+                                    title="{{ cell.date|date:'j N' }}: {{ cell.max_rating_key|title }}"
+                                ></a>
+                            {% else %}
+                                <div
+                                    class="rounded calendar-cell{% if cell.is_today %} ring-2 ring-offset-2 ring-text-1{% endif %}{% if cell.is_selected %} ring-2 ring-ring-selected{% endif %}"
+                                    data-rating-min="{{ cell.min_rating_key }}"
+                                    data-rating-max="{{ cell.max_rating_key }}"
+                                    title="{{ cell.date|date:'j N' }}"
+                                >
+                                </div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>

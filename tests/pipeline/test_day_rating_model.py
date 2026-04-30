@@ -6,6 +6,7 @@ Covers:
   - to_string() format for variable days (min != max)
   - Queryset ordering
   - for_region_month() returns only in-range rows
+  - for_region_range() returns only in-range rows (inclusive bounds)
   - unique_together raises IntegrityError on duplicate (region, date)
   - Admin is registered for the model
 """
@@ -149,6 +150,72 @@ class TestForRegionMonth:
         pks = set(qs.values_list("pk", flat=True))
         assert first.pk in pks
         assert last.pk in pks
+
+
+@pytest.mark.django_db
+class TestForRegionRange:
+    """Tests for RegionDayRatingQuerySet.for_region_range()."""
+
+    def test_includes_lower_bound(self) -> None:
+        """for_region_range is inclusive of the start date."""
+        region = RegionFactory.create(region_id="CH-4115")
+        on_start = RegionDayRatingFactory.create(
+            region=region, date=datetime.date(2025, 11, 1)
+        )
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2025, 10, 31))
+
+        qs = RegionDayRating.objects.for_region_range(
+            region,
+            datetime.date(2025, 11, 1),
+            datetime.date(2025, 11, 30),
+        )
+        pks = list(qs.values_list("pk", flat=True))
+        assert pks == [on_start.pk]
+
+    def test_includes_upper_bound(self) -> None:
+        """for_region_range is inclusive of the end date."""
+        region = RegionFactory.create(region_id="CH-4115")
+        on_end = RegionDayRatingFactory.create(
+            region=region, date=datetime.date(2026, 4, 30)
+        )
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 5, 1))
+
+        qs = RegionDayRating.objects.for_region_range(
+            region,
+            datetime.date(2025, 11, 1),
+            datetime.date(2026, 4, 30),
+        )
+        pks = list(qs.values_list("pk", flat=True))
+        assert pks == [on_end.pk]
+
+    def test_excludes_other_regions(self) -> None:
+        """for_region_range excludes rows for other regions in the same range."""
+        region_a = RegionFactory.create(region_id="CH-4115")
+        region_b = RegionFactory.create(region_id="CH-9999")
+        RegionDayRatingFactory.create(region=region_a, date=datetime.date(2026, 1, 15))
+        RegionDayRatingFactory.create(region=region_b, date=datetime.date(2026, 1, 15))
+
+        qs = RegionDayRating.objects.for_region_range(
+            region_a,
+            datetime.date(2026, 1, 1),
+            datetime.date(2026, 1, 31),
+        )
+        assert qs.count() == 1
+        row = qs.first()
+        assert row is not None
+        assert row.region_id == region_a.pk
+
+    def test_empty_range_returns_no_rows(self) -> None:
+        """for_region_range returns nothing when start > end."""
+        region = RegionFactory.create(region_id="CH-4115")
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 15))
+
+        qs = RegionDayRating.objects.for_region_range(
+            region,
+            datetime.date(2026, 2, 1),
+            datetime.date(2026, 1, 1),
+        )
+        assert qs.count() == 0
 
 
 @pytest.mark.django_db

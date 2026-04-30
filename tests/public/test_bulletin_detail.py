@@ -16,16 +16,22 @@ from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
-from django.test import Client
+from django.test import Client, override_settings
 from django.urls import reverse
 
+from pipeline.models import RegionDayRating
 from public.views import (
     _get_nav_dates,
     _issues_for_date,
     _resolve_selected_issue,
     _select_bulletin_for_date,
 )
-from tests.factories import BulletinFactory, RegionBulletinFactory, RegionFactory
+from tests.factories import (
+    BulletinFactory,
+    RegionBulletinFactory,
+    RegionDayRatingFactory,
+    RegionFactory,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -671,3 +677,103 @@ class TestAdjoiningRegions:
         assert response.context["bulletin"] is None
         assert list(response.context["adjoining_regions"]) == [neighbour]
         assert b'data-testid="adjoining-regions"' in response.content
+
+
+@pytest.mark.django_db
+class TestSeasonCalendar:
+    """Tests for the SNOW-83 season heatmap rendered on the bulletin page."""
+
+    @override_settings(SEASON_START_DATE=date(2026, 3, 1))
+    def test_context_has_season_calendar(self, client: Client, region) -> None:
+        """``season_calendar`` is in the response context on a normal page."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin",
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
+            )
+            response = client.get(url)
+
+        assert response.context["season_calendar"] is not None
+        assert response.context["season_calendar"].columns
+
+    @override_settings(SEASON_START_DATE=date(2026, 3, 1))
+    def test_section_renders_with_testid(self, client: Client, region) -> None:
+        """The rendered HTML contains the season-calendar test id."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin",
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
+            )
+            response = client.get(url)
+
+        assert b'data-testid="season-calendar"' in response.content
+
+    @override_settings(SEASON_START_DATE=date(2026, 3, 1))
+    def test_today_tile_carries_today_ring(self, client: Client, region) -> None:
+        """Today's tile has the ring-text-1 today highlight class."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin",
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
+            )
+            response = client.get(url)
+
+        # The today highlight class is unique to today's tile.
+        assert b"ring-2 ring-offset-2 ring-text-1" in response.content
+
+    @override_settings(SEASON_START_DATE=date(2026, 3, 1))
+    def test_historic_url_marks_page_date_tile_selected(
+        self, client: Client, region
+    ) -> None:
+        """On a historic URL the page_date tile carries the ring-ring-selected class."""
+        _make_am_bulletin(region, date(2026, 3, 5))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "CH-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-05",
+                },
+            )
+            response = client.get(url)
+
+        # Both rings should be present: today (today's column) and selected
+        # (the page_date column).
+        assert b"ring-text-1" in response.content
+        assert b"ring-ring-selected" in response.content
+
+    @override_settings(SEASON_START_DATE=date(2026, 3, 1))
+    def test_tomorrow_row_renders_when_present(self, client: Client, region) -> None:
+        """A RegionDayRating row for today + 1 surfaces with non-no_rating attrs."""
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=date(2026, 3, 16),
+            min_rating=RegionDayRating.Rating.CONSIDERABLE,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            source_bulletin=bulletin,
+        )
+        _make_am_bulletin(region, date(2026, 3, 15))
+
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin",
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
+            )
+            response = client.get(url)
+
+        # The link to tomorrow's bulletin includes the date in the URL.
+        expected = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "CH-4115",
+                "slug": "ch-4115",
+                "date_str": "2026-03-16",
+            },
+        )
+        assert expected.encode() in response.content
+        assert b'data-rating-max="considerable"' in response.content
