@@ -237,7 +237,7 @@ class TestBuildRenderModelStableDay:
         """Stable day yields 'Stable day' character."""
         props = _load_sample("sample_stable_day.json")
         rm = build_render_model(props)
-        assert compute_day_character(rm) == "Stable day"
+        assert compute_day_character(rm).label == "Stable day"
 
     def test_snowpack_structure_populated(self) -> None:
         """snowpack_structure is populated from the raw data."""
@@ -290,7 +290,7 @@ class TestBuildRenderModelVariableDay:
         """Variable day with gliding_snow → Hard-to-read day."""
         props = _load_sample("sample_variable_day.json")
         rm = build_render_model(props)
-        assert compute_day_character(rm) == "Hard-to-read day"
+        assert compute_day_character(rm).label == "Hard-to-read day"
 
     def test_dry_and_wet_problems_are_segregated(self) -> None:
         """Dry and wet traits each contain only their own problem types."""
@@ -334,7 +334,7 @@ class TestBuildRenderModelSubdivision3Plus:
         """Danger 3+ → Widespread danger (rule 3b)."""
         props = _load_sample("sample_subdivision_3plus_day.json")
         rm = build_render_model(props)
-        assert compute_day_character(rm) == "Widespread danger"
+        assert compute_day_character(rm).label == "Widespread danger"
 
     def test_version_is_current(self) -> None:
         """3+ subdivision fixture has current RENDER_MODEL_VERSION."""
@@ -527,7 +527,7 @@ class TestBuildRenderModelBothEmpty:
             "avalancheProblems": [],
         }
         rm = build_render_model(props)
-        assert compute_day_character(rm) == "Stable day"
+        assert compute_day_character(rm).label == "Stable day"
 
 
 # ---------------------------------------------------------------------------
@@ -1045,7 +1045,7 @@ class TestComputeDayCharacterRoundTrip:
         """Stable day fixture produces 'Stable day' end-to-end."""
         props = _load_sample("sample_stable_day.json")
         rm = build_render_model(props)
-        assert compute_day_character(rm) == "Stable day"
+        assert compute_day_character(rm).label == "Stable day"
 
     def test_empty_traits_defaults_to_stable(self) -> None:
         """Render model with empty traits defaults to Stable day."""
@@ -1054,7 +1054,7 @@ class TestComputeDayCharacterRoundTrip:
             "danger": {"key": "low", "number": "1", "subdivision": None},
             "traits": [],
         }
-        assert compute_day_character(rm) == "Stable day"
+        assert compute_day_character(rm).label == "Stable day"
 
     def test_multiple_traits_flattened_for_rules(self) -> None:
         """Problems across multiple traits are flattened for rule evaluation."""
@@ -1087,7 +1087,7 @@ class TestComputeDayCharacterRoundTrip:
             ],
         }
         # 7 unique aspects across both traits → Widespread danger
-        assert compute_day_character(rm) == "Widespread danger"
+        assert compute_day_character(rm).label == "Widespread danger"
 
     def test_danger_zero_hits_safe_default(self) -> None:
         """Danger number 0 (malformed input) hits the safe default return path."""
@@ -1102,7 +1102,7 @@ class TestComputeDayCharacterRoundTrip:
                 }
             ],
         }
-        assert compute_day_character(rm) == "Stable day"
+        assert compute_day_character(rm).label == "Stable day"
 
 
 # ---------------------------------------------------------------------------
@@ -1505,8 +1505,9 @@ class TestDayCharacterAcrossAllSamples:
             rm = build_render_model(props)
         except RenderModelBuildError:
             pytest.skip(f"{filename} is expected to raise RenderModelBuildError")
-        label = compute_day_character(rm)
-        assert label in valid_labels
+        result = compute_day_character(rm)
+        assert result.label in valid_labels
+        assert result.explainer
 
 
 # ---------------------------------------------------------------------------

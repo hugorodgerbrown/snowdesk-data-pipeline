@@ -11,8 +11,11 @@ the output shape or logic changes so that existing rows can be detected as
 stale and rebuilt via the ``rebuild_render_models`` management command.
 
 Also provides ``compute_day_character``, a pure function that classifies a
-render_model into one of five day-character labels using the five-rule cascade
-defined in docs/day_character_rules_spec.md.
+render_model into one of five day-character entries using the five-rule cascade
+defined in docs/day_character_rules_spec.md. Each entry is a
+:class:`DayCharacter` dataclass carrying both the canonical label and a
+one-line explainer that the bulletin page surfaces as an eyebrow above the
+"Day Risk Profile" section.
 
 Version 2 changes:
   - Aggregation drives trait and problem ordering verbatim.
@@ -43,11 +46,20 @@ Version 3 changes:
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.utils.translation import gettext_lazy as _
+
+if TYPE_CHECKING:
+    # ``django_stubs_ext`` ships only with the typing toolchain; importing
+    # it at runtime would force every test/CI env to install a typing-only
+    # dependency. ``from __future__ import annotations`` (above) means the
+    # ``StrOrPromise`` reference in DayCharacter resolves as a forward
+    # string at runtime, so the import is genuinely free.
+    from django_stubs_ext import StrOrPromise
 
 logger = logging.getLogger(__name__)
 
@@ -784,6 +796,49 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+@dataclasses.dataclass(frozen=True)
+class DayCharacter:
+    """
+    Pair of label + one-line explainer for the day-character eyebrow.
+
+    The label is one of the five canonical strings from the day-character
+    cascade; the explainer is a fixed one-liner that frames the label for
+    a non-expert reader. Both fields hold ``gettext_lazy`` proxies so the
+    active locale resolves them at render time.
+    """
+
+    label: StrOrPromise
+    explainer: StrOrPromise
+
+
+_DAY_CHARACTER: dict[str, DayCharacter] = {
+    "stable": DayCharacter(
+        label=_("Stable day"),
+        explainer=_("Low danger and benign problems — manage as usual."),
+    ),
+    "manageable": DayCharacter(
+        label=_("Manageable day"),
+        explainer=_("Moderate to considerable danger — read the terrain carefully."),
+    ),
+    "hard_to_read": DayCharacter(
+        label=_("Hard-to-read day"),
+        explainer=_("Persistent or gliding-snow problems can mask the real risk."),
+    ),
+    "widespread": DayCharacter(
+        label=_("Widespread danger"),
+        explainer=_(
+            "Considerable danger across many aspects, elevations, or problems."
+        ),
+    ),
+    "dangerous": DayCharacter(
+        label=_("Dangerous conditions"),
+        explainer=_(
+            "High to very high danger — backcountry travel is not recommended."
+        ),
+    ),
+}
+
+
 def _elevation_lower_le_2000(elevation: Any) -> bool:
     """
     Return True if the render model elevation's lower bound is at or below 2000m.
@@ -848,15 +903,15 @@ def _is_stable(danger: int, problems: list[dict[str, Any]]) -> bool:
     )
 
 
-def compute_day_character(render_model: dict[str, Any]) -> str:
+def compute_day_character(render_model: dict[str, Any]) -> DayCharacter:
     """
-    Classify a render model into one of five day-character labels.
+    Classify a render model into one of five day-character entries.
 
     Rules are evaluated top-to-bottom; the first match wins. Uses the
     five-rule cascade from docs/day_character_rules_spec.md.
 
     When ``traits`` is empty (no avalanche problems reported), returns
-    ``"Stable day"`` immediately.
+    the ``"Stable day"`` entry immediately.
 
     This function is pure — no side effects, no database access.
 
@@ -865,9 +920,10 @@ def compute_day_character(render_model: dict[str, Any]) -> str:
             :func:`build_render_model`.
 
     Returns:
-        One of ``"Stable day"``, ``"Manageable day"``,
-        ``"Hard-to-read day"``, ``"Widespread danger"``, or
-        ``"Dangerous conditions"``.
+        A :class:`DayCharacter` carrying both the canonical label
+        (``"Stable day"``, ``"Manageable day"``, ``"Hard-to-read day"``,
+        ``"Widespread danger"``, or ``"Dangerous conditions"``) and a
+        one-line explainer for the eyebrow on the bulletin page.
 
     """
     danger_info = render_model.get("danger") or {}
@@ -879,7 +935,7 @@ def compute_day_character(render_model: dict[str, Any]) -> str:
 
     # Empty traits → quiet day, no problems to trigger any rule.
     if not traits:
-        return _("Stable day")  # type: ignore[return-value]
+        return _DAY_CHARACTER["stable"]
 
     problems: list[dict[str, Any]] = [
         p for trait in traits for p in (trait.get("problems") or [])
@@ -887,29 +943,29 @@ def compute_day_character(render_model: dict[str, Any]) -> str:
 
     # Rule 1 — Dangerous conditions: danger >= 4
     if danger >= 4:
-        return _("Dangerous conditions")  # type: ignore[return-value]
+        return _DAY_CHARACTER["dangerous"]
 
     # Rule 2 — Hard-to-read day: danger >= 2 and any hard-to-read problem
     if danger >= 2 and any(
         p.get("problem_type") in _HARD_TO_READ_PROBLEMS for p in problems
     ):
-        return _("Hard-to-read day")  # type: ignore[return-value]
+        return _DAY_CHARACTER["hard_to_read"]
 
     # Rule 3 — Widespread danger: danger == 3 and broad exposure
     if danger == 3 and _is_widespread(problems):
-        return _("Widespread danger")  # type: ignore[return-value]
+        return _DAY_CHARACTER["widespread"]
 
     # Rule 3b — Widespread danger: danger == 3 and upper subdivision (3+)
     if danger == 3 and subdivision == "+":
-        return _("Widespread danger")  # type: ignore[return-value]
+        return _DAY_CHARACTER["widespread"]
 
     # Rule 5 — Stable day
     if _is_stable(danger, problems):
-        return _("Stable day")  # type: ignore[return-value]
+        return _DAY_CHARACTER["stable"]
 
     # Rule 4 — Manageable day: danger 2 or 3 with no earlier match
     if danger in {2, 3}:
-        return _("Manageable day")  # type: ignore[return-value]
+        return _DAY_CHARACTER["manageable"]
 
     # Safe default
-    return _("Stable day")  # type: ignore[return-value]
+    return _DAY_CHARACTER["stable"]
