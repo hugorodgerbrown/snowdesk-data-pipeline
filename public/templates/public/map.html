@@ -375,6 +375,15 @@
                     <rect x="6" y="6" width="12" height="12" rx="1.5" />
                 </svg>
             </button>
+            <button
+                id="scrubber-speed"
+                type="button"
+                class="scrubber-speed"
+                aria-label='{% trans "Timelapse speed" %}'
+                data-speed="1"
+            >
+                1&times;
+            </button>
             <span class="season-scrubber-bound">{{ season_start|date:'M j'|upper }}</span>
             <div class="season-scrubber-track" aria-hidden="true">
                 <div class="season-scrubber-thumb" style="left: {{ today_pct }}%"></div>
