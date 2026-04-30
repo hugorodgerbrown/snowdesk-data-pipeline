@@ -33,6 +33,12 @@ DATABASES = {
 # (including the full test suite) are never throttled.
 RATELIMIT_ENABLE = False
 
+# Allow per-request flag overrides via ``?dwf_<flag_name>=1`` (or ``=0``)
+# while developing locally. Lets you flip a flag on the fly without
+# touching the DB or the admin. Production deliberately omits this — an
+# externally toggleable flag override would defeat the point of the gate.
+WAFFLE_OVERRIDE = True
+
 # Expose X-DB-Query-Count so local pages show the per-request SQL query
 # count in DevTools; also needed for `monitor_query_counts` locally.
 QUERY_COUNT_HEADER_ENABLED = True

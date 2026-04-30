@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     # Third-party
     "django_htmx",
     "csp",
+    "waffle",
     # Local
     "core",
     "pipeline",
@@ -68,6 +69,12 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # django-waffle. Reads request.user (populated by AuthenticationMiddleware
+    # immediately above) so per-user / superuser / staff flag targeting works.
+    # Adds ``request.waffles`` for view-side flag checks; mounts no URL conf
+    # because we don't expose a wafflejs endpoint (no JS-side flag checks
+    # yet). See ``docs/feature-flags.md``.
+    "waffle.middleware.WaffleMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
@@ -255,6 +262,27 @@ def _csp_filter_request(request):  # type: ignore[no-untyped-def]
 
 
 CSP_FILTER_REQUEST_FUNC = _csp_filter_request
+
+
+# ---------------------------------------------------------------------------
+# Feature flags (django-waffle)
+# ---------------------------------------------------------------------------
+# Server-side feature flagging via the ``waffle`` app. Flags target users
+# (``superusers``, ``staff``, individual ``users``, ``groups``, percentages)
+# and live in the DB; toggle them at ``/admin/waffle/flag/``. New flags are
+# introduced via a data migration in ``pipeline/migrations/`` (see
+# ``docs/feature-flags.md`` for the template).
+#
+# ``WAFFLE_FLAG_DEFAULT = False`` — a flag with no DB row evaluates to off.
+# This is the only safe default: a typo in a ``flag_is_active(...)`` call
+# fails closed instead of silently exposing the gated code path.
+#
+# ``WAFFLE_CREATE_MISSING_FLAGS = False`` — looking up an unknown flag must
+# not auto-create it. Flag rows are intentional configuration; we want them
+# created via the admin or a migration so reviewers see them in the diff.
+
+WAFFLE_FLAG_DEFAULT = False
+WAFFLE_CREATE_MISSING_FLAGS = False
 
 
 # ---------------------------------------------------------------------------

@@ -313,3 +313,4 @@ Read these when working in the relevant area:
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
 | Management command catalogue | [`docs/management-commands.md`](docs/management-commands.md) |
 | Nav partial implementation spec | [`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) |
+| Feature flags (django-waffle) | [`docs/feature-flags.md`](docs/feature-flags.md) |

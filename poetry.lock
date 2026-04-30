@@ -737,6 +737,24 @@ django = "*"
 typing-extensions = "*"
 
 [[package]]
+name = "django-waffle"
+version = "5.0.0"
+description = "A feature flipper for Django."
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "django_waffle-5.0.0-py3-none-any.whl", hash = "sha256:3312851d9d926b76b9e90712355781700a383b82b5bf2b61e1f1be97532c0f3d"},
+    {file = "django_waffle-5.0.0.tar.gz", hash = "sha256:62f9d00eedf68dafb82657beab56e601bddedc1ea1ccfef91d83df8658708509"},
+]
+
+[package.dependencies]
+django = ">=4.2"
+
+[package.extras]
+docs = ["sphinx", "sphinx-rtd-theme"]
+
+[[package]]
 name = "djangofmt"
 version = "0.2.7"
 description = "A fast, HTML aware, Django template formatter, written in Rust."
@@ -3196,4 +3214,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "03199535749d62138560a4adfb39a77c0688285b6b7534798adb6df24a00338c"
+content-hash = "a27594b08d78ddf976646370b0dcafdc8feb49b79e3ef9fee43afd03a3503a3f"
