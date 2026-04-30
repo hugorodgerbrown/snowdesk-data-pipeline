@@ -8,4 +8,4 @@ api_today_summaries 1
 api_resorts_by_region 2
 api_regions_geojson 1
 region_redirect 2
-bulletin_historic 8
+bulletin_historic 9

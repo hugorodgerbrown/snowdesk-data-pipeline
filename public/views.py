@@ -41,7 +41,7 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
-from django.db.models import Max
+from django.db.models import Max, Prefetch
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -1280,10 +1280,17 @@ def bulletin_detail(
     # ``region.subregion``) — without it, the subregion lookup adds a
     # second SELECT on every bulletin pageview. SNOW-13 query-count
     # monitor caught the +1 regression.
+    #
+    # ``neighbours`` is prefetched ordered-by-name so the "Adjoining
+    # regions" section in the template iterates in display order without
+    # a per-render sort.
     region = get_object_or_404(
-        Region.objects.select_related("subregion"),
+        Region.objects.select_related("subregion").prefetch_related(
+            Prefetch("neighbours", queryset=Region.objects.order_by("name")),
+        ),
         region_id__iexact=region_id,
     )
+    adjoining_regions = list(region.neighbours.all())
 
     # Warm the cache for future region_redirect lookups.
     cache.set(
@@ -1317,6 +1324,7 @@ def bulletin_detail(
                 "region_name": region.name,
                 "region_id": region.region_id,
                 "year": datetime.date.today().year,
+                "adjoining_regions": adjoining_regions,
             },
             bulletin=None,
         )
@@ -1399,6 +1407,8 @@ def bulletin_detail(
         # Masthead context.
         "day_windows": day_windows,
         "subregion_name": subregion_name,
+        # Geographic neighbours — see SNOW-82.
+        "adjoining_regions": adjoining_regions,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 

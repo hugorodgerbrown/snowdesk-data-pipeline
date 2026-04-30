@@ -586,3 +586,88 @@ class TestBulletinDetailIssueParam:
 
         assert response.status_code == 200
         assert response.context["page_date"] == date(2026, 3, 15)
+
+
+@pytest.mark.django_db
+class TestAdjoiningRegions:
+    """Tests for the adjoining-regions context entry and rendered section."""
+
+    def test_context_lists_neighbours_in_alphabetical_order(
+        self, client: Client, region
+    ) -> None:
+        """``adjoining_regions`` is sorted by name regardless of insertion order."""
+        zoulou = RegionFactory.create(region_id="CH-9991", name="Zoulou", slug="zoulou")
+        alpha = RegionFactory.create(region_id="CH-9992", name="Alpha", slug="alpha")
+        mike = RegionFactory.create(region_id="CH-9993", name="Mike", slug="mike")
+        # Insert in non-alphabetical order to prove the view sorts.
+        region.neighbours.set([zoulou, mike, alpha])
+
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin",
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
+            )
+            response = client.get(url)
+
+        names = [r.name for r in response.context["adjoining_regions"]]
+        assert names == ["Alpha", "Mike", "Zoulou"]
+
+    def test_section_renders_with_links_to_each_neighbour(
+        self, client: Client, region
+    ) -> None:
+        """The Adjoining Regions section emits a link per neighbour."""
+        neighbour = RegionFactory.create(
+            region_id="CH-9994", name="Bordering", slug="bordering"
+        )
+        region.neighbours.add(neighbour)
+
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin",
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
+            )
+            response = client.get(url)
+
+        content = response.content.decode()
+        expected_url = reverse(
+            "public:bulletin",
+            kwargs={"region_id": "CH-9994", "slug": "bordering"},
+        )
+        assert 'data-testid="adjoining-regions"' in content
+        assert "Bordering" in content
+        assert expected_url in content
+
+    def test_section_hidden_when_no_neighbours(self, client: Client, region) -> None:
+        """No neighbours seeded → no adjoining-regions section in the HTML."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin",
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
+            )
+            response = client.get(url)
+
+        assert response.context["adjoining_regions"] == []
+        assert b'data-testid="adjoining-regions"' not in response.content
+
+    def test_empty_state_includes_adjoining_regions(
+        self, client: Client, region
+    ) -> None:
+        """Even when there is no bulletin for the date, neighbours still render."""
+        neighbour = RegionFactory.create(
+            region_id="CH-9995", name="Border", slug="border"
+        )
+        region.neighbours.add(neighbour)
+
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin",
+                kwargs={"region_id": "CH-4115", "slug": "valais"},
+            )
+            response = client.get(url)
+
+        assert response.context["bulletin"] is None
+        assert list(response.context["adjoining_regions"]) == [neighbour]
+        assert b'data-testid="adjoining-regions"' in response.content
