@@ -895,3 +895,31 @@
 .scrubber-play[data-state="stopped"] .scrubber-stop-icon {
     display: none;
 }
+
+/* Speed cycler — sits to the right of the play button. Mirrors the play
+   button's pill geometry but swaps the filled circle for an outlined
+   capsule with the current multiplier as a numeric label. min-width
+   keeps the layout stable as the label cycles 1× / 2× / 4× / ½×. */
+.scrubber-speed {
+    flex: 0 0 auto;
+    height: 22px;
+    min-width: 32px;
+    margin: 0;
+    padding: 0 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    color: var(--ink);
+    border: 0.5px solid var(--border);
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+.scrubber-speed:hover {
+    background: rgba(0, 0, 0, 0.05);
+}

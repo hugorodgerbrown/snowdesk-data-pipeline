@@ -1683,7 +1683,13 @@ const clearRegionRepaint = () => {
   const button = document.getElementById('scrubber-play');
   if (!button) return;
 
-  const FRAME_MS = 100;  // 10 fps
+  // 1× = 10 fps. The speed-button cycles through SPEED_PRESETS; the
+  // active multiplier divides BASE_FRAME_MS to derive the setInterval
+  // delay. The 10ms floor in frameMs() guards against a future >10×
+  // preset starving the main thread.
+  const BASE_FRAME_MS = 200;
+  const SPEED_PRESETS = [1, 2, 4, 0.5];
+  const SPEED_STORAGE_KEY = 'snowdesk.map.timelapse-speed';
 
   // Drive the existing scrubber thumb so the playback position is
   // visible on the same control the user can drag.
@@ -1694,6 +1700,23 @@ const clearRegionRepaint = () => {
   const todayPct = scrubber ? parseFloat(scrubber.dataset.todayPct) : NaN;
   const todayKey = scrubber ? scrubber.dataset.today : null;
   const seasonSpanMs = seasonEndMs - seasonStartMs;
+
+  const speedButton = document.getElementById('scrubber-speed');
+  let speed = 1;
+  try {
+    const stored = parseFloat(localStorage.getItem(SPEED_STORAGE_KEY));
+    if (SPEED_PRESETS.includes(stored)) speed = stored;
+  } catch (_) {}
+
+  const frameMs = () => Math.max(10, Math.round(BASE_FRAME_MS / speed));
+
+  const formatSpeedLabel = (s) => (s === 0.5 ? '½×' : s + '×');
+
+  const renderSpeedButton = () => {
+    if (!speedButton) return;
+    speedButton.textContent = formatSpeedLabel(speed);
+    speedButton.dataset.speed = String(speed);
+  };
 
   const moveScrubber = (dateKey) => {
     if (!scrubberThumb || !Number.isFinite(seasonSpanMs) || seasonSpanMs <= 0) return;
@@ -1718,6 +1741,20 @@ const clearRegionRepaint = () => {
     repaintRegionsForDate(dateKey, cache);
     moveScrubber(dateKey);
     announce(dateKey);
+  };
+
+  // Hoisted so the speed-button handler can re-arm setInterval with the
+  // same callback when the user changes speed mid-playback.
+  const tick = () => {
+    frameIdx += 1;
+    if (frameIdx >= sortedDates.length) {
+      // Last frame already painted on the previous tick — stop here so
+      // the final value sits long enough to register before regions
+      // snap back to today.
+      stop();
+      return;
+    }
+    applyFrame(sortedDates[frameIdx]);
   };
 
   const stop = () => {
@@ -1752,17 +1789,7 @@ const clearRegionRepaint = () => {
     button.dataset.state = 'playing';
     button.setAttribute('aria-label', 'Stop season timelapse');
     applyFrame(sortedDates[frameIdx]);
-    timer = setInterval(() => {
-      frameIdx += 1;
-      if (frameIdx >= sortedDates.length) {
-        // Last frame already painted on the previous tick — stop here so
-        // the final value sits long enough to register before regions
-        // snap back to today.
-        stop();
-        return;
-      }
-      applyFrame(sortedDates[frameIdx]);
-    }, FRAME_MS);
+    timer = setInterval(tick, frameMs());
   };
 
   // When the scrubber commits a new date, the timelapse must surrender
@@ -1786,6 +1813,22 @@ const clearRegionRepaint = () => {
     if (timer !== null) stop();
     else start();
   });
+
+  if (speedButton) {
+    renderSpeedButton();
+    speedButton.addEventListener('click', () => {
+      const idx = SPEED_PRESETS.indexOf(speed);
+      speed = SPEED_PRESETS[(idx + 1) % SPEED_PRESETS.length];
+      try { localStorage.setItem(SPEED_STORAGE_KEY, String(speed)); } catch (_) {}
+      renderSpeedButton();
+      // Re-arm the running loop at the new rate without losing position
+      // so the user sees the speed change take effect immediately.
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = setInterval(tick, frameMs());
+      }
+    });
+  }
 })();
 
 // Always-visible date pill anchored next to the (i) legend toggle.

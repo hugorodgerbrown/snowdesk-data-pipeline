@@ -171,6 +171,22 @@ def test_map_page_renders_unified_time_controls():
 
 
 @pytest.mark.django_db
+def test_map_page_renders_timelapse_speed_button():
+    """
+    The timelapse speed cycler renders alongside the play button with the
+    1× default. The JS rehydrates ``data-speed`` and the visible label
+    from localStorage on first paint, but the markup contract is the
+    default — verifying it pins the entry point the JS hooks into.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'id="scrubber-speed"' in content
+    assert 'data-speed="1"' in content
+    assert "aria-label='Timelapse speed'" in content
+
+
+@pytest.mark.django_db
 def test_map_page_no_offline_toggle_or_precache_url():
     """SNOW-79: the SNOW-9 "Save offline" button and its data-attribute are gone.
 
