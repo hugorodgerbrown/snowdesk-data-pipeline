@@ -383,6 +383,18 @@ reachable via the SNOW-81 deep-link in the masthead.
         {# bulletin #}
 
         {% comment %}
+           Season-long heatmap calendar — one tile per day from
+           SEASON_START_DATE through today + 1, coloured by the EAWS
+           rating scale (SNOW-83). Sits between the metadata strip and
+           the adjoining-regions section, mirroring the SNOW-82 drop-in
+           pattern. Hidden when the helper returns an empty grid (e.g.
+           before season start).
+        {% endcomment %}
+        {% if season_calendar %}
+            {% include "public/partials/_season_calendar.html" %}
+        {% endif %}
+
+        {% comment %}
            Adjoining regions — geographic neighbours of the focal region.
            Computed from boundary polygons at fixture-build time and
            rehydrated via the symmetric Region.neighbours M2M (SNOW-82).

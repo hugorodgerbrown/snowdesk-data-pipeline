@@ -422,6 +422,17 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 .calendar-cell[data-rating-min="considerable"][data-rating-max="very_high"]  { background: linear-gradient(to top right, var(--color-eaws-considerable-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
 .calendar-cell[data-rating-min="high"][data-rating-max="very_high"]          { background: linear-gradient(to top right, var(--color-eaws-high-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
 
+/* —— Season-long heatmap (SNOW-83) ——————————————————————————————
+   Same .calendar-cell tokens as the month grid, but shrunk so a full
+   season fits in a single horizontal sweep on the bulletin page.
+   Tiles are square; the colour fills above (data-rating-min/max) all
+   apply unchanged.
+   ————————————————————————————————————————— */
+[data-testid="season-calendar"] .calendar-cell {
+    width: 0.75rem;
+    height: 0.75rem;
+}
+
 
 /* —— Bulletin masthead — date + calendar above region (SNOW-72) ————
    Date eyebrow + calendar trigger sit above the region H1, with the

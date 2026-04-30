@@ -66,6 +66,7 @@ from pipeline.services.render_model import (
 from pipeline.utils import html_to_markdown
 
 from .guidance import load_field_guidance
+from .season_calendar import build_season_grid
 
 logger = logging.getLogger(__name__)
 
@@ -1321,10 +1322,12 @@ def bulletin_detail(
             request,
             {
                 "bulletin": None,
+                "region": region,
                 "region_name": region.name,
                 "region_id": region.region_id,
                 "year": datetime.date.today().year,
                 "adjoining_regions": adjoining_regions,
+                "season_calendar": build_season_grid(region, target_date, today),
             },
             bulletin=None,
         )
@@ -1387,6 +1390,8 @@ def bulletin_detail(
         urlencode({"date": page_date.isoformat()}),
     )
 
+    season_calendar = build_season_grid(region, page_date, today)
+
     context = {
         "region": region,
         "region_name": region_name,
@@ -1404,6 +1409,8 @@ def bulletin_detail(
         "calendar_region_id": region.region_id,
         "calendar_partial_url": calendar_partial_url,
         "calendar_current_date": page_date,
+        # Season-long heatmap — see SNOW-83.
+        "season_calendar": season_calendar,
         # Masthead context.
         "day_windows": day_windows,
         "subregion_name": subregion_name,
