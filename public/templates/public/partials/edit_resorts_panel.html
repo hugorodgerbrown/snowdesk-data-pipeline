@@ -1,14 +1,19 @@
 {% load i18n %}
 {% comment %}
-    public/partials/edit_resorts_panel.html — SNOW-74 edit-resorts mode side panel.
+    public/partials/edit_resorts_panel.html — edit-resorts mode side panel.
 
     Rendered conditionally from public/map.html when the request hits
     /map/?edit=resorts AND settings.DEBUG is True. The DEBUG guard lives
     at the API endpoints; the panel just provides the UI affordance.
 
-    Hydrated by static/js/map_edit_resorts.js: queue rows, detail block,
-    and current/draft coordinate readouts are populated from
-    /api/edit/resorts/queue/ and updated as the operator clicks.
+    Hydrated by static/js/map_edit_resorts.js — the catalogue is fetched
+    once and rendered as a flat alphabetical list with Set/Unset/Review
+    pills (SNOW-85 manual workflow; replaces the SNOW-74 grouped queue
+    of unset resorts). The search input filters the same list in place.
+
+    Several DOM IDs (edit-resorts-queue, edit-resorts-remaining) keep
+    their SNOW-74 names for minimal-diff reasons even though they no
+    longer correspond to a queue concept — the JS comments explain.
 {% endcomment %}
 <aside
     id="edit-resorts-panel"
@@ -29,8 +34,8 @@
         </div>
         <p class="mt-1 text-xs text-slate-500">
             {% blocktrans trimmed %}
-                Click the map to drop a pin, drag to refine, then Save. Run <code>manage.py dump_resorts_fixture
-                    --commit</code> to persist to git.
+                Pick a resort, click the map to drop a pin (or paste lat/lon), then Save. Run
+                <code>manage.py dump_resorts_fixture --commit</code> to persist to git.
             {% endblocktrans %}
         </p>
     </header>
@@ -40,16 +45,18 @@
             id="edit-resorts-search"
             type="search"
             class="w-full rounded border border-slate-300 px-2 py-1 text-sm focus:border-sky-500 focus:outline-none"
-            placeholder='{% trans "Search any resort…" %}'
+            placeholder='{% trans "Filter resorts…" %}'
             autocomplete="off"
             spellcheck="false"
         >
-        <ul
-            id="edit-resorts-search-results"
-            class="mt-1 max-h-40 overflow-y-auto rounded border border-slate-200 bg-white text-sm"
-            hidden
-        >
-        </ul>
+        <label class="mt-2 flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+            <input
+                id="edit-resorts-hide-set"
+                type="checkbox"
+                class="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+            >
+            <span>{% trans "Hide already-set resorts" %}</span>
+        </label>
     </div>
 
     <div class="border-b border-slate-200 px-4 py-3">
@@ -57,7 +64,7 @@
             {% trans "Current target" %}
         </h3>
         <div id="edit-resorts-target" class="text-sm text-slate-900">
-            <p class="italic text-slate-400">{% trans "Loading queue…" %}</p>
+            <p class="italic text-slate-400">{% trans "No resort selected." %}</p>
         </div>
         <div class="mt-2 flex items-center gap-2">
             <label for="edit-resorts-paste" class="shrink-0 text-xs text-slate-500">{% trans "Paste:" %}</label>
@@ -87,13 +94,6 @@
             >
                 {% trans "Cancel" %}
             </button>
-            <button
-                type="button"
-                id="edit-resorts-skip"
-                class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-            >
-                {% trans "Skip" %}
-            </button>
         </div>
         <p
             id="edit-resorts-error"
@@ -105,7 +105,7 @@
 
     <div class="flex-1 overflow-y-auto px-4 py-3">
         <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            {% trans "Queue" %}
+            {% trans "Resorts" %}
         </h3>
         <ul id="edit-resorts-queue" class="space-y-1 text-sm">
             <li class="italic text-slate-400">{% trans "Loading…" %}</li>

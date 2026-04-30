@@ -583,97 +583,226 @@ def _validate_swiss_coords(lat: float, lon: float) -> str | None:
     return None
 
 
-def _serialise_queue_entry(resort: Resort) -> dict[str, Any]:
-    """Serialise a Resort to the queue payload shape."""
-    return {
-        "id": resort.pk,
-        "name": resort.name,
-        "name_alt": resort.name_alt,
-        "region_id": resort.region.region_id,
-        "region_name": resort.region.name,
-        "canton": resort.canton,
-        "latitude": resort.latitude,
-        "longitude": resort.longitude,
-        "needs_review": resort.needs_review,
-    }
-
-
-def _next_queue_entry(skip_pk: int) -> dict[str, Any] | None:
+def _point_in_polygon(lat: float, lon: float, polygon: dict[str, Any]) -> bool:
     """
-    Return the next queue entry after ``skip_pk``, or ``None`` if empty.
+    Return True if (lat, lon) lies inside a GeoJSON Polygon geometry.
 
-    Reads the queue afresh — the caller has just saved a row that may
-    or may not still match ``needs_geocoding()`` (it shouldn't, but the
-    filter is the source of truth).
+    Implements the standard ray-casting algorithm: cast a horizontal ray
+    east of the point and count how many polygon edges it crosses. Odd
+    crossings = inside. Looping over every ring (outer + any holes) at
+    once correctly handles holes: a point inside the outer ring but
+    inside a hole gets an even total and is reported as outside, which
+    is the right answer.
+
+    Polygon coordinates are stored in GeoJSON order as ``[lon, lat]``;
+    we rename to ``x, y`` here so the algorithm reads naturally. Edge
+    cases: a point exactly on a horizontal edge can flip either way
+    depending on tie-breaking, but we don't need pixel-perfect boundary
+    behaviour — the resort save-coords path uses this to pick a
+    *containing* region for an admin-placed pin, and the operator can
+    always nudge the pin if it lands ambiguously.
+
+    Args:
+        lat: Latitude of the test point (WGS 84).
+        lon: Longitude of the test point (WGS 84).
+        polygon: GeoJSON Polygon geometry as stored in
+            ``Region.boundary`` (``{"type": "Polygon", "coordinates":
+            [[[lon, lat], ...], ...]}``). Behaviour for non-Polygon
+            geometries is undefined — callers must pre-filter.
+
+    Returns:
+        True if the point lies inside the polygon.
+
     """
-    nxt = (
-        Resort.objects.needs_geocoding()
-        .exclude(pk=skip_pk)
-        .select_related("region")
-        .order_by("region__region_id", "name")
-        .first()
-    )
-    if nxt is None:
+    x, y = lon, lat
+    inside = False
+    for ring in polygon.get("coordinates", []):
+        # Iterate edges of this ring as (i-1, i) vertex pairs.
+        n = len(ring)
+        if n < 3:
+            continue
+        j = n - 1
+        for i in range(n):
+            xi, yi = ring[i]
+            xj, yj = ring[j]
+            # Standard ray-cast: count an edge crossing if the test
+            # point's y lies between the edge endpoints' y, AND the
+            # x of the edge at that y is to the right of the test
+            # point. The strict-inequality on yi/yj avoids
+            # double-counting at shared vertices.
+            if (yi > y) != (yj > y):
+                x_at_y = (xj - xi) * (y - yi) / (yj - yi) + xi
+                if x < x_at_y:
+                    inside = not inside
+            j = i
+    return inside
+
+
+def _bbox_of_polygon(
+    polygon: dict[str, Any],
+) -> tuple[float, float, float, float] | None:
+    """Return ``(west, south, east, north)`` of a GeoJSON Polygon's outer ring.
+
+    Returns ``None`` if the polygon has no usable ring. Used by
+    :func:`_region_for_point` as a cheap pre-filter so the full
+    ray-cast only runs on regions whose bbox could plausibly contain
+    the point.
+    """
+    rings = polygon.get("coordinates") or []
+    if not rings or not rings[0]:
         return None
-    return _serialise_queue_entry(nxt)
+    w = s = float("inf")
+    e = n = float("-inf")
+    for x, y in rings[0]:
+        if x < w:
+            w = x
+        if x > e:
+            e = x
+        if y < s:
+            s = y
+        if y > n:
+            n = y
+    return (w, s, e, n)
+
+
+def _region_for_point(lat: float, lon: float) -> Region | None:
+    """Return the Region whose boundary polygon contains (lat, lon).
+
+    Returns ``None`` if the point falls outside every region.
+
+    Iterates ``Region.objects.exclude(boundary__isnull=True)`` and runs
+    a bbox pre-filter followed by a full ray-cast. Used by the
+    edit-resorts save endpoint to auto-correct a resort's parent-region
+    FK when the saved pin lands outside the FK's polygon — some
+    imported resorts have wrong region tags (e.g. Villars-sur-Ollon
+    seeded as CH-1113 but actually in CH-1114), and the operator
+    placing a pin is the most authoritative signal we'll get.
+
+    The lookup is O(regions × ring vertices) Python — ~150 regions
+    each with a few hundred vertices means single-digit ms per call,
+    fine for an interactive admin tool.
+
+    Args:
+        lat: Latitude (WGS 84).
+        lon: Longitude (WGS 84).
+
+    Returns:
+        The first matching Region, or ``None``. "First" is in the
+        Region default ordering — ties (a point on a shared boundary)
+        are unlikely in practice and not worth disambiguating.
+
+    """
+    for region in Region.objects.exclude(boundary__isnull=True).iterator():
+        # The ``exclude(boundary__isnull=True)`` filter already drops
+        # null rows; the explicit guard here is for mypy's benefit
+        # (``Region.boundary`` is typed as Optional) and as defence in
+        # depth against a future schema/migration that lets nulls back
+        # in. ``assert`` would be the pythonic check but ruff's S101
+        # rejects assertions outside test code.
+        boundary = region.boundary
+        if boundary is None:
+            continue
+        bbox = _bbox_of_polygon(boundary)
+        if bbox is None:
+            continue
+        w, s, e, n = bbox
+        if not (w <= lon <= e and s <= lat <= n):
+            continue
+        if _point_in_polygon(lat, lon, boundary):
+            return region
+    return None
 
 
 @require_GET
 def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
-    """
-    Return the resort-edit queue + flat catalogue (DEBUG-only).
+    """Return the flat resort catalogue + L2 labels (DEBUG-only).
 
     Response shape::
 
         {
-          "queue":       [{queue-entry}, ...],     # needs_geocoding()
-          "all_resorts": [{catalogue-entry}, ...]  # everything, lightweight
+          "all_resorts": [{catalogue-entry}, ...],
+          "sub_regions": {"CH-41": "Lower Valais", ...}
         }
 
-    Queue order: ``region__region_id ASC, name ASC`` — groups resorts by
-    their parent region so the operator can sweep through one geographic
-    area at a time. The L1 prefix (first 4 chars, e.g. ``CH-4``) is the
-    natural break between sections in the panel UI.
+    Catalogue order is L2 prefix → L4 region_id → name. Sorting by
+    ``region__region_id`` groups entries by L2 (the L2 prefix is a
+    prefix of the full region_id) so the JS can detect L2 transitions
+    just by comparing the first 5 chars of consecutive rows'
+    ``region_id`` and emit a section header labelled with the L2 name
+    from ``sub_regions``.
+
+    Each catalogue entry carries the fields the side panel needs to
+    render a row and (on click) a full target readout: ``id``,
+    ``name``, ``region_id``, ``region_name``, ``canton``, ``latitude``,
+    ``longitude``, ``has_coords``, ``needs_review``.
+
+    ``sub_regions`` maps L2 prefixes (e.g. ``"CH-41"``) to a display
+    label — ``name_en`` when SLF publishes one, otherwise ``name_native``.
+    L1 grouping was tried first (SNOW-85 addendum 3) but L2 is a more
+    useful grouping for the operator: ~25 L2 sections of ~5–10
+    resorts each scans better than ~9 L1 sections of ~10–30.
+
+    The endpoint name and URL are kept from SNOW-74 (``edit_resorts_queue``,
+    ``/api/edit/resorts/queue/``) for minimal-diff reasons even though
+    the SNOW-85 manual workflow no longer surfaces a "queue" of unset
+    rows. Renaming the URL would require a coordinated panel-template
+    + JS update for no behavioural benefit.
 
     Returns 404 when ``settings.DEBUG`` is off.
     """
     _require_debug()
-    queue = [
-        _serialise_queue_entry(r)
-        for r in (
-            Resort.objects.needs_geocoding()
-            .select_related("region")
-            .order_by("region__region_id", "name")
-        )
-    ]
     all_resorts = [
         {
             "id": pk,
             "name": name,
             "region_id": region_id,
+            "region_name": region_name,
+            "canton": canton,
+            "latitude": lat,
+            "longitude": lon,
             "has_coords": lat is not None and lon is not None,
             "needs_review": needs_review,
         }
-        for pk, name, region_id, lat, lon, needs_review in (
+        for pk, name, region_id, region_name, canton, lat, lon, needs_review in (
             Resort.objects.select_related("region")
-            .order_by("name")
+            # L2 (e.g. "CH-41") is a prefix of L4 (e.g. "CH-4115"), so
+            # sorting on region_id alone groups rows by L2 in the right
+            # order. ``name`` breaks ties within a region.
+            .order_by("region__region_id", "name")
             .values_list(
                 "pk",
                 "name",
                 "region__region_id",
+                "region__name",
+                "canton",
                 "latitude",
                 "longitude",
                 "needs_review",
             )
         )
     ]
-    return JsonResponse({"queue": queue, "all_resorts": all_resorts})
+    # Prefer the English name when SLF publishes one (some L2 entries
+    # have ``name_en=""``); fall back to the locally-dominant name so
+    # the section header is never blank.
+    sub_regions = {
+        prefix: (name_en or name_native)
+        for prefix, name_en, name_native in EawsSubRegion.objects.values_list(
+            "prefix",
+            "name_en",
+            "name_native",
+        )
+    }
+    return JsonResponse(
+        {
+            "all_resorts": all_resorts,
+            "sub_regions": sub_regions,
+        }
+    )
 
 
 @require_POST
 def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonResponse:
-    """
-    Persist clicked latitude/longitude for a resort (DEBUG-only).
+    """Persist clicked latitude/longitude for a resort (DEBUG-only).
 
     Request body (JSON)::
 
@@ -681,8 +810,11 @@ def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonRespons
 
     On success, sets ``geocode_source="manual"``,
     ``geocode_confidence=1.0``, ``geocoded_at=now()``, and clears
-    ``needs_review``. Returns the updated resort plus the next queue
-    entry so the panel can advance without a follow-up GET.
+    ``needs_review``. Auto-rebinds ``resort.region`` if the saved
+    point lands inside a different region's polygon (SNOW-85). Returns
+    the updated resort fields including the (possibly re-bound)
+    ``region_id`` and ``region_name`` so the panel can patch its
+    in-memory catalogue without a follow-up GET.
 
     Errors:
         404 — DEBUG=False, or unknown ``resort_id``.
@@ -739,23 +871,44 @@ def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonRespons
     resort.geocode_confidence = 1.0
     resort.geocoded_at = timezone.now()
     resort.needs_review = False
-    resort.save(
-        update_fields=[
-            "latitude",
-            "longitude",
-            "geocode_source",
-            "geocode_confidence",
-            "geocoded_at",
-            "needs_review",
-            "updated_at",
-        ]
-    )
+    update_fields = [
+        "latitude",
+        "longitude",
+        "geocode_source",
+        "geocode_confidence",
+        "geocoded_at",
+        "needs_review",
+        "updated_at",
+    ]
+
+    # Auto-rebind the parent region from the clicked location. Some
+    # imported resorts have wrong region tags (e.g. Villars-sur-Ollon
+    # and Gryon were seeded as CH-1113 but sit in CH-1114) and the
+    # operator placing a pin is the most authoritative signal we'll
+    # get. If the saved point is outside every region polygon (rare,
+    # would need to be in a no-coverage gap), leave the FK alone
+    # rather than nulling it. We log when a rebind fires so a
+    # subsequent ``dump_resorts_fixture --commit`` makes the data
+    # change visible in the diff.
+    containing = _region_for_point(lat, lon)
+    if containing is not None and containing.pk != resort.region_id:
+        logger.info(
+            "edit_resort_save_coords: rebinding %s from %s to %s",
+            resort.name,
+            resort.region.region_id,
+            containing.region_id,
+        )
+        resort.region = containing
+        update_fields.append("region")
+
+    resort.save(update_fields=update_fields)
 
     return JsonResponse(
         {
             "id": resort.pk,
             "name": resort.name,
             "region_id": resort.region.region_id,
+            "region_name": resort.region.name,
             "latitude": resort.latitude,
             "longitude": resort.longitude,
             "geocode_source": resort.geocode_source,
@@ -764,7 +917,6 @@ def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonRespons
             if resort.geocoded_at
             else None,
             "needs_review": resort.needs_review,
-            "next_in_queue": _next_queue_entry(skip_pk=resort.pk),
         }
     )
 

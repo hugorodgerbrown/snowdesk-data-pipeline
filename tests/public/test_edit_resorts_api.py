@@ -19,7 +19,7 @@ import pytest
 from django.test import Client, override_settings
 from django.urls import reverse
 
-from tests.factories import RegionFactory, ResortFactory
+from tests.factories import EawsSubRegionFactory, RegionFactory, ResortFactory
 
 # ---------------------------------------------------------------------------
 # resorts_geojson
@@ -72,48 +72,120 @@ class TestResortsGeojson:
 class TestEditResortsQueue:
     """Tests for ``GET /api/edit/resorts/queue/`` (DEBUG-only)."""
 
-    def test_queue_contains_only_unset_or_review(self) -> None:
-        """Queue includes unset rows + review-flagged rows; excludes clean."""
-        # Explicit region_ids so the order is deterministic. Queue is
-        # sorted by ``region__region_id ASC, name ASC``.
-        region_a = RegionFactory.create(region_id="CH-1100")
-        region_b = RegionFactory.create(region_id="CH-2200")
-        unset = ResortFactory.create(name="bbb", region=region_b)
-        flagged = ResortFactory.create(
-            name="aaa",
-            region=region_a,
-            latitude=46.0,
-            longitude=7.0,
-            needs_review=True,
-        )
-        ResortFactory.create(  # Clean — should NOT appear in queue.
-            name="ccc",
-            region=region_a,
-            latitude=46.5,
-            longitude=7.5,
-            needs_review=False,
-        )
-
+    def test_response_shape(self) -> None:
+        """SNOW-85: response carries ``all_resorts`` and ``sub_regions``."""
+        ResortFactory.create(name="A", latitude=46.0, longitude=7.0)
+        ResortFactory.create(name="B")
         client = Client()
         resp = client.get(reverse("api:edit_resorts_queue"))
         assert resp.status_code == 200
         body = resp.json()
-        ids = [entry["id"] for entry in body["queue"]]
-        # Order: region_id ASC, name ASC — flagged is in CH-1100 (first),
-        # unset is in CH-2200 (second). needs_review is no longer a sort
-        # key; it remains a visual flag (rendered with ⚠ in the panel).
-        assert ids == [flagged.pk, unset.pk]
+        assert set(body.keys()) == {"all_resorts", "sub_regions"}
 
-    def test_all_resorts_includes_clean_geocoded(self) -> None:
-        """Catalogue includes every resort; ``has_coords`` reflects reality."""
+    def test_all_resorts_ordered_by_region_then_name(self) -> None:
+        """
+        Catalogue order is L1 → L4 → name. Sorting by ``region_id``
+        groups L1s together because the L1 prefix is a prefix of the
+        full region_id, and ``name`` breaks ties within a region.
+        """
+        ch1 = RegionFactory.create(region_id="CH-1100")
+        ch4a = RegionFactory.create(region_id="CH-4115")
+        ch4b = RegionFactory.create(region_id="CH-4116")
+        # Out-of-alphabetical-order names within and across regions —
+        # the server's sort is what we're asserting on.
+        ResortFactory.create(name="zzz", region=ch1)
+        ResortFactory.create(name="aaa", region=ch4b)
+        ResortFactory.create(name="mmm", region=ch4a)
+        ResortFactory.create(name="bbb", region=ch4a)
+        client = Client()
+        resp = client.get(reverse("api:edit_resorts_queue"))
+        body = resp.json()
+        ordered = [(e["region_id"], e["name"]) for e in body["all_resorts"]]
+        assert ordered == [
+            ("CH-1100", "zzz"),
+            ("CH-4115", "bbb"),
+            ("CH-4115", "mmm"),
+            ("CH-4116", "aaa"),
+        ]
+
+    def test_sub_regions_label_map(self) -> None:
+        """
+        ``sub_regions`` maps each L2 prefix to a display label.
+        Prefers ``name_en`` when SLF publishes one; falls back to
+        ``name_native`` so the label is never blank.
+
+        Uses fictional ``ZZ-`` prefixes to avoid collision with the
+        real EAWS fixture pre-loaded by migration 0012 (the factory
+        has ``django_get_or_create=("prefix",)`` so reusing CH-41
+        etc. would return the seeded row and ignore our overrides).
+        """
+        EawsSubRegionFactory.create(
+            prefix="ZZ-11",
+            name_en="Western Lower Alps",
+            name_native="Bas-Alpes occidentales",
+        )
+        EawsSubRegionFactory.create(
+            prefix="ZZ-41",
+            name_en="",  # SLF doesn't publish an English name for this one.
+            name_native="Unteres Wallis",
+        )
+        client = Client()
+        resp = client.get(reverse("api:edit_resorts_queue"))
+        body = resp.json()
+        sub_regions = body["sub_regions"]
+        assert sub_regions["ZZ-11"] == "Western Lower Alps"
+        assert sub_regions["ZZ-41"] == "Unteres Wallis"
+
+    def test_all_resorts_includes_every_resort(self) -> None:
+        """
+        Catalogue includes every resort regardless of geocoding state;
+        ``has_coords`` reflects reality. SNOW-85: with the manual
+        workflow, the operator works through the whole catalogue.
+        """
         clean = ResortFactory.create(name="A", latitude=46.0, longitude=7.0)
         unset = ResortFactory.create(name="B")
+        flagged = ResortFactory.create(
+            name="C",
+            latitude=46.0,
+            longitude=7.0,
+            needs_review=True,
+        )
         client = Client()
         resp = client.get(reverse("api:edit_resorts_queue"))
         body = resp.json()
         catalogue = {entry["id"]: entry for entry in body["all_resorts"]}
         assert catalogue[clean.pk]["has_coords"] is True
         assert catalogue[unset.pk]["has_coords"] is False
+        assert catalogue[flagged.pk]["needs_review"] is True
+
+    def test_all_resorts_carries_display_fields(self) -> None:
+        """
+        Catalogue entries carry the full display fields needed by the
+        side panel (region_name, canton, latitude, longitude) so the
+        panel can render a row's target readout without a follow-up
+        fetch. SNOW-85 widened the catalogue: previously selecting
+        Aigle (set, in CH-1111) showed blank lat/lon and zoomed to the
+        wrong region because the lookup path lost the data.
+        """
+        region = RegionFactory.create(region_id="CH-1111", name="Lower Chablais")
+        resort = ResortFactory.create(
+            name="Aigle",
+            region=region,
+            canton="VD",
+            latitude=46.318,
+            longitude=6.969,
+        )
+        client = Client()
+        resp = client.get(reverse("api:edit_resorts_queue"))
+        body = resp.json()
+        entry = next(e for e in body["all_resorts"] if e["id"] == resort.pk)
+        assert entry["region_id"] == "CH-1111"
+        assert entry["region_name"] == "Lower Chablais"
+        assert entry["canton"] == "VD"
+        assert entry["latitude"] == 46.318
+        assert entry["longitude"] == 6.969
+        assert entry["has_coords"] is True
+        assert entry["needs_review"] is False
 
 
 @pytest.mark.django_db
@@ -161,25 +233,13 @@ class TestEditResortSaveCoords:
         assert resort.geocoded_at is not None
         assert resort.needs_review is False
 
-    def test_response_advances_queue(self) -> None:
-        """The response's ``next_in_queue`` points at the next unset row."""
-        region = RegionFactory.create()
-        first = ResortFactory.create(name="aaa", region=region)
-        second = ResortFactory.create(name="bbb", region=region)
+    def test_response_does_not_carry_next_in_queue(self) -> None:
+        """SNOW-85 dropped auto-advance; ``next_in_queue`` is gone."""
+        resort = ResortFactory.create(name="A")
         client = Client()
-        resp = _post_coords(client, first.pk, latitude=46.0, longitude=7.0)
+        resp = _post_coords(client, resort.pk, latitude=46.0, longitude=7.0)
         assert resp.status_code == 200
-        next_entry = resp.json()["next_in_queue"]
-        assert next_entry is not None
-        assert next_entry["id"] == second.pk
-
-    def test_next_in_queue_null_when_queue_empty(self) -> None:
-        """When the queue empties on save, ``next_in_queue`` is null."""
-        only = ResortFactory.create(name="aaa")
-        client = Client()
-        resp = _post_coords(client, only.pk, latitude=46.0, longitude=7.0)
-        assert resp.status_code == 200
-        assert resp.json()["next_in_queue"] is None
+        assert "next_in_queue" not in resp.json()
 
     def test_unknown_resort_returns_404(self) -> None:
         """Posting against a non-existent resort id returns 404."""
@@ -240,6 +300,103 @@ class TestEditResortSaveCoords:
         resort.refresh_from_db()
         assert resort.needs_review is False
 
+    def test_save_rebinds_region_when_pin_falls_in_different_polygon(self) -> None:
+        """
+        Auto-rebind: if the saved point lands inside a different region's
+        polygon than the resort's current FK, update the FK. Some imported
+        resorts have wrong region tags (e.g. Villars-sur-Ollon was seeded
+        as CH-1113 but actually sits in CH-1114); the operator placing a
+        pin is the most authoritative signal we'll get.
+        """
+        # Two adjacent square polygons inside the Swiss bbox; the resort
+        # is FK'd to ``wrong_region`` but the saved pin falls inside
+        # ``correct_region``.
+        wrong_region = RegionFactory.create(
+            region_id="CH-1113",
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [[7.0, 46.0], [7.5, 46.0], [7.5, 46.5], [7.0, 46.5], [7.0, 46.0]],
+                ],
+            },
+        )
+        correct_region = RegionFactory.create(
+            region_id="CH-1114",
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [[7.5, 46.0], [8.0, 46.0], [8.0, 46.5], [7.5, 46.5], [7.5, 46.0]],
+                ],
+            },
+        )
+        resort = ResortFactory.create(name="Villars-sur-Ollon", region=wrong_region)
+        client = Client()
+        # Pin at lon=7.75, lat=46.25 — inside correct_region's polygon.
+        resp = _post_coords(client, resort.pk, latitude=46.25, longitude=7.75)
+        assert resp.status_code == 200
+        body = resp.json()
+        # Response carries the rebound region in both id and name.
+        assert body["region_id"] == "CH-1114"
+        assert body["region_name"] == correct_region.name
+        # DB row was updated.
+        resort.refresh_from_db()
+        assert resort.region_id == correct_region.pk
+
+    def test_save_keeps_region_when_pin_in_same_polygon(self) -> None:
+        """
+        No rebind when the saved point is already inside the FK'd
+        region's polygon — the existing region must be preserved, and
+        ``region`` must NOT be in the update_fields side effects.
+        """
+        region = RegionFactory.create(
+            region_id="CH-1111",
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [[6.0, 46.0], [7.5, 46.0], [7.5, 47.5], [6.0, 47.5], [6.0, 46.0]],
+                ],
+            },
+        )
+        resort = ResortFactory.create(name="Aigle", region=region)
+        client = Client()
+        resp = _post_coords(client, resort.pk, latitude=46.318, longitude=6.969)
+        assert resp.status_code == 200
+        assert resp.json()["region_id"] == "CH-1111"
+        resort.refresh_from_db()
+        assert resort.region_id == region.pk
+
+    def test_save_keeps_region_when_pin_outside_every_polygon(self) -> None:
+        """
+        Defensive: if the saved point falls in a no-coverage gap (outside
+        every region polygon), the FK is left alone rather than nulled.
+        """
+        # The only region with a boundary doesn't contain the saved pin.
+        far_region = RegionFactory.create(
+            region_id="CH-9999",
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [10.0, 47.0],
+                        [10.4, 47.0],
+                        [10.4, 47.4],
+                        [10.0, 47.4],
+                        [10.0, 47.0],
+                    ],
+                ],
+            },
+        )
+        original_region = RegionFactory.create(region_id="CH-1100")
+        resort = ResortFactory.create(name="Edge", region=original_region)
+        client = Client()
+        # Pin in the middle of Switzerland, well outside far_region.
+        resp = _post_coords(client, resort.pk, latitude=46.5, longitude=7.5)
+        assert resp.status_code == 200
+        assert resp.json()["region_id"] == "CH-1100"
+        resort.refresh_from_db()
+        assert resort.region_id == original_region.pk
+        assert far_region.pk != resort.region_id  # sanity
+
 
 @pytest.mark.django_db
 class TestEditResortSaveCoordsDebugGate:
@@ -266,6 +423,134 @@ class TestEditResortSaveCoordsDebugGate:
 # ---------------------------------------------------------------------------
 # Edit-mode rendering of /map/
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Geometry helpers (SNOW-85 — auto-rebind support)
+# ---------------------------------------------------------------------------
+
+
+class TestPointInPolygon:
+    """
+    Unit tests for the ray-casting point-in-polygon helper that backs
+    the resort-save auto-rebind. Direct tests on the helper rather than
+    only via the endpoint, so a regression here is diagnosable without
+    untangling Django/HTTP layers.
+    """
+
+    SQUARE: dict = {
+        "type": "Polygon",
+        "coordinates": [
+            # Outer ring — clockwise or counter-clockwise both work.
+            [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+        ],
+    }
+
+    SQUARE_WITH_HOLE: dict = {
+        "type": "Polygon",
+        "coordinates": [
+            [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+            # Hole in the middle.
+            [[4.0, 4.0], [6.0, 4.0], [6.0, 6.0], [4.0, 6.0], [4.0, 4.0]],
+        ],
+    }
+
+    def test_point_inside_polygon_returns_true(self) -> None:
+        """A point clearly inside the outer ring is reported as inside."""
+        from public.api import _point_in_polygon
+
+        assert _point_in_polygon(lat=5.0, lon=5.0, polygon=self.SQUARE) is True
+
+    def test_point_outside_polygon_returns_false(self) -> None:
+        """A point clearly outside the outer ring is reported as outside."""
+        from public.api import _point_in_polygon
+
+        assert _point_in_polygon(lat=20.0, lon=20.0, polygon=self.SQUARE) is False
+
+    def test_point_inside_hole_returns_false(self) -> None:
+        """
+        A point inside a hole is reported as outside — the standard
+        ray-cast over all rings flips parity correctly for holes.
+        """
+        from public.api import _point_in_polygon
+
+        assert (
+            _point_in_polygon(lat=5.0, lon=5.0, polygon=self.SQUARE_WITH_HOLE) is False
+        )
+
+    def test_point_outside_hole_but_inside_outer_returns_true(self) -> None:
+        """A point inside the outer ring but outside the hole is inside."""
+        from public.api import _point_in_polygon
+
+        assert (
+            _point_in_polygon(lat=2.0, lon=2.0, polygon=self.SQUARE_WITH_HOLE) is True
+        )
+
+    def test_empty_polygon_returns_false(self) -> None:
+        """A degenerate polygon with no rings is treated as empty."""
+        from public.api import _point_in_polygon
+
+        assert (
+            _point_in_polygon(
+                lat=0.0, lon=0.0, polygon={"type": "Polygon", "coordinates": []}
+            )
+            is False
+        )
+
+
+@pytest.mark.django_db
+class TestRegionForPoint:
+    """
+    Tests for the region lookup that ``edit_resort_save_coords`` uses
+    to auto-rebind a resort's parent region from its saved location.
+    """
+
+    def test_finds_containing_region(self) -> None:
+        """Returns the region whose polygon contains the test point."""
+        from public.api import _region_for_point
+
+        target = RegionFactory.create(
+            region_id="CH-A",
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [[7.0, 46.0], [8.0, 46.0], [8.0, 47.0], [7.0, 47.0], [7.0, 46.0]],
+                ],
+            },
+        )
+        # An adjacent region that does not contain the test point.
+        RegionFactory.create(
+            region_id="CH-B",
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [[8.0, 46.0], [9.0, 46.0], [9.0, 47.0], [8.0, 47.0], [8.0, 46.0]],
+                ],
+            },
+        )
+        assert _region_for_point(lat=46.5, lon=7.5) == target
+
+    def test_returns_none_outside_every_region(self) -> None:
+        """Returns ``None`` when the point falls in no coverage."""
+        from public.api import _region_for_point
+
+        RegionFactory.create(
+            region_id="CH-X",
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [[7.0, 46.0], [8.0, 46.0], [8.0, 47.0], [7.0, 47.0], [7.0, 46.0]],
+                ],
+            },
+        )
+        assert _region_for_point(lat=46.5, lon=10.0) is None
+
+    def test_skips_regions_without_boundary(self) -> None:
+        """Regions with ``boundary=None`` are excluded from the lookup."""
+        from public.api import _region_for_point
+
+        RegionFactory.create(region_id="CH-NOBOUND", boundary=None)
+        assert _region_for_point(lat=46.5, lon=7.5) is None
 
 
 @pytest.mark.django_db

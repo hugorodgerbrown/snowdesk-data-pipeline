@@ -36,17 +36,30 @@
   const targetEl                  = document.getElementById('edit-resorts-target');
   const saveBtn                   = document.getElementById('edit-resorts-save');
   const cancelBtn                 = document.getElementById('edit-resorts-cancel');
-  const skipBtn                   = document.getElementById('edit-resorts-skip');
   const errorEl                   = document.getElementById('edit-resorts-error');
   const searchInput               = document.getElementById('edit-resorts-search');
-  const searchResultsEl           = document.getElementById('edit-resorts-search-results');
+  const hideSetInput              = document.getElementById('edit-resorts-hide-set');
   const pasteInput                = document.getElementById('edit-resorts-paste');
 
+  // ``hide-set`` toggle preference is persisted across reloads — the
+  // operator commonly works through unset/review rows over multiple
+  // sessions and shouldn't have to re-flip the toggle each time.
+  const HIDE_SET_STORAGE_KEY = 'snowdesk.edit_resorts.hide_set';
+
   // State.
-  let queue          = [];   // Array of queue entries (resorts needing geocoding).
-  let allResorts     = [];   // Flat catalogue for the search box.
-  let currentTarget  = null; // The selected queue entry.
-  let draftMarker    = null; // MapLibre Marker, draggable.
+  //
+  // ``allResorts`` is the full catalogue rendered in the side panel
+  // — the operator works through the list manually, so there's no
+  // separate "queue" of unset rows any more (SNOW-85 simplified the
+  // workflow). ``currentTarget`` is the row the operator most
+  // recently clicked. ``subRegionLabels`` is a {prefix: name} map
+  // (e.g. {"CH-41": "Lower Valais"}) used for the L2 section headers
+  // in the resorts list.
+  let allResorts         = [];   // Full catalogue, sorted by region+name.
+  let subRegionLabels    = {};   // {prefix: name} for L2 section headers.
+  let currentTarget      = null; // The selected resort entry, or null.
+  let draftMarker        = null; // MapLibre Marker, draggable.
+  let selectedRegionFid  = null; // Numeric feature id of the highlighted region.
 
   // Format a coord pair to 5 decimal places (≈1m precision in Switzerland).
   const fmtCoord = (lat, lng) =>
@@ -62,53 +75,120 @@
     errorEl.hidden = true;
   };
 
+  // Header counter — "{set count} / {total} set". Replaces the
+  // SNOW-74 queue-remaining counter; with the manual workflow the
+  // operator wants progress feedback (how much of the catalogue is
+  // already placed) rather than queue depth.
   const renderRemaining = () => {
-    remainingEl.textContent = `${queue.length} ${queue.length === 1 ? 'left' : 'left'}`;
+    const total = allResorts.length;
+    const set = allResorts.reduce((acc, r) => acc + (r.has_coords ? 1 : 0), 0);
+    remainingEl.textContent = `${set} / ${total} set`;
   };
 
-  // L1 prefix — the first 4 chars of an SLF region_id (e.g. "CH-4115" → "CH-4")
-  // is the EAWS major-region key. Used to group the queue into geographic
-  // sections in the panel.
-  const l1Of = (regionId) => regionId.slice(0, 4);
+  // Status pill for a catalogue row. Three states with distinct colour
+  // coding so the operator can see at a glance which resorts are
+  // already placed vs still need work. Shared with the search filter
+  // (when active, the same rows render with the same pills).
+  const statusBadge = (m) => {
+    if (m.needs_review) {
+      return { label: 'Review', cls: 'bg-red-100 text-red-800' };
+    }
+    if (m.has_coords) {
+      return { label: 'Set', cls: 'bg-emerald-100 text-emerald-800' };
+    }
+    return { label: 'Unset', cls: 'bg-amber-100 text-amber-800' };
+  };
 
-  const renderQueue = () => {
+  // L2 prefix — the first 5 chars of an SLF region_id (e.g.
+  // "CH-4115" → "CH-41") is the EAWS sub-region key. Used to insert
+  // section headers between L2 groups in the resorts list.
+  const l2Of = (regionId) => regionId.slice(0, 5);
+
+  // "Set" rows are the ones the operator considers correct
+  // (geocoded and not flagged for review). When ``hide-set`` is on
+  // we drop these from the rendered list so the operator can sweep
+  // through only the rows that still need attention.
+  const isSet = (entry) => entry.has_coords && !entry.needs_review;
+
+  // Render the full resort catalogue — sorted by region_id then name
+  // server-side (SNOW-85) — with a Set/Unset/Review pill on every
+  // row and a section header before each L2 group, labelled with the
+  // L2 region's name (e.g. "Lower Valais" before all CH-411x rows).
+  // The search input and the hide-set toggle filter this same list
+  // in place; headers are emitted for whichever L2 groups have
+  // surviving rows after filtering.
+  //
+  // The DOM ID is still ``edit-resorts-queue`` for minimal-diff
+  // reasons — the element holds a list, not a queue, but renaming
+  // the ID would churn the panel template + every CSS selector for
+  // no real benefit.
+  const renderResortsList = () => {
     queueListEl.innerHTML = '';
-    if (queue.length === 0) {
+    const filter = searchInput.value.trim().toLowerCase();
+    const hideSet = !!(hideSetInput && hideSetInput.checked);
+    const rows = allResorts.filter((r) => {
+      if (filter && !r.name.toLowerCase().includes(filter)) return false;
+      if (hideSet && isSet(r)) return false;
+      return true;
+    });
+    if (rows.length === 0) {
       const empty = document.createElement('li');
       empty.className = 'italic text-slate-400';
-      empty.textContent = 'Queue empty — nice work.';
+      let msg = 'No resorts loaded.';
+      if (filter && hideSet) msg = 'No unset matches.';
+      else if (filter)       msg = 'No matches.';
+      else if (hideSet)      msg = 'All resorts are set — toggle off to see the rest.';
+      empty.textContent = msg;
       queueListEl.appendChild(empty);
       return;
     }
-    let lastL1 = null;
-    for (const entry of queue) {
-      const l1 = l1Of(entry.region_id);
-      if (l1 !== lastL1) {
-        // Section header for the L1 area. The first section gets no top
-        // margin/border via the first:* utilities so it sits flush with
-        // the queue list label.
+    let lastL2 = null;
+    for (const entry of rows) {
+      const l2 = l2Of(entry.region_id);
+      if (l2 !== lastL2) {
+        // Section header for the L2 area — shows the human-readable
+        // sub-region name with the prefix code as a subtitle for
+        // operators who think in codes. The first header gets no top
+        // margin/border via the first:* utilities so it sits flush
+        // with the list label.
+        const label = subRegionLabels[l2] || l2;
         const header = document.createElement('li');
-        header.className = 'mt-3 border-t border-slate-200 px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 first:mt-0 first:border-t-0 first:pt-0';
-        header.textContent = l1;
+        header.className = 'mt-3 flex items-baseline justify-between border-t border-slate-200 px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 first:mt-0 first:border-t-0 first:pt-0';
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = label;
+        header.appendChild(labelSpan);
+        const codeSpan = document.createElement('span');
+        codeSpan.className = 'font-mono text-[9px] text-slate-300';
+        codeSpan.textContent = l2;
+        header.appendChild(codeSpan);
         queueListEl.appendChild(header);
-        lastL1 = l1;
+        lastL2 = l2;
       }
 
       const li = document.createElement('li');
       const isCurrent = currentTarget && currentTarget.id === entry.id;
       li.className = [
-        'flex cursor-pointer items-baseline justify-between rounded px-2 py-1',
+        'flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-1',
         isCurrent ? 'bg-sky-100 font-semibold text-sky-900' : 'hover:bg-slate-100',
       ].join(' ');
       li.dataset.resortId = String(entry.id);
 
       const left = document.createElement('span');
-      left.textContent = entry.name;
+      left.className = 'flex items-baseline gap-2 truncate';
+      const name = document.createElement('span');
+      name.className = 'truncate';
+      name.textContent = entry.name;
+      left.appendChild(name);
+      const region = document.createElement('span');
+      region.className = 'shrink-0 text-xs text-slate-400';
+      region.textContent = entry.region_id;
+      left.appendChild(region);
       li.appendChild(left);
 
+      const badge = statusBadge(entry);
       const right = document.createElement('span');
-      right.className = 'text-xs text-slate-500';
-      right.textContent = entry.region_id + (entry.needs_review ? ' ⚠' : '');
+      right.className = `shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${badge.cls}`;
+      right.textContent = badge.label;
       li.appendChild(right);
 
       li.addEventListener('click', () => selectTarget(entry));
@@ -153,44 +233,147 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
 
+  // Region focus ------------------------------------------------------------
+  //
+  // The L4 region polygons are loaded by static/js/map.js into the
+  // ``regions`` source and indexed at module scope as
+  // ``FEATURE_BY_REGION_ID[regionId]``. We re-use that lookup to frame
+  // the map on the resort's parent region whenever the operator picks
+  // an unplaced resort, and to highlight the matching outline so
+  // "select" is literal as well as positional. The regions-line
+  // ``line-opacity`` paint expression is rewritten by
+  // ``enterEditModeVisuals`` to honour an ``edit-selected`` feature
+  // state, so toggling that state is all that's needed to swap which
+  // region's outline is bright.
+
+  // Compute the lng/lat bounding box of a GeoJSON Polygon or MultiPolygon
+  // feature. Mirrors the equivalent helper in static/js/map.js, which is
+  // closure-scoped inside the main IIFE there and not exported. The
+  // duplication is small (~12 lines) and avoids reshuffling map.js.
+  const featureBBoxOf = (feature) => {
+    const coords = feature.geometry.type === 'Polygon'
+      ? feature.geometry.coordinates
+      : feature.geometry.coordinates.flat();
+    let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+    for (const ring of coords) {
+      for (const [lng, lat] of ring) {
+        if (lng < w) w = lng;
+        if (lng > e) e = lng;
+        if (lat < s) s = lat;
+        if (lat > n) n = lat;
+      }
+    }
+    return [[w, s], [e, n]];
+  };
+
+  // Look up the region feature for an SLF region_id. Returns ``null``
+  // when the regions source isn't ready yet or the region has no
+  // boundary — callers must tolerate that.
+  const regionFeatureFor = (regionId) => {
+    if (typeof FEATURE_BY_REGION_ID === 'undefined' || !FEATURE_BY_REGION_ID) {
+      return null;
+    }
+    return FEATURE_BY_REGION_ID[regionId] || null;
+  };
+
+  const fitMapToRegion = (regionId) => {
+    if (typeof MAP === 'undefined' || !MAP) return;
+    const feature = regionFeatureFor(regionId);
+    if (!feature || !feature.geometry) return;
+    // Modest padding and a maxZoom cap — small regions otherwise zoom
+    // past the city-detail level we want for placing a pin.
+    MAP.fitBounds(featureBBoxOf(feature), {
+      padding: { top: 60, right: 380, bottom: 60, left: 60 }, // panel is 360px wide
+      maxZoom: 11,
+      duration: 400,
+    });
+  };
+
+  const clearSelectedRegion = () => {
+    if (selectedRegionFid === null) return;
+    if (typeof MAP === 'undefined' || !MAP) {
+      selectedRegionFid = null;
+      return;
+    }
+    try {
+      MAP.setFeatureState(
+        { source: 'regions', id: selectedRegionFid },
+        { 'edit-selected': false },
+      );
+    } catch (_) { /* source may not be installed yet */ }
+    selectedRegionFid = null;
+  };
+
+  const setSelectedRegion = (regionId) => {
+    clearSelectedRegion();
+    if (typeof MAP === 'undefined' || !MAP) return;
+    const feature = regionFeatureFor(regionId);
+    if (!feature || feature.id === undefined) return;
+    try {
+      MAP.setFeatureState(
+        { source: 'regions', id: feature.id },
+        { 'edit-selected': true },
+      );
+      selectedRegionFid = feature.id;
+    } catch (_) { /* source not ready — silently skip */ }
+  };
+
   // Selection ---------------------------------------------------------------
 
   const selectTarget = (entry) => {
+    // Track the region we were on *before* this selection so we can
+    // tell whether we're crossing region boundaries. Same-region
+    // navigation must preserve the operator's manual zoom — they
+    // commonly zoom in to place a precise pin on resort A then click
+    // resort B in the same region; flinging them back to the region
+    // bbox would force them to re-zoom every time.
+    const previousRegionId = currentTarget ? currentTarget.region_id : null;
+    const isRegionChange = entry.region_id !== previousRegionId;
+
     currentTarget = entry;
     clearError();
     removeDraftMarker();
+    // Highlight the parent region in both the placed-pin and unplaced
+    // cases — gives the operator a visual confirmation of which region
+    // their resort lives in. Idempotent on same-region (the
+    // setFeatureState writes the same value back).
+    setSelectedRegion(entry.region_id);
     // If the resort already has coords, pre-populate a draft marker so the
     // operator can drag-to-refine without first clicking-to-place.
     if (entry.latitude != null && entry.longitude != null) {
       placeDraftMarker(entry.longitude, entry.latitude);
-      // Pan to it so the operator can see what they're editing.
       if (typeof MAP !== 'undefined' && MAP) {
-        MAP.flyTo({ center: [entry.longitude, entry.latitude], zoom: 12 });
+        if (isRegionChange) {
+          // Crossed regions — frame on the new pin at zoom 12. flyTo
+          // animates both pan and zoom.
+          MAP.flyTo({ center: [entry.longitude, entry.latitude], zoom: 12 });
+        } else {
+          // Same region — preserve the current zoom level, just pan
+          // so the new pin sits roughly centred. panTo animates pan
+          // only, leaving zoom untouched.
+          MAP.panTo([entry.longitude, entry.latitude]);
+        }
       }
+    } else if (isRegionChange) {
+      // Unplaced resort in a new region — fit the map to that region's
+      // polygon so the operator can see the area before clicking to
+      // drop a pin. Without this, picking an unplaced resort leaves
+      // the view at the previous frame (typically the whole-Switzerland
+      // framing the map booted with).
+      fitMapToRegion(entry.region_id);
     }
-    renderQueue();
+    // Same-region unplaced selection: the operator's view is already
+    // good (they were just placing a pin in this region); do nothing.
+    renderResortsList();
     renderTarget();
   };
 
   const selectTargetById = (id) => {
-    const entry = queue.find((e) => e.id === id) || allResorts.find((e) => e.id === id);
-    if (!entry) return;
-    // If the search hit isn't a queue entry, normalise it to queue shape so
-    // selectTarget can render it. We need extra fields the catalogue lacks
-    // (region_name, canton, latitude, longitude, name_alt) — fetch by hitting
-    // the queue endpoint again would be wasteful for one row, so we fall
-    // back to whatever shape we have. The render function tolerates blanks.
-    if (!('region_name' in entry)) {
-      // Fetch the full catalogue entry once via a minimal GET — re-using
-      // the queue endpoint to keep the surface area tight.
-      fetch(QUEUE_URL).then((r) => r.json()).then((data) => {
-        const full = data.queue.find((e) => e.id === id)
-          || data.all_resorts.find((e) => e.id === id);
-        if (full) selectTarget(full);
-      });
-      return;
-    }
-    selectTarget(entry);
+    // The catalogue carries every resort with full display fields
+    // (region_name, canton, latitude, longitude) so a single lookup
+    // suffices — see public/api.py::edit_resorts_queue.
+    const entry = allResorts.find((e) => e.id === id);
+    if (entry) selectTarget(entry);
   };
 
   // Draft marker ------------------------------------------------------------
@@ -281,20 +464,35 @@
         return;
       }
       const data = await resp.json();
-      // Drop the saved row from the queue and advance.
-      queue = queue.filter((e) => e.id !== data.id);
-      removeDraftMarker();
-      currentTarget = null;
-      if (data.next_in_queue) {
-        // The server's next_in_queue is already in queue-entry shape; the
-        // queue array itself is computed fresh from the saved-list filter
-        // above, but the next pointer might reference a row we already
-        // know about (idempotent) or one that surfaced because the saved
-        // row had needs_review=True and pushed others up.
-        const known = queue.find((e) => e.id === data.next_in_queue.id);
-        selectTarget(known || data.next_in_queue);
+      // Patch the in-memory catalogue so the just-saved row's pill
+      // flips Unset → Set, and a subsequent search hit on the same
+      // resort renders the post-save state (new region_id from
+      // auto-rebind, new lat/lon, has_coords true) without a page
+      // reload. Catalogue order is by name, so no re-sort is needed.
+      const catIdx = allResorts.findIndex((r) => r.id === data.id);
+      if (catIdx !== -1) {
+        allResorts[catIdx] = {
+          ...allResorts[catIdx],
+          region_id:   data.region_id,
+          region_name: data.region_name,
+          latitude:    data.latitude,
+          longitude:   data.longitude,
+          has_coords:  true,
+          needs_review: data.needs_review,
+        };
       }
-      renderQueue();
+      // Keep the just-saved resort selected so the operator gets
+      // visual confirmation (panel readout still shows the resort,
+      // pill flips to Set on the list row). Patch ``currentTarget``
+      // to the post-save shape so re-clicking it doesn't read stale
+      // pre-save lat/lon. The auto-advance to the "next in queue"
+      // that SNOW-74 had is gone — the operator picks the next row
+      // themselves.
+      removeDraftMarker();
+      if (currentTarget && currentTarget.id === data.id) {
+        currentTarget = catIdx !== -1 ? allResorts[catIdx] : currentTarget;
+      }
+      renderResortsList();
       renderRemaining();
       renderTarget();
       refreshResortsLayer();
@@ -310,91 +508,13 @@
     renderTarget();
   };
 
-  const skip = () => {
-    if (!currentTarget) return;
-    removeDraftMarker();
-    const idx = queue.findIndex((e) => e.id === currentTarget.id);
-    const next = queue[idx + 1] || queue[0] || null;
-    currentTarget = next && next.id !== currentTarget.id ? next : null;
-    renderQueue();
-    renderTarget();
-  };
-
   // Search ------------------------------------------------------------------
-
-  const statusBadge = (m) => {
-    // Three states with distinct colour coding so the operator can see
-    // at a glance which resorts are already placed vs still need work.
-    if (m.needs_review) {
-      return { label: 'Review', cls: 'bg-red-100 text-red-800' };
-    }
-    if (m.has_coords) {
-      return { label: 'Set', cls: 'bg-emerald-100 text-emerald-800' };
-    }
-    return { label: 'Unset', cls: 'bg-amber-100 text-amber-800' };
-  };
-
-  const renderSearchResults = (matches) => {
-    searchResultsEl.innerHTML = '';
-    if (matches.length === 0) {
-      const li = document.createElement('li');
-      li.className = 'px-2 py-1 italic text-slate-400';
-      li.textContent = 'No matches.';
-      searchResultsEl.appendChild(li);
-      searchResultsEl.hidden = false;
-      return;
-    }
-    for (const m of matches.slice(0, 20)) {
-      const li = document.createElement('li');
-      li.className = 'flex cursor-pointer items-center justify-between gap-2 px-2 py-1 hover:bg-sky-50';
-      li.dataset.resortId = String(m.id);
-
-      const left = document.createElement('span');
-      left.className = 'flex items-baseline gap-2 truncate';
-      const name = document.createElement('span');
-      name.className = 'truncate text-slate-900';
-      name.textContent = m.name;
-      left.appendChild(name);
-      const region = document.createElement('span');
-      region.className = 'text-xs text-slate-400';
-      region.textContent = m.region_id;
-      left.appendChild(region);
-      li.appendChild(left);
-
-      const badge = statusBadge(m);
-      const right = document.createElement('span');
-      right.className = `shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${badge.cls}`;
-      right.textContent = badge.label;
-      li.appendChild(right);
-
-      li.addEventListener('click', () => {
-        searchInput.value = '';
-        searchResultsEl.hidden = true;
-        selectTargetById(m.id);
-      });
-      searchResultsEl.appendChild(li);
-    }
-    searchResultsEl.hidden = false;
-  };
-
-  // Sort once at hydration time so the dropdown is always alphabetical.
-  const sortedAllResorts = () =>
-    [...allResorts].sort((a, b) => a.name.localeCompare(b.name));
-
+  //
+  // The search input filters the main resorts list in place — there
+  // is no separate dropdown any more. Typing narrows the visible
+  // rows; clearing the box restores the full list.
   const onSearch = () => {
-    const q = searchInput.value.trim().toLowerCase();
-    const source = sortedAllResorts();
-    const matches = q
-      ? source.filter((r) => r.name.toLowerCase().includes(q))
-      : source;
-    renderSearchResults(matches);
-  };
-
-  // Show the full sorted list on focus so the operator can browse without
-  // typing — useful when correcting a placed resort whose name they don't
-  // remember exactly.
-  const onSearchFocus = () => {
-    if (allResorts.length > 0) renderSearchResults(sortedAllResorts());
+    renderResortsList();
   };
 
   // Resort points layer (existing geocoded resorts) -------------------------
@@ -452,7 +572,31 @@
     // Hide the choropleth fill + labels; dim the outlines for region context.
     try { MAP.setLayoutProperty('regions-fill', 'visibility', 'none'); } catch (_) {}
     try { MAP.setLayoutProperty('regions-label', 'visibility', 'none'); } catch (_) {}
-    try { MAP.setPaintProperty('regions-line', 'line-opacity', 0.2); } catch (_) {}
+    // Dim every region outline to 0.2 except the one currently selected
+    // for editing (feature-state ``edit-selected`` flipped on by
+    // ``setSelectedRegion``), which goes to full opacity. The same
+    // expression is re-applied on every basemap swap via the styledata
+    // handler at the end of this file, so the highlight survives a
+    // setStyle().
+    try {
+      MAP.setPaintProperty('regions-line', 'line-opacity', [
+        'case',
+        ['boolean', ['feature-state', 'edit-selected'], false], 1.0,
+        0.2,
+      ]);
+    } catch (_) { /* layer not yet installed */ }
+    // A slightly heavier stroke for the selected region helps it read
+    // against the swisstopo_winter basemap's contour clutter. Preserve
+    // SNOW-61's zoom-interpolation shape (interpolate at the top level,
+    // case as stops) so non-selected outlines still scale sensibly with
+    // zoom and don't drop sub-pixel at country view.
+    try {
+      MAP.setPaintProperty('regions-line', 'line-width', [
+        'interpolate', ['linear'], ['zoom'],
+        5, ['case', ['boolean', ['feature-state', 'edit-selected'], false], 3.0, 1.2],
+        9, ['case', ['boolean', ['feature-state', 'edit-selected'], false], 2.5, 0.6],
+      ]);
+    } catch (_) { /* layer not yet installed */ }
     // Hide normal-mode UI noise.
     const sheet = document.getElementById('sheet');
     if (sheet) sheet.style.display = 'none';
@@ -507,22 +651,25 @@
 
   // Boot --------------------------------------------------------------------
 
-  const loadQueue = async () => {
+  // Load the catalogue and render. No auto-select on first load — the
+  // operator picks the first resort themselves. (SNOW-74 auto-selected
+  // the head of the unset queue; that flow is gone with the manual
+  // workflow.)
+  const loadCatalogue = async () => {
     try {
       const resp = await fetch(QUEUE_URL);
       if (!resp.ok) {
-        showError(`Could not load queue (HTTP ${resp.status}).`);
+        showError(`Could not load resorts (HTTP ${resp.status}).`);
         return;
       }
       const data = await resp.json();
-      queue = data.queue || [];
       allResorts = data.all_resorts || [];
+      subRegionLabels = data.sub_regions || {};
       renderRemaining();
-      renderQueue();
-      if (queue.length > 0) selectTarget(queue[0]);
-      else renderTarget();
+      renderResortsList();
+      renderTarget();
     } catch (err) {
-      showError(`Could not load queue: ${err.message || err}`);
+      showError(`Could not load resorts: ${err.message || err}`);
     }
   };
 
@@ -530,16 +677,29 @@
 
   saveBtn.addEventListener('click', save);
   cancelBtn.addEventListener('click', cancel);
-  skipBtn.addEventListener('click', skip);
   searchInput.addEventListener('input', onSearch);
-  searchInput.addEventListener('focus', onSearchFocus);
   pasteInput.addEventListener('input', onPasteInput);
-  // Hide the dropdown when focus moves away — small delay so the click on a
-  // result li still registers (focus leaves the input the moment we click).
-  searchInput.addEventListener('blur', () => {
-    setTimeout(() => { searchResultsEl.hidden = true; }, 150);
-  });
   document.addEventListener('keydown', onKeyDown);
+
+  // Hide-set toggle: restore prior state from localStorage on boot
+  // (operators commonly leave this on across sessions while sweeping
+  // through unset rows), and persist on every change. Re-render on
+  // change so the list updates immediately.
+  if (hideSetInput) {
+    try {
+      hideSetInput.checked =
+        window.localStorage.getItem(HIDE_SET_STORAGE_KEY) === '1';
+    } catch (_) { /* private mode / disabled storage — start unchecked */ }
+    hideSetInput.addEventListener('change', () => {
+      try {
+        window.localStorage.setItem(
+          HIDE_SET_STORAGE_KEY,
+          hideSetInput.checked ? '1' : '0',
+        );
+      } catch (_) { /* swallow — toggle still works without persistence */ }
+      renderResortsList();
+    });
+  }
 
   // Hide the page-level header search (which covers regions + resorts) so
   // the operator has one search affordance — the panel's resort-only one.
@@ -565,6 +725,11 @@
             MAP.getLayoutProperty('regions-fill', 'visibility') !== 'none'
           ) {
             enterEditModeVisuals();
+            // The regions source has just been re-installed by
+            // map.js, which means the previous feature-state was
+            // wiped; re-apply the highlight for the active target so
+            // the selected outline survives a basemap swap.
+            if (currentTarget) setSelectedRegion(currentTarget.region_id);
           }
           // Re-add the points if the style swap dropped them.
           if (!MAP.getLayer(LAYER_ID)) {
@@ -575,5 +740,5 @@
     });
   }
 
-  loadQueue();
+  loadCatalogue();
 })();
