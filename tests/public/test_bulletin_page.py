@@ -1225,3 +1225,92 @@ class TestCalendarDismissScript:
         assert "hx-target=&quot;#bulletin-calendar-host&quot;" in content or (
             'hx-target="#bulletin-calendar-host"' in content
         )
+
+
+# ---------------------------------------------------------------------------
+# Test: day-character eyebrow (SNOW-8)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestDayCharacterEyebrow:
+    """
+    Day-character eyebrow above the Day Risk Profile heading.
+
+    The eyebrow surfaces the label produced by
+    ``compute_day_character`` along with a one-line static explainer.
+    It is suppressed in the error state (``render_model.version == 0``)
+    where the bulletin body is replaced by a warning panel.
+    """
+
+    def test_renders_label_and_explainer(self, client: Client, simple_bulletin, region):
+        """A normal bulletin renders the label + explainer in the eyebrow."""
+        url = _url("CH-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        # simple_bulletin is danger=2 with a wind_slab problem → the
+        # cascade resolves to Manageable day.
+        assert 'data-testid="day-character"' in content
+        assert 'data-testid="day-character-label"' in content
+        assert "Manageable day" in content
+        assert 'data-testid="day-character-explainer"' in content
+
+    def test_renders_hard_to_read_for_persistent_weak_layers(
+        self, client: Client, region
+    ):
+        """A bulletin with persistent weak layers renders the hard-to-read label."""
+        day = date(2026, 3, 20)
+        trait = {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Persistent weak layers",
+            "geography": {"source": "problems"},
+            "problems": [_problem(problem_type="persistent_weak_layers")],
+            "prose": None,
+            "danger_level": 3,
+        }
+        rm = _render_model_with_traits([trait])
+        rm["danger"] = {"key": "considerable", "number": "3", "subdivision": None}
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+
+        url = _url("CH-4115", "valais", "2026-03-20")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="day-character"' in content
+        assert "Hard-to-read day" in content
+
+    def test_eyebrow_precedes_day_risk_profile_heading(
+        self, client: Client, simple_bulletin, region
+    ):
+        """The eyebrow sits above the Day Risk Profile heading in DOM order."""
+        url = _url("CH-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        eyebrow_idx = content.index('data-testid="day-character"')
+        heading_idx = content.index('data-testid="day-risk-profile-heading"')
+        assert eyebrow_idx < heading_idx
+
+    def test_eyebrow_absent_in_error_state(self, client: Client, region):
+        """A version=0 error bulletin replaces the body and suppresses the eyebrow."""
+        from pipeline.services.render_model import RENDER_MODEL_VERSION
+
+        day = date(2026, 3, 21)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model={
+                "version": 0,
+                "error": "Synthetic test error — do not display",
+                "error_type": "RenderModelBuildError",
+            },
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data={
+                "type": "Feature",
+                "geometry": None,
+                "properties": {"dangerRatings": [{"mainValue": "moderate"}]},
+            },
+        )
+        url = _url("CH-4115", "valais", "2026-03-21")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="day-character"' not in content
