@@ -41,14 +41,6 @@ from pipeline.services.render_model import (
 
 logger = logging.getLogger(__name__)
 
-# Hard-to-read problem types — duplicated as a local constant rather
-# than imported from render_model so the CSV stays stable if the
-# private set there is ever renamed. Match what compute_day_character
-# checks (rule 2).
-_HARD_TO_READ_PROBLEMS: frozenset[str] = frozenset(
-    {"persistent_weak_layers", "gliding_snow"}
-)
-
 CSV_HEADERS: tuple[str, ...] = (
     # Identity
     "bulletin_id",
