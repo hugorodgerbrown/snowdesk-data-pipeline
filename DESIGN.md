@@ -10,7 +10,7 @@ It exists so that a new design-focused conversation can pick up where the previo
 
 ## Design tokens
 
-The canonical source of truth for all tokens is [`src/css/main.css`](src/css/main.css), which declares them in a Tailwind v4 `@theme` block. Tokens below are mirrored here for Claude Design import; when the CSS and this document disagree, the CSS wins.
+The canonical source of truth for all tokens is the W3C [DTCG](https://www.designtokens.org/) JSON under [`design/tokens/`](design/tokens/). Style Dictionary (`npm run tokens`) builds those sources into three outputs: a Tailwind v4 `@theme { }` block at `static/css/tokens.css` (gitignored, imported by [`src/css/main.css`](src/css/main.css)), a Tokens Studio shape at [`design/figma/tokens.json`](design/figma/tokens.json) (paste into the Figma plugin to round-trip designer edits back as JSON), and an auto-generated reference table at [`design/docs/tokens.md`](design/docs/tokens.md). Tokens below are mirrored here for Claude Design import; when the JSON sources and this document disagree, the JSON wins.
 
 ### Typography
 
@@ -78,7 +78,7 @@ Exact EAWS specification colours. Do not adjust for brand reasons — these are 
 | `--color-status-success-*` | `#d1fae5` / `#065f46` | `#14332a` / `#6ee7b7` | Success flash / badge |
 | `--color-status-info-*` | `#dbeafe` / `#1e40af` | `#1e2a4a` / `#93c5fd` | Info flash / badge |
 
-A dedicated warning-callout ramp (`--color-callout-warning-*`) exists for render-model error banners — see `src/css/main.css` for the full set.
+A dedicated warning-callout ramp (`--color-callout-warning-*`) exists for render-model error banners — see [`design/docs/tokens.md`](design/docs/tokens.md) for the full set.
 
 ### Radii
 
@@ -101,6 +101,7 @@ Content column inside `<nav>` and primary body copy: **640px max-width**, centre
 
 ### Token rules
 
+- **To change a token value, edit the DTCG JSON in [`design/tokens/`](design/tokens/) and run `npm run tokens`.** Never hand-edit `static/css/tokens.css` — it's a build artefact, gitignored, and overwritten on every rebuild.
 - Never hard-code hex values in templates or new CSS. Reference the token.
 - Use Tailwind utility classes (`text-text-1`, `bg-card`, `rounded-card`, etc.) in templates; custom CSS lives in `src/css/main.css` only when a utility can't express it (generated content, data-attribute selectors, HTML resets).
 - When contrast matters, use `text-text-1`, `text-text-2`, or the `--color-eaws-*-text` tokens. `text-text-3` sits on the WCAG AA boundary — never dim it further with `opacity-*`.
