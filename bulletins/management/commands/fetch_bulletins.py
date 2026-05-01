@@ -1,5 +1,5 @@
 """
-pipeline/management/commands/fetch_bulletins.py — Management command: fetch_bulletins.
+bulletins/management/commands/fetch_bulletins.py — Management command: fetch_bulletins.
 
 Fetches SLF bulletins from the CAAML API across a date range and (optionally)
 persists them to the database. Supersedes the previous fetch_data and
@@ -62,8 +62,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from bulletins.models import Bulletin, PipelineRun
-from pipeline.services.data_fetcher import run_pipeline
-from pipeline.services.slf_archive import merge, read_archive, write_archive
+from bulletins.services.data_fetcher import run_pipeline
+from bulletins.services.slf_archive import merge, read_archive, write_archive
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 """
-tests/pipeline/services/test_slf_archive.py — Tests for the SLF NDJSON archive.
+tests/bulletins/services/test_slf_archive.py — Tests for the SLF NDJSON archive.
 
-Covers the pure functions in ``pipeline.services.slf_archive``:
+Covers the pure functions in ``bulletins.services.slf_archive``:
   - read_archive: round-trip, missing-file safety, blank-line tolerance
   - merge: dedup by bulletinID with later-wins semantics, sort order
   - write_archive: atomic write, parent-dir creation
@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pipeline.services.slf_archive import merge, read_archive, write_archive
+from bulletins.services.slf_archive import merge, read_archive, write_archive
 
 
 def _record(bulletin_id: str, start_time: str, **overrides: Any) -> dict[str, Any]:

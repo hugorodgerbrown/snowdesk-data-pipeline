@@ -55,15 +55,15 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition
 
 from bulletins.models import Bulletin, RegionBulletin, RegionDayRating
-from pipeline.decorators import require_htmx
-from pipeline.models import Region
-from pipeline.schema import ValidTimePeriod
-from pipeline.services.render_model import (
+from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     build_render_model,
     compute_day_character,
 )
+from pipeline.decorators import require_htmx
+from pipeline.models import Region
+from pipeline.schema import ValidTimePeriod
 from pipeline.utils import html_to_markdown
 
 from .guidance import load_field_guidance
@@ -1857,7 +1857,7 @@ def enrich_render_model(
 
     Args:
         render_model: A render model dict as produced by
-            :func:`pipeline.services.render_model.build_render_model`.
+            :func:`bulletins.services.render_model.build_render_model`.
 
     Returns:
         A new render model dict with enriched trait problems.

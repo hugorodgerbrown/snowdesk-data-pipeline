@@ -1,10 +1,10 @@
 """
-pipeline/management/commands/export_day_character_csv.py — Day-character CSV export.
+bulletins/management/commands/export_day_character_csv.py — Day-character CSV export.
 
 Walks the ``Bulletin`` archive and emits one CSV row per bulletin capturing
 the canonical day-character key, its explainer, and every render_model
 input that feeds the five-rule cascade in
-``pipeline.services.render_model.compute_day_character``. The output is
+``bulletins.services.render_model.compute_day_character``. The output is
 designed so each row can be hand-verified against the cascade — danger
 level, subdivision, problem types, aspect counts, and the lowest
 elevation lower bound are all surfaced as their own columns.
@@ -33,7 +33,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from bulletins.models import Bulletin
-from pipeline.services.render_model import (
+from bulletins.services.render_model import (
     _DAY_CHARACTER,
     DayCharacter,
     compute_day_character,

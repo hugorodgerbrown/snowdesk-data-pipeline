@@ -1,5 +1,5 @@
 """
-tests/pipeline/management/commands/test_diagnose_region_coverage.py — Tests
+tests/bulletins/management/commands/test_diagnose_region_coverage.py — Tests
 for the ``diagnose_region_coverage`` management command.
 
 Covers:

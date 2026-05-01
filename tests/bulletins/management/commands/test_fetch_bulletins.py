@@ -1,5 +1,5 @@
 """
-tests/pipeline/management/commands/test_fetch_bulletins.py — Tests for fetch_bulletins.
+tests/bulletins/management/commands/test_fetch_bulletins.py — Tests for fetch_bulletins.
 
 Covers argument defaults (no-args invocation), --date / --start-date /
 --end-date semantics, --commit / --force forwarding, error handling, and
@@ -16,7 +16,7 @@ from django.core.management.base import CommandError
 from django.test import override_settings
 
 from bulletins.models import PipelineRun
-from pipeline.services.slf_archive import read_archive, write_archive
+from bulletins.services.slf_archive import read_archive, write_archive
 from tests.factories import BulletinFactory, PipelineRunFactory
 
 
@@ -75,7 +75,7 @@ def _make_failed_records_run(records_failed: int = 2) -> PipelineRun:
     )
 
 
-PATCH_TARGET = "pipeline.management.commands.fetch_bulletins.run_pipeline"
+PATCH_TARGET = "bulletins.management.commands.fetch_bulletins.run_pipeline"
 
 
 @pytest.mark.django_db
@@ -95,7 +95,7 @@ class TestFetchBulletinsCommand:
         mock_run.return_value = _make_successful_run()
 
         with patch(
-            "pipeline.management.commands.fetch_bulletins.timezone.localdate",
+            "bulletins.management.commands.fetch_bulletins.timezone.localdate",
             return_value=date(2026, 4, 16),
         ):
             call_command("fetch_bulletins")
@@ -129,7 +129,7 @@ class TestFetchBulletinsCommand:
         )
 
         with patch(
-            "pipeline.management.commands.fetch_bulletins.timezone.localdate",
+            "bulletins.management.commands.fetch_bulletins.timezone.localdate",
             return_value=date(2026, 4, 16),
         ):
             call_command("fetch_bulletins")
@@ -154,7 +154,7 @@ class TestFetchBulletinsCommand:
         )
 
         with patch(
-            "pipeline.management.commands.fetch_bulletins.timezone.localdate",
+            "bulletins.management.commands.fetch_bulletins.timezone.localdate",
             return_value=date(2026, 4, 16),
         ):
             call_command("fetch_bulletins", "--start-date", "2026-01-01")
@@ -276,7 +276,7 @@ class TestFetchBulletinsCommand:
         mock_run.return_value = _make_successful_run()
 
         with patch(
-            "pipeline.management.commands.fetch_bulletins.timezone.localdate",
+            "bulletins.management.commands.fetch_bulletins.timezone.localdate",
             return_value=date(2026, 4, 16),
         ):
             call_command("fetch_bulletins", "--start-date", "2026-04-01")

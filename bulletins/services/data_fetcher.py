@@ -1,5 +1,5 @@
 """
-pipeline/services/data_fetcher.py — Fetching and persisting SLF bulletins.
+bulletins/services/data_fetcher.py — Fetching and persisting SLF bulletins.
 
 Contains pure-ish functions that:
   1. Fetch a page of bulletins from the SLF CAAML API (fetch_bulletin_page).
@@ -27,13 +27,13 @@ import requests
 from django.conf import settings
 
 from bulletins.models import Bulletin, PipelineRun, RegionBulletin
-from pipeline.models import Region
-from pipeline.services.day_rating import apply_bulletin_day_ratings
-from pipeline.services.render_model import (
+from bulletins.services.day_rating import apply_bulletin_day_ratings
+from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     build_render_model,
 )
+from pipeline.models import Region
 
 logger = logging.getLogger(__name__)
 

@@ -16,13 +16,13 @@ from datetime import UTC
 import factory
 
 from bulletins.models import Bulletin, PipelineRun, RegionBulletin, RegionDayRating
+from bulletins.services.day_rating import DAY_RATING_VERSION
 from pipeline.models import (
     EawsMajorRegion,
     EawsSubRegion,
     Region,
     Resort,
 )
-from pipeline.services.day_rating import DAY_RATING_VERSION
 from subscriptions.models import Subscriber, Subscription
 
 

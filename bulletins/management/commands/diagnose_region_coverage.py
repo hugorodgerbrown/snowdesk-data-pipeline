@@ -1,5 +1,5 @@
 """
-pipeline/management/commands/diagnose_region_coverage.py — Diagnostic command.
+bulletins/management/commands/diagnose_region_coverage.py — Diagnostic command.
 
 Reports which Swiss regions are missing from ``RegionDayRating``, partitioning
 all regions in the fixture into three buckets:
@@ -37,8 +37,8 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from bulletins.models import Bulletin, RegionDayRating
+from bulletins.services.day_rating import _target_day
 from pipeline.models import Region
-from pipeline.services.day_rating import _target_day
 
 logger = logging.getLogger(__name__)
 

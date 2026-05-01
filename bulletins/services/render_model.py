@@ -1,5 +1,5 @@
 """
-pipeline/services/render_model.py — Render model builder for SLF avalanche bulletins.
+bulletins/services/render_model.py — Render model builder for SLF avalanche bulletins.
 
 Converts the raw CAAML properties dict stored in Bulletin.raw_data into a
 versioned, presentation-ready ``render_model`` dict. The render model is a

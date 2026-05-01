@@ -51,7 +51,7 @@ from core.models import BaseModel
 #
 # All three models are fixture-backed and treated as static reference
 # data. ``Region`` is NOT auto-created at bulletin-ingest time (see
-# ``pipeline.services.data_fetcher._get_region``); an unknown
+# ``bulletins.services.data_fetcher._get_region``); an unknown
 # ``region_id`` in an inbound bulletin raises ``UnknownRegionError`` so a
 # human can update the fixtures.
 #

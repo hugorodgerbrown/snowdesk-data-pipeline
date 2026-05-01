@@ -184,7 +184,7 @@ class BulletinQuerySet(models.QuerySet["Bulletin"]):
 
         Args:
             current_version: The current RENDER_MODEL_VERSION constant from
-                pipeline.services.render_model.
+                bulletins.services.render_model.
 
         Returns:
             A filtered queryset of stale Bulletin rows.

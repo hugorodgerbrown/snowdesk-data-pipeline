@@ -23,7 +23,7 @@ from django.test import Client
 from django.urls import reverse
 
 from bulletins.models import RegionDayRating
-from pipeline.services.render_model import RENDER_MODEL_VERSION
+from bulletins.services.render_model import RENDER_MODEL_VERSION
 from tests.factories import (
     BulletinFactory,
     RegionBulletinFactory,
