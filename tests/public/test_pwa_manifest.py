@@ -3,7 +3,11 @@
 Browsers only show the install affordance once the manifest declares
 real icons — every other PWA prereq was already in place. These tests
 guard the icon contract so a regression doesn't silently kill
-installability the way SNOW-9's empty ``icons: []`` did.
+installability the way SNOW-9's empty ``icons: []`` did. SNOW-87 added
+``start_url`` and ``scope`` assertions so the installed app launches on
+the home page and keeps every public path inside the standalone window
+(rather than escaping to a browser tab when the user navigates outside
+``/map/``).
 
 Only static-file-level facts are asserted here: shape of the JSON,
 presence of the size + purpose entries, and that the icon paths are
@@ -26,6 +30,24 @@ def _load_manifest() -> dict:
     """Read ``static/manifest.webmanifest`` from disk and parse as JSON."""
     parsed: dict = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
     return parsed
+
+
+def test_manifest_start_url_is_site_root() -> None:
+    """``start_url`` is ``/`` so the installed app opens the home page (SNOW-87)."""
+    manifest = _load_manifest()
+    assert manifest.get("start_url") == "/"
+
+
+def test_manifest_scope_is_site_root() -> None:
+    """``scope`` is ``/`` so every public path stays in the standalone window (SNOW-87).
+
+    Without an explicit ``scope``, the W3C default is the directory of
+    ``start_url`` — which on the previous ``/map/`` setting meant any
+    in-app link to ``/``, ``/region/<id>/``, ``/subscribe/``, etc.
+    escaped the standalone window into a regular browser tab.
+    """
+    manifest = _load_manifest()
+    assert manifest.get("scope") == "/"
 
 
 def test_manifest_declares_icons() -> None:

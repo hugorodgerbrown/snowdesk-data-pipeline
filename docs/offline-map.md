@@ -13,7 +13,7 @@ manifest icons.
 
 | Path | Role |
 |------|------|
-| `static/manifest.webmanifest` | Web app manifest. Declares name, icons, theme/background colour, `start_url=/map/`, `display=standalone`. Linked from `public/templates/public/base.html`. |
+| `static/manifest.webmanifest` | Web app manifest. Declares name, icons, theme/background colour, `start_url=/`, `scope=/`, `display=standalone`. Linked from `public/templates/public/base.html`. |
 | `static/js/sw.js` | The service worker itself (~150 lines). Stale-while-revalidate for static shell + the regions GeoJSON; network-first for HTML navigations; network-only for everything else. |
 | `static/js/sw_register.js` | Registers `/sw.js` at root scope on every public page. Loaded `defer` from `base.html` so the registration runs site-wide. |
 | `public/views.py::serve_sw` | Serves `/sw.js` with the `Service-Worker-Allowed: /` and `Cache-Control: no-cache` headers required for root-scope control + prompt SW updates. URL is registered in `public/urls.py`. |
@@ -33,9 +33,14 @@ the following are true:
 
 1. Page served over HTTPS (Render handles this on `*.onrender.com`).
 2. `<link rel="manifest" href="…">` present — added in `base.html`.
-3. Manifest declares `name`, `short_name`, `start_url`,
+3. Manifest declares `name`, `short_name`, `start_url`, `scope`,
    `display: standalone`, `theme_color`, `background_color` — already
-   set in `static/manifest.webmanifest`.
+   set in `static/manifest.webmanifest`. Both `start_url` and `scope`
+   are `/` so the installed app opens on the home page and every
+   public path (map, bulletins, subscribe, terms) stays inside the
+   standalone window. Without `scope: /`, the W3C default would be the
+   directory of `start_url`, which would push every other page out
+   into a regular browser tab (SNOW-87).
 4. Manifest `icons[]` carries at least one 192×192 and one 512×512
    PNG — generated from `static/favicon.svg` by
    `bin/build-pwa-icons`.
