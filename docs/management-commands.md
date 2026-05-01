@@ -94,6 +94,17 @@ poetry run python manage.py diagnose_region_coverage --verbose-table       # add
 # round-trips as ["CH-4115"] rather than a numeric pk.
 poetry run python manage.py dump_resorts_fixture           # preview diff only
 poetry run python manage.py dump_resorts_fixture --commit  # write the fixture
+
+# Export a CSV of day-character labels and the inputs that feed the
+# five-rule cascade in pipeline.services.render_model.compute_day_character.
+# One row per Bulletin. Pure SELECT — defaults to stdout, --output PATH
+# writes a file. Use --lang/--start-date/--end-date to narrow the scan.
+poetry run python manage.py export_day_character_csv > dc.csv               # whole archive
+poetry run python manage.py export_day_character_csv --lang de > dc-de.csv  # one language
+poetry run python manage.py export_day_character_csv \
+    --start-date 2026-01-01 --end-date 2026-01-31 --lang de --output dc.csv
+
+# Flags: --output PATH, --start-date YYYY-MM-DD, --end-date YYYY-MM-DD, --lang LANG
 ```
 
 `SEASON_START_DATE` is read from the environment in
