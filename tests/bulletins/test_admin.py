@@ -1,8 +1,9 @@
 """
-tests/pipeline/test_admin.py — Tests for the BulletinAdmin backfill view.
+tests/bulletins/test_admin.py — Tests for BulletinAdmin.
 
 Verifies that the backfill button triggers a pipeline run, shows
 appropriate success/error messages, and rejects non-POST requests.
+Also covers the SNOW-22 XSS-escaping helpers on the detail view.
 """
 
 from datetime import date
@@ -13,8 +14,8 @@ from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
+from bulletins.admin import BulletinAdmin
 from bulletins.models import PipelineRun
-from pipeline.admin import BulletinAdmin
 from tests.factories import PipelineRunFactory
 
 
@@ -41,7 +42,7 @@ class TestBackfillView:
             records_created=10,
             records_updated=2,
         )
-        with patch("pipeline.admin.run_pipeline", return_value=run) as mock_run:
+        with patch("bulletins.admin.run_pipeline", return_value=run) as mock_run:
             response = admin_client.post(BACKFILL_URL)
 
         mock_run.assert_called_once_with(
@@ -61,7 +62,7 @@ class TestBackfillView:
             records_created=5,
             records_updated=1,
         )
-        with patch("pipeline.admin.run_pipeline", return_value=run):
+        with patch("bulletins.admin.run_pipeline", return_value=run):
             response = admin_client.post(BACKFILL_URL, follow=True)
 
         messages = list(response.context["messages"])
@@ -75,7 +76,7 @@ class TestBackfillView:
             status=PipelineRun.Status.FAILED,
             error_message="API timeout",
         )
-        with patch("pipeline.admin.run_pipeline", return_value=run):
+        with patch("bulletins.admin.run_pipeline", return_value=run):
             response = admin_client.post(BACKFILL_URL, follow=True)
 
         messages = list(response.context["messages"])
@@ -84,7 +85,7 @@ class TestBackfillView:
 
     def test_exception_shows_error(self, admin_client: Client) -> None:
         """An exception during the pipeline shows an error message."""
-        with patch("pipeline.admin.run_pipeline", side_effect=RuntimeError("boom")):
+        with patch("bulletins.admin.run_pipeline", side_effect=RuntimeError("boom")):
             response = admin_client.post(BACKFILL_URL, follow=True)
 
         messages = list(response.context["messages"])
@@ -117,6 +118,7 @@ class TestAdminXssEscape:
     """
 
     def _admin(self) -> BulletinAdmin:
+        """Return a BulletinAdmin instance bound to the default admin site."""
         from django.contrib.admin import site
 
         from bulletins.models import Bulletin as BulletinModel
@@ -124,6 +126,7 @@ class TestAdminXssEscape:
         return BulletinAdmin(BulletinModel, site)
 
     def _bulletin(self, raw_properties: dict):
+        """Create a Bulletin with the given raw_data properties payload."""
         from tests.factories import BulletinFactory
 
         return BulletinFactory.create(raw_data={"properties": raw_properties})
