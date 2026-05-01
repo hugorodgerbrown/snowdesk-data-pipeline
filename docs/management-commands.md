@@ -126,3 +126,61 @@ snowpack build-up. Once the DB has bulletins, `fetch_bulletins` prefers
 the gentler default of "start at the latest bulletin's `valid_from` day"
 so scheduled runs only re-walk a small same-day overlap (duplicates are
 ignored downstream — it's the fetch that's being optimised).
+
+---
+
+## `fetch_weather` — fetch today's Open-Meteo weather for all regions
+
+Reads weather data from the Open-Meteo forecast API and optionally
+writes `WeatherSnapshot` rows (one per region). Read-only by default;
+the API is always called even without `--commit`, making a bare
+invocation a useful connectivity probe.
+
+> **Note:** The Render cron entry for scheduled runs must be added
+> separately in the Render dashboard — this command only provides the
+> Django management-command entry point.
+
+```bash
+# Read-only probe for today — no DB writes; real API call.
+poetry run python manage.py fetch_weather
+
+# Persist today's weather for all regions.
+poetry run python manage.py fetch_weather --commit
+
+# Persist weather for a specific date.
+poetry run python manage.py fetch_weather --date 2026-05-01 --commit
+
+# Flags:
+#   --date   YYYY-MM-DD  date to fetch for; default: today (local timezone)
+#   --commit             persist WeatherSnapshot rows; omit for a read-only run
+```
+
+---
+
+## `backfill_weather` — backfill historical weather for a date range
+
+Fetches historical weather from the Open-Meteo archive API for every
+region across a date range. Requires `--start` and `--end`. Read-only
+by default; pass `--commit` to persist. An optional `--delay` flag
+paces the API calls (seconds between region calls) for very long
+backfills.
+
+```bash
+# Dry-run probe for a full season window.
+poetry run python manage.py backfill_weather \
+    --start 2025-12-01 --end 2026-04-30
+
+# Persist the full season.
+poetry run python manage.py backfill_weather \
+    --start 2025-12-01 --end 2026-04-30 --commit
+
+# Pace calls (0.5 s between regions) for a multi-year historical backfill.
+poetry run python manage.py backfill_weather \
+    --start 2020-11-01 --end 2025-04-30 --delay 0.5 --commit
+
+# Flags:
+#   --start  YYYY-MM-DD  first date in the range (inclusive, required)
+#   --end    YYYY-MM-DD  last date in the range (inclusive, required)
+#   --commit             persist WeatherSnapshot rows; omit for read-only
+#   --delay  SECONDS     sleep N seconds between region archive calls (default 0)
+```

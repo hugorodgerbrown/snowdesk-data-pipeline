@@ -2,8 +2,9 @@
 bulletins/admin.py — Django admin registrations for bulletin models.
 
 Provides list views and detail views for Bulletin, RegionBulletin,
-RegionDayRating, and PipelineRun so that operators can inspect pipeline
-runs and bulletin data without needing direct database access.
+RegionDayRating, PipelineRun, and WeatherSnapshot so that operators can
+inspect pipeline runs and bulletin data without needing direct database
+access.
 
 Includes the SNOW-22 safe rendering helpers (danger_ratings,
 avalanche_problems, aggregation, weather_forecast, etc.) and the
@@ -20,7 +21,13 @@ from django.http import HttpRequest, HttpResponseRedirect
 from django.urls import URLPattern, path, reverse
 from django.utils.html import format_html, format_html_join
 
-from bulletins.models import Bulletin, PipelineRun, RegionBulletin, RegionDayRating
+from bulletins.models import (
+    Bulletin,
+    PipelineRun,
+    RegionBulletin,
+    RegionDayRating,
+    WeatherSnapshot,
+)
 from bulletins.services.data_fetcher import run_pipeline
 from pipeline.utils import html_to_markdown
 
@@ -532,3 +539,14 @@ class RegionDayRatingAdmin(admin.ModelAdmin):
     raw_id_fields = ("region", "source_bulletin")
     ordering = ("-date", "region__region_id")
     readonly_fields = ("uuid", "created_at", "updated_at")
+
+
+@admin.register(WeatherSnapshot)
+class WeatherSnapshotAdmin(admin.ModelAdmin):
+    """Admin view for WeatherSnapshot."""
+
+    list_display = ["id", "region", "valid_for_date", "weather_code", "fetched_at"]
+    list_filter = ["valid_for_date"]
+    search_fields = ["region__region_id", "region__name"]
+    readonly_fields = ["fetched_at"]
+    ordering = ["-valid_for_date", "region__region_id"]
