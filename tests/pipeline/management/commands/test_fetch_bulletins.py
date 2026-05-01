@@ -319,6 +319,38 @@ class TestFetchBulletinsCommand:
         assert kwargs["force"] is True
 
     # ------------------------------------------------------------------
+    # --delay
+    # ------------------------------------------------------------------
+
+    @patch(PATCH_TARGET)
+    def test_delay_defaults_to_zero(self, mock_run: MagicMock) -> None:
+        """Bare invocation forwards delay=0.0 — no throttling by default."""
+        mock_run.return_value = _make_successful_run()
+
+        call_command("fetch_bulletins", "--date", "2026-03-15")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["delay"] == 0.0
+
+    @patch(PATCH_TARGET)
+    def test_delay_forwarded_to_run_pipeline(
+        self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--delay forwards a positive float and surfaces in the banner."""
+        mock_run.return_value = _make_successful_run()
+
+        call_command("fetch_bulletins", "--date", "2026-03-15", "--delay", "2.5")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["delay"] == 2.5
+        assert "DELAY=2.5s" in capsys.readouterr().out
+
+    def test_negative_delay_rejected(self) -> None:
+        """Negative --delay values are rejected at argparse time."""
+        with pytest.raises(CommandError, match="delay must be non-negative"):
+            call_command("fetch_bulletins", "--date", "2026-03-15", "--delay", "-1")
+
+    # ------------------------------------------------------------------
     # Triggered-by label & error paths
     # ------------------------------------------------------------------
 

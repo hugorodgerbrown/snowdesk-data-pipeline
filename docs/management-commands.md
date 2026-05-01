@@ -40,6 +40,13 @@ poetry run python manage.py fetch_bulletins --commit --stash
 # settings.SLF_API_LOCAL_MIRROR_URL to be configured (development.py).
 poetry run python manage.py fetch_bulletins --source local-mirror --commit
 
+# Multi-year backfill — pace API calls to be a good citizen on the
+# public, no-auth SLF API. The delay applies between page fetches,
+# not between individual bulletins.
+poetry run python manage.py fetch_bulletins \
+    --start-date 2014-11-01 --end-date 2024-04-30 \
+    --delay 5 --commit
+
 # Flags:
 #   --start-date YYYY-MM-DD  default: latest DB bulletin's valid_from day,
 #                            or settings.SEASON_START_DATE when the DB is empty.
@@ -54,6 +61,11 @@ poetry run python manage.py fetch_bulletins --source local-mirror --commit
 #                            dev-only view; errors out if the mirror URL
 #                            setting is not configured.
 #   --stash                  append fetched bulletins to the on-disk archive
+#   --delay      SECONDS     default 0 (no pause). Sleep N seconds between
+#                            successive SLF API page fetches. Intended for
+#                            multi-year backfills where being a good citizen
+#                            on the public, no-auth API matters more than
+#                            wall-clock speed.
 
 # Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
 # Read-only by default — pass --commit to persist (same convention as fetch_bulletins).
