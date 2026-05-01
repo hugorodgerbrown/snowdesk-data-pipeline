@@ -139,9 +139,11 @@ class TestFetchWeatherForRegion:
             result = fetch_weather_for_region(region, target, commit=True)
 
         assert result is not None
-        assert result.region == region
-        assert result.valid_for_date == target
-        assert result.weather_code == 1
+        snapshot, created = result
+        assert created is True
+        assert snapshot.region == region
+        assert snapshot.valid_for_date == target
+        assert snapshot.weather_code == 1
         assert WeatherSnapshot.objects.filter(
             region=region, valid_for_date=target
         ).exists()
@@ -191,7 +193,9 @@ class TestFetchWeatherForRegion:
             result = fetch_weather_for_region(region, target, commit=True)
 
         assert result is not None
-        assert result.weather_code == 3
+        snapshot, created = result
+        assert created is False
+        assert snapshot.weather_code == 3
         # Still only one row.
         assert (
             WeatherSnapshot.objects.filter(region=region, valid_for_date=target).count()
@@ -227,8 +231,9 @@ class TestFetchWeatherForRegion:
             result = fetch_weather_for_region(region, target, commit=True)
 
         assert result is not None
-        assert result.sunrise.tzinfo is not None
-        assert result.sunset.tzinfo is not None
+        snapshot, _ = result
+        assert snapshot.sunrise.tzinfo is not None
+        assert snapshot.sunset.tzinfo is not None
 
     def test_correct_lat_lon_passed_to_api(self) -> None:
         """The region's centre lat/lon are forwarded to the Open-Meteo API."""
@@ -394,7 +399,9 @@ class TestFetchArchiveForRegion:
         ):
             result = fetch_archive_for_region(region, start, end, commit=True)
 
+        # result is a list of (snapshot, created) tuples.
         assert len(result) == 3
+        assert all(created is True for _, created in result)
         assert WeatherSnapshot.objects.filter(region=region).count() == 3
         codes = list(
             WeatherSnapshot.objects.filter(region=region)
@@ -464,7 +471,9 @@ class TestFetchArchiveForRegion:
             result = fetch_archive_for_region(region, target, target, commit=True)
 
         assert len(result) == 1
-        assert result[0].weather_code == 5
+        snapshot, created = result[0]
+        assert created is False
+        assert snapshot.weather_code == 5
         assert WeatherSnapshot.objects.filter(region=region).count() == 1
 
     def test_correct_date_range_params_passed_to_api(self) -> None:

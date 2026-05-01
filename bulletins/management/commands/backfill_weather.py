@@ -29,7 +29,6 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
-from bulletins.models import WeatherSnapshot
 from bulletins.services.weather_fetcher import (
     backfill_all_regions,
     fetch_archive_for_region,
@@ -222,22 +221,16 @@ def _backfill_with_delay(
             continue
 
         try:
-            existing_count = WeatherSnapshot.objects.filter(
-                region=region,
-                valid_for_date__gte=start,
-                valid_for_date__lte=end,
-            ).count()
-
-            snapshots = fetch_archive_for_region(region, start, end, commit=commit)
+            results = fetch_archive_for_region(region, start, end, commit=commit)
 
             if commit:
-                total = len(snapshots)
-                updated = min(existing_count, total)
-                created = total - updated
-                counts["created"] += created
-                counts["updated"] += updated
+                for _snapshot, created in results:
+                    if created:
+                        counts["created"] += 1
+                    else:
+                        counts["updated"] += 1
 
-        except Exception:
+        except Exception:  # noqa: BLE001 — broad catch intentional: per-region failure must not abort the batch
             logger.warning(
                 "Failed to backfill region=%s", region.region_id, exc_info=True
             )

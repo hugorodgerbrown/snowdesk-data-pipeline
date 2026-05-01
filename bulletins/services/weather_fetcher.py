@@ -5,7 +5,8 @@ Contains four functions:
 
   fetch_weather_for_region(region, target_date, *, commit)
       Fetches today's (or any single day's) weather for one region from the
-      Open-Meteo forecast endpoint and optionally persists a WeatherSnapshot.
+      Open-Meteo forecast endpoint. Returns ``(WeatherSnapshot, created)`` when
+      ``commit=True``, or ``None`` when ``commit=False``.
 
   fetch_all_regions(target_date, *, commit)
       Calls fetch_weather_for_region for every Region that has a centre
@@ -13,7 +14,8 @@ Contains four functions:
 
   fetch_archive_for_region(region, start_date, end_date, *, commit)
       Fetches historical weather for a date range from the Open-Meteo archive
-      endpoint and optionally persists WeatherSnapshot rows.
+      endpoint. Returns a list of ``(WeatherSnapshot, created)`` tuples when
+      ``commit=True``, or an empty list when ``commit=False``.
 
   backfill_all_regions(start_date, end_date, *, commit)
       Calls fetch_archive_for_region for every Region that has a centre
@@ -103,7 +105,7 @@ def fetch_weather_for_region(
     target_date: date,
     *,
     commit: bool,
-) -> WeatherSnapshot | None:
+) -> tuple[WeatherSnapshot, bool] | None:
     """
     Fetch and optionally persist today's weather snapshot for one region.
 
@@ -121,7 +123,9 @@ def fetch_weather_for_region(
             written and None is returned.
 
     Returns:
-        The created or updated WeatherSnapshot, or None when ``commit=False``.
+        A ``(WeatherSnapshot, created)`` tuple when ``commit=True``, where
+        ``created`` is True for a new row or False for an update. Returns
+        None when ``commit=False``.
 
     Raises:
         requests.HTTPError: If the Open-Meteo API returns a non-2xx status.
@@ -180,7 +184,7 @@ def fetch_weather_for_region(
         target_date,
         weather_code,
     )
-    return snapshot
+    return snapshot, created
 
 
 def fetch_all_regions(
@@ -214,11 +218,12 @@ def fetch_all_regions(
         "skipped": 0,
     }
 
-    regions = Region.objects.all().order_by("region_id")
+    # Materialise once so we can use len() without a second DB round-trip.
+    regions = list(Region.objects.order_by("region_id"))
     logger.info(
         "fetch_all_regions: date=%s regions=%d commit=%s",
         target_date,
-        regions.count(),
+        len(regions),
         commit,
     )
 
@@ -229,16 +234,14 @@ def fetch_all_regions(
             continue
 
         try:
-            existing = WeatherSnapshot.objects.filter(
-                region=region, valid_for_date=target_date
-            ).first()
-            fetch_weather_for_region(region, target_date, commit=commit)
-            if commit:
-                if existing is None:
+            result = fetch_weather_for_region(region, target_date, commit=commit)
+            if commit and result is not None:
+                _, created = result
+                if created:
                     counts["created"] += 1
                 else:
                     counts["updated"] += 1
-        except Exception:
+        except Exception:  # noqa: BLE001 — broad catch intentional: per-region failure must not abort the batch
             logger.warning(
                 "Failed to fetch weather for region=%s date=%s",
                 region.region_id,
@@ -263,7 +266,7 @@ def fetch_archive_for_region(
     end_date: date,
     *,
     commit: bool,
-) -> list[WeatherSnapshot]:
+) -> list[tuple[WeatherSnapshot, bool]]:
     """
     Fetch historical weather for a date range for one region.
 
@@ -280,7 +283,8 @@ def fetch_archive_for_region(
         commit: If True, persist snapshots to the database.
 
     Returns:
-        A list of WeatherSnapshot instances (empty when ``commit=False``).
+        A list of ``(WeatherSnapshot, created)`` tuples — one per day — when
+        ``commit=True``. Returns an empty list when ``commit=False``.
 
     Raises:
         requests.HTTPError: If the Open-Meteo archive API returns a non-2xx
@@ -323,7 +327,7 @@ def fetch_archive_for_region(
         )
         return []
 
-    snapshots: list[WeatherSnapshot] = []
+    snapshots: list[tuple[WeatherSnapshot, bool]] = []
     for date_str, code, sunrise_str, sunset_str in zip(
         dates, weather_codes, sunrises, sunsets
     ):
@@ -342,7 +346,7 @@ def fetch_archive_for_region(
             day,
             code,
         )
-        snapshots.append(snapshot)
+        snapshots.append((snapshot, created))
 
     return snapshots
 
@@ -380,12 +384,13 @@ def backfill_all_regions(
         "skipped": 0,
     }
 
-    regions = Region.objects.all().order_by("region_id")
+    # Materialise once so we can use len() without a second DB round-trip.
+    regions = list(Region.objects.order_by("region_id"))
     logger.info(
         "backfill_all_regions: start=%s end=%s regions=%d commit=%s",
         start_date,
         end_date,
-        regions.count(),
+        len(regions),
         commit,
     )
 
@@ -396,26 +401,18 @@ def backfill_all_regions(
             continue
 
         try:
-            # Count existing snapshots for this region/range before the call so
-            # we can distinguish created vs updated without inspecting each row.
-            existing_count = WeatherSnapshot.objects.filter(
-                region=region,
-                valid_for_date__gte=start_date,
-                valid_for_date__lte=end_date,
-            ).count()
-
-            snapshots = fetch_archive_for_region(
+            results = fetch_archive_for_region(
                 region, start_date, end_date, commit=commit
             )
 
             if commit:
-                total = len(snapshots)
-                updated = min(existing_count, total)
-                created = total - updated
-                counts["created"] += created
-                counts["updated"] += updated
+                for _snapshot, created in results:
+                    if created:
+                        counts["created"] += 1
+                    else:
+                        counts["updated"] += 1
 
-        except Exception:
+        except Exception:  # noqa: BLE001 — broad catch intentional: per-region failure must not abort the batch
             logger.warning(
                 "Failed to backfill weather for region=%s start=%s end=%s",
                 region.region_id,
