@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "csp",
     # Local
     "pipeline",
+    "bulletins",
     "public",
     "subscriptions",
 ]
@@ -389,6 +390,11 @@ LOGGING = {
             "propagate": False,
         },
         "pipeline": {
+            "handlers": ["console", "file_pipeline", "file_errors"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "bulletins": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",
             "propagate": False,
