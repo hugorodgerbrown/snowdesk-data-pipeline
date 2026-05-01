@@ -548,5 +548,7 @@ class WeatherSnapshotAdmin(admin.ModelAdmin):
     list_display = ["id", "region", "valid_for_date", "weather_code", "fetched_at"]
     list_filter = ["valid_for_date"]
     search_fields = ["region__region_id", "region__name"]
-    readonly_fields = ["fetched_at"]
+    list_select_related = ("region",)
+    raw_id_fields = ("region",)
+    readonly_fields = ("uuid", "created_at", "updated_at", "fetched_at")
     ordering = ["-valid_for_date", "region__region_id"]
