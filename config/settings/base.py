@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "django_htmx",
     "csp",
     # Local
+    "core",
     "pipeline",
     "public",
     "subscriptions",

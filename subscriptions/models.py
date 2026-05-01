@@ -16,7 +16,7 @@ import logging
 
 from django.db import models
 
-from pipeline.models import BaseModel
+from core.models import BaseModel
 
 logger = logging.getLogger(__name__)
 
