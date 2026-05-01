@@ -14,6 +14,7 @@ import datetime
 from datetime import UTC
 
 import factory
+from django.utils import timezone as django_timezone
 
 from bulletins.models import (
     Bulletin,
@@ -181,7 +182,7 @@ class WeatherSnapshotFactory(factory.django.DjangoModelFactory[WeatherSnapshot])
         model = WeatherSnapshot
 
     region = factory.SubFactory(RegionFactory)
-    valid_for_date = factory.LazyFunction(lambda: datetime.date.today())
+    valid_for_date = factory.LazyFunction(django_timezone.localdate)
     weather_code = 0  # clear sky
     sunrise = factory.LazyFunction(
         lambda: datetime.datetime(2026, 5, 1, 5, 30, tzinfo=UTC)
