@@ -139,8 +139,7 @@ def fetch_weather_for_region(
     params: dict[str, str] = {
         "latitude": str(centre["lat"]),
         "longitude": str(centre["lon"]),
-        "current": "weather_code",
-        "daily": "sunrise,sunset",
+        "daily": "weather_code,sunrise,sunset",
         "timezone": "auto",
         "forecast_days": "1",
         "start_date": target_date.isoformat(),

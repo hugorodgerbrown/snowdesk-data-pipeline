@@ -248,6 +248,23 @@ class TestFetchWeatherForRegion:
         assert params["latitude"] == "47.2"
         assert params["longitude"] == "8.1"
 
+    def test_forecast_params_shape(self) -> None:
+        """Forecast params must not include a 'current' key; weather_code is in 'daily'."""
+        region = RegionFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_forecast_response()
+        mock = _mock_get(api_data)
+
+        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_region(region, target, commit=False)
+
+        params = mock.call_args[1]["params"]
+        assert "current" not in params, "forecast params must not include 'current'"
+        daily_fields = params["daily"].split(",")
+        assert "weather_code" in daily_fields, "weather_code must be in daily params"
+        assert "sunrise" in daily_fields, "sunrise must be in daily params"
+        assert "sunset" in daily_fields, "sunset must be in daily params"
+
 
 # ---------------------------------------------------------------------------
 # fetch_all_regions
