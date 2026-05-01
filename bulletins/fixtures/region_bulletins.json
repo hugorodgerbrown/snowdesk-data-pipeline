@@ -1,6 +1,6 @@
 [
   {
-    "model": "pipeline.regionbulletin",
+    "model": "bulletins.regionbulletin",
     "pk": 1,
     "fields": {
       "bulletin": 1,
@@ -11,7 +11,7 @@
     }
   },
   {
-    "model": "pipeline.regionbulletin",
+    "model": "bulletins.regionbulletin",
     "pk": 2,
     "fields": {
       "bulletin": 2,
@@ -22,7 +22,7 @@
     }
   },
   {
-    "model": "pipeline.regionbulletin",
+    "model": "bulletins.regionbulletin",
     "pk": 3,
     "fields": {
       "bulletin": 3,
