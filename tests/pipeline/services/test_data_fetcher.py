@@ -10,7 +10,9 @@ Covers:
   - run_pipeline: full orchestration with mocked API pages
 """
 
+import json
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -30,6 +32,7 @@ from pipeline.services.data_fetcher import (
     _get_region,
     _normalise_response,
     _parse_dt,
+    _resolve_issued_at,
     fetch_bulletin_page,
     run_pipeline,
     upsert_bulletin,
@@ -151,6 +154,47 @@ class TestParseDt:
         result = _parse_dt("2025-03-15T08:00:00")
         assert result == datetime(2025, 3, 15, 8, 0, 0, tzinfo=UTC)
         assert result.tzinfo is UTC
+
+
+# ---------------------------------------------------------------------------
+# _resolve_issued_at
+# ---------------------------------------------------------------------------
+
+
+class TestResolveIssuedAt:
+    """Tests for _resolve_issued_at."""
+
+    def test_uses_publication_time_when_present(self):
+        """Modern bulletins return ``publicationTime`` parsed to UTC."""
+        raw = {
+            "publicationTime": "2025-03-15T08:00:00Z",
+            "validTime": {
+                "startTime": "2025-03-15T17:00:00Z",
+                "endTime": "2025-03-16T17:00:00Z",
+            },
+        }
+        assert _resolve_issued_at(raw) == datetime(2025, 3, 15, 8, 0, 0, tzinfo=UTC)
+
+    def test_falls_back_to_valid_time_start_when_missing(self):
+        """Pre-2024 bulletins lack publicationTime; fall back to validTime.startTime."""
+        raw = {
+            "validTime": {
+                "startTime": "2023-12-13T16:00:00Z",
+                "endTime": "2023-12-14T16:00:00Z",
+            },
+        }
+        assert _resolve_issued_at(raw) == datetime(2023, 12, 13, 16, 0, 0, tzinfo=UTC)
+
+    def test_falls_back_when_publication_time_is_empty_string(self):
+        """An empty publicationTime string is treated the same as missing."""
+        raw = {
+            "publicationTime": "",
+            "validTime": {
+                "startTime": "2023-12-13T16:00:00Z",
+                "endTime": "2023-12-14T16:00:00Z",
+            },
+        }
+        assert _resolve_issued_at(raw) == datetime(2023, 12, 13, 16, 0, 0, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +379,49 @@ class TestUpsertBulletin:
 
         bulletin = Bulletin.objects.get(bulletin_id="test-001")
         assert bulletin.next_update is None
+
+    def test_handles_missing_publication_time(self):
+        """Pre-2024 bulletins without publicationTime fall back to validTime.startTime."""
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin()
+        del raw["publicationTime"]
+        created = upsert_bulletin(raw, run)
+
+        assert created is True
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        # validTime.startTime in the helper default is 2025-03-15T17:00:00Z.
+        assert bulletin.issued_at == datetime(2025, 3, 15, 17, 0, 0, tzinfo=UTC)
+        assert bulletin.render_model_version == RENDER_MODEL_VERSION
+
+    def test_legacy_2023_fixture_ingests_cleanly(self):
+        """The real failing 2023 payload ingests without error after the fix."""
+        fixture_path = Path("sample_data/sample_legacy_no_publication_time.json")
+        # Sample fixtures are stored GeoJSON-wrapped; the SLF API delivers
+        # the bare ``properties`` payload that ``upsert_bulletin`` consumes.
+        raw = json.loads(fixture_path.read_text())["properties"]
+
+        # Seed the regions referenced by this real bulletin so _get_region
+        # finds them. RegionFactory generates a unique region_id per call by
+        # default, so we override explicitly per region.
+        for region in raw["regions"]:
+            RegionFactory.create(
+                region_id=region["regionID"],
+                name=region["name"],
+            )
+
+        run = PipelineRunFactory.create()
+        created = upsert_bulletin(raw, run)
+
+        assert created is True
+        bulletin = Bulletin.objects.get(bulletin_id="52873-A")
+        assert bulletin.issued_at == datetime(2023, 12, 13, 16, 0, 0, tzinfo=UTC)
+        assert bulletin.render_model_version == RENDER_MODEL_VERSION
+        # Both editorial groupings (dry/new_snow + wet/gliding_snow) should
+        # have been built into traits.
+        traits = bulletin.render_model["traits"]
+        assert [t["category"] for t in traits] == ["dry", "wet"]
+        # All 25 regions should be linked.
+        assert bulletin.regions.count() == 25
 
     def test_handles_empty_regions(self):
         """Bulletin with no regions creates no RegionBulletin rows."""
