@@ -161,12 +161,17 @@ poetry run python manage.py fetch_weather --date 2026-05-01 --commit
 
 Fetches historical weather from the Open-Meteo archive API for every
 region across a date range. Requires `--start` and `--end`. Read-only
-by default; pass `--commit` to persist. An optional `--delay` flag
-paces the API calls (seconds between region calls) for very long
-backfills.
+by default; pass `--commit` to persist.
+
+The Open-Meteo archive endpoint enforces a tight free-tier rate limit,
+so the command paces calls by default: `--delay` defaults to **1.0
+second** between successive per-region archive calls (~60 calls/minute,
+comfortably under the limit). Pass `--delay 0` to disable pacing if you
+have a paid plan or a tiny region count; raise it for very long
+backfills if you start to see 429 responses.
 
 ```bash
-# Dry-run probe for a full season window.
+# Dry-run probe for a full season window (paced at 1 s/region by default).
 poetry run python manage.py backfill_weather \
     --start 2025-12-01 --end 2026-04-30
 
@@ -174,13 +179,18 @@ poetry run python manage.py backfill_weather \
 poetry run python manage.py backfill_weather \
     --start 2025-12-01 --end 2026-04-30 --commit
 
-# Pace calls (0.5 s between regions) for a multi-year historical backfill.
+# Tighten pacing for a multi-year historical backfill.
 poetry run python manage.py backfill_weather \
-    --start 2020-11-01 --end 2025-04-30 --delay 0.5 --commit
+    --start 2020-11-01 --end 2025-04-30 --delay 2 --commit
+
+# Disable pacing (only if you have a paid Open-Meteo plan).
+poetry run python manage.py backfill_weather \
+    --start 2025-12-01 --end 2026-04-30 --delay 0 --commit
 
 # Flags:
 #   --start  YYYY-MM-DD  first date in the range (inclusive, required)
 #   --end    YYYY-MM-DD  last date in the range (inclusive, required)
 #   --commit             persist WeatherSnapshot rows; omit for read-only
-#   --delay  SECONDS     sleep N seconds between region archive calls (default 0)
+#   --delay  SECONDS     sleep N seconds between region archive calls
+#                        (default 1.0; pass 0 to disable pacing)
 ```

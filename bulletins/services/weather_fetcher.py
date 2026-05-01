@@ -33,6 +33,7 @@ rows are written.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import UTC, date, datetime
 from typing import Any, cast
 
@@ -356,6 +357,7 @@ def backfill_all_regions(
     end_date: date,
     *,
     commit: bool,
+    delay: float = 0.0,
 ) -> dict[str, int]:
     """
     Backfill historical weather snapshots for every Region with a centre.
@@ -368,6 +370,11 @@ def backfill_all_regions(
         start_date: First date in the backfill range (inclusive).
         end_date: Last date in the backfill range (inclusive).
         commit: If True, write snapshots to the database.
+        delay: Seconds to sleep between successive per-region archive
+            calls. ``0.0`` (default) is a no-op; positive values pace the
+            API to stay inside Open-Meteo's free-tier rate limit. The
+            sleep happens between regions only — never before the first
+            or after the last.
 
     Returns:
         A dict with integer counters:
@@ -387,14 +394,15 @@ def backfill_all_regions(
     # Materialise once so we can use len() without a second DB round-trip.
     regions = list(Region.objects.order_by("region_id"))
     logger.info(
-        "backfill_all_regions: start=%s end=%s regions=%d commit=%s",
+        "backfill_all_regions: start=%s end=%s regions=%d commit=%s delay=%s",
         start_date,
         end_date,
         len(regions),
         commit,
+        delay,
     )
 
-    for region in regions:
+    for idx, region in enumerate(regions):
         if not region.centre:
             logger.debug("Skipping region=%s — no centre coordinate", region.region_id)
             counts["skipped"] += 1
@@ -421,6 +429,10 @@ def backfill_all_regions(
                 exc_info=True,
             )
             counts["failed"] += 1
+
+        # Pace the API: sleep between regions, but not after the last one.
+        if delay > 0 and idx < len(regions) - 1:
+            time.sleep(delay)
 
     logger.info(
         "backfill_all_regions done: created=%d updated=%d failed=%d skipped=%d",

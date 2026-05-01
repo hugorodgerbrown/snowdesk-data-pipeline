@@ -8,7 +8,8 @@ Covers:
   - --commit forwards commit=True to the service.
   - Banner content (date range, day count, region count, READ-ONLY flag).
   - Raises CommandError with non-zero exit when failed > 0.
-  - --delay is accepted as a non-negative float.
+  - --delay defaults to 1.0 s and is forwarded to the service; --delay 0
+    disables pacing.
   - Success output when commit=True.
 """
 
@@ -258,45 +259,46 @@ class TestBackfillWeatherCommand:
     # --delay flag
     # ------------------------------------------------------------------
 
-    @patch("bulletins.management.commands.backfill_weather.time.sleep")
-    @patch("bulletins.management.commands.backfill_weather.fetch_archive_for_region")
-    def test_delay_flag_invokes_sleep_between_regions(
-        self,
-        mock_archive: MagicMock,
-        mock_sleep: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--delay causes sleep() to be called between region archive calls."""
-        # Two regions with centres.
-        RegionFactory.create()
-        RegionFactory.create()
-        mock_archive.return_value = []
+    @patch(PATCH_TARGET)
+    def test_default_delay_is_one_second(self, mock_backfill: MagicMock) -> None:
+        """Without an explicit --delay, the default 1.0 is forwarded to the service."""
+        mock_backfill.return_value = _make_counts()
 
         call_command(
             "backfill_weather",
             start=date(2026, 4, 1),
-            end=date(2026, 4, 1),
-            delay=0.5,
+            end=date(2026, 4, 30),
         )
 
-        # Sleep should be called once (between the two regions, not after the last).
-        mock_sleep.assert_called_once_with(0.5)
+        assert mock_backfill.call_args[1]["delay"] == 1.0
 
     @patch(PATCH_TARGET)
-    def test_no_delay_does_not_sleep(self, mock_backfill: MagicMock) -> None:
-        """Without --delay, the direct backfill_all_regions path is used (no sleep)."""
+    def test_explicit_delay_forwarded(self, mock_backfill: MagicMock) -> None:
+        """--delay is forwarded verbatim to backfill_all_regions."""
         mock_backfill.return_value = _make_counts()
 
-        with patch(
-            "bulletins.management.commands.backfill_weather.time.sleep"
-        ) as mock_sleep:
-            call_command(
-                "backfill_weather",
-                start=date(2026, 4, 1),
-                end=date(2026, 4, 1),
-            )
+        call_command(
+            "backfill_weather",
+            start=date(2026, 4, 1),
+            end=date(2026, 4, 30),
+            delay=2.5,
+        )
 
-        mock_sleep.assert_not_called()
+        assert mock_backfill.call_args[1]["delay"] == 2.5
+
+    @patch(PATCH_TARGET)
+    def test_zero_delay_forwarded(self, mock_backfill: MagicMock) -> None:
+        """--delay 0 disables pacing and forwards delay=0.0 to the service."""
+        mock_backfill.return_value = _make_counts()
+
+        call_command(
+            "backfill_weather",
+            start=date(2026, 4, 1),
+            end=date(2026, 4, 30),
+            delay=0,
+        )
+
+        assert mock_backfill.call_args[1]["delay"] == 0.0
 
     # ------------------------------------------------------------------
     # Output

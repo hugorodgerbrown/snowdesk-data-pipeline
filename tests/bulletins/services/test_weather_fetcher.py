@@ -610,3 +610,54 @@ class TestBackfillAllRegions:
 
         assert counts["updated"] == 1
         assert counts["created"] == 0
+
+    def test_delay_sleeps_between_regions(self) -> None:
+        """``delay > 0`` sleeps between regions but never after the last one."""
+        # Three regions with centres → two between-region gaps.
+        RegionFactory.create()
+        RegionFactory.create()
+        RegionFactory.create()
+        target = datetime.date(2026, 4, 28)
+        api_data = _make_archive_response(
+            dates=["2026-04-28"],
+            weather_codes=[0],
+            sunrises=["2026-04-28T05:40+02:00"],
+            sunsets=["2026-04-28T20:30+02:00"],
+        )
+
+        with (
+            patch(
+                "bulletins.services.weather_fetcher.requests.get",
+                _mock_get(api_data),
+            ),
+            patch("bulletins.services.weather_fetcher.time.sleep") as mock_sleep,
+        ):
+            backfill_all_regions(target, target, commit=True, delay=0.5)
+
+        # Two sleeps between three regions, none after the last.
+        assert mock_sleep.call_count == 2
+        for call in mock_sleep.call_args_list:
+            assert call.args == (0.5,)
+
+    def test_zero_delay_does_not_sleep(self) -> None:
+        """``delay=0`` (the service default) skips ``time.sleep`` entirely."""
+        RegionFactory.create()
+        RegionFactory.create()
+        target = datetime.date(2026, 4, 28)
+        api_data = _make_archive_response(
+            dates=["2026-04-28"],
+            weather_codes=[0],
+            sunrises=["2026-04-28T05:40+02:00"],
+            sunsets=["2026-04-28T20:30+02:00"],
+        )
+
+        with (
+            patch(
+                "bulletins.services.weather_fetcher.requests.get",
+                _mock_get(api_data),
+            ),
+            patch("bulletins.services.weather_fetcher.time.sleep") as mock_sleep,
+        ):
+            backfill_all_regions(target, target, commit=True, delay=0.0)
+
+        mock_sleep.assert_not_called()

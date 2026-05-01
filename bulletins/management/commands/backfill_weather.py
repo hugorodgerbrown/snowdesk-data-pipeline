@@ -5,34 +5,36 @@ Backfills Open-Meteo historical weather data (via the archive endpoint) for all
 regions across a date range. Read-only by default; pass --commit to write.
 
 Requires --start and --end (both YYYY-MM-DD). --end must be on or after --start.
-An optional --delay flag introduces a sleep between successive region calls (in
-seconds) to act as a good citizen on the Open-Meteo API.
+
+The Open-Meteo archive endpoint enforces a tight free-tier rate limit, so the
+command paces calls by default: ``--delay`` defaults to ``1.0`` seconds between
+successive per-region archive calls (~60 calls/minute, comfortably under the
+limit). Pass ``--delay 0`` to disable pacing if you have a paid Open-Meteo plan
+or are running a tiny region count.
 
 Usage:
-    # Dry-run probe for a winter season window.
+    # Dry-run probe for a winter season window (paced at 1 s/region by default).
     python manage.py backfill_weather --start 2025-12-01 --end 2026-04-30
 
     # Persist historical weather for the full season.
     python manage.py backfill_weather --start 2025-12-01 --end 2026-04-30 --commit
 
-    # Pace the calls (0.5 s between regions) for long backfills.
+    # Tighten or disable pacing.
     python manage.py backfill_weather \
-        --start 2024-11-01 --end 2025-04-30 --delay 0.5 --commit
+        --start 2024-11-01 --end 2025-04-30 --delay 2 --commit
+    python manage.py backfill_weather \
+        --start 2024-11-01 --end 2025-04-30 --delay 0 --commit
 """
 
 import argparse
 import logging
-import time
 from argparse import ArgumentParser
 from datetime import date
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
-from bulletins.services.weather_fetcher import (
-    backfill_all_regions,
-    fetch_archive_for_region,
-)
+from bulletins.services.weather_fetcher import backfill_all_regions
 from pipeline.models import Region
 
 logger = logging.getLogger(__name__)
@@ -93,12 +95,14 @@ class Command(BaseCommand):
         parser.add_argument(
             "--delay",
             type=_non_negative_float,
-            default=0.0,
+            default=1.0,
             metavar="SECONDS",
             help=(
-                "Sleep this many seconds between successive region archive calls. "
-                "Default 0 (no delay). Use for long backfills to be a considerate "
-                "Open-Meteo API consumer."
+                "Sleep this many seconds between successive per-region archive "
+                "calls. Default 1.0 — paces the run inside Open-Meteo's free-tier "
+                "rate limit (~60 calls/minute). Pass 0 to disable pacing if you "
+                "have a paid plan or a tiny region count; raise it for very long "
+                "backfills if you start to see 429 responses."
             ),
         )
 
@@ -140,10 +144,7 @@ class Command(BaseCommand):
             delay,
         )
 
-        if delay > 0:
-            counts = _backfill_with_delay(start, end, commit=commit, delay=delay)
-        else:
-            counts = backfill_all_regions(start, end, commit=commit)
+        counts = backfill_all_regions(start, end, commit=commit, delay=delay)
 
         if verbosity >= 1:
             if commit:
@@ -181,63 +182,3 @@ class Command(BaseCommand):
                 f"backfill_weather completed with {counts['failed']} region failure(s) "
                 f"for range {start}–{end}. Check logs for details."
             )
-
-
-def _backfill_with_delay(
-    start: date,
-    end: date,
-    *,
-    commit: bool,
-    delay: float,
-) -> dict[str, int]:
-    """
-    Backfill all regions, sleeping ``delay`` seconds between each region.
-
-    Mirrors the logic of ``backfill_all_regions`` but injects a sleep
-    between per-region archive calls so the command is a good citizen on
-    the Open-Meteo API during long historical backfills.
-
-    Args:
-        start: First date in the range (inclusive).
-        end: Last date in the range (inclusive).
-        commit: If True, persist snapshots to the database.
-        delay: Seconds to sleep between successive region calls.
-
-    Returns:
-        Aggregated counters (created, updated, failed, skipped).
-
-    """
-    counts: dict[str, int] = {
-        "created": 0,
-        "updated": 0,
-        "failed": 0,
-        "skipped": 0,
-    }
-
-    regions = list(Region.objects.all().order_by("region_id"))
-    for idx, region in enumerate(regions):
-        if not region.centre:
-            counts["skipped"] += 1
-            continue
-
-        try:
-            results = fetch_archive_for_region(region, start, end, commit=commit)
-
-            if commit:
-                for _snapshot, created in results:
-                    if created:
-                        counts["created"] += 1
-                    else:
-                        counts["updated"] += 1
-
-        except Exception:  # noqa: BLE001 — broad catch intentional: per-region failure must not abort the batch
-            logger.warning(
-                "Failed to backfill region=%s", region.region_id, exc_info=True
-            )
-            counts["failed"] += 1
-
-        # Sleep between regions, but not after the last one.
-        if idx < len(regions) - 1:
-            time.sleep(delay)
-
-    return counts
