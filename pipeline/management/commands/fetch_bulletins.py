@@ -43,8 +43,15 @@ Usage:
 
     # Bootstrap an empty DB end-to-end against the local mirror.
     python manage.py fetch_bulletins --source local-mirror --commit
+
+    # Multi-year backfill — pace API calls to be a good citizen on the
+    # public, no-auth SLF API.
+    python manage.py fetch_bulletins \
+        --start-date 2014-11-01 --end-date 2024-04-30 \
+        --delay 5 --commit
 """
 
+import argparse
 import logging
 from argparse import ArgumentParser
 from datetime import date
@@ -67,6 +74,23 @@ _START_SOURCE_SEASON_BACKSTOP = "season_backstop"
 _SOURCE_LIVE = "live"
 _SOURCE_LOCAL_MIRROR = "local-mirror"
 _SOURCE_CHOICES = (_SOURCE_LIVE, _SOURCE_LOCAL_MIRROR)
+
+
+def _non_negative_float(raw: str) -> float:
+    """
+    Argparse ``type=`` helper for non-negative float arguments.
+
+    Raises:
+        argparse.ArgumentTypeError: if the value is unparseable or negative.
+
+    """
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid float value: {raw!r}") from exc
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"delay must be non-negative (got {value})")
+    return value
 
 
 class Command(BaseCommand):
@@ -145,6 +169,18 @@ class Command(BaseCommand):
                 "--stash alone for a read-only archive refresh."
             ),
         )
+        parser.add_argument(
+            "--delay",
+            type=_non_negative_float,
+            default=0.0,
+            metavar="SECONDS",
+            help=(
+                "Sleep this many seconds between successive SLF API page "
+                "requests. Default 0 (no delay). Intended for multi-year "
+                "backfills where being a good citizen on the public, "
+                "no-auth API matters more than wall-clock speed."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
@@ -153,6 +189,7 @@ class Command(BaseCommand):
         force: bool = options["force"]
         stash: bool = options["stash"]
         source: str = options["source"]
+        delay: float = options["delay"]
         base_url = self._resolve_source(source)
         days = (end - start).days + 1
 
@@ -165,6 +202,7 @@ class Command(BaseCommand):
             start_source=start_source,
             source=source,
             stash=stash,
+            delay=delay,
         )
 
         collected: list[dict[str, Any]] = []
@@ -179,6 +217,7 @@ class Command(BaseCommand):
                 force=force,
                 base_url=base_url,
                 on_fetched=on_fetched,
+                delay=delay,
             )
         except Exception as exc:
             raise CommandError(f"Pipeline failed: {exc}") from exc
@@ -328,6 +367,7 @@ class Command(BaseCommand):
         start_source: str,
         source: str,
         stash: bool,
+        delay: float,
     ) -> None:
         """Write the start-of-run banner and matching log line."""
         flags: list[str] = []
@@ -339,6 +379,8 @@ class Command(BaseCommand):
             flags.append("STASH")
         if source != _SOURCE_LIVE:
             flags.append(f"SOURCE={source.upper()}")
+        if delay > 0:
+            flags.append(f"DELAY={delay:g}s")
         flag_label = " [" + ", ".join(flags) + "]" if flags else ""
 
         start_label = self._start_source_label(start_source)
@@ -352,7 +394,7 @@ class Command(BaseCommand):
         )
         logger.info(
             "fetch_bulletins started: %s to %s, %d day(s), "
-            "commit=%s, force=%s, stash=%s, source=%s, start_source=%s",
+            "commit=%s, force=%s, stash=%s, source=%s, delay=%s, start_source=%s",
             start,
             end,
             days,
@@ -360,6 +402,7 @@ class Command(BaseCommand):
             force,
             stash,
             source,
+            delay,
             start_source,
         )
 

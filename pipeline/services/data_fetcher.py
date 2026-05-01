@@ -17,6 +17,7 @@ fetch_bulletin_page() and upsert_bulletin() independently.
 """
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -360,6 +361,7 @@ def run_pipeline(
     force: bool = False,
     base_url: str | None = None,
     on_fetched: Callable[[dict[str, Any]], None] | None = None,
+    delay: float = 0.0,
 ) -> PipelineRun:
     """
     Orchestrate a full pipeline run over a date range.
@@ -383,6 +385,11 @@ def run_pipeline(
             wires this to a list collector so the on-disk archive
             captures everything the fetcher saw — independent of the
             date window or whether the bulletin was already in the DB.
+        delay: Seconds to sleep between successive page fetches. ``0.0``
+            (default) is a no-op; positive values pace the API to avoid
+            hammering the SLF server during multi-year backfills. The
+            sleep happens only between pages, never before the first
+            request or after the last.
 
     Returns:
         The completed (or failed) PipelineRun instance.
@@ -406,12 +413,13 @@ def run_pipeline(
 
     try:
         logger.info(
-            "Pipeline run %s: range %s–%s force=%s dry_run=%s",
+            "Pipeline run %s: range %s–%s force=%s dry_run=%s delay=%s",
             run.pk,
             start,
             end,
             force,
             dry_run,
+            delay,
         )
 
         while True:
@@ -438,6 +446,9 @@ def run_pipeline(
                 break
 
             offset += PAGE_SIZE
+
+            if delay > 0:
+                time.sleep(delay)
 
     except Exception as exc:
         run.mark_failed(exc)
