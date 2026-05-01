@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, cast
 
 import requests
 from django.utils import timezone as django_timezone
@@ -128,7 +128,7 @@ def fetch_weather_for_region(
         KeyError: If the expected fields are absent from the API response.
 
     """
-    centre = region.centre  # {"lon": float, "lat": float}
+    centre: dict[str, float] = cast(dict[str, float], region.centre)
     logger.debug(
         "Fetching forecast weather for region=%s date=%s commit=%s",
         region.region_id,
@@ -136,20 +136,17 @@ def fetch_weather_for_region(
         commit,
     )
 
-    response = requests.get(
-        FORECAST_URL,
-        params={
-            "latitude": centre["lat"],
-            "longitude": centre["lon"],
-            "current": "weather_code",
-            "daily": "sunrise,sunset",
-            "timezone": "auto",
-            "forecast_days": 1,
-            "start_date": target_date.isoformat(),
-            "end_date": target_date.isoformat(),
-        },
-        timeout=REQUEST_TIMEOUT,
-    )
+    params: dict[str, str] = {
+        "latitude": str(centre["lat"]),
+        "longitude": str(centre["lon"]),
+        "current": "weather_code",
+        "daily": "sunrise,sunset",
+        "timezone": "auto",
+        "forecast_days": "1",
+        "start_date": target_date.isoformat(),
+        "end_date": target_date.isoformat(),
+    }
+    response = requests.get(FORECAST_URL, params=params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     data: dict[str, Any] = response.json()
 
@@ -292,7 +289,7 @@ def fetch_archive_for_region(
         KeyError: If the expected fields are absent from the API response.
 
     """
-    centre = region.centre
+    centre: dict[str, float] = cast(dict[str, float], region.centre)
     logger.debug(
         "Fetching archive weather for region=%s start=%s end=%s commit=%s",
         region.region_id,
@@ -301,18 +298,15 @@ def fetch_archive_for_region(
         commit,
     )
 
-    response = requests.get(
-        ARCHIVE_URL,
-        params={
-            "latitude": centre["lat"],
-            "longitude": centre["lon"],
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-            "daily": "weather_code,sunrise,sunset",
-            "timezone": "auto",
-        },
-        timeout=REQUEST_TIMEOUT,
-    )
+    archive_params: dict[str, str] = {
+        "latitude": str(centre["lat"]),
+        "longitude": str(centre["lon"]),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "daily": "weather_code,sunrise,sunset",
+        "timezone": "auto",
+    }
+    response = requests.get(ARCHIVE_URL, params=archive_params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     data: dict[str, Any] = response.json()
 

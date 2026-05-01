@@ -244,8 +244,9 @@ class TestFetchWeatherForRegion:
 
         call_kwargs = mock.call_args
         params = call_kwargs[1]["params"]
-        assert params["latitude"] == 47.2
-        assert params["longitude"] == 8.1
+        # Params are passed as strings to keep the dict[str, str] type.
+        assert params["latitude"] == "47.2"
+        assert params["longitude"] == "8.1"
 
 
 # ---------------------------------------------------------------------------
