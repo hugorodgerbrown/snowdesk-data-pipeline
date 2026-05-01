@@ -46,8 +46,8 @@
 ```python
 import json
 from django.utils import timezone
-from pipeline.models import PipelineRun
-from pipeline.services.data_fetcher import upsert_bulletin
+from bulletins.models import PipelineRun
+from bulletins.services.data_fetcher import upsert_bulletin
 
 run = PipelineRun.objects.create(triggered_by="qa-setup")
 run.mark_running()
@@ -163,7 +163,7 @@ print("Done. 6 bulletins loaded.")
 |------|--------|-----------------|
 | 1 | Run `poetry run python manage.py rebuild_render_models` | Prints heading `Rebuilding render models (version=N) [READ-ONLY]` |
 | 2 | Read "Bulletins to process:" line | Shows `0` (all current bulletins fresh) and "Nothing to do." |
-| 3 | Manually set one bulletin's version to 0: `poetry run python manage.py shell -c "from pipeline.models import Bulletin; Bulletin.objects.filter(bulletin_id='stable-day-001').update(render_model_version=0)"` | Exits without error |
+| 3 | Manually set one bulletin's version to 0: `poetry run python manage.py shell -c "from bulletins.models import Bulletin; Bulletin.objects.filter(bulletin_id='stable-day-001').update(render_model_version=0)"` | Exits without error |
 | 4 | Re-run `poetry run python manage.py rebuild_render_models` | "Bulletins to process: 1" and "Read-only run complete — would have rebuilt 1 bulletin(s)… Pass --commit to persist." |
 | 5 | Shell check: `Bulletin.objects.get(bulletin_id="stable-day-001").render_model_version` | Prints `0` — version was not updated |
 
@@ -364,7 +364,7 @@ print("Done. 6 bulletins loaded.")
 
 ## Relevant source files
 
-- `pipeline/services/render_model.py` — builder + `compute_day_character` + `RenderModelBuildError`
+- `bulletins/services/render_model.py` — builder + `compute_day_character` + `RenderModelBuildError`
 - `pipeline/management/commands/rebuild_render_models.py` — management command
 - `public/views.py` — `_build_panel_context`, `_get_render_model`, `enrich_render_model`, safety net
 - `public/templates/public/_bulletin_panel.html` — trait rendering, error card, empty-traits card, prose-only branch

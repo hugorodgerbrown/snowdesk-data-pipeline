@@ -12,7 +12,7 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
 - `prose` — `{ snowpack_structure, weather_review, weather_forecast, tendency[] }`. Scalars are HTML strings or `None`. Each tendency entry has `{ comment, tendency_type, valid_from, valid_until }`.
 - `snowpack_structure` (top-level) is kept alongside `prose.snowpack_structure` for backward compatibility; both hold the same value. Will be dropped in v4.
 
-**Versioning**: `RENDER_MODEL_VERSION = 3` (in `pipeline/services/render_model.py`). Bump it and run `rebuild_render_models` whenever the output shape or builder logic changes. `BulletinQuerySet.needs_render_model_rebuild()` returns all rows with a stale version.
+**Versioning**: `RENDER_MODEL_VERSION = 3` (in `bulletins/services/render_model.py`). Bump it and run `rebuild_render_models` whenever the output shape or builder logic changes. `BulletinQuerySet.needs_render_model_rebuild()` returns all rows with a stale version.
 
 **Display enrichment** (SNOW-69): the stored render model is the canonical, version-stamped shape — but it isn't what templates consume. `enrich_render_model()` in `public/views.py` adds presentation-ready fields (problem labels, `ElevationBounds`, `field_guidance`, `hide_comment`) on top of each trait's problems before the data reaches the template. Both the bulletin page and the map drawer endpoint (`public.api.region_summary`) call it, so the two render paths share a single enriched shape. Keep purely-derivable presentation in the enrichment step rather than the builder — it stays out of the stored JSON, doesn't bump the version, and can change without a rebuild.
 
@@ -27,5 +27,5 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
 **Day character**: `compute_day_character(render_model)` is a pure function that classifies a render model into one of five labels (`"Stable day"`, `"Manageable day"`, `"Hard-to-read day"`, `"Widespread danger"`, `"Dangerous conditions"`). Empty `traits` → `"Stable day"` immediately.
 
 **Services**:
-- `pipeline/services/render_model.py` — `build_render_model()`, `compute_day_character()`, `RenderModelBuildError`, `RENDER_MODEL_VERSION`.
-- `pipeline/services/data_fetcher.py` — `upsert_bulletin` calls `build_render_model` inline (never via a signal); increments `run.records_failed` on `RenderModelBuildError`.
+- `bulletins/services/render_model.py` — `build_render_model()`, `compute_day_character()`, `RenderModelBuildError`, `RENDER_MODEL_VERSION`.
+- `bulletins/services/data_fetcher.py` — `upsert_bulletin` calls `build_render_model` inline (never via a signal); increments `run.records_failed` on `RenderModelBuildError`.

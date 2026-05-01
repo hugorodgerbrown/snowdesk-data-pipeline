@@ -7,7 +7,7 @@ is a server-rendered HTMX fragment backed by a denormalised per-(region,
 date) rating table — no JSON API, no per-day render-model reads at
 request time.
 
-**Model**: `pipeline.models.RegionDayRating` — one row per
+**Model**: `bulletins.models.RegionDayRating` — one row per
 `(region, calendar day)` with:
 - `min_rating` / `max_rating` — `Rating` `TextChoices`
   (`no_rating`, `low`, `moderate`, `considerable`, `high`, `very_high`).
@@ -21,7 +21,7 @@ request time.
   constant when the aggregation policy changes.
 - `unique_together = (region, date)`; ordering `["-date", "region__region_id"]`.
 
-**Aggregation policy** (see `pipeline/services/day_rating.py`):
+**Aggregation policy** (see `bulletins/services/day_rating.py`):
 - For day X, pick the single bulletin whose `_target_day` equals X with
   the latest `valid_from`. Morning-of-X (hour < 12) naturally wins over
   prior-evening-of-(X−1) (hour ≥ 12) because its `valid_from` is later.
