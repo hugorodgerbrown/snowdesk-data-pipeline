@@ -1,6 +1,6 @@
 [
   {
-    "model": "pipeline.bulletin",
+    "model": "bulletins.bulletin",
     "pk": 1,
     "fields": {
       "bulletin_id": "a4020001-4115-4bd2-9fe6-d0e4f9a1b2c3",
@@ -84,7 +84,7 @@
     }
   },
   {
-    "model": "pipeline.bulletin",
+    "model": "bulletins.bulletin",
     "pk": 2,
     "fields": {
       "bulletin_id": "a4020002-4115-4bd2-9fe6-d0e4f9a1b2c3",
@@ -168,7 +168,7 @@
     }
   },
   {
-    "model": "pipeline.bulletin",
+    "model": "bulletins.bulletin",
     "pk": 3,
     "fields": {
       "bulletin_id": "a4020003-4115-4bd2-9fe6-d0e4f9a1b2c3",

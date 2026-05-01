@@ -19,7 +19,7 @@ import pytest
 from django.contrib import admin
 from django.db import IntegrityError
 
-from pipeline.models import RegionDayRating
+from bulletins.models import RegionDayRating
 from tests.factories import RegionDayRatingFactory, RegionFactory
 
 

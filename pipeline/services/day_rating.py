@@ -47,7 +47,8 @@ from typing import TYPE_CHECKING
 from pipeline.services.render_model import RENDER_MODEL_VERSION
 
 if TYPE_CHECKING:
-    from pipeline.models import Bulletin, Region
+    from bulletins.models import Bulletin
+    from pipeline.models import Region
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +192,7 @@ def recompute_region_day(
 
     """
     # Avoid circular import — models is always available at call time.
-    from pipeline.models import Bulletin, RegionDayRating
+    from bulletins.models import Bulletin, RegionDayRating
 
     no_rating = RegionDayRating.Rating.NO_RATING
 

@@ -32,7 +32,7 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
-from pipeline.models import Bulletin
+from bulletins.models import Bulletin
 from pipeline.services.render_model import (
     _DAY_CHARACTER,
     DayCharacter,

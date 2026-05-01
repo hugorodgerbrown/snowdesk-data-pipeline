@@ -22,7 +22,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from pipeline.models import RegionDayRating
+from bulletins.models import RegionDayRating
 from tests.factories import (
     BulletinFactory,
     EawsMajorRegionFactory,

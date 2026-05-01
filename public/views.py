@@ -54,8 +54,9 @@ from django.utils.translation import gettext as _gettext, gettext_lazy as _
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition
 
+from bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from pipeline.decorators import require_htmx
-from pipeline.models import Bulletin, Region, RegionBulletin, RegionDayRating
+from pipeline.models import Region
 from pipeline.schema import ValidTimePeriod
 from pipeline.services.render_model import (
     RENDER_MODEL_VERSION,
@@ -2027,7 +2028,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "footer_date_to": bulletin.valid_to,
         "footer_next_update": bulletin.next_update,
         "footer_date_source": "Bulletin.valid_from / valid_to",
-        "admin_url": reverse("admin:pipeline_bulletin_change", args=[bulletin.pk]),
+        "admin_url": reverse("admin:bulletins_bulletin_change", args=[bulletin.pk]),
         "render_model": render_model,
         "is_time_variable": is_time_variable,
         # Per-half danger fields feed the AM/PM split headline band.

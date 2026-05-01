@@ -13,8 +13,8 @@ from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
+from bulletins.models import PipelineRun
 from pipeline.admin import BulletinAdmin
-from pipeline.models import PipelineRun
 from tests.factories import PipelineRunFactory
 
 
@@ -27,7 +27,7 @@ def admin_client() -> Client:
     return client
 
 
-BACKFILL_URL = reverse("admin:pipeline_bulletin_backfill")
+BACKFILL_URL = reverse("admin:bulletins_bulletin_backfill")
 
 
 @pytest.mark.django_db
@@ -52,7 +52,7 @@ class TestBackfillView:
             force=False,
         )
         assert response.status_code == 302
-        assert response["Location"] == reverse("admin:pipeline_bulletin_changelist")
+        assert response["Location"] == reverse("admin:bulletins_bulletin_changelist")
 
     def test_success_message_shown(self, admin_client: Client) -> None:
         """A successful backfill shows a success message."""
@@ -119,7 +119,7 @@ class TestAdminXssEscape:
     def _admin(self) -> BulletinAdmin:
         from django.contrib.admin import site
 
-        from pipeline.models import Bulletin as BulletinModel
+        from bulletins.models import Bulletin as BulletinModel
 
         return BulletinAdmin(BulletinModel, site)
 

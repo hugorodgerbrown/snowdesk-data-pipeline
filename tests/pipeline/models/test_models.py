@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from pipeline.models import Bulletin
+from bulletins.models import Bulletin
 from pipeline.schema import AvalancheProblem, DangerRating, Elevation
 from tests.factories import BulletinFactory
 

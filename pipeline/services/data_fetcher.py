@@ -26,7 +26,8 @@ from typing import Any
 import requests
 from django.conf import settings
 
-from pipeline.models import Bulletin, PipelineRun, Region, RegionBulletin
+from bulletins.models import Bulletin, PipelineRun, RegionBulletin
+from pipeline.models import Region
 from pipeline.services.day_rating import apply_bulletin_day_ratings
 from pipeline.services.render_model import (
     RENDER_MODEL_VERSION,

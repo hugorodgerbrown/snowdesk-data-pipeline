@@ -21,7 +21,7 @@ import datetime
 import pytest
 from django.test import override_settings
 
-from pipeline.models import RegionDayRating
+from bulletins.models import RegionDayRating
 from public.season_calendar import build_season_grid
 from tests.factories import (
     BulletinFactory,

@@ -15,7 +15,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
 
-from pipeline.models import PipelineRun
+from bulletins.models import PipelineRun
 from pipeline.services.slf_archive import read_archive, write_archive
 from tests.factories import BulletinFactory, PipelineRunFactory
 

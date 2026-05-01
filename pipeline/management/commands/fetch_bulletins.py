@@ -61,7 +61,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from pipeline.models import Bulletin, PipelineRun
+from bulletins.models import Bulletin, PipelineRun
 from pipeline.services.data_fetcher import run_pipeline
 from pipeline.services.slf_archive import merge, read_archive, write_archive
 

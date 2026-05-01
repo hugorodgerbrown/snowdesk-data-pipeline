@@ -19,7 +19,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from pipeline.models import Bulletin, RegionDayRating
+from bulletins.models import Bulletin, RegionDayRating
 from pipeline.services.render_model import RENDER_MODEL_VERSION
 from tests.factories import BulletinFactory, RegionBulletinFactory, RegionFactory
 

@@ -36,7 +36,8 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
-from pipeline.models import Bulletin, Region, RegionDayRating
+from bulletins.models import Bulletin, RegionDayRating
+from pipeline.models import Region
 from pipeline.services.day_rating import _target_day
 
 logger = logging.getLogger(__name__)

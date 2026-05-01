@@ -16,14 +16,12 @@ from django.http import HttpRequest, HttpResponseRedirect
 from django.urls import URLPattern, path, reverse
 from django.utils.html import format_html, format_html_join
 
+from bulletins.models import Bulletin, PipelineRun, RegionBulletin, RegionDayRating
+
 from .models import (
-    Bulletin,
     EawsMajorRegion,
     EawsSubRegion,
-    PipelineRun,
     Region,
-    RegionBulletin,
-    RegionDayRating,
     Resort,
 )
 from .services.data_fetcher import run_pipeline
@@ -212,7 +210,7 @@ class BulletinAdmin(admin.ModelAdmin):
             path(
                 "backfill/",
                 self.admin_site.admin_view(self.backfill_view),
-                name="pipeline_bulletin_backfill",
+                name="bulletins_bulletin_backfill",
             ),
         ]
         return custom_urls + super().get_urls()
@@ -226,7 +224,7 @@ class BulletinAdmin(admin.ModelAdmin):
         """
         if request.method != "POST":
             self.message_user(request, "Invalid request method.", messages.ERROR)
-            return HttpResponseRedirect(reverse("admin:pipeline_bulletin_changelist"))
+            return HttpResponseRedirect(reverse("admin:bulletins_bulletin_changelist"))
 
         start = self.BACKFILL_START
         end = date.today()
@@ -243,7 +241,7 @@ class BulletinAdmin(admin.ModelAdmin):
         except Exception:
             logger.exception("Admin backfill failed")
             self.message_user(request, "Backfill failed — check logs.", messages.ERROR)
-            return HttpResponseRedirect(reverse("admin:pipeline_bulletin_changelist"))
+            return HttpResponseRedirect(reverse("admin:bulletins_bulletin_changelist"))
 
         if run.status == PipelineRun.Status.FAILED:
             self.message_user(
@@ -258,7 +256,7 @@ class BulletinAdmin(admin.ModelAdmin):
                 f"{run.records_updated} updated.",
                 messages.SUCCESS,
             )
-        return HttpResponseRedirect(reverse("admin:pipeline_bulletin_changelist"))
+        return HttpResponseRedirect(reverse("admin:bulletins_bulletin_changelist"))
 
     def _get_properties(self, obj: Bulletin) -> dict:
         """

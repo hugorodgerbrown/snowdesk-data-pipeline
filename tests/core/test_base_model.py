@@ -24,7 +24,8 @@ def test_subscriber_inherits_base_model():
 
 
 def test_pipeline_models_inherit_base_model():
-    from pipeline.models import Bulletin, PipelineRun, Region
+    from bulletins.models import Bulletin, PipelineRun
+    from pipeline.models import Region
 
     for model in (Bulletin, PipelineRun, Region):
         assert issubclass(model, BaseModel)
