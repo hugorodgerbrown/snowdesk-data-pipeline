@@ -16,6 +16,7 @@ compose. The management commands call run_pipeline(); unit tests can call
 fetch_bulletin_page() and upsert_bulletin() independently.
 """
 
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -137,6 +138,30 @@ def _parse_dt(value: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
+def _resolve_issued_at(raw: dict[str, Any]) -> datetime:
+    """
+    Resolve a bulletin's publication timestamp from the raw payload.
+
+    Pre-2024 SLF bulletins omit the top-level ``publicationTime`` field
+    that modern bulletins carry. When it is absent, fall back to
+    ``validTime.startTime`` — for SLF the two values are typically
+    identical (or differ by at most a couple of hours), so this is a
+    safe proxy for both the pagination boundary check and the
+    ``Bulletin.issued_at`` column.
+
+    Args:
+        raw: A single bulletin dict from the SLF CAAML API.
+
+    Returns:
+        A UTC-aware datetime suitable for use as ``issued_at``.
+
+    """
+    pub_time = raw.get("publicationTime")
+    if pub_time:
+        return _parse_dt(pub_time)
+    return _parse_dt(raw["validTime"]["startTime"])
+
+
 class UnknownRegionError(LookupError):
     """Raised when an ingested bulletin references an unseeded region_id.
 
@@ -226,7 +251,7 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
         "raw_data": raw_data,
         "render_model": computed_render_model,
         "render_model_version": computed_render_model_version,
-        "issued_at": _parse_dt(raw["publicationTime"]),
+        "issued_at": _resolve_issued_at(raw),
         "valid_from": _parse_dt(raw["validTime"]["startTime"]),
         "valid_to": _parse_dt(raw["validTime"]["endTime"]),
         "next_update": _parse_dt(next_update_raw) if next_update_raw else None,
@@ -298,7 +323,7 @@ def _process_bulletin(
     Returns one of the ``_OUTCOME_*`` constants so the caller can update
     counters or terminate pagination without owning the decision logic.
     """
-    issued_at = _parse_dt(raw["publicationTime"])
+    issued_at = _resolve_issued_at(raw)
 
     if issued_at >= range_end:
         return _OUTCOME_SKIPPED_NEWER
@@ -339,14 +364,18 @@ def _process_page(
     for raw in page:
         if on_fetched is not None:
             on_fetched(raw)
-        outcome = _process_bulletin(
-            raw,
-            run,
-            range_start=range_start,
-            range_end=range_end,
-            dry_run=dry_run,
-            force=force,
-        )
+        try:
+            outcome = _process_bulletin(
+                raw,
+                run,
+                range_start=range_start,
+                range_end=range_end,
+                dry_run=dry_run,
+                force=force,
+            )
+        except KeyError:
+            logger.error("Error parsing bulletin data:\n%s", json.dumps(raw, indent=4))
+            raise
         if outcome == _OUTCOME_OUT_OF_RANGE:
             return True
         counts[outcome] += 1

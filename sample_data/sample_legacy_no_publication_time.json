@@ -1,0 +1,101 @@
+{
+  "type": "Feature",
+  "geometry": null,
+  "properties": {
+    "bulletinID": "52873-A",
+    "lang": "en",
+    "validTime": {
+        "startTime": "2023-12-13T16:00:00Z",
+        "endTime": "2023-12-14T16:00:00Z"
+    },
+    "nextUpdate": "2023-12-14T07:00:00Z",
+    "unscheduled": false,
+    "regions": [
+        {"regionID": "CH-1114", "name": "Bex-Villars"},
+        {"regionID": "CH-1243", "name": "Schreckhorn"},
+        {"regionID": "CH-1245", "name": "Guttannen"},
+        {"regionID": "CH-1246", "name": "Gadmertal"},
+        {"regionID": "CH-1247", "name": "Grimselpass"},
+        {"regionID": "CH-1312", "name": "Monthey-Val d'Illiez"},
+        {"regionID": "CH-2221", "name": "Meiental"},
+        {"regionID": "CH-2222", "name": "Maderanertal"},
+        {"regionID": "CH-2223", "name": "nördliches Urseren"},
+        {"regionID": "CH-3112", "name": "Glarus Süd-Grosstal"},
+        {"regionID": "CH-3113", "name": "Glarus Süd-Sernftal"},
+        {"regionID": "CH-3224", "name": "Sarganserland"},
+        {"regionID": "CH-4111", "name": "Emosson"},
+        {"regionID": "CH-4112", "name": "Génépi"},
+        {"regionID": "CH-4113", "name": "Val d'Entremont-Val Ferret"},
+        {"regionID": "CH-4114", "name": "Conthey-Fully"},
+        {"regionID": "CH-4121", "name": "Montana"},
+        {"regionID": "CH-4211", "name": "Leukerbad - Lötschental"},
+        {"regionID": "CH-4213", "name": "Konkordia Gebiet"},
+        {"regionID": "CH-4214", "name": "Riederalp"},
+        {"regionID": "CH-4215", "name": "Leuk"},
+        {"regionID": "CH-4241", "name": "Reckingen"},
+        {"regionID": "CH-4243", "name": "nördliches Obergoms"},
+        {"regionID": "CH-5124", "name": "Flims"},
+        {"regionID": "CH-5211", "name": "nördliches Tujetsch"}
+    ],
+    "dangerRatings": [
+        {
+            "mainValue": "high",
+            "validTimePeriod": "all_day",
+            "customData": {"CH": {"subdivision": "minus"}}
+        }
+    ],
+    "avalancheProblems": [
+        {
+            "problemType": "new_snow",
+            "comment": "The large quantity of fresh snow and the deep wind slabs formed by the westerly wind are prone to triggering. Natural avalanches are to be expected. In their paths avalanches can entrain the wet snow. They can reach very large size. In the typical avalanche paths the avalanches can reach valley bottoms at relatively high altitudes and endanger transportation routes that are exposed.\nEven single winter sport participants can release avalanches easily. The conditions are very critical for winter sport activities outside marked and open pistes.",
+            "dangerRatingValue": "high",
+            "validTimePeriod": "all_day",
+            "elevation": {"lowerBound": "2400"},
+            "aspects": ["NW", "N", "NE", "E", "SE"],
+            "customData": {
+                "CH": {
+                    "subdivision": "minus",
+                    "coreZoneText": "Danger level \"high\" (4-) in northwest to north to southeast facing aspects above 2400m. Other slopes about one danger level less."
+                }
+            }
+        },
+        {
+            "problemType": "gliding_snow",
+            "comment": "Below approximately 2400 m more gliding avalanches are to be expected, even large ones in isolated cases. Areas with glide cracks are to be avoided. Exposed parts of transportation routes can be endangered.",
+            "dangerRatingValue": "considerable",
+            "validTimePeriod": "all_day"
+        }
+    ],
+    "customData": {
+        "CH": {
+            "aggregation": [
+                {
+                    "category": "dry",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["new_snow"]
+                },
+                {
+                    "category": "wet",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["gliding_snow"]
+                }
+            ]
+        }
+    },
+    "highlights": "As a consequence of new snow a high avalanche danger will be encountered in some regions.",
+    "weatherForecast": {
+        "comment": "<h1>Weather forecast through Thursday, 14.12.2023</h1><p>In the north, it will remain very cloudy with precipitation. The snowfall level will drop to low altitudes. It will be mostly sunny in the south.</p>"
+    },
+    "weatherReview": {
+        "comment": "<h1>Observed weather review Wednesday, 13.12.2023</h1><p>It was very cloudy with heavy precipitation at times. The snowfall level only dropped from around 2000 m to around 1200 to 1600 m as the day progressed.</p>"
+    },
+    "snowpackStructure": {
+        "comment": "<h1>Snowpack</h1><p>With rain to high altitudes and snowfall and wind on top of this, avalanches, some of them large, occurred in particular in Valais and on the northern flank of the Alps.</p>"
+    },
+    "tendency": [
+        {
+            "comment": "<h1>Outlook through Saturday, 16.12.2023</h1><h2>Friday</h2><p>On Friday afternoon, the precipitation will end and it will become sunny from the west.</p>"
+        }
+    ]
+  }
+}
