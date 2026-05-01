@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 
 from django.conf import settings
 
-from pipeline.models import RegionDayRating
+from bulletins.models import RegionDayRating
 
 if TYPE_CHECKING:
     from pipeline.models import Region

@@ -20,13 +20,8 @@ import pytest
 import requests
 from django.test import override_settings
 
-from pipeline.models import (
-    Bulletin,
-    PipelineRun,
-    Region,
-    RegionBulletin,
-    RegionDayRating,
-)
+from bulletins.models import Bulletin, PipelineRun, RegionBulletin, RegionDayRating
+from pipeline.models import Region
 from pipeline.services.data_fetcher import (
     UnknownRegionError,
     _get_region,

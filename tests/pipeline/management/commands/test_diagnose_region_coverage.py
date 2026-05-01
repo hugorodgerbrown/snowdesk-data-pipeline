@@ -25,7 +25,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from pipeline.models import Bulletin, RegionBulletin, RegionDayRating
+from bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from tests.factories import (
     BulletinFactory,
     RegionBulletinFactory,

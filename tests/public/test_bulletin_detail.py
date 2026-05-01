@@ -19,7 +19,7 @@ from django.core.cache import cache
 from django.test import Client, override_settings
 from django.urls import reverse
 
-from pipeline.models import RegionDayRating
+from bulletins.models import RegionDayRating
 from public.views import (
     _get_nav_dates,
     _issues_for_date,
@@ -336,7 +336,7 @@ class TestBulletinDetailView:
         # ``next: HH:MM`` tooltip on the disabled `»` chip) can opt in.
         # The current layout does not surface the value in the DOM.
         am = _make_am_bulletin(region, date(2026, 3, 15))
-        from pipeline.models import Bulletin
+        from bulletins.models import Bulletin
 
         Bulletin.objects.filter(pk=am.pk).update(
             next_update=datetime(2026, 3, 15, 15, 0, tzinfo=UTC)
@@ -354,7 +354,7 @@ class TestBulletinDetailView:
     def test_no_next_update_after_due_time(self, client: Client, region):
         """After the next_update time has passed, the disabled label is absent."""
         am = _make_am_bulletin(region, date(2026, 3, 15))
-        from pipeline.models import Bulletin
+        from bulletins.models import Bulletin
 
         Bulletin.objects.filter(pk=am.pk).update(
             next_update=datetime(2026, 3, 15, 15, 0, tzinfo=UTC)

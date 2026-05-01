@@ -27,7 +27,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pipeline.models import RegionDayRating
+from bulletins.models import RegionDayRating
 from pipeline.services.day_rating import (
     DAY_RATING_VERSION,
     _target_day,

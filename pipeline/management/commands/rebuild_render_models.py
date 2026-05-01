@@ -38,7 +38,7 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
-from pipeline.models import Bulletin
+from bulletins.models import Bulletin
 from pipeline.services.day_rating import recompute_region_day
 from pipeline.services.render_model import (
     RENDER_MODEL_VERSION,

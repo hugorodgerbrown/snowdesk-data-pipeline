@@ -123,7 +123,7 @@ class TestErrorStateCard:
         content = response.content.decode()
 
         # Admin link to the specific bulletin change page.
-        expected_admin = f"/admin/pipeline/bulletin/{bulletin.pk}/change/"
+        expected_admin = f"/admin/bulletins/bulletin/{bulletin.pk}/change/"
         assert expected_admin in content
 
         # Raw error text visible.

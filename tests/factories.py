@@ -1,5 +1,5 @@
 """
-tests/factories.py — FactoryBoy factories for all pipeline models.
+tests/factories.py — FactoryBoy factories for all Snowdesk models.
 
 Each model has a corresponding factory that produces valid instances with
 sensible defaults. Use these in tests to avoid brittle fixture data.
@@ -15,14 +15,11 @@ from datetime import UTC
 
 import factory
 
+from bulletins.models import Bulletin, PipelineRun, RegionBulletin, RegionDayRating
 from pipeline.models import (
-    Bulletin,
     EawsMajorRegion,
     EawsSubRegion,
-    PipelineRun,
     Region,
-    RegionBulletin,
-    RegionDayRating,
     Resort,
 )
 from pipeline.services.day_rating import DAY_RATING_VERSION
