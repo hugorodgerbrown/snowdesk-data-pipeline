@@ -4,7 +4,7 @@ tests/public/test_day_character.py — Tests for the compute_day_character funct
 Covers all five rules in the day-character cascade, including edge cases
 for subdivision, elevation bounds, aspect counts, and the safe default.
 
-Re-pointed to pipeline.services.render_model.compute_day_character which
+Re-pointed to bulletins.services.render_model.compute_day_character which
 supersedes the old public.views.day_character implementation.
 """
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from pipeline.services.render_model import compute_day_character
+from bulletins.services.render_model import compute_day_character
 
 
 def _render_model(

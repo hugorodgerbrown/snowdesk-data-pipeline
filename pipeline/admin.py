@@ -17,6 +17,7 @@ from django.urls import URLPattern, path, reverse
 from django.utils.html import format_html, format_html_join
 
 from bulletins.models import Bulletin, PipelineRun, RegionBulletin, RegionDayRating
+from bulletins.services.data_fetcher import run_pipeline
 
 from .models import (
     EawsMajorRegion,
@@ -24,7 +25,6 @@ from .models import (
     Region,
     Resort,
 )
-from .services.data_fetcher import run_pipeline
 from .utils import html_to_markdown
 
 logger = logging.getLogger(__name__)

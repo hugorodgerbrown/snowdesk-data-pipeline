@@ -1,5 +1,5 @@
 """
-pipeline/services/day_rating.py — Per-(region, date) danger rating aggregation.
+bulletins/services/day_rating.py — Per-(region, date) danger rating aggregation.
 
 Maintains the RegionDayRating denormalisation table. Each row stores both the
 minimum and maximum danger ratings (within one chosen bulletin) for a single
@@ -44,7 +44,7 @@ import logging
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
-from pipeline.services.render_model import RENDER_MODEL_VERSION
+from bulletins.services.render_model import RENDER_MODEL_VERSION
 
 if TYPE_CHECKING:
     from bulletins.models import Bulletin

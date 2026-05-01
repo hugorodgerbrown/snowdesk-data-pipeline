@@ -1292,7 +1292,7 @@ class TestDayCharacterEyebrow:
 
     def test_eyebrow_absent_in_error_state(self, client: Client, region):
         """A version=0 error bulletin replaces the body and suppresses the eyebrow."""
-        from pipeline.services.render_model import RENDER_MODEL_VERSION
+        from bulletins.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 3, 21)
         _make_am_bulletin(

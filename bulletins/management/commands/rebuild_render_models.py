@@ -1,5 +1,5 @@
 """
-pipeline/management/commands/rebuild_render_models.py — Management command.
+bulletins/management/commands/rebuild_render_models.py — Management command.
 
 Rebuilds the ``render_model`` JSONField on Bulletin rows whose
 ``render_model_version`` is older than the current ``RENDER_MODEL_VERSION``
@@ -39,8 +39,8 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from bulletins.models import Bulletin
-from pipeline.services.day_rating import recompute_region_day
-from pipeline.services.render_model import (
+from bulletins.services.day_rating import recompute_region_day
+from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     build_render_model,
@@ -261,7 +261,7 @@ class Command(BaseCommand):
         """
         from datetime import date
 
-        from pipeline.services.day_rating import _target_day
+        from bulletins.services.day_rating import _target_day
 
         pairs: set[tuple[Any, date]] = set()
         for bulletin in bulletins:

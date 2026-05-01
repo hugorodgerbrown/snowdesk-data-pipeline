@@ -1,5 +1,5 @@
 """
-pipeline/services/slf_archive.py — On-disk NDJSON archive of SLF bulletins.
+bulletins/services/slf_archive.py — On-disk NDJSON archive of SLF bulletins.
 
 Reading and writing ``sample_data/slf_archive.ndjson``: a single
 NDJSON file holding every bulletin captured by ``fetch_bulletins

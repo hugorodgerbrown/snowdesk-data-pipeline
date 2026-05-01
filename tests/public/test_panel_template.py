@@ -95,7 +95,7 @@ class TestErrorStateCard:
         view uses the stored render_model directly rather than rebuilding it.
         The stored render_model has version==0 which triggers the error card.
         """
-        from pipeline.services.render_model import RENDER_MODEL_VERSION
+        from bulletins.services.render_model import RENDER_MODEL_VERSION
 
         return _make_am_bulletin(
             region,
@@ -182,7 +182,7 @@ class TestTraitHeaderSemantics:
 
     def test_trait_title_rendered_in_h2(self, anon_client: Client, region):
         """Each trait title appears inside an <h2> tag, not a <p> or <div>."""
-        from pipeline.services.render_model import RENDER_MODEL_VERSION
+        from bulletins.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 5, 10)
         _make_am_bulletin(
@@ -219,7 +219,7 @@ class TestTraitHeaderSemantics:
 
     def test_two_trait_rating_blocks_present(self, anon_client: Client, region):
         """A variable-day bulletin produces one rating block per trait."""
-        from pipeline.services.render_model import RENDER_MODEL_VERSION
+        from bulletins.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 5, 11)
         _make_am_bulletin(

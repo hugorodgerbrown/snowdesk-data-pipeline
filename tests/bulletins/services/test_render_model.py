@@ -1,5 +1,5 @@
 """
-tests/pipeline/services/test_render_model.py — Tests for the render_model service.
+tests/bulletins/services/test_render_model.py — Tests for the render_model service.
 
 Covers:
   - build_render_model: output shape, trait building, aggregation ordering,
@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 
-from pipeline.services.render_model import (
+from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     _build_metadata,
@@ -387,14 +387,14 @@ class TestBuildRenderModelNoAggregation:
         """The synthesis path logs a warning so operators can track upstream gaps."""
         import logging
 
-        # config/settings/base.py sets propagate=False on the pipeline logger
+        # config/settings/base.py sets propagate=False on the bulletins logger
         # so that pytest's root caplog doesn't see records by default. Flip it
         # for the duration of this test so caplog can verify the warning.
-        monkeypatch.setattr(logging.getLogger("pipeline"), "propagate", True)
+        monkeypatch.setattr(logging.getLogger("bulletins"), "propagate", True)
 
         props = _load_sample("sample_no_aggregation_day.json")
 
-        with caplog.at_level(logging.WARNING, logger="pipeline.services.render_model"):
+        with caplog.at_level(logging.WARNING, logger="bulletins.services.render_model"):
             build_render_model(props)
 
         assert any(
@@ -887,7 +887,7 @@ class TestBuildRenderModel3PlusTraits:
                 }
             },
         }
-        with patch("pipeline.services.render_model.logger") as mock_logger:
+        with patch("bulletins.services.render_model.logger") as mock_logger:
             rm = build_render_model(props)
 
         assert len(rm["traits"]) == 3

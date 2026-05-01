@@ -1,5 +1,5 @@
 """
-tests/pipeline/management/commands/test_rebuild_render_models.py — Tests
+tests/bulletins/management/commands/test_rebuild_render_models.py — Tests
 for the rebuild_render_models management command.
 
 Covers:
@@ -20,7 +20,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from bulletins.models import Bulletin, RegionDayRating
-from pipeline.services.render_model import RENDER_MODEL_VERSION
+from bulletins.services.render_model import RENDER_MODEL_VERSION
 from tests.factories import BulletinFactory, RegionBulletinFactory, RegionFactory
 
 
@@ -203,12 +203,12 @@ class TestRebuildRenderModelsErrorHandling:
         """A RenderModelBuildError on one bulletin does not abort the whole run."""
         from unittest.mock import patch
 
-        from pipeline.services.render_model import RenderModelBuildError
+        from bulletins.services.render_model import RenderModelBuildError
 
         _make_bulletin(render_model_version=0, bulletin_id="error-001")
 
         with patch(
-            "pipeline.management.commands.rebuild_render_models.build_render_model",
+            "bulletins.management.commands.rebuild_render_models.build_render_model",
             side_effect=RenderModelBuildError("simulated failure"),
         ):
             # Should not raise — error is caught and stored.
@@ -253,13 +253,13 @@ class TestRebuildRenderModelsDayRatings:
         """When failures occur, command prints summary and exits non-zero."""
         from unittest.mock import patch
 
-        from pipeline.services.render_model import RenderModelBuildError
+        from bulletins.services.render_model import RenderModelBuildError
 
         _make_bulletin(render_model_version=0, bulletin_id="fail-sum-001")
         _make_bulletin(render_model_version=0, bulletin_id="fail-sum-002")
 
         with patch(
-            "pipeline.management.commands.rebuild_render_models.build_render_model",
+            "bulletins.management.commands.rebuild_render_models.build_render_model",
             side_effect=RenderModelBuildError("simulated failure"),
         ):
             with pytest.raises(CommandError):

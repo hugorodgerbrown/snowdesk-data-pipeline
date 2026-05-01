@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from django.test import Client, override_settings
 
-from pipeline.services.slf_archive import write_archive
+from bulletins.services.slf_archive import write_archive
 
 
 def _record(bulletin_id: str, publication_time: str) -> dict[str, Any]:

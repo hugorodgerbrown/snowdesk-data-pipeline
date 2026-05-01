@@ -1,5 +1,5 @@
 """
-tests/pipeline/services/test_day_rating.py — Tests for the day_rating service.
+tests/bulletins/services/test_day_rating.py — Tests for the day_rating service.
 
 Covers (v4 single-bulletin policy):
   - _target_day: morning/evening/boundary rules.
@@ -28,13 +28,13 @@ from unittest.mock import patch
 import pytest
 
 from bulletins.models import RegionDayRating
-from pipeline.services.day_rating import (
+from bulletins.services.day_rating import (
     DAY_RATING_VERSION,
     _target_day,
     apply_bulletin_day_ratings,
     recompute_region_day,
 )
-from pipeline.services.render_model import RENDER_MODEL_VERSION
+from bulletins.services.render_model import RENDER_MODEL_VERSION
 from tests.factories import (
     BulletinFactory,
     PipelineRunFactory,
@@ -572,7 +572,7 @@ class TestUpsertBulletinSwallowsException:
 
     def test_exception_is_caught_not_propagated(self) -> None:
         """When apply_bulletin_day_ratings raises, upsert_bulletin still returns."""
-        from pipeline.services.data_fetcher import upsert_bulletin
+        from bulletins.services.data_fetcher import upsert_bulletin
 
         run = PipelineRunFactory.create()
         # Seed the region first — regions are fixture-backed (no auto-create).
@@ -593,7 +593,7 @@ class TestUpsertBulletinSwallowsException:
         }
 
         with patch(
-            "pipeline.services.data_fetcher.apply_bulletin_day_ratings",
+            "bulletins.services.data_fetcher.apply_bulletin_day_ratings",
             side_effect=RuntimeError("test explosion"),
         ):
             result = upsert_bulletin(raw, run)

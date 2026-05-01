@@ -21,8 +21,8 @@ import logging
 from django.conf import settings
 from django.http import HttpRequest, JsonResponse
 
-from pipeline.services.data_fetcher import PAGE_SIZE
-from pipeline.services.slf_archive import read_archive
+from bulletins.services.data_fetcher import PAGE_SIZE
+from bulletins.services.slf_archive import read_archive
 
 logger = logging.getLogger(__name__)
 

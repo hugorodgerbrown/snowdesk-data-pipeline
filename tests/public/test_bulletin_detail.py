@@ -409,7 +409,7 @@ class TestBulletinDetailView:
         self, client: Client, region, caplog
     ):
         """When stale rebuild raises RenderModelBuildError, page returns 200 with error card."""
-        from pipeline.services.render_model import RenderModelBuildError
+        from bulletins.services.render_model import RenderModelBuildError
 
         am = _make_am_bulletin(region, date(2026, 3, 15), render_model_version=1)
         url = reverse(

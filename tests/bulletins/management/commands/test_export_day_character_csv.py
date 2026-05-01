@@ -1,5 +1,5 @@
 """
-tests/pipeline/management/commands/test_export_day_character_csv.py.
+tests/bulletins/management/commands/test_export_day_character_csv.py.
 
 Covers ``export_day_character_csv``: read-only behaviour, header layout,
 row content for each rule branch (stable / manageable / hard_to_read /
