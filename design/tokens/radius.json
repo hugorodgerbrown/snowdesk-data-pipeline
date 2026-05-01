@@ -1,0 +1,7 @@
+{
+  "radius": {
+    "card": { "$value": "16px", "$type": "dimension", "$description": "outer card shell" },
+    "tag":  { "$value": "8px",  "$type": "dimension", "$description": "problem tag, inner chips" },
+    "pill": { "$value": "4px",  "$type": "dimension", "$description": "timing badge, period pill" }
+  }
+}

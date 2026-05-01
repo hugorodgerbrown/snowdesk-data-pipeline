@@ -17,14 +17,23 @@ Mobile preset by default (no desktop override), 3 runs per URL.
 
 Requires Chrome/Chromium on the host. The script:
 
-1. Runs `collectstatic --noinput` under `DJANGO_SETTINGS_MODULE=config.settings.perf`
+1. Runs `npm run tokens` to build `static/css/tokens.css` from
+   `design/tokens/*.json` (Style Dictionary). The Tailwind compile
+   step depends on this — Tailwind reads the `@theme` block from the
+   imported tokens.css to generate utility classes.
+2. Runs `collectstatic --noinput` under `DJANGO_SETTINGS_MODULE=config.settings.perf`
    so the ManifestStaticFilesStorage manifest is populated.
-2. Starts a Django server on `:8765` using `config.settings.perf` — the
+3. Starts a Django server on `:8765` using `config.settings.perf` — the
    same WhiteNoise + `CompressedManifestStaticFilesStorage` + `GZipMiddleware`
    stack as production, so hashed filenames, pre-compressed assets, and
    cache headers match reality.
-3. Audits the URLs in `lighthouserc.json` and writes HTML + JSON reports
+4. Audits the URLs in `lighthouserc.json` and writes HTML + JSON reports
    to `.lighthouseci/` (gitignored).
+
+> The token build also runs in the GitHub Actions Lighthouse workflow
+> (between `npm ci` and the Tailwind compile step). For Render deploys,
+> the build command in the dashboard must also include `npm run tokens`
+> before the Tailwind compile.
 
 ```bash
 npm run lh          # full audit — ~90s

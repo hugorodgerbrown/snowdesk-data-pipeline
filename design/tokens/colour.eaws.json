@@ -1,0 +1,27 @@
+{
+  "color": {
+    "eaws-low":           { "$value": "#ccff66", "$type": "color", "$description": "EAWS level-1 indicator" },
+    "eaws-moderate":      { "$value": "#ffff00", "$type": "color", "$description": "EAWS level-2 indicator" },
+    "eaws-considerable":  { "$value": "#ff9900", "$type": "color", "$description": "EAWS level-3 indicator" },
+    "eaws-high":          { "$value": "#ff0000", "$type": "color", "$description": "EAWS level-4 indicator" },
+    "eaws-very-high":     { "$value": "#ff0000", "$type": "color", "$description": "EAWS level-5 indicator (same hue as High per spec)" },
+
+    "eaws-low-tint":          { "$value": "#e8ffb8", "$type": "color", "$description": "muted tint background for level-1 danger band" },
+    "eaws-moderate-tint":     { "$value": "#fff7b8", "$type": "color" },
+    "eaws-considerable-tint": { "$value": "#ffe5c2", "$type": "color" },
+    "eaws-high-tint":         { "$value": "#ffd9d9", "$type": "color" },
+    "eaws-very-high-tint":    { "$value": "#1a0000", "$type": "color", "$description": "inverted — white text on dark for level-5" },
+
+    "eaws-low-text":          { "$value": "#3a5a00", "$type": "color", "$description": "readable text on level-1 tint" },
+    "eaws-moderate-text":     { "$value": "#4d4500", "$type": "color" },
+    "eaws-considerable-text": { "$value": "#5c3000", "$type": "color" },
+    "eaws-high-text":         { "$value": "#6b0000", "$type": "color" },
+    "eaws-very-high-text":    { "$value": "#ffffff", "$type": "color" },
+
+    "eaws-low-fg":          { "$value": "#1a1916", "$type": "color", "$description": "foreground on saturated level-1 background (tile pictograms)" },
+    "eaws-moderate-fg":     { "$value": "#1a1916", "$type": "color" },
+    "eaws-considerable-fg": { "$value": "#1a1916", "$type": "color" },
+    "eaws-high-fg":         { "$value": "#ffffff", "$type": "color" },
+    "eaws-very-high-fg":    { "$value": "#ffffff", "$type": "color" }
+  }
+}

@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "lh": "DJANGO_SETTINGS_MODULE=config.settings.perf poetry run python manage.py collectstatic --noinput && lhci autorun",
+    "tokens": "node design/build/style-dictionary.config.mjs",
+    "lh": "npm run tokens && DJANGO_SETTINGS_MODULE=config.settings.perf poetry run python manage.py collectstatic --noinput && lhci autorun",
     "lh:open": "open $(python -c \"import json; print(' '.join(r['htmlPath'] for r in json.load(open('.lighthouseci/manifest.json')) if r['isRepresentativeRun']))\")",
     "build:icons": "node bin/build-pwa-icons"
   },
@@ -8,6 +9,7 @@
     "@lhci/cli": "^0.14.0",
     "@tailwindcss/cli": "^4.2.2",
     "sharp": "^0.34.0",
+    "style-dictionary": "^4.4.0",
     "supabase": "^2.87.1"
   }
 }

@@ -1,0 +1,6 @@
+{
+  "font": {
+    "sans": { "$value": "'DM Sans',  system-ui, sans-serif",  "$type": "fontFamily" },
+    "mono": { "$value": "'DM Mono',  ui-monospace, monospace", "$type": "fontFamily" }
+  }
+}

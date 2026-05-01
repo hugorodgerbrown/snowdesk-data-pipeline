@@ -2,15 +2,16 @@
 
 > **Prerequisites**
 >
-> 1. All three terminals running:
+> 1. Design tokens built once: `npm run tokens` (re-run after editing `design/tokens/*.json`)
+> 2. All three terminals running:
 >    - Terminal 1: `npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch`
 >    - Terminal 2: `poetry run python manage.py runserver`
 >    - Terminal 3: available for management commands
-> 2. Migrations applied: `poetry run python manage.py migrate`
-> 3. `.env` contains `DJANGO_SETTINGS_MODULE=config.settings.development` (ensures `DEBUG=True`, which makes the day-character debug band visible at the bottom of each panel card).
-> 4. Test data loaded as described in section A below. All shell snippets assume the working directory is `/Users/hugo/Projects/snowdesk-data-pipeline`.
-> 5. A Django superuser exists for admin access: `poetry run python manage.py createsuperuser`.
-> 6. Log output is visible in Terminal 2 (runserver stdout).
+> 3. Migrations applied: `poetry run python manage.py migrate`
+> 4. `.env` contains `DJANGO_SETTINGS_MODULE=config.settings.development` (ensures `DEBUG=True`, which makes the day-character debug band visible at the bottom of each panel card).
+> 5. Test data loaded as described in section A below. All shell snippets assume the working directory is `/Users/hugo/Projects/snowdesk-data-pipeline`.
+> 6. A Django superuser exists for admin access: `poetry run python manage.py createsuperuser`.
+> 7. Log output is visible in Terminal 2 (runserver stdout).
 
 ---
 

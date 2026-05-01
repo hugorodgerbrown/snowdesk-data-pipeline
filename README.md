@@ -12,6 +12,11 @@ poetry install
 npm install
 poetry run python manage.py migrate
 
+# One-off: build CSS variables from design tokens (re-run after editing
+# anything under design/tokens/). Style Dictionary writes to
+# static/css/tokens.css, which src/css/main.css imports.
+npm run tokens
+
 # Terminal 1: Tailwind CSS watcher
 npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch
 
@@ -36,7 +41,9 @@ poetry run python manage.py fetch_bulletins \
 
 - **Python / Django** — data pipeline, models, views
 - **Tailwind CSS v4** — compiled via `@tailwindcss/cli` from `src/css/main.css`
-  to `static/css/output.css`
+  to `static/css/output.css`. Design tokens live as DTCG JSON under
+  `design/tokens/` and are built into `static/css/tokens.css` (the `@theme`
+  block) by Style Dictionary (`npm run tokens`).
 - **HTMX** — dynamic fragments on the public site (bulletin calendar, subscription region search)
 - **MapLibre GL** — interactive choropleth on the public map
 - **Render cron** — runs the `fetch_bulletins` management command on a schedule; the pipeline itself is just Django code, no in-process scheduler

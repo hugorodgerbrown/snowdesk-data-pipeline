@@ -4,10 +4,11 @@
 >
 > 1. Django dev server running: `poetry run python manage.py runserver` at http://localhost:8000
 > 2. Mailhog running on localhost:1025 (web UI at http://localhost:8025)
-> 3. Tailwind CSS watcher running: `npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch`
-> 4. Database migrated: `poetry run python manage.py migrate`
-> 5. Fixtures loaded: `poetry run python manage.py loaddata regions resorts`
-> 6. At least one day of bulletin data fetched: `poetry run python manage.py fetch_bulletins --date $(date +%Y-%m-%d) --commit` (or `fetch_bulletins --start-date 2026-04-01 --end-date 2026-04-13 --commit` for date navigation tests)
+> 3. Design tokens built (one-off, re-run after editing `design/tokens/*.json`): `npm run tokens`
+> 4. Tailwind CSS watcher running: `npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch`
+> 5. Database migrated: `poetry run python manage.py migrate`
+> 6. Fixtures loaded: `poetry run python manage.py loaddata regions resorts`
+> 7. At least one day of bulletin data fetched: `poetry run python manage.py fetch_bulletins --date $(date +%Y-%m-%d) --commit` (or `fetch_bulletins --start-date 2026-04-01 --end-date 2026-04-13 --commit` for date navigation tests)
 
 ---
 

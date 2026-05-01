@@ -1,0 +1,52 @@
+{
+  "color": {
+    "bg":           { "$value": "#1c1b19", "$type": "color" },
+    "card":         { "$value": "#2a2825", "$type": "color" },
+    "card-subtle":  { "$value": "#23211f", "$type": "color" },
+    "tag":          { "$value": "#302e2a", "$type": "color" },
+
+    "text-1":       { "$value": "#edece8", "$type": "color" },
+    "text-2":       { "$value": "#a8a49c", "$type": "color" },
+    "text-3":       { "$value": "#8a867e", "$type": "color" },
+
+    "border":         { "$value": "rgba(255, 255, 255, 0.09)", "$type": "color" },
+    "border-strong":  { "$value": "rgba(255, 255, 255, 0.16)", "$type": "color" },
+
+    "admin-bg":       { "$value": "#1c1b19", "$type": "color" },
+    "admin-nav":      { "$value": "#141312", "$type": "color" },
+    "admin-nav-text": { "$value": "#edece8", "$type": "color" },
+
+    "accent":       { "$value": "#3b82f6", "$type": "color" },
+    "accent-hover": { "$value": "#60a5fa", "$type": "color" },
+    "accent-text":  { "$value": "#ffffff", "$type": "color" },
+
+    "status-error-bg":      { "$value": "#451a1a", "$type": "color" },
+    "status-error-text":    { "$value": "#fca5a5", "$type": "color" },
+    "status-warning-bg":    { "$value": "#452a0a", "$type": "color" },
+    "status-warning-text":  { "$value": "#fcd34d", "$type": "color" },
+    "status-success-bg":    { "$value": "#14332a", "$type": "color" },
+    "status-success-text":  { "$value": "#6ee7b7", "$type": "color" },
+    "status-info-bg":       { "$value": "#1e2a4a", "$type": "color" },
+    "status-info-text":     { "$value": "#93c5fd", "$type": "color" },
+
+    "callout-warning-bg":         { "$value": "#2a2010", "$type": "color" },
+    "callout-warning-border":     { "$value": "#b8860b", "$type": "color" },
+    "callout-warning-heading":    { "$value": "#fcd34d", "$type": "color" },
+    "callout-warning-text":       { "$value": "#fbbf24", "$type": "color" },
+    "callout-warning-code-bg":    { "$value": "#332a14", "$type": "color" },
+    "callout-warning-link-hover": { "$value": "#fde68a", "$type": "color" },
+
+    "form-error":  { "$value": "#f87171", "$type": "color" },
+
+    "chip":         { "$value": "rgba(255, 255, 255, 0.07)", "$type": "color" },
+    "chip-strong":  { "$value": "rgba(255, 255, 255, 0.10)", "$type": "color" },
+
+    "card-hover":     { "$value": "#353330", "$type": "color" },
+    "ring-selected":  { "$value": "#60a5fa", "$type": "color" },
+
+    "glass":        { "$value": "rgba(20, 22, 26, 0.78)", "$type": "color", "$description": "inverted glass so pills read against dark basemaps" }
+  },
+  "shadow": {
+    "glass": { "$value": "0 2px 14px rgba(0, 0, 0, 0.35)", "$type": "shadow" }
+  }
+}

@@ -7,6 +7,7 @@ __pycache__/
 *.pyd
 *.pyo
 build/
+!design/build/
 design_handoff_*
 dist/
 DO_NOT_ADD/
@@ -24,8 +25,13 @@ node_modules/
 # Poetry
 poetry.toml
 
-# Tailwind CLI build output (regenerated from static/css/main.css)
+# Tailwind CLI build output (regenerated from src/css/main.css)
 static/css/output.css
+
+# Style Dictionary build output (regenerated from design/tokens/*.json
+# by `npm run tokens`). The Tokens Studio JSON and Markdown reference
+# under design/figma and design/docs ARE committed.
+static/css/tokens.css
 
 # Django
 db.sqlite3

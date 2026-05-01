@@ -12,6 +12,8 @@ on:
       - "**/*.html"
       - "src/css/**"
       - "static/**"
+      - "design/tokens/**"
+      - "design/build/**"
       - "package.json"
       - "package-lock.json"
       - "lighthouserc.*"
@@ -50,6 +52,9 @@ jobs:
 
       - name: Install Node dependencies
         run: npm ci
+
+      - name: Build design tokens
+        run: npm run tokens
 
       - name: Build Tailwind CSS
         run: npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify

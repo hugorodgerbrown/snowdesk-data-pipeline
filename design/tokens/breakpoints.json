@@ -1,0 +1,10 @@
+{
+  "breakpoint": {
+    "tablet":  { "$value": "600px", "$type": "dimension" },
+    "desktop": { "$value": "960px", "$type": "dimension" }
+  },
+  "width": {
+    "card-mobile": { "$value": "390px",  "$type": "dimension", "$description": "single-column mobile max-width" },
+    "grid-max":    { "$value": "1200px", "$type": "dimension", "$description": "multi-column grid max-width" }
+  }
+}

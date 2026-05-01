@@ -26,7 +26,10 @@ public/          Public-facing bulletin site
   api.py         Plain JsonResponse endpoints consumed by the map page
   api_urls.py    URL routing for /api/ (namespace: api:)
 src/             Tailwind CSS source (main.css — not served directly)
-static/          CSS/JS assets (includes compiled output.css)
+design/          Design tokens (DTCG JSON) + Style Dictionary build config;
+                 `npm run tokens` writes static/css/tokens.css and a
+                 Tokens Studio JSON for Figma round-trip.
+static/          CSS/JS assets (includes compiled output.css and tokens.css)
 logs/            Log files (gitignored except .gitkeep)
 ```
 
@@ -43,6 +46,10 @@ cp .env.example .env          # fill in values
 poetry install
 npm install
 poetry run python manage.py migrate
+
+# One-off: build CSS variables from the DTCG token sources under
+# design/tokens/ into static/css/tokens.css (re-run after any token edit).
+npm run tokens
 
 # Terminal 1: Tailwind CSS watcher
 npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch
@@ -150,21 +157,46 @@ Command catalogue and flag reference: [`docs/management-commands.md`](docs/manag
 
 **Tailwind CSS v4** compiled via the `@tailwindcss/cli` package.
 
-- Source: `src/css/main.css` — contains `@import "tailwindcss"`, `@theme` design
-  tokens, and component exceptions. Lives outside `static/` so WhiteNoise never
-  tries to post-process it.
-- Output: `static/css/output.css` — gitignored build artifact loaded by templates.
-- All styling uses Tailwind utility classes in templates. Only add custom CSS to
-  `src/css/main.css` for things Tailwind cannot express (generated content,
-  data-attribute selectors, raw HTML resets).
+- **Design tokens** are the source of truth — they live as W3C
+  [DTCG](https://www.designtokens.org/) JSON under `design/tokens/`
+  (semantic colours, EAWS scale, typography, radius, breakpoints).
+  Edit token VALUES there, not in CSS.
+- **Style Dictionary** (`npm run tokens`) builds the JSON into:
+  - `static/css/tokens.css` — the Tailwind v4 `@theme { }` block plus
+    a `.dark { }` override block. Imported by `src/css/main.css`.
+    Gitignored as a build artefact (regenerated from the JSON).
+  - `design/figma/tokens.json` — Tokens Studio shape for Figma
+    round-trip sync.
+  - `design/docs/tokens.md` — auto-generated reference table.
+- **Source:** `src/css/main.css` — fonts, `@import "tailwindcss"`,
+  `@import "../../static/css/tokens.css"`, and component exceptions.
+  Lives outside `static/` so WhiteNoise never tries to post-process it.
+- **Output:** `static/css/output.css` — gitignored build artefact
+  loaded by templates.
+- All styling uses Tailwind utility classes in templates. Only add
+  custom CSS to `src/css/main.css` for things Tailwind cannot express
+  (generated content, data-attribute selectors, raw HTML resets).
+
+`npm run tokens` MUST run before `@tailwindcss/cli` because Tailwind
+reads the `@theme` block from the imported `tokens.css` to generate
+utility classes. The Lighthouse CI workflow runs both in order; locally
+run it once after `npm install` and again after editing any
+`design/tokens/*.json`.
 
 ```bash
-# Development (watch mode)
+# Build tokens (run once, then any time you edit design/tokens/*.json)
+npm run tokens
+
+# Development (watch mode — pick up edits to main.css and templates)
 npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch
 
 # Production (minified)
 npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 ```
+
+> Render deploy (manual): the build command in the Render dashboard
+> must include `npm run tokens` before the Tailwind compile, otherwise
+> the deployed CSS will be missing the `@theme` block.
 
 **HTMX** patterns:
 - Full-page views return a complete HTML response.
