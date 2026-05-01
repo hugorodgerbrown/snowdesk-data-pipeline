@@ -108,7 +108,7 @@ poetry run python manage.py dump_resorts_fixture           # preview diff only
 poetry run python manage.py dump_resorts_fixture --commit  # write the fixture
 
 # Export a CSV of day-character labels and the inputs that feed the
-# five-rule cascade in pipeline.services.render_model.compute_day_character.
+# five-rule cascade in bulletins.services.render_model.compute_day_character.
 # One row per Bulletin. Pure SELECT — defaults to stdout, --output PATH
 # writes a file. Use --lang/--start-date/--end-date to narrow the scan.
 poetry run python manage.py export_day_character_csv > dc.csv               # whole archive

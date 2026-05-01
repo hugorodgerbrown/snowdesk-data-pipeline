@@ -11,10 +11,16 @@ updates without a full JavaScript framework.
 
 ```
 config/          Django project settings (split base/development/production)
-pipeline/        Core app: models, views, services, management commands
-  services/      Pure-function modules for fetching and processing SLF bulletins
-  management/    Django management commands (fetch_bulletins, rebuild_render_models)
-  templates/     Django templates; partials/ holds HTMX fragment responses
+core/            Shared abstractions (BaseModel; abstract, no concrete tables)
+pipeline/        Geographic reference data — Region / EawsMajorRegion /
+                 EawsSubRegion / Resort, plus HTTP-layer middleware and the
+                 dev-only SLF mirror endpoint
+bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
+                 PipelineRun, RegionDayRating, the four ingestion services
+                 (data_fetcher, render_model, day_rating, slf_archive), the
+                 four bulletin commands (fetch_bulletins, rebuild_render_models,
+                 diagnose_region_coverage, export_day_character_csv), and the
+                 admin classes for those models
 subscriptions/   Signed-token subscription flow (see docs/subscriptions.md)
 public/          Public-facing bulletin site
   api.py         Plain JsonResponse endpoints consumed by the map page
@@ -23,6 +29,12 @@ src/             Tailwind CSS source (main.css — not served directly)
 static/          CSS/JS assets (includes compiled output.css)
 logs/            Log files (gitignored except .gitkeep)
 ```
+
+The `bulletins/` ↔ `pipeline/` split is deliberate: `pipeline/` holds
+stable shared lookup data (regions, resorts) and HTTP plumbing; `bulletins/`
+holds everything that originates from the SLF API and the denormalisation
+that drives the calendar. `core/` exists so neither app needs to import
+abstract bases from the other.
 
 ## Running locally
 
