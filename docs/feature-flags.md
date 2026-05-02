@@ -45,6 +45,7 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
 | `edit_map` | `superusers=True` | The in-map resort editor at `/map/?edit=resorts` and its API endpoints (`/api/edit/resorts/queue/`, `/api/edit/resorts/<id>/coords/`). | SNOW-86 (test case for the mechanism); first consumer is SNOW-74. |
+| `weather_header` | `superusers=True` | The weather-driven bulletin header band on the bulletin detail page (`/<region_id>/<slug>/[<date>/]`). Hides the placeholder visual + debug overlay from public traffic until the design hand-off lands. | SNOW-98. |
 
 Keep this table up to date as new flags land.
 

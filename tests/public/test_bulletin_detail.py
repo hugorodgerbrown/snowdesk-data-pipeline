@@ -18,6 +18,7 @@ import pytest
 from django.core.cache import cache
 from django.test import Client, override_settings
 from django.urls import reverse
+from waffle.testutils import override_flag
 
 from bulletins.models import RegionDayRating
 from public.views import (
@@ -785,7 +786,25 @@ class TestSeasonCalendar:
 
 @pytest.mark.django_db
 class TestWeatherHeader:
-    """Tests for the WeatherSnapshot → context plumbing on bulletin_detail."""
+    """Tests for the WeatherSnapshot → context plumbing on bulletin_detail.
+
+    The ``weather_header`` waffle flag is forced on for every test in
+    this class via the autouse fixture below so each test exercises the
+    rendered partial. The off-state is covered by
+    :class:`TestWeatherHeaderFlagGate`.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _enable_weather_header_flag(self):
+        """Force ``weather_header=on`` for every test in this class.
+
+        ``override_flag`` cannot be used as a pytest class decorator
+        (Django's decorator only supports ``unittest.TestCase``
+        subclasses), so apply it via an autouse fixture as the rest of
+        the codebase does (see ``tests/public/test_edit_resorts_api.py``).
+        """
+        with override_flag("weather_header", active=True):
+            yield
 
     def _bulletin_url(self) -> str:
         """Return the today-bulletin URL used by every test below."""
@@ -951,3 +970,58 @@ class TestWeatherHeader:
 
         assert response.status_code == 200
         assert response.context["weather_display"] is None
+
+
+@pytest.mark.django_db
+class TestWeatherHeaderFlagGate:
+    """The weather header partial is hidden when ``weather_header`` is off."""
+
+    def _bulletin_url(self) -> str:
+        """Return the today-bulletin URL."""
+        return reverse(
+            "public:bulletin",
+            kwargs={"region_id": "CH-4115", "slug": "valais"},
+        )
+
+    @override_flag("weather_header", active=False)
+    def test_partial_hidden_when_flag_inactive(self, client: Client, region) -> None:
+        """With the flag off, the band markup is not emitted even with data.
+
+        ``weather_display`` is still computed in the view (the partial does
+        the visibility decision), so we assert the rendered HTML rather
+        than the context dict.
+        """
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=0,
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+        )
+
+        with _freeze("2026-03-15T12:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        assert b'data-testid="bulletin-weather-header"' not in response.content
+        # The view still computes weather_display — only the partial is gated.
+        assert response.context["weather_display"] is not None
+
+    @override_flag("weather_header", active=True)
+    def test_partial_visible_when_flag_active(self, client: Client, region) -> None:
+        """With the flag on, the band markup is rendered as normal."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=0,
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+        )
+
+        with _freeze("2026-03-15T12:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        assert b'data-testid="bulletin-weather-header"' in response.content
