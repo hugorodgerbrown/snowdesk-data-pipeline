@@ -17,8 +17,9 @@ Swiss region choropleth and back the per-region bottom sheet:
   for the region's current bulletin (consumed by the bottom sheet).
 * ``/api/offline-manifest/map/``           — precache manifest for the offline CTA.
 
-DEBUG-only endpoints powering the in-map resort editor (SNOW-74,
-``?edit=resorts`` on /map/):
+Flag-gated endpoints powering the in-map resort editor (SNOW-74,
+``?edit=resorts`` on /map/). Both views check the ``edit_map`` waffle
+flag (SNOW-86) and 404 when it is inactive for the request user:
 
 * ``GET  /api/edit/resorts/queue/``                — queue + catalogue payload.
 * ``POST /api/edit/resorts/<int:resort_id>/coords/`` — persist clicked lat/lon.
@@ -35,7 +36,7 @@ import json
 import logging
 from typing import Any
 
-from django.conf import settings
+import waffle
 from django.http import Http404, HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
@@ -557,14 +558,22 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
 
 
 # ---------------------------------------------------------------------------
-# Edit-resorts mode (SNOW-74) — DEBUG-only
+# Edit-resorts mode (SNOW-74) — flag-gated on ``edit_map`` (SNOW-86)
 # ---------------------------------------------------------------------------
 
 
-def _require_debug() -> None:
-    """Raise Http404 unless ``settings.DEBUG`` is on."""
-    if not settings.DEBUG:
-        raise Http404("Edit mode is only available when DEBUG=True.")
+def _require_edit_map_flag(request: HttpRequest) -> None:
+    """Raise Http404 unless the ``edit_map`` waffle flag is active.
+
+    Mirrors the view-level guard ``map_view`` applies before rendering
+    the editor panel: an unauthorised caller hitting the API directly
+    must see the same 404 the URL conf used to give them when the
+    feature was DEBUG-only. Flag is seeded with ``superusers=True`` by
+    migration ``pipeline/migrations/0017_seed_edit_map_flag.py``;
+    extend / disable via ``/admin/waffle/flag/edit_map/``.
+    """
+    if not waffle.flag_is_active(request, "edit_map"):
+        raise Http404("edit_map flag is inactive for this request.")
 
 
 def _validate_swiss_coords(lat: float, lon: float) -> str | None:
@@ -713,7 +722,7 @@ def _region_for_point(lat: float, lon: float) -> Region | None:
 
 @require_GET
 def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
-    """Return the flat resort catalogue + L2 labels (DEBUG-only).
+    """Return the flat resort catalogue + L2 labels (flag-gated).
 
     Response shape::
 
@@ -746,9 +755,10 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
     rows. Renaming the URL would require a coordinated panel-template
     + JS update for no behavioural benefit.
 
-    Returns 404 when ``settings.DEBUG`` is off.
+    Returns 404 when the ``edit_map`` waffle flag is inactive for the
+    request user (SNOW-86; seeded with ``superusers=True``).
     """
-    _require_debug()
+    _require_edit_map_flag(request)
     all_resorts = [
         {
             "id": pk,
@@ -800,7 +810,7 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
 
 @require_POST
 def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonResponse:
-    """Persist clicked latitude/longitude for a resort (DEBUG-only).
+    """Persist clicked latitude/longitude for a resort (flag-gated).
 
     Request body (JSON)::
 
@@ -815,11 +825,11 @@ def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonRespons
     in-memory catalogue without a follow-up GET.
 
     Errors:
-        404 — DEBUG=False, or unknown ``resort_id``.
+        404 — ``edit_map`` waffle flag inactive, or unknown ``resort_id``.
         400 — invalid JSON; missing or non-float lat/lon; coordinates
               outside the Swiss bounding box.
     """
-    _require_debug()
+    _require_edit_map_flag(request)
 
     try:
         payload = json.loads(request.body or b"")

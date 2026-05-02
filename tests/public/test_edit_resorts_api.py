@@ -4,11 +4,17 @@ tests/public/test_edit_resorts_api.py — SNOW-74 in-map resort editor.
 Covers the three endpoints introduced for the ``?edit=resorts`` mode:
 
 * ``api:resorts_geojson``           — always available; only geocoded rows.
-* ``api:edit_resorts_queue``        — DEBUG-only; queue + catalogue payload.
-* ``api:edit_resort_save_coords``   — DEBUG-only; persists clicked lat/lon.
+* ``api:edit_resorts_queue``        — flag-gated (``edit_map``);
+  queue + catalogue payload.
+* ``api:edit_resort_save_coords``   — flag-gated (``edit_map``);
+  persists clicked lat/lon.
 
-The DEBUG guard is asserted with ``@override_settings(DEBUG=False)`` for
-both edit-mode endpoints. The ``resorts_geojson`` endpoint is not gated.
+The flag gate is asserted with ``@override_flag("edit_map", active=False)``
+for both edit-mode endpoints. The ``resorts_geojson`` endpoint is not
+gated. Positive-path tests force the flag on with
+``@override_flag("edit_map", active=True)`` at the class level so they
+don't rely on the seeding migration's ``superusers=True`` row (the
+default test client is anonymous).
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ import json
 import pytest
 from django.test import Client, override_settings
 from django.urls import reverse
+from waffle.testutils import override_flag
 
 from tests.factories import EawsSubRegionFactory, RegionFactory, ResortFactory
 
@@ -70,7 +77,18 @@ class TestResortsGeojson:
 
 @pytest.mark.django_db
 class TestEditResortsQueue:
-    """Tests for ``GET /api/edit/resorts/queue/`` (DEBUG-only)."""
+    """Tests for ``GET /api/edit/resorts/queue/`` (flag-gated)."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_edit_map_flag(self):
+        """Force ``edit_map=on`` for every test in this class.
+
+        Per-class ``@override_flag`` decoration would need a
+        ``unittest.TestCase`` subclass; with plain pytest classes we use
+        an autouse fixture that wraps each test in the context manager.
+        """
+        with override_flag("edit_map", active=True):
+            yield
 
     def test_response_shape(self) -> None:
         """SNOW-85: response carries ``all_resorts`` and ``sub_regions``."""
@@ -189,14 +207,14 @@ class TestEditResortsQueue:
 
 
 @pytest.mark.django_db
-class TestEditResortsQueueDebugGate:
-    """The queue endpoint must 404 in production (DEBUG=False)."""
+class TestEditResortsQueueFlagGate:
+    """The queue endpoint must 404 when ``edit_map`` is off."""
 
-    @override_settings(DEBUG=False)
-    def test_returns_404_when_debug_off(self) -> None:
-        """Edit-mode endpoints are DEBUG-only at the URL and view layers."""
+    @override_flag("edit_map", active=False)
+    def test_returns_404_when_flag_inactive(self) -> None:
+        """Edit-mode endpoints 404 when the ``edit_map`` flag is inactive."""
         client = Client()
-        resp = client.get("/api/edit/resorts/queue/")
+        resp = client.get(reverse("api:edit_resorts_queue"))
         assert resp.status_code == 404
 
 
@@ -216,7 +234,17 @@ def _post_coords(client: Client, resort_id: int, **body: object):
 
 @pytest.mark.django_db
 class TestEditResortSaveCoords:
-    """Tests for ``POST /api/edit/resorts/<id>/coords/`` (DEBUG-only)."""
+    """Tests for ``POST /api/edit/resorts/<id>/coords/`` (flag-gated)."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_edit_map_flag(self):
+        """Force ``edit_map=on`` for every test in this class.
+
+        See :class:`TestEditResortsQueue` for why we use a fixture
+        rather than a class-level ``@override_flag``.
+        """
+        with override_flag("edit_map", active=True):
+            yield
 
     def test_happy_path_writes_all_fields(self) -> None:
         """A valid POST sets coords + provenance + clears needs_review."""
@@ -399,17 +427,16 @@ class TestEditResortSaveCoords:
 
 
 @pytest.mark.django_db
-class TestEditResortSaveCoordsDebugGate:
-    """The save endpoint must 404 in production (DEBUG=False)."""
+class TestEditResortSaveCoordsFlagGate:
+    """The save endpoint must 404 when ``edit_map`` is off."""
 
-    @override_settings(DEBUG=False)
-    def test_returns_404_when_debug_off(self) -> None:
-        """Save endpoint refuses with 404 when DEBUG is off."""
+    @override_flag("edit_map", active=False)
+    def test_returns_404_when_flag_inactive(self) -> None:
+        """Save endpoint refuses with 404 when ``edit_map`` is inactive."""
         resort = ResortFactory.create(name="A")
         client = Client()
-        # Direct-path POST — the URL itself is also gated, so a 404 is correct.
         resp = client.post(
-            f"/api/edit/resorts/{resort.pk}/coords/",
+            reverse("api:edit_resort_save_coords", args=[resort.pk]),
             data=json.dumps({"latitude": 46.0, "longitude": 7.0}),
             content_type="application/json",
         )
@@ -555,27 +582,32 @@ class TestRegionForPoint:
 
 @pytest.mark.django_db
 class TestMapViewEditMode:
-    """``map_view`` should boot the panel only when DEBUG and the flag agree."""
+    """Boot the panel only when querystring and ``edit_map`` flag both agree.
 
-    @override_settings(DEBUG=True)
-    def test_query_string_with_debug_renders_panel(self) -> None:
-        """``?edit=resorts`` + DEBUG=True shows the panel."""
+    Both the ``?edit=resorts`` querystring **and** the ``edit_map``
+    waffle flag must be present for ``map_view`` to render the
+    edit-resorts panel (SNOW-86).
+    """
+
+    @override_flag("edit_map", active=True)
+    def test_query_string_with_flag_renders_panel(self) -> None:
+        """``?edit=resorts`` + flag active shows the panel."""
         client = Client()
         resp = client.get(reverse("public:map") + "?edit=resorts")
         assert resp.status_code == 200
         assert b"edit-resorts-panel" in resp.content
 
-    @override_settings(DEBUG=False)
-    def test_query_string_without_debug_silent_fallback(self) -> None:
-        """``?edit=resorts`` + DEBUG=False renders the normal map."""
+    @override_flag("edit_map", active=False)
+    def test_query_string_without_flag_silent_fallback(self) -> None:
+        """``?edit=resorts`` + flag inactive renders the normal map."""
         client = Client()
         resp = client.get(reverse("public:map") + "?edit=resorts")
         assert resp.status_code == 200
         assert b"edit-resorts-panel" not in resp.content
 
-    @override_settings(DEBUG=True)
+    @override_flag("edit_map", active=True)
     def test_no_query_string_does_not_render_panel(self) -> None:
-        """Without the flag, the panel is absent even in DEBUG."""
+        """Without the querystring, the panel is absent even when the flag is on."""
         client = Client()
         resp = client.get(reverse("public:map"))
         assert resp.status_code == 200

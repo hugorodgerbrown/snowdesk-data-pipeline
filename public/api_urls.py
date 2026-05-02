@@ -7,7 +7,6 @@ don't share a namespace — ``{% url "api:today_summaries" %}`` vs
 ``{% url "public:bulletin" %}``.
 """
 
-from django.conf import settings
 from django.urls import path
 
 from . import api
@@ -35,21 +34,18 @@ urlpatterns = [
         api.region_summary,
         name="region_summary",
     ),
+    # SNOW-74 — edit-resorts mode endpoints. Always registered; the
+    # views inline-gate on the ``edit_map`` waffle flag (SNOW-86) and
+    # 404 when it is inactive for the request user, so non-superusers
+    # see the same response shape they did when this was DEBUG-only.
+    path(
+        "edit/resorts/queue/",
+        api.edit_resorts_queue,
+        name="edit_resorts_queue",
+    ),
+    path(
+        "edit/resorts/<int:resort_id>/coords/",
+        api.edit_resort_save_coords,
+        name="edit_resort_save_coords",
+    ),
 ]
-
-# SNOW-74 — edit-resorts mode endpoints. Views also inline-gate on
-# ``settings.DEBUG`` via ``_require_debug()``; the URL-level ``if``
-# keeps them out of the resolver when DEBUG is off.
-if settings.DEBUG:
-    urlpatterns += [
-        path(
-            "edit/resorts/queue/",
-            api.edit_resorts_queue,
-            name="edit_resorts_queue",
-        ),
-        path(
-            "edit/resorts/<int:resort_id>/coords/",
-            api.edit_resort_save_coords,
-            name="edit_resort_save_coords",
-        ),
-    ]
