@@ -31,6 +31,7 @@ from tests.factories import (
     RegionBulletinFactory,
     RegionDayRatingFactory,
     RegionFactory,
+    WeatherSnapshotFactory,
 )
 
 
@@ -777,3 +778,176 @@ class TestSeasonCalendar:
         )
         assert expected.encode() in response.content
         assert b'data-rating-max="considerable"' in response.content
+
+
+# ── Weather header (SNOW-98) ───────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestWeatherHeader:
+    """Tests for the WeatherSnapshot → context plumbing on bulletin_detail."""
+
+    def _bulletin_url(self) -> str:
+        """Return the today-bulletin URL used by every test below."""
+        return reverse(
+            "public:bulletin",
+            kwargs={"region_id": "CH-4115", "slug": "valais"},
+        )
+
+    def test_no_snapshot_yields_none_in_context(self, client: Client, region) -> None:
+        """When no WeatherSnapshot exists, ``weather_display`` is None."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        assert response.context["weather_display"] is None
+        # Partial short-circuits on None — the marker div must be absent.
+        assert b'data-testid="bulletin-weather-header"' not in response.content
+
+    def test_daytime_snapshot_emits_day_attributes(
+        self, client: Client, region
+    ) -> None:
+        """A clear-sky daytime snapshot maps to bucket=clear, time=day."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=0,  # clear sky
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+        )
+
+        with _freeze("2026-03-15T12:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        display = response.context["weather_display"]
+        assert display is not None
+        assert display["bucket"] == "clear"
+        assert display["time_of_day"] == "day"
+        # The partial renders the data-attributes the design CSS targets.
+        assert b'data-weather-bucket="clear"' in response.content
+        assert b'data-time-of-day="day"' in response.content
+
+    def test_nighttime_snapshot_emits_night_attributes(
+        self, client: Client, region
+    ) -> None:
+        """A snowing snapshot read after sunset maps to bucket=snow, time=night."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=71,  # snowfall
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+        )
+
+        with _freeze("2026-03-15T22:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        display = response.context["weather_display"]
+        assert display is not None
+        assert display["bucket"] == "snow"
+        assert display["time_of_day"] == "night"
+        assert b'data-weather-bucket="snow"' in response.content
+        assert b'data-time-of-day="night"' in response.content
+
+    def test_historical_date_with_daytime_clock_renders_as_day(
+        self, client: Client, region
+    ) -> None:
+        """Browsing a past date at 11:09 wall-clock still renders as day.
+
+        Regression guard: an earlier implementation compared full instants,
+        which always landed past every historical sunset and forced every
+        past page into the night theme.
+        """
+        _make_am_bulletin(region, date(2026, 3, 14))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 14),
+            weather_code=0,
+            sunrise=datetime(2026, 3, 14, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 14, 18, 0, tzinfo=UTC),
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "CH-4115",
+                "slug": "valais",
+                "date_str": "2026-03-14",
+            },
+        )
+        with _freeze("2026-05-01T11:09:00+00:00"):
+            response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.context["weather_display"]["time_of_day"] == "day"
+
+    def test_historical_date_with_evening_clock_renders_as_night(
+        self, client: Client, region
+    ) -> None:
+        """Browsing a past date at 23:09 wall-clock renders as night."""
+        _make_am_bulletin(region, date(2026, 3, 14))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 14),
+            weather_code=0,
+            sunrise=datetime(2026, 3, 14, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 14, 18, 0, tzinfo=UTC),
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "CH-4115",
+                "slug": "valais",
+                "date_str": "2026-03-14",
+            },
+        )
+        with _freeze("2026-05-01T23:09:00+00:00"):
+            response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.context["weather_display"]["time_of_day"] == "night"
+
+    def test_empty_state_still_includes_weather_display(
+        self, client: Client, region
+    ) -> None:
+        """No bulletin but a snapshot exists → header still renders."""
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=3,  # overcast
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+        )
+
+        with _freeze("2026-03-15T12:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        assert response.context["bulletin"] is None
+        display = response.context["weather_display"]
+        assert display is not None
+        assert display["bucket"] == "cloudy"
+
+    def test_snapshot_for_other_region_does_not_leak(
+        self, client: Client, region
+    ) -> None:
+        """A snapshot for a different region must not surface on this page."""
+        other = RegionFactory.create(region_id="CH-9999", name="Other", slug="other")
+        WeatherSnapshotFactory.create(
+            region=other,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=0,
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+        )
+        _make_am_bulletin(region, date(2026, 3, 15))
+
+        with _freeze("2026-03-15T12:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        assert response.context["weather_display"] is None
