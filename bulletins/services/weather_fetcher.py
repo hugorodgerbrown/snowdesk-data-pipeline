@@ -146,7 +146,8 @@ def fetch_weather_for_region(
         "longitude": str(centre["lon"]),
         "daily": "weather_code,sunrise,sunset",
         "timezone": "auto",
-        "forecast_days": "1",
+        # HRB: forecast_days cannot be used with start/end dates.
+        # "forecast_days": "1",
         "start_date": target_date.isoformat(),
         "end_date": target_date.isoformat(),
     }
