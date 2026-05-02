@@ -3,29 +3,6 @@
   "env": {
     "BASH_MAX_OUTPUT_LENGTH": "150000"
   },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bin/init-worktree",
-            "statusMessage": "Initialising worktree…"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bin/mark-worktree-cleanable"
-          }
-        ]
-      }
-    ]
-  },
   "permissions": {
     "allow": [
       "Bash(python3 -c ':*)",

@@ -121,6 +121,7 @@ Contains pure-ish functions that:
   `logs/pipeline.log` with rotation. Don't reconfigure handlers inside
   app code.
 - `print()` is a lint error (`T2` rule). Use the logger.
+- log API responses with `logger.debug()`
 
 ### 2.6 Formatting and linting
 
@@ -286,7 +287,7 @@ for the reference shape.
 - **pytest** with **pytest-django** is the runner. `unittest.TestCase`
   subclasses are tolerated but not preferred.
 - **FactoryBoy** for test data. Never build model instances with
-  `Model(...)` directly in tests.
+  `Model(...)` directly in tests. All models must have a factory.
 - Tests live in `tests/`, mirroring the source structure. Each Django
   module `foo/bar.py` has a corresponding `tests/foo/test_bar.py`.
 - Per-file ignores for `*tests/*` disable docstring rules, line-length,
