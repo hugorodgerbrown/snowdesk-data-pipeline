@@ -830,8 +830,10 @@ def examples_random(request: HttpRequest) -> HttpResponse:
     every client behind a shared cache / CDN.
 
     Finds the most recent bulletin issue date, picks a random region from
-    that issue, and renders the bulletin template directly at the current
-    URL. Refreshing the page picks a different region each time.
+    that issue, and renders the bulletin page **using the same core
+    renderer as the canonical route** so the example is byte-for-byte
+    identical to a real bulletin page. Refreshing picks a different
+    region each time.
 
     Falls back to the marketing homepage if there are no bulletins.
 
@@ -852,102 +854,47 @@ def examples_random(request: HttpRequest) -> HttpResponse:
         .distinct()
     )
 
-    regions = Region.objects.filter(pk__in=region_ids)
-    if not regions.exists():
+    # Match the prefetch shape ``bulletin_detail`` uses so the core renders
+    # at the same query budget the SNOW-13 monitor enforces.
+    regions = list(
+        Region.objects.filter(pk__in=region_ids)
+        .select_related("subregion")
+        .prefetch_related(
+            Prefetch("neighbours", queryset=Region.objects.order_by("name")),
+        )
+    )
+    if not regions:
         return redirect("public:home")
 
-    region = random.choice(list(regions))  # noqa: S311 — not crypto
-    today = timezone.now().date()
-    issues = _issues_for_date(region, today)
+    region = random.choice(regions)  # noqa: S311 — not crypto
     requested_issue_id = request.GET.get("issue") or None
-    selected = _resolve_selected_issue(issues, today, requested_issue_id)
-
-    if selected is None:
-        return _render_bulletin_page(
-            request,
-            {
-                "bulletin": None,
-                "region_name": region.name,
-                "region_id": region.region_id,
-                "year": today.year,
-            },
-            bulletin=None,
-        )
-
-    page_date = today
-
-    link = (
-        RegionBulletin.objects.filter(bulletin=selected, region=region)
-        .values_list("region_name_at_time", flat=True)
-        .first()
-    )
-    region_name = link or region.name
-
-    prev_date, next_date = _get_nav_dates(region, page_date)
-
-    is_today = page_date == today
-    next_update_time: datetime.datetime | None = None
-    now = timezone.now()
-    if (
-        is_today
-        and next_date is None
-        and selected.next_update
-        and selected.next_update > now
-    ):
-        next_update_time = selected.next_update
-
-    panel = _build_panel_context(selected)
-
-    day_windows: list[dict[str, Any]] = _build_day_windows(selected)
-    subregion_name = (
-        region.subregion.name_en or region.subregion.name_native
-        if region.subregion
-        else ""
-    )
-    calendar_partial_url = "{}?{}".format(
-        reverse(
-            "public:calendar_partial",
-            kwargs={
-                "region_id": region.region_id,
-                "year": page_date.year,
-                "month": page_date.month,
-            },
-        ),
-        urlencode({"date": page_date.isoformat()}),
+    return _bulletin_detail_response(
+        request,
+        region,
+        timezone.now().date(),
+        requested_issue_id=requested_issue_id,
+        # ``examples_random`` is an evergreen "today's bulletin" demo,
+        # so the canonical points at the no-date form-2 URL of the
+        # picked region — not the dated form 3 (SNOW-99).
+        canonical_is_today=True,
     )
 
-    context = {
-        "region": region,
-        "region_name": region_name,
-        "region_id": region.region_id,
-        "slug": slugify(region.name),
-        "bulletin": selected,
-        "panel": panel,
-        "page_date": page_date,
-        "is_today": is_today,
-        "prev_date": prev_date,
-        "next_date": next_date,
-        "next_update_time": next_update_time,
-        "year": today.year,
-        # Calendar widget context.
-        "calendar_region_id": region.region_id,
-        "calendar_partial_url": calendar_partial_url,
-        "calendar_current_date": page_date,
-        # Masthead context.
-        "day_windows": day_windows,
-        "subregion_name": subregion_name,
-    }
-    return _render_bulletin_page(request, context, bulletin=selected)
 
-
+@never_cache
 def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     """
-    Redirect to a random bulletin matching a specific danger level.
+    Render a random bulletin matching a specific danger level inline.
 
     Finds the most recent bulletin whose highest ``mainValue`` matches the
-    requested level, picks a random region from that bulletin, and redirects
-    to the bulletin detail page. Returns 404 if the slug is unrecognised or
-    no matching bulletin exists.
+    requested level, picks a region from that bulletin, and renders **the
+    same view as the canonical bulletin route** with the matched bulletin
+    pinned via ``requested_issue_id`` — guaranteeing the page actually
+    reflects the requested danger level (not whatever the 10:00-rule
+    default would land on for that date).
+
+    Decorated with ``@never_cache`` so refreshing surfaces a different
+    matching bulletin each time. Returns 404 if the slug is unrecognised
+    or no matching bulletin exists.
 
     Args:
         request: The incoming HTTP request.
@@ -955,7 +902,8 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
             or ``"very-high"``).
 
     Returns:
-        A redirect response, or 404 if no matching bulletin is found.
+        The rendered bulletin page, or 404 if no matching bulletin is
+        found.
 
     """
     danger_key = _DANGER_SLUG_TO_KEY.get(danger_level)
@@ -964,7 +912,7 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
 
     # Filter in Python because SQLite does not support JSON __contains.
     # The candidate pool is small (most recent 200 bulletins) so this is
-    # fast enough for a redirect view.
+    # fast enough for a render view.
     candidates = Bulletin.objects.order_by("-issued_at")[:200]
     matching = [
         b
@@ -979,47 +927,79 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
         raise Http404(f"No bulletins found for danger level: {danger_level}")
 
     bulletin = random.choice(matching)  # noqa: S311 — not crypto
+    # Match ``bulletin_detail``'s prefetch shape so the core renders at
+    # the SNOW-13-tracked query budget.
     region_bulletin = (
         RegionBulletin.objects.filter(bulletin=bulletin)
-        .select_related("region")
+        .select_related("region", "region__subregion")
+        .prefetch_related(
+            Prefetch("region__neighbours", queryset=Region.objects.order_by("name")),
+        )
         .first()
     )
     if not region_bulletin:
         raise Http404(f"No regions found for bulletin: {bulletin.bulletin_id}")
 
     region = region_bulletin.region
-    name_slug = _get_name_slug(region)
-    date_str = bulletin.valid_to.strftime("%Y-%m-%d")
-    return redirect(
-        "public:bulletin_date",
-        region_id=region.region_id,
-        slug=name_slug,
-        date_str=date_str,
+    target_date = bulletin.valid_to.date()
+    # Pin the matched bulletin so the rendered page actually shows the
+    # requested danger level. An explicit ``?issue=`` query param wins
+    # over the pin so deep-links continue to work.
+    requested_issue_id = request.GET.get("issue") or str(bulletin.bulletin_id)
+    return _bulletin_detail_response(
+        request,
+        region,
+        target_date,
+        requested_issue_id=requested_issue_id,
     )
 
 
-def region_redirect(request: HttpRequest, region_id: str) -> HttpResponse:
+def _redirect_to_canonical(
+    request: HttpRequest,
+    region: Region,
+    target_date: datetime.date | None = None,
+) -> HttpResponse:
     """
-    Redirect ``/<region_id>/`` to ``/<region_id>/<slug>/``.
+    Build a 302 to the fully-qualified ``/<region_id>/<slug>/<date>/`` URL.
 
-    Looks up the region name slug from cache first; only hits the
-    database on a cache miss.
+    The canonical bulletin URL has a date segment so search engines and
+    shared links resolve a single page per (region, day) pair. All three
+    non-canonical entry points funnel through here:
 
-    Args:
-        request: The incoming HTTP request.
-        region_id: SLF region identifier (e.g. ``"CH-4115"``).
+    * Form 1 (``/<region_id>/``)
+    * Form 2 (``/<region_id>/<slug>/``)
+    * Form 3 with a non-canonical region_id or slug (e.g. preserved
+      casing or a stale slug like ``ch_4124``)
 
-    Returns:
-        A 302 redirect to the canonical ``/<region_id>/<slug>/`` URL.
-
+    ``target_date`` defaults to today; pass the inbound date when
+    redirecting from a form-3 URL so the redirect preserves the day the
+    user asked for. Any query string on the inbound request is preserved
+    so deep links like ``?issue=<uuid>`` continue to work.
     """
-    region = get_object_or_404(Region, region_id__iexact=region_id)
-    name_slug = _get_name_slug(region)
-    return redirect(
-        "public:bulletin",
-        region_id=region.region_id,
-        slug=name_slug,
-    )
+    target = region.get_absolute_url(target_date)
+    # The semgrep open-redirect rule fires on the syntactic taint flow
+    # from ``request.META`` to ``redirect()``. The sink is provably safe:
+    # ``target`` is a server-relative path built via ``Region.get_absolute_url``
+    # (always lowercase region_id + slugified name + today's date), and
+    # the query string is appended after a literal ``?`` separator — so
+    # QUERY_STRING content cannot change the host of the redirect target.
+    # Suppress at the source line where taint enters.
+    # noqa is for the line-length cap: the rule id makes the line long.
+    qs = request.META.get("QUERY_STRING", "")  # noqa: E501  # nosemgrep: python.django.security.injection.open-redirect.open-redirect
+    if qs:
+        target = f"{target}?{qs}"
+    return redirect(target)
+
+
+# ---------------------------------------------------------------------------
+# Forms 1 + 2 + 3 share ``bulletin_detail`` (see end of this section).
+# Forms 1 (``/<region_id>/``) and 2 (``/<region_id>/<slug>/``) render today's
+# bulletin in place at the inbound URL — they do NOT redirect. Only form 3
+# with non-canonical components (e.g. preserved-case region_id or stale
+# ``ch_4124``-style slug) redirects to the canonical form-3 URL. The page
+# always advertises the canonical form-3 URL via ``<link rel="canonical">``
+# regardless of which form the user landed on.
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -1249,54 +1229,95 @@ def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
     return windows
 
 
-@condition(
-    etag_func=_bulletin_page_etag,
-    last_modified_func=_bulletin_page_last_modified,
-)
-def bulletin_detail(
+def _build_canonical_url(
     request: HttpRequest,
-    region_id: str,
-    slug: str,
-    date_str: str | None = None,
-) -> HttpResponse:
+    region: Region,
+    target_date: datetime.date | None,
+) -> str:
     """
-    Render the bulletin viewer for a given region on a specific day.
+    Build the absolute canonical URL for a region (and optional date).
 
-    Without ``date_str`` the view shows today's bulletin. With a date
-    segment (``YYYY-MM-DD``) it shows that day's bulletin.
-
-    For past days the morning bulletin is shown (the updated daytime
-    assessment).  For the current day the bulletin whose validity window
-    contains the current time is shown automatically.
-
-    The ``slug`` segment is cosmetic (for readable URLs) and is not used
-    for lookup — the region is resolved entirely from ``region_id``.
-
-    Args:
-        request: The incoming HTTP request.
-        region_id: SLF region identifier (e.g. ``"CH-4115"``).
-        slug: Slugified region name (e.g. ``"valais"``); cosmetic only.
-        date_str: Optional date string in ``YYYY-MM-DD`` format.
-
-    Returns:
-        The rendered bulletin page.
-
+    Used by ``_bulletin_detail_response`` to populate the
+    ``<link rel="canonical">`` tag. ``target_date`` selects between the
+    two canonical families (SNOW-99): pass ``None`` for the form-2
+    "today" / evergreen URL ``/<region_id>/<slug>/``, or a ``date`` for
+    the form-3 dated URL ``/<region_id>/<slug>/<YYYY-MM-DD>/``. Defers
+    to ``Region.get_absolute_url`` so the path components stay
+    consistent with every other internal URL builder.
     """
-    # ``select_related("subregion")`` pre-loads the parent EAWS L2 row
-    # the masthead's H2 reads (and any future caller that touches
-    # ``region.subregion``) — without it, the subregion lookup adds a
-    # second SELECT on every bulletin pageview. SNOW-13 query-count
-    # monitor caught the +1 regression.
-    #
-    # ``neighbours`` is prefetched ordered-by-name so the "Adjoining
-    # regions" section in the template iterates in display order without
-    # a per-render sort.
-    region = get_object_or_404(
+    return request.build_absolute_uri(region.get_absolute_url(target_date))
+
+
+def _resolve_region_for_bulletin(region_id: str) -> Region:
+    """
+    Look up a Region with the prefetches the bulletin page needs.
+
+    ``select_related("subregion")`` pre-loads the parent EAWS L2 row the
+    masthead's H2 reads — without it, the subregion lookup adds a second
+    SELECT on every bulletin pageview (SNOW-13 query-count monitor
+    caught the +1 regression). ``neighbours`` is prefetched ordered-by-
+    name so the "Adjoining regions" section in the template iterates in
+    display order without a per-render sort.
+    """
+    return get_object_or_404(
         Region.objects.select_related("subregion").prefetch_related(
             Prefetch("neighbours", queryset=Region.objects.order_by("name")),
         ),
         region_id__iexact=region_id,
     )
+
+
+def _bulletin_detail_response(
+    request: HttpRequest,
+    region: Region,
+    target_date: datetime.date,
+    *,
+    requested_issue_id: str | None = None,
+    canonical_is_today: bool = False,
+) -> HttpResponse:
+    """
+    Render the bulletin viewer for a resolved ``(region, target_date)``.
+
+    Shared core for the canonical bulletin route and both example
+    routes — guarantees the example pages are byte-for-byte identical
+    to the real bulletin pages.
+
+    The caller is responsible for resolving ``region`` (with
+    ``select_related("subregion")`` and the ``neighbours`` prefetch — see
+    ``_resolve_region_for_bulletin``) and parsing ``target_date``.
+    ``requested_issue_id`` overrides the default 10:00-rule issue
+    selection — pass it from ``request.GET.get("issue")`` for the
+    canonical route, or from a bulletin's ``bulletin_id`` to pin a
+    specific issue for an example page.
+
+    ``canonical_is_today`` selects between the two canonical URL
+    families. Pass ``True`` when the inbound request is the no-date
+    "today / evergreen" view (forms 1 and 2, ``examples_random``); the
+    page advertises the form-2 URL ``/<region_id>/<slug>/``. Pass
+    ``False`` when the request is for a specific calendar day
+    (form 3, ``examples_category``); the page advertises the form-3
+    URL ``/<region_id>/<slug>/<date>/``. The two URLs render the same
+    content today but are semantically distinct destinations — the
+    today URL is a live page that follows the calendar; the dated URL
+    is a historical record.
+
+    Args:
+        request: The incoming HTTP request.
+        region: A pre-fetched ``Region`` with ``subregion`` selected and
+            ``neighbours`` prefetched.
+        target_date: Calendar day the page represents.
+        requested_issue_id: Optional bulletin id (UUID string) to pin
+            the active issue tab; falls back to the 10:00 default when
+            ``None``.
+        canonical_is_today: When ``True``, advertise the form-2
+            "today" canonical URL; when ``False``, advertise the
+            form-3 dated canonical URL.
+
+    Returns:
+        The rendered bulletin page (or empty-state page when no issue
+        covers the target day).
+
+    """
     adjoining_regions = list(region.neighbours.all())
 
     # Warm the cache for future region_redirect lookups.
@@ -1306,14 +1327,15 @@ def bulletin_detail(
         timeout=_ZONE_NAME_CACHE_TIMEOUT,
     )
 
-    # Determine the target date.
     today = timezone.now().date()
-    target_date = today
-    if date_str:
-        try:
-            target_date = datetime.date.fromisoformat(date_str)
-        except ValueError:
-            target_date = today
+    # Two canonical-URL flavours: the no-date "today" form (form 2)
+    # for live / evergreen views, and the dated form (form 3) for
+    # historical views. See SNOW-99.
+    canonical_url = _build_canonical_url(
+        request,
+        region,
+        None if canonical_is_today else target_date,
+    )
 
     # Weather header data (SNOW-98). The snapshot is one row per
     # (region, valid_for_date); ``.first()`` is fine because the model's
@@ -1326,11 +1348,10 @@ def bulletin_detail(
     weather_display = build_weather_display(weather_snapshot, timezone.now())
 
     # Collect every issue that touches the target day and pick the one
-    # the user asked for via ``?issue=<uuid>``; otherwise fall back to
-    # the 10:00-rule default. Multi-issue days render the user-selected
-    # issue (or the default) as the page body.
+    # the caller asked for; otherwise fall back to the 10:00-rule
+    # default. Multi-issue days render the requested (or default) issue
+    # as the page body.
     issues = _issues_for_date(region, target_date)
-    requested_issue_id = request.GET.get("issue") or None
     selected = _resolve_selected_issue(issues, target_date, requested_issue_id)
 
     if selected is None:
@@ -1341,10 +1362,12 @@ def bulletin_detail(
                 "region": region,
                 "region_name": region.name,
                 "region_id": region.region_id,
+                "page_date": target_date,
                 "year": datetime.date.today().year,
                 "adjoining_regions": adjoining_regions,
                 "season_calendar": build_season_grid(region, target_date, today),
                 "weather_display": weather_display,
+                "canonical_url": canonical_url,
             },
             bulletin=None,
         )
@@ -1435,6 +1458,8 @@ def bulletin_detail(
         "adjoining_regions": adjoining_regions,
         # Weather-driven header — see SNOW-98.
         "weather_display": weather_display,
+        # Canonical form-3 URL — see SNOW-99.
+        "canonical_url": canonical_url,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 
@@ -1454,6 +1479,100 @@ def bulletin_detail(
             max_age = max(30, min(remaining, 300))
         patch_cache_control(response, public=True, max_age=max_age)
     return response
+
+
+def bulletin_detail(
+    request: HttpRequest,
+    region_id: str,
+    slug: str | None = None,
+    date_str: str | None = None,
+) -> HttpResponse:
+    """
+    Render the bulletin viewer at any of the three URL forms.
+
+    Single entry point for forms 1 (``/<region_id>/``), 2
+    (``/<region_id>/<slug>/``), and 3 (``/<region_id>/<slug>/<date>/``).
+    Forms 1 and 2 render today's bulletin in place at the inbound URL —
+    they do NOT redirect to form 3. Only form 3 with non-canonical path
+    components (e.g. ``/CH-4124/ch_4124/<date>/`` instead of
+    ``/ch-4124/val-d-anniviers/<date>/``) 302s to the canonical form.
+
+    The canonical-redirect check compares ``request.path`` against
+    ``region.get_absolute_url(target_date)``. ``request.path`` is
+    inherently free of fragments and query strings (Django strips both
+    before populating it), and the redirect helper preserves the
+    inbound query string. The check only fires when ``date_str`` is
+    present — no-date hits (forms 1 and 2) render in place even when
+    the URL casing or slug is non-canonical.
+
+    Two canonical URL families coexist (SNOW-99): the ``<link rel="canonical">``
+    advertises the **form-2** URL when the inbound request had no date
+    component (forms 1 and 2 — the live "today" view), and the
+    **form-3** URL when the inbound request specified a date (form 3 —
+    the historical record). The two render the same bytes today but
+    are semantically distinct destinations: the no-date URL follows
+    the calendar; the dated URL freezes once the date is past.
+
+    The wrapper does *not* live under ``@condition`` because the
+    canonical-redirect must take precedence over conditional-GET — a
+    cached non-canonical response should not 304 indefinitely. Once we
+    know the URL is canonical (or no date was supplied) we delegate to
+    ``_bulletin_detail_render`` which is conditional-GET aware.
+
+    For past days the morning bulletin is shown (the updated daytime
+    assessment). For the current day the bulletin whose validity window
+    contains the current time is shown automatically. Pass
+    ``?issue=<uuid>`` to pin a specific issue tab.
+
+    Args:
+        request: The incoming HTTP request.
+        region_id: SLF region identifier (e.g. ``"CH-4115"``).
+        slug: Slugified region name (cosmetic; ignored for lookup).
+            ``None`` when hitting form 1.
+        date_str: Date in ``YYYY-MM-DD`` format. ``None`` on forms 1
+            and 2 → today; unparseable strings on form 3 also fall
+            back to today.
+
+    Returns:
+        The rendered bulletin page, or a 302 to the canonical URL when
+        a form-3 path is non-canonical.
+
+    """
+    region = _resolve_region_for_bulletin(region_id)
+    target_date = _parse_target_date(date_str)
+    if date_str is not None and request.path != region.get_absolute_url(target_date):
+        return _redirect_to_canonical(request, region, target_date)
+    return _bulletin_detail_render(request, region_id, slug, date_str)
+
+
+@condition(
+    etag_func=_bulletin_page_etag,
+    last_modified_func=_bulletin_page_last_modified,
+)
+def _bulletin_detail_render(
+    request: HttpRequest,
+    region_id: str,
+    slug: str | None = None,
+    date_str: str | None = None,
+) -> HttpResponse:
+    """
+    Render the bulletin page with conditional-GET.
+
+    Internal helper invoked only when ``bulletin_detail`` has confirmed
+    the inbound URL is one of the renderable forms (form 1, form 2, or
+    canonical form 3). Wrapped in ``@condition`` so browsers and CDNs
+    can serve 304 responses when the bulletin data hasn't changed.
+    """
+    region = _resolve_region_for_bulletin(region_id)
+    target_date = _parse_target_date(date_str)
+    requested_issue_id = request.GET.get("issue") or None
+    return _bulletin_detail_response(
+        request,
+        region,
+        target_date,
+        requested_issue_id=requested_issue_id,
+        canonical_is_today=date_str is None,
+    )
 
 
 # ---------------------------------------------------------------------------

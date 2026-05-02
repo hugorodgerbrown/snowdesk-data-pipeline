@@ -43,6 +43,23 @@ logger = logging.getLogger(__name__)
 # Each tuple is (name, url_path). Names must be unique, stable, and safe
 # for plain-text keys (no spaces). URLs are hit as-is; redirects are not
 # followed so the measured count is for the immediate response only.
+#
+# Bulletin URLs MUST be the canonical form-3 URL (lowercase region_id,
+# name-derived slug, fixture-backed date). Any other shape regresses the
+# query count to one of two unstable paths:
+#
+# * Today URLs (form 1 ``/<region_id>/`` or form 2
+#   ``/<region_id>/<slug>/``) hit the empty-state render branch on CI
+#   because the committed fixture has no "today" data — local devs see
+#   the full-render branch because they fetch live bulletins, so the
+#   counts diverge by ~2 queries (the ``region_name_at_time`` and
+#   prev-nav lookups skipped on empty state).
+# * Non-canonical form-3 URLs (preserved-case region_id, stale slug)
+#   short-circuit at the canonical-redirect, measuring redirect
+#   overhead (~3 queries) rather than the render path.
+#
+# The canonical historic URL below renders the full bulletin against
+# fixture data on both local and CI, so the count is stable.
 MONITORED_URLS: list[tuple[str, str]] = [
     ("home", "/"),
     ("map", "/map/"),
@@ -53,8 +70,7 @@ MONITORED_URLS: list[tuple[str, str]] = [
     # the precache feature. The route 404s now and the 404 path runs ~4
     # middleware queries — tracking that against a "0 queries" target
     # would be monitoring the 404 handler, not a Snowdesk endpoint.
-    ("region_redirect", "/CH-4115/"),
-    ("bulletin_historic", "/CH-4115/martigny-verbier/2026-04-01/"),
+    ("bulletin_historic", "/ch-4115/martigny-verbier/2026-04-02/"),
 ]
 
 BASELINE_PATH = Path(settings.BASE_DIR) / "perf" / "query_counts.txt"

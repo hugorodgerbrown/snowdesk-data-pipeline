@@ -618,7 +618,12 @@ def test_region_summary_peek_includes_bulletin_deep_link():
     assert response.status_code == 200
     peek = response.json()["peek"]
     assert 'data-testid="region-peek-bulletin-link"' in peek
-    expected_href = reverse("public:bulletin", args=["CH-4115", "ch-4115"])
+    # SNOW-99: peek now carries the canonical form-3 URL — lowercase
+    # ``region_id`` and the *name*-derived slug — so clicking through
+    # doesn't incur an extra 302 hop. The factory creates a region
+    # named "CH-4115" (no name set), so ``name_slug`` falls back to the
+    # slugified form of the auto-stringified name.
+    expected_href = region.get_absolute_url()
     assert f'href="{expected_href}"' in peek
 
 

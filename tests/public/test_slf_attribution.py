@@ -155,11 +155,10 @@ class TestGlobalSiteFooter:
 
     def test_bulletin_renders_footer(self, client, region):
         _make_today_bulletin(region)
-        url = reverse(
-            "public:bulletin",
-            kwargs={"region_id": region.region_id, "slug": region.slug},
-        )
-        response = client.get(url)
+        # SNOW-99: hit the canonical form-3 URL directly via the model's
+        # ``get_absolute_url`` so the test isn't affected by the form-1/2
+        # or off-canonical-form-3 redirect chains.
+        response = client.get(region.get_absolute_url())
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
 

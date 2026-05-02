@@ -4,7 +4,7 @@ public/api_urls.py — URL routing for the public JSON API.
 Mounted at ``/api/`` from ``config/urls.py``. Kept separate from
 ``public/urls.py`` so the page-serving routes and the JSON endpoints
 don't share a namespace — ``{% url "api:today_summaries" %}`` vs
-``{% url "public:bulletin" %}``.
+``{% url "public:bulletin_date" %}``.
 """
 
 from django.urls import path

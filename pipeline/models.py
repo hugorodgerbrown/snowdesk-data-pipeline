@@ -25,9 +25,11 @@ Keep business logic out of models — put it in pipeline/services/ instead.
 
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 from django.db import models
+from django.urls import reverse
 from django.utils.text import slugify
 
 from core.models import BaseModel
@@ -313,6 +315,64 @@ class Region(BaseModel):
     def major_region(self) -> EawsMajorRegion:
         """Return the L1 major region this region belongs to."""
         return self.subregion.major
+
+    @property
+    def canonical_region_id(self) -> str:
+        """Lowercase, hyphen-normalised ``region_id`` for URL paths.
+
+        ``region_id`` is stored case-preserved (e.g. ``"CH-4115"``) so
+        the SLF identifier round-trips through the API exactly as it
+        arrived. URLs always use the slugified form so callers and
+        search engines see a single canonical path per region.
+        """
+        return slugify(self.region_id)
+
+    @property
+    def name_slug(self) -> str:
+        """Slugified region name for the second URL path component.
+
+        Re-derived from ``self.name`` on every access rather than from
+        the stored ``slug`` field — that field is auto-generated from
+        ``region_id`` (e.g. ``"ch-4115"``), not from the name. Computing
+        from the name keeps the URL human-readable
+        (``/ch-4115/brunig-lungern/``).
+        """
+        return slugify(self.name)
+
+    def get_absolute_url(self, target_date: datetime.date | None = None) -> str:
+        """Return the canonical bulletin URL for this region.
+
+        Two distinct canonical forms (SNOW-99):
+
+        * ``target_date is None`` (default) → form 2
+          ``/<region_id>/<slug>/``. The "today" / evergreen URL — its
+          rendered content shifts as the calendar advances, and search
+          engines index it as a single live page.
+        * ``target_date`` set to a date → form 3
+          ``/<region_id>/<slug>/<YYYY-MM-DD>/``. The historical URL
+          for that specific calendar day; once the date is past the
+          rendered content is fixed.
+
+        Both forms always use the lowercased ``region_id`` and the
+        name-derived slug so callers and search engines see one
+        canonical URL per (region [, day]).
+        """
+        if target_date is None:
+            return reverse(
+                "public:bulletin",
+                kwargs={
+                    "region_id": self.canonical_region_id,
+                    "slug": self.name_slug,
+                },
+            )
+        return reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": self.canonical_region_id,
+                "slug": self.name_slug,
+                "date_str": target_date.isoformat(),
+            },
+        )
 
 
 # ---------------------------------------------------------------------------

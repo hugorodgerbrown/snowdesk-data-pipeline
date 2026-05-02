@@ -40,7 +40,6 @@ import waffle
 from django.http import Http404, HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
-from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
@@ -540,7 +539,12 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     # time_period_label, ElevationBounds); without enrichment those rows
     # silently disappear via the partial's {% if %} guards.
     rm = enrich_render_model(bulletin.render_model or {})
-    bulletin_url = reverse("public:bulletin", args=[region.region_id, region.slug])
+    # Two canonical URL families (SNOW-99): when the map page is at
+    # "today" (no ``?d=``), point the peek at the no-date form-2 URL —
+    # the live evergreen page. When the user has scrubbed to a specific
+    # date via ``?d=``, point at the form-3 dated URL — the historical
+    # record. Either way the link skips the 302 hop.
+    bulletin_url = region.get_absolute_url(None if raw_date is None else target_date)
 
     ctx = {
         "region": region,

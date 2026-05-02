@@ -42,6 +42,10 @@ reachable via the SNOW-81 deep-link in the masthead.
 {% endblock %}
 
 {% block extra_head %}
+    {# Canonical form-3 URL (SNOW-99). Set on every render path, including #}
+    {# the empty-state and the /examples/ pages so search engines collapse #}
+    {# duplicate URLs to a single bulletin destination.                    #}
+    {% if canonical_url %}<link rel="canonical" href="{{ canonical_url }}">{% endif %}
     <script
         src="https://unpkg.com/htmx.org@2.0.4"
         integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
@@ -446,7 +450,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                         <li>
                             <a
                                 class="text-text-2 underline hover:text-text-1"
-                                href="{% url 'public:bulletin' region_id=r.region_id slug=r.slug %}"
+                                href="{% url 'public:bulletin_date' region_id=r.canonical_region_id slug=r.name_slug date_str=page_date|date:'Y-m-d' %}"
                             >
                                 {{ r.name }}
                             </a>
