@@ -130,6 +130,37 @@
   --color-eaws-high-fg:         #ffffff;
   --color-eaws-very-high-fg:    #ffffff;
 
+  /* —— Weather header (SNOW-98) ————————————————
+     Background tokens for the bulletin page's
+     graphic weather header. Two values per
+     bucket (day / night) — the day/night split
+     is driven by the WeatherSnapshot's sunrise
+     /sunset times, not by the site theme, so
+     these tokens are intentionally NOT mirrored
+     under .dark {}.
+
+     PLACEHOLDER VALUES — the final visual design
+     will replace these once handed over. Keep the
+     token names stable so the partial markup
+     (data-weather-bucket / data-time-of-day) does
+     not need to change.
+     ————————————————————————————————————————— */
+
+  --color-weather-clear-day:           #9bc6e8;   /* clear sky                     */
+  --color-weather-clear-night:         #1a2a4a;   /* deep night sky                */
+  --color-weather-partly-cloudy-day:   #aac8de;
+  --color-weather-partly-cloudy-night: #22324a;
+  --color-weather-cloudy-day:          #b8bcc1;
+  --color-weather-cloudy-night:        #2a2e34;
+  --color-weather-fog-day:             #cfcec8;
+  --color-weather-fog-night:           #2c2e35;
+  --color-weather-rain-day:            #7e94a8;
+  --color-weather-rain-night:          #1d2932;
+  --color-weather-snow-day:            #dde7ee;
+  --color-weather-snow-night:          #1f2a3a;
+  --color-weather-thunder-day:         #5e6470;
+  --color-weather-thunder-night:       #101220;
+
   /* Border radius */
   --radius-card:   16px;   /* outer card shell                    */
   --radius-tag:    8px;    /* problem tag, inner chips             */
@@ -252,6 +283,47 @@
 .danger-band[data-level="considerable"] { border-top: 4px solid var(--color-eaws-considerable); }
 .danger-band[data-level="high"]         { border-top: 4px solid var(--color-eaws-high); }
 .danger-band[data-level="very_high"]    { border-top: 4px solid var(--color-eaws-very-high); }
+
+
+/* —— Weather header (SNOW-98) —————————————————
+   Bulletin-page graphic header whose background
+   shifts with the WeatherSnapshot bucket and the
+   sunrise/sunset time-of-day computed at view time.
+
+   The block is a placeholder visual until the
+   final design lands. Height and margin are kept
+   here (rather than as Tailwind utilities in the
+   template) so the design hand-off can update the
+   look in one place without touching every page
+   that includes the partial.
+
+   Usage in template (see includes/bulletin_weather_header.html):
+     <div class="weather-header"
+          data-weather-bucket="clear"
+          data-time-of-day="day"></div>
+   ————————————————————————————————————————— */
+
+.weather-header {
+  height: 96px;
+  margin: 0 -1rem 1rem;   /* full-bleed inside the page's px-4 container */
+  border-radius: var(--radius-card);
+  background: var(--color-card-subtle);   /* fallback if no bucket matches */
+}
+
+.weather-header[data-weather-bucket="clear"][data-time-of-day="day"]           { background: var(--color-weather-clear-day); }
+.weather-header[data-weather-bucket="clear"][data-time-of-day="night"]         { background: var(--color-weather-clear-night); }
+.weather-header[data-weather-bucket="partly_cloudy"][data-time-of-day="day"]   { background: var(--color-weather-partly-cloudy-day); }
+.weather-header[data-weather-bucket="partly_cloudy"][data-time-of-day="night"] { background: var(--color-weather-partly-cloudy-night); }
+.weather-header[data-weather-bucket="cloudy"][data-time-of-day="day"]          { background: var(--color-weather-cloudy-day); }
+.weather-header[data-weather-bucket="cloudy"][data-time-of-day="night"]        { background: var(--color-weather-cloudy-night); }
+.weather-header[data-weather-bucket="fog"][data-time-of-day="day"]             { background: var(--color-weather-fog-day); }
+.weather-header[data-weather-bucket="fog"][data-time-of-day="night"]           { background: var(--color-weather-fog-night); }
+.weather-header[data-weather-bucket="rain"][data-time-of-day="day"]            { background: var(--color-weather-rain-day); }
+.weather-header[data-weather-bucket="rain"][data-time-of-day="night"]          { background: var(--color-weather-rain-night); }
+.weather-header[data-weather-bucket="snow"][data-time-of-day="day"]            { background: var(--color-weather-snow-day); }
+.weather-header[data-weather-bucket="snow"][data-time-of-day="night"]          { background: var(--color-weather-snow-night); }
+.weather-header[data-weather-bucket="thunder"][data-time-of-day="day"]         { background: var(--color-weather-thunder-day); }
+.weather-header[data-weather-bucket="thunder"][data-time-of-day="night"]       { background: var(--color-weather-thunder-night); }
 
 
 /* —— EAWS per-problem danger left-border ————

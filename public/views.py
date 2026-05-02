@@ -55,13 +55,14 @@ from django.utils.translation import gettext as _gettext, gettext_lazy as _
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition
 
-from bulletins.models import Bulletin, RegionBulletin, RegionDayRating
+from bulletins.models import Bulletin, RegionBulletin, RegionDayRating, WeatherSnapshot
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     build_render_model,
     compute_day_character,
 )
+from bulletins.services.weather_display import build_weather_display
 from pipeline.decorators import require_htmx
 from pipeline.models import Region
 from pipeline.schema import ValidTimePeriod
@@ -1314,6 +1315,16 @@ def bulletin_detail(
         except ValueError:
             target_date = today
 
+    # Weather header data (SNOW-98). The snapshot is one row per
+    # (region, valid_for_date); ``.first()`` is fine because the model's
+    # ``unique_together = (region, valid_for_date)`` guarantees at most
+    # one match. ``weather_display`` is ``None`` when no snapshot exists
+    # so the partial can render its safe fallback.
+    weather_snapshot = (
+        WeatherSnapshot.objects.for_date(target_date).filter(region=region).first()
+    )
+    weather_display = build_weather_display(weather_snapshot, timezone.now())
+
     # Collect every issue that touches the target day and pick the one
     # the user asked for via ``?issue=<uuid>``; otherwise fall back to
     # the 10:00-rule default. Multi-issue days render the user-selected
@@ -1333,6 +1344,7 @@ def bulletin_detail(
                 "year": datetime.date.today().year,
                 "adjoining_regions": adjoining_regions,
                 "season_calendar": build_season_grid(region, target_date, today),
+                "weather_display": weather_display,
             },
             bulletin=None,
         )
@@ -1421,6 +1433,8 @@ def bulletin_detail(
         "subregion_name": subregion_name,
         # Geographic neighbours — see SNOW-82.
         "adjoining_regions": adjoining_regions,
+        # Weather-driven header — see SNOW-98.
+        "weather_display": weather_display,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 
