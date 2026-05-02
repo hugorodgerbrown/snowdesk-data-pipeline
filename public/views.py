@@ -873,6 +873,10 @@ def examples_random(request: HttpRequest) -> HttpResponse:
         region,
         timezone.now().date(),
         requested_issue_id=requested_issue_id,
+        # ``examples_random`` is an evergreen "today's bulletin" demo,
+        # so the canonical points at the no-date form-2 URL of the
+        # picked region — not the dated form 3 (SNOW-99).
+        canonical_is_today=True,
     )
 
 
@@ -1226,18 +1230,20 @@ def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
 
 
 def _build_canonical_url(
-    request: HttpRequest, region: Region, target_date: datetime.date
+    request: HttpRequest,
+    region: Region,
+    target_date: datetime.date | None,
 ) -> str:
     """
-    Build the absolute form-3 URL for a (region, date) pair.
+    Build the absolute canonical URL for a region (and optional date).
 
     Used by ``_bulletin_detail_response`` to populate the
-    ``<link rel="canonical">`` tag — every bulletin page (including
-    example pages rendered at ``/examples/...`` URLs) advertises a
-    single canonical destination of the form
-    ``/<region_id>/<slug>/<YYYY-MM-DD>/``. Defers to
-    ``Region.get_absolute_url`` so the path components stay consistent
-    with every other internal URL builder.
+    ``<link rel="canonical">`` tag. ``target_date`` selects between the
+    two canonical families (SNOW-99): pass ``None`` for the form-2
+    "today" / evergreen URL ``/<region_id>/<slug>/``, or a ``date`` for
+    the form-3 dated URL ``/<region_id>/<slug>/<YYYY-MM-DD>/``. Defers
+    to ``Region.get_absolute_url`` so the path components stay
+    consistent with every other internal URL builder.
     """
     return request.build_absolute_uri(region.get_absolute_url(target_date))
 
@@ -1267,6 +1273,7 @@ def _bulletin_detail_response(
     target_date: datetime.date,
     *,
     requested_issue_id: str | None = None,
+    canonical_is_today: bool = False,
 ) -> HttpResponse:
     """
     Render the bulletin viewer for a resolved ``(region, target_date)``.
@@ -1283,6 +1290,17 @@ def _bulletin_detail_response(
     canonical route, or from a bulletin's ``bulletin_id`` to pin a
     specific issue for an example page.
 
+    ``canonical_is_today`` selects between the two canonical URL
+    families. Pass ``True`` when the inbound request is the no-date
+    "today / evergreen" view (forms 1 and 2, ``examples_random``); the
+    page advertises the form-2 URL ``/<region_id>/<slug>/``. Pass
+    ``False`` when the request is for a specific calendar day
+    (form 3, ``examples_category``); the page advertises the form-3
+    URL ``/<region_id>/<slug>/<date>/``. The two URLs render the same
+    content today but are semantically distinct destinations — the
+    today URL is a live page that follows the calendar; the dated URL
+    is a historical record.
+
     Args:
         request: The incoming HTTP request.
         region: A pre-fetched ``Region`` with ``subregion`` selected and
@@ -1291,6 +1309,9 @@ def _bulletin_detail_response(
         requested_issue_id: Optional bulletin id (UUID string) to pin
             the active issue tab; falls back to the 10:00 default when
             ``None``.
+        canonical_is_today: When ``True``, advertise the form-2
+            "today" canonical URL; when ``False``, advertise the
+            form-3 dated canonical URL.
 
     Returns:
         The rendered bulletin page (or empty-state page when no issue
@@ -1307,7 +1328,14 @@ def _bulletin_detail_response(
     )
 
     today = timezone.now().date()
-    canonical_url = _build_canonical_url(request, region, target_date)
+    # Two canonical-URL flavours: the no-date "today" form (form 2)
+    # for live / evergreen views, and the dated form (form 3) for
+    # historical views. See SNOW-99.
+    canonical_url = _build_canonical_url(
+        request,
+        region,
+        None if canonical_is_today else target_date,
+    )
 
     # Weather header data (SNOW-98). The snapshot is one row per
     # (region, valid_for_date); ``.first()`` is fine because the model's
@@ -1477,10 +1505,13 @@ def bulletin_detail(
     present — no-date hits (forms 1 and 2) render in place even when
     the URL casing or slug is non-canonical.
 
-    Every render advertises the canonical form-3 URL via
-    ``<link rel="canonical">`` regardless of which form the user
-    landed on, so search engines collapse all three forms into a
-    single indexed destination.
+    Two canonical URL families coexist (SNOW-99): the ``<link rel="canonical">``
+    advertises the **form-2** URL when the inbound request had no date
+    component (forms 1 and 2 — the live "today" view), and the
+    **form-3** URL when the inbound request specified a date (form 3 —
+    the historical record). The two render the same bytes today but
+    are semantically distinct destinations: the no-date URL follows
+    the calendar; the dated URL freezes once the date is past.
 
     The wrapper does *not* live under ``@condition`` because the
     canonical-redirect must take precedence over conditional-GET — a
@@ -1536,7 +1567,11 @@ def _bulletin_detail_render(
     target_date = _parse_target_date(date_str)
     requested_issue_id = request.GET.get("issue") or None
     return _bulletin_detail_response(
-        request, region, target_date, requested_issue_id=requested_issue_id
+        request,
+        region,
+        target_date,
+        requested_issue_id=requested_issue_id,
+        canonical_is_today=date_str is None,
     )
 
 

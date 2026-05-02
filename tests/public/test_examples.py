@@ -4,9 +4,11 @@ tests/public/test_examples.py — Tests for the example URL views.
 Covers ``/examples/random/``, ``/examples/category/<danger_level>/``,
 and the deprecated ``/random/`` redirect. Both example views render
 the bulletin page inline using the canonical view's core (SNOW-99) so
-the rendered output is byte-for-byte identical to a real bulletin —
-including a ``<link rel="canonical">`` pointing at the real form-3 URL
-of the picked region/date (not the ``/examples/...`` URL itself).
+the rendered output is byte-for-byte identical to a real bulletin.
+The ``<link rel="canonical">`` resolves to either the live no-date
+form-2 URL (``examples_random``, evergreen) or the historical dated
+form-3 URL (``examples_category``, pinned to a specific bulletin) —
+never the ``/examples/...`` URL itself.
 """
 
 from __future__ import annotations
@@ -94,10 +96,8 @@ class TestExamplesRandom:
         assert response.status_code == 302
         assert response["Location"] == "/"
 
-    def test_canonical_url_points_at_real_bulletin(
-        self, client: Client, region
-    ) -> None:
-        """The canonical URL points at the form-3 URL of the picked region."""
+    def test_canonical_url_points_at_today_form2(self, client: Client, region) -> None:
+        """``/examples/random/`` is evergreen ⇒ canonical = no-date form 2."""
         _make_bulletin_with_region(
             region, "moderate", datetime(2025, 3, 15, 8, 0, tzinfo=UTC)
         )
@@ -106,9 +106,9 @@ class TestExamplesRandom:
 
         assert response.status_code == 200
         canonical = response.context["canonical_url"]
-        # Random picked the only region; canonical must point at form 3
-        # of that region (not at /examples/random/).
-        assert "/ch-4115/valais/" in canonical
+        # Canonical points at the live no-date URL of the picked region —
+        # not the dated form-3 URL, and not at /examples/random/.
+        assert canonical.endswith("/ch-4115/valais/")
         assert "/examples/" not in canonical
         assert b'<link rel="canonical"' in response.content
 

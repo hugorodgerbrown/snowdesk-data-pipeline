@@ -68,17 +68,22 @@ class TestForm1Render:
 
         assert response.status_code == 200
 
-    def test_form1_canonical_link_points_at_form3(
+    def test_form1_canonical_link_points_at_today_form2(
         self, client: Client, region_with_bulletin: None
     ) -> None:
-        """The rendered page advertises the form-3 URL via canonical."""
-        today = timezone.now().date().isoformat()
+        """The rendered page advertises the no-date form-2 ("today") URL.
+
+        Two canonical URL families (SNOW-99): the no-date form is the
+        live "today" page, the dated form is the historical record. A
+        no-date inbound URL canonicalises to the no-date URL — it's a
+        live page, not a frozen one.
+        """
         url = reverse("public:region_root", kwargs={"region_id": "CH-4115"})
         response = client.get(url)
 
         assert response.status_code == 200
         canonical = response.context["canonical_url"]
-        assert canonical.endswith(f"/ch-4115/valais/{today}/")
+        assert canonical.endswith("/ch-4115/valais/")
         assert b'<link rel="canonical"' in response.content
 
     def test_form1_case_insensitive_region_id(
@@ -125,11 +130,11 @@ class TestForm2Render:
     ) -> None:
         """Form 2 ignores the slug for lookup; renders in place even if wrong."""
         # No-date URLs render in place even when components are non-canonical.
-        # The canonical link in the HTML still points at the proper slug.
+        # The canonical link in the HTML still points at the no-date
+        # form-2 "today" URL with the proper region_id + name slug.
         response = client.get("/CH-4115/wrong-slug/")
         assert response.status_code == 200
-        today = timezone.now().date().isoformat()
-        assert response.context["canonical_url"].endswith(f"/ch-4115/valais/{today}/")
+        assert response.context["canonical_url"].endswith("/ch-4115/valais/")
 
     def test_form2_unknown_region_returns_404(self, client: Client) -> None:
         """An unknown region_id at form 2 still 404s."""

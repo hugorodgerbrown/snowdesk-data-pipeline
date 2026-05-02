@@ -30,7 +30,6 @@ from typing import Any
 
 from django.db import models
 from django.urls import reverse
-from django.utils import timezone
 from django.utils.text import slugify
 
 from core.models import BaseModel
@@ -343,13 +342,29 @@ class Region(BaseModel):
     def get_absolute_url(self, target_date: datetime.date | None = None) -> str:
         """Return the canonical bulletin URL for this region.
 
-        Form-3 URL ``/<region_id>/<slug>/<YYYY-MM-DD>/`` (SNOW-99) using
-        the lower-cased ``region_id`` and name-derived slug. Defaults to
-        today when ``target_date`` is omitted so internal callers don't
-        have to thread a date through every link.
+        Two distinct canonical forms (SNOW-99):
+
+        * ``target_date is None`` (default) → form 2
+          ``/<region_id>/<slug>/``. The "today" / evergreen URL — its
+          rendered content shifts as the calendar advances, and search
+          engines index it as a single live page.
+        * ``target_date`` set to a date → form 3
+          ``/<region_id>/<slug>/<YYYY-MM-DD>/``. The historical URL
+          for that specific calendar day; once the date is past the
+          rendered content is fixed.
+
+        Both forms always use the lowercased ``region_id`` and the
+        name-derived slug so callers and search engines see one
+        canonical URL per (region [, day]).
         """
         if target_date is None:
-            target_date = timezone.now().date()
+            return reverse(
+                "public:bulletin",
+                kwargs={
+                    "region_id": self.canonical_region_id,
+                    "slug": self.name_slug,
+                },
+            )
         return reverse(
             "public:bulletin_date",
             kwargs={

@@ -539,9 +539,12 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     # time_period_label, ElevationBounds); without enrichment those rows
     # silently disappear via the partial's {% if %} guards.
     rm = enrich_render_model(bulletin.render_model or {})
-    # Use the canonical form-3 URL (SNOW-99) so clicking through the map
-    # peek lands on the page directly rather than incurring a 302.
-    bulletin_url = region.get_absolute_url(target_date)
+    # Two canonical URL families (SNOW-99): when the map page is at
+    # "today" (no ``?d=``), point the peek at the no-date form-2 URL —
+    # the live evergreen page. When the user has scrubbed to a specific
+    # date via ``?d=``, point at the form-3 dated URL — the historical
+    # record. Either way the link skips the 302 hop.
+    bulletin_url = region.get_absolute_url(None if raw_date is None else target_date)
 
     ctx = {
         "region": region,
