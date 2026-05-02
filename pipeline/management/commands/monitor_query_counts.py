@@ -53,7 +53,7 @@ MONITORED_URLS: list[tuple[str, str]] = [
     # the precache feature. The route 404s now and the 404 path runs ~4
     # middleware queries — tracking that against a "0 queries" target
     # would be monitoring the 404 handler, not a Snowdesk endpoint.
-    ("region_redirect", "/CH-4115/"),
+    ("region_root", "/CH-4115/"),
     ("bulletin_historic", "/CH-4115/martigny-verbier/2026-04-01/"),
 ]
 

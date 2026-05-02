@@ -987,44 +987,15 @@ def _redirect_to_canonical(
     return redirect(target)
 
 
-def region_redirect(request: HttpRequest, region_id: str) -> HttpResponse:
-    """
-    Redirect ``/<region_id>/`` to the canonical form-3 URL.
-
-    Args:
-        request: The incoming HTTP request.
-        region_id: SLF region identifier (e.g. ``"CH-4115"``).
-
-    Returns:
-        A 302 redirect to ``/<region_id>/<slug>/<today>/``.
-
-    """
-    region = get_object_or_404(Region, region_id__iexact=region_id)
-    return _redirect_to_canonical(request, region)
-
-
-def region_slug_redirect(
-    request: HttpRequest, region_id: str, slug: str
-) -> HttpResponse:
-    """
-    Redirect ``/<region_id>/<slug>/`` to the canonical form-3 URL.
-
-    The ``slug`` segment is cosmetic — the redirect target always uses
-    the slug derived from ``region.name`` regardless of what the user
-    typed. This collapses any historic / typo'd slugs into a single
-    canonical URL per (region, day) pair.
-
-    Args:
-        request: The incoming HTTP request.
-        region_id: SLF region identifier (e.g. ``"CH-4115"``).
-        slug: Cosmetic name slug, ignored for lookup.
-
-    Returns:
-        A 302 redirect to ``/<region_id>/<slug>/<today>/``.
-
-    """
-    region = get_object_or_404(Region, region_id__iexact=region_id)
-    return _redirect_to_canonical(request, region)
+# ---------------------------------------------------------------------------
+# Forms 1 + 2 + 3 share ``bulletin_detail`` (see end of this section).
+# Forms 1 (``/<region_id>/``) and 2 (``/<region_id>/<slug>/``) render today's
+# bulletin in place at the inbound URL — they do NOT redirect. Only form 3
+# with non-canonical components (e.g. preserved-case region_id or stale
+# ``ch_4124``-style slug) redirects to the canonical form-3 URL. The page
+# always advertises the canonical form-3 URL via ``<link rel="canonical">``
+# regardless of which form the user landed on.
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -1485,30 +1456,37 @@ def _bulletin_detail_response(
 def bulletin_detail(
     request: HttpRequest,
     region_id: str,
-    slug: str,
-    date_str: str,
+    slug: str | None = None,
+    date_str: str | None = None,
 ) -> HttpResponse:
     """
-    Render the bulletin viewer for a given region on a specific day.
+    Render the bulletin viewer at any of the three URL forms.
 
-    Form-3 entry point. Region is resolved case-insensitively from
-    ``region_id``; if the inbound URL path doesn't match the canonical
-    form (``request.path != region.get_absolute_url(target_date)``) the
-    view 302s to the canonical URL rather than rendering. This catches
-    cases like ``/CH-4124/ch_4124/<date>/`` (preserved-case region_id
-    plus the auto-generated ``Region.slug`` in the second segment) and
-    forwards them to ``/ch-4124/val-d-anniviers/<date>/``.
+    Single entry point for forms 1 (``/<region_id>/``), 2
+    (``/<region_id>/<slug>/``), and 3 (``/<region_id>/<slug>/<date>/``).
+    Forms 1 and 2 render today's bulletin in place at the inbound URL —
+    they do NOT redirect to form 3. Only form 3 with non-canonical path
+    components (e.g. ``/CH-4124/ch_4124/<date>/`` instead of
+    ``/ch-4124/val-d-anniviers/<date>/``) 302s to the canonical form.
 
-    The check uses ``request.path`` so query strings and fragments are
-    naturally excluded — Django strips both before populating
-    ``request.path``. The original query string is preserved across the
-    redirect via ``_redirect_to_canonical``.
+    The canonical-redirect check compares ``request.path`` against
+    ``region.get_absolute_url(target_date)``. ``request.path`` is
+    inherently free of fragments and query strings (Django strips both
+    before populating it), and the redirect helper preserves the
+    inbound query string. The check only fires when ``date_str`` is
+    present — no-date hits (forms 1 and 2) render in place even when
+    the URL casing or slug is non-canonical.
+
+    Every render advertises the canonical form-3 URL via
+    ``<link rel="canonical">`` regardless of which form the user
+    landed on, so search engines collapse all three forms into a
+    single indexed destination.
 
     The wrapper does *not* live under ``@condition`` because the
-    canonical-redirect must take precedence over conditional GET — a
+    canonical-redirect must take precedence over conditional-GET — a
     cached non-canonical response should not 304 indefinitely. Once we
-    know the URL is canonical we delegate to ``_bulletin_detail_render``
-    which is conditional-GET aware.
+    know the URL is canonical (or no date was supplied) we delegate to
+    ``_bulletin_detail_render`` which is conditional-GET aware.
 
     For past days the morning bulletin is shown (the updated daytime
     assessment). For the current day the bulletin whose validity window
@@ -1518,18 +1496,20 @@ def bulletin_detail(
     Args:
         request: The incoming HTTP request.
         region_id: SLF region identifier (e.g. ``"CH-4115"``).
-        slug: Slugified region name (e.g. ``"valais"``); cosmetic only.
-        date_str: Date in ``YYYY-MM-DD`` format; falls back to today on
-            unparseable input.
+        slug: Slugified region name (cosmetic; ignored for lookup).
+            ``None`` when hitting form 1.
+        date_str: Date in ``YYYY-MM-DD`` format. ``None`` on forms 1
+            and 2 → today; unparseable strings on form 3 also fall
+            back to today.
 
     Returns:
         The rendered bulletin page, or a 302 to the canonical URL when
-        the inbound path is non-canonical.
+        a form-3 path is non-canonical.
 
     """
     region = _resolve_region_for_bulletin(region_id)
     target_date = _parse_target_date(date_str)
-    if request.path != region.get_absolute_url(target_date):
+    if date_str is not None and request.path != region.get_absolute_url(target_date):
         return _redirect_to_canonical(request, region, target_date)
     return _bulletin_detail_render(request, region_id, slug, date_str)
 
@@ -1541,16 +1521,16 @@ def bulletin_detail(
 def _bulletin_detail_render(
     request: HttpRequest,
     region_id: str,
-    slug: str,
-    date_str: str,
+    slug: str | None = None,
+    date_str: str | None = None,
 ) -> HttpResponse:
     """
-    Render the canonical-form-3 bulletin page with conditional-GET.
+    Render the bulletin page with conditional-GET.
 
     Internal helper invoked only when ``bulletin_detail`` has confirmed
-    the inbound URL is canonical. Wrapped in ``@condition`` so browsers
-    and CDNs can serve 304 responses when the bulletin data hasn't
-    changed.
+    the inbound URL is one of the renderable forms (form 1, form 2, or
+    canonical form 3). Wrapped in ``@condition`` so browsers and CDNs
+    can serve 304 responses when the bulletin data hasn't changed.
     """
     region = _resolve_region_for_bulletin(region_id)
     target_date = _parse_target_date(date_str)

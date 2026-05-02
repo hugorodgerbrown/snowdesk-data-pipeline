@@ -1,11 +1,19 @@
 """
-tests/public/test_zone_redirect.py — Tests for the canonical-redirect views.
+tests/public/test_zone_redirect.py — Tests for the three bulletin URL forms.
 
-Verifies that forms 1 (``/<region_id>/``) and 2 (``/<region_id>/<slug>/``)
-both 302 to the fully-qualified form-3 URL (``/<region_id>/<slug>/<date>/``)
-with today's date defaulted in, that query strings are preserved across
-the redirect, that the name-slug cache is warmed by the canonical render,
-and that unknown region IDs return 404.
+Verifies that:
+
+* Form 1 (``/<region_id>/``) renders today's bulletin in place — never
+  redirects, even when the inbound region_id casing differs from the
+  canonical lowercase form.
+* Form 2 (``/<region_id>/<slug>/``) renders today's bulletin in place
+  with the same in-place semantics.
+* Form 3 (``/<region_id>/<slug>/<date>/``) renders that day's bulletin
+  when the URL components are canonical, and 302s to the canonical form
+  when they are not (e.g. preserved-case region_id, or a stale
+  ``ch_4124``-style slug).
+* Every render advertises the canonical form-3 URL via
+  ``<link rel="canonical">``.
 """
 
 from datetime import UTC, datetime
@@ -48,107 +56,80 @@ def region_with_bulletin(region):
 
 
 @pytest.mark.django_db
-class TestRegionRedirect:
-    """Tests for the form 1 (``/<region_id>/``) → form-3 redirect."""
+class TestForm1Render:
+    """Form 1 (``/<region_id>/``) renders today's bulletin in place."""
 
-    def test_redirects_to_canonical_form3_url(
+    def test_form1_renders_today_inline(
         self, client: Client, region_with_bulletin: None
     ) -> None:
-        """A GET to /<region_id>/ should 302 to the form-3 URL with today."""
-        today = timezone.now().date().isoformat()
-        url = reverse("public:region_redirect", kwargs={"region_id": "CH-4115"})
+        """A GET to /<region_id>/ renders today's bulletin (200, no 302)."""
+        url = reverse("public:region_root", kwargs={"region_id": "CH-4115"})
         response = client.get(url)
 
-        assert response.status_code == 302
-        assert response["Location"] == f"/ch-4115/valais/{today}/"
+        assert response.status_code == 200
 
-    def test_case_insensitive_region_id(
+    def test_form1_canonical_link_points_at_form3(
+        self, client: Client, region_with_bulletin: None
+    ) -> None:
+        """The rendered page advertises the form-3 URL via canonical."""
+        today = timezone.now().date().isoformat()
+        url = reverse("public:region_root", kwargs={"region_id": "CH-4115"})
+        response = client.get(url)
+
+        assert response.status_code == 200
+        canonical = response.context["canonical_url"]
+        assert canonical.endswith(f"/ch-4115/valais/{today}/")
+        assert b'<link rel="canonical"' in response.content
+
+    def test_form1_case_insensitive_region_id(
         self, client: Client, region_with_bulletin: None
     ) -> None:
         """Both ``CH-4115`` and ``ch-4115`` resolve to the same region."""
-        today = timezone.now().date().isoformat()
         response = client.get("/ch-4115/")
-        assert response.status_code == 302
-        assert response["Location"] == f"/ch-4115/valais/{today}/"
+        assert response.status_code == 200
+        assert response.context["region"].region_id == "CH-4115"
 
-    def test_unknown_region_returns_404(self, client: Client) -> None:
+    def test_form1_unknown_region_returns_404(self, client: Client) -> None:
         """A region ID that doesn't match any Region should 404."""
-        url = reverse("public:region_redirect", kwargs={"region_id": "XX-9999"})
+        url = reverse("public:region_root", kwargs={"region_id": "XX-9999"})
         response = client.get(url)
         assert response.status_code == 404
 
-    def test_query_string_preserved(
+    def test_form1_query_string_honored(
         self, client: Client, region_with_bulletin: None
     ) -> None:
-        """Query strings (e.g. ``?issue=<uuid>``) survive the redirect."""
-        today = timezone.now().date().isoformat()
-        response = client.get("/CH-4115/?issue=abc-123&foo=bar")
-        assert response.status_code == 302
-        assert response["Location"] == (
-            f"/ch-4115/valais/{today}/?issue=abc-123&foo=bar"
-        )
-
-    def test_multiword_region_name_is_slugified(self, client: Client) -> None:
-        """Region names with spaces should be properly slugified."""
-        region = RegionFactory.create(
-            region_id="CH-5200",
-            name="Haut Val de Bagnes",
-            slug="ch-5200",
-        )
-        bulletin = BulletinFactory.create(
-            issued_at=datetime(2025, 3, 15, 8, 0, tzinfo=UTC),
-        )
-        RegionBulletinFactory.create(
-            bulletin=bulletin,
-            region=region,
-            region_name_at_time="Haut Val de Bagnes",
-        )
-
-        today = timezone.now().date().isoformat()
-        url = reverse("public:region_redirect", kwargs={"region_id": "CH-5200"})
-        response = client.get(url)
-
-        assert response.status_code == 302
-        assert response["Location"] == f"/ch-5200/haut-val-de-bagnes/{today}/"
+        """``?issue=`` on form 1 is read by the renderer (not redirected)."""
+        # No matching bulletin issue → renderer falls back to the default,
+        # but the request must NOT 302; the URL should render at form 1.
+        response = client.get("/CH-4115/?issue=00000000-0000-0000-0000-000000000000")
+        assert response.status_code == 200
 
 
 @pytest.mark.django_db
-class TestRegionSlugRedirect:
-    """Tests for the form 2 (``/<region_id>/<slug>/``) → form-3 redirect."""
+class TestForm2Render:
+    """Form 2 (``/<region_id>/<slug>/``) renders today's bulletin in place."""
 
-    def test_form2_redirects_to_form3(
+    def test_form2_renders_today_inline(
         self, client: Client, region_with_bulletin: None
     ) -> None:
-        """A GET to /<region_id>/<slug>/ should 302 to form-3 with today."""
-        today = timezone.now().date().isoformat()
+        """A GET to /<region_id>/<slug>/ renders today's bulletin (200)."""
         url = reverse(
             "public:bulletin",
             kwargs={"region_id": "CH-4115", "slug": "valais"},
         )
         response = client.get(url)
+        assert response.status_code == 200
 
-        assert response.status_code == 302
-        assert response["Location"] == f"/ch-4115/valais/{today}/"
-
-    def test_form2_normalises_arbitrary_slug(
+    def test_form2_with_arbitrary_slug_still_renders(
         self, client: Client, region_with_bulletin: None
     ) -> None:
-        """Form 2 ignores the inbound slug and uses the canonical name slug."""
-        today = timezone.now().date().isoformat()
-        # Inbound slug is wrong/historical — redirect target must use the
-        # canonical name slug regardless.
+        """Form 2 ignores the slug for lookup; renders in place even if wrong."""
+        # No-date URLs render in place even when components are non-canonical.
+        # The canonical link in the HTML still points at the proper slug.
         response = client.get("/CH-4115/wrong-slug/")
-        assert response.status_code == 302
-        assert response["Location"] == f"/ch-4115/valais/{today}/"
-
-    def test_form2_query_string_preserved(
-        self, client: Client, region_with_bulletin: None
-    ) -> None:
-        """Query strings survive the form-2 redirect too."""
+        assert response.status_code == 200
         today = timezone.now().date().isoformat()
-        response = client.get("/CH-4115/valais/?issue=abc-123")
-        assert response.status_code == 302
-        assert response["Location"] == (f"/ch-4115/valais/{today}/?issue=abc-123")
+        assert response.context["canonical_url"].endswith(f"/ch-4115/valais/{today}/")
 
     def test_form2_unknown_region_returns_404(self, client: Client) -> None:
         """An unknown region_id at form 2 still 404s."""

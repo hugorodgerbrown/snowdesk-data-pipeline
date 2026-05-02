@@ -11,15 +11,19 @@ URL structure:
   /examples/category/<danger_level>/           Renders a random bulletin matching
                                                the given danger level inline.
   /random/                                     Deprecated → /examples/random/.
-  /<region_id>/                                302 → /<region_id>/<slug>/<today>/.
-  /<region_id>/<slug>/                         302 → /<region_id>/<slug>/<today>/.
-  /<region_id>/<slug>/<date>/                  Canonical bulletin URL — renders
-                                               the bulletin for that date.
+  /<region_id>/                                Renders today's bulletin in place.
+  /<region_id>/<slug>/                         Renders today's bulletin in place.
+  /<region_id>/<slug>/<date>/                  Renders that day's bulletin; 302s
+                                               to the canonical form when the
+                                               URL components don't match.
 
-Forms 1 (``/<region_id>/``) and 2 (``/<region_id>/<slug>/``) both 302 to
-the canonical form-3 URL with today's date defaulted in. The form-3 URL
-is the only pattern that lands on ``bulletin_detail``, and is the single
-URL advertised via ``<link rel="canonical">`` on the page itself.
+All three forms are served by ``bulletin_detail``. Forms 1 and 2 default
+to today's date and render in place — they never redirect even when the
+URL casing or slug is non-canonical. Form 3 (with an explicit date) 302s
+to the canonical form ``/<canonical_region_id>/<name_slug>/<date>/`` when
+the inbound path doesn't already match. Every render emits a
+``<link rel="canonical">`` pointing at the form-3 canonical URL so SEO
+collapses all three forms into one indexed destination.
 
 The ``/map/``, ``/terms/`` and ``/examples/`` routes are registered before
 the generic ``<str:region_id>/<slug:slug>/`` pattern so Django's URL
@@ -53,18 +57,17 @@ urlpatterns = [
     ),
     # Deprecated — redirect to /examples/random/
     path("random/", views.random_redirect, name="random"),
-    # Bulletin pages — in increasing order of specificity.
-    # Forms 1 + 2 redirect to the canonical form-3 URL (today's date).
-    # The ``bulletin`` URL name resolves to the form-2 redirect entry — every
-    # internal href that wants the canonical URL must use ``bulletin_date``.
+    # Bulletin pages — three forms, all served by ``bulletin_detail``.
+    # Forms 1 + 2 default to today and render in place; form 3 redirects
+    # to canonical when the URL components don't match.
     path(
         "<str:region_id>/",
-        views.region_redirect,
-        name="region_redirect",
+        views.bulletin_detail,
+        name="region_root",
     ),
     path(
         "<str:region_id>/<slug:slug>/",
-        views.region_slug_redirect,
+        views.bulletin_detail,
         name="bulletin",
     ),
     path(
