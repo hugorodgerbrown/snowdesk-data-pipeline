@@ -950,40 +950,37 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     )
 
 
-def _redirect_to_canonical(request: HttpRequest, region: Region) -> HttpResponse:
+def _redirect_to_canonical(
+    request: HttpRequest,
+    region: Region,
+    target_date: datetime.date | None = None,
+) -> HttpResponse:
     """
-    Build a 302 to the fully-qualified ``/<region_id>/<slug>/<today>/`` URL.
+    Build a 302 to the fully-qualified ``/<region_id>/<slug>/<date>/`` URL.
 
     The canonical bulletin URL has a date segment so search engines and
-    shared links resolve a single page per (region, day) pair. Forms 1
-    (``/<region_id>/``) and 2 (``/<region_id>/<slug>/``) both funnel here
-    with today's date as the default. Any query string on the inbound
-    request is preserved so deep links like ``?issue=<uuid>`` continue
-    to work after the redirect.
+    shared links resolve a single page per (region, day) pair. All three
+    non-canonical entry points funnel through here:
+
+    * Form 1 (``/<region_id>/``)
+    * Form 2 (``/<region_id>/<slug>/``)
+    * Form 3 with a non-canonical region_id or slug (e.g. preserved
+      casing or a stale slug like ``ch_4124``)
+
+    ``target_date`` defaults to today; pass the inbound date when
+    redirecting from a form-3 URL so the redirect preserves the day the
+    user asked for. Any query string on the inbound request is preserved
+    so deep links like ``?issue=<uuid>`` continue to work.
     """
-    today = timezone.now().date()
-    target = reverse(
-        "public:bulletin_date",
-        kwargs={
-            "region_id": region.region_id,
-            "slug": _get_name_slug(region),
-            "date_str": today.isoformat(),
-        },
-    )
-    # ``target`` is a server-relative path built via ``reverse()`` and the
-    # query string is appended after a literal ``?`` separator — there is
-    # no way for QUERY_STRING content to change the host of the redirect.
-    # The semgrep open-redirect rule fires on the syntactic shape (request
-    # data → redirect()) but the host is not attacker-controlled here, so
-    # ``is_safe_url`` would only add cost without changing behaviour.
-    # The semgrep open-redirect rule fires on the taint flow from
-    # ``request.META`` to ``redirect()``. The sink is provably safe here
-    # because ``target`` is a server-relative path built via ``reverse()``
-    # and the query string is appended after a literal ``?`` separator —
-    # there is no way for QUERY_STRING content to change the host of the
-    # redirect target. Suppress at the source line where taint enters.
-    # noqa is for the line-length cap: semgrep's nosemgrep marker must
-    # sit inline on the taint-source line, and the rule id is long.
+    target = region.get_absolute_url(target_date)
+    # The semgrep open-redirect rule fires on the syntactic taint flow
+    # from ``request.META`` to ``redirect()``. The sink is provably safe:
+    # ``target`` is a server-relative path built via ``Region.get_absolute_url``
+    # (always lowercase region_id + slugified name + today's date), and
+    # the query string is appended after a literal ``?`` separator — so
+    # QUERY_STRING content cannot change the host of the redirect target.
+    # Suppress at the source line where taint enters.
+    # noqa is for the line-length cap: the rule id makes the line long.
     qs = request.META.get("QUERY_STRING", "")  # noqa: E501  # nosemgrep: python.django.security.injection.open-redirect.open-redirect
     if qs:
         target = f"{target}?{qs}"
@@ -1267,17 +1264,11 @@ def _build_canonical_url(
     ``<link rel="canonical">`` tag — every bulletin page (including
     example pages rendered at ``/examples/...`` URLs) advertises a
     single canonical destination of the form
-    ``/<region_id>/<slug>/<YYYY-MM-DD>/``.
+    ``/<region_id>/<slug>/<YYYY-MM-DD>/``. Defers to
+    ``Region.get_absolute_url`` so the path components stay consistent
+    with every other internal URL builder.
     """
-    path = reverse(
-        "public:bulletin_date",
-        kwargs={
-            "region_id": region.region_id,
-            "slug": _get_name_slug(region),
-            "date_str": target_date.isoformat(),
-        },
-    )
-    return request.build_absolute_uri(path)
+    return request.build_absolute_uri(region.get_absolute_url(target_date))
 
 
 def _resolve_region_for_bulletin(region_id: str) -> Region:
@@ -1491,10 +1482,6 @@ def _bulletin_detail_response(
     return response
 
 
-@condition(
-    etag_func=_bulletin_page_etag,
-    last_modified_func=_bulletin_page_last_modified,
-)
 def bulletin_detail(
     request: HttpRequest,
     region_id: str,
@@ -1504,18 +1491,29 @@ def bulletin_detail(
     """
     Render the bulletin viewer for a given region on a specific day.
 
-    The canonical form-3 URL ``/<region_id>/<slug>/<date>/`` is the only
-    pattern that lands here — forms 1 (``/<region_id>/``) and 2
-    (``/<region_id>/<slug>/``) both 302 to this URL with today's date
-    defaulted in.
+    Form-3 entry point. Region is resolved case-insensitively from
+    ``region_id``; if the inbound URL path doesn't match the canonical
+    form (``request.path != region.get_absolute_url(target_date)``) the
+    view 302s to the canonical URL rather than rendering. This catches
+    cases like ``/CH-4124/ch_4124/<date>/`` (preserved-case region_id
+    plus the auto-generated ``Region.slug`` in the second segment) and
+    forwards them to ``/ch-4124/val-d-anniviers/<date>/``.
+
+    The check uses ``request.path`` so query strings and fragments are
+    naturally excluded — Django strips both before populating
+    ``request.path``. The original query string is preserved across the
+    redirect via ``_redirect_to_canonical``.
+
+    The wrapper does *not* live under ``@condition`` because the
+    canonical-redirect must take precedence over conditional GET — a
+    cached non-canonical response should not 304 indefinitely. Once we
+    know the URL is canonical we delegate to ``_bulletin_detail_render``
+    which is conditional-GET aware.
 
     For past days the morning bulletin is shown (the updated daytime
     assessment). For the current day the bulletin whose validity window
     contains the current time is shown automatically. Pass
     ``?issue=<uuid>`` to pin a specific issue tab.
-
-    The ``slug`` segment is cosmetic — the region is resolved entirely
-    from ``region_id``.
 
     Args:
         request: The incoming HTTP request.
@@ -1525,8 +1523,34 @@ def bulletin_detail(
             unparseable input.
 
     Returns:
-        The rendered bulletin page.
+        The rendered bulletin page, or a 302 to the canonical URL when
+        the inbound path is non-canonical.
 
+    """
+    region = _resolve_region_for_bulletin(region_id)
+    target_date = _parse_target_date(date_str)
+    if request.path != region.get_absolute_url(target_date):
+        return _redirect_to_canonical(request, region, target_date)
+    return _bulletin_detail_render(request, region_id, slug, date_str)
+
+
+@condition(
+    etag_func=_bulletin_page_etag,
+    last_modified_func=_bulletin_page_last_modified,
+)
+def _bulletin_detail_render(
+    request: HttpRequest,
+    region_id: str,
+    slug: str,
+    date_str: str,
+) -> HttpResponse:
+    """
+    Render the canonical-form-3 bulletin page with conditional-GET.
+
+    Internal helper invoked only when ``bulletin_detail`` has confirmed
+    the inbound URL is canonical. Wrapped in ``@condition`` so browsers
+    and CDNs can serve 304 responses when the bulletin data hasn't
+    changed.
     """
     region = _resolve_region_for_bulletin(region_id)
     target_date = _parse_target_date(date_str)

@@ -69,8 +69,16 @@ def staff_client(staff_user):
     return c
 
 
-def _bulletin_url(day: date, region_id: str = "CH-7777", slug: str = "ch-7777") -> str:
-    """Build the bulletin_date URL for a given day."""
+def _bulletin_url(
+    day: date, region_id: str = "ch-7777", slug: str = "test-valley"
+) -> str:
+    """Build the canonical form-3 URL for the test region.
+
+    Defaults match the canonical components for the test fixture region
+    (lowercase ``region_id`` + name-derived slug) so the GET hits the
+    renderer directly rather than redirecting through the form-3
+    canonical-redirect layer (SNOW-99).
+    """
     return reverse(
         "public:bulletin_date",
         kwargs={

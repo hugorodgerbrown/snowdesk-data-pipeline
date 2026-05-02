@@ -220,7 +220,7 @@ class TestBulletinDetailView:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -240,7 +240,7 @@ class TestBulletinDetailView:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-14",
                 },
@@ -251,23 +251,27 @@ class TestBulletinDetailView:
         assert response.context["bulletin"].pk == am_14.pk
         assert response.context["is_today"] is False
 
-    def test_invalid_date_falls_back_to_today(self, client: Client, region):
-        """An invalid date segment falls back to today."""
-        am = _make_am_bulletin(region, date(2026, 3, 15))
+    def test_invalid_date_redirects_to_canonical_today(self, client: Client, region):
+        """An invalid date segment falls back to today and redirects."""
+        # ``_parse_target_date`` falls back to today on unparseable input,
+        # which makes the inbound path non-canonical (the slug
+        # "not-a-date" doesn't match today's ISO string), so the form-3
+        # wrapper 302s to the canonical URL with today's date.
+        _make_am_bulletin(region, date(2026, 3, 15))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "not-a-date",
                 },
             )
             response = client.get(url)
 
-        assert response.status_code == 200
-        assert response.context["bulletin"].pk == am.pk
+        assert response.status_code == 302
+        assert response["Location"] == "/ch-4115/valais/2026-03-15/"
 
     def test_no_bulletin_shows_empty_state(self, client: Client, region):
         """When no bulletin exists for the date the empty state is rendered."""
@@ -275,7 +279,7 @@ class TestBulletinDetailView:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -295,7 +299,7 @@ class TestBulletinDetailView:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -313,7 +317,7 @@ class TestBulletinDetailView:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -331,7 +335,7 @@ class TestBulletinDetailView:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-14",
                 },
@@ -360,7 +364,7 @@ class TestBulletinDetailView:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -382,7 +386,7 @@ class TestBulletinDetailView:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -414,7 +418,7 @@ class TestBulletinDetailView:
         url = reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": "CH-4115",
+                "region_id": "ch-4115",
                 "slug": "valais",
                 "date_str": "2026-03-15",
             },
@@ -445,7 +449,7 @@ class TestBulletinDetailView:
         url = reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": "CH-4115",
+                "region_id": "ch-4115",
                 "slug": "valais",
                 "date_str": "2026-03-15",
             },
@@ -583,8 +587,8 @@ class TestBulletinDetailIssueParam:
         return reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": region.region_id,
-                "slug": region.slug,
+                "region_id": region.canonical_region_id,
+                "slug": region.name_slug,
                 "date_str": date_str,
             },
         )
@@ -647,7 +651,7 @@ class TestAdjoiningRegions:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -671,7 +675,7 @@ class TestAdjoiningRegions:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -685,7 +689,7 @@ class TestAdjoiningRegions:
         expected_url = reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": "CH-9994",
+                "region_id": "ch-9994",
                 "slug": "bordering",
                 "date_str": "2026-03-15",
             },
@@ -701,7 +705,7 @@ class TestAdjoiningRegions:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -724,7 +728,7 @@ class TestAdjoiningRegions:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -748,7 +752,7 @@ class TestSeasonCalendar:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -766,7 +770,7 @@ class TestSeasonCalendar:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -783,7 +787,7 @@ class TestSeasonCalendar:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -803,7 +807,7 @@ class TestSeasonCalendar:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-05",
                 },
@@ -832,7 +836,7 @@ class TestSeasonCalendar:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -840,11 +844,13 @@ class TestSeasonCalendar:
             response = client.get(url)
 
         # The link to tomorrow's bulletin includes the date in the URL.
+        # SNOW-99: the calendar partial uses ``region.canonical_region_id``
+        # and ``region.name_slug`` (slugified ``Valais`` → ``valais``).
         expected = reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": "CH-4115",
-                "slug": "ch-4115",
+                "region_id": "ch-4115",
+                "slug": "valais",
                 "date_str": "2026-03-16",
             },
         )
@@ -887,7 +893,7 @@ class TestWeatherHeader:
         return reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": "CH-4115",
+                "region_id": "ch-4115",
                 "slug": "valais",
                 "date_str": "2026-03-15",
             },
@@ -973,7 +979,7 @@ class TestWeatherHeader:
         url = reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": "CH-4115",
+                "region_id": "ch-4115",
                 "slug": "valais",
                 "date_str": "2026-03-14",
             },
@@ -999,7 +1005,7 @@ class TestWeatherHeader:
         url = reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": "CH-4115",
+                "region_id": "ch-4115",
                 "slug": "valais",
                 "date_str": "2026-03-14",
             },
@@ -1061,7 +1067,7 @@ class TestWeatherHeaderFlagGate:
         return reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": "CH-4115",
+                "region_id": "ch-4115",
                 "slug": "valais",
                 "date_str": "2026-03-15",
             },
@@ -1122,7 +1128,7 @@ class TestCanonicalUrl:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -1131,7 +1137,7 @@ class TestCanonicalUrl:
 
         assert response.status_code == 200
         canonical = response.context["canonical_url"]
-        assert canonical.endswith("/CH-4115/valais/2026-03-15/")
+        assert canonical.endswith("/ch-4115/valais/2026-03-15/")
         assert b'<link rel="canonical"' in response.content
         assert canonical.encode() in response.content
 
@@ -1141,7 +1147,7 @@ class TestCanonicalUrl:
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "valais",
                     "date_str": "2026-03-15",
                 },
@@ -1151,26 +1157,28 @@ class TestCanonicalUrl:
         assert response.status_code == 200
         assert response.context["bulletin"] is None
         canonical = response.context["canonical_url"]
-        assert canonical.endswith("/CH-4115/valais/2026-03-15/")
+        assert canonical.endswith("/ch-4115/valais/2026-03-15/")
         assert b'<link rel="canonical"' in response.content
 
-    def test_canonical_uses_name_slug_not_url_slug(self, client: Client) -> None:
-        """An off-canonical inbound slug does not poison the canonical URL."""
-        # Create a region whose name slug ("valais") differs from any
-        # historic / typo'd inbound slug; the canonical URL must always
-        # use the name-derived slug regardless of what the URL contained.
+    def test_off_canonical_inbound_slug_redirects_to_name_slug(
+        self, client: Client
+    ) -> None:
+        """An off-canonical inbound slug 302s to the name-derived form."""
+        # Create a region whose name slug ("valais") differs from the
+        # auto-generated ``Region.slug`` (``ch-4115``); a request that
+        # uses any non-canonical slug must redirect to the name slug.
         RegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
                 "public:bulletin_date",
                 kwargs={
-                    "region_id": "CH-4115",
+                    "region_id": "ch-4115",
                     "slug": "wrong-slug",
                     "date_str": "2026-03-15",
                 },
             )
             response = client.get(url)
 
-        canonical = response.context["canonical_url"]
-        assert canonical.endswith("/CH-4115/valais/2026-03-15/")
+        assert response.status_code == 302
+        assert response["Location"] == "/ch-4115/valais/2026-03-15/"

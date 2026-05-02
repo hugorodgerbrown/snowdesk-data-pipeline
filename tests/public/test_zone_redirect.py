@@ -60,7 +60,7 @@ class TestRegionRedirect:
         response = client.get(url)
 
         assert response.status_code == 302
-        assert response["Location"] == f"/CH-4115/valais/{today}/"
+        assert response["Location"] == f"/ch-4115/valais/{today}/"
 
     def test_case_insensitive_region_id(
         self, client: Client, region_with_bulletin: None
@@ -69,7 +69,7 @@ class TestRegionRedirect:
         today = timezone.now().date().isoformat()
         response = client.get("/ch-4115/")
         assert response.status_code == 302
-        assert response["Location"] == f"/CH-4115/valais/{today}/"
+        assert response["Location"] == f"/ch-4115/valais/{today}/"
 
     def test_unknown_region_returns_404(self, client: Client) -> None:
         """A region ID that doesn't match any Region should 404."""
@@ -85,7 +85,7 @@ class TestRegionRedirect:
         response = client.get("/CH-4115/?issue=abc-123&foo=bar")
         assert response.status_code == 302
         assert response["Location"] == (
-            f"/CH-4115/valais/{today}/?issue=abc-123&foo=bar"
+            f"/ch-4115/valais/{today}/?issue=abc-123&foo=bar"
         )
 
     def test_multiword_region_name_is_slugified(self, client: Client) -> None:
@@ -109,7 +109,7 @@ class TestRegionRedirect:
         response = client.get(url)
 
         assert response.status_code == 302
-        assert response["Location"] == f"/CH-5200/haut-val-de-bagnes/{today}/"
+        assert response["Location"] == f"/ch-5200/haut-val-de-bagnes/{today}/"
 
 
 @pytest.mark.django_db
@@ -128,7 +128,7 @@ class TestRegionSlugRedirect:
         response = client.get(url)
 
         assert response.status_code == 302
-        assert response["Location"] == f"/CH-4115/valais/{today}/"
+        assert response["Location"] == f"/ch-4115/valais/{today}/"
 
     def test_form2_normalises_arbitrary_slug(
         self, client: Client, region_with_bulletin: None
@@ -139,7 +139,7 @@ class TestRegionSlugRedirect:
         # canonical name slug regardless.
         response = client.get("/CH-4115/wrong-slug/")
         assert response.status_code == 302
-        assert response["Location"] == f"/CH-4115/valais/{today}/"
+        assert response["Location"] == f"/ch-4115/valais/{today}/"
 
     def test_form2_query_string_preserved(
         self, client: Client, region_with_bulletin: None
@@ -148,7 +148,7 @@ class TestRegionSlugRedirect:
         today = timezone.now().date().isoformat()
         response = client.get("/CH-4115/valais/?issue=abc-123")
         assert response.status_code == 302
-        assert response["Location"] == (f"/CH-4115/valais/{today}/?issue=abc-123")
+        assert response["Location"] == (f"/ch-4115/valais/{today}/?issue=abc-123")
 
     def test_form2_unknown_region_returns_404(self, client: Client) -> None:
         """An unknown region_id at form 2 still 404s."""
@@ -158,6 +158,53 @@ class TestRegionSlugRedirect:
         )
         response = client.get(url)
         assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestForm3CanonicalRedirect:
+    """Form 3 with a non-canonical region_id or slug 302s to canonical."""
+
+    def test_uppercase_region_id_redirects_to_lowercase(
+        self, client: Client, region_with_bulletin: None
+    ) -> None:
+        """``/CH-4115/valais/<date>/`` 302s to ``/ch-4115/valais/<date>/``."""
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "CH-4115",
+                "slug": "valais",
+                "date_str": "2025-03-15",
+            },
+        )
+        response = client.get(url)
+        assert response.status_code == 302
+        assert response["Location"] == "/ch-4115/valais/2025-03-15/"
+
+    def test_stale_underscore_slug_redirects_to_name_slug(
+        self, client: Client, region_with_bulletin: None
+    ) -> None:
+        """``/ch-4115/ch_4115/<date>/`` 302s to the name-derived slug."""
+        # Mirrors the bug the user reported on production data: the
+        # second segment had been ``ch_4115`` (auto-generated from the
+        # ``Region.slug`` field) instead of ``valais`` (slugified name).
+        response = client.get("/ch-4115/ch_4115/2025-03-15/")
+        assert response.status_code == 302
+        assert response["Location"] == "/ch-4115/valais/2025-03-15/"
+
+    def test_non_canonical_redirect_preserves_query_string(
+        self, client: Client, region_with_bulletin: None
+    ) -> None:
+        """A non-canonical form-3 redirect carries any inbound ``?issue=``."""
+        response = client.get("/CH-4115/valais/2025-03-15/?issue=abc-123")
+        assert response.status_code == 302
+        assert response["Location"] == ("/ch-4115/valais/2025-03-15/?issue=abc-123")
+
+    def test_canonical_form3_url_renders_directly(
+        self, client: Client, region_with_bulletin: None
+    ) -> None:
+        """When the inbound URL is already canonical, render with 200."""
+        response = client.get("/ch-4115/valais/2025-03-15/")
+        assert response.status_code == 200
 
 
 @pytest.mark.django_db
@@ -175,7 +222,7 @@ class TestCanonicalRenderWarmsCache:
         url = reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": "CH-4115",
+                "region_id": "ch-4115",
                 "slug": "valais",
                 "date_str": today,
             },

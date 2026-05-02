@@ -450,7 +450,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                         <li>
                             <a
                                 class="text-text-2 underline hover:text-text-1"
-                                href="{% url 'public:bulletin_date' region_id=r.region_id slug=r.slug date_str=page_date|date:'Y-m-d' %}"
+                                href="{% url 'public:bulletin_date' region_id=r.canonical_region_id slug=r.name_slug date_str=page_date|date:'Y-m-d' %}"
                             >
                                 {{ r.name }}
                             </a>

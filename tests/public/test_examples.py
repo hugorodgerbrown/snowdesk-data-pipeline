@@ -108,7 +108,7 @@ class TestExamplesRandom:
         canonical = response.context["canonical_url"]
         # Random picked the only region; canonical must point at form 3
         # of that region (not at /examples/random/).
-        assert "/CH-4115/valais/" in canonical
+        assert "/ch-4115/valais/" in canonical
         assert "/examples/" not in canonical
         assert b'<link rel="canonical"' in response.content
 
@@ -176,7 +176,7 @@ class TestExamplesCategory:
         canonical = response.context["canonical_url"]
         # Canonical points at /<region_id>/<slug>/<bulletin-date>/, never
         # at /examples/category/...
-        assert "/CH-4115/valais/2025-03-15/" in canonical
+        assert "/ch-4115/valais/2025-03-15/" in canonical
         assert "/examples/" not in canonical
 
     def test_pinned_bulletin_actually_renders(self, client: Client, region) -> None:

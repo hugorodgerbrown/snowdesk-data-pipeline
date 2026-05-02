@@ -200,7 +200,7 @@ class TestTemplateName:
 
     def test_renders_bulletin_html(self, client: Client, simple_bulletin, region):
         """The view renders public/bulletin.html."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
         assert "public/bulletin.html" in [t.name for t in response.templates]
@@ -217,14 +217,14 @@ class TestRatingBlockCount:
 
     def test_one_trait_one_block(self, client: Client, simple_bulletin, region):
         """One trait produces exactly one rating block."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="rating-block"') == 1
 
     def test_two_traits_two_blocks(self, client: Client, variable_bulletin, region):
         """Two traits produce exactly two rating blocks."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="rating-block"') == 2
@@ -243,7 +243,7 @@ class TestAspectElevationRow:
         self, client: Client, simple_bulletin, region
     ):
         """Rating block has aspect/elevation row when geography.source is 'problems'."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="aspect-elevation-row"' in content
@@ -257,7 +257,7 @@ class TestAspectElevationRow:
         rm = _render_model_with_traits([wet_trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="aspect-elevation-row"' not in content
@@ -279,7 +279,7 @@ class TestAspectElevationRow:
         rm = _render_model_with_traits([trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="aspect-elevation-row"' not in content
@@ -308,7 +308,7 @@ class TestProseFull:
         rm = _render_model_with_traits([trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         # The prose is sanitised by snowdesk_html but the text content remains
@@ -344,7 +344,7 @@ class TestSnowpackWeatherSection:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="weather-review-heading"' not in content
@@ -364,7 +364,7 @@ class TestSnowpackWeatherSection:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="snowpack-weather-section"' in content
@@ -385,7 +385,7 @@ class TestSnowpackWeatherSection:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="snowpack-weather-section"' not in content
@@ -405,7 +405,7 @@ class TestSnowpackWeatherSection:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="snowpack-weather-section"' in content
@@ -433,7 +433,7 @@ class TestSnowpackWeatherSection:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="snowpack-weather-section"' in content
@@ -466,7 +466,7 @@ class TestMetadataStrip:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         # Em-dash character should appear in the next-update cell
@@ -489,7 +489,7 @@ class TestMetadataStrip:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="metadata-strip"' in content
@@ -524,7 +524,7 @@ class TestNoBulletinPageFooter:
 
     def test_no_page_footer_landmark(self, client: Client, simple_bulletin, region):
         """The page-local footer landmark is gone."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="page-footer"' not in content
@@ -551,7 +551,7 @@ class TestNoBulletinPageFooter:
             region_name_at_time="Münstertal",
         )
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert "Münstertal" not in content
@@ -568,7 +568,7 @@ class TestTypography:
 
     def test_font_sans_on_container(self, client: Client, simple_bulletin, region):
         """The outermost container has the font-sans class."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         # The outermost div must carry font-sans
@@ -594,14 +594,14 @@ class TestDebuggingAids:
         self, client: Client, simple_bulletin, region
     ):
         """Response carries the bulletin UUID in ``X-Bulletin-Id``."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
         assert response["X-Bulletin-Id"] == str(simple_bulletin.bulletin_id)
 
     def test_x_bulletin_id_header_absent_on_empty_state(self, client: Client, region):
         """No bulletin → no ``X-Bulletin-Id`` header."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
         assert "X-Bulletin-Id" not in response
@@ -617,7 +617,7 @@ class TestDebuggingAids:
             render_model_version=3,
             raw_data={"properties": {"bulletinID": "sentinel-uuid-12345"}},
         )
-        url = _url("CH-4115", "valais", "2026-03-17")
+        url = _url("ch-4115", "valais", "2026-03-17")
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
@@ -634,7 +634,7 @@ class TestDebuggingAids:
     ):
         """DEBUG=False → no raw_data script tag, header still present."""
         settings.DEBUG = False
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
@@ -652,7 +652,7 @@ class TestDebuggingAids:
             render_model_version=3,
             raw_data={"properties": {"comment": "hostile </script><b>pwn</b>"}},
         )
-        url = _url("CH-4115", "valais", "2026-03-18")
+        url = _url("ch-4115", "valais", "2026-03-18")
         response = client.get(url)
         content = response.content.decode()
         # The literal ``</script>`` must not appear inside the raw-data
@@ -726,7 +726,7 @@ class TestRatingBlockOrder:
         rm = _render_model_with_traits([dry_trait, wet_trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
 
@@ -764,7 +764,7 @@ class TestRatingBlockOrder:
         rm = _render_model_with_traits([wet_trait, dry_trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-16")
+        url = _url("ch-4115", "valais", "2026-03-16")
         response = client.get(url)
         assert response.status_code == 200
 
@@ -793,7 +793,7 @@ class TestDayWindowsPanel:
 
     def test_default_renders_panel(self, client: Client, variable_bulletin, region):
         """The day-windows panel renders by default — no headline band."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="day-windows-panel"' in content
@@ -803,7 +803,7 @@ class TestDayWindowsPanel:
         self, client: Client, variable_bulletin, region
     ):
         """The 'Day Risk Profile' h2 sits above the day-windows panel."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="day-risk-profile-heading"' in content
@@ -842,7 +842,7 @@ class TestDayWindowsPanel:
         rm = _render_model_with_traits([earlier_trait, later_trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-18")
+        url = _url("ch-4115", "valais", "2026-03-18")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 2
@@ -861,7 +861,7 @@ class TestDayWindowsPanel:
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-19")
+        url = _url("ch-4115", "valais", "2026-03-19")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 1
@@ -900,7 +900,7 @@ class TestDayWindowsPanel:
         rm = _render_model_with_traits([all_day_trait, later_trait])
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-23")
+        url = _url("ch-4115", "valais", "2026-03-23")
         response = client.get(url)
         content = response.content.decode()
         # Two rows, ordered: the all_day row sits first, the later row second.
@@ -955,7 +955,7 @@ class TestDayWindowsPanel:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-24")
+        url = _url("ch-4115", "valais", "2026-03-24")
         response = client.get(url)
         content = response.content.decode()
         panel_start = content.index('data-testid="day-windows-panel"')
@@ -1004,7 +1004,7 @@ class TestDayWindowsPanel:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-20")
+        url = _url("ch-4115", "valais", "2026-03-20")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 3
@@ -1031,7 +1031,7 @@ class TestDayWindowsPanel:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-21")
+        url = _url("ch-4115", "valais", "2026-03-21")
         response = client.get(url)
         content = response.content.decode()
         # lv-considerable + the digit 3 inside the tile.
@@ -1066,7 +1066,7 @@ class TestDayWindowsPanel:
         )
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-22")
+        url = _url("ch-4115", "valais", "2026-03-22")
         response = client.get(url)
         content = response.content.decode()
         # Single all_day row at the higher level (3 / Considerable). Caption
@@ -1094,14 +1094,14 @@ class TestBulletinMasthead:
 
     def test_renders_masthead(self, client: Client, simple_bulletin, region):
         """The masthead landmark renders on the bulletin page by default."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="bulletin-masthead"' in content
 
     def test_eyebrow_precedes_region_h1(self, client: Client, simple_bulletin, region):
         """Date eyebrow + calendar trigger sit above the region H1 in DOM order."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         eyebrow_idx = content.index('class="bm-eyebrow"')
@@ -1112,7 +1112,7 @@ class TestBulletinMasthead:
         self, client: Client, simple_bulletin, region
     ):
         """Parent EAWS L2 sub-region renders as an H2 below the region H1."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="bulletin-masthead-subregion"' in content
@@ -1127,7 +1127,7 @@ class TestBulletinMasthead:
         sub.name_en = "Lower Valais"
         sub.name_native = "Bas-Valais"
         sub.save(update_fields=["name_en", "name_native"])
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = Client().get(url)
         content = response.content.decode()
         assert "Lower Valais" in content
@@ -1140,7 +1140,7 @@ class TestBulletinMasthead:
         sub.name_en = ""
         sub.name_native = "Bas-Valais"
         sub.save(update_fields=["name_en", "name_native"])
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = Client().get(url)
         content = response.content.decode()
         assert "Bas-Valais" in content
@@ -1149,7 +1149,7 @@ class TestBulletinMasthead:
         self, client: Client, simple_bulletin, region
     ):
         """The calendar HTMX button sits in the masthead, not the top nav."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="bm-calendar-trigger"' in content
@@ -1166,7 +1166,7 @@ class TestBulletinMasthead:
         The map's existing hash router opens the bottom sheet for the
         region at peek state on load (SNOW-81 / SNOW-63 auto-zoom).
         """
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="bm-map-link"' in content
@@ -1181,7 +1181,7 @@ class TestBulletinMasthead:
         self, client: Client, simple_bulletin, region
     ):
         """The top nav is wayfinding-only — no calendar button."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         # Only one calendar button on the page (in the masthead, not the nav).
@@ -1193,7 +1193,7 @@ class TestBulletinMasthead:
         self, client: Client, variable_bulletin, region
     ):
         """The Day Risk Profile heading + day-windows panel render below."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="day-risk-profile-heading"' in content
@@ -1216,7 +1216,7 @@ class TestCalendarDismissScript:
 
     def test_dismiss_script_is_present(self, client: Client, simple_bulletin, region):
         """The dismiss listener is rendered on the bulletin page."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         # The listener targets the calendar host and matches any trigger
@@ -1245,7 +1245,7 @@ class TestDayCharacterEyebrow:
 
     def test_renders_label_and_explainer(self, client: Client, simple_bulletin, region):
         """A normal bulletin renders the label + explainer in the eyebrow."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         # simple_bulletin is danger=2 with a wind_slab problem → the
@@ -1273,7 +1273,7 @@ class TestDayCharacterEyebrow:
         rm["danger"] = {"key": "considerable", "number": "3", "subdivision": None}
         _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
 
-        url = _url("CH-4115", "valais", "2026-03-20")
+        url = _url("ch-4115", "valais", "2026-03-20")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="day-character"' in content
@@ -1283,7 +1283,7 @@ class TestDayCharacterEyebrow:
         self, client: Client, simple_bulletin, region
     ):
         """The eyebrow sits above the Day Risk Profile heading in DOM order."""
-        url = _url("CH-4115", "valais", "2026-03-15")
+        url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         eyebrow_idx = content.index('data-testid="day-character"')
@@ -1310,7 +1310,7 @@ class TestDayCharacterEyebrow:
                 "properties": {"dangerRatings": [{"mainValue": "moderate"}]},
             },
         )
-        url = _url("CH-4115", "valais", "2026-03-21")
+        url = _url("ch-4115", "valais", "2026-03-21")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="day-character"' not in content

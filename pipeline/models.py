@@ -25,9 +25,12 @@ Keep business logic out of models — put it in pipeline/services/ instead.
 
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 from django.db import models
+from django.urls import reverse
+from django.utils import timezone
 from django.utils.text import slugify
 
 from core.models import BaseModel
@@ -313,6 +316,48 @@ class Region(BaseModel):
     def major_region(self) -> EawsMajorRegion:
         """Return the L1 major region this region belongs to."""
         return self.subregion.major
+
+    @property
+    def canonical_region_id(self) -> str:
+        """Lowercase, hyphen-normalised ``region_id`` for URL paths.
+
+        ``region_id`` is stored case-preserved (e.g. ``"CH-4115"``) so
+        the SLF identifier round-trips through the API exactly as it
+        arrived. URLs always use the slugified form so callers and
+        search engines see a single canonical path per region.
+        """
+        return slugify(self.region_id)
+
+    @property
+    def name_slug(self) -> str:
+        """Slugified region name for the second URL path component.
+
+        Re-derived from ``self.name`` on every access rather than from
+        the stored ``slug`` field — that field is auto-generated from
+        ``region_id`` (e.g. ``"ch-4115"``), not from the name. Computing
+        from the name keeps the URL human-readable
+        (``/ch-4115/brunig-lungern/``).
+        """
+        return slugify(self.name)
+
+    def get_absolute_url(self, target_date: datetime.date | None = None) -> str:
+        """Return the canonical bulletin URL for this region.
+
+        Form-3 URL ``/<region_id>/<slug>/<YYYY-MM-DD>/`` (SNOW-99) using
+        the lower-cased ``region_id`` and name-derived slug. Defaults to
+        today when ``target_date`` is omitted so internal callers don't
+        have to thread a date through every link.
+        """
+        if target_date is None:
+            target_date = timezone.now().date()
+        return reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": self.canonical_region_id,
+                "slug": self.name_slug,
+                "date_str": target_date.isoformat(),
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
