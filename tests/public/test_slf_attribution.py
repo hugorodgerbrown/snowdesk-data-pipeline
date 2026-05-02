@@ -155,9 +155,17 @@ class TestGlobalSiteFooter:
 
     def test_bulletin_renders_footer(self, client, region):
         _make_today_bulletin(region)
+        # SNOW-99: form 2 now redirects to form 3, so hit the canonical
+        # URL directly with today's date to assert the rendered page.
+        from django.utils import timezone
+
         url = reverse(
-            "public:bulletin",
-            kwargs={"region_id": region.region_id, "slug": region.slug},
+            "public:bulletin_date",
+            kwargs={
+                "region_id": region.region_id,
+                "slug": region.slug,
+                "date_str": timezone.localdate().isoformat(),
+            },
         )
         response = client.get(url)
         assert response.status_code == 200

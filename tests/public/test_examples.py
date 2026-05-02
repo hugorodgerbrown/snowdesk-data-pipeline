@@ -2,7 +2,11 @@
 tests/public/test_examples.py — Tests for the example URL views.
 
 Covers ``/examples/random/``, ``/examples/category/<danger_level>/``,
-and the deprecated ``/random/`` redirect.
+and the deprecated ``/random/`` redirect. Both example views render
+the bulletin page inline using the canonical view's core (SNOW-99) so
+the rendered output is byte-for-byte identical to a real bulletin —
+including a ``<link rel="canonical">`` pointing at the real form-3 URL
+of the picked region/date (not the ``/examples/...`` URL itself).
 """
 
 from __future__ import annotations
@@ -90,6 +94,24 @@ class TestExamplesRandom:
         assert response.status_code == 302
         assert response["Location"] == "/"
 
+    def test_canonical_url_points_at_real_bulletin(
+        self, client: Client, region
+    ) -> None:
+        """The canonical URL points at the form-3 URL of the picked region."""
+        _make_bulletin_with_region(
+            region, "moderate", datetime(2025, 3, 15, 8, 0, tzinfo=UTC)
+        )
+        url = reverse("public:examples_random")
+        response = client.get(url)
+
+        assert response.status_code == 200
+        canonical = response.context["canonical_url"]
+        # Random picked the only region; canonical must point at form 3
+        # of that region (not at /examples/random/).
+        assert "/CH-4115/valais/" in canonical
+        assert "/examples/" not in canonical
+        assert b'<link rel="canonical"' in response.content
+
 
 @pytest.mark.django_db
 class TestExamplesCategory:
@@ -105,17 +127,19 @@ class TestExamplesCategory:
             ("very-high", "very_high"),
         ],
     )
-    def test_redirects_for_each_danger_level(
+    def test_renders_inline_for_each_danger_level(
         self, client: Client, region, slug: str, caaml_key: str
     ) -> None:
-        """Each valid danger level slug redirects to a matching bulletin."""
+        """Each valid danger level slug renders the matching bulletin inline."""
         _make_bulletin_with_region(
             region, caaml_key, datetime(2025, 3, 15, 8, 0, tzinfo=UTC)
         )
         url = reverse("public:examples_category", kwargs={"danger_level": slug})
         response = client.get(url)
-        assert response.status_code == 302
-        assert "/CH-4115/" in response["Location"]
+        assert response.status_code == 200
+        # The rendered page is the real bulletin template, with the
+        # picked region's name visible.
+        assert b"Valais" in response.content
 
     def test_unknown_danger_level_returns_404(self, client: Client) -> None:
         """An unrecognised danger level slug returns 404."""
@@ -134,3 +158,46 @@ class TestExamplesCategory:
         url = reverse("public:examples_category", kwargs={"danger_level": "high"})
         response = client.get(url)
         assert response.status_code == 404
+
+    def test_canonical_url_points_at_real_bulletin(
+        self, client: Client, region
+    ) -> None:
+        """The canonical URL points at the form-3 URL of the matched bulletin."""
+        _make_bulletin_with_region(
+            region, "considerable", datetime(2025, 3, 15, 8, 0, tzinfo=UTC)
+        )
+        url = reverse(
+            "public:examples_category",
+            kwargs={"danger_level": "considerable"},
+        )
+        response = client.get(url)
+
+        assert response.status_code == 200
+        canonical = response.context["canonical_url"]
+        # Canonical points at /<region_id>/<slug>/<bulletin-date>/, never
+        # at /examples/category/...
+        assert "/CH-4115/valais/2025-03-15/" in canonical
+        assert "/examples/" not in canonical
+
+    def test_pinned_bulletin_actually_renders(self, client: Client, region) -> None:
+        """The matched bulletin is pinned via ``requested_issue_id``."""
+        # Two bulletins on the same date with different danger levels.
+        # ``examples_category`` should pick the one matching the URL slug
+        # and pass its bulletin_id as requested_issue_id so the rendered
+        # body actually shows the requested danger level.
+        target = _make_bulletin_with_region(
+            region, "high", datetime(2025, 3, 15, 8, 0, tzinfo=UTC)
+        )
+        # Decoy: a different danger level on the same day.
+        _make_bulletin_with_region(
+            region, "low", datetime(2025, 3, 15, 9, 0, tzinfo=UTC)
+        )
+        url = reverse(
+            "public:examples_category",
+            kwargs={"danger_level": "high"},
+        )
+        response = client.get(url)
+
+        assert response.status_code == 200
+        # The view's rendered bulletin context object is the matched one.
+        assert response.context["bulletin"].pk == target.pk

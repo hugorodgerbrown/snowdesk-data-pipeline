@@ -540,7 +540,12 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     # time_period_label, ElevationBounds); without enrichment those rows
     # silently disappear via the partial's {% if %} guards.
     rm = enrich_render_model(bulletin.render_model or {})
-    bulletin_url = reverse("public:bulletin", args=[region.region_id, region.slug])
+    # Use the canonical form-3 URL (SNOW-99) so clicking through the map
+    # peek lands on the page directly rather than incurring a 302.
+    bulletin_url = reverse(
+        "public:bulletin_date",
+        args=[region.region_id, region.slug, target_date.isoformat()],
+    )
 
     ctx = {
         "region": region,

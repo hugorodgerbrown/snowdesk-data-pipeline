@@ -618,7 +618,10 @@ def test_region_summary_peek_includes_bulletin_deep_link():
     assert response.status_code == 200
     peek = response.json()["peek"]
     assert 'data-testid="region-peek-bulletin-link"' in peek
-    expected_href = reverse("public:bulletin", args=["CH-4115", "ch-4115"])
+    # SNOW-99: peek now carries the canonical form-3 URL (with today's
+    # date) so clicking through doesn't incur an extra 302 hop.
+    today = timezone.localdate().isoformat()
+    expected_href = reverse("public:bulletin_date", args=["CH-4115", "ch-4115", today])
     assert f'href="{expected_href}"' in peek
 
 
