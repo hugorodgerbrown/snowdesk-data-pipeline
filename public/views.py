@@ -970,7 +970,21 @@ def _redirect_to_canonical(request: HttpRequest, region: Region) -> HttpResponse
             "date_str": today.isoformat(),
         },
     )
-    qs = request.META.get("QUERY_STRING", "")
+    # ``target`` is a server-relative path built via ``reverse()`` and the
+    # query string is appended after a literal ``?`` separator — there is
+    # no way for QUERY_STRING content to change the host of the redirect.
+    # The semgrep open-redirect rule fires on the syntactic shape (request
+    # data → redirect()) but the host is not attacker-controlled here, so
+    # ``is_safe_url`` would only add cost without changing behaviour.
+    # The semgrep open-redirect rule fires on the taint flow from
+    # ``request.META`` to ``redirect()``. The sink is provably safe here
+    # because ``target`` is a server-relative path built via ``reverse()``
+    # and the query string is appended after a literal ``?`` separator —
+    # there is no way for QUERY_STRING content to change the host of the
+    # redirect target. Suppress at the source line where taint enters.
+    # noqa is for the line-length cap: semgrep's nosemgrep marker must
+    # sit inline on the taint-source line, and the rule id is long.
+    qs = request.META.get("QUERY_STRING", "")  # noqa: E501  # nosemgrep: python.django.security.injection.open-redirect.open-redirect
     if qs:
         target = f"{target}?{qs}"
     return redirect(target)
