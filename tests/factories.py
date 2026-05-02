@@ -14,8 +14,15 @@ import datetime
 from datetime import UTC
 
 import factory
+from django.utils import timezone as django_timezone
 
-from bulletins.models import Bulletin, PipelineRun, RegionBulletin, RegionDayRating
+from bulletins.models import (
+    Bulletin,
+    PipelineRun,
+    RegionBulletin,
+    RegionDayRating,
+    WeatherSnapshot,
+)
 from bulletins.services.day_rating import DAY_RATING_VERSION
 from pipeline.models import (
     EawsMajorRegion,
@@ -164,6 +171,25 @@ class RegionDayRatingFactory(factory.django.DjangoModelFactory[RegionDayRating])
     max_subdivision = ""
     source_bulletin = None
     version = DAY_RATING_VERSION
+
+
+class WeatherSnapshotFactory(factory.django.DjangoModelFactory[WeatherSnapshot]):
+    """Factory for WeatherSnapshot instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = WeatherSnapshot
+
+    region = factory.SubFactory(RegionFactory)
+    valid_for_date = factory.LazyFunction(django_timezone.localdate)
+    weather_code = 0  # clear sky
+    sunrise = factory.LazyFunction(
+        lambda: datetime.datetime(2026, 5, 1, 5, 30, tzinfo=UTC)
+    )
+    sunset = factory.LazyFunction(
+        lambda: datetime.datetime(2026, 5, 1, 20, 45, tzinfo=UTC)
+    )
 
 
 class SubscriberFactory(factory.django.DjangoModelFactory[Subscriber]):

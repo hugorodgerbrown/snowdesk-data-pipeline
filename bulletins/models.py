@@ -1,7 +1,7 @@
 """
 bulletins/models.py — Bulletin-derived database models.
 
-Owns the four bulletin-driven models:
+Owns the five bulletin-driven models:
   - PipelineRun: records each execution of the data pipeline (scheduled or
     manual), its status, and timing metadata.
   - Bulletin: stores SLF avalanche bulletins fetched from the CAAML API,
@@ -14,15 +14,18 @@ Owns the four bulletin-driven models:
   - RegionDayRating: denormalised per-(region, date) min and max danger
     ratings, updated whenever a bulletin covering that (region, date) is
     ingested or rebuilt. Drives the longitudinal calendar view.
+  - WeatherSnapshot: one row per (region, date) storing the WMO weather
+    code and sunrise/sunset times fetched from Open-Meteo. Used by the
+    render model (SNOW-98) to determine whether a day is daytime or night.
 
 Region hierarchy (Region, EawsMajorRegion, EawsSubRegion, Resort) stays
 in ``pipeline.models`` — those are stable lookup tables shared across the
 whole project, not bulletin-derived data.
 
-``Meta.db_table`` on every model below is pinned to the existing
-``pipeline_*`` table names so the SNOW-92 cutover is a state-only
-migration: no DDL runs, no data moves, only Django's view of which app
-owns each model changes.
+``Meta.db_table`` on the four SNOW-92 models below is pinned to the
+existing ``pipeline_*`` table names so that migration was state-only:
+no DDL ran, no data moved. WeatherSnapshot is a new table and does NOT
+pin ``db_table`` — Django defaults to ``bulletins_weathersnapshot``.
 
 Each model uses a custom Manager + QuerySet pair so that domain-specific
 query methods live on the queryset and are accessible via both
@@ -39,6 +42,7 @@ from datetime import date as _date
 from typing import Any
 
 from django.db import models
+from django.db.models import CASCADE
 from django.utils import timezone
 
 from core.models import BaseModel
@@ -521,6 +525,93 @@ class RegionDayRating(BaseModel):
             )
         suffix = self.max_subdivision or ""
         return f"{self.region.region_id} {self.date} {self.max_rating}{suffix}"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# WeatherSnapshot
+# ---------------------------------------------------------------------------
+
+
+class WeatherSnapshotQuerySet(models.QuerySet["WeatherSnapshot"]):
+    """Custom queryset for WeatherSnapshot."""
+
+    def for_date(self, target_date: _date) -> "WeatherSnapshotQuerySet":
+        """
+        Return all snapshots valid for a given calendar date.
+
+        Args:
+            target_date: The calendar date to filter by.
+
+        Returns:
+            A filtered queryset of WeatherSnapshot rows for that date.
+
+        """
+        return self.filter(valid_for_date=target_date)
+
+
+class WeatherSnapshot(BaseModel):
+    """
+    Open-Meteo weather data for one region on one calendar day.
+
+    One row per (region, valid_for_date) pair. Fetched by the
+    ``fetch_weather`` management command (today) or ``backfill_weather``
+    (historical range). Stores the WMO weather code and tz-aware
+    sunrise/sunset times so that downstream consumers (SNOW-98 render
+    model) can determine day/night state without re-calling the API.
+
+    ``is_day`` is intentionally NOT stored here — it is computed at render
+    time by the consumer (SNOW-98) because it depends on the display
+    timestamp, not the snapshot.
+    """
+
+    region = models.ForeignKey(
+        "pipeline.Region",
+        on_delete=CASCADE,
+        related_name="weather_snapshots",
+    )
+    fetched_at = models.DateTimeField(
+        default=timezone.now,
+        help_text="When this snapshot was last written (updated on every upsert).",
+    )
+    valid_for_date = models.DateField(
+        db_index=True,
+        help_text="The calendar date this weather observation/forecast applies to.",
+    )
+    weather_code = models.PositiveSmallIntegerField(
+        help_text="WMO weather interpretation code (0–99).",
+    )
+    sunrise = models.DateTimeField(
+        help_text=(
+            "Sunrise time for this region on valid_for_date (tz-aware, local time)."
+        ),
+    )
+    sunset = models.DateTimeField(
+        help_text=(
+            "Sunset time for this region on valid_for_date (tz-aware, local time)."
+        ),
+    )
+
+    objects = WeatherSnapshotQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        unique_together = [("region", "valid_for_date")]
+        ordering = ["-valid_for_date", "region__region_id"]
+        indexes = [
+            models.Index(fields=["region", "valid_for_date"]),
+        ]
+
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this snapshot.
+
+        Format: ``CH-4115 2026-05-01 wmo=1``
+        """
+        return f"{self.region.region_id} {self.valid_for_date} wmo={self.weather_code}"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""
