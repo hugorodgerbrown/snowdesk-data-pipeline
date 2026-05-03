@@ -1156,6 +1156,61 @@ class TestWeatherHeaderFlagGate:
         assert b'data-testid="bulletin-weather-header"' in response.content
 
 
+# ── Masthead weather icon (SNOW-100) ─────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestMastheadWeatherIcon:
+    """The small weather icon in the masthead H1 row (SNOW-100).
+
+    The masthead icon is independent of the ``weather_header`` waffle flag
+    (that flag gates only the band partial below the masthead).  These tests
+    therefore do NOT activate the flag, so they exercise the icon in isolation.
+    """
+
+    def _bulletin_url(self) -> str:
+        """Return the canonical form-3 bulletin URL used by every test below."""
+        return reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "ch-4115",
+                "slug": "valais",
+                "date_str": "2026-03-15",
+            },
+        )
+
+    def test_masthead_renders_weather_icon(self, client: Client, region) -> None:
+        """When a snapshot exists, the masthead icon is present with the right src."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=0,  # clear sky → clear-day.svg
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+        )
+
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        assert b'data-testid="bulletin-masthead-weather-icon"' in response.content
+        assert b"icons/weather/clear-day.svg" in response.content
+
+    def test_masthead_omits_weather_icon_when_no_snapshot(
+        self, client: Client, region
+    ) -> None:
+        """When no WeatherSnapshot exists, the masthead icon is absent."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        # No WeatherSnapshotFactory call — snapshot deliberately absent.
+
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        assert b'data-testid="bulletin-masthead-weather-icon"' not in response.content
+
+
 @pytest.mark.django_db
 class TestCanonicalUrl:
     """The form-3 canonical URL is rendered as a ``<link rel="canonical">``."""
