@@ -1,17 +1,17 @@
-{% load i18n %}
+{% load i18n static %}
 {% comment %}
-templates/includes/bulletin_weather_header.html — weather-driven page header (SNOW-98).
+templates/includes/bulletin_weather_header.html — weather-driven page header (SNOW-98, SNOW-100).
 
 Renders a graphic band whose background changes with the current weather
 bucket (clear, partly_cloudy, cloudy, fog, rain, snow, thunder) and time
-of day (day, night). The visual is a placeholder — the final design lands
-separately and will be plumbed in by replacing the CSS in src/css/main.css
-without changing the markup or context contract.
+of day (day, night). A hero-sized Meteocons icon and condition label sit
+inside the left side of the band (SNOW-100).
 
 Required context (added by public.views.bulletin_detail):
   weather_display      — dict from bulletins.services.weather_display, or None.
                          Shape: {weather, bucket, is_day, time_of_day,
-                         sunrise_local, sunset_local}.
+                         sunrise_local, sunset_local, icon_bucket,
+                         condition_label, icon_filename}.
 
 When weather_display is None (no snapshot for this region/day, or this
 template is used by a non-bulletin page), nothing is rendered.
@@ -33,6 +33,15 @@ the header conveys information that needs an a11y label.
         data-testid="bulletin-weather-header"
         aria-hidden="true"
     >
+        {# Hero icon + condition label (SNOW-100). #}
+        <div class="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
+            <img
+                src="{% static 'icons/weather/'|add:weather_display.icon_filename %}"
+                class="w-16 h-16"
+                alt=""
+            >
+            <span class="text-white text-sm font-medium drop-shadow">{{ weather_display.condition_label }}</span>
+        </div>
         {# DEBUG OVERLAY (SNOW-98 design iteration) — remove when visual lands. #}
         <div
             class="absolute inset-0 flex items-center justify-center gap-4 font-mono text-xs text-white/95 bg-black/35 rounded-[var(--radius-card)]"

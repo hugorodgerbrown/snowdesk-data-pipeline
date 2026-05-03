@@ -934,6 +934,12 @@ class TestWeatherHeader:
         # The partial renders the data-attributes the design CSS targets.
         assert b'data-weather-bucket="clear"' in response.content
         assert b'data-time-of-day="day"' in response.content
+        # Icon affordance (SNOW-100): icon file and condition label in HTML.
+        assert display["icon_bucket"] == "clear"
+        assert display["condition_label"] == "Clear"
+        assert display["icon_filename"] == "clear-day.svg"
+        assert b"icons/weather/clear-day.svg" in response.content
+        assert b">Clear<" in response.content
 
     def test_nighttime_snapshot_emits_night_attributes(
         self, client: Client, region
@@ -943,7 +949,7 @@ class TestWeatherHeader:
         WeatherSnapshotFactory.create(
             region=region,
             valid_for_date=date(2026, 3, 15),
-            weather_code=71,  # snowfall
+            weather_code=71,  # light snowfall — maps to light_snow icon bucket
             sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
             sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
         )
@@ -958,6 +964,39 @@ class TestWeatherHeader:
         assert display["time_of_day"] == "night"
         assert b'data-weather-bucket="snow"' in response.content
         assert b'data-time-of-day="night"' in response.content
+        # Icon affordance (SNOW-100).
+        assert display["icon_bucket"] == "light_snow"
+        assert display["condition_label"] == "Light snow"
+        assert display["icon_filename"] == "light_snow-night.svg"
+        assert b"icons/weather/light_snow-night.svg" in response.content
+        assert b">Light snow<" in response.content
+
+    def test_cloudy_emits_no_day_night_suffix(self, client: Client, region) -> None:
+        """Overcast (WMO 3) uses cloudy.svg with no day/night suffix (SNOW-100).
+
+        This guards the special-case logic: 'cloudy' is the only icon bucket
+        whose SVG does not vary by time of day.
+        """
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=3,  # overcast → cloudy bucket
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+        )
+
+        with _freeze("2026-03-15T00:30:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        display = response.context["weather_display"]
+        assert display is not None
+        assert display["icon_bucket"] == "cloudy"
+        assert display["icon_filename"] == "cloudy.svg"
+        assert b"icons/weather/cloudy.svg" in response.content
+        assert b"cloudy-day.svg" not in response.content
+        assert b"cloudy-night.svg" not in response.content
 
     def test_historical_date_with_daytime_clock_renders_as_day(
         self, client: Client, region
