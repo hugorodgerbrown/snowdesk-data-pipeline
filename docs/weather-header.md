@@ -63,6 +63,41 @@ Sunrise is **inclusive**, sunset is **exclusive** — the boundary instants land
 
 The selectors in the **Weather header** CSS section apply tokens via `[data-weather-bucket][data-time-of-day]` attribute matchers. To swap the visual design, change the token values (and optionally the rules); the markup contract stays put.
 
+## Icon affordance (SNOW-100)
+
+Layered on top of the 7-bucket background scheme, a hero-sized **icon + condition label** sits inside the band. The icon set is [Meteocons](https://github.com/basmilius/meteocons) (Bas Milius, MIT) — the static "fill" variant from the `@meteocons/svg-static` npm package (`package/fill/`).
+
+### Icon bucket scheme (12 buckets)
+
+The icon mapping is intentionally finer than the background-colour mapping: rain splits into `drizzle / light / moderate / heavy` and snow splits into `light / moderate / heavy`, so the icon tells the reader more than the colour band alone.
+
+| Icon bucket | WMO codes |
+|---|---|
+| `clear` | 0 |
+| `partly_cloudy` | 1, 2 |
+| `cloudy` | 3 |
+| `fog` | 45, 48 |
+| `drizzle` | 51, 53, 55, 56, 57 |
+| `light_rain` | 61, 66, 80 |
+| `moderate_rain` | 63, 81 |
+| `heavy_rain` | 65, 67, 82 |
+| `light_snow` | 71, 77, 85 |
+| `moderate_snow` | 73 |
+| `heavy_snow` | 75, 86 |
+| `thunder` | 95, 96, 99 |
+
+Unknown codes fall back to `cloudy` — same posture as the background bucket map.
+
+### Day/night suffix
+
+Every bucket except `cloudy` has separate `-day` and `-night` SVGs, picked using the same `is_day` projection that drives the background. `cloudy` reads the same regardless of light, so it ships as a single `cloudy.svg`.
+
+The filename resolver is a string concatenation: `f"{icon_bucket}-{time_of_day}.svg"` for buckets in `WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT`, otherwise `f"{icon_bucket}.svg"`.
+
+### Licence
+
+Meteocons is MIT-licensed. The full licence text and provenance note live in [`static/icons/weather/LICENSE.md`](../static/icons/weather/LICENSE.md).
+
 ## Failure modes
 
 * **No snapshot for (region, date)**: `weather_display` is `None`; partial renders nothing.
