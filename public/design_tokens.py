@@ -102,8 +102,15 @@ class FoundationCategory:
             ``kind="components"``. Required for components entries;
             ignored for foundations.
         variants: Tuple of context dicts. Each variant carries a
-            ``caption`` plus the keys the ``partial`` reads. Required for
-            components entries; ignored for foundations.
+            ``caption`` plus the keys the ``partial`` reads. Variants may
+            optionally carry ``solo=True`` — that variant spans both
+            columns on a two-column layout. Required for components
+            entries; ignored for foundations.
+        panel_layout: Layout shape for the panel content. ``"stack"`` is
+            a vertical stack (default, used by foundations and most
+            components). ``"two-col"`` is single-column on mobile and
+            two-column on desktop (≥ md breakpoint) — useful for
+            paired variants like the weather-header day/night matrix.
 
     """
 
@@ -114,6 +121,7 @@ class FoundationCategory:
     tokens: tuple[Token | IconToken, ...] = ()
     partial: str | None = None
     variants: tuple[dict[str, Any], ...] = ()
+    panel_layout: str = "stack"
 
 
 @dataclass(frozen=True)
@@ -592,6 +600,7 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/bulletin_header.html",
         variants=WEATHER_HEADER_VARIANTS,
+        panel_layout="two-col",
     ),
 )
 

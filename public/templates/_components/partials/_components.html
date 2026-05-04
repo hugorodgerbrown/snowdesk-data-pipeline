@@ -13,17 +13,42 @@ Same template runs in both the light section and the .dark-wrapped section
 of the parent ``_panel.html`` shell, so the rendered partial inherits
 whichever theme cascades from above.
 
+Layout
+------
+``category.panel_layout`` toggles the wrapper grid:
+
+* ``"stack"`` (default) — vertical single-column stack at every breakpoint.
+* ``"two-col"``         — single column on mobile, two columns on ≥md.
+                          Variants flagged with ``solo=True`` span the
+                          full row on the two-column layout, so an
+                          unpaired entry (e.g. the no-snapshot fallback)
+                          doesn't offset every subsequent day/night pair
+                          by one column.
+
 Context:
     category : FoundationCategory whose ``partial`` and ``variants`` are
                rendered (must have ``kind="components"``).
 {% endcomment %}
-<div class="space-y-6">
-    {% for variant in category.variants %}
-        <figure class="space-y-2">
-            <figcaption class="text-xs font-mono text-text-3">{{ variant.caption }}</figcaption>
-            <div class="rounded-card overflow-hidden border border-border">
-                {% include_variant category.partial variant %}
-            </div>
-        </figure>
-    {% endfor %}
-</div>
+{% if category.panel_layout == "two-col" %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {% for variant in category.variants %}
+            <figure class="space-y-2{% if variant.solo %} md:col-span-2{% endif %}">
+                <figcaption class="text-xs font-mono text-text-3">{{ variant.caption }}</figcaption>
+                <div class="rounded-card overflow-hidden border border-border">
+                    {% include_variant category.partial variant %}
+                </div>
+            </figure>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="space-y-6">
+        {% for variant in category.variants %}
+            <figure class="space-y-2">
+                <figcaption class="text-xs font-mono text-text-3">{{ variant.caption }}</figcaption>
+                <div class="rounded-card overflow-hidden border border-border">
+                    {% include_variant category.partial variant %}
+                </div>
+            </figure>
+        {% endfor %}
+    </div>
+{% endif %}

@@ -109,7 +109,9 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
         else:
             # ``cloudy`` is the only bucket without a day/night split — the
             # icon reads the same regardless of light, so it ships as a
-            # single SVG and a single library variant.
+            # single SVG and a single library variant. Mark ``solo=True`` so
+            # the two-column panel layout spans this entry across the row
+            # rather than offsetting every following pair by one column.
             entries.append(
                 {
                     "caption": bucket_label,
@@ -120,12 +122,14 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
                         "page_date": today,
                         "calendar_partial_url": calendar_partial_url,
                     },
+                    "solo": True,
                 }
             )
 
     # No-snapshot fallback — the partial's degraded path. Kept last so the
     # main matrix flows top-to-bottom in canonical bucket order before the
-    # edge case shows up.
+    # edge case shows up. ``solo=True`` so it spans both columns on the
+    # two-column layout (no day/night counterpart to pair it with).
     entries.append(
         {
             "caption": "No snapshot · fallback",
@@ -136,6 +140,7 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
                 "page_date": today,
                 "calendar_partial_url": calendar_partial_url,
             },
+            "solo": True,
         }
     )
     return tuple(entries)
