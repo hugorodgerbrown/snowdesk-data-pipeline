@@ -1,18 +1,28 @@
 # Weather-driven bulletin header
 
-The bulletin detail page renders a graphic header band whose appearance varies with the current weather conditions and the time of day at the bulletin region. Data lives in `WeatherSnapshot` (see [`bulletins/models.py`](../bulletins/models.py)); display logic lives in [`bulletins/services/weather_display.py`](../bulletins/services/weather_display.py); markup lives in [`templates/includes/bulletin_weather_header.html`](../templates/includes/bulletin_weather_header.html); CSS tokens live in [`src/css/main.css`](../src/css/main.css) under the **Weather header** section.
+The bulletin detail page renders a unified header panel whose appearance varies with the current weather conditions and the time of day at the bulletin region. Data lives in `WeatherSnapshot` (see [`bulletins/models.py`](../bulletins/models.py)); display logic lives in [`bulletins/services/weather_display.py`](../bulletins/services/weather_display.py); markup lives in [`templates/includes/bulletin_header.html`](../templates/includes/bulletin_header.html); CSS tokens live in [`src/css/main.css`](../src/css/main.css) under the **Weather header** section.
+
+The `weather_header` waffle flag controls which header the bulletin page renders (see [`docs/feature-flags.md`](feature-flags.md)):
+
+- **Flag on** → `templates/includes/bulletin_header.html` — unified panel (region wayfinding + date + weather hero icon + condition label + sunrise/sunset).
+- **Flag off** → `templates/includes/bulletin_masthead.html` — legacy masthead without weather data.
+
+The pre-SNOW-100 band partial (`templates/includes/bulletin_weather_header.html`) was deleted alongside the unified header rollout — neither flag path referenced it any more.
 
 ## Data flow
 
 ```
-WeatherSnapshot         build_weather_display(...)        bulletin_weather_header.html
+WeatherSnapshot         build_weather_display(...)        bulletin_header.html
 (weather_code,          ┌─ bucket: clear|partly_cloudy    ┌─ data-weather-bucket="…"
  sunrise, sunset)  ───▶ │  cloudy|fog|rain|snow|thunder ─▶│  data-time-of-day="day|night"
-                        ├─ is_day: bool                   └─ data-weather-code="<int>"
+                        ├─ is_day: bool                   │  data-weather-code="<int>"
+                        ├─ icon_bucket: (12 values)       └─ hero <img> + condition label
+                        ├─ condition_label: str               + sunrise/sunset strip
+                        ├─ icon_filename: str
                         └─ time_of_day: "day"|"night"
 ```
 
-`bulletin_detail` in [`public/views.py`](../public/views.py) fetches the snapshot via `WeatherSnapshot.objects.for_date(target_date).filter(region=region).first()` and passes the `WeatherDisplay` dict (or `None`) into the template context as `weather_display`. The partial short-circuits to a no-op when `weather_display is None`, so callers can include it unconditionally.
+`bulletin_detail` in [`public/views.py`](../public/views.py) fetches the snapshot via `WeatherSnapshot.objects.for_date(target_date).filter(region=region).first()` and passes the `WeatherDisplay` dict (or `None`) into the template context as `weather_display`. When `weather_display` is `None` the unified header still renders — the hero icon is omitted, weather/sunrise lines are dropped from the metadata strip, and `data-weather-bucket="none"` triggers a neutral dark fallback colour via `--color-weather-fallback`.
 
 ## Bucket map
 
@@ -63,8 +73,43 @@ Sunrise is **inclusive**, sunset is **exclusive** — the boundary instants land
 
 The selectors in the **Weather header** CSS section apply tokens via `[data-weather-bucket][data-time-of-day]` attribute matchers. To swap the visual design, change the token values (and optionally the rules); the markup contract stays put.
 
+## Icon scheme
+
+The unified header carries a hero-sized **icon + condition label** alongside the region name and date. The icon set is [Meteocons](https://github.com/basmilius/meteocons) (Bas Milius, MIT) — the static "fill" variant from the `@meteocons/svg-static` npm package (`package/fill/`). A `bg-black/35` overlay sits between the bucket-colour background and the white text/icon so contrast is maintained across all bucket × time-of-day combinations without per-bucket text colour rules.
+
+### Icon bucket scheme (12 buckets)
+
+The icon mapping is intentionally finer than the background-colour mapping: rain splits into `drizzle / light / moderate / heavy` and snow splits into `light / moderate / heavy`, so the icon tells the reader more than the colour band alone.
+
+| Icon bucket | WMO codes |
+|---|---|
+| `clear` | 0 |
+| `partly_cloudy` | 1, 2 |
+| `cloudy` | 3 |
+| `fog` | 45, 48 |
+| `drizzle` | 51, 53, 55, 56, 57 |
+| `light_rain` | 61, 66, 80 |
+| `moderate_rain` | 63, 81 |
+| `heavy_rain` | 65, 67, 82 |
+| `light_snow` | 71, 77, 85 |
+| `moderate_snow` | 73 |
+| `heavy_snow` | 75, 86 |
+| `thunder` | 95, 96, 99 |
+
+Unknown codes fall back to `cloudy` — same posture as the background bucket map.
+
+### Day/night suffix
+
+Every bucket except `cloudy` has separate `-day` and `-night` SVGs, picked using the same `is_day` projection that drives the background. `cloudy` reads the same regardless of light, so it ships as a single `cloudy.svg`.
+
+The filename resolver is a string concatenation: `f"{icon_bucket}-{time_of_day}.svg"` for buckets in `WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT`, otherwise `f"{icon_bucket}.svg"`.
+
+### Licence
+
+Meteocons is MIT-licensed. The full licence text and provenance note live in [`static/icons/weather/LICENSE.md`](../static/icons/weather/LICENSE.md).
+
 ## Failure modes
 
-* **No snapshot for (region, date)**: `weather_display` is `None`; partial renders nothing.
+* **No snapshot for (region, date)**: `weather_display` is `None`; the unified header still renders with `data-weather-bucket="none"` (neutral dark via `--color-weather-fallback`) — region name, date, and calendar trigger are present but the hero icon and weather metadata strip are omitted.
 * **Snapshot for a different region**: filtered out by the `.filter(region=region)` clause; cannot leak into another region's page.
 * **Unknown WMO code**: falls back to `cloudy` rather than raising. A warning would be over-alert: the data set already includes long-tail codes Open-Meteo occasionally adds, and a single rogue value should not 500 the page.

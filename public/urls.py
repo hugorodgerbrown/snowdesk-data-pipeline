@@ -30,6 +30,7 @@ the generic ``<str:region_id>/<slug:slug>/`` pattern so Django's URL
 resolver matches the literal suffixes first.
 """
 
+from django.conf import settings
 from django.urls import path
 
 from . import debug_views, views
@@ -69,6 +70,22 @@ urlpatterns = [
     ),
     # Deprecated — redirect to /examples/random/
     path("random/", views.random_redirect, name="random"),
+]
+
+# Staff-only design-debug pages, only mounted in DEBUG builds. The view
+# is itself decorated with @_require_debug + @staff_member_required, so
+# even a stray production import would render 404 / login-redirect rather
+# than the markup. See public/debug_views.py.
+if settings.DEBUG:
+    urlpatterns.append(
+        path(
+            "debug/header/",
+            debug_views.header_combinations,
+            name="debug_header",
+        ),
+    )
+
+urlpatterns += [
     # Bulletin pages — three forms, all served by ``bulletin_detail``.
     # Forms 1 + 2 default to today and render in place; form 3 redirects
     # to canonical when the URL components don't match.

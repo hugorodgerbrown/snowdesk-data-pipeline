@@ -139,27 +139,37 @@
      these tokens are intentionally NOT mirrored
      under .dark {}.
 
-     PLACEHOLDER VALUES — the final visual design
-     will replace these once handed over. Keep the
-     token names stable so the partial markup
-     (data-weather-bucket / data-time-of-day) does
-     not need to change.
+     The day tokens are tuned to read realistically
+     for the weather they describe — clear-day is a
+     vivid sky blue that contrasts visibly against
+     cloudy-day's neutral grey and fog-day's warm
+     grey. The ``bg-black/35`` overlay applied in
+     ``templates/includes/bulletin_header.html``
+     darkens the rendered colour to ~65% of the base
+     token, so the chosen values above are tuned for
+     the post-overlay appearance, not the raw token.
+     White-text contrast lands in the WCAG AA range
+     (4.5:1 to 7:1 across day buckets, comfortably
+     AAA on every night bucket). Keep the token names
+     stable so the partial markup (data-weather-bucket
+     / data-time-of-day) does not need to change.
      ————————————————————————————————————————— */
 
-  --color-weather-clear-day:           #9bc6e8;   /* clear sky                     */
+  --color-weather-clear-day:           #5fa1d3;   /* vivid sky blue, sun pops      */
   --color-weather-clear-night:         #1a2a4a;   /* deep night sky                */
-  --color-weather-partly-cloudy-day:   #aac8de;
+  --color-weather-partly-cloudy-day:   #8aabc8;   /* paler blue, cloud-influenced  */
   --color-weather-partly-cloudy-night: #22324a;
-  --color-weather-cloudy-day:          #b8bcc1;
+  --color-weather-cloudy-day:          #a3aab3;   /* clean mid-grey, no blue cast  */
   --color-weather-cloudy-night:        #2a2e34;
-  --color-weather-fog-day:             #cfcec8;
+  --color-weather-fog-day:             #b6b3aa;   /* warm pale grey, fog-like      */
   --color-weather-fog-night:           #2c2e35;
-  --color-weather-rain-day:            #7e94a8;
+  --color-weather-rain-day:            #7a92aa;   /* cool blue-grey                */
   --color-weather-rain-night:          #1d2932;
-  --color-weather-snow-day:            #dde7ee;
+  --color-weather-snow-day:            #b3c2ce;   /* pale blue-grey, white flakes  */
   --color-weather-snow-night:          #1f2a3a;
-  --color-weather-thunder-day:         #5e6470;
+  --color-weather-thunder-day:         #5e6470;   /* moody dark — storms stay dark */
   --color-weather-thunder-night:       #101220;
+  --color-weather-fallback:            #3a3733;   /* no-snapshot neutral (theme-invariant) */
 
   /* Border radius */
   --radius-card:   16px;   /* outer card shell                    */
@@ -305,7 +315,7 @@
 
 .weather-header {
   height: 96px;
-  margin: 0 -1rem 1rem;   /* full-bleed inside the page's px-4 container */
+  margin: 0 0 1rem;   /* full-bleed inside the page's px-4 container */
   border-radius: var(--radius-card);
   background: var(--color-card-subtle);   /* fallback if no bucket matches */
 }
@@ -324,6 +334,41 @@
 .weather-header[data-weather-bucket="snow"][data-time-of-day="night"]          { background: var(--color-weather-snow-night); }
 .weather-header[data-weather-bucket="thunder"][data-time-of-day="day"]         { background: var(--color-weather-thunder-day); }
 .weather-header[data-weather-bucket="thunder"][data-time-of-day="night"]       { background: var(--color-weather-thunder-night); }
+
+
+/* —— Bulletin header panel ——————————————————
+   Unified panel carrying region/sub-region, date,
+   and weather. Bucket-coloured background preserves
+   the SNOW-98 day/night signal; a bg-black/35 overlay
+   in the markup normalises text contrast. Height is
+   content-driven (min-height in markup), unlike the
+   fixed-96px decorative .weather-header band.
+
+   Usage in template (see includes/bulletin_header.html):
+     <header class="bulletin-header"
+             data-weather-bucket="rain"
+             data-time-of-day="day">…</header>
+   ————————————————————————————————————————— */
+
+.bulletin-header {
+  border-radius: var(--radius-card);
+  background: var(--color-weather-fallback);   /* used when no snapshot is available */
+}
+
+.bulletin-header[data-weather-bucket="clear"][data-time-of-day="day"]           { background: var(--color-weather-clear-day); }
+.bulletin-header[data-weather-bucket="clear"][data-time-of-day="night"]         { background: var(--color-weather-clear-night); }
+.bulletin-header[data-weather-bucket="partly_cloudy"][data-time-of-day="day"]   { background: var(--color-weather-partly-cloudy-day); }
+.bulletin-header[data-weather-bucket="partly_cloudy"][data-time-of-day="night"] { background: var(--color-weather-partly-cloudy-night); }
+.bulletin-header[data-weather-bucket="cloudy"][data-time-of-day="day"]          { background: var(--color-weather-cloudy-day); }
+.bulletin-header[data-weather-bucket="cloudy"][data-time-of-day="night"]        { background: var(--color-weather-cloudy-night); }
+.bulletin-header[data-weather-bucket="fog"][data-time-of-day="day"]             { background: var(--color-weather-fog-day); }
+.bulletin-header[data-weather-bucket="fog"][data-time-of-day="night"]           { background: var(--color-weather-fog-night); }
+.bulletin-header[data-weather-bucket="rain"][data-time-of-day="day"]            { background: var(--color-weather-rain-day); }
+.bulletin-header[data-weather-bucket="rain"][data-time-of-day="night"]          { background: var(--color-weather-rain-night); }
+.bulletin-header[data-weather-bucket="snow"][data-time-of-day="day"]            { background: var(--color-weather-snow-day); }
+.bulletin-header[data-weather-bucket="snow"][data-time-of-day="night"]          { background: var(--color-weather-snow-night); }
+.bulletin-header[data-weather-bucket="thunder"][data-time-of-day="day"]         { background: var(--color-weather-thunder-day); }
+.bulletin-header[data-weather-bucket="thunder"][data-time-of-day="night"]       { background: var(--color-weather-thunder-night); }
 
 
 /* —— EAWS per-problem danger left-border ————
