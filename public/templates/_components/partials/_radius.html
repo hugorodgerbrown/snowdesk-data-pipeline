@@ -1,0 +1,22 @@
+{% comment %}
+public/templates/_components/partials/_radius.html — Border-radius panel.
+
+One rounded box per radius token. Uses the same ``var()`` lookup pattern
+as swatches so the rendered value follows whichever theme wraps the
+template.
+
+Context:
+    category : FoundationCategory whose tokens describe radius values.
+{% endcomment %}
+<div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+    {% for token in category.tokens %}
+        <figure class="space-y-2">
+            <div class="aspect-[4/3] bg-card border border-border-strong" style="border-radius: var({{ token.name }})">
+            </div>
+            <figcaption class="space-y-0.5">
+                <p class="text-xs font-mono text-text-1">{{ token.name }}</p>
+                <p class="text-xs text-text-2">{{ token.label }} · {{ token.light }}</p>
+            </figcaption>
+        </figure>
+    {% endfor %}
+</div>

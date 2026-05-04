@@ -1,0 +1,45 @@
+{% load static %}
+{% comment %}
+public/templates/_components/partials/_icons.html — Icon-asset panel.
+
+Renders all IconToken entries in ``category.tokens``, sub-grouped by their
+``group`` field (Favicon / Danger level / Avalanche problem). Each icon
+sits inside a neutral card so the asset's own colour shows truthfully.
+
+Static SVGs are served via {% static %}, which honours WhiteNoise hashing
+in production. Anything missing on disk would 404 — reviewers spot drift
+visually, in addition to whatever ``manage.py collectstatic --dry-run``
+reports.
+
+Context:
+    category : FoundationCategory whose tokens are IconToken instances.
+{% endcomment %}
+<div class="space-y-8">
+    {% regroup category.tokens by group as groups %}
+    {% for grouping in groups %}
+        <section class="space-y-3">
+            <p class="text-xs font-mono uppercase tracking-widest text-text-3">
+                {{ grouping.grouper }}
+            </p>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {% for token in grouping.list %}
+                    <figure class="space-y-2">
+                        <div class="aspect-square rounded-tag border border-border bg-card flex items-center justify-center p-4">
+                            <img
+                                src="{% static token.path %}"
+                                alt="{{ token.label }}"
+                                class="max-w-full max-h-full"
+                                loading="lazy"
+                            >
+                        </div>
+                        <figcaption class="space-y-0.5">
+                            <p class="text-xs font-mono text-text-1 break-all">{{ token.name }}</p>
+                            <p class="text-xs text-text-2">{{ token.label }}</p>
+                            <p class="text-[11px] font-mono text-text-3 break-all">{{ token.path }}</p>
+                        </figcaption>
+                    </figure>
+                {% endfor %}
+            </div>
+        </section>
+    {% endfor %}
+</div>

@@ -32,7 +32,7 @@ resolver matches the literal suffixes first.
 
 from django.urls import path
 
-from . import views
+from . import debug_views, views
 
 app_name = "public"
 
@@ -47,6 +47,18 @@ urlpatterns = [
         "partials/calendar/<str:region_id>/<int:year>/<int:month>/",
         views.calendar_partial,
         name="calendar_partial",
+    ),
+    # Component library — staff-only design-system page (SNOW-103).
+    # Underscore prefix follows the project convention for staff-only routes.
+    path(
+        "_components/",
+        debug_views.component_library,
+        name="components_index",
+    ),
+    path(
+        "partials/_components/<slug:slug>/",
+        debug_views.component_library_panel,
+        name="components_panel",
     ),
     # Examples — sample bulletin links rendered inline using the canonical view.
     path("examples/random/", views.examples_random, name="examples_random"),

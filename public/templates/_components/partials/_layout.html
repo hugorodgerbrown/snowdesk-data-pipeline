@@ -1,0 +1,25 @@
+{% comment %}
+public/templates/_components/partials/_layout.html — Layout-token panel.
+
+Renders each breakpoint and content-width token as a horizontal ruler
+clamped to that width. Two rulers per row don't make sense; one column,
+left-aligned, with each ruler starting from the same origin so the
+relative widths are visually obvious.
+
+Context:
+    category : FoundationCategory whose tokens describe widths.
+{% endcomment %}
+<div class="space-y-4">
+    {% for token in category.tokens %}
+        <figure class="space-y-1">
+            <figcaption class="flex items-baseline gap-2 text-xs">
+                <span class="font-mono text-text-1">{{ token.name }}</span>
+                <span class="text-text-2">{{ token.label }}</span>
+                <span class="font-mono text-text-3">{{ token.light }}</span>
+            </figcaption>
+            <div class="h-3 bg-tag border border-border rounded-pill overflow-hidden">
+                <div class="h-full bg-accent" style="width: min(100%, var({{ token.name }}))"></div>
+            </div>
+        </figure>
+    {% endfor %}
+</div>
