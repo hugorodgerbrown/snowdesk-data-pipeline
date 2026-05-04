@@ -1,9 +1,22 @@
 """
-public/design_tokens.py — Foundation registry for the component library.
+public/design_tokens.py — Component-library registry.
 
-Hand-curated catalogue of design tokens, mirroring src/css/main.css's
-@theme {} block. The component library iterates this registry; if a new
-token lands in CSS, add it here too.
+Hand-curated catalogue of everything the design-system page at
+``/_components/`` renders. Two top-level groups, both built from the same
+``FoundationCategory`` dataclass:
+
+1. **Foundations** — design tokens, mirroring src/css/main.css's
+   ``@theme {}`` block. ``kind`` is one of ``"swatches"``, ``"typography"``,
+   ``"radius"``, ``"layout"``, ``"icons"``. Each entry's ``tokens`` field
+   carries ``Token`` and/or ``IconToken`` instances. The
+   registry-vs-CSS sync check in ``public/checks.py`` walks this group.
+
+2. **Components** — rendered HTML components. ``kind`` is ``"components"``.
+   Each entry sources its render content from its ``partial`` template
+   path and a ``variants`` tuple of context dicts; the renderer iterates
+   the variants and ``{% include partial with **variant.context %}`` for
+   each. Variant fixtures live in ``public/_component_fixtures.py`` so
+   this file stays free of synthetic-data construction.
 
 The shape is deliberately Python-side (not parsed from CSS) so the renderer
 stays simple and the registry can carry presentation hints (panel kind,
@@ -15,6 +28,9 @@ a ``.dark`` ancestor.
 """
 
 from dataclasses import dataclass
+from typing import Any
+
+from public._component_fixtures import WEATHER_HEADER_VARIANTS
 
 
 @dataclass(frozen=True)
@@ -61,19 +77,40 @@ class IconToken:
 
 @dataclass(frozen=True)
 class FoundationCategory:
-    """One sidebar entry / one panel-worth of tokens.
+    """One sidebar entry / one panel-worth of content.
+
+    Used for both Foundations entries (``kind`` in ``swatches``,
+    ``typography``, ``radius``, ``layout``, ``icons``; populated via
+    ``tokens``) and Components entries (``kind="components"``; populated
+    via ``partial`` + ``variants``). The class name is preserved from
+    SNOW-103 for backwards compatibility with the existing sync check;
+    the ``Foundation`` prefix is now mildly inaccurate but renaming would
+    churn imports across the whole library.
 
     Attributes:
         slug: URL slug used in ``/partials/_components/<slug>/``.
         label: Sidebar label.
-        description: One-line panel intro shown above the swatches.
-        kind: Panel template hint; one of ``"swatches"``, ``"typography"``,
-            ``"radius"``, ``"layout"`` or ``"icons"``. The panel wrapper
-            template dispatches to ``_<kind>.html`` based on this value.
+        description: One-line panel intro shown above the content.
+        kind: Panel template hint; the panel wrapper dispatches to
+            ``_<kind>.html`` based on this value.
         tokens: Tuple of ``Token`` and/or ``IconToken`` entries rendered
-            inside this panel. Mixed-type tuples are valid; the sync check
-            in ``public/checks.py`` filters to ``Token`` instances since
-            only those map to CSS custom properties.
+            inside the panel. Required when ``kind`` is a foundations
+            kind; ignored (defaults to empty) when ``kind="components"``.
+            The sync check in ``public/checks.py`` filters to ``Token``
+            instances since only those map to CSS custom properties.
+        partial: Django template path included once per variant when
+            ``kind="components"``. Required for components entries;
+            ignored for foundations.
+        variants: Tuple of context dicts. Each variant carries a
+            ``caption`` plus the keys the ``partial`` reads. Variants may
+            optionally carry ``solo=True`` — that variant spans both
+            columns on a two-column layout. Required for components
+            entries; ignored for foundations.
+        panel_layout: Layout shape for the panel content. ``"stack"`` is
+            a vertical stack (default, used by foundations and most
+            components). ``"two-col"`` is single-column on mobile and
+            two-column on desktop (≥ md breakpoint) — useful for
+            paired variants like the weather-header day/night matrix.
 
     """
 
@@ -81,7 +118,30 @@ class FoundationCategory:
     label: str
     description: str
     kind: str
-    tokens: tuple[Token | IconToken, ...]
+    tokens: tuple[Token | IconToken, ...] = ()
+    partial: str | None = None
+    variants: tuple[dict[str, Any], ...] = ()
+    panel_layout: str = "stack"
+
+
+@dataclass(frozen=True)
+class LibraryGroup:
+    """One top-level grouping in the component-library sidebar.
+
+    Today there are two: Foundations (design tokens) and Components
+    (rendered HTML partials). Each renders as a sidebar heading followed
+    by its category entries, in the order declared.
+
+    Attributes:
+        slug: Stable identifier used by tests; not surfaced in the URL.
+        label: Sidebar heading text.
+        categories: Tuple of category entries shown under this heading.
+
+    """
+
+    slug: str
+    label: str
+    categories: tuple[FoundationCategory, ...]
 
 
 FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
@@ -528,9 +588,38 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
 )
 
 
-_BY_SLUG: dict[str, FoundationCategory] = {c.slug: c for c in FOUNDATION_CATEGORIES}
+COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
+    FoundationCategory(
+        slug="weather-header",
+        label="Weather header",
+        description=(
+            "Bulletin-page weather header — region + sub-region + date + "
+            "weather hero, rendered against every icon-bucket × time-of-day "
+            "combination plus the no-snapshot fallback."
+        ),
+        kind="components",
+        partial="includes/bulletin_header.html",
+        variants=WEATHER_HEADER_VARIANTS,
+        panel_layout="two-col",
+    ),
+)
+
+
+LIBRARY_GROUPS: tuple[LibraryGroup, ...] = (
+    LibraryGroup("foundations", "Foundations", FOUNDATION_CATEGORIES),
+    LibraryGroup("components", "Components", COMPONENT_CATEGORIES),
+)
+
+
+_BY_SLUG: dict[str, FoundationCategory] = {
+    category.slug: category for group in LIBRARY_GROUPS for category in group.categories
+}
 
 
 def get_category(slug: str) -> FoundationCategory | None:
-    """Return the foundation category matching ``slug``, or None if unknown."""
+    """Return the library category matching ``slug``, or None if unknown.
+
+    Walks every category across both groups (Foundations + Components),
+    so callers don't need to know which group a slug belongs to.
+    """
     return _BY_SLUG.get(slug)

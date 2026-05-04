@@ -3,14 +3,16 @@
 {% comment %}
 public/templates/_components/index.html — Component-library shell (SNOW-103).
 
-Staff-only design-system page at /_components/. Sidebar (left) lists every
-foundation category from FOUNDATION_CATEGORIES; main column (#cl-main)
-renders the active panel via HTMX swap. Default panel is rendered SSR on
-first load so the page is meaningful before HTMX boots.
+Staff-only design-system page at /_components/. Sidebar (left) is grouped
+into Foundations (design tokens) and Components (rendered HTML partials);
+the main column (#cl-main) renders the active panel via HTMX swap. The
+default panel is rendered SSR on first load so the page is meaningful
+before HTMX boots.
 
 Context:
-    categories : tuple of FoundationCategory — sidebar entries.
-    active     : the FoundationCategory rendered into #cl-main on first load.
+    groups : tuple of LibraryGroup — top-level sidebar groupings, each
+             with a ``label`` heading and an ordered ``categories`` tuple.
+    active : the FoundationCategory rendered into #cl-main on first load.
 {% endcomment %}
 {% block title %}Components · Snowdesk{% endblock %}
 {% block body_class %}bg-bg text-text-1 font-sans min-h-screen{% endblock %}
@@ -42,28 +44,33 @@ Context:
             <aside>
                 <nav
                     id="cl-sidebar"
-                    class="sticky top-6 flex flex-col gap-1 text-sm"
-                    aria-label="Foundation categories"
+                    class="sticky top-6 flex flex-col gap-4 text-sm"
+                    aria-label="Component-library categories"
                 >
-                    <p class="text-xs font-mono uppercase tracking-widest text-text-3 mb-2">
-                        Foundations
-                    </p>
-                    {% for category in categories %}
-                        <a
-                            href="{% url 'public:components_index' %}?slug={{ category.slug }}"
-                            data-slug="{{ category.slug }}"
-                            hx-get="{% url 'public:components_panel' slug=category.slug %}"
-                            hx-target="#cl-main"
-                            hx-swap="innerHTML"
-                            hx-indicator="#cl-indicator"
-                            hx-on::after-request="document.querySelectorAll('#cl-sidebar a').forEach(el => el.removeAttribute('aria-current')); this.setAttribute('aria-current', 'page')"
-                            class="px-3 py-1.5 rounded-tag text-text-2 hover:bg-tag aria-[current=page]:bg-tag aria-[current=page]:text-text-1 aria-[current=page]:font-medium"
-                            {% if category.slug == active.slug %}
-                                aria-current="page"
-                            {% endif %}
-                        >
-                            {{ category.label }}
-                        </a>
+                    {% for group in groups %}
+                        <div class="flex flex-col gap-1">
+                            <p class="text-xs font-mono uppercase tracking-widest text-text-3 mb-1">
+                                {{ group.label }}
+                            </p>
+                            {% for category in group.categories %}
+                                <a
+                                    href="{% url 'public:components_index' %}?slug={{ category.slug }}"
+                                    data-slug="{{ category.slug }}"
+                                    hx-get="{% url 'public:components_panel' slug=category.slug %}"
+                                    hx-target="#cl-main"
+                                    hx-swap="innerHTML"
+                                    hx-indicator="#cl-indicator"
+                                    hx-push-url="{% url 'public:components_index' %}?slug={{ category.slug }}"
+                                    hx-on::after-request="document.querySelectorAll('#cl-sidebar a').forEach(el => el.removeAttribute('aria-current')); this.setAttribute('aria-current', 'page')"
+                                    class="px-3 py-1.5 rounded-tag text-text-2 hover:bg-tag aria-[current=page]:bg-tag aria-[current=page]:text-text-1 aria-[current=page]:font-medium"
+                                    {% if category.slug == active.slug %}
+                                        aria-current="page"
+                                    {% endif %}
+                                >
+                                    {{ category.label }}
+                                </a>
+                            {% endfor %}
+                        </div>
                     {% endfor %}
                 </nav>
             </aside>
