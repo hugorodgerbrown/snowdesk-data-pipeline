@@ -1,15 +1,17 @@
 """
 bulletins/services/weather_display.py — Render-time helpers for WeatherSnapshot.
 
-Maps the Open-Meteo WMO weather interpretation code (0–99) onto a small set
-of display buckets, and computes whether a given moment falls inside the
-snapshot's day window. Lifted out of ``public/views.py`` so the bucket
-table and the day/night logic can be unit-tested in isolation, and so the
-view doesn't grow another lookup constant.
+Maps the Open-Meteo WMO weather interpretation code (0–99) onto two sets of
+display buckets:
 
-The bucket vocabulary is intentionally short — the visual design needs
-distinct backgrounds, not a 1:1 mapping of WMO codes. Codes that don't
-appear in the table fall back to ``cloudy`` (a safe, neutral-looking band
+1. **Background buckets** (``WEATHER_BUCKETS``, 7 entries): coarse grouping
+   used to drive the coloured CSS band behind the header.
+2. **Icon buckets** (``WEATHER_ICON_BUCKETS``, 12 entries): finer grouping
+   used to select a Meteocons SVG icon. Rain is split into drizzle / light /
+   moderate / heavy; snow splits into light / moderate / heavy — so the icon
+   tells the reader more than the colour band alone.
+
+Both maps fall back to ``cloudy`` for unknown codes (a safe, neutral default
 rather than a missing-data sentinel).
 
 WMO code reference:
@@ -104,6 +106,107 @@ def weather_code_bucket(code: int) -> str:
     return _WMO_CODE_TO_BUCKET.get(code, DEFAULT_BUCKET)
 
 
+# ---------------------------------------------------------------------------
+# Icon bucket layer (SNOW-100)
+# ---------------------------------------------------------------------------
+
+# Twelve icon buckets — a finer split than the 7 background buckets. Rain is
+# split into drizzle / light / moderate / heavy; snow into light / moderate /
+# heavy. Exposed as a tuple so call sites can enumerate them without importing
+# the private dict below.
+WEATHER_ICON_BUCKETS: tuple[str, ...] = (
+    "clear",
+    "partly_cloudy",
+    "cloudy",
+    "fog",
+    "drizzle",
+    "light_rain",
+    "moderate_rain",
+    "heavy_rain",
+    "light_snow",
+    "moderate_snow",
+    "heavy_snow",
+    "thunder",
+)
+
+# Every icon bucket that ships separate day/night SVG variants. ``cloudy`` is
+# the only bucket without a day/night distinction — it reads the same
+# regardless of light, so it ships as a single ``cloudy.svg``.
+WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT: frozenset[str] = frozenset(
+    WEATHER_ICON_BUCKETS
+) - {"cloudy"}
+
+DEFAULT_ICON_BUCKET: str = "cloudy"
+
+# En-GB condition labels displayed alongside the icon.
+_ICON_BUCKET_LABEL: dict[str, str] = {
+    "clear": "Clear",
+    "partly_cloudy": "Partly cloudy",
+    "cloudy": "Overcast",
+    "fog": "Fog",
+    "drizzle": "Drizzle",
+    "light_rain": "Light rain",
+    "moderate_rain": "Rain",
+    "heavy_rain": "Heavy rain",
+    "light_snow": "Light snow",
+    "moderate_snow": "Snow",
+    "heavy_snow": "Heavy snow",
+    "thunder": "Thunderstorm",
+}
+
+# Map every WMO code to one of the 12 icon buckets above.
+_WMO_CODE_TO_ICON_BUCKET: dict[int, str] = {
+    0: "clear",
+    1: "partly_cloudy",
+    2: "partly_cloudy",
+    3: "cloudy",
+    45: "fog",
+    48: "fog",
+    51: "drizzle",
+    53: "drizzle",
+    55: "drizzle",
+    56: "drizzle",
+    57: "drizzle",
+    61: "light_rain",
+    63: "moderate_rain",
+    65: "heavy_rain",
+    66: "light_rain",
+    67: "heavy_rain",
+    71: "light_snow",
+    73: "moderate_snow",
+    75: "heavy_snow",
+    77: "light_snow",
+    80: "light_rain",
+    81: "moderate_rain",
+    82: "heavy_rain",
+    85: "light_snow",
+    86: "heavy_snow",
+    95: "thunder",
+    96: "thunder",
+    99: "thunder",
+}
+
+
+def weather_code_icon_bucket(code: int) -> str:
+    """
+    Return the icon bucket for a WMO weather interpretation code.
+
+    The icon bucket is a finer split than the background bucket (12 vs 7),
+    separating rain into drizzle / light / moderate / heavy and snow into
+    light / moderate / heavy.  Unknown codes resolve to
+    :data:`DEFAULT_ICON_BUCKET` (``"cloudy"``) — the same safe-fallback
+    posture as :func:`weather_code_bucket`.
+
+    Args:
+        code: A WMO weather interpretation code (0–99).
+
+    Returns:
+        One of the bucket identifiers in :data:`WEATHER_ICON_BUCKETS`.
+
+    """
+    return _WMO_CODE_TO_ICON_BUCKET.get(code, DEFAULT_ICON_BUCKET)
+
+
 def is_day(weather: "WeatherSnapshot", now: datetime.datetime) -> bool:
     """
     Return ``True`` if the wall-clock ``now`` sits inside the day window.
@@ -138,7 +241,12 @@ def is_day(weather: "WeatherSnapshot", now: datetime.datetime) -> bool:
 
 
 class WeatherDisplay(TypedDict):
-    """Context dict consumed by ``includes/bulletin_weather_header.html``."""
+    """Context dict consumed by ``includes/bulletin_header.html`` (SNOW-100).
+
+    Previously consumed by ``includes/bulletin_weather_header.html``; the
+    band partial was retired when the unified header replaced the masthead
+    + weather-band stack.
+    """
 
     weather: "WeatherSnapshot"
     bucket: str
@@ -146,6 +254,9 @@ class WeatherDisplay(TypedDict):
     time_of_day: str  # "day" or "night" — pre-computed for template clarity.
     sunrise_local: str  # "HH:MM" in the snapshot's local tz (debug overlay).
     sunset_local: str  # "HH:MM" in the snapshot's local tz (debug overlay).
+    icon_bucket: str  # One of WEATHER_ICON_BUCKETS (finer than ``bucket``).
+    condition_label: str  # En-GB human label, e.g. "Light snow".
+    icon_filename: str  # Basename of the SVG in static/icons/weather/.
 
 
 def build_weather_display(
@@ -172,14 +283,25 @@ def build_weather_display(
     if weather is None:
         return None
     daytime = is_day(weather, now)
+    time_of_day = "day" if daytime else "night"
+    icon_bucket = weather_code_icon_bucket(weather.weather_code)
+    # Buckets in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT get a "-day"/"-night"
+    # suffix; "cloudy" is the lone exception that ships as a single SVG.
+    if icon_bucket in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT:
+        icon_filename = f"{icon_bucket}-{time_of_day}.svg"
+    else:
+        icon_filename = f"{icon_bucket}.svg"
     return WeatherDisplay(
         weather=weather,
         bucket=weather_code_bucket(weather.weather_code),
         is_day=daytime,
-        time_of_day="day" if daytime else "night",
+        time_of_day=time_of_day,
         # Format in the snapshot's stored offset (e.g. +02:00 for Switzerland)
         # so the debug overlay shows the wall-clock time of sunrise/sunset
         # *at the bulletin region*, not the Django-active TIME_ZONE.
         sunrise_local=weather.sunrise.strftime("%H:%M"),
         sunset_local=weather.sunset.strftime("%H:%M"),
+        icon_bucket=icon_bucket,
+        condition_label=_ICON_BUCKET_LABEL[icon_bucket],
+        icon_filename=icon_filename,
     )

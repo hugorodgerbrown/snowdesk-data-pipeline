@@ -1,4 +1,5 @@
 {% load i18n %}
+{% load static %}
 {% comment %}
 templates/includes/bulletin_masthead.html — bulletin-page masthead (SNOW-72).
 
@@ -12,6 +13,12 @@ back to the map at /map/#<region_id>. The map's existing hash router
 opens the bottom sheet for that region at peek state on load; auto-zoom
 is governed by the user's saved preference.
 
+A small weather icon (32 px, SNOW-100) sits between the region H1 and
+the map-pin link, using ``weather_display.icon_filename`` and
+``weather_display.condition_label`` from ``build_weather_display()``.
+The icon is omitted entirely when ``weather_display`` is None (no
+snapshot for the date), mirroring the band partial's posture.
+
 Required context:
   page_date            — datetime.date for the focal day (eyebrow text)
   region_name          — display name for the H1
@@ -19,6 +26,7 @@ Required context:
   subregion_name       — parent L2 sub-region name (English where SLF
                          publishes one, native otherwise) for the H2
   calendar_partial_url — HTMX endpoint for the calendar fragment
+  weather_display      — dict from build_weather_display(), or None
 {% endcomment %}
 <header class="bm-header" data-testid="bulletin-masthead">
     {% if calendar_partial_url %}
@@ -62,6 +70,15 @@ Required context:
 
     <div class="bm-region-row">
         <h1 class="bm-region">{{ region_name }}</h1>
+        {% if weather_display %}
+            <img
+                src="{% static 'icons/weather/'|add:weather_display.icon_filename %}"
+                class="bm-weather-icon w-8 h-8 ml-auto"
+                alt=""
+                title="{{ weather_display.condition_label }}"
+                data-testid="bulletin-masthead-weather-icon"
+            >
+        {% endif %}
         <a
             href="{% url 'public:map' %}#{{ region_id }}"
             class="bm-region-link"
