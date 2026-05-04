@@ -146,20 +146,27 @@
      not need to change.
      ————————————————————————————————————————— */
 
-  --color-weather-clear-day:           #9bc6e8;   /* clear sky                     */
+  /* Day tokens deepened so Meteocons fills (yellow sun, white moon, white
+     snowflakes, pale cloud highlights) read against a sufficiently dark
+     backdrop after the bg-black/35 overlay applied in
+     templates/includes/bulletin_header.html. Pre-overlay L*≈40-45 → post-
+     overlay L*≈25-30, matching the night tokens' effective luminance for
+     consistent text/icon contrast across the day/night signal. */
+  --color-weather-clear-day:           #3e6892;   /* deep sky blue, sun pops       */
   --color-weather-clear-night:         #1a2a4a;   /* deep night sky                */
-  --color-weather-partly-cloudy-day:   #aac8de;
+  --color-weather-partly-cloudy-day:   #4a6a8a;
   --color-weather-partly-cloudy-night: #22324a;
-  --color-weather-cloudy-day:          #b8bcc1;
+  --color-weather-cloudy-day:          #646871;
   --color-weather-cloudy-night:        #2a2e34;
-  --color-weather-fog-day:             #cfcec8;
+  --color-weather-fog-day:             #6c6a64;
   --color-weather-fog-night:           #2c2e35;
-  --color-weather-rain-day:            #7e94a8;
+  --color-weather-rain-day:            #5e7488;
   --color-weather-rain-night:          #1d2932;
-  --color-weather-snow-day:            #dde7ee;
+  --color-weather-snow-day:            #5e7080;   /* cool mid blue-grey, white flakes pop */
   --color-weather-snow-night:          #1f2a3a;
   --color-weather-thunder-day:         #5e6470;
   --color-weather-thunder-night:       #101220;
+  --color-weather-fallback:            #3a3733;   /* no-snapshot neutral (theme-invariant) */
 
   /* Border radius */
   --radius-card:   16px;   /* outer card shell                    */
@@ -305,7 +312,7 @@
 
 .weather-header {
   height: 96px;
-  margin: 0 -1rem 1rem;   /* full-bleed inside the page's px-4 container */
+  margin: 0 0 1rem;   /* full-bleed inside the page's px-4 container */
   border-radius: var(--radius-card);
   background: var(--color-card-subtle);   /* fallback if no bucket matches */
 }
@@ -324,6 +331,41 @@
 .weather-header[data-weather-bucket="snow"][data-time-of-day="night"]          { background: var(--color-weather-snow-night); }
 .weather-header[data-weather-bucket="thunder"][data-time-of-day="day"]         { background: var(--color-weather-thunder-day); }
 .weather-header[data-weather-bucket="thunder"][data-time-of-day="night"]       { background: var(--color-weather-thunder-night); }
+
+
+/* —— Bulletin header panel ——————————————————
+   Unified panel carrying region/sub-region, date,
+   and weather. Bucket-coloured background preserves
+   the SNOW-98 day/night signal; a bg-black/35 overlay
+   in the markup normalises text contrast. Height is
+   content-driven (min-height in markup), unlike the
+   fixed-96px decorative .weather-header band.
+
+   Usage in template (see includes/bulletin_header.html):
+     <header class="bulletin-header"
+             data-weather-bucket="rain"
+             data-time-of-day="day">…</header>
+   ————————————————————————————————————————— */
+
+.bulletin-header {
+  border-radius: var(--radius-card);
+  background: var(--color-weather-fallback);   /* used when no snapshot is available */
+}
+
+.bulletin-header[data-weather-bucket="clear"][data-time-of-day="day"]           { background: var(--color-weather-clear-day); }
+.bulletin-header[data-weather-bucket="clear"][data-time-of-day="night"]         { background: var(--color-weather-clear-night); }
+.bulletin-header[data-weather-bucket="partly_cloudy"][data-time-of-day="day"]   { background: var(--color-weather-partly-cloudy-day); }
+.bulletin-header[data-weather-bucket="partly_cloudy"][data-time-of-day="night"] { background: var(--color-weather-partly-cloudy-night); }
+.bulletin-header[data-weather-bucket="cloudy"][data-time-of-day="day"]          { background: var(--color-weather-cloudy-day); }
+.bulletin-header[data-weather-bucket="cloudy"][data-time-of-day="night"]        { background: var(--color-weather-cloudy-night); }
+.bulletin-header[data-weather-bucket="fog"][data-time-of-day="day"]             { background: var(--color-weather-fog-day); }
+.bulletin-header[data-weather-bucket="fog"][data-time-of-day="night"]           { background: var(--color-weather-fog-night); }
+.bulletin-header[data-weather-bucket="rain"][data-time-of-day="day"]            { background: var(--color-weather-rain-day); }
+.bulletin-header[data-weather-bucket="rain"][data-time-of-day="night"]          { background: var(--color-weather-rain-night); }
+.bulletin-header[data-weather-bucket="snow"][data-time-of-day="day"]            { background: var(--color-weather-snow-day); }
+.bulletin-header[data-weather-bucket="snow"][data-time-of-day="night"]          { background: var(--color-weather-snow-night); }
+.bulletin-header[data-weather-bucket="thunder"][data-time-of-day="day"]         { background: var(--color-weather-thunder-day); }
+.bulletin-header[data-weather-bucket="thunder"][data-time-of-day="night"]       { background: var(--color-weather-thunder-night); }
 
 
 /* —— EAWS per-problem danger left-border ————
