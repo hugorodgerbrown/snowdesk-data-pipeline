@@ -1,0 +1,36 @@
+{% comment %}
+public/templates/_components/partials/_panel.html — Foundation panel wrapper.
+
+Returned both as the inner-HTML for HTMX sidebar clicks and rendered SSR
+inside index.html for the default category. Renders the heading, then
+the same inner template twice — once outside .dark, once inside — so the
+light and dark theme variants sit side-by-side.
+
+Inner template is dispatched by ``active.kind``:
+    - "swatches"   → _swatches.html
+    - "typography" → _typography.html
+    - "radius"     → _radius.html
+    - "layout"     → _layout.html
+
+Context:
+    active : FoundationCategory currently being rendered.
+{% endcomment %}
+<article class="space-y-8">
+    <header class="space-y-1">
+        <p class="text-xs font-mono uppercase tracking-widest text-text-3">foundation</p>
+        <h2 class="text-2xl font-bold tracking-tight">{{ active.label }}</h2>
+        <p class="text-sm text-text-2 max-w-prose">{{ active.description }}</p>
+    </header>
+
+    {# Light theme #}
+    <section class="space-y-3">
+        <h3 class="text-xs font-mono uppercase tracking-widest text-text-3">Light</h3>
+        {% include "_components/partials/_"|add:active.kind|add:".html" with category=active only %}
+    </section>
+
+    {# Dark theme — wrap in .dark so CSS custom properties cascade as on the dark page #}
+    <section class="dark bg-bg text-text-1 rounded-card p-6 space-y-3">
+        <h3 class="text-xs font-mono uppercase tracking-widest text-text-3">Dark</h3>
+        {% include "_components/partials/_"|add:active.kind|add:".html" with category=active only %}
+    </section>
+</article>

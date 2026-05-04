@@ -1,0 +1,46 @@
+{% comment %}
+public/templates/_components/partials/_typography.html — Type ramp panel.
+
+Renders DM Sans and DM Mono at the heading / body / mono sizes the public
+site uses. The exact font-family value is read from the registry token's
+``light`` field (theme-invariant tokens use ``light`` as the canonical
+value).
+
+Context:
+    category : FoundationCategory whose tokens describe each font family.
+{% endcomment %}
+<div class="space-y-8">
+    {% for token in category.tokens %}
+        <section class="space-y-2">
+            <p class="text-xs font-mono text-text-3">
+                {{ token.name }} · {{ token.light }}
+            </p>
+            <div class="space-y-2" style="font-family: var({{ token.name }})">
+                {% if token.name == "--font-mono" %}
+                    <p class="text-base">
+                        const danger = bulletin.danger_level; // mono · base
+                    </p>
+                    <p class="text-xs text-text-2">
+                        // mono · 12px caption
+                    </p>
+                {% else %}
+                    <p class="text-3xl font-bold tracking-tight">
+                        h1 · The quick brown fox
+                    </p>
+                    <p class="text-2xl font-bold tracking-tight">
+                        h2 · The quick brown fox
+                    </p>
+                    <p class="text-xl font-semibold">
+                        h3 · The quick brown fox
+                    </p>
+                    <p class="text-base text-text-1">
+                        body · The quick brown fox jumps over the lazy dog.
+                    </p>
+                    <p class="text-sm text-text-2">
+                        small · The quick brown fox jumps over the lazy dog.
+                    </p>
+                {% endif %}
+            </div>
+        </section>
+    {% endfor %}
+</div>

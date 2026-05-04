@@ -1,19 +1,27 @@
 """
-public/debug_views.py — staff-only design-debug pages.
+public/debug_views.py — Staff-only design and component-library pages.
 
-These views render isolated component combinations for visual sanity checks
-during design iteration. They are mounted in :mod:`public.urls` only when
-``settings.DEBUG`` is True, and each view is additionally gated on a staff
-``@_require_debug`` decorator so a stray production import cannot leak the
-markup.
+Two distinct surfaces live here. They share an audience (staff designers
+during iteration) but differ in scope and gating:
 
-Today there is one debug page:
+1. :func:`component_library` and :func:`component_library_panel`
+   (SNOW-103) — the design system at ``/_components/``. Renders every
+   foundation token from ``src/css/main.css`` side-by-side in light + dark.
+   Sidebar nav + HTMX-swapped main panel; foundations only at this stage,
+   HTML components plug in via SNOW-104. Auth: ``staff_member_required``
+   only — no DEBUG gate. The page is reachable in production by any
+   staff user, by design (everyone with admin access already has
+   equivalent capability via Django admin).
 
-* :func:`header_combinations` — renders ``includes/bulletin_header.html`` once
-  for every WMO weather code (day + night), in both the light and the dark
-  theme, so a designer can compare icon contrast and bucket-colour shading
-  against the live partial markup without having to construct 28 bulletin
-  fixtures.
+2. :func:`header_combinations` (SNOW-100) — the bulletin-header matrix
+   at ``/debug/header/``. Renders ``includes/bulletin_header.html`` once
+   for every WMO weather code (day + night), in both the light and the
+   dark theme, so a designer can compare icon contrast and bucket-colour
+   shading against the live partial markup without having to construct
+   28 bulletin fixtures. Mounted in :mod:`public.urls` only when
+   ``settings.DEBUG`` is True, and additionally gated on
+   ``@_require_debug`` so a stray production import cannot leak the
+   markup.
 """
 
 import functools
@@ -35,7 +43,59 @@ from bulletins.services.weather_display import (
     WEATHER_ICON_BUCKETS,
     WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,
 )
+from pipeline.decorators import require_htmx
 from pipeline.models import Region
+from public.design_tokens import FOUNDATION_CATEGORIES, get_category
+
+# ---------------------------------------------------------------------------
+# Component library (SNOW-103) — /_components/
+# ---------------------------------------------------------------------------
+
+DEFAULT_SLUG = "typography"
+
+
+@staff_member_required
+def component_library(request: HttpRequest) -> HttpResponse:
+    """Render the full component-library page with the default panel SSR.
+
+    The default panel (typography) is rendered server-side so the URL is
+    meaningful with JS off and so screen-reader users don't land on an
+    empty main column.
+    """
+    return render(
+        request,
+        "_components/index.html",
+        {
+            "categories": FOUNDATION_CATEGORIES,
+            "active": get_category(DEFAULT_SLUG),
+        },
+    )
+
+
+@staff_member_required
+@require_htmx
+def component_library_panel(
+    request: HttpRequest,
+    slug: str,
+) -> HttpResponse:
+    """Return the inner-HTML for one foundation panel (HTMX-only).
+
+    Unknown ``slug`` returns 404 — the URL is meant to be reached from
+    the sidebar, where every entry corresponds to a real category.
+    """
+    category = get_category(slug)
+    if category is None:
+        return HttpResponseNotFound()
+    return render(
+        request,
+        "_components/partials/_panel.html",
+        {"active": category},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Header-combinations debug page (SNOW-100) — /debug/header/ (DEBUG only)
+# ---------------------------------------------------------------------------
 
 
 def _require_debug(view: Callable[..., HttpResponse]) -> Callable[..., HttpResponse]:
@@ -133,7 +193,9 @@ def header_combinations(request: HttpRequest) -> HttpResponse:
     # Falls back to a known-good Vaud region if the DB has no fixtures
     # loaded (e.g. fresh dev environment before ``loaddata``).
     random_region = (
-        Region.objects.select_related("subregion").order_by("?").first()  # noqa: S311 — not crypto
+        Region.objects.select_related("subregion")
+        .order_by("?")  # noqa: S311 — not crypto
+        .first()
     )
     if random_region:
         region_id = random_region.region_id

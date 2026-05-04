@@ -1,0 +1,30 @@
+{% comment %}
+public/templates/_components/partials/_swatches.html — Colour swatch grid.
+
+Rendered for any FoundationCategory with kind="swatches". Each swatch is a
+coloured square (background = ``var(<token.name>)``) with the token name +
+human label + value caption. The same markup picks up the *light* value
+when rendered outside a ``.dark`` ancestor and the *dark* value when
+rendered inside one — the grid is theme-agnostic.
+
+Context:
+    category : FoundationCategory whose tokens are rendered.
+{% endcomment %}
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+    {% for token in category.tokens %}
+        <figure class="space-y-2">
+            <div class="aspect-[4/3] rounded-tag border border-border" style="background: var({{ token.name }})"></div>
+            <figcaption class="space-y-0.5">
+                <p class="text-xs font-mono text-text-1 break-all">{{ token.name }}</p>
+                <p class="text-xs text-text-2">{{ token.label }}</p>
+                <p class="text-[11px] font-mono text-text-3 break-all">
+                    {{ token.light }}
+                    {% if token.dark %}
+                        <span class="text-text-3">·</span>
+                        {{ token.dark }}
+                    {% endif %}
+                </p>
+            </figcaption>
+        </figure>
+    {% endfor %}
+</div>
