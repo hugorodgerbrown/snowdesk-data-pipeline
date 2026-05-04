@@ -45,6 +45,72 @@ user-visible string is wrapped in `{% trans %}`. The JS in `sw_register.js`
 only toggles the `hidden`/`flex` class pair (the HTML5 `hidden` attribute
 would lose to Tailwind's `flex` utility in the cascade).
 
+### How the trigger fires
+
+The browser detects an SW update by **byte-comparing** the freshly fetched
+`/sw.js` against the registered version. Anything that changes the bytes
+(bumping `CACHE_VERSION`, adding a comment, editing a strategy) qualifies as
+an update; identical bytes do not. The check runs on every navigation under
+the SW's scope, accelerated by the `Cache-Control: no-cache` header that
+`serve_sw` returns.
+
+When the bytes differ, the SW lifecycle plays out as:
+
+```
+fetch /sw.js  →  install (skipWaiting)  →  installed  →  activating  →  activated
+                                              │
+                                              └── statechange listener in
+                                                  sw_register.js fires here.
+                                                  If navigator.serviceWorker.controller
+                                                  is non-null (= an old SW is still
+                                                  controlling the tab), the banner
+                                                  is revealed.
+```
+
+The `controller` check suppresses the banner on first-time installs (when
+no SW was previously controlling) — the user is not "updating" anything,
+they are seeing the SW for the first time.
+
+### Testing the banner locally
+
+There is a chicken-and-egg quirk on the first deploy that introduces this
+banner: any browser that already has the **old** `sw_register.js` cached
+will keep running it (the SW serves `sw_register.js` from its own cache via
+stale-while-revalidate) and will never reveal the banner — the old script
+literally has no banner-reveal code. The new `sw_register.js` lands in the
+SW cache during that first stale-while-revalidate fetch, but it does not
+**run** until the next page load.
+
+Concretely, on a tab that was registered against the pre-banner SW:
+
+1. **Reload 1** — old `sw_register.js` runs (no banner logic). New
+   `sw_register.js` arrives in the cache via stale-while-revalidate.
+2. **Reload 2** — new `sw_register.js` runs; banner logic is now armed.
+   But there is no pending update, so nothing is shown.
+3. Bump `CACHE_VERSION` and **Reload 3** — banner appears.
+
+To skip steps 1 and 2 in dev (or to test the banner deliberately), unregister
+the SW once and reload:
+
+```js
+// DevTools console, on any page of the site:
+const regs = await navigator.serviceWorker.getRegistrations();
+for (const r of regs) await r.unregister();
+const names = await caches.keys();
+for (const n of names) await caches.delete(n);
+location.reload();
+```
+
+After the reload, the new banner-aware `sw_register.js` is running. From
+this point any byte change to `static/js/sw.js` (most simply a bump of
+`CACHE_VERSION` from `'snowdesk-shell-v1'` to `'snowdesk-shell-v2'`) will
+surface the banner on the next navigation.
+
+In production this bootstrap happens transparently — every browser
+eventually picks up the new register script via stale-while-revalidate, and
+from then on every shell update fires the banner. The first roll-out of the
+banner itself is a one-deploy burn-in.
+
 ---
 
 There is **no precache manifest endpoint** and **no "Save offline"
