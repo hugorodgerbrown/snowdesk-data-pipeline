@@ -25,6 +25,9 @@ subscriptions/   Signed-token subscription flow (see docs/subscriptions.md)
 public/          Public-facing bulletin site
   api.py         Plain JsonResponse endpoints consumed by the map page
   api_urls.py    URL routing for /api/ (namespace: api:)
+  debug_views.py Staff-only design-debug pages (mounted at /debug/* when DEBUG=True)
+templates/       Project-level templates shared across apps
+  includes/      Reusable partials (bulletin_header.html, nav.html, …)
 src/             Tailwind CSS source (main.css — not served directly)
 static/          CSS/JS assets (includes compiled output.css)
 logs/            Log files (gitignored except .gitkeep)

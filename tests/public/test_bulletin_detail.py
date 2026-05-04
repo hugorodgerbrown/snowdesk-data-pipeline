@@ -900,15 +900,25 @@ class TestWeatherHeader:
         )
 
     def test_no_snapshot_yields_none_in_context(self, client: Client, region) -> None:
-        """When no WeatherSnapshot exists, ``weather_display`` is None."""
+        """When no WeatherSnapshot exists, ``weather_display`` is None.
+
+        The unified header partial (SNOW-100) still renders the panel chrome
+        in the no-data path so the rest of the page chrome stays consistent —
+        ``data-weather-bucket="none"`` falls back to a neutral dark token, the
+        hero icon is omitted, and the metadata strip drops the weather lines.
+        Assert that shape rather than the partial vanishing.
+        """
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
             response = client.get(self._bulletin_url())
 
         assert response.status_code == 200
         assert response.context["weather_display"] is None
-        # Partial short-circuits on None — the marker div must be absent.
-        assert b'data-testid="bulletin-weather-header"' not in response.content
+        # Panel renders, but in the degraded ``bucket=none`` mode without a
+        # hero icon — the visual cue that no snapshot was available.
+        assert b'data-testid="bulletin-header"' in response.content
+        assert b'data-weather-bucket="none"' in response.content
+        assert b'data-testid="bulletin-header-hero-icon"' not in response.content
 
     def test_daytime_snapshot_emits_day_attributes(
         self, client: Client, region
@@ -934,6 +944,12 @@ class TestWeatherHeader:
         # The partial renders the data-attributes the design CSS targets.
         assert b'data-weather-bucket="clear"' in response.content
         assert b'data-time-of-day="day"' in response.content
+        # Icon affordance (SNOW-100): icon file and condition label in HTML.
+        assert display["icon_bucket"] == "clear"
+        assert display["condition_label"] == "Clear"
+        assert display["icon_filename"] == "clear-day.svg"
+        assert b"icons/weather/clear-day.svg" in response.content
+        assert b">Clear<" in response.content
 
     def test_nighttime_snapshot_emits_night_attributes(
         self, client: Client, region
@@ -943,7 +959,7 @@ class TestWeatherHeader:
         WeatherSnapshotFactory.create(
             region=region,
             valid_for_date=date(2026, 3, 15),
-            weather_code=71,  # snowfall
+            weather_code=71,  # light snowfall — maps to light_snow icon bucket
             sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
             sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
         )
@@ -958,6 +974,39 @@ class TestWeatherHeader:
         assert display["time_of_day"] == "night"
         assert b'data-weather-bucket="snow"' in response.content
         assert b'data-time-of-day="night"' in response.content
+        # Icon affordance (SNOW-100).
+        assert display["icon_bucket"] == "light_snow"
+        assert display["condition_label"] == "Light snow"
+        assert display["icon_filename"] == "light_snow-night.svg"
+        assert b"icons/weather/light_snow-night.svg" in response.content
+        assert b">Light snow<" in response.content
+
+    def test_cloudy_emits_no_day_night_suffix(self, client: Client, region) -> None:
+        """Overcast (WMO 3) uses cloudy.svg with no day/night suffix (SNOW-100).
+
+        This guards the special-case logic: 'cloudy' is the only icon bucket
+        whose SVG does not vary by time of day.
+        """
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=3,  # overcast → cloudy bucket
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+        )
+
+        with _freeze("2026-03-15T00:30:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        display = response.context["weather_display"]
+        assert display is not None
+        assert display["icon_bucket"] == "cloudy"
+        assert display["icon_filename"] == "cloudy.svg"
+        assert b"icons/weather/cloudy.svg" in response.content
+        assert b"cloudy-day.svg" not in response.content
+        assert b"cloudy-night.svg" not in response.content
 
     def test_historical_date_with_daytime_clock_renders_as_day(
         self, client: Client, region
@@ -1075,11 +1124,14 @@ class TestWeatherHeaderFlagGate:
 
     @override_flag("weather_header", active=False)
     def test_partial_hidden_when_flag_inactive(self, client: Client, region) -> None:
-        """With the flag off, the band markup is not emitted even with data.
+        """With the flag off, the unified header is not rendered.
 
-        ``weather_display`` is still computed in the view (the partial does
-        the visibility decision), so we assert the rendered HTML rather
-        than the context dict.
+        SNOW-100 made the flag the EITHER/OR switch between the unified
+        ``bulletin_header.html`` (flag on) and the legacy
+        ``bulletin_masthead.html`` (flag off). Assert the legacy masthead
+        renders and the unified header does not. ``weather_display`` is
+        still computed in the view regardless of the flag — it's the
+        template that picks which partial to include.
         """
         _make_am_bulletin(region, date(2026, 3, 15))
         WeatherSnapshotFactory.create(
@@ -1094,13 +1146,14 @@ class TestWeatherHeaderFlagGate:
             response = client.get(self._bulletin_url())
 
         assert response.status_code == 200
-        assert b'data-testid="bulletin-weather-header"' not in response.content
+        assert b'data-testid="bulletin-header"' not in response.content
+        assert b'data-testid="bulletin-masthead"' in response.content
         # The view still computes weather_display — only the partial is gated.
         assert response.context["weather_display"] is not None
 
     @override_flag("weather_header", active=True)
     def test_partial_visible_when_flag_active(self, client: Client, region) -> None:
-        """With the flag on, the band markup is rendered as normal."""
+        """With the flag on, the unified header partial renders."""
         _make_am_bulletin(region, date(2026, 3, 15))
         WeatherSnapshotFactory.create(
             region=region,
@@ -1114,7 +1167,64 @@ class TestWeatherHeaderFlagGate:
             response = client.get(self._bulletin_url())
 
         assert response.status_code == 200
-        assert b'data-testid="bulletin-weather-header"' in response.content
+        assert b'data-testid="bulletin-header"' in response.content
+        # And the legacy masthead is not rendered alongside it.
+        assert b'data-testid="bulletin-masthead"' not in response.content
+
+
+# ── Masthead weather icon (SNOW-100) ─────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestMastheadWeatherIcon:
+    """The small weather icon in the masthead H1 row (SNOW-100).
+
+    The masthead icon is independent of the ``weather_header`` waffle flag
+    (that flag gates only the band partial below the masthead).  These tests
+    therefore do NOT activate the flag, so they exercise the icon in isolation.
+    """
+
+    def _bulletin_url(self) -> str:
+        """Return the canonical form-3 bulletin URL used by every test below."""
+        return reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "ch-4115",
+                "slug": "valais",
+                "date_str": "2026-03-15",
+            },
+        )
+
+    def test_masthead_renders_weather_icon(self, client: Client, region) -> None:
+        """When a snapshot exists, the masthead icon is present with the right src."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=date(2026, 3, 15),
+            weather_code=0,  # clear sky → clear-day.svg
+            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
+        )
+
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        assert b'data-testid="bulletin-masthead-weather-icon"' in response.content
+        assert b"icons/weather/clear-day.svg" in response.content
+
+    def test_masthead_omits_weather_icon_when_no_snapshot(
+        self, client: Client, region
+    ) -> None:
+        """When no WeatherSnapshot exists, the masthead icon is absent."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        # No WeatherSnapshotFactory call — snapshot deliberately absent.
+
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            response = client.get(self._bulletin_url())
+
+        assert response.status_code == 200
+        assert b'data-testid="bulletin-masthead-weather-icon"' not in response.content
 
 
 @pytest.mark.django_db

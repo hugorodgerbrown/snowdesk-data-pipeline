@@ -66,6 +66,37 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% block site_footer %}
             {% include "public/_site_footer.html" %}
         {% endblock %}
+        {# SNOW-79 follow-up: SW-update banner. Hidden by default; revealed by   #}
+        {# sw_register.js when a new service worker has installed and the page  #}
+        {# is still controlled by the old one. Click "Reload" to pick up the    #}
+        {# new shell; click × to dismiss for the rest of this page's lifetime.  #}
+        {# ``.hidden`` (Tailwind's ``display: none``) instead of the HTML5      #}
+        {# ``hidden`` attribute — the latter is overridden by the ``flex``      #}
+        {# utility because the UA stylesheet's ``[hidden]`` rule is not         #}
+        {# ``!important``. The reveal/dismiss script toggles this class.        #}
+        <div
+            id="sw-update-banner"
+            role="status"
+            aria-live="polite"
+            class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 items-center gap-3 rounded-full border border-border bg-card text-text-1 shadow-lg px-4 py-2 text-sm"
+        >
+            <span>{% trans "An updated version is available." %}</span>
+            <button
+                type="button"
+                data-action="reload"
+                class="rounded-full bg-accent text-accent-text px-3 py-1 text-xs font-medium hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+                {% trans "Reload" %}
+            </button>
+            <button
+                type="button"
+                data-action="dismiss"
+                aria-label="{% trans 'Dismiss' %}"
+                class="text-text-3 hover:text-text-1 px-1 leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+            >
+                ×
+            </button>
+        </div>
         {# SNOW-79: register the PWA shell SW from every public page. #}
         <script src="{% static 'js/sw_register.js' %}" defer></script>
         {% block extra_js %}{% endblock %}
