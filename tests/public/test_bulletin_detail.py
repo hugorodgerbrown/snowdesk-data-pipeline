@@ -900,15 +900,25 @@ class TestWeatherHeader:
         )
 
     def test_no_snapshot_yields_none_in_context(self, client: Client, region) -> None:
-        """When no WeatherSnapshot exists, ``weather_display`` is None."""
+        """When no WeatherSnapshot exists, ``weather_display`` is None.
+
+        The unified header partial (SNOW-100) still renders the panel chrome
+        in the no-data path so the rest of the page chrome stays consistent —
+        ``data-weather-bucket="none"`` falls back to a neutral dark token, the
+        hero icon is omitted, and the metadata strip drops the weather lines.
+        Assert that shape rather than the partial vanishing.
+        """
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
             response = client.get(self._bulletin_url())
 
         assert response.status_code == 200
         assert response.context["weather_display"] is None
-        # Partial short-circuits on None — the marker div must be absent.
-        assert b'data-testid="bulletin-weather-header"' not in response.content
+        # Panel renders, but in the degraded ``bucket=none`` mode without a
+        # hero icon — the visual cue that no snapshot was available.
+        assert b'data-testid="bulletin-header"' in response.content
+        assert b'data-weather-bucket="none"' in response.content
+        assert b'data-testid="bulletin-header-hero-icon"' not in response.content
 
     def test_daytime_snapshot_emits_day_attributes(
         self, client: Client, region
@@ -1114,11 +1124,14 @@ class TestWeatherHeaderFlagGate:
 
     @override_flag("weather_header", active=False)
     def test_partial_hidden_when_flag_inactive(self, client: Client, region) -> None:
-        """With the flag off, the band markup is not emitted even with data.
+        """With the flag off, the unified header is not rendered.
 
-        ``weather_display`` is still computed in the view (the partial does
-        the visibility decision), so we assert the rendered HTML rather
-        than the context dict.
+        SNOW-100 made the flag the EITHER/OR switch between the unified
+        ``bulletin_header.html`` (flag on) and the legacy
+        ``bulletin_masthead.html`` (flag off). Assert the legacy masthead
+        renders and the unified header does not. ``weather_display`` is
+        still computed in the view regardless of the flag — it's the
+        template that picks which partial to include.
         """
         _make_am_bulletin(region, date(2026, 3, 15))
         WeatherSnapshotFactory.create(
@@ -1133,13 +1146,14 @@ class TestWeatherHeaderFlagGate:
             response = client.get(self._bulletin_url())
 
         assert response.status_code == 200
-        assert b'data-testid="bulletin-weather-header"' not in response.content
+        assert b'data-testid="bulletin-header"' not in response.content
+        assert b'data-testid="bulletin-masthead"' in response.content
         # The view still computes weather_display — only the partial is gated.
         assert response.context["weather_display"] is not None
 
     @override_flag("weather_header", active=True)
     def test_partial_visible_when_flag_active(self, client: Client, region) -> None:
-        """With the flag on, the band markup is rendered as normal."""
+        """With the flag on, the unified header partial renders."""
         _make_am_bulletin(region, date(2026, 3, 15))
         WeatherSnapshotFactory.create(
             region=region,
@@ -1153,7 +1167,9 @@ class TestWeatherHeaderFlagGate:
             response = client.get(self._bulletin_url())
 
         assert response.status_code == 200
-        assert b'data-testid="bulletin-weather-header"' in response.content
+        assert b'data-testid="bulletin-header"' in response.content
+        # And the legacy masthead is not rendered alongside it.
+        assert b'data-testid="bulletin-masthead"' not in response.content
 
 
 # ── Masthead weather icon (SNOW-100) ─────────────────────────────────────────
