@@ -287,10 +287,21 @@ const clearRegionRepaint = () => {
     });
 
     // Outline — thin, darker on the selected region.
+    //
+    // SNOW-105: round joins and caps so the ring's start/end vertex doesn't
+    // expose a butt-capped seam at high zoom — the visible "missing closing
+    // edge" reported on every region past city zoom was that seam, not an
+    // open ring (data is closed at every layer). The third interpolation
+    // stop pins the unselected width at 0.6 px past z9 so linear
+    // extrapolation doesn't fade the line out to zero by z13.
     map.addLayer({
       id: 'regions-line',
       type: 'line',
       source: 'regions',
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
       paint: {
         'line-color': [
           'case',
@@ -301,8 +312,9 @@ const clearRegionRepaint = () => {
         // nested inside case. Invert: interpolate at top level, case as stops.
         'line-width': [
           'interpolate', ['linear'], ['zoom'],
-          5, ['case', ['boolean', ['feature-state', 'selected'], false], 2, 1.2],
-          9, ['case', ['boolean', ['feature-state', 'selected'], false], 2, 0.6],
+          5,  ['case', ['boolean', ['feature-state', 'selected'], false], 2, 1.2],
+          9,  ['case', ['boolean', ['feature-state', 'selected'], false], 2, 0.6],
+          22, ['case', ['boolean', ['feature-state', 'selected'], false], 2, 0.6],
         ],
       },
     });
@@ -355,6 +367,9 @@ const clearRegionRepaint = () => {
         source: 'sub-regions',
         layout: {
           visibility: overlayState.l2 ? 'visible' : 'none',
+          // SNOW-105: rounded join/cap to hide the closing-vertex seam.
+          'line-join': 'round',
+          'line-cap': 'round',
         },
         paint: {
           'line-color': '#0c447c',
@@ -391,6 +406,9 @@ const clearRegionRepaint = () => {
         source: 'major-regions',
         layout: {
           visibility: overlayState.l1 ? 'visible' : 'none',
+          // SNOW-105: rounded join/cap to hide the closing-vertex seam.
+          'line-join': 'round',
+          'line-cap': 'round',
         },
         paint: {
           'line-color': '#7a1f1f',
