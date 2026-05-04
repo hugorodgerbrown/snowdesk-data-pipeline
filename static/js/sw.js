@@ -107,8 +107,12 @@ self.addEventListener('activate', (event) => {
         .filter((name) => name !== CACHE_VERSION)
         .map((name) => caches.delete(name));
       await Promise.all(deletions);
-      // Take control of pages already open without forcing a reload.
-      await self.clients.claim();
+      // Deliberately NOT calling ``self.clients.claim()`` — pairing it
+      // with ``skipWaiting`` and a controllerchange-based auto-reload in
+      // ``sw_register.js`` produces a tight reload loop in dev, where the
+      // browser-side SW update check fires on every navigation. Letting
+      // the new SW take control on the next natural navigation gives the
+      // same end-state without the loop.
     })(),
   );
 });
