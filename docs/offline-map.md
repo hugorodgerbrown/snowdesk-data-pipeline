@@ -15,9 +15,37 @@ manifest icons.
 |------|------|
 | `static/manifest.webmanifest` | Web app manifest. Declares name, icons, theme/background colour, `start_url=/`, `scope=/`, `display=standalone`. Linked from `public/templates/public/base.html`. |
 | `static/js/sw.js` | The service worker itself (~150 lines). Stale-while-revalidate for static shell + the regions GeoJSON; network-first for HTML navigations; network-only for everything else. |
-| `static/js/sw_register.js` | Registers `/sw.js` at root scope on every public page. Loaded `defer` from `base.html` so the registration runs site-wide. |
+| `static/js/sw_register.js` | Registers `/sw.js` at root scope on every public page. Loaded `defer` from `base.html`. Also drives the `#sw-update-banner` (see "Update strategy" below). |
 | `public/views.py::serve_sw` | Serves `/sw.js` with the `Service-Worker-Allowed: /` and `Cache-Control: no-cache` headers required for root-scope control + prompt SW updates. URL is registered in `public/urls.py`. |
 | `static/icons/pwa/` | Manifest icons: 192, 512, and a 512 maskable variant. Generated from `static/favicon.svg` by `bin/build-pwa-icons`. |
+
+## Update strategy
+
+The SW calls `self.skipWaiting()` on `install` so the new version takes
+over on the next navigation, but it deliberately does **not** call
+`self.clients.claim()`. Pairing `claim()` with a `controllerchange`-based
+auto-reload in `sw_register.js` produced a tight reload loop in dev — every
+navigation re-triggered the SW update check. Without `claim()`, the new SW
+activates immediately but only controls an open tab on its next natural
+navigation.
+
+To surface the pending update to the user, `sw_register.js` reveals a
+fixed bottom banner (`#sw-update-banner` in `base.html`) whenever a freshly
+installed SW is waiting and the page is still controlled by the old one. The
+banner offers two actions:
+
+- **Reload** — navigates the page, picking up the new shell.
+- **×** — dismisses the banner for the rest of the tab's lifetime.
+
+Trade-off: in-flight tabs no longer auto-reload on SW activation. The banner
+makes the update visible without the loop.
+
+The banner markup is baked into `public/templates/public/base.html`; every
+user-visible string is wrapped in `{% trans %}`. The JS in `sw_register.js`
+only toggles the `hidden`/`flex` class pair (the HTML5 `hidden` attribute
+would lose to Tailwind's `flex` utility in the cascade).
+
+---
 
 There is **no precache manifest endpoint** and **no "Save offline"
 button**. The previous SNOW-9 design (opt-in chunked precache for the
