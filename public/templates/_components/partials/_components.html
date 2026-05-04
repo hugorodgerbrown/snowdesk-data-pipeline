@@ -34,7 +34,7 @@ Context:
         {% for variant in category.variants %}
             <figure class="space-y-2{% if variant.solo %} md:col-span-2{% endif %}">
                 <figcaption class="text-xs font-mono text-text-3">{{ variant.caption }}</figcaption>
-                <div class="rounded-card overflow-hidden border border-border">
+                <div class="rounded-card overflow-hidden">
                     {% include_variant category.partial variant %}
                 </div>
             </figure>
@@ -45,7 +45,7 @@ Context:
         {% for variant in category.variants %}
             <figure class="space-y-2">
                 <figcaption class="text-xs font-mono text-text-3">{{ variant.caption }}</figcaption>
-                <div class="rounded-card overflow-hidden border border-border">
+                <div class="rounded-card overflow-hidden">
                     {% include_variant category.partial variant %}
                 </div>
             </figure>

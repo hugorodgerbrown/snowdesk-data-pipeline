@@ -26,7 +26,7 @@ from bulletins.services.weather_display import (
     _WMO_CODE_TO_BUCKET,
     _WMO_CODE_TO_ICON_BUCKET,
     WEATHER_ICON_BUCKETS,
-    WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,
+    WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,  # used inside synthetic_weather_display
 )
 
 
@@ -74,12 +74,21 @@ def _sample_code_for_bucket(icon_bucket: str) -> int:
 def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
     """Build the weather-header variant matrix.
 
-    One entry per icon bucket (12 entries) × day/night (or just one for
-    buckets without a day/night split — currently ``cloudy``), plus a
-    no-snapshot fallback variant at the end. Total entries ≈ 24 + 1.
+    Two entries per icon bucket (12 buckets × day/night = 24 entries),
+    plus the no-snapshot fallback at the end. Every bucket emits both
+    day and night — even ``cloudy``, which is the only bucket whose
+    *icon* is identical day vs night (it ships as a single ``cloudy.svg``
+    rather than ``cloudy-day.svg``/``cloudy-night.svg``). The
+    *background colour* still differs by time-of-day for cloudy
+    (``--color-weather-cloudy-day`` vs ``--color-weather-cloudy-night``),
+    so the bulletin page reads as a dark band on a cloudy night and a
+    pale band on a cloudy day — the library mirrors that.
+
     Order follows ``WEATHER_ICON_BUCKETS`` so panels in the library
     appear in the same order designers see in the bucket vocabulary
-    documentation.
+    documentation. ``WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT`` is consumed
+    inside ``synthetic_weather_display`` to pick the right icon
+    filename — the matrix builder doesn't branch on it.
     """
     today = datetime.date(2026, 2, 14)  # mid-season, deterministic
     region_name = "Bex-Villars"
@@ -90,39 +99,17 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
     for icon_bucket in WEATHER_ICON_BUCKETS:
         code = _sample_code_for_bucket(icon_bucket)
         bucket_label = _ICON_BUCKET_LABEL[icon_bucket]
-        if icon_bucket in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT:
-            for time_of_day in ("day", "night"):
-                entries.append(
-                    {
-                        "caption": f"{bucket_label} · {time_of_day}",
-                        "context": {
-                            "weather_display": synthetic_weather_display(
-                                code, time_of_day
-                            ),
-                            "region_name": region_name,
-                            "subregion_name": subregion_name,
-                            "page_date": today,
-                            "calendar_partial_url": calendar_partial_url,
-                        },
-                    }
-                )
-        else:
-            # ``cloudy`` is the only bucket without a day/night split — the
-            # icon reads the same regardless of light, so it ships as a
-            # single SVG and a single library variant. Mark ``solo=True`` so
-            # the two-column panel layout spans this entry across the row
-            # rather than offsetting every following pair by one column.
+        for time_of_day in ("day", "night"):
             entries.append(
                 {
-                    "caption": bucket_label,
+                    "caption": f"{bucket_label} · {time_of_day}",
                     "context": {
-                        "weather_display": synthetic_weather_display(code, "day"),
+                        "weather_display": synthetic_weather_display(code, time_of_day),
                         "region_name": region_name,
                         "subregion_name": subregion_name,
                         "page_date": today,
                         "calendar_partial_url": calendar_partial_url,
                     },
-                    "solo": True,
                 }
             )
 
