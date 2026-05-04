@@ -47,7 +47,7 @@
 
 'use strict';
 
-const CACHE_VERSION = 'snowdesk-shell-v1';
+const CACHE_VERSION = 'snowdesk-shell-v2';
 
 // File extensions that count as same-origin static shell. Anything
 // not in this set, and not a same-origin GeoJSON feed, falls through
