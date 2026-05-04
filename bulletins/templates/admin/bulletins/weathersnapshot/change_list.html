@@ -1,9 +1,40 @@
 {% extends "admin/change_list.html" %}
 {% load i18n %}
 
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        /* Match Django admin's `.object-tools a` pill shape on the
+           Fetch-today button while keeping the lighter `.button` colour
+           so it stays visually distinct from the dark "Add" pill. */
+        .object-tools form.fetch-today-form {
+            display: inline;
+        }
+        .object-tools form.fetch-today-form button {
+            box-sizing: border-box;
+            /* Match the inline-block flow of `.object-tools a` so vertical
+               padding renders the same. `line-height: inherit` is the key:
+               browsers don't inherit line-height onto <button> by default,
+               so without this the button collapses to the smaller `normal`
+               line-height (~1.2) and ends up shorter than the anchors. */
+            display: inline-block;
+            padding: 3px 12px;
+            border: none;
+            border-radius: 15px;
+            font-weight: 400;
+            font-size: 0.6875rem;
+            line-height: inherit;
+            font-family: inherit;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+    </style>
+{% endblock extrastyle %}
+
 {% block object-tools-items %}
     <li>
-        <form method="post" action="{% url 'admin:bulletins_weathersnapshot_fetch_today' %}" style="display: inline">
+        <form method="post" action="{% url 'admin:bulletins_weathersnapshot_fetch_today' %}" class="fetch-today-form">
             {% csrf_token %}
             <button type="submit" class="button" data-testid="weathersnapshot-fetch-today">
                 {% trans "Fetch today's weather" %}
