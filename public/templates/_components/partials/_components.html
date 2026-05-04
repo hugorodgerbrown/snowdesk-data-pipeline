@@ -1,0 +1,29 @@
+{% load component_library_tags %}
+{% comment %}
+public/templates/_components/partials/_components.html — Components panel.
+
+Rendered for any FoundationCategory with kind="components". Iterates the
+category's ``variants`` tuple and includes the category's ``partial``
+once per variant under a captioned card. The custom ``include_variant``
+tag merges ``variant.context`` into the parent template context so each
+partial reads its own keys — the dispatch template stays component-
+agnostic and works for masthead, day-windows, etc. as they land.
+
+Same template runs in both the light section and the .dark-wrapped section
+of the parent ``_panel.html`` shell, so the rendered partial inherits
+whichever theme cascades from above.
+
+Context:
+    category : FoundationCategory whose ``partial`` and ``variants`` are
+               rendered (must have ``kind="components"``).
+{% endcomment %}
+<div class="space-y-6">
+    {% for variant in category.variants %}
+        <figure class="space-y-2">
+            <figcaption class="text-xs font-mono text-text-3">{{ variant.caption }}</figcaption>
+            <div class="rounded-card overflow-hidden border border-border">
+                {% include_variant category.partial variant %}
+            </div>
+        </figure>
+    {% endfor %}
+</div>
