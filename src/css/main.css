@@ -139,19 +139,19 @@
      these tokens are intentionally NOT mirrored
      under .dark {}.
 
-     PLACEHOLDER VALUES — the final visual design
-     will replace these once handed over. Keep the
-     token names stable so the partial markup
-     (data-weather-bucket / data-time-of-day) does
-     not need to change.
+     SNOW-100 deepened the day tokens to match the
+     night tokens' effective luminance after the
+     ``bg-black/35`` overlay applied in
+     ``templates/includes/bulletin_header.html``.
+     Pre-overlay L*≈40-45 → post-overlay L*≈25-30,
+     giving consistent white-on-dark contrast across
+     every (bucket × time-of-day) combination. White
+     text reads at 8.95:1 to 10.25:1 — comfortably
+     above WCAG AAA. Keep the token names stable so
+     the partial markup (data-weather-bucket /
+     data-time-of-day) does not need to change.
      ————————————————————————————————————————— */
 
-  /* Day tokens deepened so Meteocons fills (yellow sun, white moon, white
-     snowflakes, pale cloud highlights) read against a sufficiently dark
-     backdrop after the bg-black/35 overlay applied in
-     templates/includes/bulletin_header.html. Pre-overlay L*≈40-45 → post-
-     overlay L*≈25-30, matching the night tokens' effective luminance for
-     consistent text/icon contrast across the day/night signal. */
   --color-weather-clear-day:           #3e6892;   /* deep sky blue, sun pops       */
   --color-weather-clear-night:         #1a2a4a;   /* deep night sky                */
   --color-weather-partly-cloudy-day:   #4a6a8a;

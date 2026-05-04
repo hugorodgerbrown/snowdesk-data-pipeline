@@ -16,7 +16,7 @@ Today there is one debug page:
   fixtures.
 """
 
-import datetime
+import functools
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
@@ -26,6 +26,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 
 from bulletins.services.weather_display import (
     _ICON_BUCKET_LABEL,
@@ -44,14 +45,18 @@ def _require_debug(view: Callable[..., HttpResponse]) -> Callable[..., HttpRespo
     Belt-and-braces with the conditional URL registration in
     :mod:`public.urls`: even if the URL pattern slipped through to a
     production deploy, this decorator prevents the view from rendering.
+
+    Uses ``functools.wraps`` so Django's URL resolver sees the wrapped
+    view's full identity (``__module__``, ``__qualname__``, ``__doc__``)
+    rather than the inner ``wrapped`` closure.
     """
 
+    @functools.wraps(view)
     def wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         if not settings.DEBUG:
             return HttpResponseNotFound()
         return view(request, *args, **kwargs)
 
-    wrapped.__name__ = view.__name__
     return wrapped
 
 
@@ -121,7 +126,7 @@ def header_combinations(request: HttpRequest) -> HttpResponse:
             }
         )
 
-    today = datetime.date.today()
+    today = timezone.localdate()
     # Pick a random region so refreshing the page exercises the layout with
     # different region/sub-region text lengths — useful for catching wrap
     # issues at narrow widths that a single hardcoded fixture would hide.

@@ -18,7 +18,11 @@ Context provided by the view:
   region_name          — sample region for the H1.
   subregion_name       — sample sub-region for the eyebrow above the H1.
   page_date            — today, used for the date in the metadata strip.
-  calendar_partial_url — None, so the partial omits the calendar trigger.
+  calendar_partial_url — real ``public:calendar_partial`` URL built from
+                         the random region; every panel renders the
+                         calendar trigger and clicking it HTMX-swaps the
+                         drawer into the single ``#bulletin-calendar-host``
+                         slot at the top of the page.
 {% endcomment %}
 {% block title %}Header combinations · debug · Snowdesk{% endblock %}
 

@@ -241,7 +241,12 @@ def is_day(weather: "WeatherSnapshot", now: datetime.datetime) -> bool:
 
 
 class WeatherDisplay(TypedDict):
-    """Context dict consumed by ``includes/bulletin_weather_header.html``."""
+    """Context dict consumed by ``includes/bulletin_header.html`` (SNOW-100).
+
+    Previously consumed by ``includes/bulletin_weather_header.html``; the
+    band partial was retired when the unified header replaced the masthead
+    + weather-band stack.
+    """
 
     weather: "WeatherSnapshot"
     bucket: str

@@ -127,6 +127,10 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
                             alt=""
                             title="{% trans 'Sunrise' %}"
                         >
+                        {# sr-only labels carry the semantic meaning for screen   #}
+                        {# readers; the icon's ``alt=""`` keeps it decorative and #}
+                        {# the visible time string stays a bare number.            #}
+                        <span class="sr-only">{% trans "Sunrise" %}</span>
                         <span>{{ weather_display.sunrise_local }}</span>
                         <span aria-hidden="true">-</span>
                         <span class="inline-flex items-center gap-x-1">
@@ -136,6 +140,7 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
                                 alt=""
                                 title="{% trans 'Sunset' %}"
                             >
+                            <span class="sr-only">{% trans "Sunset" %}</span>
                             <span>{{ weather_display.sunset_local }}</span>
                         </span>
                     </span>
