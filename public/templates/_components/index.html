@@ -60,6 +60,7 @@ Context:
                                     hx-target="#cl-main"
                                     hx-swap="innerHTML"
                                     hx-indicator="#cl-indicator"
+                                    hx-push-url="{% url 'public:components_index' %}?slug={{ category.slug }}"
                                     hx-on::after-request="document.querySelectorAll('#cl-sidebar a').forEach(el => el.removeAttribute('aria-current')); this.setAttribute('aria-current', 'page')"
                                     class="px-3 py-1.5 rounded-tag text-text-2 hover:bg-tag aria-[current=page]:bg-tag aria-[current=page]:text-text-1 aria-[current=page]:font-medium"
                                     {% if category.slug == active.slug %}

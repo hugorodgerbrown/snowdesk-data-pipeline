@@ -28,18 +28,27 @@ DEFAULT_SLUG = "typography"
 
 @staff_member_required
 def component_library(request: HttpRequest) -> HttpResponse:
-    """Render the full component-library page with the default panel SSR.
+    """Render the full component-library page with the active panel SSR.
 
-    The default panel (typography) is rendered server-side so the URL is
-    meaningful with JS off and so screen-reader users don't land on an
-    empty main column.
+    The active panel is the one whose slug appears in ``?slug=`` (so
+    ``/_components/?slug=weather-header`` deep-links straight to that
+    panel), falling back to ``DEFAULT_SLUG`` when the query string is
+    absent or names an unknown slug. Silent fallback is preferred over
+    a 404 so old or misspelled bookmarks land on a usable page rather
+    than a hard error.
+
+    The active panel is rendered server-side so the URL is meaningful
+    with JS off and so screen-reader users don't land on an empty main
+    column.
     """
+    requested_slug = request.GET.get("slug", DEFAULT_SLUG)
+    active = get_category(requested_slug) or get_category(DEFAULT_SLUG)
     return render(
         request,
         "_components/index.html",
         {
             "groups": LIBRARY_GROUPS,
-            "active": get_category(DEFAULT_SLUG),
+            "active": active,
         },
     )
 

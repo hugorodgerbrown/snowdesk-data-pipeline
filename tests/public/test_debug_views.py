@@ -130,6 +130,38 @@ class TestComponentLibraryIndex:
             assert category.label in body
             assert _panel_url(category.slug) in body
 
+    @pytest.mark.parametrize("slug", _all_slugs(), ids=lambda s: s)
+    def test_query_param_deep_links_to_panel(
+        self, staff_client: Client, slug: str
+    ) -> None:
+        """``?slug=<slug>`` SSR-renders the matching panel as active.
+
+        Lets ``/_components/?slug=weather-header`` deep-link straight
+        to the weather-header panel for sharing in chat / bookmarks.
+        """
+        response = staff_client.get(f"{_index_url()}?slug={slug}")
+        assert response.status_code == 200
+        assert response.context["active"].slug == slug
+
+    def test_unknown_slug_query_param_falls_back_to_default(
+        self, staff_client: Client
+    ) -> None:
+        """Unknown ``?slug=`` silently falls back to the default panel.
+
+        Old or misspelled bookmarks land on a usable page rather than a
+        hard 404 — the slug is in the URL bar so users can see what
+        they tried.
+        """
+        response = staff_client.get(f"{_index_url()}?slug=does-not-exist")
+        assert response.status_code == 200
+        assert response.context["active"].slug == "typography"
+
+    def test_empty_slug_query_param_renders_default(self, staff_client: Client) -> None:
+        """``?slug=`` with no value renders the default panel."""
+        response = staff_client.get(f"{_index_url()}?slug=")
+        assert response.status_code == 200
+        assert response.context["active"].slug == "typography"
+
 
 @pytest.mark.django_db
 class TestComponentLibraryPanel:
