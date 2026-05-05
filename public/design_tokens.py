@@ -30,7 +30,7 @@ a ``.dark`` ancestor.
 from dataclasses import dataclass
 from typing import Any
 
-from public._component_fixtures import WEATHER_HEADER_VARIANTS
+from public._component_fixtures import DAY_WINDOWS_VARIANTS, WEATHER_HEADER_VARIANTS
 
 
 @dataclass(frozen=True)
@@ -111,6 +111,12 @@ class FoundationCategory:
             components). ``"two-col"`` is single-column on mobile and
             two-column on desktop (≥ md breakpoint) — useful for
             paired variants like the weather-header day/night matrix.
+        swatch_columns: Optional fixed column count for the swatch grid
+            (``kind="swatches"`` only). Defaults to ``None``, which
+            renders the responsive grid (2 → 3 → 4 columns at sm/lg).
+            Set to a positive int when the token list has a meaningful
+            row/column structure that lines up — e.g. EAWS uses ``5`` so
+            each column corresponds to one danger level (low → very_high).
 
     """
 
@@ -122,6 +128,7 @@ class FoundationCategory:
     partial: str | None = None
     variants: tuple[dict[str, Any], ...] = ()
     panel_layout: str = "stack"
+    swatch_columns: int | None = None
 
 
 @dataclass(frozen=True)
@@ -230,6 +237,7 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         label="EAWS scale",
         description="Five-level danger scale (theme-invariant by EAWS spec).",
         kind="swatches",
+        swatch_columns=5,
         tokens=(
             Token("--color-eaws-low", "Low", "#ccff66", None),
             Token("--color-eaws-moderate", "Moderate", "#ffff00", None),
@@ -601,6 +609,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         partial="includes/bulletin_header.html",
         variants=WEATHER_HEADER_VARIANTS,
         panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="day-windows",
+        label="Day windows",
+        description=(
+            "Per-window EAWS rating panel — one row per validTimePeriod with "
+            "a coloured danger-level tile, label and time-window pill. "
+            "Variants cover the all-day case (≈95% of bulletins) across "
+            "every danger level plus a realistic split-day layout."
+        ),
+        kind="components",
+        partial="includes/day_windows.html",
+        variants=DAY_WINDOWS_VARIANTS,
+        panel_layout="stack",
     ),
 )
 
