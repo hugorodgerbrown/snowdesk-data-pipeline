@@ -13,14 +13,14 @@ updates without a full JavaScript framework.
 config/          Django project settings (split base/development/production)
 core/            Shared abstractions (BaseModel; abstract, no concrete tables)
 pipeline/        Geographic reference data — Region / EawsMajorRegion /
-                 EawsSubRegion / Resort, plus HTTP-layer middleware and the
-                 dev-only SLF mirror endpoint
+                 EawsSubRegion / Resort, plus HTTP-layer middleware, the
+                 dev-only SLF mirror endpoint, and fixture/monitoring commands
+                 (dump_resorts_fixture, monitor_query_counts, refresh_eaws_fixtures)
 bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
                  PipelineRun, RegionDayRating, the four ingestion services
-                 (data_fetcher, render_model, day_rating, slf_archive), the
-                 four bulletin commands (fetch_bulletins, rebuild_render_models,
-                 diagnose_region_coverage, export_day_character_csv), and the
-                 admin classes for those models
+                 (data_fetcher, render_model, day_rating, slf_archive), the six
+                 bulletin and weather ingestion commands (see docs/management-commands.md),
+                 and the admin classes for those models
 subscriptions/   Signed-token subscription flow (see docs/subscriptions.md)
 public/          Public-facing bulletin site
   api.py         Plain JsonResponse endpoints consumed by the map page
@@ -318,3 +318,4 @@ Read these when working in the relevant area:
 | Management command catalogue | [`docs/management-commands.md`](docs/management-commands.md) |
 | Nav partial implementation spec | [`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) |
 | Feature flags (django-waffle) | [`docs/feature-flags.md`](docs/feature-flags.md) |
+| Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |
