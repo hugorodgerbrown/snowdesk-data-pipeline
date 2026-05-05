@@ -7,10 +7,20 @@ human label + value caption. The same markup picks up the *light* value
 when rendered outside a ``.dark`` ancestor and the *dark* value when
 rendered inside one — the grid is theme-agnostic.
 
+Layout: defaults to a responsive 2→3→4 column grid. Categories whose
+tokens have a meaningful row/column structure (e.g. EAWS, where the
+five danger levels repeat across multiple stops) override this via
+``swatch_columns`` so the columns line up by level.
+
 Context:
     category : FoundationCategory whose tokens are rendered.
 {% endcomment %}
-<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+<div
+    class="grid gap-4{% if not category.swatch_columns %} grid-cols-2 sm:grid-cols-3 lg:grid-cols-4{% endif %}"
+    {% if category.swatch_columns %}
+        style="grid-template-columns: repeat({{ category.swatch_columns }}, minmax(0, 1fr))"
+    {% endif %}
+>
     {% for token in category.tokens %}
         <figure class="space-y-2">
             <div class="aspect-[4/3] rounded-tag border border-border" style="background: var({{ token.name }})"></div>
