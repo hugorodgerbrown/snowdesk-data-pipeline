@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<!--
+  static/offline.html — Offline fallback page (SNOW-118).
+
+  Served by the SW ``_networkFirst`` strategy when an HTML navigation
+  fails AND no cached copy of the requested page exists. Pre-cached on
+  SW install so it is reliably available the moment the network drops.
+
+  Constraints (must hold to keep this page useful in the offline case):
+
+    - No external assets. No <link rel="stylesheet">, no @font-face URLs,
+      no <img src="…">. Every byte is inline.
+    - No JavaScript that depends on a network request.
+    - Brand colours match ``static/manifest.webmanifest`` so the page
+      reads as Snowdesk even with the rest of the shell unavailable.
+
+  Out of scope: per-region offline content, last-seen bulletin replay,
+  service-worker version probe. This is a recovery page, not an app
+  shell substitute.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="theme-color" content="#1a1a1a">
+        <title>Offline — Snowdesk</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+            }
+            html, body {
+                min-height: 100vh;
+                margin: 0;
+                padding: 0;
+                background-color: #f4f1e8;
+                color: #1a1a1a;
+                font-family:
+                    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue',
+                    sans-serif;
+                -webkit-font-smoothing: antialiased;
+            }
+            body {
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 2rem 1.5rem;
+                text-align: center;
+            }
+            .wordmark {
+                margin-bottom: 2.5rem;
+                font-weight: 600;
+                font-size: 0.875rem;
+                letter-spacing: 0.02em;
+                opacity: 0.6;
+            }
+            h1 {
+                margin: 0 0 0.5rem;
+                font-weight: 600;
+                font-size: 1.5rem;
+                letter-spacing: -0.01em;
+            }
+            p {
+                max-width: 28rem;
+                margin: 0 0 2rem;
+                line-height: 1.5;
+                opacity: 0.7;
+            }
+            button {
+                padding: 0.625rem 1.25rem;
+                border: none;
+                border-radius: 9999px;
+                background: #1a1a1a;
+                color: #f4f1e8;
+                font: inherit;
+                font-weight: 500;
+                cursor: pointer;
+            }
+            button:hover {
+                opacity: 0.9;
+            }
+            button:focus-visible {
+                outline: 2px solid #1a1a1a;
+                outline-offset: 2px;
+            }
+            @media (prefers-color-scheme: dark) {
+                html, body {
+                    background-color: #1a1a1a;
+                    color: #f4f1e8;
+                }
+                button {
+                    background: #f4f1e8;
+                    color: #1a1a1a;
+                }
+                button:focus-visible {
+                    outline-color: #f4f1e8;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <p class="wordmark">Snowdesk</p>
+        <h1>You're offline</h1>
+        <p>
+            Snowdesk needs a network connection to fetch the latest bulletin. Check your connection and try again.
+        </p>
+        <button type="button" onclick="location.reload()">Retry</button>
+    </body>
+</html>

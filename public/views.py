@@ -791,6 +791,94 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
     return response
 
 
+def serve_manifest(request: HttpRequest) -> HttpResponse:
+    """
+    Serve the web app manifest at ``/manifest.webmanifest`` (SNOW-118).
+
+    The manifest is templated rather than served as a static file so the
+    browser-facing identity URLs (``id``, ``start_url``, ``scope``) can
+    be rendered as **absolute** URLs derived from ``settings.SITE_BASE_URL``
+    — relative paths technically resolve correctly per origin, but explicit
+    absolute URLs are the W3C recommendation and survive future changes
+    to the manifest's URL or to ``start_url``. The same setting is already
+    used to build absolute links in transactional emails, so production
+    and dev each point at their own canonical hostname via the existing
+    env-var (``http://localhost:8000`` in dev, ``https://snowdesk.info``
+    in production).
+
+    The response carries ``Content-Type: application/manifest+json`` so
+    Chromium honours the manifest spec strictly. ``Cache-Control:
+    public, max-age=300`` is short enough that a SITE_BASE_URL change
+    propagates within five minutes but long enough to avoid re-rendering
+    on every page load.
+
+    Args:
+        request: The incoming HTTP request (unused — the manifest is
+            origin-keyed via ``SITE_BASE_URL``, not per-request).
+
+    Returns:
+        An ``HttpResponse`` with the JSON manifest body and the required
+        ``Content-Type`` and ``Cache-Control`` headers.
+
+    """
+    base = settings.SITE_BASE_URL.rstrip("/")
+    manifest = {
+        "name": "Snowdesk",
+        "short_name": "Snowdesk",
+        "id": f"{base}/",
+        "lang": "en",
+        "description": "Daily Swiss avalanche bulletins for the alpine region.",
+        "categories": ["weather", "sports", "travel"],
+        "start_url": f"{base}/",
+        "scope": f"{base}/",
+        "display": "standalone",
+        "background_color": "#f4f1e8",
+        "theme_color": "#1a1a1a",
+        "icons": [
+            {
+                "src": "/static/icons/pwa/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": "/static/icons/pwa/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": "/static/icons/pwa/icon-maskable-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable",
+            },
+        ],
+        "screenshots": [
+            {
+                "src": "/static/icons/pwa/screenshots/map-wide.png",
+                "sizes": "1280x720",
+                "type": "image/png",
+                "form_factor": "wide",
+                "label": "Avalanche map for the alpine region",
+            },
+            {
+                "src": "/static/icons/pwa/screenshots/bulletin-narrow.png",
+                "sizes": "750x1334",
+                "type": "image/png",
+                "form_factor": "narrow",
+                "label": "Daily bulletin for a single region",
+            },
+        ],
+    }
+    response = HttpResponse(
+        json.dumps(manifest, indent=2),
+        content_type="application/manifest+json",
+    )
+    response["Cache-Control"] = "public, max-age=300"
+    return response
+
+
 def random_redirect(request: HttpRequest) -> HttpResponse:
     """
     Redirect ``/random/`` to ``/examples/random/`` (deprecated).

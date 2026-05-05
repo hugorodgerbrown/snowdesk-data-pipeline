@@ -1,0 +1,106 @@
+#!/usr/bin/env node
+/*
+ * bin/build-pwa-screenshots — Render PWA install-dialog screenshots.
+ *
+ * Outputs two PNGs into static/icons/pwa/screenshots/:
+ *   - map-wide.png         (1280×720, form_factor: wide)
+ *   - bulletin-narrow.png  (750×1334, form_factor: narrow)
+ *
+ * Run via ``npm run build:screenshots`` (see package.json). The PNGs
+ * are checked in — when the brand changes, regenerate and commit.
+ *
+ * Why placeholders (not real page captures)?
+ * ------------------------------------------
+ * The manifest's ``screenshots`` array unlocks Chrome's rich install
+ * dialog on Android, which requires both a wide (desktop) and narrow
+ * (mobile) variant. The dialog renders the screenshots above the
+ * description; without them Chrome falls back to the small dialog.
+ * Branded placeholders are sufficient to unlock the rich variant —
+ * actual page captures are a refinement that depends on Playwright /
+ * Puppeteer being installed as a dev dependency, which isn't worth the
+ * bundle weight while the UI is still in flux. A future ticket can
+ * swap this script for a real-capture variant once the layouts settle.
+ */
+
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const sharp = require('sharp');
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const OUT_DIR = path.join(REPO_ROOT, 'static', 'icons', 'pwa', 'screenshots');
+
+const BACKGROUND_COLOUR = '#f4f1e8';
+const TEXT_COLOUR = '#1a1a1a';
+const ACCENT_COLOUR = '#1a1a1a';
+
+/**
+ * Build a branded SVG sized to ``width x height`` with a centred
+ * Snowdesk wordmark and a one-line tagline below. Plain text rendered
+ * via sharp's SVG-to-PNG path so this script has zero browser
+ * dependencies.
+ *
+ * @param {number} width
+ * @param {number} height
+ * @param {string} headline
+ * @param {string} subtext
+ * @returns {string} SVG markup
+ */
+function brandedSvg(width, height, headline, subtext) {
+  const cx = width / 2;
+  const cy = height / 2;
+  const headlineSize = Math.round(Math.min(width, height) * 0.08);
+  const subSize = Math.round(headlineSize * 0.45);
+  const wordmarkSize = Math.round(headlineSize * 0.5);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <rect width="${width}" height="${height}" fill="${BACKGROUND_COLOUR}"/>
+  <text x="${cx}" y="${cy - headlineSize}"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        font-size="${wordmarkSize}" font-weight="600" fill="${ACCENT_COLOUR}"
+        text-anchor="middle" letter-spacing="0.5">SNOWDESK</text>
+  <text x="${cx}" y="${cy + headlineSize * 0.2}"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        font-size="${headlineSize}" font-weight="600" fill="${TEXT_COLOUR}"
+        text-anchor="middle">${headline}</text>
+  <text x="${cx}" y="${cy + headlineSize * 1.6}"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        font-size="${subSize}" font-weight="400" fill="${TEXT_COLOUR}" opacity="0.7"
+        text-anchor="middle">${subtext}</text>
+</svg>`;
+}
+
+async function buildScreenshot(width, height, headline, subtext, outName) {
+  const outPath = path.join(OUT_DIR, outName);
+  const svg = brandedSvg(width, height, headline, subtext);
+  await sharp(Buffer.from(svg, 'utf-8'))
+    .png()
+    .toFile(outPath);
+  console.log(
+    `wrote ${path.relative(REPO_ROOT, outPath)} (${width}×${height})`,
+  );
+}
+
+async function main() {
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  await buildScreenshot(
+    1280,
+    720,
+    'Avalanche map',
+    'Daily SLF bulletins for the entire alpine region',
+    'map-wide.png',
+  );
+  await buildScreenshot(
+    750,
+    1334,
+    'Daily bulletin',
+    'Per-region detail in your pocket',
+    'bulletin-narrow.png',
+  );
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

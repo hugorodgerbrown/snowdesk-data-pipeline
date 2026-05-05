@@ -2,20 +2,26 @@
 /*
  * bin/build-pwa-icons — Render PWA icon PNGs from static/favicon.svg.
  *
- * Outputs three files into static/icons/pwa/:
- *   - icon-192.png           (192×192, purpose: any)
- *   - icon-512.png           (512×512, purpose: any)
- *   - icon-maskable-512.png  (512×512, purpose: maskable)
+ * Outputs four files into static/icons/pwa/:
+ *   - icon-192.png            (192×192, purpose: any)
+ *   - icon-512.png            (512×512, purpose: any)
+ *   - icon-maskable-512.png   (512×512, purpose: maskable)
+ *   - apple-touch-icon-180.png (180×180, opaque background, no alpha —
+ *                               iOS rounds the corners automatically and
+ *                               can't render transparency in home-screen
+ *                               icons cleanly)
  *
- * Run via ``npm run build:icons`` (see package.json). The output is
- * gitignored — production deploys regenerate it as part of the
- * Render build.
+ * Run via ``npm run build:icons`` (see package.json). The PNGs are
+ * checked in alongside ``static/favicon.svg`` — when the SVG changes,
+ * regenerate and commit the new outputs.
  *
  * The maskable variant pads the source artwork inside a "safe zone"
  * (80% of the canvas) so adaptive icon shapes on Android don't crop
  * the glyph. Background colour matches manifest.background_color so
  * the rounded SVG corners aren't visible after Android's rounded mask
- * crops them.
+ * crops them. The apple-touch-icon variant uses the same flat
+ * background so the icon reads as a solid tile under iOS's automatic
+ * corner rounding.
  */
 
 'use strict';
@@ -62,6 +68,22 @@ async function buildMaskable(size, outName) {
   );
 }
 
+async function buildAppleTouchIcon(size, outName) {
+  const outPath = path.join(OUT_DIR, outName);
+  // iOS home-screen icons cannot be transparent — flatten the SVG over
+  // the manifest background colour so corners don't render black after
+  // iOS's automatic corner rounding. ``flatten`` removes the alpha
+  // channel and fills the background with the supplied colour.
+  await sharp(SRC_SVG)
+    .resize(size, size)
+    .flatten({ background: BACKGROUND_COLOUR })
+    .png()
+    .toFile(outPath);
+  console.log(
+    `wrote ${path.relative(REPO_ROOT, outPath)} (${size}×${size}, apple-touch, opaque)`,
+  );
+}
+
 async function main() {
   if (!fs.existsSync(SRC_SVG)) {
     console.error(`source SVG not found: ${SRC_SVG}`);
@@ -71,6 +93,7 @@ async function main() {
   await buildAny(192, 'icon-192.png');
   await buildAny(512, 'icon-512.png');
   await buildMaskable(512, 'icon-maskable-512.png');
+  await buildAppleTouchIcon(180, 'apple-touch-icon-180.png');
 }
 
 main().catch((err) => {
