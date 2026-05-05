@@ -88,14 +88,31 @@ class SeasonGrid:
     an abbreviated month name (``"Nov"``) only on the first column of
     that calendar month, and an empty string otherwise. The template
     iterates it zipped with ``columns`` to draw the labels row.
+
+    ``season_label`` is the two-year season identifier in SLF style
+    (e.g. ``"25/26"`` for the season starting in autumn 2025), used by
+    the page-nav trigger to make the current season explicit.
     """
 
     columns: list[tuple[SeasonCell | None, ...]]
     month_labels: list[str]
+    season_label: str = ""
 
     def __bool__(self) -> bool:
         """Return ``False`` when the grid is empty (e.g. before season start)."""
         return bool(self.columns)
+
+    @property
+    def columns_with_labels(
+        self,
+    ) -> list[tuple[str, tuple[SeasonCell | None, ...]]]:
+        """Yield ``(month_label, column)`` pairs for parallel template iteration.
+
+        A non-empty ``month_label`` flags the column as the start of a new
+        calendar month — the template uses that to insert a visual gap so
+        the heatmap's month boundaries are scannable.
+        """
+        return list(zip(self.month_labels, self.columns, strict=True))
 
 
 def build_season_grid(
@@ -121,8 +138,9 @@ def build_season_grid(
     """
     start: datetime.date = settings.SEASON_START_DATE
     end = today + datetime.timedelta(days=1)
+    season_label = _season_label(start)
     if end < start:
-        return SeasonGrid(columns=[], month_labels=[])
+        return SeasonGrid(columns=[], month_labels=[], season_label=season_label)
 
     rows = RegionDayRating.objects.for_region_range(region, start, end)
     by_date: dict[datetime.date, RegionDayRating] = {r.date: r for r in rows}
@@ -163,7 +181,21 @@ def build_season_grid(
 
     columns = _pack_into_columns(cells, start)
     month_labels = _month_label_indices(columns)
-    return SeasonGrid(columns=columns, month_labels=month_labels)
+    return SeasonGrid(
+        columns=columns,
+        month_labels=month_labels,
+        season_label=season_label,
+    )
+
+
+def _season_label(start: datetime.date) -> str:
+    """Build the SLF-style two-year season identifier (e.g. ``"25/26"``).
+
+    The Northern-hemisphere avalanche season runs from autumn through to
+    late spring of the following year. The label is always two two-digit
+    years separated by a slash.
+    """
+    return f"{start.year % 100:02d}/{(start.year + 1) % 100:02d}"
 
 
 def _pack_into_columns(

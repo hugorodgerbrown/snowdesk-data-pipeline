@@ -55,17 +55,20 @@
         <div class="overflow-x-auto" data-season-scroll>
             <div data-testid="season-calendar" class="inline-block">
                 {# Month labels row — one cell per column, parallel to the grid below. #}
+                {# A non-empty label flags the column as the start of a new month;     #}
+                {# the matching ml-2 spacer (skipped on the very first column) creates #}
+                {# a visual gap so the heatmap's month boundaries are scannable.       #}
                 <div class="flex gap-0.5 mb-1">
-                    {% for label in season_calendar.month_labels %}
-                        <div class="text-text-3 calendar-cell calendar-cell-label">
+                    {% for label, column in season_calendar.columns_with_labels %}
+                        <div class="text-text-3 calendar-cell calendar-cell-label{% if label and not forloop.first %} ml-2{% endif %}">
                             {{ label }}
                         </div>
                     {% endfor %}
                 </div>
                 {# Grid — one flex column per week, 7 cells per column (Mon..Sun). #}
                 <div class="flex gap-0.5">
-                    {% for column in season_calendar.columns %}
-                        <div class="flex flex-col gap-0.5 shrink-0">
+                    {% for label, column in season_calendar.columns_with_labels %}
+                        <div class="flex flex-col gap-0.5 shrink-0{% if label and not forloop.first %} ml-2{% endif %}">
                             {% for cell in column %}
                                 {% if cell is None %}
                                     <div class="calendar-cell"></div>
