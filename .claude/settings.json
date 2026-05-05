@@ -23,5 +23,18 @@
       "Read(./.ruff_cache/**)",
       "Read(./.mypy_cache/**)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "EnterWorktree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bin/init-worktree 2>&1 || true"
+          }
+        ]
+      }
+    ]
   }
 }

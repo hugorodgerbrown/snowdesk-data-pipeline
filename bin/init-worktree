@@ -14,8 +14,9 @@
 #                    SQLite + concurrent writers from multiple Django
 #                    servers would clash, so don't share).
 #
-# Idempotent: skips assets that already exist locally. Safe to invoke on
-# every Claude SessionStart — the no-op path is a few stat() calls.
+# Idempotent: skips assets that already exist locally. Wired up via
+# the PostToolUse:EnterWorktree hook in .claude/settings.json so it
+# fires automatically when Claude creates a new worktree.
 #
 # Refuses to run from the main worktree itself.
 
@@ -73,8 +74,8 @@ link_if_missing .env
 link_if_missing .venv
 copy_if_missing db.sqlite3
 
-# Silent on a fully-set-up worktree (the SessionStart hook case); only
-# announces when the worktree actually needed bootstrapping.
+# Silent on a fully-set-up worktree; only announces when the worktree
+# actually needed bootstrapping.
 if [ "$actions" -gt 0 ]; then
     echo "init-worktree: applied $actions action(s)"
 fi
