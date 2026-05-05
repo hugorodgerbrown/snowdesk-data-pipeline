@@ -16,7 +16,7 @@ admin shortcut) was removed in SNOW-80 — the global ``_site_footer.html``
 covers the SLF attribution requirement, and adjacent regions are now
 reachable via the SNOW-81 deep-link in the masthead.
 {% endcomment %}
-{% load i18n static snowdesk_html snowdesk_time waffle_tags %}
+{% load i18n static snowdesk_html snowdesk_time %}
 
 {% block favicon %}
     {# Favicon tinted to the bulletin's highest EAWS danger level so       #}
@@ -126,11 +126,7 @@ reachable via the SNOW-81 deep-link in the masthead.
            artefact of WR's modal-over-map architecture, removed per
            DESIGN.md confirmed subtractions.
         {% endcomment %}
-        {% flag "weather_header" %}
         {% include "includes/bulletin_header.html" %}
-        {% else %}
-        {% include "includes/bulletin_masthead.html" %}
-        {% endflag %}
 
         {% if not bulletin %}
             {# ── Empty state ─────────────────────────────────────────── #}
