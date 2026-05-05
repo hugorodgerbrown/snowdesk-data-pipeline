@@ -3,20 +3,23 @@ tests/bulletins/test_admin.py — Tests for BulletinAdmin.
 
 Verifies that the backfill button triggers a pipeline run, shows
 appropriate success/error messages, and rejects non-POST requests.
-Also covers the SNOW-22 XSS-escaping helpers on the detail view.
+Also covers the SNOW-22 XSS-escaping helpers on the detail view, and
+(SNOW-113) the empty-list / edge-case branches of the BulletinAdmin
+display methods that XSS tests skip.
 """
 
 from datetime import date
 from unittest.mock import patch
 
 import pytest
+from django.contrib.admin import site
 from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
 from bulletins.admin import BulletinAdmin
-from bulletins.models import PipelineRun
-from tests.factories import PipelineRunFactory
+from bulletins.models import Bulletin, PipelineRun
+from tests.factories import BulletinFactory, PipelineRunFactory
 
 
 @pytest.fixture()
@@ -184,3 +187,182 @@ class TestAdminXssEscape:
         )
         html = self._admin().aggregation(bulletin)
         assert _SCRIPT_TAG not in html
+
+
+# ── SNOW-113: BulletinAdmin helper / display-method coverage ─────────────────
+
+
+def _admin() -> BulletinAdmin:
+    """Return a BulletinAdmin instance bound to the default admin site."""
+    return BulletinAdmin(Bulletin, site)
+
+
+class TestBulletinAdminHelpers:
+    """
+    Pure-function coverage for the static and instance helpers on
+    BulletinAdmin that don't need a database.
+    """
+
+    def test_format_elevation_lower_and_upper(self) -> None:
+        """Both bounds present → ``"{lower}m – {upper}m"`` range string."""
+        result = BulletinAdmin._format_elevation(
+            {"lowerBound": "1800", "upperBound": "2400"}
+        )
+        assert result == "1800m – 2400m"
+
+    def test_format_elevation_lower_only(self) -> None:
+        """Only ``lowerBound`` present → ``"Above {lower}m"``."""
+        result = BulletinAdmin._format_elevation({"lowerBound": "2000"})
+        assert result == "Above 2000m"
+
+    def test_format_elevation_upper_only(self) -> None:
+        """Only ``upperBound`` present → ``"Below {upper}m"``."""
+        result = BulletinAdmin._format_elevation({"upperBound": "2400"})
+        assert result == "Below 2400m"
+
+    def test_format_elevation_empty_dict_returns_all_elevations(self) -> None:
+        """An elevation dict with neither bound falls through to the default."""
+        # The leading guard catches a falsy dict; passing a dict whose values
+        # are all falsy reaches the trailing `return "All elevations"` branch.
+        result = BulletinAdmin._format_elevation(
+            {"lowerBound": None, "upperBound": None}
+        )
+        assert result == "All elevations"
+
+    def test_format_elevation_none_returns_all_elevations(self) -> None:
+        """``None`` input takes the leading guard to ``"All elevations"``."""
+        assert BulletinAdmin._format_elevation(None) == "All elevations"
+
+    def test_render_comment_none_returns_dash(self) -> None:
+        """Falsy input returns the en-dash placeholder."""
+        assert _admin()._render_comment(None) == "—"
+        assert _admin()._render_comment("") == "—"
+
+    def test_render_comment_empty_markdown_returns_dash(self) -> None:
+        """When ``html_to_markdown`` returns "", the dash placeholder is used."""
+        with patch("bulletins.admin.html_to_markdown", return_value=""):
+            result = _admin()._render_comment("<div></div>")
+        assert result == "—"
+
+    def test_render_comment_with_content_returns_pre_block(self) -> None:
+        """A non-empty markdown body is wrapped in a ``<pre>`` element."""
+        result = _admin()._render_comment("<p>hello world</p>")
+        assert "<pre" in result
+        assert "hello world" in result
+
+
+@pytest.mark.django_db
+class TestBulletinAdminDisplayMethods:
+    """
+    Coverage for the ``@admin.display`` callables on BulletinAdmin —
+    specifically the empty-list, missing-key, and content-rendering
+    branches that the XSS tests do not exercise.
+    """
+
+    def _bulletin(self, raw_properties: dict) -> Bulletin:
+        """Create a Bulletin with the given raw_data properties payload."""
+        return BulletinFactory.create(raw_data={"properties": raw_properties})
+
+    def test_danger_ratings_empty_returns_dash(self) -> None:
+        """Empty ``dangerRatings`` array short-circuits to the dash."""
+        bulletin = self._bulletin({"dangerRatings": []})
+        assert _admin().danger_ratings(bulletin) == "—"
+
+    def test_avalanche_problems_empty_returns_dash(self) -> None:
+        """Empty ``avalancheProblems`` array short-circuits to the dash."""
+        bulletin = self._bulletin({"avalancheProblems": []})
+        assert _admin().avalanche_problems(bulletin) == "—"
+
+    def test_aggregation_empty_returns_dash(self) -> None:
+        """Empty ``customData.CH.aggregation`` array short-circuits to the dash."""
+        bulletin = self._bulletin({"customData": {"CH": {"aggregation": []}}})
+        assert _admin().aggregation(bulletin) == "—"
+
+    def test_weather_forecast_with_comment(self) -> None:
+        """A populated ``weatherForecast.comment`` renders inside ``<pre>``."""
+        bulletin = self._bulletin(
+            {"weatherForecast": {"comment": "<p>Snow showers</p>"}}
+        )
+        html = _admin().weather_forecast(bulletin)
+        assert "<pre" in html
+        assert "Snow showers" in html
+
+    def test_weather_forecast_missing_key_returns_dash(self) -> None:
+        """No ``weatherForecast`` key falls through to the dash placeholder."""
+        bulletin = self._bulletin({})
+        assert _admin().weather_forecast(bulletin) == "—"
+
+    def test_weather_review_with_comment(self) -> None:
+        """A populated ``weatherReview.comment`` renders inside ``<pre>``."""
+        bulletin = self._bulletin(
+            {"weatherReview": {"comment": "<p>Overnight clear</p>"}}
+        )
+        html = _admin().weather_review(bulletin)
+        assert "<pre" in html
+        assert "Overnight clear" in html
+
+    def test_snowpack_structure_with_comment(self) -> None:
+        """A populated ``snowpackStructure.comment`` renders inside ``<pre>``."""
+        bulletin = self._bulletin(
+            {"snowpackStructure": {"comment": "<p>Weak layer at depth</p>"}}
+        )
+        html = _admin().snowpack_structure(bulletin)
+        assert "<pre" in html
+        assert "Weak layer at depth" in html
+
+    def test_tendency_empty_returns_dash(self) -> None:
+        """An empty ``tendency`` list short-circuits to the dash."""
+        bulletin = self._bulletin({"tendency": []})
+        assert _admin().tendency(bulletin) == "—"
+
+    def test_tendency_with_comments_renders_joined(self) -> None:
+        """Multiple tendency entries with comments are joined into the body."""
+        bulletin = self._bulletin(
+            {
+                "tendency": [
+                    {"comment": "<p>Slight decrease tomorrow</p>"},
+                    {"comment": "<p>Stable Saturday</p>"},
+                ]
+            }
+        )
+        html = _admin().tendency(bulletin)
+        assert "<pre" in html
+        assert "Slight decrease tomorrow" in html
+        assert "Stable Saturday" in html
+
+    def test_tendency_filters_non_dict_and_missing_comment(self) -> None:
+        """Non-dict entries and dict entries without a ``comment`` are filtered out."""
+        bulletin = self._bulletin(
+            {
+                "tendency": [
+                    "not a dict",
+                    {"validTime": "x"},
+                    {"comment": ""},
+                    {"comment": "<p>Real comment</p>"},
+                ]
+            }
+        )
+        html = _admin().tendency(bulletin)
+        assert "Real comment" in html
+        assert "not a dict" not in html
+
+    def test_tendency_all_entries_filtered_returns_dash(self) -> None:
+        """When all entries are filtered out, the dash placeholder is used."""
+        bulletin = self._bulletin({"tendency": [{"validTime": "x"}, "string entry"]})
+        assert _admin().tendency(bulletin) == "—"
+
+    def test_raw_data_pretty_renders_json(self) -> None:
+        """``raw_data_pretty`` wraps indented JSON in a ``<pre>`` element."""
+        bulletin = self._bulletin({"foo": "bar"})
+        html = _admin().raw_data_pretty(bulletin)
+        assert "<pre" in html
+        assert "&quot;foo&quot;" in html
+        assert "&quot;bar&quot;" in html
+
+    def test_render_model_pretty_renders_json(self) -> None:
+        """``render_model_pretty`` wraps indented JSON in a ``<pre>`` element."""
+        bulletin = BulletinFactory.create(render_model={"version": 4})
+        html = _admin().render_model_pretty(bulletin)
+        assert "<pre" in html
+        assert "&quot;version&quot;" in html
+        assert "4" in html
