@@ -102,5 +102,95 @@ state.
                 </svg>
             </button>
         {% endif %}
+        {% if request.user.is_staff %}
+            <div class="relative {% if not season_trigger %}ml-auto{% endif %}" data-admin-menu>
+                <button
+                    type="button"
+                    id="admin-menu-toggle"
+                    class="inline-flex items-center gap-1 px-1.5 py-1 text-text-2 hover:text-text-1 rounded text-sm"
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                    aria-controls="admin-menu"
+                >
+                    {% trans "Admin" %}
+                    <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="m6 9 6 6 6-6" />
+                    </svg>
+                </button>
+                <ul
+                    id="admin-menu"
+                    role="menu"
+                    hidden
+                    class="absolute right-0 top-full mt-1 min-w-[160px] rounded border border-border bg-card shadow-sm py-1 z-50"
+                >
+                    <li role="none">
+                        <a
+                            role="menuitem"
+                            href="{% url 'public:components_index' %}"
+                            class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
+                        >
+                            {% trans "Component library" %}
+                        </a>
+                    </li>
+                    <li role="none">
+                        <a
+                            role="menuitem"
+                            href="/map/?edit=resorts"
+                            class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
+                        >
+                            {% trans "Edit map" %}
+                        </a>
+                    </li>
+                    <li role="none">
+                        <a
+                            role="menuitem"
+                            href="/admin/"
+                            class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
+                        >
+                            {% trans "Django admin" %}
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        {% endif %}
     </div>
 </nav>
+{% if request.user.is_staff %}
+    <script>
+        (function () {
+            var wrapper = document.querySelector('[data-admin-menu]');
+            if (!wrapper) return;
+            var toggle = document.getElementById('admin-menu-toggle');
+            var menu = document.getElementById('admin-menu');
+            function setOpen(open) {
+                toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                menu.hidden = !open;
+            }
+            toggle.addEventListener('click', function (e) {
+                e.stopPropagation();
+                setOpen(menu.hidden);
+            });
+            document.addEventListener('click', function (e) {
+                if (menu.hidden) return;
+                if (wrapper.contains(e.target)) return;
+                setOpen(false);
+            });
+            window.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !menu.hidden) {
+                    setOpen(false);
+                    toggle.focus();
+                }
+            });
+        })();
+    </script>
+{% endif %}
