@@ -16,12 +16,12 @@ needs no DB at all).
 from __future__ import annotations
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.template.loader import render_to_string
 from django.test import RequestFactory
+from django.urls import reverse
 
-User = get_user_model()
+from tests.factories import UserFactory
 
 
 @pytest.fixture()
@@ -33,21 +33,13 @@ def rf() -> RequestFactory:
 @pytest.fixture()
 def staff_user(db):
     """Return a staff Django user."""
-    return User.objects.create_user(
-        username="staffnav",
-        password="pass",  # noqa: S106 — test-only credential, not real
-        is_staff=True,
-    )
+    return UserFactory.create(is_staff=True)
 
 
 @pytest.fixture()
 def regular_user(db):
     """Return a non-staff Django user."""
-    return User.objects.create_user(
-        username="regularnav",
-        password="pass",  # noqa: S106 — test-only credential, not real
-        is_staff=False,
-    )
+    return UserFactory.create(is_staff=False)
 
 
 @pytest.mark.django_db
@@ -59,8 +51,8 @@ class TestNavAdminMenu:
         request = rf.get("/")
         request.user = staff_user
         html = render_to_string("includes/nav.html", {}, request=request)
-        assert "admin-menu" in html
-        assert "/_components/" in html
+        assert 'id="admin-menu"' in html
+        assert reverse("public:components_index") in html
         assert "/map/?edit=resorts" in html
         assert "/admin/" in html
 
@@ -71,11 +63,11 @@ class TestNavAdminMenu:
         request = rf.get("/")
         request.user = regular_user
         html = render_to_string("includes/nav.html", {}, request=request)
-        assert "admin-menu" not in html
+        assert 'id="admin-menu"' not in html
 
     def test_anonymous_sees_no_admin_menu(self, rf: RequestFactory) -> None:
         """Anonymous users do not see the admin menu."""
         request = rf.get("/")
         request.user = AnonymousUser()
         html = render_to_string("includes/nav.html", {}, request=request)
-        assert "admin-menu" not in html
+        assert 'id="admin-menu"' not in html
