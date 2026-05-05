@@ -1,69 +1,98 @@
 {% load i18n %}
 {% comment %}
-   Season-long heatmap calendar (SNOW-83) — one tile per day from
-   SEASON_START_DATE through today + 1, weeks-as-columns, Mon..Sun
-   rows. Tile colours come from the existing .calendar-cell EAWS
-   tokens; this partial only fixes the smaller per-tile dimensions.
+   Season heatmap sheet (SNOW-117) — full-width slide-down panel
+   surfaced by the page nav's "🗓 SEASON" trigger. One tile per day
+   from SEASON_START_DATE through today + 1, weeks-as-columns,
+   Mon..Sun rows. Tile colours come from the existing .calendar-cell
+   EAWS tokens.
 
-   Accessibility: the heatmap is presented as a single labelled
-   chart (role="img"). The 12px tiles are too small to be valid
-   touch targets under WCAG 2.5.8, so the inner grid is hidden from
-   the accessibility tree (aria-hidden) and removed from the
-   keyboard tab order (tabindex="-1"). For accessible date
-   navigation users have the month-grid calendar reachable from the
-   masthead date trigger, which has full-size tiles.
+   The sheet starts in the closed state (data-season-sheet="closed",
+   transform: translateY(-100%)) and the toggle script in
+   bulletin.html flips it to "open" on trigger / Escape / backdrop /
+   ✕ click. Every cell is a full WCAG 24×24 px target carrying the
+   day number, so the heatmap is keyboard-reachable in addition to
+   being a focus-trapped dialog.
 
    Underscore prefix marks this as a plain include (not an HTMX
-   response). Static for a given page load — no partial route.
+   response). Static for a given page load — the sheet body never
+   round-trips to the server.
 {% endcomment %}
-<div
-    class="mt-8 pt-4 border-t border-border"
-    data-testid="season-calendar"
-    role="img"
-    aria-label="{% trans 'Heatmap of avalanche danger ratings across the current season. Use the date trigger in the masthead for keyboard-accessible date navigation.' %}"
->
-    <h2
-        class="font-mono uppercase tracking-wider text-[9px] text-text-3 mb-2"
-        aria-hidden="true"
+<div data-season-sheet="closed">
+    <div class="season-sheet-backdrop" data-season-dismiss aria-hidden="true"></div>
+    <div
+        class="season-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="{% trans 'Season heatmap' %}"
+        data-testid="season-sheet"
     >
-        {% trans "This season" %}
-    </h2>
-    <div class="overflow-x-auto" aria-hidden="true">
-        <div class="inline-block">
-            {# Month labels row — one cell per column, parallel to the grid below. #}
-            <div class="flex gap-0.5 mb-1">
-                {% for label in season_calendar.month_labels %}
-                    <div class="text-[9px] text-text-3 calendar-cell">{{ label }}</div>
-                {% endfor %}
-            </div>
-            {# Grid — one flex column per week, 7 cells per column (Mon..Sun). #}
-            <div class="flex gap-0.5">
-                {% for column in season_calendar.columns %}
-                    <div class="flex flex-col gap-0.5 shrink-0">
-                        {% for cell in column %}
-                            {% if cell is None %}
-                                <div class="calendar-cell"></div>
-                            {% elif cell.has_bulletin %}
-                                <a
-                                    href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
-                                    class="rounded calendar-cell{% if cell.is_today %} ring-2 ring-offset-2 ring-text-1{% endif %}{% if cell.is_selected %} ring-2 ring-ring-selected{% endif %}"
-                                    data-rating-min="{{ cell.min_rating_key }}"
-                                    data-rating-max="{{ cell.max_rating_key }}"
-                                    title="{{ cell.date|date:'j N' }}: {{ cell.max_rating_key|title }}"
-                                    tabindex="-1"
-                                ></a>
-                            {% else %}
-                                <div
-                                    class="rounded calendar-cell{% if cell.is_today %} ring-2 ring-offset-2 ring-text-1{% endif %}{% if cell.is_selected %} ring-2 ring-ring-selected{% endif %}"
-                                    data-rating-min="{{ cell.min_rating_key }}"
-                                    data-rating-max="{{ cell.max_rating_key }}"
-                                    title="{{ cell.date|date:'j N' }}"
-                                >
-                                </div>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
-                {% endfor %}
+        <div class="season-sheet-header">
+            <span class="font-mono uppercase tracking-widest text-[9px] text-text-3">
+                {% trans "This season" %}
+            </span>
+            <button
+                type="button"
+                class="season-sheet-dismiss"
+                data-season-dismiss
+                aria-label="{% trans 'Close season heatmap' %}"
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                </svg>
+            </button>
+        </div>
+        <div class="overflow-x-auto" data-season-scroll>
+            <div data-testid="season-calendar" class="inline-block">
+                {# Month labels row — one cell per column, parallel to the grid below. #}
+                <div class="flex gap-0.5 mb-1">
+                    {% for label in season_calendar.month_labels %}
+                        <div class="text-text-3 calendar-cell calendar-cell-label">
+                            {{ label }}
+                        </div>
+                    {% endfor %}
+                </div>
+                {# Grid — one flex column per week, 7 cells per column (Mon..Sun). #}
+                <div class="flex gap-0.5">
+                    {% for column in season_calendar.columns %}
+                        <div class="flex flex-col gap-0.5 shrink-0">
+                            {% for cell in column %}
+                                {% if cell is None %}
+                                    <div class="calendar-cell"></div>
+                                {% elif cell.has_bulletin %}
+                                    <a
+                                        href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
+                                        class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
+                                        data-rating-min="{{ cell.min_rating_key }}"
+                                        data-rating-max="{{ cell.max_rating_key }}"
+                                        title="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
+                                        aria-label="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
+                                    >{{ cell.date|date:'j' }}</a>
+                                {% else %}
+                                    <div
+                                        class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
+                                        data-rating-min="{{ cell.min_rating_key }}"
+                                        data-rating-max="{{ cell.max_rating_key }}"
+                                        title="{{ cell.date|date:'D j N' }}"
+                                        aria-label="{{ cell.date|date:'D j N' }}"
+                                    >
+                                        {{ cell.date|date:'j' }}
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
     </div>

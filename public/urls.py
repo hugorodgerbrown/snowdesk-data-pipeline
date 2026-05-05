@@ -42,12 +42,6 @@ urlpatterns = [
     # SLF data-licence acknowledgement page — registered before generic
     # <str:region_id>/ patterns so "terms" never resolves as a region_id.
     path("terms/", views.terms, name="terms"),
-    # Calendar partial — registered before generic <str:region_id>/ patterns.
-    path(
-        "partials/calendar/<str:region_id>/<int:year>/<int:month>/",
-        views.calendar_partial,
-        name="calendar_partial",
-    ),
     # Component library — staff-only design-system page (SNOW-103).
     # Underscore prefix follows the project convention for staff-only routes.
     path(

@@ -32,7 +32,8 @@ reachable via the SNOW-81 deep-link in the masthead.
 {% endblock %}
 
 {% block meta_description %}
-    {% blocktrans with name=region_name %}Avalanche bulletin for {{ name }}{% endblocktrans %}{% if page_date %},
+    {% blocktrans with name=region_name %}Avalanche bulletin for
+        {{ name }}{% endblocktrans %}{% if page_date %},
         {{ page_date|date:"j F Y" }}{% endif %}.
 {% endblock %}
 
@@ -65,53 +66,65 @@ reachable via the SNOW-81 deep-link in the masthead.
 {% endblock %}
 
 {% block nav %}
-    {# The masthead promotes the calendar trigger into its own body, so   #}
-    {# the top bar is wayfinding-only (back link + wordmark). Explicit    #}
-    {# ``calendar_*=None`` shadows the values the view always passes —    #}
-    {# ``{% include with %}`` only adds to context, it doesn't isolate it. #}
+    {# The page nav carries the season-sheet trigger top-right (SNOW-117) when #}
+    {# the bulletin has a non-empty heatmap to show; otherwise the bar is      #}
+    {# wayfinding-only (back link + wordmark).                                  #}
     {% url 'public:map' as map_url %}
-    {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=None calendar_partial_url=None %}
+    {% include "includes/nav.html" with back_url=map_url back_label="Map" season_trigger=season_calendar %}
 {% endblock %}
 
 {% block content %}
-    {# ── Calendar popover host — swapped in by the nav calendar button ── #}
-    {# w-full is load-bearing: this div is a flex item under <body class= #}
-    {# "flex flex-col"> with mx-auto and no flow content (only the        #}
-    {# absolute child below). Without w-full it collapses to its padding, #}
-    {# anchoring `right-4` against an ~0-width box and pushing the        #}
-    {# 288px-wide host off-screen to the left on narrow viewports.        #}
-    <div class="relative mx-auto w-full max-w-[640px] px-4">
-        <div
-            id="bulletin-calendar-host"
-            class="absolute top-0 right-4 z-10 w-72"
-        >
-        </div>
-    </div>
-    {# ── Outside-click dismiss for the calendar drawer ───────────────── #}
-    {# The drawer is a one-element popover; without an outside-click     #}
-    {# listener it stays open until the user clicks a date or navigates  #}
-    {# months. This listens at the document level and clears the host    #}
-    {# whenever a click lands outside both the drawer itself and the     #}
-    {# masthead's calendar trigger (matched by [hx-target]). Inline +    #}
-    {# nonced so it satisfies CSP.                                        #}
-    <script nonce="{{ request.csp_nonce }}">
-        (function () {
-            document.addEventListener('click', function (e) {
-                var host = document.getElementById('bulletin-calendar-host');
-                if (!host || !host.firstElementChild) return;
-                if (host.contains(e.target)) return;
-                if (e.target.closest('[hx-target="#bulletin-calendar-host"]')) return;
-                host.innerHTML = '';
-            });
-        })();
-    </script>
+    {# ── Season heatmap sheet ─────────────────────────────────────────── #}
+    {# The sheet itself is fixed-position; rendering it at the top of the #}
+    {# content area keeps it logically adjacent to the trigger and gives  #}
+    {# the toggle script a stable target. Hidden when build_season_grid   #}
+    {# returns an empty grid (e.g. before SEASON_START_DATE).             #}
+    {% if season_calendar %}
+        {% include "public/partials/_season_calendar.html" %}
+        <script nonce="{{ request.csp_nonce }}">
+            (function () {
+                var sheet = document.querySelector('[data-season-sheet]');
+                var trigger = document.querySelector('[data-season-trigger]');
+                if (!sheet || !trigger) return;
+
+                function setState(state) {
+                    sheet.dataset.seasonSheet = state;
+                    trigger.setAttribute('aria-expanded', state === 'open' ? 'true' : 'false');
+                    if (state === 'open') {
+                        var scroller = sheet.querySelector('[data-season-scroll]');
+                        var target = sheet.querySelector('.calendar-cell-selected')
+                            || sheet.querySelector('.calendar-cell-today');
+                        if (scroller && target) {
+                            scroller.scrollLeft = Math.max(
+                                0,
+                                target.offsetLeft - (scroller.clientWidth / 2) + (target.clientWidth / 2)
+                            );
+                        }
+                    }
+                }
+
+                trigger.addEventListener('click', function () {
+                    setState(sheet.dataset.seasonSheet === 'open' ? 'closed' : 'open');
+                });
+                sheet.querySelectorAll('[data-season-dismiss]').forEach(function (el) {
+                    el.addEventListener('click', function () { setState('closed'); });
+                });
+                document.addEventListener('keydown', function (e) {
+                    if (e.key === 'Escape' && sheet.dataset.seasonSheet === 'open') {
+                        setState('closed');
+                    }
+                });
+            })();
+        </script>
+    {% endif %}
     {# ── Outermost container: font-sans overrides any serif from @theme ── #}
     <div class="font-sans max-w-[640px] mx-auto px-4 py-4">
         {% comment %}
            SECTION 1 — Page chrome
-           Region name, date/validity, calendar trigger.
-           No Close button — artefact of WR's modal-over-map architecture,
-           removed per DESIGN.md confirmed subtractions.
+           Region name, date/validity. Date picker lives in the page nav
+           as the season-sheet trigger (SNOW-117). No Close button —
+           artefact of WR's modal-over-map architecture, removed per
+           DESIGN.md confirmed subtractions.
         {% endcomment %}
         {% flag "weather_header" %}
         {% include "includes/bulletin_header.html" %}
@@ -378,7 +391,8 @@ reachable via the SNOW-81 deep-link in the masthead.
                                     </p>
                                     <p class="text-text-2">
                                         {% if meta.publication_time %}
-                                            {{ meta.publication_time|parse_iso|date:"j M H:i" }} UTC
+                                            {{ meta.publication_time|parse_iso|date:"j M H:i" }}
+                                            UTC
                                         {% else %}
                                             &mdash;
                                         {% endif %}
@@ -415,18 +429,6 @@ reachable via the SNOW-81 deep-link in the masthead.
             {% endif %}{# error state else #}
         {% endif %}
         {# bulletin #}
-
-        {% comment %}
-           Season-long heatmap calendar — one tile per day from
-           SEASON_START_DATE through today + 1, coloured by the EAWS
-           rating scale (SNOW-83). Sits between the metadata strip and
-           the adjoining-regions section, mirroring the SNOW-82 drop-in
-           pattern. Hidden when the helper returns an empty grid (e.g.
-           before season start).
-        {% endcomment %}
-        {% if season_calendar %}
-            {% include "public/partials/_season_calendar.html" %}
-        {% endif %}
 
         {% comment %}
            Adjoining regions — geographic neighbours of the focal region.

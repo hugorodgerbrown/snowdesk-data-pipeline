@@ -3,10 +3,11 @@
 {% comment %}
 templates/includes/bulletin_masthead.html — bulletin-page masthead (SNOW-72).
 
-Date eyebrow + calendar trigger sit above the region H1, and the parent
-EAWS L2 sub-region is rendered as an H2 below the H1 to give the focal
-region a wayfinding context line. The calendar drawer is the only date
-picker — the page chrome's top nav is wayfinding-only.
+Date eyebrow sits above the region H1, with the parent EAWS L2
+sub-region rendered as an H2 below. The date eyebrow is plain static
+text; the date picker for the page lives in the page nav as the
+"🗓 SEASON" sheet trigger (SNOW-117), so the masthead carries no
+calendar affordance.
 
 A map-pin link sits to the right of the H1 (SNOW-81), deep-linking
 back to the map at /map/#<region_id>. The map's existing hash router
@@ -25,48 +26,10 @@ Required context:
   region_id            — SLF region id for the map deep-link href
   subregion_name       — parent L2 sub-region name (English where SLF
                          publishes one, native otherwise) for the H2
-  calendar_partial_url — HTMX endpoint for the calendar fragment
   weather_display      — dict from build_weather_display(), or None
 {% endcomment %}
 <header class="bm-header" data-testid="bulletin-masthead">
-    {% if calendar_partial_url %}
-        <button
-            type="button"
-            class="bm-date-trigger"
-            hx-get="{{ calendar_partial_url }}"
-            hx-target="#bulletin-calendar-host"
-            hx-swap="innerHTML"
-            hx-indicator="#calendar-spinner"
-            aria-label="{% trans 'Show monthly calendar' %}"
-            data-testid="bm-calendar-trigger"
-        >
-            <span class="bm-eyebrow">{{ page_date|date:"D j M Y" }}</span>
-            <svg
-                class="bm-cal-icon"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-            >
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-        </button>
-        <span
-            id="calendar-spinner"
-            class="htmx-indicator text-text-3 text-xs ml-2"
-            aria-live="polite"
-        >{% trans "Loading…" %}</span>
-    {% else %}
-        <p class="bm-eyebrow">{{ page_date|date:"D j M Y" }}</p>
-    {% endif %}
+    <p class="bm-eyebrow">{{ page_date|date:"D j M Y" }}</p>
 
     <div class="bm-region-row">
         <h1 class="bm-region">{{ region_name }}</h1>
@@ -103,6 +66,8 @@ Required context:
         </a>
     </div>
     {% if subregion_name %}
-        <h2 class="bm-subregion" data-testid="bulletin-masthead-subregion">{{ subregion_name }}</h2>
+        <h2 class="bm-subregion" data-testid="bulletin-masthead-subregion">
+            {{ subregion_name }}
+        </h2>
     {% endif %}
 </header>
