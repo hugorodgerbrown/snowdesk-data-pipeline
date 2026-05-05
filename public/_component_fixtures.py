@@ -93,7 +93,6 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
     today = datetime.date(2026, 2, 14)  # mid-season, deterministic
     region_name = "Bex-Villars"
     subregion_name = "Vaud Alps"
-    calendar_partial_url = "#"  # Library never round-trips through HTMX.
 
     entries: list[dict[str, Any]] = []
     for icon_bucket in WEATHER_ICON_BUCKETS:
@@ -108,7 +107,6 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
                         "region_name": region_name,
                         "subregion_name": subregion_name,
                         "page_date": today,
-                        "calendar_partial_url": calendar_partial_url,
                     },
                 }
             )
@@ -125,7 +123,6 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
                 "region_name": region_name,
                 "subregion_name": subregion_name,
                 "page_date": today,
-                "calendar_partial_url": calendar_partial_url,
             },
             "solo": True,
         }
@@ -143,7 +140,7 @@ def _build_masthead_variants() -> tuple[dict[str, Any], ...]:
     (``panel_layout="stack"``):
 
     1. Default — short region name, sub-region present, weather icon
-       (clear-day) present, calendar trigger present.
+       (clear-day) present.
     2. No sub-region — exercises the ``{% if subregion_name %}`` guard
        that hides the H2 for regions without an EAWS L2 parent.
     3. No weather snapshot — ``weather_display=None`` so the icon is
@@ -152,13 +149,10 @@ def _build_masthead_variants() -> tuple[dict[str, Any], ...]:
        ``bm-region-row`` flex reflow at narrow widths.
 
     Date and region_id are deterministic so dev-preview screenshots are
-    reproducible across machines. The calendar URL is ``"#"`` — the
-    library never round-trips through HTMX, so a placeholder href keeps
-    the trigger button rendered without firing a real request.
+    reproducible across machines.
     """
     today = datetime.date(2026, 2, 14)  # mid-season, deterministic
     region_id = "7551"  # Representative SLF L4 region id; not the focus.
-    calendar_partial_url = "#"  # Library never round-trips through HTMX.
     weather = synthetic_weather_display(0, "day")  # WMO 0 = clear sky.
 
     return (
@@ -169,7 +163,6 @@ def _build_masthead_variants() -> tuple[dict[str, Any], ...]:
                 "region_name": "Bex-Villars",
                 "region_id": region_id,
                 "subregion_name": "Vaud Alps",
-                "calendar_partial_url": calendar_partial_url,
                 "weather_display": weather,
             },
         },
@@ -180,7 +173,6 @@ def _build_masthead_variants() -> tuple[dict[str, Any], ...]:
                 "region_name": "Bex-Villars",
                 "region_id": region_id,
                 "subregion_name": "",
-                "calendar_partial_url": calendar_partial_url,
                 "weather_display": weather,
             },
         },
@@ -191,7 +183,6 @@ def _build_masthead_variants() -> tuple[dict[str, Any], ...]:
                 "region_name": "Bex-Villars",
                 "region_id": region_id,
                 "subregion_name": "Vaud Alps",
-                "calendar_partial_url": calendar_partial_url,
                 "weather_display": None,
             },
         },
@@ -202,7 +193,6 @@ def _build_masthead_variants() -> tuple[dict[str, Any], ...]:
                 "region_name": "Vorderrhein und Hinterrhein bis Andermatt",
                 "region_id": region_id,
                 "subregion_name": "Glarner Alpen und nördliches Bündnerland",
-                "calendar_partial_url": calendar_partial_url,
                 "weather_display": weather,
             },
         },

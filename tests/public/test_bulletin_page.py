@@ -11,6 +11,7 @@ factories) to stay consistent with the existing test suite.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 from django.test import Client
@@ -1145,18 +1146,18 @@ class TestBulletinMasthead:
         content = response.content.decode()
         assert "Bas-Valais" in content
 
-    def test_calendar_trigger_inline_in_masthead(
+    def test_masthead_carries_no_calendar_trigger(
         self, client: Client, simple_bulletin, region
     ):
-        """The calendar HTMX button sits in the masthead, not the top nav."""
+        """The masthead has no calendar/season trigger — date eyebrow is plain text now (SNOW-117)."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="bm-calendar-trigger"' in content
-        # And the trigger sits inside the masthead landmark.
-        masthead_idx = content.index('data-testid="bulletin-masthead"')
-        trigger_idx = content.index('data-testid="bm-calendar-trigger"')
-        assert masthead_idx < trigger_idx
+        masthead_start = content.index('data-testid="bulletin-masthead"')
+        masthead_end = content.index("</header>", masthead_start)
+        masthead_block = content[masthead_start:masthead_end]
+        assert "data-season-trigger" not in masthead_block
+        assert "Show monthly calendar" not in masthead_block
 
     def test_renders_map_deep_link_beside_h1(
         self, client: Client, simple_bulletin, region
@@ -1177,17 +1178,27 @@ class TestBulletinMasthead:
         link_idx = content.index('data-testid="bm-map-link"')
         assert region_idx < link_idx
 
-    def test_top_nav_omits_calendar_button(
+    def test_top_nav_renders_season_trigger(
         self, client: Client, simple_bulletin, region
     ):
-        """The top nav is wayfinding-only — no calendar button."""
+        """The top nav carries the season-sheet trigger (SNOW-117)."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        # Only one calendar button on the page (in the masthead, not the nav).
-        assert content.count("Show monthly calendar") == 1
-        nav_block_end = content.index("</nav>")
-        assert "Show monthly calendar" not in content[:nav_block_end]
+        # Exactly one trigger button on the page (the toggle script also
+        # references the [data-season-trigger] selector — that's why we
+        # match the button form rather than the bare attribute name).
+        assert content.count("<button") >= 1
+        nav_end = content.index("</nav>")
+        nav_block = content[:nav_end]
+        assert "data-season-trigger" in nav_block
+        # The masthead carries no calendar/season trigger any more.
+        masthead_block_start = content.index('data-testid="bulletin-masthead"')
+        masthead_block_end = content.index("</header>", masthead_block_start)
+        assert (
+            "data-season-trigger"
+            not in content[masthead_block_start:masthead_block_end]
+        )
 
     def test_still_renders_day_risk_profile_panel(
         self, client: Client, variable_bulletin, region
@@ -1201,30 +1212,72 @@ class TestBulletinMasthead:
 
 
 # ---------------------------------------------------------------------------
-# Test: calendar drawer outside-click dismissal
+# Test: season heatmap sheet (SNOW-117)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestCalendarDismissScript:
+class TestSeasonSheet:
     """
-    The bulletin page mounts a small inline script that closes the
-    calendar drawer (``#bulletin-calendar-host``) when the user clicks
-    anywhere outside the drawer or its trigger button. The script lives
-    in the page chrome so v1/v2/v3/v4 all benefit from the same dismiss.
+    Season heatmap sheet — slide-down dialog surfaced from the page nav's
+    ``🗓 SEASON`` trigger. Replaces the old month-grid drawer.
+
+    Markup contract: a `[data-season-sheet="closed"]` wrapper holding a
+    backdrop and a `role="dialog"` body. The sheet only renders when
+    ``season_calendar`` is non-empty — before SEASON_START_DATE the page
+    drops the trigger and the sheet entirely.
     """
 
-    def test_dismiss_script_is_present(self, client: Client, simple_bulletin, region):
-        """The dismiss listener is rendered on the bulletin page."""
+    def test_renders_sheet_and_trigger_when_season_active(
+        self, client: Client, simple_bulletin, region
+    ):
+        """A bulletin with a populated season grid renders trigger + closed sheet."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        # The listener targets the calendar host and matches any trigger
-        # by its hx-target attribute.
-        assert "bulletin-calendar-host" in content
-        assert "hx-target=&quot;#bulletin-calendar-host&quot;" in content or (
-            'hx-target="#bulletin-calendar-host"' in content
-        )
+        assert 'data-season-sheet="closed"' in content
+        assert "data-season-trigger" in content
+        assert 'data-testid="season-sheet"' in content
+
+    def test_omits_sheet_when_season_grid_empty(
+        self, client: Client, simple_bulletin, region
+    ):
+        """With SEASON_START_DATE in the future, build_season_grid is empty and the sheet is omitted."""
+        future_start = date(2099, 12, 1)
+        with patch("django.conf.settings.SEASON_START_DATE", future_start):
+            url = _url("ch-4115", "valais", "2026-03-15")
+            response = client.get(url)
+        content = response.content.decode()
+        assert "data-season-sheet" not in content
+        assert "data-season-trigger" not in content
+
+    def test_today_cell_carries_today_modifier(
+        self, client: Client, simple_bulletin, region
+    ):
+        """Today's cell in the heatmap is flagged with calendar-cell-today."""
+        # The cell is keyed by date alone — no RegionDayRating row needed
+        # for the modifier class to render.
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert "calendar-cell-today" in content
+
+    def test_selected_cell_carries_selected_modifier(self, client: Client, region):
+        """A non-today page_date renders the cell with calendar-cell-selected."""
+        # Pin "today" two days after the page date so is_selected is True
+        # for the page-date cell (the SeasonGrid suppresses is_selected
+        # when the page date coincides with today).
+        page_day = date(2026, 3, 13)
+        rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
+        _make_am_bulletin(region, page_day, render_model=rm, render_model_version=3)
+        with patch(
+            "public.views.timezone.now",
+            return_value=datetime(2026, 3, 15, 12, 0, tzinfo=UTC),
+        ):
+            url = _url("ch-4115", "valais", "2026-03-13")
+            response = client.get(url)
+        content = response.content.decode()
+        assert "calendar-cell-selected" in content
 
 
 # ---------------------------------------------------------------------------

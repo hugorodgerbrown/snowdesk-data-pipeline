@@ -64,6 +64,11 @@ class SeasonCell:
     ``is_today`` and ``is_selected`` are mutually exclusive: when the page
     date matches today, only ``is_today`` is set — otherwise the tile
     would render with two stacked rings.
+
+    ``month_parity`` alternates 0/1 across calendar months (the first
+    dated month is 0). The template paints a subtle backdrop on cells
+    where ``month_parity == 1`` so the month boundary is visible at
+    the exact day, even when it falls mid-column.
     """
 
     date: datetime.date
@@ -73,6 +78,7 @@ class SeasonCell:
     has_bulletin: bool
     is_today: bool = False
     is_selected: bool = False
+    month_parity: int = 0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -88,10 +94,15 @@ class SeasonGrid:
     an abbreviated month name (``"Nov"``) only on the first column of
     that calendar month, and an empty string otherwise. The template
     iterates it zipped with ``columns`` to draw the labels row.
+
+    ``season_label`` is the two-year season identifier in SLF style
+    (e.g. ``"25/26"`` for the season starting in autumn 2025), used by
+    the page-nav trigger to make the current season explicit.
     """
 
     columns: list[tuple[SeasonCell | None, ...]]
     month_labels: list[str]
+    season_label: str = ""
 
     def __bool__(self) -> bool:
         """Return ``False`` when the grid is empty (e.g. before season start)."""
@@ -121,15 +132,20 @@ def build_season_grid(
     """
     start: datetime.date = settings.SEASON_START_DATE
     end = today + datetime.timedelta(days=1)
+    season_label = _season_label(start)
     if end < start:
-        return SeasonGrid(columns=[], month_labels=[])
+        return SeasonGrid(columns=[], month_labels=[], season_label=season_label)
 
     rows = RegionDayRating.objects.for_region_range(region, start, end)
     by_date: dict[datetime.date, RegionDayRating] = {r.date: r for r in rows}
 
     cells: list[SeasonCell] = []
     cursor = start
+    month_parity = 0
+    prev_month: int | None = None
     while cursor <= end:
+        if prev_month is not None and cursor.month != prev_month:
+            month_parity = 1 - month_parity
         rdr = by_date.get(cursor)
         min_key: str
         max_key: str
@@ -157,13 +173,29 @@ def build_season_grid(
                 has_bulletin=has_bulletin,
                 is_today=is_today,
                 is_selected=is_selected,
+                month_parity=month_parity,
             )
         )
+        prev_month = cursor.month
         cursor += datetime.timedelta(days=1)
 
     columns = _pack_into_columns(cells, start)
     month_labels = _month_label_indices(columns)
-    return SeasonGrid(columns=columns, month_labels=month_labels)
+    return SeasonGrid(
+        columns=columns,
+        month_labels=month_labels,
+        season_label=season_label,
+    )
+
+
+def _season_label(start: datetime.date) -> str:
+    """Build the SLF-style two-year season identifier (e.g. ``"25/26"``).
+
+    The Northern-hemisphere avalanche season runs from autumn through to
+    late spring of the following year. The label is always two two-digit
+    years separated by a slash.
+    """
+    return f"{start.year % 100:02d}/{(start.year + 1) % 100:02d}"
 
 
 def _pack_into_columns(

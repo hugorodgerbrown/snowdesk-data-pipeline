@@ -1,10 +1,10 @@
 {% comment %}
 templates/includes/nav.html — Persistent top navigation bar.
 
-Renders the Snowdesk wordmark plus an optional back link and optional
-calendar toggle button. Kept deliberately minimal: no hamburger menu,
-no right-hand nav items, no secondary links — the bulletin site is
-mobile-first and ships one concept per page.
+Renders the Snowdesk wordmark plus an optional back link and an
+optional Season trigger button. Kept deliberately minimal: no
+hamburger menu, no right-hand nav items, no secondary links — the
+bulletin site is mobile-first and ships one concept per page.
 
 Parameters
 ----------
@@ -16,19 +16,18 @@ back_label : str, optional
     Label shown next to the chevron. Defaults to "Back" — prefer a
     destination-specific label ("Map", "Season") where possible so the
     user knows where the arrow leads.
-calendar_region_id : str, optional
-    When set, a calendar glyph button is rendered right-aligned. Clicking
-    it issues an HTMX GET to calendar_partial_url, swapping the result
-    into #bulletin-calendar-host.
-calendar_partial_url : str, optional
-    HTMX endpoint URL for the calendar fragment (required when
-    calendar_region_id is set).
+season_trigger : bool, optional
+    When truthy, a labelled "🗓 SEASON" button is rendered right-aligned.
+    The button's only job is to flip the sibling [data-season-sheet]
+    element between "closed" and "open"; the toggle script lives in
+    bulletin.html alongside the sheet itself, so this partial stays
+    template-only.
 
 Usage
 -----
     {% include "includes/nav.html" %}
     {% include "includes/nav.html" with back_url="/map/" back_label="Map" %}
-    {% include "includes/nav.html" with back_url=map_url back_label="Map" calendar_region_id=region.region_id calendar_partial_url=calendar_partial_url %}
+    {% include "includes/nav.html" with back_url=map_url back_label="Map" season_trigger=True %}
 
 Layout
 ------
@@ -48,7 +47,10 @@ state.
     <div class="mx-auto max-w-[640px] flex items-center gap-3 px-4 py-2.5">
         {% if back_url %}
             {% trans "Back" as back_default %}
-            <a href="{{ back_url }}" class="flex items-center gap-1.5 text-text-2 text-sm hover:text-text-1">
+            <a
+                href="{{ back_url }}"
+                class="flex items-center gap-1.5 text-text-2 text-sm hover:text-text-1"
+            >
                 <svg
                     width="14"
                     height="14"
@@ -72,19 +74,19 @@ state.
         >
             Snowdesk
         </a>
-        {% if calendar_region_id and calendar_partial_url %}
+        {% if season_trigger %}
             <button
                 type="button"
-                class="ml-auto p-1.5 text-text-2 hover:text-text-1 rounded"
-                hx-get="{{ calendar_partial_url }}"
-                hx-target="#bulletin-calendar-host"
-                hx-swap="innerHTML"
-                hx-indicator="#calendar-spinner"
-                aria-label='{% trans "Show monthly calendar" %}'
+                class="ml-auto inline-flex items-center gap-1.5 px-1.5 py-1 text-text-2 hover:text-text-1 rounded font-mono text-[11px] uppercase tracking-widest"
+                data-season-trigger
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-label="{% blocktrans with label=season_trigger.season_label %}Show {{ label }} season heatmap{% endblocktrans %}"
             >
+                <span>{{ season_trigger.season_label }} {% trans "Season" %}</span>
                 <svg
-                    width="18"
-                    height="18"
+                    width="14"
+                    height="14"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -99,11 +101,6 @@ state.
                     <line x1="3" y1="10" x2="21" y2="10" />
                 </svg>
             </button>
-            <span
-                id="calendar-spinner"
-                class="htmx-indicator text-text-3 text-xs"
-                aria-live="polite"
-            >{% trans "Loading…" %}</span>
         {% endif %}
     </div>
 </nav>

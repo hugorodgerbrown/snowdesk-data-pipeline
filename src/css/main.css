@@ -539,23 +539,143 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 .calendar-cell[data-rating-min="considerable"][data-rating-max="very_high"]  { background: linear-gradient(to top right, var(--color-eaws-considerable-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
 .calendar-cell[data-rating-min="high"][data-rating-max="very_high"]          { background: linear-gradient(to top right, var(--color-eaws-high-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
 
-/* —— Season-long heatmap (SNOW-83) ——————————————————————————————
-   Same .calendar-cell tokens as the month grid, but shrunk so a full
-   season fits in a single horizontal sweep on the bulletin page.
-   Tiles are square; the colour fills above (data-rating-min/max) all
-   apply unchanged.
+/* —— Season heatmap sheet (SNOW-117) ————————————————————————————
+   The season heatmap renders inside a slide-down sheet (not inline).
+   Tiles are 24×24 px circles carrying the day-of-month number, framed
+   by a hairline border so out-of-season pad cells (no data-rating-min)
+   stay invisible. Today / selected get a 2 px border by overriding the
+   default-border rule — selectors include [data-rating-min] so they
+   match its specificity, otherwise the cascade silently falls back to
+   grey (this exact bug bit the SNOW-116 spike).
+
+   Colour fills carried over from the month-grid era apply unchanged
+   (the data-rating-min/max rules higher up in this file fill the tile
+   background; we only style border + box here).
    ————————————————————————————————————————— */
 [data-testid="season-calendar"] .calendar-cell {
-    width: 0.75rem;
-    height: 0.75rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    font-size: 0.6875rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    box-sizing: border-box;
+}
+[data-testid="season-calendar"] .calendar-cell[data-rating-min] {
+    border-color: rgba(0, 0, 0, 0.12);
+}
+[data-testid="season-calendar"] .calendar-cell-today[data-rating-min] {
+    border-color: var(--color-text-1);
+    border-width: 2px;
+}
+[data-testid="season-calendar"] .calendar-cell-selected[data-rating-min] {
+    border-color: var(--color-ring-selected);
+    border-width: 2px;
+}
+[data-testid="season-calendar"] .calendar-cell-label {
+    font-size: 9px;
+    justify-content: flex-start;
+    border: none;
+}
+
+/* Per-cell wrapper — sits behind each tile and carries the alternating
+   month tint via [data-month-parity]. 28×28 px (24 px cell + 2 px tinted
+   border on every side); wrappers butt flush so the tint reads as a
+   continuous band that switches on the exact day boundary, including
+   mid-column for weeks that span a month-end. The cell content sits
+   centred inside the wrapper as a 24 px rounded-full circle, so the
+   2 px ring of tint surrounds each tile. */
+[data-testid="season-calendar"] .season-cell-wrap {
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 2px;
+    box-sizing: content-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+[data-testid="season-calendar"] [data-month-parity="1"] {
+    background: rgba(0, 0, 0, 0.05);
+}
+.dark [data-testid="season-calendar"] [data-month-parity="1"] {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+/* —— Season heatmap sheet primitive (SNOW-117) ——————————————————
+   Slide-down full-width panel anchored to the top of the viewport.
+   Toggled by the [data-season-sheet] state attribute set by the
+   inline-nonced script in bulletin.html: "closed" → translateY(-100%),
+   backdrop hidden; "open" → translateY(0), backdrop opacity 1.
+
+   Kept near the top of the cascade so the critical-CSS path covers
+   the rules — a flash of unstyled sheet was observed during the spike
+   when output.css was still loading.
+   ————————————————————————————————————————— */
+.season-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease-out;
+    z-index: 40;
+}
+.season-sheet {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: var(--color-card);
+    border-bottom: 1px solid var(--color-border);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    padding-bottom: 1rem;
+    transform: translateY(-100%);
+    transition: transform 220ms ease-out;
+    z-index: 41;
+}
+.season-sheet > * {
+    max-width: 640px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+.season-sheet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 0.625rem;
+    padding-bottom: 0.625rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-border);
+}
+.season-sheet-dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-2);
+    padding: 0.25rem;
+    margin-right: -0.25rem;
+}
+.season-sheet-dismiss:hover {
+    color: var(--color-text-1);
+}
+[data-season-sheet="open"] .season-sheet-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+}
+[data-season-sheet="open"] .season-sheet {
+    transform: translateY(0);
 }
 
 
-/* —— Bulletin masthead — date + calendar above region (SNOW-72) ————
-   Date eyebrow + calendar trigger sit above the region H1, with the
-   parent EAWS L2 sub-region rendered as a quiet H2 below it. Same
-   calendar plumbing as the rest of the page — tapping the date opens
-   the monthly calendar drawer; the calendar is the only date picker.
+/* —— Bulletin masthead — date + region + sub-region (SNOW-72) ————
+   Date eyebrow renders as static text above the region H1, with the
+   parent EAWS L2 sub-region rendered as a quiet H2 below it. The date
+   picker for the page lives in the page nav as the season-sheet
+   trigger (SNOW-117), so the masthead carries no calendar affordance.
    ————————————————————————————————————————— */
 
 .bm-header {
@@ -588,35 +708,6 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   margin: 0;
   text-wrap: balance;
 }
-.bm-date-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  margin-bottom: 8px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--color-text-3);
-  font: inherit;
-  transition: color 80ms;
-}
-.bm-date-trigger:hover {
-  color: var(--color-text-1);
-}
-.bm-date-trigger .bm-eyebrow {
-  margin: 0;
-  /* Inherit the trigger's hover colour so eyebrow + glyph track together. */
-  color: inherit;
-}
-.bm-cal-icon {
-  display: inline-block;
-  /* Slight optical lift so the calendar glyph baseline matches the
-     uppercase eyebrow's cap height. */
-  margin-bottom: 1px;
-  color: inherit;
-}
-
 /* Region row — H1 plus the map-pin deep-link to the right (SNOW-81).
    The link reuses the masthead's text-3 → text-1 hover treatment so it
    reads as a quiet glyph, not a chrome button. */

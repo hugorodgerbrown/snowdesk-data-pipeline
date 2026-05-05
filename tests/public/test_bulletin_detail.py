@@ -780,8 +780,8 @@ class TestSeasonCalendar:
         assert b'data-testid="season-calendar"' in response.content
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
-    def test_today_tile_carries_today_ring(self, client: Client, region) -> None:
-        """Today's tile has the ring-text-1 today highlight class."""
+    def test_today_tile_carries_today_modifier(self, client: Client, region) -> None:
+        """Today's tile is flagged with the calendar-cell-today modifier (SNOW-117)."""
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
@@ -794,14 +794,14 @@ class TestSeasonCalendar:
             )
             response = client.get(url)
 
-        # The today highlight class is unique to today's tile.
-        assert b"ring-2 ring-offset-2 ring-text-1" in response.content
+        # The today modifier is applied to today's tile (and only today's).
+        assert b"calendar-cell-today" in response.content
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
     def test_historic_url_marks_page_date_tile_selected(
         self, client: Client, region
     ) -> None:
-        """On a historic URL the page_date tile carries the ring-ring-selected class."""
+        """On a historic URL both the today and selected modifiers are present (SNOW-117)."""
         _make_am_bulletin(region, date(2026, 3, 5))
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
@@ -814,10 +814,10 @@ class TestSeasonCalendar:
             )
             response = client.get(url)
 
-        # Both rings should be present: today (today's column) and selected
+        # Both modifiers are present: today (today's column) and selected
         # (the page_date column).
-        assert b"ring-text-1" in response.content
-        assert b"ring-ring-selected" in response.content
+        assert b"calendar-cell-today" in response.content
+        assert b"calendar-cell-selected" in response.content
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
     def test_tomorrow_row_renders_when_present(self, client: Client, region) -> None:

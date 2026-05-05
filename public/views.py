@@ -29,14 +29,12 @@ context so the template hides them gracefully.
 
 from __future__ import annotations
 
-import calendar as _calendar_module
 import dataclasses
 import datetime
 import json
 import logging
 import random
 from typing import Any, cast
-from urllib.parse import urlencode
 
 import waffle
 from django.conf import settings
@@ -55,7 +53,7 @@ from django.utils.translation import gettext as _gettext, gettext_lazy as _
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition
 
-from bulletins.models import Bulletin, RegionBulletin, RegionDayRating, WeatherSnapshot
+from bulletins.models import Bulletin, RegionBulletin, WeatherSnapshot
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -63,7 +61,6 @@ from bulletins.services.render_model import (
     compute_day_character,
 )
 from bulletins.services.weather_display import build_weather_display
-from pipeline.decorators import require_htmx
 from pipeline.models import Region
 from pipeline.schema import ValidTimePeriod
 from pipeline.utils import html_to_markdown
@@ -462,8 +459,8 @@ def _select_bulletin_for_date(
 
     Thin wrapper over :func:`_issues_for_date` +
     :func:`_select_default_issue`.  Exposed as a named helper because
-    other views (``examples_random``, ``calendar_partial``) depend on
-    picking a single default without knowing about the full issue list.
+    other views (``examples_random``) depend on picking a single
+    default without knowing about the full issue list.
 
     Args:
         region: The Region to look up.
@@ -1504,20 +1501,6 @@ def _bulletin_detail_response(
         else ""
     )
 
-    # The calendar partial needs the focal date so it can highlight the
-    # selected day.
-    calendar_partial_url = "{}?{}".format(
-        reverse(
-            "public:calendar_partial",
-            kwargs={
-                "region_id": region.region_id,
-                "year": page_date.year,
-                "month": page_date.month,
-            },
-        ),
-        urlencode({"date": page_date.isoformat()}),
-    )
-
     season_calendar = build_season_grid(region, page_date, today)
 
     context = {
@@ -1533,11 +1516,7 @@ def _bulletin_detail_response(
         "next_date": next_date,
         "next_update_time": next_update_time,
         "year": today.year,
-        # Calendar widget context.
-        "calendar_region_id": region.region_id,
-        "calendar_partial_url": calendar_partial_url,
-        "calendar_current_date": page_date,
-        # Season-long heatmap — see SNOW-83.
+        # Season heatmap — surfaced as a slide-down sheet (SNOW-117).
         "season_calendar": season_calendar,
         # Masthead context.
         "day_windows": day_windows,
@@ -2268,260 +2247,3 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     }
     panel["day_character"] = compute_day_character(raw_render_model)
     return panel
-
-
-# ---------------------------------------------------------------------------
-# Calendar partial
-# ---------------------------------------------------------------------------
-
-# Named constant for the number of weeks shown in the calendar grid.
-_CALENDAR_WEEKS = 6
-
-
-@dataclasses.dataclass(frozen=True)
-class CalendarCell:
-    """
-    A single cell in the month-grid calendar.
-
-    Either an in-month cell with rating data, or a padding cell (no date).
-
-    ``min_rating_key`` and ``max_rating_key`` carry the lowest and highest
-    danger ratings for the day respectively.  When they are equal the day is
-    uniform and the tile renders as a solid fill; when they differ the day is
-    variable and the tile renders as a left-to-right gradient.
-
-    ``subdivision`` is the max-bulletin's subdivision suffix.  It is only
-    shown on uniform days (no room on split tiles).
-    """
-
-    date: datetime.date | None
-    """Calendar date, or None for pad cells outside the current month."""
-    min_rating_key: str
-    """Lowest danger rating key for the day, or ``"no_rating"``."""
-    max_rating_key: str
-    """Highest danger rating key for the day, or ``"no_rating"``."""
-    subdivision: str
-    """Subdivision suffix (``"+"``, ``"-"``, ``"="``), or empty string."""
-    has_bulletin: bool
-    """True when there is a qualifying bulletin to link to."""
-    is_selected: bool = False
-    """True when this cell corresponds to the currently-viewed bulletin date."""
-
-
-def _build_calendar_grid(
-    ratings: dict[datetime.date, "RegionDayRating"],
-    year: int,
-    month: int,
-    today: datetime.date,
-    selected_date: datetime.date | None = None,
-) -> list[list[CalendarCell]]:
-    """
-    Build a 6-row × 7-column calendar grid for a month.
-
-    The week starts on Monday (ISO 8601 / British convention). Pad cells
-    outside the month have ``date=None``. In-month cells carry the matching
-    RegionDayRating data when available.
-
-    Args:
-        ratings: Mapping of date → RegionDayRating for the month.
-        year: Calendar year.
-        month: Calendar month (1–12).
-        today: Today's date (used only for context; not mutated here).
-        selected_date: The currently-viewed bulletin date, if any. The matching
-            cell will have ``is_selected=True``.
-
-    Returns:
-        A list of 6 lists each containing 7 CalendarCell instances.
-
-    """
-    # _calendar_module.monthcalendar returns weeks as Mon-Sun rows with 0 for pad.
-    raw_weeks = _calendar_module.monthcalendar(year, month)
-    # Ensure exactly 6 rows by padding with empty weeks if needed.
-    while len(raw_weeks) < _CALENDAR_WEEKS:
-        raw_weeks.append([0] * 7)
-
-    grid: list[list[CalendarCell]] = []
-    for week in raw_weeks[:_CALENDAR_WEEKS]:
-        row: list[CalendarCell] = []
-        for day_num in week:
-            if day_num == 0:
-                row.append(
-                    CalendarCell(
-                        date=None,
-                        min_rating_key="",
-                        max_rating_key="",
-                        subdivision="",
-                        has_bulletin=False,
-                    )
-                )
-            else:
-                cell_date = datetime.date(year, month, day_num)
-                rdr = ratings.get(cell_date)
-                max_rating_key: str
-                min_rating_key: str
-                if rdr is None:
-                    max_rating_key = RegionDayRating.Rating.NO_RATING
-                    min_rating_key = RegionDayRating.Rating.NO_RATING
-                    subdivision = ""
-                    has_bulletin = False
-                else:
-                    max_rating_key = rdr.max_rating
-                    min_rating_key = rdr.min_rating
-                    subdivision = rdr.max_subdivision
-                    has_bulletin = (
-                        rdr.source_bulletin_id is not None
-                        and max_rating_key != RegionDayRating.Rating.NO_RATING
-                    )
-                row.append(
-                    CalendarCell(
-                        date=cell_date,
-                        min_rating_key=min_rating_key,
-                        max_rating_key=max_rating_key,
-                        subdivision=subdivision,
-                        has_bulletin=has_bulletin,
-                        is_selected=(
-                            selected_date is not None and cell_date == selected_date
-                        ),
-                    )
-                )
-        grid.append(row)
-
-    return grid
-
-
-def _parse_selected_date(request: HttpRequest) -> datetime.date | None:
-    """Parse ``?date=YYYY-MM-DD`` from the query string.
-
-    Returns ``None`` when the param is absent or malformed.
-    """
-    raw_date = request.GET.get("date")
-    if not raw_date:
-        return None
-    try:
-        return datetime.datetime.strptime(raw_date, "%Y-%m-%d").date()
-    except ValueError:
-        return None
-
-
-def _calendar_nav_query(selected_date: datetime.date | None) -> str:
-    """
-    Re-encode the calendar partial's nav query (``?date=…``).
-
-    Used for prev/next-month links so the focal day is preserved when the
-    user pages between months.
-    """
-    if selected_date is None:
-        return ""
-    return f"?{urlencode({'date': selected_date.isoformat()})}"
-
-
-@require_htmx
-def calendar_partial(
-    request: HttpRequest,
-    region_id: str,
-    year: int,
-    month: int,
-) -> HttpResponse:
-    """
-    Return the month-grid calendar fragment for a region.
-
-    Restricted to HTMX requests (returns 400 otherwise). The fragment
-    wraps itself in ``<div id="bulletin-calendar">`` so prev/next navigation
-    can swap the outer element with ``hx-target="#bulletin-calendar"
-    hx-swap="outerHTML"``.
-
-    Year/month are clamped to the season start (``settings.SEASON_START_DATE``)
-    and today. Requests outside that range are silently clamped rather than
-    returning 404 — out-of-bound navigations from old bookmarks degrade
-    gracefully.
-
-    Args:
-        request: The incoming HTTP request (must be HTMX).
-        region_id: SLF region identifier (e.g. ``"CH-4115"``).
-        year: Calendar year.
-        month: Calendar month as an integer 1–12.
-
-    Returns:
-        Rendered HTML fragment, or 400 for non-HTMX requests.
-
-    """
-    if not 1 <= month <= 12:
-        raise Http404("Invalid month")
-
-    region = get_object_or_404(Region, region_id__iexact=region_id)
-
-    today = timezone.now().date()
-    season_start: datetime.date = settings.SEASON_START_DATE
-
-    # Clamp (year, month) to [season_start, today].
-    requested = datetime.date(year, month, 1)
-    min_month = datetime.date(season_start.year, season_start.month, 1)
-    max_month = datetime.date(today.year, today.month, 1)
-
-    if requested < min_month:
-        requested = min_month
-    elif requested > max_month:
-        requested = max_month
-
-    year = requested.year
-    month = requested.month
-
-    selected_date = _parse_selected_date(request)
-
-    # Fetch ratings for the month.
-    rating_qs = RegionDayRating.objects.for_region_month(region, year, month)
-    ratings: dict[datetime.date, RegionDayRating] = {r.date: r for r in rating_qs}
-
-    grid = _build_calendar_grid(
-        ratings, year, month, today, selected_date=selected_date
-    )
-
-    # Re-apply the focal-day query string so prev/next-month renders keep
-    # the same selected date highlighted.
-    nav_query = _calendar_nav_query(selected_date)
-
-    prev_month = requested - datetime.timedelta(days=1)
-    prev_month = datetime.date(prev_month.year, prev_month.month, 1)
-    prev_url: str | None = None
-    if prev_month >= min_month:
-        prev_url = (
-            reverse(
-                "public:calendar_partial",
-                kwargs={
-                    "region_id": region.region_id,
-                    "year": prev_month.year,
-                    "month": prev_month.month,
-                },
-            )
-            + nav_query
-        )
-
-    next_month_day = _calendar_module.monthrange(year, month)[1]
-    next_month = datetime.date(year, month, next_month_day) + datetime.timedelta(days=1)
-    next_month = datetime.date(next_month.year, next_month.month, 1)
-    next_url: str | None = None
-    if next_month <= max_month:
-        next_url = (
-            reverse(
-                "public:calendar_partial",
-                kwargs={
-                    "region_id": region.region_id,
-                    "year": next_month.year,
-                    "month": next_month.month,
-                },
-            )
-            + nav_query
-        )
-
-    context: dict[str, Any] = {
-        "region": region,
-        "year": year,
-        "month": month,
-        "month_label": datetime.date(year, month, 1).strftime("%B %Y"),
-        "grid": grid,
-        "today": today,
-        "prev_url": prev_url,
-        "next_url": next_url,
-        "calendar_current_date": selected_date,
-    }
-    return render(request, "public/partials/calendar.html", context)
