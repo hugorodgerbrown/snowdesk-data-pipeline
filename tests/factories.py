@@ -14,6 +14,8 @@ import datetime
 from datetime import UTC
 
 import factory
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.utils import timezone as django_timezone
 
 from bulletins.models import (
@@ -214,3 +216,16 @@ class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):
 
     subscriber = factory.SubFactory(SubscriberFactory)
     region = factory.SubFactory(RegionFactory)
+
+
+class UserFactory(factory.django.DjangoModelFactory[User]):
+    """Factory for the auth User model."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = get_user_model()
+
+    username = factory.Sequence(lambda n: f"user{n}")
+    password = factory.django.Password("pass")
+    is_staff = False
