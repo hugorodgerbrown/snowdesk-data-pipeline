@@ -53,45 +53,65 @@
             </button>
         </div>
         <div class="overflow-x-auto" data-season-scroll>
-            {# Heatmap is grouped by calendar month so the template can flip a   #}
-            {# subtle background tint between adjacent months — the boundary is #}
-            {# the parity flip on `data-month-parity`, no spacer columns needed. #}
-            <div data-testid="season-calendar" class="flex">
-                {% for label, parity, columns in season_calendar.month_groups %}
-                    <div data-month-parity="{{ parity }}" class="season-month">
-                        <div class="text-text-3 calendar-cell-label">{{ label }}</div>
-                        <div class="flex gap-0.5">
-                            {% for column in columns %}
-                                <div class="flex flex-col gap-0.5 shrink-0">
-                                    {% for cell in column %}
-                                        {% if cell is None %}
-                                            <div class="calendar-cell"></div>
-                                        {% elif cell.has_bulletin %}
-                                            <a
-                                                href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
-                                                class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
-                                                data-rating-min="{{ cell.min_rating_key }}"
-                                                data-rating-max="{{ cell.max_rating_key }}"
-                                                title="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
-                                                aria-label="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
-                                            >{{ cell.date|date:'j' }}</a>
-                                        {% else %}
-                                            <div
-                                                class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
-                                                data-rating-min="{{ cell.min_rating_key }}"
-                                                data-rating-max="{{ cell.max_rating_key }}"
-                                                title="{{ cell.date|date:'D j N' }}"
-                                                aria-label="{{ cell.date|date:'D j N' }}"
-                                            >
-                                                {{ cell.date|date:'j' }}
-                                            </div>
-                                        {% endif %}
-                                    {% endfor %}
-                                </div>
+            <div data-testid="season-calendar" class="inline-block">
+                {# Month labels row — one cell per column, parallel to the grid below. #}
+                {# A non-empty entry marks the column where a new calendar month       #}
+                {# begins; the label sits above the first column of its month.         #}
+                <div class="flex mb-1">
+                    {% for label in season_calendar.month_labels %}
+                        <div class="season-cell-wrap text-text-3 calendar-cell-label">
+                            {{ label }}
+                        </div>
+                    {% endfor %}
+                </div>
+                {# Grid — one flex column per week, 7 cells per column (Mon..Sun).    #}
+                {# Each cell is wrapped in .season-cell-wrap, which carries           #}
+                {# data-month-parity so the alternate-background tint flips on the    #}
+                {# exact day boundary — including mid-column for weeks that span a    #}
+                {# month-end. Wrappers butt flush (no gap) so the parity tint reads   #}
+                {# as a continuous band behind the rounded-full rating tiles.         #}
+                <div class="flex">
+                    {% for column in season_calendar.columns %}
+                        <div class="flex flex-col shrink-0">
+                            {% for cell in column %}
+                                {% if cell is None %}
+                                    <div class="season-cell-wrap">
+                                        <div class="calendar-cell"></div>
+                                    </div>
+                                {% elif cell.has_bulletin %}
+                                    <div
+                                        class="season-cell-wrap"
+                                        data-month-parity="{{ cell.month_parity }}"
+                                    >
+                                        <a
+                                            href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
+                                            class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
+                                            data-rating-min="{{ cell.min_rating_key }}"
+                                            data-rating-max="{{ cell.max_rating_key }}"
+                                            title="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
+                                            aria-label="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
+                                        >{{ cell.date|date:'j' }}</a>
+                                    </div>
+                                {% else %}
+                                    <div
+                                        class="season-cell-wrap"
+                                        data-month-parity="{{ cell.month_parity }}"
+                                    >
+                                        <div
+                                            class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
+                                            data-rating-min="{{ cell.min_rating_key }}"
+                                            data-rating-max="{{ cell.max_rating_key }}"
+                                            title="{{ cell.date|date:'D j N' }}"
+                                            aria-label="{{ cell.date|date:'D j N' }}"
+                                        >
+                                            {{ cell.date|date:'j' }}
+                                        </div>
+                                    </div>
+                                {% endif %}
                             {% endfor %}
                         </div>
-                    </div>
-                {% endfor %}
+                    {% endfor %}
+                </div>
             </div>
         </div>
     </div>

@@ -64,6 +64,11 @@ class SeasonCell:
     ``is_today`` and ``is_selected`` are mutually exclusive: when the page
     date matches today, only ``is_today`` is set — otherwise the tile
     would render with two stacked rings.
+
+    ``month_parity`` alternates 0/1 across calendar months (the first
+    dated month is 0). The template paints a subtle backdrop on cells
+    where ``month_parity == 1`` so the month boundary is visible at
+    the exact day, even when it falls mid-column.
     """
 
     date: datetime.date
@@ -73,6 +78,7 @@ class SeasonCell:
     has_bulletin: bool
     is_today: bool = False
     is_selected: bool = False
+    month_parity: int = 0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -101,37 +107,6 @@ class SeasonGrid:
     def __bool__(self) -> bool:
         """Return ``False`` when the grid is empty (e.g. before season start)."""
         return bool(self.columns)
-
-    @property
-    def month_groups(
-        self,
-    ) -> list[tuple[str, int, list[tuple[SeasonCell | None, ...]]]]:
-        """Group columns by calendar month for the alternate-background heatmap.
-
-        Yields ``(label, parity, columns)`` triples. ``label`` is the
-        abbreviated month name ("Nov"). ``parity`` alternates 0/1 across
-        groups so the template can apply alternating background tints to
-        make the month boundaries scannable. Leading-pad columns (when
-        the season starts mid-week) roll into the first dated month's
-        group rather than forming a labelless group of their own.
-        """
-        groups: list[tuple[str, int, list[tuple[SeasonCell | None, ...]]]] = []
-        parity = 0
-        current_label = ""
-        current_columns: list[tuple[SeasonCell | None, ...]] = []
-        for label, column in zip(self.month_labels, self.columns, strict=True):
-            if label and current_label:
-                groups.append((current_label, parity, current_columns))
-                parity = 1 - parity
-                current_label = label
-                current_columns = [column]
-            else:
-                if label:
-                    current_label = label
-                current_columns.append(column)
-        if current_columns:
-            groups.append((current_label, parity, current_columns))
-        return groups
 
 
 def build_season_grid(
@@ -166,7 +141,11 @@ def build_season_grid(
 
     cells: list[SeasonCell] = []
     cursor = start
+    month_parity = 0
+    prev_month: int | None = None
     while cursor <= end:
+        if prev_month is not None and cursor.month != prev_month:
+            month_parity = 1 - month_parity
         rdr = by_date.get(cursor)
         min_key: str
         max_key: str
@@ -194,8 +173,10 @@ def build_season_grid(
                 has_bulletin=has_bulletin,
                 is_today=is_today,
                 is_selected=is_selected,
+                month_parity=month_parity,
             )
         )
+        prev_month = cursor.month
         cursor += datetime.timedelta(days=1)
 
     columns = _pack_into_columns(cells, start)

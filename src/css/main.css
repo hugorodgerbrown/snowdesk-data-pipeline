@@ -580,25 +580,27 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     border: none;
 }
 
-/* Per-month wrappers — alternate a subtle background tint between adjacent
-   months so the boundaries are scannable without forcing a spacer column.
-   Padding gives the cells a hairline of breathing room inside the tint;
-   margin-bottom on the label aligns the first cell row with the rest of
-   the heatmap regardless of label height. */
-[data-testid="season-calendar"] .season-month {
-    padding: 0.25rem 0.25rem 0.25rem 0.25rem;
-}
-[data-testid="season-calendar"] .season-month .calendar-cell-label {
-    margin-bottom: 0.25rem;
-}
-[data-testid="season-calendar"] [data-month-parity="0"] {
-    background: transparent;
+/* Per-cell wrapper — sits behind each tile and carries the alternating
+   month tint via [data-month-parity]. 28×28 px (24 px cell + 2 px tinted
+   border on every side); wrappers butt flush so the tint reads as a
+   continuous band that switches on the exact day boundary, including
+   mid-column for weeks that span a month-end. The cell content sits
+   centred inside the wrapper as a 24 px rounded-full circle, so the
+   2 px ring of tint surrounds each tile. */
+[data-testid="season-calendar"] .season-cell-wrap {
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 2px;
+    box-sizing: content-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 [data-testid="season-calendar"] [data-month-parity="1"] {
-    background: rgba(0, 0, 0, 0.04);
+    background: rgba(0, 0, 0, 0.05);
 }
 .dark [data-testid="season-calendar"] [data-month-parity="1"] {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.06);
 }
 
 /* —— Season heatmap sheet primitive (SNOW-117) ——————————————————
