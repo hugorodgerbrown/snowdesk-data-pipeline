@@ -2,7 +2,8 @@
   "scripts": {
     "lh": "DJANGO_SETTINGS_MODULE=config.settings.perf poetry run python manage.py collectstatic --noinput && lhci autorun",
     "lh:open": "open $(python -c \"import json; print(' '.join(r['htmlPath'] for r in json.load(open('.lighthouseci/manifest.json')) if r['isRepresentativeRun']))\")",
-    "build:icons": "node bin/build-pwa-icons"
+    "build:icons": "node bin/build-pwa-icons",
+    "build:screenshots": "node bin/build-pwa-screenshots"
   },
   "devDependencies": {
     "@lhci/cli": "^0.14.0",

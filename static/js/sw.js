@@ -15,9 +15,12 @@
  *                                deploys for a given session)
  *     → stale-while-revalidate.
  *
- *   - HTML navigations          → network-first with a cache fallback
- *                                so an offline reload still surfaces
- *                                the last-seen version of the page.
+ *   - HTML navigations          → network-first with a per-page cache
+ *                                fallback so an offline reload still
+ *                                surfaces the last-seen version, and a
+ *                                pre-cached /static/offline.html if the
+ *                                requested URL has never been visited
+ *                                (SNOW-118).
  *
  *   - Everything else           (most /api/* endpoints, third-party
  *                                origins like maplibre + tiles)
@@ -47,7 +50,15 @@
 
 'use strict';
 
-const CACHE_VERSION = 'snowdesk-shell-v2';
+const CACHE_VERSION = 'snowdesk-shell-v3';
+
+// Pre-cached on install so the offline fallback is reliably available
+// the moment the network drops, even on the very first navigation that
+// loses connectivity. Keep this list short — anything hashed by
+// ManifestStaticFilesStorage can't be precached by stable URL, and
+// stale-while-revalidate already handles the shell on the second visit.
+const OFFLINE_FALLBACK = '/static/offline.html';
+const PRECACHE_URLS = [OFFLINE_FALLBACK];
 
 // File extensions that count as same-origin static shell. Anything
 // not in this set, and not a same-origin GeoJSON feed, falls through
@@ -79,7 +90,16 @@ const STATIC_PATHS = new Set(['/api/regions.geojson']);
 // Lifecycle — install
 // ---------------------------------------------------------------------------
 
-self.addEventListener('install', () => {
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    (async () => {
+      // Pre-cache the offline fallback so the network-first strategy
+      // can return it from cache when both network and per-page cache
+      // miss (e.g. user opens a never-visited page while offline).
+      const cache = await caches.open(CACHE_VERSION);
+      await cache.addAll(PRECACHE_URLS);
+    })(),
+  );
   // Skip the "waiting" phase so the new SW takes over on the next
   // page load without forcing the user to close every open tab.
   self.skipWaiting();
@@ -176,9 +196,11 @@ async function _staleWhileRevalidate(request) {
 }
 
 /**
- * Network-first: try the network, fall back to cache on failure.
- * Use for HTML navigations so the user sees fresh data normally and
- * the last-seen page when offline.
+ * Network-first: try the network, fall back to cache on failure, then
+ * to the offline fallback page if the request is a navigation. Use for
+ * HTML navigations so the user sees fresh data normally, the last-seen
+ * page when offline-but-cached, and a branded offline page when neither
+ * network nor cache has the URL (a page they've never visited before).
  */
 async function _networkFirst(request) {
   const cache = await caches.open(CACHE_VERSION);
@@ -191,6 +213,10 @@ async function _networkFirst(request) {
   } catch (err) {
     const cached = await cache.match(request);
     if (cached) return cached;
+    if (request.mode === 'navigate' || request.destination === 'document') {
+      const fallback = await cache.match(OFFLINE_FALLBACK);
+      if (fallback) return fallback;
+    }
     throw err;
   }
 }

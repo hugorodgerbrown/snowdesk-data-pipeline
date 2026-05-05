@@ -1,6 +1,10 @@
 {
   "name": "Snowdesk",
   "short_name": "Snowdesk",
+  "id": "/",
+  "lang": "en",
+  "description": "Daily Swiss avalanche bulletins for the alpine region.",
+  "categories": ["weather", "sports", "travel"],
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -24,6 +28,22 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/static/icons/pwa/screenshots/map-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Avalanche map for the alpine region"
+    },
+    {
+      "src": "/static/icons/pwa/screenshots/bulletin-narrow.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Daily bulletin for a single region"
     }
   ]
 }
