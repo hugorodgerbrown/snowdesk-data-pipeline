@@ -1080,47 +1080,17 @@ class TestDayWindowsPanel:
 
 
 # ---------------------------------------------------------------------------
-# Test: bulletin masthead (date+calendar above region, subregion H2)
+# Test: bulletin page content — subregion names, day-risk panel
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestBulletinMasthead:
+class TestBulletinPageContent:
     """
-    Bulletin masthead — date eyebrow + calendar trigger sit above the
-    region H1, and the parent EAWS L2 sub-region renders as a quiet H2
-    below the H1. The calendar drawer is the only date picker; the top
-    nav is wayfinding-only.
+    Miscellaneous content assertions for the bulletin page that are not
+    tied to a specific partial — subregion name resolution and the
+    day-risk-profile panel that sits below the header.
     """
-
-    def test_renders_masthead(self, client: Client, simple_bulletin, region):
-        """The masthead landmark renders on the bulletin page by default."""
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="bulletin-masthead"' in content
-
-    def test_eyebrow_precedes_region_h1(self, client: Client, simple_bulletin, region):
-        """Date eyebrow + calendar trigger sit above the region H1 in DOM order."""
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        content = response.content.decode()
-        eyebrow_idx = content.index('class="bm-eyebrow"')
-        region_idx = content.index('class="bm-region"')
-        assert eyebrow_idx < region_idx
-
-    def test_renders_subregion_h2_below_h1(
-        self, client: Client, simple_bulletin, region
-    ):
-        """Parent EAWS L2 sub-region renders as an H2 below the region H1."""
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="bulletin-masthead-subregion"' in content
-        # Region H1 precedes the subregion H2.
-        region_idx = content.index('class="bm-region"')
-        subregion_idx = content.index('data-testid="bulletin-masthead-subregion"')
-        assert region_idx < subregion_idx
 
     def test_subregion_uses_english_name_when_present(self, simple_bulletin, region):
         """``EawsSubRegion.name_en`` wins over native when SLF publishes one."""
@@ -1146,64 +1116,10 @@ class TestBulletinMasthead:
         content = response.content.decode()
         assert "Bas-Valais" in content
 
-    def test_masthead_carries_no_calendar_trigger(
-        self, client: Client, simple_bulletin, region
-    ):
-        """The masthead has no calendar/season trigger — date eyebrow is plain text now (SNOW-117)."""
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        content = response.content.decode()
-        masthead_start = content.index('data-testid="bulletin-masthead"')
-        masthead_end = content.index("</header>", masthead_start)
-        masthead_block = content[masthead_start:masthead_end]
-        assert "data-season-trigger" not in masthead_block
-        assert "Show monthly calendar" not in masthead_block
-
-    def test_renders_map_deep_link_beside_h1(
-        self, client: Client, simple_bulletin, region
-    ):
-        """A map-pin link to ``/map/#<region_id>`` sits beside the region H1.
-
-        The map's existing hash router opens the bottom sheet for the
-        region at peek state on load (SNOW-81 / SNOW-63 auto-zoom).
-        """
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="bm-map-link"' in content
-        expected_href = f'href="{reverse("public:map")}#CH-4115"'
-        assert expected_href in content
-        # H1 precedes the map link in DOM order; both sit inside the row.
-        region_idx = content.index('class="bm-region"')
-        link_idx = content.index('data-testid="bm-map-link"')
-        assert region_idx < link_idx
-
-    def test_top_nav_renders_season_trigger(
-        self, client: Client, simple_bulletin, region
-    ):
-        """The top nav carries the season-sheet trigger (SNOW-117)."""
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        content = response.content.decode()
-        # Exactly one trigger button on the page (the toggle script also
-        # references the [data-season-trigger] selector — that's why we
-        # match the button form rather than the bare attribute name).
-        assert content.count("<button") >= 1
-        nav_end = content.index("</nav>")
-        nav_block = content[:nav_end]
-        assert "data-season-trigger" in nav_block
-        # The masthead carries no calendar/season trigger any more.
-        masthead_block_start = content.index('data-testid="bulletin-masthead"')
-        masthead_block_end = content.index("</header>", masthead_block_start)
-        assert (
-            "data-season-trigger"
-            not in content[masthead_block_start:masthead_block_end]
-        )
-
     def test_still_renders_day_risk_profile_panel(
         self, client: Client, variable_bulletin, region
     ):
-        """The Day Risk Profile heading + day-windows panel render below."""
+        """The Day Risk Profile heading + day-windows panel render below the header."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()

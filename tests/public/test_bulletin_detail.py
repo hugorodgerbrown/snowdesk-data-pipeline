@@ -18,7 +18,6 @@ import pytest
 from django.core.cache import cache
 from django.test import Client, override_settings
 from django.urls import reverse
-from waffle.testutils import override_flag
 
 from bulletins.models import RegionDayRating
 from public.views import (
@@ -327,8 +326,8 @@ class TestBulletinDetailView:
         content = response.content.decode()
         assert "Today" in content
 
-    def test_past_date_shown_in_eyebrow(self, client: Client, region):
-        """A past page date appears in the masthead eyebrow."""
+    def test_past_date_shown_in_header(self, client: Client, region):
+        """A past page date appears in the bulletin header."""
         _make_am_bulletin(region, date(2026, 3, 14))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
@@ -343,8 +342,8 @@ class TestBulletinDetailView:
             response = client.get(url)
 
         content = response.content.decode()
-        # The masthead eyebrow uses the ``D j M Y`` format.
-        assert "Sat 14 Mar 2026" in content
+        # The bulletin header uses the ``D j M`` format (no year).
+        assert "Sat 14 Mar" in content
 
     def test_next_update_context_populated_today_before_due(
         self, client: Client, region
@@ -865,23 +864,9 @@ class TestSeasonCalendar:
 class TestWeatherHeader:
     """Tests for the WeatherSnapshot → context plumbing on bulletin_detail.
 
-    The ``weather_header`` waffle flag is forced on for every test in
-    this class via the autouse fixture below so each test exercises the
-    rendered partial. The off-state is covered by
-    :class:`TestWeatherHeaderFlagGate`.
+    Verifies that weather context is correctly computed and passed to the
+    ``bulletin_header.html`` partial across all meaningful snapshot states.
     """
-
-    @pytest.fixture(autouse=True)
-    def _enable_weather_header_flag(self):
-        """Force ``weather_header=on`` for every test in this class.
-
-        ``override_flag`` cannot be used as a pytest class decorator
-        (Django's decorator only supports ``unittest.TestCase``
-        subclasses), so apply it via an autouse fixture as the rest of
-        the codebase does (see ``tests/public/test_edit_resorts_api.py``).
-        """
-        with override_flag("weather_header", active=True):
-            yield
 
     def _bulletin_url(self) -> str:
         """Return the today-bulletin URL used by every test below.
@@ -1105,126 +1090,6 @@ class TestWeatherHeader:
 
         assert response.status_code == 200
         assert response.context["weather_display"] is None
-
-
-@pytest.mark.django_db
-class TestWeatherHeaderFlagGate:
-    """The weather header partial is hidden when ``weather_header`` is off."""
-
-    def _bulletin_url(self) -> str:
-        """Return the today-bulletin URL (form-3 canonical post-SNOW-99)."""
-        return reverse(
-            "public:bulletin_date",
-            kwargs={
-                "region_id": "ch-4115",
-                "slug": "valais",
-                "date_str": "2026-03-15",
-            },
-        )
-
-    @override_flag("weather_header", active=False)
-    def test_partial_hidden_when_flag_inactive(self, client: Client, region) -> None:
-        """With the flag off, the unified header is not rendered.
-
-        SNOW-100 made the flag the EITHER/OR switch between the unified
-        ``bulletin_header.html`` (flag on) and the legacy
-        ``bulletin_masthead.html`` (flag off). Assert the legacy masthead
-        renders and the unified header does not. ``weather_display`` is
-        still computed in the view regardless of the flag — it's the
-        template that picks which partial to include.
-        """
-        _make_am_bulletin(region, date(2026, 3, 15))
-        WeatherSnapshotFactory.create(
-            region=region,
-            valid_for_date=date(2026, 3, 15),
-            weather_code=0,
-            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
-            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
-        )
-
-        with _freeze("2026-03-15T12:00:00+00:00"):
-            response = client.get(self._bulletin_url())
-
-        assert response.status_code == 200
-        assert b'data-testid="bulletin-header"' not in response.content
-        assert b'data-testid="bulletin-masthead"' in response.content
-        # The view still computes weather_display — only the partial is gated.
-        assert response.context["weather_display"] is not None
-
-    @override_flag("weather_header", active=True)
-    def test_partial_visible_when_flag_active(self, client: Client, region) -> None:
-        """With the flag on, the unified header partial renders."""
-        _make_am_bulletin(region, date(2026, 3, 15))
-        WeatherSnapshotFactory.create(
-            region=region,
-            valid_for_date=date(2026, 3, 15),
-            weather_code=0,
-            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
-            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
-        )
-
-        with _freeze("2026-03-15T12:00:00+00:00"):
-            response = client.get(self._bulletin_url())
-
-        assert response.status_code == 200
-        assert b'data-testid="bulletin-header"' in response.content
-        # And the legacy masthead is not rendered alongside it.
-        assert b'data-testid="bulletin-masthead"' not in response.content
-
-
-# ── Masthead weather icon (SNOW-100) ─────────────────────────────────────────
-
-
-@pytest.mark.django_db
-class TestMastheadWeatherIcon:
-    """The small weather icon in the masthead H1 row (SNOW-100).
-
-    The masthead icon is independent of the ``weather_header`` waffle flag
-    (that flag gates only the band partial below the masthead).  These tests
-    therefore do NOT activate the flag, so they exercise the icon in isolation.
-    """
-
-    def _bulletin_url(self) -> str:
-        """Return the canonical form-3 bulletin URL used by every test below."""
-        return reverse(
-            "public:bulletin_date",
-            kwargs={
-                "region_id": "ch-4115",
-                "slug": "valais",
-                "date_str": "2026-03-15",
-            },
-        )
-
-    def test_masthead_renders_weather_icon(self, client: Client, region) -> None:
-        """When a snapshot exists, the masthead icon is present with the right src."""
-        _make_am_bulletin(region, date(2026, 3, 15))
-        WeatherSnapshotFactory.create(
-            region=region,
-            valid_for_date=date(2026, 3, 15),
-            weather_code=0,  # clear sky → clear-day.svg
-            sunrise=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
-            sunset=datetime(2026, 3, 15, 18, 0, tzinfo=UTC),
-        )
-
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            response = client.get(self._bulletin_url())
-
-        assert response.status_code == 200
-        assert b'data-testid="bulletin-masthead-weather-icon"' in response.content
-        assert b"icons/weather/clear-day.svg" in response.content
-
-    def test_masthead_omits_weather_icon_when_no_snapshot(
-        self, client: Client, region
-    ) -> None:
-        """When no WeatherSnapshot exists, the masthead icon is absent."""
-        _make_am_bulletin(region, date(2026, 3, 15))
-        # No WeatherSnapshotFactory call — snapshot deliberately absent.
-
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            response = client.get(self._bulletin_url())
-
-        assert response.status_code == 200
-        assert b'data-testid="bulletin-masthead-weather-icon"' not in response.content
 
 
 @pytest.mark.django_db

@@ -30,7 +30,7 @@ a ``.dark`` ancestor.
 from dataclasses import dataclass
 from typing import Any
 
-from public._component_fixtures import MASTHEAD_VARIANTS, WEATHER_HEADER_VARIANTS
+from public._component_fixtures import WEATHER_HEADER_VARIANTS
 
 
 @dataclass(frozen=True)
@@ -601,20 +601,6 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         partial="includes/bulletin_header.html",
         variants=WEATHER_HEADER_VARIANTS,
         panel_layout="two-col",
-    ),
-    FoundationCategory(
-        slug="masthead",
-        label="Bulletin masthead",
-        description=(
-            "Bulletin-page masthead — date eyebrow + calendar trigger, "
-            "region H1 with optional weather icon and map-pin link, "
-            "and an optional sub-region H2. Variants exercise the H1 "
-            "wrap, the icon-omission fallback, and the no-sub-region path."
-        ),
-        kind="components",
-        partial="includes/bulletin_masthead.html",
-        variants=MASTHEAD_VARIANTS,
-        panel_layout="stack",
     ),
 )
 
