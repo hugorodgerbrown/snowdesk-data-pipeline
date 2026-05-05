@@ -13,7 +13,7 @@ manifest icons.
 
 | Path | Role |
 |------|------|
-| `static/manifest.webmanifest` | Web app manifest. Declares name, `id`, `lang`, `description`, `categories`, icons, screenshots, theme/background colour, `start_url=/`, `scope=/`, `display=standalone`. Linked from `public/templates/public/base.html`. |
+| `public.views.serve_manifest` | Web app manifest, served at `/manifest.webmanifest` with `Content-Type: application/manifest+json`. Declares name, `id`, `lang`, `description`, `categories`, icons, screenshots, theme/background colour, plus absolute `start_url`, `scope`, and `id` derived from `settings.SITE_BASE_URL` so each environment has a stable canonical identity (`http://localhost:8000` in dev, `https://snowdesk.info` in prod). Linked from `public/templates/public/base.html` via `{% url 'web_manifest' %}`. |
 | `static/js/sw.js` | The service worker itself. Stale-while-revalidate for static shell + the regions GeoJSON; network-first for HTML navigations (with a pre-cached `/static/offline.html` fallback); network-only for everything else. |
 | `static/js/sw_register.js` | Registers `/sw.js` at root scope on every public page. Loaded `defer` from `base.html`. Also drives the `#sw-update-banner` (see "Update strategy" below). |
 | `static/js/pwa_install.js` | Captures `beforeinstallprompt` and toggles the `#pwa-install-banner` / `#pwa-install-ios-banner` markup in `base.html` (SNOW-118). |
@@ -131,13 +131,15 @@ the following are true:
 1. Page served over HTTPS (Render handles this on `*.onrender.com`).
 2. `<link rel="manifest" href="…">` present — added in `base.html`.
 3. Manifest declares `name`, `short_name`, `start_url`, `scope`,
-   `display: standalone`, `theme_color`, `background_color` — already
-   set in `static/manifest.webmanifest`. Both `start_url` and `scope`
-   are `/` so the installed app opens on the home page and every
-   public path (map, bulletins, subscribe, terms) stays inside the
-   standalone window. Without `scope: /`, the W3C default would be the
-   directory of `start_url`, which would push every other page out
-   into a regular browser tab (SNOW-87).
+   `display: standalone`, `theme_color`, `background_color` — set in
+   the `serve_manifest` view. `start_url`, `scope`, and `id` are all
+   absolute URLs derived from `settings.SITE_BASE_URL` so the
+   installed app opens on the home page, every public path stays
+   inside the standalone window, and the install identity is stable
+   across changes to the manifest URL or `start_url` (SNOW-87 +
+   SNOW-118). Without `scope`, the W3C default would be the directory
+   of `start_url`, which on the previous `/map/` setting pushed every
+   other page out into a regular browser tab.
 4. Manifest `icons[]` carries at least one 192×192 and one 512×512
    PNG — generated from `static/favicon.svg` by
    `bin/build-pwa-icons`.

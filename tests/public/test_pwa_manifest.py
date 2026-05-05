@@ -9,13 +9,13 @@ the home page and keeps every public path inside the standalone window
 (rather than escaping to a browser tab when the user navigates outside
 ``/map/``). SNOW-118 added the manifest-polish fields (``id``, ``lang``,
 ``description``, ``categories``, ``screenshots``) that drive Chrome's
-rich install dialog and app-listing metadata.
+rich install dialog and app-listing metadata, and migrated the manifest
+from a static file to ``public.views.serve_manifest`` so identity URLs
+can be rendered absolute against ``settings.SITE_BASE_URL``.
 
-Only static-file-level facts are asserted here: shape of the JSON,
-presence of the size + purpose entries, and that the icon paths are
-served by Django at the URLs the manifest declares. Runtime SW
-behaviour (cache hits, version bumps) is not unit-testable in pytest
-— see ``docs/offline-map.md`` for the manual verification steps.
+Tests fetch the manifest over HTTP via the test ``Client`` so the
+assertions cover the live response shape, headers, and the templated
+URL substitution — not just the on-disk JSON.
 """
 
 from __future__ import annotations
@@ -24,24 +24,44 @@ import json
 from pathlib import Path
 
 from django.conf import settings
-
-_MANIFEST_PATH = Path(settings.BASE_DIR) / "static" / "manifest.webmanifest"
+from django.test import Client, override_settings
 
 
 def _load_manifest() -> dict:
-    """Read ``static/manifest.webmanifest`` from disk and parse as JSON."""
-    parsed: dict = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+    """Fetch ``/manifest.webmanifest`` via the test client and parse as JSON."""
+    response = Client().get("/manifest.webmanifest")
+    assert response.status_code == 200
+    parsed: dict = json.loads(response.content.decode("utf-8"))
     return parsed
 
 
-def test_manifest_start_url_is_site_root() -> None:
-    """``start_url`` is ``/`` so the installed app opens the home page (SNOW-87)."""
+def test_manifest_served_with_correct_content_type() -> None:
+    """``/manifest.webmanifest`` returns ``application/manifest+json`` (SNOW-118).
+
+    The W3C manifest spec specifies this MIME type; Chromium honours it
+    strictly and falls back to a less-rich install affordance when the
+    type is generic ``application/json``.
+    """
+    response = Client().get("/manifest.webmanifest")
+    assert response.status_code == 200
+    assert response["Content-Type"] == "application/manifest+json"
+
+
+def test_manifest_start_url_is_absolute_site_root() -> None:
+    """``start_url`` is the absolute canonical site URL (SNOW-87 / SNOW-118).
+
+    SNOW-87 set ``start_url`` to the site root; SNOW-118 made it
+    absolute via ``settings.SITE_BASE_URL`` so it survives any future
+    move to a different manifest path or hostname migration.
+    """
     manifest = _load_manifest()
-    assert manifest.get("start_url") == "/"
+    base = settings.SITE_BASE_URL.rstrip("/")
+    assert manifest.get("start_url") == f"{base}/"
 
 
-def test_manifest_scope_is_site_root() -> None:
-    """``scope`` is ``/`` so every public path stays in the standalone window (SNOW-87).
+def test_manifest_scope_is_absolute_site_root() -> None:
+    """``scope`` is the absolute canonical site URL so every public path stays
+    inside the standalone window (SNOW-87 / SNOW-118).
 
     Without an explicit ``scope``, the W3C default is the directory of
     ``start_url`` — which on the previous ``/map/`` setting meant any
@@ -49,7 +69,8 @@ def test_manifest_scope_is_site_root() -> None:
     escaped the standalone window into a regular browser tab.
     """
     manifest = _load_manifest()
-    assert manifest.get("scope") == "/"
+    base = settings.SITE_BASE_URL.rstrip("/")
+    assert manifest.get("scope") == f"{base}/"
 
 
 def test_manifest_declares_icons() -> None:
@@ -86,15 +107,35 @@ def test_manifest_icon_files_exist_on_disk() -> None:
         assert path.exists(), f"manifest icon {icon['src']} missing on disk"
 
 
-def test_manifest_includes_id() -> None:
-    """``id`` pins canonical app identity to the origin root (SNOW-118).
+def test_manifest_id_is_absolute_url() -> None:
+    """``id`` is the absolute canonical app identity URL (SNOW-118).
 
-    The W3C manifest spec recommends an explicit ``id`` so the browser
-    can match the installed app across changes to ``start_url`` (e.g. a
-    later i18n redirect to ``/en/``).
+    The W3C manifest spec resolves ``id`` as a URL relative to the
+    manifest URL — ``/`` would technically work — but the spec
+    recommends an explicit absolute URL so the install identity stays
+    stable across changes to ``start_url`` or the manifest's own URL.
     """
     manifest = _load_manifest()
-    assert manifest.get("id") == "/"
+    base = settings.SITE_BASE_URL.rstrip("/")
+    assert manifest.get("id") == f"{base}/"
+
+
+def test_manifest_id_changes_with_site_base_url() -> None:
+    """``id`` derives from ``settings.SITE_BASE_URL`` per environment (SNOW-118).
+
+    Production sets ``SITE_BASE_URL=https://snowdesk.info``; dev defaults
+    to ``http://localhost:8000``. Each environment must resolve to a
+    distinct, hostname-pinned identity URL — otherwise a dev install
+    and a prod install would share the same install slot.
+    """
+    with override_settings(SITE_BASE_URL="https://snowdesk.info"):
+        prod = _load_manifest()
+    with override_settings(SITE_BASE_URL="http://localhost:8000"):
+        dev = _load_manifest()
+    assert prod["id"] == "https://snowdesk.info/"
+    assert dev["id"] == "http://localhost:8000/"
+    assert prod["start_url"] == "https://snowdesk.info/"
+    assert dev["start_url"] == "http://localhost:8000/"
 
 
 def test_manifest_includes_lang() -> None:
@@ -145,12 +186,3 @@ def test_manifest_screenshot_files_exist_on_disk() -> None:
         relative = shot["src"][len("/static/") :]
         path = Path(settings.BASE_DIR) / "static" / relative
         assert path.exists(), f"manifest screenshot {shot['src']} missing on disk"
-
-
-# Note: there is no test for the manifest's HTTP response. In dev the
-# manifest is served by Django's runserver auto-mounted /static/
-# handler; in production by WhiteNoise. Neither path is reachable from
-# the bare ``Client()`` in tests without bringing up extra routing
-# scaffolding that would exercise infrastructure rather than the SNOW-79
-# contract. The on-disk-file check above covers the failure mode that
-# matters: the manifest pointing at icons that don't ship.

@@ -48,11 +48,14 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% endblock %}
         <meta name="description" content="{% block meta_description %}{% endblock %}">
         <title>{% block title %}Snowdesk{% endblock %}</title>
-        {# SNOW-79: PWA manifest + theme colour are linked site-wide so the #}
-        {# browser's install affordance is available from any public page,  #}
-        {# not just /map/. The SW registration script runs deferred at the  #}
-        {# end of <body> via {% block extra_js %}.                          #}
-        <link rel="manifest" href="{% static 'manifest.webmanifest' %}">
+        {# SNOW-79: PWA manifest + theme colour are linked site-wide so the   #}
+        {# browser's install affordance is available from any public page,    #}
+        {# not just /map/. The SW registration script runs deferred at the    #}
+        {# end of <body> via {% block extra_js %}.                            #}
+        {# SNOW-118: the manifest is served by ``public.views.serve_manifest`` #}
+        {# (not as a static file) so ``id``, ``start_url``, and ``scope`` can #}
+        {# be rendered as absolute URLs from ``settings.SITE_BASE_URL``.       #}
+        <link rel="manifest" href="{% url 'web_manifest' %}">
         <meta name="theme-color" content="#1a1a1a">
         {# SNOW-118: Apple iOS PWA support. Without these, "Add to Home    #}
         {# Screen" on iPhone produces a screenshot icon and a non-         #}

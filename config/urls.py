@@ -5,8 +5,9 @@ Mounts the Django admin, the subscriptions flow under /subscribe/, the JSON
 API under /api/, the django-csp-plus report endpoint under /csp/, and the
 public-facing bulletin site at the root.
 
-The ``/sw.js`` route is registered before ``public.urls`` so the generic
-``<str:region_id>/`` pattern in public.urls does not swallow it.
+The ``/sw.js`` and ``/manifest.webmanifest`` routes are registered before
+``public.urls`` so the generic ``<str:region_id>/`` pattern in public.urls
+does not swallow them.
 
 When ``settings.DEBUG`` is true, the development-only SLF mirror is
 mounted under ``/dev/slf-mirror/`` so ``fetch_bulletins --source
@@ -18,7 +19,7 @@ from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 
-from public.views import serve_sw
+from public.views import serve_manifest, serve_sw
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -26,6 +27,7 @@ urlpatterns = [
     path("api/", include("public.api_urls")),
     path("csp/", include("csp.urls")),
     path("sw.js", serve_sw, name="service_worker"),
+    path("manifest.webmanifest", serve_manifest, name="web_manifest"),
 ]
 
 # Dev-only routes must register BEFORE ``public.urls`` because that
