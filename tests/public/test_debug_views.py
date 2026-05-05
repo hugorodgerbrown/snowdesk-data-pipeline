@@ -196,6 +196,54 @@ class TestComponentLibraryPanel:
         assert 'data-time-of-day="day"' in body
         assert 'data-weather-bucket="none"' in body  # fallback variant
 
+    def test_day_windows_panel_renders_expected_variants(
+        self, htmx_staff_client: Client
+    ) -> None:
+        """The day-windows panel ships two variants matching the scope contract.
+
+        Variant 1 is the all-day level grid (five rows stepping low → very_high
+        with an "All day" pill); variant 2 is the realistic split-day pair
+        (earlier @ moderate + later @ considerable). Asserting both the
+        context shape and rendered HTML guards against drift in either the
+        fixture or the ``include_variant`` plumbing.
+        """
+        response = htmx_staff_client.get(_panel_url("day-windows"))
+        assert response.status_code == 200
+
+        active = response.context["active"]
+        assert active.slug == "day-windows"
+        assert len(active.variants) == 2
+
+        # Variant 1 — all-day, five EAWS levels.
+        v1_windows = active.variants[0]["context"]["day_windows"]
+        assert [w["level_key"] for w in v1_windows] == [
+            "low",
+            "moderate",
+            "considerable",
+            "high",
+            "very_high",
+        ]
+        assert {w["type"] for w in v1_windows} == {"all_day"}
+        assert {w["pill_label"] for w in v1_windows} == {"All day"}
+
+        # Variant 2 — realistic split-day pair.
+        v2_windows = active.variants[1]["context"]["day_windows"]
+        assert [(w["type"], w["level_key"]) for w in v2_windows] == [
+            ("earlier", "moderate"),
+            ("later", "considerable"),
+        ]
+
+        # Rendered HTML — confirms include_variant reached the partial and
+        # that the level_css → CSS class mapping (``very_high`` → ``lv-very-high``)
+        # survives the round-trip.
+        body = response.content.decode()
+        assert "lv-low" in body
+        assert "lv-very-high" in body
+        assert 'data-window="earlier"' in body
+        assert 'data-window="later"' in body
+        assert ">Earlier<" in body
+        assert ">Later<" in body
+
     def test_unknown_slug_returns_404(self, htmx_staff_client: Client) -> None:
         """Slugs that don't appear in any library group 404."""
         # ``not-a-real-slug`` matches the <slug:slug> URL converter (only

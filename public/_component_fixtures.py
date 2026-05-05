@@ -131,3 +131,72 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
 
 
 WEATHER_HEADER_VARIANTS: tuple[dict[str, Any], ...] = _build_weather_header_variants()
+
+
+# Day-windows panel (SNOW-107) ---------------------------------------------
+# Mirrors the dict shape produced by ``_build_day_windows`` in
+# ``public/views.py``. Labels and numbers below mirror ``_DANGER_PANEL_META``
+# in the same module — copied verbatim so the fixture stays self-contained
+# and doesn't reach into a non-public symbol. Pill labels mirror
+# ``_DAY_WINDOW_PILL_LABELS`` (no rebadging here — we set them directly).
+
+_DAY_WINDOW_LEVEL_META: dict[str, dict[str, str]] = {
+    "low": {"label": "Low", "number": "1"},
+    "moderate": {"label": "Moderate", "number": "2"},
+    "considerable": {"label": "Considerable", "number": "3"},
+    "high": {"label": "High", "number": "4"},
+    "very_high": {"label": "Very high", "number": "5"},
+}
+
+
+def _make_window(period: str, level_key: str, pill_label: str) -> dict[str, Any]:
+    """Build one day-window row dict for the component-library fixture."""
+    meta = _DAY_WINDOW_LEVEL_META[level_key]
+    return {
+        "type": period,
+        "level_key": level_key,
+        "level_css": level_key.replace("_", "-"),
+        "level_label": meta["label"],
+        "level_number": meta["number"],
+        "caption": None,
+        "pill_label": pill_label,
+    }
+
+
+def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
+    """Build the day-windows variant matrix.
+
+    Two stacked variants:
+
+    * **All-day, level grid** — five synthetic ``all_day`` rows stepping
+      ``low → very_high`` so tile + label contrast is reviewable across
+      the whole EAWS scale on one screen. Not a realistic bulletin
+      (real bulletins have at most two windows) — a comparison harness.
+    * **Split-day, mixed levels** — a realistic two-row layout: an
+      ``earlier`` window at moderate paired with a ``later`` window at
+      considerable, to show how two different tints read side-by-side.
+    """
+    all_day_grid = [
+        _make_window("all_day", "low", "All day"),
+        _make_window("all_day", "moderate", "All day"),
+        _make_window("all_day", "considerable", "All day"),
+        _make_window("all_day", "high", "All day"),
+        _make_window("all_day", "very_high", "All day"),
+    ]
+    split_day = [
+        _make_window("earlier", "moderate", "Earlier"),
+        _make_window("later", "considerable", "Later"),
+    ]
+    return (
+        {
+            "caption": "All day · five EAWS levels",
+            "context": {"day_windows": all_day_grid},
+        },
+        {
+            "caption": "Split day · earlier vs later",
+            "context": {"day_windows": split_day},
+        },
+    )
+
+
+DAY_WINDOWS_VARIANTS: tuple[dict[str, Any], ...] = _build_day_windows_variants()

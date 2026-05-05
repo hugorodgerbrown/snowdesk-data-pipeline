@@ -2,17 +2,23 @@
 public/templatetags/component_library_tags.py — Template tags for the design system.
 
 Used exclusively by the component-library page at ``/_components/`` and
-its panels under ``public/templates/_components/``. Currently exposes one
-tag, ``include_variant``, which renders an arbitrary partial against a
-``variant.context`` dict — the trick that lets every ``kind="components"``
-entry source its render content from the registry without the dispatch
-template hard-coding per-component context keys.
+its panels under ``public/templates/_components/``. Exposes:
+
+* ``include_variant`` — render an arbitrary partial against a
+  ``variant.context`` dict so each ``kind="components"`` entry can source
+  its render content from the registry without the dispatch template
+  hard-coding per-component context keys.
+* ``contains_slug`` — filter used by the sidebar to decide which
+  ``<details>`` group is open on first paint (the one that owns the
+  active category).
 """
 
 from typing import Any
 
 from django import template
 from django.template.loader import get_template
+
+from public.design_tokens import LibraryGroup
 
 register = template.Library()
 
@@ -53,3 +59,14 @@ def include_variant(
     flat_context: dict[str, Any] = {str(k): v for k, v in context.flatten().items()}
     flat_context.update(variant.get("context", {}))
     return rendered_template.render(flat_context)
+
+
+@register.filter
+def contains_slug(group: LibraryGroup, slug: str) -> bool:
+    """Return True if any category in ``group`` matches ``slug``.
+
+    Used by the sidebar to decide which ``<details>`` group renders open
+    on first paint — the one that owns the currently-active panel — so
+    the user lands with their context expanded and the rest collapsed.
+    """
+    return any(category.slug == slug for category in group.categories)

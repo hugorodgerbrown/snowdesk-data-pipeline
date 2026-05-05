@@ -30,7 +30,7 @@ a ``.dark`` ancestor.
 from dataclasses import dataclass
 from typing import Any
 
-from public._component_fixtures import WEATHER_HEADER_VARIANTS
+from public._component_fixtures import DAY_WINDOWS_VARIANTS, WEATHER_HEADER_VARIANTS
 
 
 @dataclass(frozen=True)
@@ -601,6 +601,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         partial="includes/bulletin_header.html",
         variants=WEATHER_HEADER_VARIANTS,
         panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="day-windows",
+        label="Day windows",
+        description=(
+            "Per-window EAWS rating panel — one row per validTimePeriod with "
+            "a coloured danger-level tile, label and time-window pill. "
+            "Variants cover the all-day case (≈95% of bulletins) across "
+            "every danger level plus a realistic split-day layout."
+        ),
+        kind="components",
+        partial="includes/day_windows.html",
+        variants=DAY_WINDOWS_VARIANTS,
+        panel_layout="stack",
     ),
 )
 

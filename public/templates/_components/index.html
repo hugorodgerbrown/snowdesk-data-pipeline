@@ -1,5 +1,6 @@
 {% extends "public/base.html" %}
 {% load static %}
+{% load component_library_tags %}
 {% comment %}
 public/templates/_components/index.html — Component-library shell (SNOW-103).
 
@@ -48,29 +49,32 @@ Context:
                     aria-label="Component-library categories"
                 >
                     {% for group in groups %}
-                        <div class="flex flex-col gap-1">
-                            <p class="text-xs font-mono uppercase tracking-widest text-text-3 mb-1">
+                        {# Each group is collapsible — the one owning the active panel opens on first paint. #}
+                        <details {% if group|contains_slug:active.slug %}open{% endif %}>
+                            <summary class="text-xs font-mono uppercase tracking-widest text-text-3 mb-1 cursor-pointer select-none hover:text-text-2 marker:text-text-3">
                                 {{ group.label }}
-                            </p>
-                            {% for category in group.categories %}
-                                <a
-                                    href="{% url 'public:components_index' %}?slug={{ category.slug }}"
-                                    data-slug="{{ category.slug }}"
-                                    hx-get="{% url 'public:components_panel' slug=category.slug %}"
-                                    hx-target="#cl-main"
-                                    hx-swap="innerHTML"
-                                    hx-indicator="#cl-indicator"
-                                    hx-push-url="{% url 'public:components_index' %}?slug={{ category.slug }}"
-                                    hx-on::after-request="document.querySelectorAll('#cl-sidebar a').forEach(el => el.removeAttribute('aria-current')); this.setAttribute('aria-current', 'page')"
-                                    class="px-3 py-1.5 rounded-tag text-text-2 hover:bg-tag aria-[current=page]:bg-tag aria-[current=page]:text-text-1 aria-[current=page]:font-medium"
-                                    {% if category.slug == active.slug %}
-                                        aria-current="page"
-                                    {% endif %}
-                                >
-                                    {{ category.label }}
-                                </a>
-                            {% endfor %}
-                        </div>
+                            </summary>
+                            <div class="flex flex-col gap-1">
+                                {% for category in group.categories %}
+                                    <a
+                                        href="{% url 'public:components_index' %}?slug={{ category.slug }}"
+                                        data-slug="{{ category.slug }}"
+                                        hx-get="{% url 'public:components_panel' slug=category.slug %}"
+                                        hx-target="#cl-main"
+                                        hx-swap="innerHTML"
+                                        hx-indicator="#cl-indicator"
+                                        hx-push-url="{% url 'public:components_index' %}?slug={{ category.slug }}"
+                                        hx-on::after-request="document.querySelectorAll('#cl-sidebar a').forEach(el => el.removeAttribute('aria-current')); this.setAttribute('aria-current', 'page')"
+                                        class="px-3 py-1.5 rounded-tag text-text-2 hover:bg-tag aria-[current=page]:bg-tag aria-[current=page]:text-text-1 aria-[current=page]:font-medium"
+                                        {% if category.slug == active.slug %}
+                                            aria-current="page"
+                                        {% endif %}
+                                    >
+                                        {{ category.label }}
+                                    </a>
+                                {% endfor %}
+                            </div>
+                        </details>
                     {% endfor %}
                 </nav>
             </aside>
