@@ -37,6 +37,28 @@ has tests at `tests/pipeline/models/test_models.py`.
 
 ## 2. Python style
 
+Follow the Zen of Python (h/t Tim Peters):
+
+* Beautiful is better than ugly.
+* Explicit is better than implicit.
+* Simple is better than complex.
+* Complex is better than complicated.
+* Flat is better than nested.
+* Sparse is better than dense.
+* Readability counts.
+* Special cases aren't special enough to break the rules.
+* Although practicality beats purity.
+* Errors should never pass silently.
+* Unless explicitly silenced.
+* In the face of ambiguity, refuse the temptation to guess.
+* There should be one-- and preferably only one --obvious way to do it.
+* Although that way may not be obvious at first unless you're Dutch.
+* Now is better than never.
+* Although never is often better than *right* now.
+* If the implementation is hard to explain, it's a bad idea.
+* If the implementation is easy to explain, it may be a good idea.
+* Namespaces are one honking great idea -- let's do more of those!
+
 ### 2.1 Module headers
 
 Every module starts with a docstring block whose first line names the
@@ -200,13 +222,17 @@ fetch, or mutate other records.
   routed under a `partials/` prefix (see
   [pipeline/urls.py](pipeline/urls.py)) and guarded with the
   `require_htmx` decorator from [pipeline/views.py](pipeline/views.py).
-- Views are thin: parse query params, call the ORM or service layer,
-  render a template. No business logic.
+- Views are thin: parse query params, enforce permissions, call the ORM or
+  service layer, render a template. No business logic.
 - Use `@require_GET` / `@require_POST` from
   `django.views.decorators.http`.
 - Type annotations: `def view(request: HttpRequest) -> HttpResponse:`.
 
-### 3.5 Services
+### 3.5 Templates
+
+-  No database lookups in templates / templatetags
+
+### 3.6 Services
 
 - Located in `pipeline/services/`.
 - Prefer plain functions over classes — composition over inheritance.
@@ -217,7 +243,7 @@ fetch, or mutate other records.
   patch them.
 - Keep a module-level logger.
 
-### 3.6 Management commands
+### 3.7 Management commands
 
 Every command under `pipeline/management/commands/` must:
 
@@ -236,7 +262,7 @@ See
 [pipeline/management/commands/fetch_bulletins.py](pipeline/management/commands/fetch_bulletins.py)
 for the reference shape.
 
-### 3.7 Settings
+### 3.8 Settings
 
 - Split across `config/settings/base.py`, `development.py`,
   `production.py`. `DJANGO_SETTINGS_MODULE` is read from the
