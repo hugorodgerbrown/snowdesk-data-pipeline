@@ -103,16 +103,35 @@ class SeasonGrid:
         return bool(self.columns)
 
     @property
-    def columns_with_labels(
+    def month_groups(
         self,
-    ) -> list[tuple[str, tuple[SeasonCell | None, ...]]]:
-        """Yield ``(month_label, column)`` pairs for parallel template iteration.
+    ) -> list[tuple[str, int, list[tuple[SeasonCell | None, ...]]]]:
+        """Group columns by calendar month for the alternate-background heatmap.
 
-        A non-empty ``month_label`` flags the column as the start of a new
-        calendar month — the template uses that to insert a visual gap so
-        the heatmap's month boundaries are scannable.
+        Yields ``(label, parity, columns)`` triples. ``label`` is the
+        abbreviated month name ("Nov"). ``parity`` alternates 0/1 across
+        groups so the template can apply alternating background tints to
+        make the month boundaries scannable. Leading-pad columns (when
+        the season starts mid-week) roll into the first dated month's
+        group rather than forming a labelless group of their own.
         """
-        return list(zip(self.month_labels, self.columns, strict=True))
+        groups: list[tuple[str, int, list[tuple[SeasonCell | None, ...]]]] = []
+        parity = 0
+        current_label = ""
+        current_columns: list[tuple[SeasonCell | None, ...]] = []
+        for label, column in zip(self.month_labels, self.columns, strict=True):
+            if label and current_label:
+                groups.append((current_label, parity, current_columns))
+                parity = 1 - parity
+                current_label = label
+                current_columns = [column]
+            else:
+                if label:
+                    current_label = label
+                current_columns.append(column)
+        if current_columns:
+            groups.append((current_label, parity, current_columns))
+        return groups
 
 
 def build_season_grid(

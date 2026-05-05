@@ -580,6 +580,27 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     border: none;
 }
 
+/* Per-month wrappers — alternate a subtle background tint between adjacent
+   months so the boundaries are scannable without forcing a spacer column.
+   Padding gives the cells a hairline of breathing room inside the tint;
+   margin-bottom on the label aligns the first cell row with the rest of
+   the heatmap regardless of label height. */
+[data-testid="season-calendar"] .season-month {
+    padding: 0.25rem 0.25rem 0.25rem 0.25rem;
+}
+[data-testid="season-calendar"] .season-month .calendar-cell-label {
+    margin-bottom: 0.25rem;
+}
+[data-testid="season-calendar"] [data-month-parity="0"] {
+    background: transparent;
+}
+[data-testid="season-calendar"] [data-month-parity="1"] {
+    background: rgba(0, 0, 0, 0.04);
+}
+.dark [data-testid="season-calendar"] [data-month-parity="1"] {
+    background: rgba(255, 255, 255, 0.05);
+}
+
 /* —— Season heatmap sheet primitive (SNOW-117) ——————————————————
    Slide-down full-width panel anchored to the top of the viewport.
    Toggled by the [data-season-sheet] state attribute set by the
