@@ -122,7 +122,7 @@ reachable via the SNOW-81 deep-link in the masthead.
         </script>
     {% endif %}
     <script nonce="{{ request.csp_nonce }}">
-        (function () {
+        document.addEventListener('DOMContentLoaded', function () {
             var el = document.querySelector('[data-prev-url],[data-next-url]');
             if (!el) return;
             var prevUrl = el.dataset.prevUrl || null;
@@ -159,7 +159,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                 if (Math.abs(delta) < 50) return;
                 navigate(delta > 0 ? nextUrl : prevUrl);
             }, { passive: true });
-        })();
+        });
     </script>
     {# ── Outermost container: font-sans overrides any serif from @theme ── #}
     <div
