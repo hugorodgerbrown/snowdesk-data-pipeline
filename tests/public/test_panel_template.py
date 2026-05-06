@@ -178,18 +178,17 @@ class TestErrorStateCard:
 
 
 @pytest.mark.django_db
-class TestTraitHeaderSemantics:
+class TestProblemCardRendering:
     """
-    Tests that trait titles render inside <h2> elements.
+    Tests that problem cards render correctly.
 
-    The page hierarchy is ``h1`` (region) → ``h2`` (trait title) → ``h2``
-    (Snowpack & Weather section) so Lighthouse's ``heading-order`` audit
-    passes. Traits must NOT render as <h3> (which would skip a level
-    given the h1 parent).
+    The page hierarchy is h1 (region) → h2 (Avalanche Problems section
+    heading) → h2 (Snowpack & Weather section) — no per-card h2 any more
+    since the card header is plain text.
     """
 
-    def test_trait_title_rendered_in_h2(self, anon_client: Client, region):
-        """Each problem group title appears inside an <h2> tag."""
+    def test_problem_label_rendered_in_card_header(self, anon_client: Client, region):
+        """Problem type label ('Wind slab') appears in the card header area."""
         from bulletins.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 5, 10)
@@ -224,12 +223,11 @@ class TestTraitHeaderSemantics:
         assert response.status_code == 200
         content = response.content.decode()
 
-        # Title should appear inside an h2 element (the group heading level).
-        assert "<h2" in content
-        assert "Dry avalanches" in content
+        assert 'data-testid="rating-block"' in content
+        assert "Wind slab" in content
 
-    def test_two_trait_rating_blocks_present(self, anon_client: Client, region):
-        """A bulletin with dry + wet problems produces two rating blocks."""
+    def test_two_problems_produce_two_blocks(self, anon_client: Client, region):
+        """A bulletin with dry + wet problems produces two separate rating blocks."""
         from bulletins.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 5, 11)
@@ -273,8 +271,8 @@ class TestTraitHeaderSemantics:
         content = response.content.decode()
 
         assert content.count('data-testid="rating-block"') == 2
-        assert "Dry avalanches" in content
-        assert "Wet-snow avalanches" in content
+        assert "Wind slab" in content
+        assert "Wet snow" in content
 
 
 # ── Per-problem danger_level_css enrichment ───────────────────────────────────

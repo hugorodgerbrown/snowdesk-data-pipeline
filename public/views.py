@@ -1699,6 +1699,7 @@ _DANGER_RATING_INT: dict[str, int] = {
     "high": 4,
     "very_high": 5,
 }
+_TIME_PERIOD_ORDER: dict[str, int] = {"all_day": 0, "earlier": 1, "later": 2}
 
 # Map CAAML ``customData.CH.subdivision`` strings to display suffixes.
 _SUBDIVISION_SUFFIX: dict[str, str] = {
@@ -1944,34 +1945,13 @@ def _problem_summary(
     return _gettext("Affects all aspects and elevations")
 
 
-def _problem_sort_key(p: dict[str, Any]) -> tuple[int, int]:
-    """Sort key for avalanche problems: highest danger first, then kind order."""
+def _problem_sort_key(p: dict[str, Any]) -> tuple[int, int, int]:
+    """Sort key: highest danger first, then kind order, then time period."""
     drv = p.get("dangerRatingValue") or ""
     level = _DANGER_RATING_INT.get(drv, 1)
     kind = _KIND_MAP.get(p.get("problemType") or "", "dry")
-    return (-level, _KIND_ORDER.get(kind, 0))
-
-
-def _collect_cluster(
-    sorted_problems: list[dict[str, Any]],
-    start: int,
-    kind: str,
-    danger_level: int,
-) -> list[dict[str, Any]]:
-    """Collect consecutive problems sharing the same (kind, danger_level) from start."""
-    cluster: list[dict[str, Any]] = []
-    j = start
-    while j < len(sorted_problems):
-        q = sorted_problems[j]
-        q_kind = _KIND_MAP.get(q.get("problemType") or "", "dry")
-        q_drv = q.get("dangerRatingValue") or ""
-        q_level = _DANGER_RATING_INT.get(q_drv, 1)
-        if q_kind == kind and q_level == danger_level:
-            cluster.append(q)
-            j += 1
-        else:
-            break
-    return cluster
+    tp = p.get("validTimePeriod") or ""
+    return (-level, _KIND_ORDER.get(kind, 0), _TIME_PERIOD_ORDER.get(tp, 0))
 
 
 def _enrich_avalanche_problem(
@@ -2028,104 +2008,72 @@ def _enrich_avalanche_problem(
     }
 
 
-def _groups_from_aggregation(
+def _problem_card(raw_p: dict[str, Any], category: str) -> dict[str, Any]:
+    """Build a flat presentation card dict from one raw CAAML avalancheProblem."""
+    drv = raw_p.get("dangerRatingValue") or ""
+    danger_level = _DANGER_RATING_INT.get(drv, 1)
+    enriched = _enrich_avalanche_problem(raw_p, [raw_p], 0)
+    return {"category": category, "danger_level": danger_level, **enriched}
+
+
+def _problem_cards_from_aggregation(
     aggregation: list[dict[str, Any]],
     problem_index: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """
-    Build one card per (aggregation entry, problem type) in aggregation order.
-
-    Each card carries exactly one enriched problem.  Title and category come
-    from the aggregation entry; danger level comes from the resolved problem.
+    Build one card per (aggregation entry, problem type), preserving order.
 
     Args:
         aggregation: The ``customData.CH.aggregation`` list.
-        problem_index: ``{problemType: raw_problem}`` index built from
+        problem_index: ``{problemType: raw_problem}`` built from
             ``avalancheProblems``.
 
     Returns:
-        Flat list of card dicts preserving aggregation order.
+        Flat list of card dicts in aggregation order.
 
     """
-    groups: list[dict[str, Any]] = []
+    cards: list[dict[str, Any]] = []
     for agg_entry in aggregation:
         category: str = agg_entry.get("category") or "dry"
-        default_title = _KIND_TITLES.get(category, _KIND_TITLES["dry"])
-        title = agg_entry.get("title") or default_title
         for pt in agg_entry.get("problemTypes") or []:
             raw_p = problem_index.get(pt)
-            if raw_p is None:
-                continue
-            drv = raw_p.get("dangerRatingValue") or ""
-            danger_level = _DANGER_RATING_INT.get(drv, 1)
-            enriched = _enrich_avalanche_problem(raw_p, [raw_p], 0)
-            groups.append(
-                {
-                    "kind": category,
-                    "category": category,
-                    "danger_level": danger_level,
-                    "title": title,
-                    "problems": [enriched],
-                }
-            )
-    return groups
+            if raw_p is not None:
+                cards.append(_problem_card(raw_p, category))
+    return cards
 
 
-def _group_avalanche_problems(
+def build_problem_cards(
     raw_problems: list[dict[str, Any]],
     aggregation: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """
-    Build rating-block card dicts from CAAML avalanche problem data.
+    Build one flat presentation card per avalancheProblem, in display order.
 
-    When ``aggregation`` is present it drives card structure, order, and
-    titles (one card per problem in aggregation order).  When absent,
-    falls back to sorting by danger level and clustering consecutive
-    (kind, danger_level) pairs.
+    When ``aggregation`` is present it drives ordering (aggregation entry →
+    problem type).  When absent, falls back to sorting by danger level
+    high-to-low, then kind (dry → wet → gliding), then time period
+    (all_day → earlier → later).
 
     Args:
         raw_problems: The CAAML ``avalancheProblems`` array.
         aggregation: The ``customData.CH.aggregation`` array (may be empty).
 
     Returns:
-        List of card dicts, each with ``kind``, ``category``,
-        ``danger_level``, ``title``, and ``problems`` keys.
-        Empty list when ``raw_problems`` is empty.
+        List of flat card dicts.  Empty list when ``raw_problems`` is empty.
 
     """
     if not raw_problems:
         return []
-
     if aggregation:
-        problem_index = {
-            p["problemType"]: p for p in raw_problems if p.get("problemType")
-        }
-        return _groups_from_aggregation(aggregation, problem_index)
-
-    sorted_problems = sorted(raw_problems, key=_problem_sort_key)
-    groups: list[dict[str, Any]] = []
-    i = 0
-    while i < len(sorted_problems):
-        p = sorted_problems[i]
-        kind = _KIND_MAP.get(p.get("problemType") or "", "dry")
-        danger_level = _DANGER_RATING_INT.get(p.get("dangerRatingValue") or "", 1)
-        cluster = _collect_cluster(sorted_problems, i, kind, danger_level)
-        enriched = [
-            _enrich_avalanche_problem(prob, cluster, k)
-            for k, prob in enumerate(cluster)
-        ]
-        groups.append(
-            {
-                "kind": kind,
-                "category": _KIND_CATEGORY.get(kind, "dry"),
-                "danger_level": danger_level,
-                "title": _KIND_TITLES.get(kind, _KIND_TITLES["dry"]),
-                "problems": enriched,
-            }
+        index = {p["problemType"]: p for p in raw_problems if p.get("problemType")}
+        return _problem_cards_from_aggregation(aggregation, index)
+    return [
+        _problem_card(
+            p,
+            _KIND_CATEGORY.get(_KIND_MAP.get(p.get("problemType") or "", "dry"), "dry"),
         )
-        i += len(cluster)
-
-    return groups
+        for p in sorted(raw_problems, key=_problem_sort_key)
+    ]
 
 
 def _enrich_render_model_problem(
@@ -2323,7 +2271,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     raw_problems: list[dict[str, Any]] = props.get("avalancheProblems") or []
     ch_data: dict[str, Any] = (props.get("customData") or {}).get("CH") or {}
     aggregation: list[dict[str, Any]] = ch_data.get("aggregation") or []
-    problem_groups = _group_avalanche_problems(raw_problems, aggregation)
+    problem_cards = build_problem_cards(raw_problems, aggregation)
     ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
     danger_key, danger_subdivision = _highest_danger_key(ratings)
     danger_meta = _DANGER_PANEL_META[danger_key]
@@ -2415,7 +2363,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "afternoon_label": afternoon_meta["label"],
         "afternoon_number": afternoon_meta["number"],
         "afternoon_subdivision": afternoon_subdivision,
-        "problem_groups": problem_groups,
+        "problem_cards": problem_cards,
     }
     panel["day_character"] = compute_day_character(raw_render_model)
     return panel

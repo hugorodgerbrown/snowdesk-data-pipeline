@@ -253,7 +253,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                     >
                         {% trans "Avalanche Problems" %}
                     </h2>
-                    {% if not panel.problem_groups %}
+                    {% if not panel.problem_cards %}
                         <div class="rounded-[12px] border border-border bg-card px-4 py-5 text-center mb-4">
                             <p class="text-sm font-medium text-text-1 mb-0.5">
                                 {% trans "No avalanche problems reported." %}
@@ -263,8 +263,8 @@ reachable via the SNOW-81 deep-link in the masthead.
                             </p>
                         </div>
                     {% else %}
-                        {% for group in panel.problem_groups %}
-                            {% include "public/_rating_block.html" with group=group %}
+                        {% for card in panel.problem_cards %}
+                            {% include "public/_rating_block.html" with card=card %}
                         {% endfor %}
                     {% endif %}
 
