@@ -206,6 +206,21 @@ def _raw_data_with_problems(problems: list[dict]) -> dict:
     }
 
 
+def _raw_data_with_aggregation(
+    aggregation: list[dict],
+    problems: list[dict],
+    ratings: list[dict] | None = None,
+) -> dict:
+    """Build a raw_data envelope with both aggregation and avalancheProblems."""
+    properties: dict = {
+        "avalancheProblems": problems,
+        "customData": {"CH": {"aggregation": aggregation}},
+    }
+    if ratings:
+        properties["dangerRatings"] = ratings
+    return {"type": "Feature", "geometry": None, "properties": properties}
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -876,6 +891,149 @@ class TestRatingBlockGrouping:
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
         assert 'data-testid="rating-block"' not in content
         assert "No avalanche problems reported." in content
+
+
+# ---------------------------------------------------------------------------
+# Test: aggregation-driven card ordering and titles (SNOW-135)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestAggregationDriven:
+    """
+    When customData.CH.aggregation is present, cards are built from it:
+    one card per (aggregation entry, problem type), in aggregation order,
+    with title and category from the aggregation entry.
+    """
+
+    def test_aggregation_order_preserved(self, client: Client, region):
+        """Cards appear in aggregation order, not sorted by danger level."""
+        day = date(2026, 3, 15)
+        # aggregation lists wet first (at low), dry second (at considerable)
+        raw = _raw_data_with_aggregation(
+            aggregation=[
+                {
+                    "category": "wet",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["wet_snow"],
+                },
+                {
+                    "category": "dry",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["wind_slab"],
+                },
+            ],
+            problems=[
+                _raw_problem(problem_type="wet_snow", danger_rating_value="low"),
+                _raw_problem(
+                    problem_type="wind_slab", danger_rating_value="considerable"
+                ),
+            ],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        wet_idx = content.index("Wet-snow avalanches")
+        dry_idx = content.index("Dry avalanches")
+        assert wet_idx < dry_idx
+
+    def test_aggregation_title_used_when_present(self, client: Client, region):
+        """aggregation.title appears as the card heading when set."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_aggregation(
+            aggregation=[
+                {
+                    "category": "wet",
+                    "validTimePeriod": "later",
+                    "problemTypes": ["wet_snow", "gliding_snow"],
+                    "title": "Wet-snow and gliding avalanches, as the day progresses",
+                }
+            ],
+            problems=[
+                _raw_problem(
+                    problem_type="wet_snow", danger_rating_value="considerable"
+                ),
+                _raw_problem(
+                    problem_type="gliding_snow", danger_rating_value="moderate"
+                ),
+            ],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert "Wet-snow and gliding avalanches, as the day progresses" in content
+
+    def test_kind_title_fallback_when_aggregation_title_absent(
+        self, client: Client, region
+    ):
+        """_KIND_TITLES fallback is used when aggregation entry has no title."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_aggregation(
+            aggregation=[
+                {
+                    "category": "dry",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["wind_slab"],
+                }
+            ],
+            problems=[
+                _raw_problem(problem_type="wind_slab", danger_rating_value="moderate")
+            ],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert "Dry avalanches" in content
+
+    def test_two_problems_in_one_entry_produce_two_cards(self, client: Client, region):
+        """Each problemType in an aggregation entry becomes its own card."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_aggregation(
+            aggregation=[
+                {
+                    "category": "wet",
+                    "validTimePeriod": "later",
+                    "problemTypes": ["wet_snow", "gliding_snow"],
+                    "title": "Wet-snow and gliding avalanches, later",
+                }
+            ],
+            problems=[
+                _raw_problem(
+                    problem_type="wet_snow", danger_rating_value="considerable"
+                ),
+                _raw_problem(
+                    problem_type="gliding_snow", danger_rating_value="moderate"
+                ),
+            ],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert content.count('data-testid="rating-block"') == 2
+
+    def test_core_zone_text_as_aria_label(self, client: Client, region):
+        """coreZoneText from customData.CH appears as aria-label on aspect/elevation row."""
+        day = date(2026, 3, 15)
+        core_text = "Danger level moderate in N to E facing aspects above 2000m."
+        raw = _raw_data_with_aggregation(
+            aggregation=[
+                {
+                    "category": "dry",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["wind_slab"],
+                }
+            ],
+            problems=[
+                {
+                    "problemType": "wind_slab",
+                    "comment": "<p>Wind slab hazard.</p>",
+                    "aspects": ["N", "NE", "E"],
+                    "elevation": {"lowerBound": "2000"},
+                    "dangerRatingValue": "moderate",
+                    "validTimePeriod": "all_day",
+                    "customData": {"CH": {"coreZoneText": core_text}},
+                }
+            ],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert f'aria-label="{core_text}"' in content
 
 
 # ---------------------------------------------------------------------------

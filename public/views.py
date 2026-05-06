@@ -1999,6 +1999,9 @@ def _enrich_avalanche_problem(
     comment_html: str = problem.get("comment") or ""
     raw_elevation: dict[str, Any] | None = problem.get("elevation") or None
     elevation = _format_elevation(raw_elevation) if raw_elevation else None
+    core_zone_text: str = ((problem.get("customData") or {}).get("CH") or {}).get(
+        "coreZoneText"
+    ) or ""
 
     label = _PROBLEM_LABELS.get(
         problem_type, problem_type.replace("_", " ").capitalize()
@@ -2021,21 +2024,68 @@ def _enrich_avalanche_problem(
         "label": label,
         "time_period_label": time_period_label,
         "hide_comment": hide_comment,
+        "core_zone_text": core_zone_text,
     }
+
+
+def _groups_from_aggregation(
+    aggregation: list[dict[str, Any]],
+    problem_index: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Build one card per (aggregation entry, problem type) in aggregation order.
+
+    Each card carries exactly one enriched problem.  Title and category come
+    from the aggregation entry; danger level comes from the resolved problem.
+
+    Args:
+        aggregation: The ``customData.CH.aggregation`` list.
+        problem_index: ``{problemType: raw_problem}`` index built from
+            ``avalancheProblems``.
+
+    Returns:
+        Flat list of card dicts preserving aggregation order.
+
+    """
+    groups: list[dict[str, Any]] = []
+    for agg_entry in aggregation:
+        category: str = agg_entry.get("category") or "dry"
+        default_title = _KIND_TITLES.get(category, _KIND_TITLES["dry"])
+        title = agg_entry.get("title") or default_title
+        for pt in agg_entry.get("problemTypes") or []:
+            raw_p = problem_index.get(pt)
+            if raw_p is None:
+                continue
+            drv = raw_p.get("dangerRatingValue") or ""
+            danger_level = _DANGER_RATING_INT.get(drv, 1)
+            enriched = _enrich_avalanche_problem(raw_p, [raw_p], 0)
+            groups.append(
+                {
+                    "kind": category,
+                    "category": category,
+                    "danger_level": danger_level,
+                    "title": title,
+                    "problems": [enriched],
+                }
+            )
+    return groups
 
 
 def _group_avalanche_problems(
     raw_problems: list[dict[str, Any]],
+    aggregation: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """
-    Group raw CAAML avalancheProblems into rating-block card dicts.
+    Build rating-block card dicts from CAAML avalanche problem data.
 
-    Sorts by danger level high-to-low (tiebreak: kind order dry → wet →
-    gliding), then groups consecutive problems sharing the same
-    (kind, danger_level) under one card dict.
+    When ``aggregation`` is present it drives card structure, order, and
+    titles (one card per problem in aggregation order).  When absent,
+    falls back to sorting by danger level and clustering consecutive
+    (kind, danger_level) pairs.
 
     Args:
         raw_problems: The CAAML ``avalancheProblems`` array.
+        aggregation: The ``customData.CH.aggregation`` array (may be empty).
 
     Returns:
         List of card dicts, each with ``kind``, ``category``,
@@ -2045,6 +2095,12 @@ def _group_avalanche_problems(
     """
     if not raw_problems:
         return []
+
+    if aggregation:
+        problem_index = {
+            p["problemType"]: p for p in raw_problems if p.get("problemType")
+        }
+        return _groups_from_aggregation(aggregation, problem_index)
 
     sorted_problems = sorted(raw_problems, key=_problem_sort_key)
     groups: list[dict[str, Any]] = []
@@ -2265,7 +2321,9 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     """
     props = _get_properties(bulletin)
     raw_problems: list[dict[str, Any]] = props.get("avalancheProblems") or []
-    problem_groups = _group_avalanche_problems(raw_problems)
+    ch_data: dict[str, Any] = (props.get("customData") or {}).get("CH") or {}
+    aggregation: list[dict[str, Any]] = ch_data.get("aggregation") or []
+    problem_groups = _group_avalanche_problems(raw_problems, aggregation)
     ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
     danger_key, danger_subdivision = _highest_danger_key(ratings)
     danger_meta = _DANGER_PANEL_META[danger_key]

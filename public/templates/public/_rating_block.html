@@ -49,11 +49,16 @@ Renders:
     {# ── Aspect / elevation row ──────────────────────────────────────────── #}
     {# Shown only when the first problem has structured aspects or elevation  #}
     {# data.  Absent for prose-only problems — asymmetry is honest.          #}
+    {# aria-label uses SLF's coreZoneText when present — a pre-formatted     #}
+    {# summary of aspect + elevation for screen readers.                     #}
     {% with first_problem=group.problems|first %}
         {% if first_problem.aspects or first_problem.elevation %}
             <div
                 class="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card"
                 data-testid="aspect-elevation-row"
+                {% if first_problem.core_zone_text %}
+                    aria-label="{{ first_problem.core_zone_text }}"
+                {% endif %}
             >
                 {% if first_problem.aspects %}
                     <div class="flex items-center gap-1.5 shrink-0">
