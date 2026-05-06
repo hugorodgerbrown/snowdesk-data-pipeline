@@ -1206,128 +1206,67 @@ _DAY_WINDOW_PILL_LABELS: dict[str, Promise] = {
 }
 
 
-def _resolve_window_level(
-    period_ratings: list[dict[str, Any]],
-    period_traits: list[dict[str, Any]],
-) -> str | None:
-    """
-    Pick the level key for one day-window row.
-
-    Primary source is the CAAML ``dangerRatings`` filtered to this period;
-    fallback path derives from ``traits[].danger_level`` for fixtures that
-    only populate the render model. Returns ``None`` when neither source
-    yields a usable level — the caller skips the window in that case.
-    """
-    if period_ratings:
-        level_key, _subdivision = _highest_danger_key(period_ratings)
-        return level_key
-    levels = [
-        t["danger_level"]
-        for t in period_traits
-        if isinstance(t.get("danger_level"), int) and 1 <= t["danger_level"] <= 5
-    ]
-    if not levels:
-        return None
-    return cast("str", _DANGER_ORDER[max(levels) - 1])
-
-
-def _resolve_window_caption(period_traits: list[dict[str, Any]]) -> str:
-    """
-    Concatenate problem-type labels for the period's covering traits.
-
-    The caption answers "what kinds of avalanche are in play during this
-    window" rather than echoing the trait's editorial title. Problem
-    types are deduplicated and joined in render-model order so a trait
-    list of [persistent_weak_layers, wet_snow] reads as
-    "Persistent weak layers, Wet snow".
-
-    Returns an empty string when no covering trait carries any problems —
-    the panel renders the row without a caption rather than inventing
-    copy.
-    """
-    if not period_traits:
-        return ""
-    seen: set[str] = set()
-    labels: list[str] = []
-    for trait in period_traits:
-        for problem in trait.get("problems") or []:
-            ptype = problem.get("problem_type") or ""
-            if not ptype or ptype in seen:
-                continue
-            seen.add(ptype)
-            label = _PROBLEM_LABELS.get(ptype) or ptype.replace("_", " ").capitalize()
-            # Resolve gettext_lazy proxies eagerly — the soft launch is
-            # English-only (project_language_scope memory) so we can flatten
-            # to str at view time and revisit if/when i18n lands.
-            labels.append(str(label))
-    return ", ".join(labels)
+def _parse_danger_rating(rating: dict[str, Any]) -> tuple[str, str, str]:
+    """Return ``(period, main_value, subdivision)`` for a CAAML dangerRating dict."""
+    period = rating.get("validTimePeriod") or "all_day"
+    level = rating.get("mainValue") or ""
+    raw_sub = (rating.get("customData") or {}).get("CH", {}).get("subdivision", "")
+    return period, level, raw_sub
 
 
 def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
     """
     Return the list[Window] consumed by the day-windows panel partial.
 
-    One row per ``validTimePeriod`` present on the bulletin. The level is
-    the highest CAAML ``mainValue`` seen for that period; the caption is
-    the title of the highest-``danger_level`` render-model trait scoped to
-    the same period (an empty string when no covering trait carries a
-    title).
-
-    The CAAML ``dangerRatings`` list is the primary source — when it is
-    absent (test fixtures populate ``render_model`` only), the helper
-    falls back to grouping ``render_model.traits`` by ``time_period`` and
-    deriving the level from ``danger_level``. Both paths yield the same
-    output shape.
-
-    Returns an empty list when the bulletin has neither dangerRatings nor
-    traits — the template hides the panel in that case rather than
-    rendering an empty card.
+    Reads ``dangerRatings`` directly from the bulletin's CAAML properties.
+    Always emits one row for the ``all_day_*`` rating. Conditionally emits
+    a second row for the ``later_*`` rating, filtered when it is a
+    same-band no-op (later main level equals the all-day main level and
+    later carries no ``plus`` / ``minus`` sublevel modifier). Returns an
+    empty list when no ``all_day`` rating is present — the template hides
+    the panel in that case.
     """
     props = _get_properties(bulletin)
     ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
-    traits: list[dict[str, Any]] = (bulletin.render_model or {}).get("traits") or []
 
-    ratings_by_period: dict[str, list[dict[str, Any]]] = {}
+    all_day_rating: dict[str, Any] | None = None
+    later_rating: dict[str, Any] | None = None
     for r in ratings:
-        period = r.get("validTimePeriod") or "all_day"
-        ratings_by_period.setdefault(period, []).append(r)
+        period, level, _ = _parse_danger_rating(r)
+        if period == "all_day" and level in _DANGER_ORDER:
+            all_day_rating = r
+        elif period == "later" and level in _DANGER_ORDER:
+            later_rating = r
 
-    traits_by_period: dict[str, list[dict[str, Any]]] = {}
-    for t in traits:
-        period = t.get("time_period") or "all_day"
-        traits_by_period.setdefault(period, []).append(t)
+    if all_day_rating is None:
+        return []
 
-    windows: list[dict[str, Any]] = []
-    for period in _DAY_WINDOW_ORDER:
-        period_ratings = ratings_by_period.get(period, [])
-        period_traits = traits_by_period.get(period, [])
-        level_key = _resolve_window_level(period_ratings, period_traits)
-        if level_key is None:
-            continue
-        windows.append(
-            {
-                "type": period,
-                "level_key": level_key,
-                "level_css": level_key.replace("_", "-"),
-                "level_label": _DANGER_PANEL_META[level_key]["label"],
-                "level_number": _DANGER_PANEL_META[level_key]["number"],
-                "caption": _resolve_window_caption(period_traits),
-                "pill_label": _DAY_WINDOW_PILL_LABELS[period],
-            }
+    def _row(rating: dict[str, Any], chip: str | Promise) -> dict[str, Any]:
+        _, level, sub = _parse_danger_rating(rating)
+        suffix = _SUBDIVISION_SUFFIX.get(sub, "")
+        number = _DANGER_PANEL_META[level]["number"]
+        return {
+            "type": (rating.get("validTimePeriod") or "all_day"),
+            "level_key": level,
+            "level_css": level.replace("_", "-"),
+            "level_label": _DANGER_PANEL_META[level]["label"],
+            "level_number": f"{number}{suffix}",
+            "caption": "",
+            "pill_label": chip,
+        }
+
+    windows = [_row(all_day_rating, _DAY_WINDOW_PILL_LABELS["all_day"])]
+
+    if later_rating is not None:
+        _, later_level, later_sub = _parse_danger_rating(later_rating)
+        _, all_day_level, all_day_sub = _parse_danger_rating(all_day_rating)
+        same_band_noop = (
+            later_level == all_day_level
+            and later_sub not in ("plus", "minus")
+            and all_day_sub not in ("plus", "minus")
         )
-
-    # Rebadge pills by row count so the panel reads naturally regardless
-    # of the underlying CAAML period mix:
-    #   1 row  → "All day"
-    #   2 rows → "Earlier" + "Later" (chronological brackets, even when
-    #            the data is e.g. (all_day, later))
-    #   3 rows → leave as-is — the natural _DAY_WINDOW_ORDER already
-    #            yields "Earlier" / "All day" / "Later"
-    if len(windows) == 1:
-        windows[0]["pill_label"] = _DAY_WINDOW_PILL_LABELS["all_day"]
-    elif len(windows) == 2:
-        windows[0]["pill_label"] = _DAY_WINDOW_PILL_LABELS["earlier"]
-        windows[1]["pill_label"] = _DAY_WINDOW_PILL_LABELS["later"]
+        if not same_band_noop:
+            windows.append(_row(later_rating, _DAY_WINDOW_PILL_LABELS["later"]))
 
     return windows
 

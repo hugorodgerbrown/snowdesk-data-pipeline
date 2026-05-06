@@ -149,7 +149,9 @@ _DAY_WINDOW_LEVEL_META: dict[str, dict[str, str]] = {
 }
 
 
-def _make_window(period: str, level_key: str, pill_label: str) -> dict[str, Any]:
+def _make_window(
+    period: str, level_key: str, pill_label: str, modifier: str = ""
+) -> dict[str, Any]:
     """Build one day-window row dict for the component-library fixture."""
     meta = _DAY_WINDOW_LEVEL_META[level_key]
     return {
@@ -157,8 +159,8 @@ def _make_window(period: str, level_key: str, pill_label: str) -> dict[str, Any]
         "level_key": level_key,
         "level_css": level_key.replace("_", "-"),
         "level_label": meta["label"],
-        "level_number": meta["number"],
-        "caption": None,
+        "level_number": f"{meta['number']}{modifier}",
+        "caption": "",
         "pill_label": pill_label,
     }
 
@@ -166,15 +168,18 @@ def _make_window(period: str, level_key: str, pill_label: str) -> dict[str, Any]
 def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
     """Build the day-windows variant matrix.
 
-    Two stacked variants:
+    Four stacked variants:
 
     * **All-day, level grid** — five synthetic ``all_day`` rows stepping
       ``low → very_high`` so tile + label contrast is reviewable across
       the whole EAWS scale on one screen. Not a realistic bulletin
       (real bulletins have at most two windows) — a comparison harness.
-    * **Split-day, mixed levels** — a realistic two-row layout: an
-      ``earlier`` window at moderate paired with a ``later`` window at
-      considerable, to show how two different tints read side-by-side.
+    * **All-day with sublevel modifier** — one ``all_day`` row at
+      considerable with a ``−`` modifier (badge reads ``3−``).
+    * **Cross-category later** — ``all_day`` low + ``later`` moderate,
+      the most common two-row shape in the bulletin sample.
+    * **Within-category later** — ``all_day`` considerable−  + ``later``
+      considerable (badge differential shows the intra-band rise).
     """
     all_day_grid = [
         _make_window("all_day", "low", "All day"),
@@ -183,8 +188,15 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
         _make_window("all_day", "high", "All day"),
         _make_window("all_day", "very_high", "All day"),
     ]
-    split_day = [
-        _make_window("earlier", "moderate", "Earlier"),
+    all_day_sublevel = [
+        _make_window("all_day", "considerable", "All day", modifier="-"),
+    ]
+    cross_category = [
+        _make_window("all_day", "low", "All day"),
+        _make_window("later", "moderate", "Later"),
+    ]
+    within_category = [
+        _make_window("all_day", "considerable", "All day", modifier="-"),
         _make_window("later", "considerable", "Later"),
     ]
     return (
@@ -193,8 +205,16 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
             "context": {"day_windows": all_day_grid},
         },
         {
-            "caption": "Split day · earlier vs later",
-            "context": {"day_windows": split_day},
+            "caption": "All day · sublevel modifier (3−)",
+            "context": {"day_windows": all_day_sublevel},
+        },
+        {
+            "caption": "Cross-category later · low → moderate",
+            "context": {"day_windows": cross_category},
+        },
+        {
+            "caption": "Within-category later · considerable− → considerable",
+            "context": {"day_windows": within_category},
         },
     )
 
