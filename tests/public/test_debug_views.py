@@ -199,20 +199,22 @@ class TestComponentLibraryPanel:
     def test_day_windows_panel_renders_expected_variants(
         self, htmx_staff_client: Client
     ) -> None:
-        """The day-windows panel ships two variants matching the scope contract.
+        """The day-windows panel ships three variants matching the scope contract.
 
         Variant 1 is the all-day level grid (five rows stepping low → very_high
         with an "All day" pill); variant 2 is the realistic split-day pair
-        (earlier @ moderate + later @ considerable). Asserting both the
-        context shape and rendered HTML guards against drift in either the
-        fixture or the ``include_variant`` plumbing.
+        (earlier @ moderate + later @ considerable); variant 3 demonstrates the
+        same-window multi-rating layout (all_day considerable + all_day moderate)
+        introduced by SNOW-126. Asserting both the context shape and rendered
+        HTML guards against drift in either the fixture or the ``include_variant``
+        plumbing.
         """
         response = htmx_staff_client.get(_panel_url("day-windows"))
         assert response.status_code == 200
 
         active = response.context["active"]
         assert active.slug == "day-windows"
-        assert len(active.variants) == 2
+        assert len(active.variants) == 3
 
         # Variant 1 — all-day, five EAWS levels.
         v1_windows = active.variants[0]["context"]["day_windows"]
@@ -232,6 +234,14 @@ class TestComponentLibraryPanel:
             ("earlier", "moderate"),
             ("later", "considerable"),
         ]
+
+        # Variant 3 — same window, two danger levels (SNOW-126).
+        v3_windows = active.variants[2]["context"]["day_windows"]
+        assert [(w["type"], w["level_key"]) for w in v3_windows] == [
+            ("all_day", "considerable"),
+            ("all_day", "moderate"),
+        ]
+        assert {w["pill_label"] for w in v3_windows} == {"All day"}
 
         # Rendered HTML — confirms include_variant reached the partial and
         # that the level_css → CSS class mapping (``very_high`` → ``lv-very-high``)

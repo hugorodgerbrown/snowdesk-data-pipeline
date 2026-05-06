@@ -166,7 +166,7 @@ def _make_window(period: str, level_key: str, pill_label: str) -> dict[str, Any]
 def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
     """Build the day-windows variant matrix.
 
-    Two stacked variants:
+    Three stacked variants:
 
     * **All-day, level grid** — five synthetic ``all_day`` rows stepping
       ``low → very_high`` so tile + label contrast is reviewable across
@@ -175,6 +175,9 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
     * **Split-day, mixed levels** — a realistic two-row layout: an
       ``earlier`` window at moderate paired with a ``later`` window at
       considerable, to show how two different tints read side-by-side.
+    * **Same-window multi-rating** — two rows in the same ``all_day``
+      window at different danger levels (considerable + moderate), showing
+      the per-(period, level) layout introduced by SNOW-126.
     """
     all_day_grid = [
         _make_window("all_day", "low", "All day"),
@@ -187,6 +190,10 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
         _make_window("earlier", "moderate", "Earlier"),
         _make_window("later", "considerable", "Later"),
     ]
+    same_window_multi = [
+        _make_window("all_day", "considerable", "All day"),
+        _make_window("all_day", "moderate", "All day"),
+    ]
     return (
         {
             "caption": "All day · five EAWS levels",
@@ -195,6 +202,10 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
         {
             "caption": "Split day · earlier vs later",
             "context": {"day_windows": split_day},
+        },
+        {
+            "caption": "Same window · considerable + moderate",
+            "context": {"day_windows": same_window_multi},
         },
     )
 

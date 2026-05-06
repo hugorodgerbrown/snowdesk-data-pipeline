@@ -1040,8 +1040,8 @@ class TestDayWindowsPanel:
         # Level label rendered.
         assert "Considerable" in content
 
-    def test_caption_concatenates_problem_type_labels(self, client: Client, region):
-        """Caption joins every covering trait's problem-type labels (deduped)."""
+    def test_caption_shows_only_problems_for_that_level(self, client: Client, region):
+        """Each row's caption lists only the problems driving its own danger level."""
         day = date(2026, 3, 22)
         rm = _render_model_with_traits(
             [
@@ -1070,13 +1070,113 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-03-22")
         response = client.get(url)
         content = response.content.decode()
-        # Single all_day row at the higher level (3 / Considerable). Caption
-        # lists every problem type from all covering traits in render-model
-        # order: Wind slab (from the dry L1 trait) then Wet snow (from the
-        # wet L3 trait). The trait titles themselves are not used.
-        assert content.count('data-testid="day-window-row"') == 1
-        assert "dw-tile lv-considerable" in content
-        assert "Wind slab, Wet snow" in content
+        # Two rows — one per (all_day, danger-level) tuple. Severity desc:
+        # Considerable (L3 / wet_snow) comes first, then Low (L1 / wind_slab).
+        assert content.count('data-testid="day-window-row"') == 2
+        considerable_idx = content.index("dw-tile lv-considerable")
+        low_idx = content.index("dw-tile lv-low")
+        assert considerable_idx < low_idx
+        # Each row carries only the problems for its own level.
+        assert "Wet snow" in content
+        assert "Wind slab" in content
+        # Both rows share a single all_day window; pill is "All day" for each.
+        assert content.count('data-window="all_day"') == 2
+        panel_start = content.index('data-testid="day-windows-panel"')
+        panel_end = content.index('data-testid="avalanche-problems-heading"')
+        panel_html = content[panel_start:panel_end]
+        assert ">All day<" in panel_html
+
+    def test_same_window_multi_rating_emits_two_rows_severity_ordered(
+        self, client: Client, region
+    ):
+        """Considerable + Moderate in the same all_day window → 2 rows, severity desc."""
+        day = date(2026, 3, 25)
+        rm = _render_model_with_traits(
+            [
+                {
+                    "category": "dry",
+                    "time_period": "all_day",
+                    "title": "Wind slab",
+                    "geography": {"source": "problems"},
+                    "problems": [_problem(problem_type="wind_slab")],
+                    "prose": None,
+                    "danger_level": 3,
+                },
+                {
+                    "category": "wet",
+                    "time_period": "all_day",
+                    "title": "Gliding snow",
+                    "geography": {"source": "problems"},
+                    "problems": [_problem(problem_type="gliding_snow")],
+                    "prose": None,
+                    "danger_level": 2,
+                },
+            ]
+        )
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+
+        url = _url("ch-4115", "valais", "2026-03-25")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 2
+        # Considerable row precedes Moderate row (severity desc).
+        considerable_idx = content.index("lv-considerable")
+        moderate_idx = content.index("lv-moderate")
+        assert considerable_idx < moderate_idx
+        # Both rows are for the all_day window; single distinct period → "All day" pills.
+        assert content.count('data-window="all_day"') == 2
+        panel_start = content.index('data-testid="day-windows-panel"')
+        panel_end = content.index('data-testid="avalanche-problems-heading"')
+        panel_html = content[panel_start:panel_end]
+        assert panel_html.count(">All day<") == 2
+        assert ">Earlier<" not in panel_html
+        assert ">Later<" not in panel_html
+
+    def test_same_window_three_ratings_emits_three_rows(self, client: Client, region):
+        """Three danger levels in the same all_day window → 3 rows, severity desc."""
+        day = date(2026, 3, 26)
+        rm = _render_model_with_traits(
+            [
+                {
+                    "category": "dry",
+                    "time_period": "all_day",
+                    "title": "New snow",
+                    "geography": {"source": "problems"},
+                    "problems": [_problem(problem_type="new_snow")],
+                    "prose": None,
+                    "danger_level": 4,
+                },
+                {
+                    "category": "dry",
+                    "time_period": "all_day",
+                    "title": "Wind slab",
+                    "geography": {"source": "problems"},
+                    "problems": [_problem(problem_type="wind_slab")],
+                    "prose": None,
+                    "danger_level": 3,
+                },
+                {
+                    "category": "dry",
+                    "time_period": "all_day",
+                    "title": "Persistent weak layers",
+                    "geography": {"source": "problems"},
+                    "problems": [_problem(problem_type="persistent_weak_layers")],
+                    "prose": None,
+                    "danger_level": 1,
+                },
+            ]
+        )
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+
+        url = _url("ch-4115", "valais", "2026-03-26")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 3
+        # Severity-ordered: High → Considerable → Low.
+        high_idx = content.index("lv-high")
+        considerable_idx = content.index("lv-considerable")
+        low_idx = content.index("lv-low")
+        assert high_idx < considerable_idx < low_idx
 
 
 # ---------------------------------------------------------------------------

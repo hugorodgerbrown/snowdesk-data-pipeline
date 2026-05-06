@@ -1206,29 +1206,54 @@ _DAY_WINDOW_PILL_LABELS: dict[str, Promise] = {
 }
 
 
-def _resolve_window_level(
+def _collect_period_levels(
     period_ratings: list[dict[str, Any]],
     period_traits: list[dict[str, Any]],
-) -> str | None:
+) -> list[tuple[str, list[dict[str, Any]]]]:
     """
-    Pick the level key for one day-window row.
+    Return ``(level_key, traits)`` pairs for one day-window period, severity desc.
 
-    Primary source is the CAAML ``dangerRatings`` filtered to this period;
-    fallback path derives from ``traits[].danger_level`` for fixtures that
-    only populate the render model. Returns ``None`` when neither source
-    yields a usable level — the caller skips the window in that case.
+    CAAML path: reads distinct ``mainValue`` strings from ``period_ratings``
+    and matches render-model traits by ``danger_level`` int. Fallback path
+    (no ratings): groups ``period_traits`` by ``danger_level``. Returns an
+    empty list when neither source yields a usable level — the caller skips
+    the window.
     """
     if period_ratings:
-        level_key, _subdivision = _highest_danger_key(period_ratings)
-        return level_key
-    levels = [
-        t["danger_level"]
-        for t in period_traits
-        if isinstance(t.get("danger_level"), int) and 1 <= t["danger_level"] <= 5
-    ]
+        seen: set[str] = set()
+        level_keys: list[str] = []
+        for r in period_ratings:
+            value = r.get("mainValue", "")
+            if value in _DANGER_ORDER and value not in seen:
+                seen.add(value)
+                level_keys.append(value)
+        level_keys.sort(key=_DANGER_ORDER.index, reverse=True)
+        result: list[tuple[str, list[dict[str, Any]]]] = []
+        for lk in level_keys:
+            level_int = _DANGER_ORDER.index(lk) + 1
+            level_traits = [
+                t for t in period_traits if t.get("danger_level") == level_int
+            ]
+            result.append((lk, level_traits))
+        return result
+    # Fallback: derive levels from render-model traits only.
+    seen_levels: set[int] = set()
+    levels: list[int] = []
+    for t in period_traits:
+        dl = t.get("danger_level")
+        if isinstance(dl, int) and 1 <= dl <= 5 and dl not in seen_levels:
+            seen_levels.add(dl)
+            levels.append(dl)
     if not levels:
-        return None
-    return cast("str", _DANGER_ORDER[max(levels) - 1])
+        return []
+    levels.sort(reverse=True)
+    return [
+        (
+            _DANGER_ORDER[dl - 1],
+            [t for t in period_traits if t.get("danger_level") == dl],
+        )
+        for dl in levels
+    ]
 
 
 def _resolve_window_caption(period_traits: list[dict[str, Any]]) -> str:
@@ -1263,21 +1288,45 @@ def _resolve_window_caption(period_traits: list[dict[str, Any]]) -> str:
     return ", ".join(labels)
 
 
+def _rebadge_window_pills(windows: list[dict[str, Any]]) -> None:
+    """
+    Rebadge ``pill_label`` on each window in place, based on distinct period count.
+
+    A period that yields multiple rows (two danger levels in the same window)
+    shares a pill label across all its rows:
+
+    * 1 distinct period  → "All day" for every row
+    * 2 distinct periods → "Earlier" for the first period, "Later" for the second
+    * 3 distinct periods → keep natural ``_DAY_WINDOW_PILL_LABELS`` labels as-is
+    """
+    distinct_periods = list(dict.fromkeys(w["type"] for w in windows))
+    if len(distinct_periods) == 1:
+        for w in windows:
+            w["pill_label"] = _DAY_WINDOW_PILL_LABELS["all_day"]
+    elif len(distinct_periods) == 2:
+        first_period = distinct_periods[0]
+        for w in windows:
+            w["pill_label"] = (
+                _DAY_WINDOW_PILL_LABELS["earlier"]
+                if w["type"] == first_period
+                else _DAY_WINDOW_PILL_LABELS["later"]
+            )
+
+
 def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
     """
     Return the list[Window] consumed by the day-windows panel partial.
 
-    One row per ``validTimePeriod`` present on the bulletin. The level is
-    the highest CAAML ``mainValue`` seen for that period; the caption is
-    the title of the highest-``danger_level`` render-model trait scoped to
-    the same period (an empty string when no covering trait carries a
-    title).
+    One row per ``(validTimePeriod, danger-level)`` tuple present on the
+    bulletin. Within each period rows are ordered severity high-to-low;
+    periods themselves follow ``_DAY_WINDOW_ORDER`` (earlier → all_day →
+    later). The caption for each row lists only the problem types that
+    contribute to that specific danger level.
 
     The CAAML ``dangerRatings`` list is the primary source — when it is
     absent (test fixtures populate ``render_model`` only), the helper
     falls back to grouping ``render_model.traits`` by ``time_period`` and
-    deriving the level from ``danger_level``. Both paths yield the same
-    output shape.
+    ``danger_level``. Both paths yield the same output shape.
 
     Returns an empty list when the bulletin has neither dangerRatings nor
     traits — the template hides the panel in that case rather than
@@ -1301,34 +1350,25 @@ def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
     for period in _DAY_WINDOW_ORDER:
         period_ratings = ratings_by_period.get(period, [])
         period_traits = traits_by_period.get(period, [])
-        level_key = _resolve_window_level(period_ratings, period_traits)
-        if level_key is None:
-            continue
-        windows.append(
-            {
-                "type": period,
-                "level_key": level_key,
-                "level_css": level_key.replace("_", "-"),
-                "level_label": _DANGER_PANEL_META[level_key]["label"],
-                "level_number": _DANGER_PANEL_META[level_key]["number"],
-                "caption": _resolve_window_caption(period_traits),
-                "pill_label": _DAY_WINDOW_PILL_LABELS[period],
-            }
-        )
+        for level_key, level_traits in _collect_period_levels(
+            period_ratings, period_traits
+        ):
+            windows.append(
+                {
+                    "type": period,
+                    "level_key": level_key,
+                    "level_css": level_key.replace("_", "-"),
+                    "level_label": _DANGER_PANEL_META[level_key]["label"],
+                    "level_number": _DANGER_PANEL_META[level_key]["number"],
+                    "caption": _resolve_window_caption(level_traits),
+                    "pill_label": _DAY_WINDOW_PILL_LABELS[period],
+                }
+            )
 
-    # Rebadge pills by row count so the panel reads naturally regardless
-    # of the underlying CAAML period mix:
-    #   1 row  → "All day"
-    #   2 rows → "Earlier" + "Later" (chronological brackets, even when
-    #            the data is e.g. (all_day, later))
-    #   3 rows → leave as-is — the natural _DAY_WINDOW_ORDER already
-    #            yields "Earlier" / "All day" / "Later"
-    if len(windows) == 1:
-        windows[0]["pill_label"] = _DAY_WINDOW_PILL_LABELS["all_day"]
-    elif len(windows) == 2:
-        windows[0]["pill_label"] = _DAY_WINDOW_PILL_LABELS["earlier"]
-        windows[1]["pill_label"] = _DAY_WINDOW_PILL_LABELS["later"]
+    if not windows:
+        return []
 
+    _rebadge_window_pills(windows)
     return windows
 
 
