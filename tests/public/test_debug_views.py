@@ -199,20 +199,21 @@ class TestComponentLibraryPanel:
     def test_day_windows_panel_renders_expected_variants(
         self, htmx_staff_client: Client
     ) -> None:
-        """The day-windows panel ships two variants matching the scope contract.
+        """The day-windows panel ships four variants matching the scope contract.
 
-        Variant 1 is the all-day level grid (five rows stepping low → very_high
-        with an "All day" pill); variant 2 is the realistic split-day pair
-        (earlier @ moderate + later @ considerable). Asserting both the
-        context shape and rendered HTML guards against drift in either the
-        fixture or the ``include_variant`` plumbing.
+        Variant 1: all-day level grid (five rows stepping low → very_high).
+        Variant 2: all-day with sublevel modifier (considerable−).
+        Variant 3: cross-category later (all_day low + later moderate).
+        Variant 4: within-category later (all_day considerable− + later considerable).
+        Asserting both the context shape and rendered HTML guards against drift
+        in either the fixture or the ``include_variant`` plumbing.
         """
         response = htmx_staff_client.get(_panel_url("day-windows"))
         assert response.status_code == 200
 
         active = response.context["active"]
         assert active.slug == "day-windows"
-        assert len(active.variants) == 2
+        assert len(active.variants) == 4
 
         # Variant 1 — all-day, five EAWS levels.
         v1_windows = active.variants[0]["context"]["day_windows"]
@@ -226,12 +227,26 @@ class TestComponentLibraryPanel:
         assert {w["type"] for w in v1_windows} == {"all_day"}
         assert {w["pill_label"] for w in v1_windows} == {"All day"}
 
-        # Variant 2 — realistic split-day pair.
+        # Variant 2 — all-day with sublevel modifier.
         v2_windows = active.variants[1]["context"]["day_windows"]
-        assert [(w["type"], w["level_key"]) for w in v2_windows] == [
-            ("earlier", "moderate"),
+        assert len(v2_windows) == 1
+        assert v2_windows[0]["level_key"] == "considerable"
+        assert v2_windows[0]["level_number"] == "3-"
+
+        # Variant 3 — cross-category later (all_day low + later moderate).
+        v3_windows = active.variants[2]["context"]["day_windows"]
+        assert [(w["type"], w["level_key"]) for w in v3_windows] == [
+            ("all_day", "low"),
+            ("later", "moderate"),
+        ]
+
+        # Variant 4 — within-category later (all_day considerable− + later considerable).
+        v4_windows = active.variants[3]["context"]["day_windows"]
+        assert [(w["type"], w["level_key"]) for w in v4_windows] == [
+            ("all_day", "considerable"),
             ("later", "considerable"),
         ]
+        assert v4_windows[0]["level_number"] == "3-"
 
         # Rendered HTML — confirms include_variant reached the partial and
         # that the level_css → CSS class mapping (``very_high`` → ``lv-very-high``)
@@ -239,9 +254,8 @@ class TestComponentLibraryPanel:
         body = response.content.decode()
         assert "lv-low" in body
         assert "lv-very-high" in body
-        assert 'data-window="earlier"' in body
         assert 'data-window="later"' in body
-        assert ">Earlier<" in body
+        assert ">All day<" in body
         assert ">Later<" in body
 
     def test_unknown_slug_returns_404(self, htmx_staff_client: Client) -> None:

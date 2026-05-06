@@ -143,6 +143,25 @@ def _problem_no_geo(
     }
 
 
+def _rating(
+    level: str, period: str = "all_day", subdivision: str | None = None
+) -> dict:
+    """Build a CAAML dangerRating dict for use in raw_data fixtures."""
+    r: dict = {"mainValue": level, "validTimePeriod": period}
+    if subdivision:
+        r["customData"] = {"CH": {"subdivision": subdivision}}
+    return r
+
+
+def _raw_data_with_ratings(ratings: list[dict]) -> dict:
+    """Build a minimal raw_data GeoJSON envelope with the given dangerRatings."""
+    return {
+        "type": "Feature",
+        "geometry": None,
+        "properties": {"dangerRatings": ratings},
+    }
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -164,7 +183,11 @@ def simple_bulletin(region):
 
 @pytest.fixture()
 def variable_bulletin(region):
-    """A bulletin with two traits (variable day — dry morning, wet afternoon)."""
+    """A bulletin with two traits (variable day — dry morning, wet afternoon).
+
+    raw_data carries matching dangerRatings so _build_day_windows() renders
+    the panel from the authoritative CAAML source.
+    """
     day = date(2026, 3, 15)
     dry_trait = _dry_trait_problems([_problem()])
     dry_trait["danger_level"] = 2
@@ -179,7 +202,15 @@ def variable_bulletin(region):
         "danger_level": 3,
     }
     rm = _render_model_with_traits([dry_trait, wet_trait])
-    return _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+    raw = _raw_data_with_ratings(
+        [
+            _rating("moderate", "all_day"),
+            _rating("considerable", "later"),
+        ]
+    )
+    return _make_am_bulletin(
+        region, day, render_model=rm, render_model_version=3, raw_data=raw
+    )
 
 
 def _url(region_id: str, slug: str, date_str: str) -> str:
@@ -786,10 +817,10 @@ class TestDayWindowsPanel:
     """
     Day Windows panel — the day's hazard summary above the rating blocks.
 
-    One row per validTimePeriod (earlier / all_day / later); ordered
-    chronologically with all_day in the middle when present. Each row
-    carries a numbered EAWS tile, the level name, an editorial caption
-    derived from the matching trait's title, and a window pill.
+    Driven directly from the bulletin's CAAML ``dangerRatings`` field.
+    Always one row for the ``all_day_*`` rating; optionally a second row
+    for the ``later_*`` rating when it differs meaningfully. Captions are
+    absent; each row is badge + rating-name + chip.
     """
 
     def test_default_renders_panel(self, client: Client, variable_bulletin, region):
@@ -814,269 +845,237 @@ class TestDayWindowsPanel:
         panel_idx = content.index('data-testid="day-windows-panel"')
         assert heading_idx < panel_idx
 
-    def test_split_day_renders_two_rows_earlier_then_later(
-        self, client: Client, region
-    ):
-        """A day with earlier+later traits renders two rows in that order."""
-        # Mirror the variable_bulletin fixture but with explicit time periods
-        # and one problem each so the panel caption (concatenated problem-type
-        # labels) is populated.
-        day = date(2026, 3, 18)
-        earlier_trait: dict = {
-            "category": "dry",
-            "time_period": "earlier",
-            "title": "Dry avalanches, morning",
-            "geography": {"source": "problems"},
-            "problems": [_problem(problem_type="wind_slab")],
-            "prose": None,
-            "danger_level": 2,
-        }
-        later_trait: dict = {
-            "category": "wet",
-            "time_period": "later",
-            "title": "Wet-snow avalanches, as the day progresses",
-            "geography": {"source": "problems"},
-            "problems": [_problem(problem_type="wet_snow")],
-            "prose": None,
-            "danger_level": 3,
-        }
-        rm = _render_model_with_traits([earlier_trait, later_trait])
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
-
-        url = _url("ch-4115", "valais", "2026-03-18")
-        response = client.get(url)
-        content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 2
-        # Ordered earlier then later.
-        earlier_idx = content.index('data-window="earlier"')
-        later_idx = content.index('data-window="later"')
-        assert earlier_idx < later_idx
-        # Each row's caption is the problem-type label for that period —
-        # not the trait's editorial title.
-        assert "Wind slab" in content
-        assert "Wet snow" in content
-
     def test_all_day_only_renders_single_row(self, client: Client, region):
-        """An all_day-only bulletin collapses to one row labelled ``All day``."""
+        """A bulletin with only an all_day rating renders one row, chip = 'All day'."""
         day = date(2026, 3, 19)
-        rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        raw = _raw_data_with_ratings([_rating("moderate", "all_day")])
+        _make_am_bulletin(region, day, raw_data=raw)
 
         url = _url("ch-4115", "valais", "2026-03-19")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 1
         assert 'data-window="all_day"' in content
-        # Pill copy comes from _DAY_WINDOW_PILL_LABELS.
         assert ">All day<" in content
 
-    def test_two_row_bulletin_pills_read_earlier_then_later(
-        self, client: Client, region
-    ):
-        """
-        When two rows render (any combination of underlying periods), the
-        pills are re-labelled as "Earlier" + "Later" in DOM order so the
-        panel reads as chronological brackets even when the underlying
-        data is something like (all_day, later).
-        """
-        day = date(2026, 3, 23)
-        all_day_trait: dict = {
-            "category": "dry",
-            "time_period": "all_day",
-            "title": "Persistent weak layers",
-            "geography": {"source": "problems"},
-            "problems": [_problem(problem_type="persistent_weak_layers")],
-            "prose": None,
-            "danger_level": 2,
-        }
-        later_trait: dict = {
-            "category": "wet",
-            "time_period": "later",
-            "title": "Wet snow",
-            "geography": {"source": "problems"},
-            "problems": [_problem(problem_type="wet_snow")],
-            "prose": None,
-            "danger_level": 3,
-        }
-        rm = _render_model_with_traits([all_day_trait, later_trait])
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
-
-        url = _url("ch-4115", "valais", "2026-03-23")
-        response = client.get(url)
-        content = response.content.decode()
-        # Two rows, ordered: the all_day row sits first, the later row second.
-        assert content.count('data-testid="day-window-row"') == 2
-        all_day_idx = content.index('data-window="all_day"')
-        later_idx = content.index('data-window="later"')
-        assert all_day_idx < later_idx
-        # The all_day row's pill is rebadged to "Earlier"; the later row's
-        # pill stays "Later". "All day" must NOT appear inside the panel.
-        panel_start = content.index('data-testid="day-windows-panel"')
-        panel_end = content.index('data-testid="avalanche-problems-heading"')
-        panel_html = content[panel_start:panel_end]
-        assert ">Earlier<" in panel_html
-        assert ">Later<" in panel_html
-        assert ">All day<" not in panel_html
-
-    def test_three_row_bulletin_pills_read_earlier_all_day_later(
-        self, client: Client, region
-    ):
-        """Three rows keep the natural Earlier / All day / Later sequence."""
-        day = date(2026, 3, 24)
-        rm = _render_model_with_traits(
-            [
-                {
-                    "category": "dry",
-                    "time_period": "earlier",
-                    "title": "Wind slab, morning",
-                    "geography": {"source": "problems"},
-                    "problems": [_problem(problem_type="wind_slab")],
-                    "prose": None,
-                    "danger_level": 2,
-                },
-                {
-                    "category": "dry",
-                    "time_period": "all_day",
-                    "title": "Persistent weak layer",
-                    "geography": {"source": "problems"},
-                    "problems": [_problem(problem_type="persistent_weak_layers")],
-                    "prose": None,
-                    "danger_level": 2,
-                },
-                {
-                    "category": "wet",
-                    "time_period": "later",
-                    "title": "Wet snow",
-                    "geography": {"source": "problems"},
-                    "problems": [_problem(problem_type="wet_snow")],
-                    "prose": None,
-                    "danger_level": 3,
-                },
-            ]
-        )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
-
-        url = _url("ch-4115", "valais", "2026-03-24")
-        response = client.get(url)
-        content = response.content.decode()
-        panel_start = content.index('data-testid="day-windows-panel"')
-        panel_end = content.index('data-testid="avalanche-problems-heading"')
-        panel_html = content[panel_start:panel_end]
-        # All three pill labels must render with three rows.
-        assert ">Earlier<" in panel_html
-        assert ">All day<" in panel_html
-        assert ">Later<" in panel_html
-
-    def test_three_window_day_renders_three_rows_chronological(
-        self, client: Client, region
-    ):
-        """Earlier + all_day + later → three rows in chronological order."""
-        day = date(2026, 3, 20)
-        rm = _render_model_with_traits(
-            [
-                {
-                    "category": "dry",
-                    "time_period": "earlier",
-                    "title": "Wind slab, morning",
-                    "geography": {"source": "problems"},
-                    "problems": [],
-                    "prose": None,
-                    "danger_level": 2,
-                },
-                {
-                    "category": "dry",
-                    "time_period": "all_day",
-                    "title": "Persistent weak layer",
-                    "geography": {"source": "problems"},
-                    "problems": [],
-                    "prose": None,
-                    "danger_level": 2,
-                },
-                {
-                    "category": "wet",
-                    "time_period": "later",
-                    "title": "Wet-snow avalanches, as the day progresses",
-                    "geography": {"source": "problems"},
-                    "problems": [],
-                    "prose": None,
-                    "danger_level": 3,
-                },
-            ]
-        )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
-
-        url = _url("ch-4115", "valais", "2026-03-20")
-        response = client.get(url)
-        content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 3
-        earlier_idx = content.index('data-window="earlier"')
-        all_day_idx = content.index('data-window="all_day"')
-        later_idx = content.index('data-window="later"')
-        assert earlier_idx < all_day_idx < later_idx
-
-    def test_tile_carries_lv_class_and_level_number(self, client: Client, region):
-        """The numbered tile uses ``lv-{level}`` so EAWS tokens drive the colour."""
-        day = date(2026, 3, 21)
-        rm = _render_model_with_traits(
-            [
-                {
-                    "category": "wet",
-                    "time_period": "all_day",
-                    "title": "Wet-snow avalanches",
-                    "geography": {"source": "problems"},
-                    "problems": [],
-                    "prose": None,
-                    "danger_level": 3,
-                }
-            ]
-        )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
-
-        url = _url("ch-4115", "valais", "2026-03-21")
-        response = client.get(url)
-        content = response.content.decode()
-        # lv-considerable + the digit 3 inside the tile.
-        assert "dw-tile lv-considerable" in content
-        # Level label rendered.
-        assert "Considerable" in content
-
-    def test_caption_concatenates_problem_type_labels(self, client: Client, region):
-        """Caption joins every covering trait's problem-type labels (deduped)."""
+    def test_two_row_pills_read_all_day_and_later(self, client: Client, region):
+        """all_day + later cross-category → two rows with chips 'All day' / 'Later'."""
         day = date(2026, 3, 22)
-        rm = _render_model_with_traits(
+        raw = _raw_data_with_ratings(
             [
-                {
-                    "category": "dry",
-                    "time_period": "all_day",
-                    "title": "Wind slab",
-                    "geography": {"source": "problems"},
-                    "problems": [_problem(problem_type="wind_slab")],
-                    "prose": None,
-                    "danger_level": 1,
-                },
-                {
-                    "category": "wet",
-                    "time_period": "all_day",
-                    "title": "Wet-snow avalanches",
-                    "geography": {"source": "problems"},
-                    "problems": [_problem(problem_type="wet_snow")],
-                    "prose": None,
-                    "danger_level": 3,
-                },
+                _rating("low", "all_day"),
+                _rating("moderate", "later"),
             ]
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        _make_am_bulletin(region, day, raw_data=raw)
 
         url = _url("ch-4115", "valais", "2026-03-22")
         response = client.get(url)
         content = response.content.decode()
-        # Single all_day row at the higher level (3 / Considerable). Caption
-        # lists every problem type from all covering traits in render-model
-        # order: Wind slab (from the dry L1 trait) then Wet snow (from the
-        # wet L3 trait). The trait titles themselves are not used.
+        assert content.count('data-testid="day-window-row"') == 2
+        all_day_idx = content.index('data-window="all_day"')
+        later_idx = content.index('data-window="later"')
+        assert all_day_idx < later_idx
+        panel_start = content.index('data-testid="day-windows-panel"')
+        panel_end = content.index('data-testid="avalanche-problems-heading"')
+        panel_html = content[panel_start:panel_end]
+        assert ">All day<" in panel_html
+        assert ">Later<" in panel_html
+        assert ">Earlier<" not in panel_html
+
+    def test_tile_carries_lv_class_and_level_number(self, client: Client, region):
+        """The numbered tile uses ``lv-{level}`` so EAWS tokens drive the colour."""
+        day = date(2026, 3, 20)
+        raw = _raw_data_with_ratings([_rating("considerable", "all_day")])
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-20")
+        response = client.get(url)
+        content = response.content.decode()
+        assert "dw-tile lv-considerable" in content
+        assert "Considerable" in content
+
+    def test_caption_is_absent(self, client: Client, region):
+        """No dw-caption element renders — captions are dropped in this design."""
+        day = date(2026, 3, 21)
+        raw = _raw_data_with_ratings([_rating("considerable", "all_day")])
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-21")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 1
+        assert "dw-caption" not in content
+
+    # ------------------------------------------------------------------
+    # Badge display — sublevel modifier
+    # ------------------------------------------------------------------
+
+    def test_single_all_day_considerable_badge(self, client: Client, region):
+        """Single all_day considerable → badge '3', chip 'All day'."""
+        day = date(2026, 3, 23)
+        raw = _raw_data_with_ratings([_rating("considerable", "all_day")])
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-23")
+        response = client.get(url)
+        content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 1
         assert "dw-tile lv-considerable" in content
-        assert "Wind slab, Wet snow" in content
+        assert ">3<" in content
+        assert ">All day<" in content
+
+    def test_sublevel_modifier_minus_on_badge(self, client: Client, region):
+        """all_day moderate minus → badge '2-' in the tile."""
+        day = date(2026, 3, 24)
+        raw = _raw_data_with_ratings([_rating("moderate", "all_day", "minus")])
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-24")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 1
+        assert "dw-tile lv-moderate" in content
+        assert ">2-<" in content
+
+    # ------------------------------------------------------------------
+    # later_ filter — cross-category (always shown)
+    # ------------------------------------------------------------------
+
+    def test_cross_category_later_up_renders_two_rows(self, client: Client, region):
+        """all_day low + later moderate (cross-category up) → 2 rows."""
+        day = date(2026, 3, 25)
+        raw = _raw_data_with_ratings(
+            [
+                _rating("low", "all_day"),
+                _rating("moderate", "later"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-25")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 2
+        assert "lv-low" in content
+        assert "lv-moderate" in content
+
+    def test_cross_category_later_two_level_jump_renders_two_rows(
+        self, client: Client, region
+    ):
+        """all_day low + later considerable (two-level jump) → 2 rows."""
+        day = date(2026, 3, 26)
+        raw = _raw_data_with_ratings(
+            [
+                _rating("low", "all_day"),
+                _rating("considerable", "later"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-26")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 2
+
+    def test_cross_category_later_down_renders_two_rows(self, client: Client, region):
+        """all_day considerable minus + later moderate (cross-category down) → 2 rows."""
+        day = date(2026, 3, 27)
+        raw = _raw_data_with_ratings(
+            [
+                _rating("considerable", "all_day", "minus"),
+                _rating("moderate", "later"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-27")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 2
+
+    # ------------------------------------------------------------------
+    # later_ filter — within-category sublevel shift (always shown)
+    # ------------------------------------------------------------------
+
+    def test_within_category_later_up_renders_two_rows_with_badge_differential(
+        self, client: Client, region
+    ):
+        """all_day considerable minus + later considerable → 2 rows, badges '3-' / '3'."""
+        day = date(2026, 3, 28)
+        raw = _raw_data_with_ratings(
+            [
+                _rating("considerable", "all_day", "minus"),
+                _rating("considerable", "later"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-28")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 2
+        # Both rows use the same level CSS.
+        assert content.count("lv-considerable") == 2
+        # Badge differential: the all_day tile shows the minus suffix.
+        assert ">3-<" in content
+        # The later tile has no suffix.
+        panel_start = content.index('data-testid="day-windows-panel"')
+        panel_end = content.index('data-testid="avalanche-problems-heading"')
+        panel_html = content[panel_start:panel_end]
+        assert ">3<" in panel_html
+
+    def test_within_category_later_down_renders_two_rows(self, client: Client, region):
+        """all_day moderate plus + later moderate minus (within-category down) → 2 rows."""
+        day = date(2026, 3, 29)
+        raw = _raw_data_with_ratings(
+            [
+                _rating("moderate", "all_day", "plus"),
+                _rating("moderate", "later", "minus"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-29")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 2
+
+    # ------------------------------------------------------------------
+    # later_ filter — same-band no-op (filtered)
+    # ------------------------------------------------------------------
+
+    def test_same_band_noop_considerable_filtered(self, client: Client, region):
+        """all_day considerable neutral + later considerable → 1 row (later filtered)."""
+        day = date(2026, 3, 30)
+        raw = _raw_data_with_ratings(
+            [
+                _rating("considerable", "all_day", "neutral"),
+                _rating("considerable", "later"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-30")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 1
+
+    def test_same_band_noop_moderate_filtered(self, client: Client, region):
+        """all_day moderate neutral + later moderate → 1 row (later filtered)."""
+        day = date(2026, 3, 31)
+        raw = _raw_data_with_ratings(
+            [
+                _rating("moderate", "all_day", "neutral"),
+                _rating("moderate", "later"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-31")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 1
 
 
 # ---------------------------------------------------------------------------
