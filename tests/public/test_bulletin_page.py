@@ -1164,10 +1164,11 @@ class TestSeasonSheet:
             url = _url("ch-4115", "valais", "2026-03-15")
             response = client.get(url)
         content = response.content.decode()
-        # Use the HTML attribute form (data-season-sheet="...") rather than the
-        # bare token — the nav JS unconditionally contains the selector string
-        # '[data-season-sheet]', so a bare search would always match.
-        assert 'data-season-sheet="' not in content
+        # The bare string 'data-season-sheet' appears in a JS querySelector
+        # outside the {% if season_calendar %} block, so assert the specific
+        # HTML attribute+value form that only exists when the sheet renders.
+        assert 'data-season-sheet="closed"' not in content
+        assert 'data-testid="season-sheet"' not in content
         assert "data-season-trigger" not in content
 
     def test_today_cell_carries_today_modifier(

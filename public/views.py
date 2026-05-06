@@ -621,6 +621,24 @@ def terms(request: HttpRequest) -> HttpResponse:
     return render(request, "public/terms.html")
 
 
+def colophon(request: HttpRequest) -> HttpResponse:
+    """
+    Render the /colophon page.
+
+    Static acknowledgement of every framework, data source, icon set,
+    font, and hosted service the site depends on. Content is authored
+    directly in the template; no runtime context is required.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered colophon page.
+
+    """
+    return render(request, "public/colophon.html")
+
+
 # User-facing labels for the basemap layer picker (SNOW-58). Keyed by the
 # same key as ``settings.BASEMAP_STYLES``; ``gettext_lazy`` so a future
 # i18n pass picks them up. Presentation, not config — lives here rather
