@@ -47,6 +47,10 @@ reachable via the SNOW-81 deep-link in the masthead.
     {# the empty-state and the /examples/ pages so search engines collapse #}
     {# duplicate URLs to a single bulletin destination.                    #}
     {% if canonical_url %}<link rel="canonical" href="{{ canonical_url }}">{% endif %}
+    {% if prev_date %}<link
+            rel="prefetch"
+            href="{% url 'public:bulletin_date' region_id=region.canonical_region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
+        >{% endif %}
     <script
         src="https://unpkg.com/htmx.org@2.0.4"
         integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
@@ -117,8 +121,58 @@ reachable via the SNOW-81 deep-link in the masthead.
             })();
         </script>
     {% endif %}
+    <script nonce="{{ request.csp_nonce }}">
+        document.addEventListener('DOMContentLoaded', function () {
+            var el = document.querySelector('[data-prev-url],[data-next-url]');
+            if (!el) return;
+            var prevUrl = el.dataset.prevUrl || null;
+            var nextUrl = el.dataset.nextUrl || null;
+
+            function navigate(url) {
+                if (url) window.location.href = url;
+            }
+
+            function inputFocused() {
+                var tag = (document.activeElement || {}).tagName || '';
+                return ['INPUT', 'TEXTAREA', 'SELECT'].indexOf(tag.toUpperCase()) !== -1;
+            }
+
+            function sheetOpen() {
+                var sheet = document.querySelector('[data-season-sheet]');
+                return sheet && sheet.dataset.seasonSheet === 'open';
+            }
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                if (inputFocused() || sheetOpen()) return;
+                e.preventDefault();
+                if (e.key === 'ArrowLeft') navigate(prevUrl);
+                if (e.key === 'ArrowRight') navigate(nextUrl);
+            });
+
+            var touchStartX = null;
+            document.addEventListener('touchstart', function (e) {
+                touchStartX = e.touches[0].clientX;
+            }, { passive: true });
+            document.addEventListener('touchend', function (e) {
+                if (touchStartX === null) return;
+                var delta = touchStartX - e.changedTouches[0].clientX;
+                touchStartX = null;
+                if (Math.abs(delta) < 50) return;
+                navigate(delta > 0 ? nextUrl : prevUrl);
+            }, { passive: true });
+        });
+    </script>
     {# ── Outermost container: font-sans overrides any serif from @theme ── #}
-    <div class="font-sans max-w-[640px] mx-auto px-4 py-4">
+    <div
+        class="font-sans max-w-[640px] mx-auto px-4 py-4"
+        {% if prev_date %}
+            data-prev-url="{% url 'public:bulletin_date' region_id=region.canonical_region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
+        {% endif %}
+        {% if next_date %}
+            data-next-url="{% url 'public:bulletin_date' region_id=region.canonical_region_id slug=slug date_str=next_date|date:'Y-m-d' %}"
+        {% endif %}
+    >
         {% comment %}
            SECTION 1 — Page chrome
            Region name, date/validity. Date picker lives in the page nav
