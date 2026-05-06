@@ -1164,7 +1164,10 @@ class TestSeasonSheet:
             url = _url("ch-4115", "valais", "2026-03-15")
             response = client.get(url)
         content = response.content.decode()
-        assert "data-season-sheet" not in content
+        # Use the HTML attribute form (data-season-sheet="...") rather than the
+        # bare token — the nav JS unconditionally contains the selector string
+        # '[data-season-sheet]', so a bare search would always match.
+        assert 'data-season-sheet="' not in content
         assert "data-season-trigger" not in content
 
     def test_today_cell_carries_today_modifier(
@@ -1197,23 +1200,24 @@ class TestSeasonSheet:
 
 
 # ---------------------------------------------------------------------------
-# Test: day-character eyebrow (SNOW-8)
+# Test: day-character callout banner (SNOW-8, redesigned SNOW-127)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestDayCharacterEyebrow:
     """
-    Day-character eyebrow above the Day Risk Profile heading.
+    Day-character callout banner above the Day Risk Profile heading.
 
-    The eyebrow surfaces the label produced by
-    ``compute_day_character`` along with a one-line static explainer.
-    It is suppressed in the error state (``render_model.version == 0``)
-    where the bulletin body is replaced by a warning panel.
+    The banner surfaces the label produced by ``compute_day_character``
+    alongside a one-line static explainer, preceded by the Snowdesk favicon
+    as a leading icon. It is suppressed in the error state
+    (``render_model.version == 0``) where the bulletin body is replaced by
+    a warning panel.
     """
 
     def test_renders_label_and_explainer(self, client: Client, simple_bulletin, region):
-        """A normal bulletin renders the label + explainer in the eyebrow."""
+        """A normal bulletin renders the callout banner with favicon, label, and explainer."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
@@ -1223,11 +1227,12 @@ class TestDayCharacterEyebrow:
         assert 'data-testid="day-character-label"' in content
         assert "Manageable day" in content
         assert 'data-testid="day-character-explainer"' in content
+        assert "favicon.svg" in content
 
     def test_renders_hard_to_read_for_persistent_weak_layers(
         self, client: Client, region
     ):
-        """A bulletin with persistent weak layers renders the hard-to-read label."""
+        """A bulletin with persistent weak layers renders the hard-to-read callout."""
         day = date(2026, 3, 20)
         trait = {
             "category": "dry",
@@ -1247,20 +1252,22 @@ class TestDayCharacterEyebrow:
         content = response.content.decode()
         assert 'data-testid="day-character"' in content
         assert "Hard-to-read day" in content
+        assert "favicon.svg" in content
+        assert "<strong" in content
 
-    def test_eyebrow_precedes_day_risk_profile_heading(
+    def test_callout_precedes_day_risk_profile_heading(
         self, client: Client, simple_bulletin, region
     ):
-        """The eyebrow sits above the Day Risk Profile heading in DOM order."""
+        """The callout banner sits above the Day Risk Profile heading in DOM order."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        eyebrow_idx = content.index('data-testid="day-character"')
+        callout_idx = content.index('data-testid="day-character"')
         heading_idx = content.index('data-testid="day-risk-profile-heading"')
-        assert eyebrow_idx < heading_idx
+        assert callout_idx < heading_idx
 
-    def test_eyebrow_absent_in_error_state(self, client: Client, region):
-        """A version=0 error bulletin replaces the body and suppresses the eyebrow."""
+    def test_callout_absent_in_error_state(self, client: Client, region):
+        """A version=0 error bulletin replaces the body and suppresses the callout."""
         from bulletins.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 3, 21)
