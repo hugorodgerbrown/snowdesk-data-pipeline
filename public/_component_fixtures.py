@@ -200,3 +200,36 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
 
 
 DAY_WINDOWS_VARIANTS: tuple[dict[str, Any], ...] = _build_day_windows_variants()
+
+
+DAY_CHARACTER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Hard-to-read day",
+        "context": {
+            "day_character": {
+                "label": "Hard-to-read day",
+                "explainer": (
+                    "Persistent or gliding-snow problems can mask the real risk."
+                ),
+            }
+        },
+    },
+    {
+        "caption": "Manageable day",
+        "context": {
+            "day_character": {
+                "label": "Manageable day",
+                "explainer": "Wind slab or storm-slab problems are the main concern.",
+            }
+        },
+    },
+    {
+        "caption": "Widespread danger",
+        "context": {
+            "day_character": {
+                "label": "Widespread danger",
+                "explainer": "Danger is present across the whole forecast area.",
+            }
+        },
+    },
+)

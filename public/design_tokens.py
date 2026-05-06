@@ -30,7 +30,11 @@ a ``.dark`` ancestor.
 from dataclasses import dataclass
 from typing import Any
 
-from public._component_fixtures import DAY_WINDOWS_VARIANTS, WEATHER_HEADER_VARIANTS
+from public._component_fixtures import (
+    DAY_CHARACTER_VARIANTS,
+    DAY_WINDOWS_VARIANTS,
+    WEATHER_HEADER_VARIANTS,
+)
 
 
 @dataclass(frozen=True)
@@ -622,6 +626,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/day_windows.html",
         variants=DAY_WINDOWS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="day-character-callout",
+        label="Day character callout",
+        description=(
+            "Inline bordered banner surfacing the day-character assessment "
+            "above the bulletin body. Combines the Snowdesk favicon, a bold "
+            "label, and a one-line explainer in a quiet warm-grey tint that "
+            "holds in both light and dark modes."
+        ),
+        kind="components",
+        partial="includes/day_character_callout.html",
+        variants=DAY_CHARACTER_VARIANTS,
         panel_layout="stack",
     ),
 )

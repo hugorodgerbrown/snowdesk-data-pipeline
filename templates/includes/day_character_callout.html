@@ -1,0 +1,25 @@
+{% load static %}
+{% comment %}
+  Day-character callout banner.
+  Context: day_character — object or dict with .label and .explainer
+{% endcomment %}
+<div
+    class="flex items-start gap-3 rounded-[8px] border border-callout-info-border bg-callout-info-bg px-3.5 py-3 text-sm"
+    data-testid="day-character"
+>
+    <img
+        src="{% static 'favicon.svg' %}"
+        alt=""
+        aria-hidden="true"
+        width="20"
+        height="20"
+        class="shrink-0 mt-0.5 rounded-[3px]"
+    >
+    <p class="text-callout-info-text leading-snug">
+        <strong
+            class="font-semibold text-text-1"
+            data-testid="day-character-label"
+        >{{ day_character.label }}.</strong>
+        <span data-testid="day-character-explainer">{{ day_character.explainer }}</span>
+    </p>
+</div>
