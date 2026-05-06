@@ -784,10 +784,10 @@ class TestRatingBlockGrouping:
         response = client.get(_url("ch-4115", "valais", "2026-03-15"))
         assert response.content.decode().count('data-testid="rating-block"') == 1
 
-    def test_two_problems_same_kind_and_level_produce_one_block_two_rows(
+    def test_two_problems_same_kind_and_level_produce_two_blocks(
         self, client: Client, region
     ):
-        """Two problems with same (kind, danger_level) → 1 card with 2 problem rows."""
+        """Two problems with same (kind, danger_level) → 2 separate cards."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems(
             [
@@ -797,13 +797,14 @@ class TestRatingBlockGrouping:
         )
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        assert content.count('data-testid="rating-block"') == 1
-        assert content.count('class="problem-row') == 2
+        assert content.count('data-testid="rating-block"') == 2
+        assert "Wind slab" in content
+        assert "New snow" in content
 
     def test_same_level_different_kind_produces_two_blocks_dry_before_wet(
         self, client: Client, region
     ):
-        """Same danger level, dry vs wet → 2 cards; dry appears first (tiebreak)."""
+        """Same danger level, dry vs wet → 2 cards; dry appears first (kind tiebreak)."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems(
             [
@@ -814,8 +815,11 @@ class TestRatingBlockGrouping:
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
         assert content.count('data-testid="rating-block"') == 2
-        dry_idx = content.index("Dry avalanches")
-        wet_idx = content.index("Wet-snow avalanches")
+        # Scope to the problems section to avoid matching labels embedded in
+        # the DEBUG raw-data JSON script block that appears earlier in the page.
+        probs_start = content.index('data-testid="avalanche-problems-heading"')
+        dry_idx = content.index("Wind slab", probs_start)
+        wet_idx = content.index("Wet snow", probs_start)
         assert dry_idx < wet_idx
 
     def test_different_levels_produces_two_blocks_high_danger_first(
@@ -834,12 +838,15 @@ class TestRatingBlockGrouping:
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
         assert content.count('data-testid="rating-block"') == 2
-        wet_idx = content.index("Wet-snow avalanches")
-        dry_idx = content.index("Dry avalanches")
+        # Scope to the problems section to avoid matching labels embedded in
+        # the DEBUG raw-data JSON script block that appears earlier in the page.
+        probs_start = content.index('data-testid="avalanche-problems-heading"')
+        wet_idx = content.index("Wet snow", probs_start)
+        dry_idx = content.index("Wind slab", probs_start)
         assert wet_idx < dry_idx
 
-    def test_three_problems_two_groups_correct_row_counts(self, client: Client, region):
-        """Three problems across two (kind, level) groups → 2 cards, correct row counts."""
+    def test_three_problems_produce_three_blocks_in_order(self, client: Client, region):
+        """Three problems → 3 cards ordered by danger level desc, then kind."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems(
             [
@@ -852,9 +859,13 @@ class TestRatingBlockGrouping:
         )
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        # wet/considerable is the single-problem card; dry/moderate has two rows.
-        assert content.count('data-testid="rating-block"') == 2
-        assert content.count('class="problem-row') == 3
+        assert content.count('data-testid="rating-block"') == 3
+        # wet/considerable ranks highest, so it appears before the two dry/moderate cards.
+        # Scope search to the problems section to avoid the DEBUG JSON embed.
+        probs_start = content.index('data-testid="avalanche-problems-heading"')
+        wet_idx = content.index("Wet snow", probs_start)
+        wind_idx = content.index("Wind slab", probs_start)
+        assert wet_idx < wind_idx
 
     def test_prose_only_problem_shows_no_aspect_elevation_row(
         self, client: Client, region
@@ -867,8 +878,8 @@ class TestRatingBlockGrouping:
         assert 'data-testid="rating-block"' in content
         assert 'data-testid="aspect-elevation-row"' not in content
 
-    def test_card_titles_match_kind(self, client: Client, region):
-        """Dry / wet / gliding cards carry the correct localised titles."""
+    def test_problem_labels_appear_in_cards(self, client: Client, region):
+        """Each problem type's display label appears in its card header."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems(
             [
@@ -879,9 +890,10 @@ class TestRatingBlockGrouping:
         )
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        assert "Dry avalanches" in content
-        assert "Wet-snow avalanches" in content
-        assert "Gliding avalanches" in content
+        assert content.count('data-testid="rating-block"') == 3
+        assert "Wind slab" in content
+        assert "Wet snow" in content
+        assert "Gliding snow" in content
 
     def test_empty_problems_shows_no_problems_card(self, client: Client, region):
         """Bulletin with avalancheProblems=[] → 'No avalanche problems reported.' empty state."""
@@ -902,8 +914,7 @@ class TestRatingBlockGrouping:
 class TestAggregationDriven:
     """
     When customData.CH.aggregation is present, cards are built from it:
-    one card per (aggregation entry, problem type), in aggregation order,
-    with title and category from the aggregation entry.
+    one card per (aggregation entry, problem type), in aggregation order.
     """
 
     def test_aggregation_order_preserved(self, client: Client, region):
@@ -932,55 +943,12 @@ class TestAggregationDriven:
         )
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        wet_idx = content.index("Wet-snow avalanches")
-        dry_idx = content.index("Dry avalanches")
+        # aggregation order (wet first) overrides the fallback danger-level sort.
+        # Scope search to the problems section to avoid the DEBUG JSON embed.
+        probs_start = content.index('data-testid="avalanche-problems-heading"')
+        wet_idx = content.index("Wet snow", probs_start)
+        dry_idx = content.index("Wind slab", probs_start)
         assert wet_idx < dry_idx
-
-    def test_aggregation_title_used_when_present(self, client: Client, region):
-        """aggregation.title appears as the card heading when set."""
-        day = date(2026, 3, 15)
-        raw = _raw_data_with_aggregation(
-            aggregation=[
-                {
-                    "category": "wet",
-                    "validTimePeriod": "later",
-                    "problemTypes": ["wet_snow", "gliding_snow"],
-                    "title": "Wet-snow and gliding avalanches, as the day progresses",
-                }
-            ],
-            problems=[
-                _raw_problem(
-                    problem_type="wet_snow", danger_rating_value="considerable"
-                ),
-                _raw_problem(
-                    problem_type="gliding_snow", danger_rating_value="moderate"
-                ),
-            ],
-        )
-        _make_am_bulletin(region, day, raw_data=raw)
-        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        assert "Wet-snow and gliding avalanches, as the day progresses" in content
-
-    def test_kind_title_fallback_when_aggregation_title_absent(
-        self, client: Client, region
-    ):
-        """_KIND_TITLES fallback is used when aggregation entry has no title."""
-        day = date(2026, 3, 15)
-        raw = _raw_data_with_aggregation(
-            aggregation=[
-                {
-                    "category": "dry",
-                    "validTimePeriod": "all_day",
-                    "problemTypes": ["wind_slab"],
-                }
-            ],
-            problems=[
-                _raw_problem(problem_type="wind_slab", danger_rating_value="moderate")
-            ],
-        )
-        _make_am_bulletin(region, day, raw_data=raw)
-        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        assert "Dry avalanches" in content
 
     def test_two_problems_in_one_entry_produce_two_cards(self, client: Client, region):
         """Each problemType in an aggregation entry becomes its own card."""
