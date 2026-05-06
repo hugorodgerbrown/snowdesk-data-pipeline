@@ -134,6 +134,11 @@
   --color-callout-warning-code-bg:    #fef3c7;   /* amber-100 */
   --color-callout-warning-link-hover: #b45309;   /* amber-700 */
 
+  /* Info callout (day-character banner) */
+  --color-callout-info-bg:      #f0ede9;            /* warm stone tint               */
+  --color-callout-info-border:  rgba(0, 0, 0, 0.12);  /* slightly stronger than border */
+  --color-callout-info-text:    #6b6860;            /* same as --color-text-2        */
+
   /* Form validation */
   --color-form-error:     #ef4444;   /* inline error text (red-500)         */
 
@@ -296,6 +301,11 @@
   --color-callout-warning-text:       #fbbf24;
   --color-callout-warning-code-bg:    #332a14;
   --color-callout-warning-link-hover: #fde68a;
+
+  /* Info callout */
+  --color-callout-info-bg:      #252320;                /* slightly lighter than dark page bg */
+  --color-callout-info-border:  rgba(255, 255, 255, 0.12);
+  --color-callout-info-text:    #a8a49c;                /* same as dark --color-text-2        */
 
   /* Form validation */
   --color-form-error:     #f87171;

@@ -216,28 +216,15 @@ reachable via the SNOW-81 deep-link in the masthead.
             {% else %}
                 {% with rm=panel.render_model %}
                     {% comment %}
-                       Day-character eyebrow — the at-a-glance assessment
-                       label produced by compute_day_character() in the
-                       render-model service, paired with a one-line static
-                       explainer that frames the rest of the bulletin for
-                       a non-expert reader. Suppressed when no day_character
-                       is available (defensive — should always be present
-                       when the panel renders).
+                       Day-character callout banner — editorial commentary
+                       produced by compute_day_character() in the render-model
+                       service. Suppressed when no day_character is available
+                       (defensive — should always be present when the panel
+                       renders).
                     {% endcomment %}
                     {% if panel.day_character %}
-                        <div class="mb-4" data-testid="day-character">
-                            <p
-                                class="text-xs font-mono uppercase tracking-widest text-text-3 mb-1"
-                                data-testid="day-character-label"
-                            >
-                                {{ panel.day_character.label }}
-                            </p>
-                            <p
-                                class="text-sm text-text-2"
-                                data-testid="day-character-explainer"
-                            >
-                                {{ panel.day_character.explainer }}
-                            </p>
+                        <div class="mb-4">
+                            {% include "includes/day_character_callout.html" with day_character=panel.day_character only %}
                         </div>
                     {% endif %}
 
