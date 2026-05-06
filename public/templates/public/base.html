@@ -66,6 +66,13 @@ extra_js        : scripts loaded at end of <body>. Used by
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
         <meta name="apple-mobile-web-app-title" content="Snowdesk">
         {% include "includes/theme_head.html" %}
+        {# Preload primary font files so the browser fetches them in parallel    #}
+        {# with the stylesheet rather than after CSS parsing discovers them.     #}
+        {# Only the two DM Sans files are preloaded — they cover weights 400–600 #}
+        {# for Latin and Latin-ext, which are all that regular pages need.       #}
+        {# DM Mono is not preloaded as it only appears in non-critical contexts. #}
+        <link rel="preload" as="font" type="font/woff2" crossorigin href="{% static 'fonts/dm-sans-latin.woff2' %}">
+        <link rel="preload" as="font" type="font/woff2" crossorigin href="{% static 'fonts/dm-sans-latin-ext.woff2' %}">
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
         {% block extra_head %}{% endblock %}
     </head>

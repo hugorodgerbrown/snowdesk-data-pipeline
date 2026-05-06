@@ -21,6 +21,15 @@
 {% block extra_head %}
     {# SNOW-79: manifest.webmanifest is now linked from base.html so the #}
     {# install affordance works site-wide, not just on /map/. #}
+    {# Preconnect to the MapLibre CDN so DNS + TLS are resolved before   #}
+    {# the <script> tag in extra_js is encountered.                      #}
+    <link rel="preconnect" href="https://unpkg.com">
+    {# Prefetch the two API calls that map.js fires immediately on load: #}
+    {# region boundaries for the choropleth, and today's danger ratings  #}
+    {# for the colour fill. On a cold first visit (no SW cache) these    #}
+    {# would otherwise be a serial chain: HTML → JS parse → fetch.      #}
+    <link rel="prefetch" href="{% url 'api:regions_geojson' %}">
+    <link rel="prefetch" href="{% url 'api:today_summaries' %}">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
     <link rel="stylesheet" href="{% static 'css/map.css' %}">
 {% endblock %}
@@ -395,8 +404,10 @@
 {% endblock %}
 
 {% block extra_js %}
-    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-    <script src="{% static 'js/map.js' %}"></script>
+    {# defer preserves execution order (maplibre before map.js) while      #}
+    {# allowing both files to download in parallel with HTML parsing.      #}
+    <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-79: SW registration moved to base.html; offline.js retired. #}
-    {% if edit_mode %}<script src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
+    {% if edit_mode %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
 {% endblock %}
