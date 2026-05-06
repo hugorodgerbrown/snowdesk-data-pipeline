@@ -23,7 +23,7 @@ bulletin content.
 <div class="region-expanded">
     {% if rm.traits %}
         {% for trait in rm.traits %}
-            {% include "public/_rating_block.html" with trait=trait %}
+            {% include "public/_rating_block.html" with group=trait %}
         {% endfor %}
     {% else %}
         <p class="region-expanded-empty">

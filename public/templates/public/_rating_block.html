@@ -3,18 +3,18 @@ public/templates/public/_rating_block.html — Single rating block for the
 bulletin page layout.
 
 Expects the following variables in scope:
-  trait   — one entry from render_model.traits (enriched by _enrich_render_model)
+  group   — one entry from problem_groups (produced by _group_avalanche_problems)
+            Keys: kind, category, danger_level, title, problems[]
 
 Renders:
   1. Coloured header strip — category danger-level pictogram, rating name
-     + level, and the trait title as scope line.
-  2. Aspect / elevation row — only when trait.geography.source == "problems"
-     and the first problem carries structured aspects or elevation data.
-     Absent entirely when source == "prose_only" (asymmetry is honest).
+     + level, and the kind-derived title as scope line.
+  2. Aspect / elevation row — only when the first problem carries structured
+     aspects or elevation data.  Absent for prose-only problems (asymmetry
+     is honest).
   3. One row per problem — EAWS icon + name + SLF prose in full, no truncation.
-     Always rendered, irrespective of geography source: prose-only traits
-     still get their per-problem icon and heading so wet_snow / gliding_snow
-     remain visually identifiable.
+     Always rendered: prose-only problems still get their per-problem icon
+     and heading so wet_snow / gliding_snow remain visually identifiable.
 {% endcomment %}
 {% load static card_tags hazard_icons snowdesk_html snowdesk_time %}
 
@@ -24,66 +24,64 @@ Renders:
     data-testid="rating-block"
 >
     {# ── Header strip: coloured band with category pictogram + rating + title #}
-    <div class="danger-band px-4 py-3 border-b border-border" data-level="{{ trait.danger_level|danger_level_key }}">
+    <div class="danger-band px-4 py-3 border-b border-border" data-level="{{ group.danger_level|danger_level_key }}">
         <div class="flex items-center gap-3">
-            {% with cat_icon=trait|category_danger_icon %}
+            {% with cat_icon=group|category_danger_icon %}
                 {% if cat_icon %}
                     <img
                         class="w-9 h-9 shrink-0"
                         src="{% static cat_icon %}"
-                        alt="{{ trait.category|capfirst }} snow level {{ trait.danger_level }}"
+                        alt="{{ group.category|capfirst }} snow level {{ group.danger_level }}"
                         data-testid="category-danger-icon"
                     >
                 {% endif %}
             {% endwith %}
             <div class="flex items-baseline justify-between gap-2 flex-wrap flex-1 min-w-0">
                 <span class="text-base font-semibold leading-tight">
-                    {{ trait.danger_level|danger_level_label }}
-                    ({{ trait.danger_level }})
+                    {{ group.danger_level|danger_level_label }}
+                    ({{ group.danger_level }})
                 </span>
-                <h2 class="text-sm font-normal">{{ trait.title }}</h2>
+                <h2 class="text-sm font-normal">{{ group.title }}</h2>
             </div>
         </div>
     </div>
 
     {# ── Aspect / elevation row ──────────────────────────────────────────── #}
-    {# Only rendered when geography has structured aspects/elevation data.    #}
-    {# Deliberately absent for prose_only — asymmetry is honest.             #}
-    {% if trait.geography.source == "problems" %}
-        {% with first_problem=trait.problems|first %}
-            {% if first_problem.aspects or first_problem.elevation %}
-                <div
-                    class="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card"
-                    data-testid="aspect-elevation-row"
-                >
-                    {% if first_problem.aspects %}
-                        <div class="flex items-center gap-1.5 shrink-0">
-                            {# aspect_rose returns a fixed SVG built from numeric values; safe to render unescaped. #}
-                            <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
-                            {{ first_problem.aspects|aspect_rose:32|safe }}
-                            <span class="text-xs text-text-2">
-                                {{ first_problem.aspects|join:", " }}
-                            </span>
-                        </div>
-                    {% endif %}
-                    {% if first_problem.elevation %}
-                        <div class="flex items-center gap-1.5 shrink-0">
-                            {# elevation_icon returns a fixed SVG built from numeric values; safe to render unescaped. #}
-                            <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
-                            {{ first_problem.elevation|elevation_icon:20|safe }}
-                            <span class="text-xs text-text-2">{{ first_problem.elevation.display }}</span>
-                        </div>
-                    {% endif %}
-                </div>
-            {% endif %}
-        {% endwith %}
-    {% endif %}
+    {# Shown only when the first problem has structured aspects or elevation  #}
+    {# data.  Absent for prose-only problems — asymmetry is honest.          #}
+    {% with first_problem=group.problems|first %}
+        {% if first_problem.aspects or first_problem.elevation %}
+            <div
+                class="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card"
+                data-testid="aspect-elevation-row"
+            >
+                {% if first_problem.aspects %}
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        {# aspect_rose returns a fixed SVG built from numeric values; safe to render unescaped. #}
+                        <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
+                        {{ first_problem.aspects|aspect_rose:32|safe }}
+                        <span class="text-xs text-text-2">
+                            {{ first_problem.aspects|join:", " }}
+                        </span>
+                    </div>
+                {% endif %}
+                {% if first_problem.elevation %}
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        {# elevation_icon returns a fixed SVG built from numeric values; safe to render unescaped. #}
+                        <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
+                        {{ first_problem.elevation|elevation_icon:20|safe }}
+                        <span class="text-xs text-text-2">{{ first_problem.elevation.display }}</span>
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% endwith %}
 
     {# ── Problem rows ────────────────────────────────────────────────────── #}
-    {# One row per structured problem — icons render regardless of geography #}
-    {# source so wet_snow / gliding_snow are always visually identifiable.   #}
+    {# One row per problem — icons render regardless of geography source so  #}
+    {# wet_snow / gliding_snow are always visually identifiable.             #}
     <div class="px-4 pt-3 pb-4 divide-y divide-border">
-        {% for problem in trait.problems %}
+        {% for problem in group.problems %}
             <div class="problem-row {% if not forloop.first %}pt-3{% endif %} {% if not forloop.last %}pb-3{% endif %}">
                 {# Icon + name header #}
                 <div class="flex items-center gap-2.5 mb-2">
