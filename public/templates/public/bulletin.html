@@ -143,7 +143,9 @@ reachable via the SNOW-81 deep-link in the masthead.
             }
 
             document.addEventListener('keydown', function (e) {
+                if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
                 if (inputFocused() || sheetOpen()) return;
+                e.preventDefault();
                 if (e.key === 'ArrowLeft') navigate(prevUrl);
                 if (e.key === 'ArrowRight') navigate(nextUrl);
             });
