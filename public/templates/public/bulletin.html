@@ -276,14 +276,13 @@ reachable via the SNOW-81 deep-link in the masthead.
                     {% endif %}
 
                     {% comment %}
-                       SECTION 4 — Snowpack and weather
-                       Four prose sub-blocks rendered as collapsible panels
-                       (native <details>/<summary>, zero JS).  Each panel is
-                       skipped entirely when its source is None/empty, so no
-                       empty summaries render.  Closed by default — the section
-                       heading carries a "Tap to expand" hint and each
-                       summary shows a chevron affordance.
-                       HTML bodies pass through |snowdesk_html for sanitisation.
+                       SECTION 4 — Snowpack and weather Four prose sub-blocks
+                       rendered as collapsible panels (native
+                       <details>/<summary>, zero JS).  Each panel is skipped
+                       entirely when its source is None/empty, so no empty
+                       summaries render.  Closed by default — each summary shows
+                       a chevron affordance. HTML bodies pass through
+                       |snowdesk_html for sanitisation.
                     {% endcomment %}
                     {% with prose=rm.prose %}
                         {% if prose %}
@@ -293,12 +292,6 @@ reachable via the SNOW-81 deep-link in the masthead.
                                         <h2 class="text-xs font-mono uppercase tracking-widest text-text-3">
                                             {% trans "Snowpack & Weather" %}
                                         </h2>
-                                        <span
-                                            class="text-[10px] font-mono uppercase tracking-widest text-text-3/70"
-                                            aria-hidden="true"
-                                        >
-                                            {% trans "Tap to expand" %}
-                                        </span>
                                     </div>
 
                                     {# — Snowpack ─────────────────────────────── #}
