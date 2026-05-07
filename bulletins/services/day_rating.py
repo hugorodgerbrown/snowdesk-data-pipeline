@@ -5,7 +5,7 @@ Maintains the RegionDayRating denormalisation table. Each row stores both the
 minimum and maximum danger ratings (within one chosen bulletin) for a single
 (region, calendar day) pair.
 
-Aggregation policy (v4 — single-bulletin):
+Aggregation policy (v5 — headline-only):
   - For day X, pick the single bulletin that was most recently published by
     ~10am on day X:
     - Morning-of-X (valid_from.date() == X, hour < 12) takes priority.
@@ -17,15 +17,16 @@ Aggregation policy (v4 — single-bulletin):
     with the latest ``valid_from``.  Because morning-of-X has a later
     ``valid_from`` than prior-evening-of-(X-1), this naturally implements
     the morning-wins / prior-evening-fallback convention.
-  - Aggregate *within* the chosen bulletin's ``render_model["traits"]``:
-    each trait's ``danger_level`` int is mapped to a rating key.
-    ``max_rating`` is the highest; ``min_rating`` is the lowest.
-  - Bulletins with an empty traits list (quiet day) fall back to the
-    bulletin's aggregate ``render_model["danger"]["key"]`` for both min and
-    max (debug log).
+  - Both ``min_rating`` and ``max_rating`` are always set to the bulletin's
+    headline ``render_model["danger"]["key"]`` (the CAAML aggregate).  This
+    keeps the heatmap tile in sync with the Day Risk Profile panel, which
+    also shows the headline rating (SNOW-138).
+  - Bulletins with an empty traits list (quiet day) use the same headline
+    key path (debug log).
   - Bulletins with a completely malformed render_model (empty dict or missing
     both ``danger`` and ``traits``) → write ``no_rating``.
   - Traits with missing or non-integer ``danger_level`` are skipped (debug log).
+    If all traits are invalid the row is written as ``no_rating``.
   - Qualifying means ``render_model_version >= RENDER_MODEL_VERSION``
     (version=0 error sentinels are excluded).
   - ``source_bulletin`` is always the chosen bulletin (or None when no
@@ -52,16 +53,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DAY_RATING_VERSION: int = 4
-
-# Canonical ordering from lowest to highest (mirrors _DANGER_ORDER in render_model).
-_RATING_ORDER: tuple[str, ...] = (
-    "low",
-    "moderate",
-    "considerable",
-    "high",
-    "very_high",
-)
+DAY_RATING_VERSION: int = 5
 
 # Map trait danger_level int (1–5) to rating key string.
 _DANGER_LEVEL_TO_KEY: dict[int, str] = {
@@ -114,33 +106,13 @@ def _target_day(bulletin: "Bulletin") -> datetime.date:
     return (vf + timedelta(days=1)).date()
 
 
-def _rating_rank(key: str) -> int:
-    """
-    Return the ordinal rank of a danger rating key.
-
-    Higher is more dangerous. Returns -1 for unrecognised keys so they
-    sort below all valid levels.
-
-    Args:
-        key: A CAAML mainValue string (e.g. ``"considerable"``).
-
-    Returns:
-        Integer rank in [0, len(_RATING_ORDER)-1], or -1.
-
-    """
-    try:
-        return _RATING_ORDER.index(key)
-    except ValueError:
-        return -1
-
-
 def _extract_headline_from_render_model(render_model: dict) -> tuple[str, str]:
     """
     Extract the headline danger key and subdivision suffix from a render model.
 
     Reads ``render_model["danger"]["key"]`` (the pre-computed aggregate) and its
-    ``subdivision`` field. Used as the subdivision source and as the min/max
-    value for quiet-day bulletins with empty traits.
+    ``subdivision`` field. Used as the single rating value written to both
+    ``min_rating`` and ``max_rating`` for every bulletin with valid traits.
 
     Args:
         render_model: A render model dict produced by build_render_model.
@@ -176,10 +148,9 @@ def recompute_region_day(
     prior-evening candidates; a Python post-filter via ``_target_day``
     then drops any evening-of-day bulletin (whose target is day+1).
 
-    Aggregates at the trait level within the chosen bulletin: each trait's
-    ``danger_level`` int is mapped to a rating key. Bulletins with an empty
-    traits list (quiet day) fall back to the bulletin's aggregate
-    ``render_model["danger"]["key"]``.
+    Sets both ``min_rating`` and ``max_rating`` to the bulletin's headline
+    ``render_model["danger"]["key"]``.  Bulletins with an empty traits list
+    (quiet day) use the same headline key path.
 
     Writes ``no_rating`` when no qualifying bulletin exists or when the
     chosen bulletin's render_model is entirely malformed.
@@ -239,8 +210,8 @@ def recompute_region_day(
             max_subdivision = headline_subdivision
             source_bulletin = chosen
         else:
-            # Extract valid trait danger levels from the chosen bulletin only.
-            valid_keys: list[str] = []
+            # Verify the bulletin has at least one valid trait danger_level.
+            has_valid_trait = False
             for trait in traits:
                 raw_level = trait.get("danger_level")
                 if (
@@ -254,9 +225,9 @@ def recompute_region_day(
                         raw_level,
                     )
                     continue
-                valid_keys.append(_DANGER_LEVEL_TO_KEY[raw_level])
+                has_valid_trait = True
 
-            if not valid_keys:
+            if not has_valid_trait:
                 # All trait levels were invalid — no usable data.
                 min_key = no_rating
                 min_subdivision = ""
@@ -264,8 +235,10 @@ def recompute_region_day(
                 max_subdivision = ""
                 source_bulletin = None
             else:
-                max_key = max(valid_keys, key=_rating_rank)
-                min_key = min(valid_keys, key=_rating_rank)
+                # Use the headline danger key for both fields so the heatmap
+                # tile always matches the Day Risk Profile panel (SNOW-138).
+                min_key = headline_key
+                max_key = headline_key
                 max_subdivision = headline_subdivision
                 min_subdivision = headline_subdivision
                 source_bulletin = chosen

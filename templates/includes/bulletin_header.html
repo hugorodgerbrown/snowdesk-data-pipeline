@@ -73,13 +73,11 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
                 {{ region_name }}
             </h1>
             <div
-                class="font-mono text-xs text-white/85 mt-2 flex flex-wrap items-center gap-x-1 gap-y-1"
+                class="text-xs text-white/85 mt-2 flex flex-wrap items-center gap-x-1 gap-y-1"
                 data-testid="bulletin-header-meta"
             >
                 <span>{{ page_date|date:"D j M" }}</span>
                 {% if weather_display %}
-                    <span aria-hidden="true">·</span>
-                    <span>{{ weather_display.condition_label }}</span>
                     <span aria-hidden="true">·</span>
                     {# Sunrise + sunset are a single inline-flex group so they wrap   #}
                     {# together to a new line rather than separately when the meta    #}
@@ -99,16 +97,19 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
                         <span>{{ weather_display.sunrise_local }}</span>
                         <span aria-hidden="true">-</span>
                         <span class="inline-flex items-center gap-x-1">
+                            {% comment ignore icon to give more space %}
                             <img
                                 src="{% static 'icons/weather/sunset.svg' %}"
                                 class="w-4 h-4"
                                 alt=""
                                 title="{% trans 'Sunset' %}"
                             >
-                            <span class="sr-only">{% trans "Sunset" %}</span>
+                            <span class="sr-only">{% trans "Sunset" %}</span> {% endcomment %}
                             <span>{{ weather_display.sunset_local }}</span>
                         </span>
                     </span>
+                    <span aria-hidden="true">·</span>
+                    <span>{{ weather_display.condition_label }}</span>
                 {% endif %}
             </div>
         </div>

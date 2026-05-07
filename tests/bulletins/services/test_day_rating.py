@@ -1,9 +1,9 @@
 """
 tests/bulletins/services/test_day_rating.py — Tests for the day_rating service.
 
-Covers (v4 single-bulletin policy):
+Covers (v5 headline-only policy):
   - _target_day: morning/evening/boundary rules.
-  - Single bulletin, two traits (dry=1, wet=3) → min=low, max=considerable.
+  - Single bulletin, two traits (dry=1, wet=3) → min=max=headline_key (considerable).
   - Single bulletin, single trait (dry=3) → min=max=considerable (stable).
   - Single bulletin with empty traits but danger.key="low" → min=max=low (fallback).
   - Morning-of-X wins over prior-evening: morning chosen, prior-evening ignored.
@@ -174,8 +174,8 @@ class TestTargetDay:
 class TestRecomputeRegionDay:
     """Tests for recompute_region_day() with the v4 single-bulletin policy."""
 
-    def test_single_bulletin_two_traits_variable(self) -> None:
-        """Single bulletin with dry=1 and wet=3 → min=low, max=considerable."""
+    def test_single_bulletin_two_traits_uses_headline_key(self) -> None:
+        """Single bulletin with dry=1 and wet=3 → min=max=headline_key (considerable)."""
         region = RegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 15)
         # Prior-evening issue: target day = 2026-01-15 (evening of Jan 14)
@@ -193,7 +193,7 @@ class TestRecomputeRegionDay:
         recompute_region_day(region, day, commit=True)
 
         rdr = RegionDayRating.objects.get(region=region, date=day)
-        assert rdr.min_rating == "low"
+        assert rdr.min_rating == "considerable"
         assert rdr.max_rating == "considerable"
         assert rdr.version == DAY_RATING_VERSION
 
@@ -305,7 +305,7 @@ class TestRecomputeRegionDay:
         recompute_region_day(region, day, commit=True)
 
         rdr = RegionDayRating.objects.get(region=region, date=day)
-        assert rdr.min_rating == "moderate"
+        assert rdr.min_rating == "considerable"
         assert rdr.max_rating == "considerable"
         assert rdr.source_bulletin_id == b_eve.pk
 
