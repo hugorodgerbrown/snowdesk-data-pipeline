@@ -35,13 +35,14 @@ Version 3 changes:
     ``tendency_type``, ``valid_from``, and ``valid_until``.
   - Top-level ``snowpack_structure`` is kept (equals ``prose.snowpack_structure``)
     for backward compatibility; the v4 bump will drop it.
-  - **Missing aggregation no longer raises.** When ``customData.CH.aggregation``
-    is absent but ``avalancheProblems`` is non-empty (a real-world SLF
-    quirk), aggregation is synthesised from the problems by grouping on
-    ``(category, validTimePeriod)``. Per the CAAML schema, aggregation
-    is a visualisation hint and dry/wet problem types are disjoint, so
-    the synthesis is unambiguous. A warning is logged so operators can
-    track the upstream gap. Output shape is unchanged — no version bump.
+
+Version 3 (continued — no shape change requiring regeneration):
+  - Removed ``fallback_key_message`` from the output shape. The field was
+    never rendered in any template; ``properties.highlights`` has been
+    absent in SLF data since 2023-12-13.
+  - Aggregation synthesis removed. ``customData.CH.aggregation`` is
+    assumed always present. Missing aggregation now logs ERROR and returns
+    empty traits instead of synthesising from problem types.
 """
 
 from __future__ import annotations
@@ -406,57 +407,6 @@ def _validate(
 
 
 # ---------------------------------------------------------------------------
-# Aggregation synthesis (fallback when SLF omits customData.CH.aggregation)
-# ---------------------------------------------------------------------------
-
-
-def _synthesise_aggregation(
-    avalanche_problems: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """
-    Build aggregation entries from avalancheProblems alone.
-
-    Used when SLF has not provided ``customData.CH.aggregation`` but the
-    bulletin still carries problems. Groups problems by
-    ``(category, validTimePeriod)``, preserving SLF's problem ordering
-    within and across groups. Category is resolved via
-    ``PROBLEM_TYPE_TO_CATEGORY`` — dry/wet problem types are disjoint so
-    the grouping is unambiguous.
-
-    Caller must run ``_validate_problems`` first; this helper assumes
-    every ``problemType`` is a known EAWS token.
-
-    Args:
-        avalanche_problems: Raw CAAML avalancheProblems list.
-
-    Returns:
-        A list of aggregation-entry dicts in the same shape as
-        ``customData.CH.aggregation``.
-
-    """
-    groups: dict[tuple[str, str], list[str]] = {}
-    order: list[tuple[str, str]] = []
-    for problem in avalanche_problems:
-        pt = problem.get("problemType", "")
-        category = PROBLEM_TYPE_TO_CATEGORY[pt]
-        time_period = problem.get("validTimePeriod") or "all_day"
-        key = (category, time_period)
-        if key not in groups:
-            groups[key] = []
-            order.append(key)
-        groups[key].append(pt)
-
-    return [
-        {
-            "category": category,
-            "validTimePeriod": time_period,
-            "problemTypes": groups[(category, time_period)],
-        }
-        for category, time_period in order
-    ]
-
-
-# ---------------------------------------------------------------------------
 # Trait builder
 # ---------------------------------------------------------------------------
 
@@ -541,39 +491,6 @@ def _build_trait(
 # ---------------------------------------------------------------------------
 # Public builder — secondary helpers
 # ---------------------------------------------------------------------------
-
-
-def _build_fallback_key_message(
-    properties: dict[str, Any],
-) -> dict[str, Any] | None:
-    """
-    Derive the fallback key message from the bulletin properties.
-
-    Checks in priority order: first problem comment, snowpack structure
-    comment, weather review comment.
-
-    Args:
-        properties: The CAAML properties dict.
-
-    Returns:
-        A dict with ``text`` and ``source`` keys, or None if no text found.
-
-    """
-    ap = properties.get("avalancheProblems") or []
-    if ap:
-        comment = ap[0].get("comment") or ""
-        if comment:
-            return {"text": comment, "source": "avalancheProblems[0].comment"}
-
-    snowpack_comment = (properties.get("snowpackStructure") or {}).get("comment") or ""
-    if snowpack_comment:
-        return {"text": snowpack_comment, "source": "snowpackStructure.comment"}
-
-    weather_comment = (properties.get("weatherReview") or {}).get("comment") or ""
-    if weather_comment:
-        return {"text": weather_comment, "source": "weatherReview.comment"}
-
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -738,17 +655,16 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
         "CH", {}
     ).get("aggregation") or []
 
-    # SLF occasionally omits the aggregation hint; rebuild it from the
-    # problem types so the bulletin still renders. Validate problems first
-    # so synthesis only sees known EAWS types.
+    # aggregation is expected to always be present when avalancheProblems is
+    # non-empty. Log an error and produce empty traits if missing — do not
+    # synthesise, as this indicates an upstream data gap.
     if avalanche_problems and not aggregation:
-        _validate_problems(avalanche_problems)
-        logger.warning(
+        logger.error(
             "Bulletin %s has avalancheProblems but no customData.CH.aggregation; "
-            "synthesising aggregation from problem types.",
+            "cannot build traits. Bulletin will render with no problem cards.",
             bulletin_id,
         )
-        aggregation = _synthesise_aggregation(avalanche_problems)
+        avalanche_problems = []
 
     # Validate — raises RenderModelBuildError on failure.
     _validate(avalanche_problems, aggregation)
@@ -773,7 +689,6 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
                 len(traits),
             )
 
-    fallback_key_message = _build_fallback_key_message(properties)
     prose = _build_prose(properties)
     metadata = _build_metadata(properties)
 
@@ -784,7 +699,6 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
         "version": RENDER_MODEL_VERSION,
         "danger": danger,
         "traits": traits,
-        "fallback_key_message": fallback_key_message,
         "snowpack_structure": snowpack_structure,
         "metadata": metadata,
         "prose": prose,

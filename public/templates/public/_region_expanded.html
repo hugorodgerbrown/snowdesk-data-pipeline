@@ -21,9 +21,9 @@ bulletin content.
 {% load i18n snowdesk_time %}
 
 <div class="region-expanded">
-    {% if rm.traits %}
-        {% for trait in rm.traits %}
-            {% include "public/_rating_block.html" with trait=trait %}
+    {% if problem_cards %}
+        {% for card in problem_cards %}
+            {% include "public/_rating_block.html" with card=card %}
         {% endfor %}
     {% else %}
         <p class="region-expanded-empty">

@@ -178,18 +178,17 @@ class TestErrorStateCard:
 
 
 @pytest.mark.django_db
-class TestTraitHeaderSemantics:
+class TestProblemCardRendering:
     """
-    Tests that trait titles render inside <h2> elements.
+    Tests that problem cards render correctly.
 
-    The page hierarchy is ``h1`` (region) → ``h2`` (trait title) → ``h2``
-    (Snowpack & Weather section) so Lighthouse's ``heading-order`` audit
-    passes. Traits must NOT render as <h3> (which would skip a level
-    given the h1 parent).
+    The page hierarchy is h1 (region) → h2 (Avalanche Problems section
+    heading) → h2 (Snowpack & Weather section) — no per-card h2 any more
+    since the card header is plain text.
     """
 
-    def test_trait_title_rendered_in_h2(self, anon_client: Client, region):
-        """Each trait title appears inside an <h2> tag, not a <p> or <div>."""
+    def test_problem_label_rendered_in_card_header(self, anon_client: Client, region):
+        """Problem type label ('Wind slab') appears in the card header area."""
         from bulletins.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 5, 10)
@@ -198,35 +197,44 @@ class TestTraitHeaderSemantics:
             day,
             render_model={
                 "version": RENDER_MODEL_VERSION,
-                "traits": [
-                    {
-                        "title": "Dry avalanches, whole day",
-                        "category": "dry",
-                        "time_period": "all_day",
-                        "problems": [],
-                        "geography": {"source": "no_problems"},
-                        "prose": "",
-                    }
-                ],
+                "traits": [],
                 "danger": {},
             },
             render_model_version=RENDER_MODEL_VERSION,
             raw_data={
+                "type": "Feature",
+                "geometry": None,
                 "properties": {
                     "dangerRatings": [{"mainValue": "low"}],
-                }
+                    "avalancheProblems": [
+                        {
+                            "problemType": "wind_slab",
+                            "dangerRatingValue": "low",
+                            "validTimePeriod": "all_day",
+                            "aspects": ["N"],
+                            "elevation": {"lowerBound": "2000"},
+                            "comment": "<p>Wind slab hazard.</p>",
+                        }
+                    ],
+                    "customData": {
+                        "CH": {
+                            "aggregation": [
+                                {"category": "dry", "problemTypes": ["wind_slab"]}
+                            ]
+                        }
+                    },
+                },
             },
         )
         response = anon_client.get(_bulletin_url(day))
         assert response.status_code == 200
         content = response.content.decode()
 
-        # Title should appear inside an h2 element (the trait heading level).
-        assert "<h2" in content
-        assert "Dry avalanches, whole day" in content
+        assert 'data-testid="rating-block"' in content
+        assert "Wind slab" in content
 
-    def test_two_trait_rating_blocks_present(self, anon_client: Client, region):
-        """A variable-day bulletin produces one rating block per trait."""
+    def test_two_problems_produce_two_blocks(self, anon_client: Client, region):
+        """A bulletin with dry + wet problems produces two separate rating blocks."""
         from bulletins.services.render_model import RENDER_MODEL_VERSION
 
         day = date(2026, 5, 11)
@@ -235,45 +243,51 @@ class TestTraitHeaderSemantics:
             day,
             render_model={
                 "version": RENDER_MODEL_VERSION,
-                "traits": [
-                    {
-                        "title": "Dry avalanches, whole day",
-                        "category": "dry",
-                        "time_period": "all_day",
-                        "problems": [],
-                        "geography": {"source": "no_problems"},
-                        "prose": "",
-                    },
-                    {
-                        "title": "Wet-snow avalanches, later",
-                        "category": "wet",
-                        "time_period": "later",
-                        "problems": [],
-                        "geography": {"source": "no_problems"},
-                        "prose": "",
-                    },
-                ],
+                "traits": [],
                 "danger": {},
             },
             render_model_version=RENDER_MODEL_VERSION,
             raw_data={
+                "type": "Feature",
+                "geometry": None,
                 "properties": {
                     "dangerRatings": [{"mainValue": "moderate"}],
-                }
+                    "avalancheProblems": [
+                        {
+                            "problemType": "wind_slab",
+                            "dangerRatingValue": "moderate",
+                            "validTimePeriod": "all_day",
+                            "aspects": [],
+                            "elevation": None,
+                            "comment": "<p>Dry hazard.</p>",
+                        },
+                        {
+                            "problemType": "wet_snow",
+                            "dangerRatingValue": "low",
+                            "validTimePeriod": "later",
+                            "aspects": [],
+                            "elevation": None,
+                            "comment": "<p>Wet hazard.</p>",
+                        },
+                    ],
+                    "customData": {
+                        "CH": {
+                            "aggregation": [
+                                {"category": "dry", "problemTypes": ["wind_slab"]},
+                                {"category": "wet", "problemTypes": ["wet_snow"]},
+                            ]
+                        }
+                    },
+                },
             },
         )
         response = anon_client.get(_bulletin_url(day))
         assert response.status_code == 200
         content = response.content.decode()
 
-        # Count rating-block wrappers rather than ``<h2`` occurrences: the page
-        # now carries other ``<h2>`` elements outside the rating blocks (section
-        # headings for "Avalanche Problems", "Snowpack & Weather", …) and the
-        # test's concern is specifically "one rating block per trait", not
-        # "exactly N headings on the page".
         assert content.count('data-testid="rating-block"') == 2
-        assert "Dry avalanches, whole day" in content
-        assert "Wet-snow avalanches, later" in content
+        assert "Wind slab" in content
+        assert "Wet snow" in content
 
 
 # ── Per-problem danger_level_css enrichment ───────────────────────────────────

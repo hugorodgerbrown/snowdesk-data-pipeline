@@ -55,6 +55,7 @@ from .views import (
     _PROBLEM_LABELS,
     _select_bulletin_for_date,
     _select_default_issue,
+    build_problem_cards,
     enrich_render_model,
 )
 
@@ -535,9 +536,6 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     if bulletin is None:
         return JsonResponse({"error": "no_bulletin"}, status=404)
 
-    # _rating_block.html requires presentation-ready fields (label,
-    # time_period_label, ElevationBounds); without enrichment those rows
-    # silently disappear via the partial's {% if %} guards.
     rm = enrich_render_model(bulletin.render_model or {})
     # Two canonical URL families (SNOW-99): when the map page is at
     # "today" (no ``?d=``), point the peek at the no-date form-2 URL —
@@ -545,11 +543,18 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     # date via ``?d=``, point at the form-3 dated URL — the historical
     # record. Either way the link skips the 302 hop.
     bulletin_url = region.get_absolute_url(None if raw_date is None else target_date)
+    raw_props = (bulletin.raw_data or {}).get("properties") or {}
+    ch_data = (raw_props.get("customData") or {}).get("CH") or {}
+    problem_cards = build_problem_cards(
+        raw_props.get("avalancheProblems") or [],
+        ch_data.get("aggregation") or [],
+    )
 
     ctx = {
         "region": region,
         "rm": rm,
         "bulletin_url": bulletin_url,
+        "problem_cards": problem_cards,
     }
     return JsonResponse(
         {

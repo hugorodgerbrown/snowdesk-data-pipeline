@@ -88,7 +88,6 @@ def _render_model(
                 "danger_level": 3,
             }
         ],
-        "fallback_key_message": None,
         "snowpack_structure": None,
         "metadata": {
             "publication_time": None,
@@ -107,15 +106,17 @@ def _render_model(
     }
 
 
-def _make_today_bulletin(region, render_model: dict):
+def _make_today_bulletin(region, render_model: dict, raw_data: dict | None = None):
     """Create a bulletin valid today in ``region`` with the given render_model."""
     vf, vt = _today_window()
+    extra = {"raw_data": raw_data} if raw_data is not None else {}
     bulletin = BulletinFactory.create(
         issued_at=vf - timedelta(minutes=30),
         valid_from=vf,
         valid_to=vt,
         render_model=render_model,
         render_model_version=render_model.get("version", 3),
+        **extra,
     )
     RegionBulletinFactory.create(
         bulletin=bulletin,
@@ -644,7 +645,29 @@ def test_region_summary_expanded_html_includes_enriched_fields():
     # _render_model defaults to time_period="all_day"; flip the problem to
     # "later" so we exercise the time_period_label path too.
     rm["traits"][0]["problems"][0]["time_period"] = "later"
-    _make_today_bulletin(region, rm)
+    raw_data = {
+        "type": "Feature",
+        "geometry": None,
+        "properties": {
+            "dangerRatings": [{"mainValue": "considerable"}],
+            "avalancheProblems": [
+                {
+                    "problemType": "wet_snow",
+                    "comment": "",
+                    "aspects": ["N", "NE", "E"],
+                    "elevation": {"lowerBound": "2400"},
+                    "dangerRatingValue": "considerable",
+                    "validTimePeriod": "later",
+                }
+            ],
+            "customData": {
+                "CH": {
+                    "aggregation": [{"category": "wet", "problemTypes": ["wet_snow"]}]
+                }
+            },
+        },
+    }
+    _make_today_bulletin(region, rm, raw_data=raw_data)
 
     client = Client()
     response = client.get(reverse("api:region_summary", args=["CH-4115"]))
@@ -664,12 +687,36 @@ def test_region_summary_expanded_html_includes_enriched_fields():
 def test_region_summary_expanded_html_renders_aspect_elevation_row():
     """
     The aspect/elevation row only renders when the partial sees structured
-    data (``geography.source == "problems"`` plus aspects or an
-    ``ElevationBounds`` truthy) — this exercises the drawer end-to-end and
-    fails if the drawer ever drops the enrichment step again.
+    data (aspects or elevation in the raw avalancheProblems) — this exercises
+    the drawer end-to-end and fails if the drawer ever drops the enrichment
+    step again.
     """
     region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    _make_today_bulletin(region, _render_model())
+    raw_data = {
+        "type": "Feature",
+        "geometry": None,
+        "properties": {
+            "dangerRatings": [{"mainValue": "considerable"}],
+            "avalancheProblems": [
+                {
+                    "problemType": "persistent_weak_layers",
+                    "comment": "",
+                    "aspects": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+                    "elevation": {"lowerBound": "2200"},
+                    "dangerRatingValue": "considerable",
+                    "validTimePeriod": "all_day",
+                }
+            ],
+            "customData": {
+                "CH": {
+                    "aggregation": [
+                        {"category": "dry", "problemTypes": ["persistent_weak_layers"]}
+                    ]
+                }
+            },
+        },
+    }
+    _make_today_bulletin(region, _render_model(), raw_data=raw_data)
 
     client = Client()
     response = client.get(reverse("api:region_summary", args=["CH-4115"]))

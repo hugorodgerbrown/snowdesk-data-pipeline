@@ -1674,6 +1674,31 @@ _DANGER_ORDER: tuple[str, ...] = (
     "very_high",
 )
 
+# Kind derivation for grouping avalanche problems into rating-block cards.
+_KIND_MAP: dict[str, str] = {
+    "new_snow": "dry",
+    "wind_slab": "dry",
+    "persistent_weak_layers": "dry",
+    "cornices": "dry",
+    "no_distinct_avalanche_problem": "dry",
+    "favourable_situation": "dry",
+    "wet_snow": "wet",
+    "gliding_snow": "gliding",
+}
+_KIND_ORDER: dict[str, int] = {"dry": 0, "wet": 1, "gliding": 2}
+_KIND_TITLES: dict[str, Any] = {
+    "dry": _("Dry avalanches"),
+    "wet": _("Wet-snow avalanches"),
+    "gliding": _("Gliding avalanches"),
+}
+_KIND_CATEGORY: dict[str, str] = {"dry": "dry", "wet": "wet", "gliding": "wet"}
+_DANGER_RATING_INT: dict[str, int] = {
+    "low": 1,
+    "moderate": 2,
+    "considerable": 3,
+    "high": 4,
+    "very_high": 5,
+}
 # Map CAAML ``customData.CH.subdivision`` strings to display suffixes.
 _SUBDIVISION_SUFFIX: dict[str, str] = {
     "minus": "-",
@@ -1918,6 +1943,126 @@ def _problem_summary(
     return _gettext("Affects all aspects and elevations")
 
 
+def _enrich_avalanche_problem(
+    problem: dict[str, Any],
+    cluster: list[dict[str, Any]],
+    idx: int,
+) -> dict[str, Any]:
+    """
+    Build a presentation-ready dict from a raw CAAML avalancheProblems entry.
+
+    Args:
+        problem: One entry from the CAAML ``avalancheProblems`` array.
+        cluster: All problems in the same (kind, danger_level) group.
+        idx: Index of this problem within ``cluster``.
+
+    Returns:
+        Dict with ``problem_type``, ``time_period``, ``aspects``,
+        ``elevation``, ``comment_html``, ``label``, ``time_period_label``,
+        and ``hide_comment`` keys.
+
+    """
+    problem_type: str = problem.get("problemType") or ""
+    time_period: str = problem.get("validTimePeriod") or ""
+    aspects: list[str] = problem.get("aspects") or []
+    comment_html: str = problem.get("comment") or ""
+    raw_elevation: dict[str, Any] | None = problem.get("elevation") or None
+    elevation = _format_elevation(raw_elevation) if raw_elevation else None
+    core_zone_text: str = ((problem.get("customData") or {}).get("CH") or {}).get(
+        "coreZoneText"
+    ) or ""
+
+    label = _PROBLEM_LABELS.get(
+        problem_type, problem_type.replace("_", " ").capitalize()
+    )
+    time_period_label = _TIME_PERIOD_LABELS.get(time_period, "")
+
+    hide_comment = False
+    if comment_html and len(cluster) > 1:
+        plain = _plain_text(comment_html)
+        later_plains = [_plain_text(p.get("comment") or "") for p in cluster[idx + 1 :]]
+        if plain in later_plains:
+            hide_comment = True
+
+    return {
+        "problem_type": problem_type,
+        "time_period": time_period,
+        "aspects": aspects,
+        "elevation": elevation,
+        "comment_html": comment_html,
+        "label": label,
+        "time_period_label": time_period_label,
+        "hide_comment": hide_comment,
+        "core_zone_text": core_zone_text,
+    }
+
+
+def _problem_card(raw_p: dict[str, Any], category: str) -> dict[str, Any]:
+    """Build a flat presentation card dict from one raw CAAML avalancheProblem."""
+    drv = raw_p.get("dangerRatingValue") or ""
+    danger_level = _DANGER_RATING_INT.get(drv, 1)
+    enriched = _enrich_avalanche_problem(raw_p, [raw_p], 0)
+    return {"category": category, "danger_level": danger_level, **enriched}
+
+
+def _problem_cards_from_aggregation(
+    aggregation: list[dict[str, Any]],
+    problem_index: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Build one card per (aggregation entry, problem type), preserving order.
+
+    Args:
+        aggregation: The ``customData.CH.aggregation`` list.
+        problem_index: ``{problemType: raw_problem}`` built from
+            ``avalancheProblems``.
+
+    Returns:
+        Flat list of card dicts in aggregation order.
+
+    """
+    cards: list[dict[str, Any]] = []
+    for agg_entry in aggregation:
+        category: str = agg_entry.get("category") or "dry"
+        for pt in agg_entry.get("problemTypes") or []:
+            raw_p = problem_index.get(pt)
+            if raw_p is not None:
+                cards.append(_problem_card(raw_p, category))
+    return cards
+
+
+def build_problem_cards(
+    raw_problems: list[dict[str, Any]],
+    aggregation: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Build one flat presentation card per avalancheProblem, in aggregation order.
+
+    Both ``raw_problems`` and ``aggregation`` are expected to be present
+    whenever the bulletin carries avalanche problems. Missing either logs
+    an ERROR and returns an empty list.
+
+    Args:
+        raw_problems: The CAAML ``avalancheProblems`` array.
+        aggregation: The ``customData.CH.aggregation`` array.
+
+    Returns:
+        List of flat card dicts in aggregation order, or empty list on error.
+
+    """
+    if not raw_problems:
+        logger.error("build_problem_cards: avalancheProblems is empty or missing")
+        return []
+    if not aggregation:
+        logger.error(
+            "build_problem_cards: customData.CH.aggregation is missing — "
+            "cannot determine display order"
+        )
+        return []
+    index = {p["problemType"]: p for p in raw_problems if p.get("problemType")}
+    return _problem_cards_from_aggregation(aggregation, index)
+
+
 def _enrich_render_model_problem(
     rm_problem: dict[str, Any],
     guidance: dict[str, Any],
@@ -2110,7 +2255,16 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
 
     """
     props = _get_properties(bulletin)
+    raw_problems: list[dict[str, Any]] = props.get("avalancheProblems") or []
+    ch_data: dict[str, Any] = (props.get("customData") or {}).get("CH") or {}
+    aggregation: list[dict[str, Any]] = ch_data.get("aggregation") or []
+    problem_cards = build_problem_cards(raw_problems, aggregation)
     ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
+    if not ratings:
+        logger.error(
+            "_build_panel_context: bulletin %s has no dangerRatings",
+            bulletin.pk,
+        )
     danger_key, danger_subdivision = _highest_danger_key(ratings)
     danger_meta = _DANGER_PANEL_META[danger_key]
 
@@ -2201,6 +2355,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "afternoon_label": afternoon_meta["label"],
         "afternoon_number": afternoon_meta["number"],
         "afternoon_subdivision": afternoon_subdivision,
+        "problem_cards": problem_cards,
     }
     panel["day_character"] = compute_day_character(raw_render_model)
     return panel

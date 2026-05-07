@@ -54,7 +54,6 @@ def _render_model_with_traits(
         "version": 3,
         "danger": {"key": "moderate", "number": "2", "subdivision": None},
         "traits": traits,
-        "fallback_key_message": None,
         "snowpack_structure": None,
         "metadata": metadata
         or {
@@ -162,6 +161,85 @@ def _raw_data_with_ratings(ratings: list[dict]) -> dict:
     }
 
 
+def _raw_problem(
+    problem_type: str = "wind_slab",
+    comment: str = "<p>Wind slab comment text.</p>",
+    aspects: list | None = None,
+    elevation: dict | None = None,
+    danger_rating_value: str = "moderate",
+    valid_time_period: str = "all_day",
+) -> dict:
+    """Build a raw CAAML avalancheProblems entry (as stored in raw_data.properties)."""
+    return {
+        "problemType": problem_type,
+        "comment": comment,
+        "aspects": aspects if aspects is not None else ["N", "NE", "E"],
+        "elevation": elevation if elevation is not None else {"lowerBound": "2200"},
+        "dangerRatingValue": danger_rating_value,
+        "validTimePeriod": valid_time_period,
+    }
+
+
+def _raw_problem_no_geo(
+    problem_type: str = "wet_snow",
+    comment: str = "<p>Wet snow comment.</p>",
+    danger_rating_value: str = "moderate",
+) -> dict:
+    """Build a raw CAAML problem with no aspects or elevation (prose-only)."""
+    return {
+        "problemType": problem_type,
+        "comment": comment,
+        "aspects": [],
+        "elevation": None,
+        "dangerRatingValue": danger_rating_value,
+        "validTimePeriod": "all_day",
+    }
+
+
+def _raw_data_with_problems(
+    problems: list[dict], ratings: list[dict] | None = None
+) -> dict:
+    """Build a minimal raw_data GeoJSON envelope with the given avalancheProblems.
+
+    Auto-generates a one-entry-per-problem aggregation preserving the problems
+    list order, and includes a default dangerRatings if none is given.
+    """
+    _WET_TYPES = {"wet_snow", "gliding_snow"}
+    aggregation = [
+        {
+            "category": "wet" if p.get("problemType") in _WET_TYPES else "dry",
+            "problemTypes": [p.get("problemType", "wind_slab")],
+        }
+        for p in problems
+    ]
+    return {
+        "type": "Feature",
+        "geometry": None,
+        "properties": {
+            "dangerRatings": ratings or [{"mainValue": "moderate"}],
+            "avalancheProblems": problems,
+            "customData": {"CH": {"aggregation": aggregation}},
+        },
+    }
+
+
+def _raw_data_with_aggregation(
+    aggregation: list[dict],
+    problems: list[dict],
+    ratings: list[dict] | None = None,
+) -> dict:
+    """Build a raw_data envelope with both aggregation and avalancheProblems."""
+    return {
+        "type": "Feature",
+        "geometry": None,
+        "properties": {
+            "dangerRatings": ratings or [{"mainValue": "moderate"}],
+            "avalancheProblems": problems,
+            "customData": {"CH": {"aggregation": aggregation}},
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -175,10 +253,13 @@ def region():
 
 @pytest.fixture()
 def simple_bulletin(region):
-    """A bulletin with one dry trait (simple day)."""
+    """A bulletin with one dry problem (simple day)."""
     day = date(2026, 3, 15)
     rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
-    return _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+    raw = _raw_data_with_problems([_raw_problem()])
+    return _make_am_bulletin(
+        region, day, render_model=rm, render_model_version=3, raw_data=raw
+    )
 
 
 @pytest.fixture()
@@ -202,14 +283,34 @@ def variable_bulletin(region):
         "danger_level": 3,
     }
     rm = _render_model_with_traits([dry_trait, wet_trait])
-    raw = _raw_data_with_ratings(
-        [
-            _rating("moderate", "all_day"),
-            _rating("considerable", "later"),
-        ]
-    )
+    raw_data = {
+        "type": "Feature",
+        "geometry": None,
+        "properties": {
+            "dangerRatings": [
+                _rating("moderate", "all_day"),
+                _rating("considerable", "later"),
+            ],
+            "avalancheProblems": [
+                _raw_problem(danger_rating_value="moderate"),
+                _raw_problem(
+                    problem_type="wet_snow",
+                    danger_rating_value="considerable",
+                    valid_time_period="later",
+                ),
+            ],
+            "customData": {
+                "CH": {
+                    "aggregation": [
+                        {"category": "dry", "problemTypes": ["wind_slab"]},
+                        {"category": "wet", "problemTypes": ["wet_snow"]},
+                    ]
+                }
+            },
+        },
+    }
     return _make_am_bulletin(
-        region, day, render_model=rm, render_model_version=3, raw_data=raw
+        region, day, render_model=rm, render_model_version=3, raw_data=raw_data
     )
 
 
@@ -269,52 +370,44 @@ class TestRatingBlockCount:
 
 @pytest.mark.django_db
 class TestAspectElevationRow:
-    """Aspect/elevation row is present only when geography.source == 'problems'."""
+    """Aspect/elevation row is present when the first problem has aspects or elevation."""
 
-    def test_row_present_when_geography_is_problems(
+    def test_row_present_when_problem_has_aspects_and_elevation(
         self, client: Client, simple_bulletin, region
     ):
-        """Rating block has aspect/elevation row when geography.source is 'problems'."""
+        """Rating block has aspect/elevation row when the first problem has geographic data."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="aspect-elevation-row"' in content
 
-    def test_row_absent_when_geography_is_prose_only(self, client: Client, region):
-        """No aspect/elevation row when geography.source is 'prose_only'."""
-        day = date(2026, 3, 15)
-        wet_trait = _wet_trait_prose(
-            "<p>Wet snow on south-facing slopes below treeline.</p>"
-        )
-        rm = _render_model_with_traits([wet_trait])
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
-
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="aspect-elevation-row"' not in content
-
     def test_row_absent_when_problem_has_no_aspects_or_elevation(
         self, client: Client, region
     ):
-        """Row absent when problems branch but first problem has neither aspects nor elevation."""
+        """No aspect/elevation row when the first problem has neither aspects nor elevation."""
         day = date(2026, 3, 15)
-        trait = {
-            "category": "dry",
-            "time_period": "all_day",
-            "title": "Dry avalanches",
-            "geography": {"source": "problems"},
-            "problems": [_problem_no_geo()],
-            "prose": None,
-            "danger_level": 2,
-        }
-        rm = _render_model_with_traits([trait])
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        raw = _raw_data_with_problems([_raw_problem_no_geo(problem_type="wet_snow")])
+        _make_am_bulletin(region, day, raw_data=raw)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="aspect-elevation-row"' not in content
+
+    def test_row_absent_when_aspects_empty_but_elevation_present(
+        self, client: Client, region
+    ):
+        """Elevation alone is enough to show the row; empty aspects list is ignored."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_problems(
+            [_raw_problem(aspects=[], elevation={"lowerBound": "2200"})]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="aspect-elevation-row"' in content
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +420,7 @@ class TestProseFull:
     """Problem prose comment appears verbatim and in full in the output."""
 
     def test_full_prose_comment_rendered(self, client: Client, region):
-        """The full text of a problem's comment_html appears verbatim in the response."""
+        """The full text of a problem's comment appears verbatim in the response."""
         day = date(2026, 3, 15)
         full_prose = (
             "<p>Wind slabs have formed on the lee side of ridges and in gullies. "
@@ -335,10 +428,8 @@ class TestProseFull:
             "Careful route selection is essential. "
             "Particularly dangerous are north and east facing slopes above 2200m.</p>"
         )
-        problem = _problem(comment_html=full_prose)
-        trait = _dry_trait_problems([problem])
-        rm = _render_model_with_traits([trait])
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        raw = _raw_data_with_problems([_raw_problem(comment=full_prose)])
+        _make_am_bulletin(region, day, raw_data=raw)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -700,111 +791,246 @@ class TestDebuggingAids:
 
 
 # ---------------------------------------------------------------------------
-# Test: rating-block DOM order mirrors render_model.traits (aggregation order)
+# Test: rating-block grouping and ordering (SNOW-135)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestRatingBlockOrder:
+class TestRatingBlockGrouping:
     """
-    Rating blocks must appear in the DOM in exactly the order given by
-    ``render_model.traits``, which itself is taken verbatim from SLF's
-    aggregation (see docs/day_character_rules_spec.md and the builder
-    ordering guarantee in pipeline/services/render_model.py). Reordering
-    at any layer (enrichment, panel context, or template loop) would
-    violate SLF's editorial intent, so we assert the DOM order matches.
+    _group_avalanche_problems sorts by danger level high-to-low (tiebreak:
+    kind order dry → wet → gliding) and clusters consecutive (kind,
+    danger_level) pairs into one card each.
     """
 
-    @staticmethod
-    def _extract_dom_order(content: str) -> list[str]:
-        """Return the sequence of category+level icons in DOM order."""
-        import re
-
-        segments = [
-            content[m.start() : m.start() + 800]
-            for m in re.finditer(r'data-testid="rating-block"', content)
-        ]
-        order: list[str] = []
-        for seg in segments:
-            m = re.search(r"(Dry|Wet)-Snow-([0-9\-]+)\.svg", seg)
-            order.append(m.group(0) if m else "?")
-        return order
-
-    def test_dry_allday_before_wet_later(self, client: Client, region):
-        """
-        Mirrors bulletin 1931's shape: aggregation = [dry/all_day/L1,
-        wet/later/L3]. The rendered DOM must show the dry (Low) block
-        BEFORE the wet (Considerable) block — never the reverse.
-        """
+    def test_single_problem_produces_one_block(self, client: Client, region):
+        """One raw problem → one rating block."""
         day = date(2026, 3, 15)
-        dry_trait = {
-            "category": "dry",
-            "time_period": "all_day",
-            "title": "Dry avalanches, whole day",
-            "geography": {"source": "problems"},
-            "problems": [_problem_no_geo(problem_type="no_distinct_avalanche_problem")],
-            "prose": None,
-            "danger_level": 1,
-        }
-        wet_trait = {
-            "category": "wet",
-            "time_period": "later",
-            "title": "Wet-snow avalanches, as the day progresses",
-            "geography": {"source": "problems"},
-            "problems": [_problem(problem_type="wet_snow")],
-            "prose": None,
-            "danger_level": 3,
-        }
-        rm = _render_model_with_traits([dry_trait, wet_trait])
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        raw = _raw_data_with_problems([_raw_problem()])
+        _make_am_bulletin(region, day, raw_data=raw)
+        response = client.get(_url("ch-4115", "valais", "2026-03-15"))
+        assert response.content.decode().count('data-testid="rating-block"') == 1
 
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        assert response.status_code == 200
-
-        order = self._extract_dom_order(response.content.decode())
-        assert order == ["Dry-Snow-1.svg", "Wet-Snow-3.svg"], (
-            f"rating blocks appeared in wrong DOM order: {order} "
-            "(expected aggregation order: dry/L1 first, wet/L3 second)"
+    def test_two_problems_same_kind_and_level_produce_two_blocks(
+        self, client: Client, region
+    ):
+        """Two problems with same (kind, danger_level) → 2 separate cards."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_problems(
+            [
+                _raw_problem(problem_type="wind_slab", danger_rating_value="moderate"),
+                _raw_problem(problem_type="new_snow", danger_rating_value="moderate"),
+            ]
         )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert content.count('data-testid="rating-block"') == 2
+        assert "Wind slab" in content
+        assert "New snow" in content
 
-    def test_wet_first_when_aggregation_lists_wet_first(self, client: Client, region):
-        """
-        When aggregation orders wet BEFORE dry (as in some SLF bulletins),
-        the DOM must honour that — never silently reshuffle to a
-        dry-first convention.
-        """
-        day = date(2026, 3, 16)
-        wet_trait = {
-            "category": "wet",
-            "time_period": "all_day",
-            "title": "Wet-snow avalanches",
-            "geography": {"source": "problems"},
-            "problems": [_problem(problem_type="wet_snow")],
-            "prose": None,
-            "danger_level": 3,
-        }
-        dry_trait = {
-            "category": "dry",
-            "time_period": "all_day",
-            "title": "Dry avalanches",
-            "geography": {"source": "problems"},
-            "problems": [_problem_no_geo(problem_type="no_distinct_avalanche_problem")],
-            "prose": None,
-            "danger_level": 1,
-        }
-        rm = _render_model_with_traits([wet_trait, dry_trait])
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
-
-        url = _url("ch-4115", "valais", "2026-03-16")
-        response = client.get(url)
-        assert response.status_code == 200
-
-        order = self._extract_dom_order(response.content.decode())
-        assert order == ["Wet-Snow-3.svg", "Dry-Snow-1.svg"], (
-            f"rating blocks appeared in wrong DOM order: {order} "
-            "(expected aggregation order: wet/L3 first, dry/L1 second)"
+    def test_same_level_different_kind_produces_two_blocks_dry_before_wet(
+        self, client: Client, region
+    ):
+        """Same danger level, dry vs wet → 2 cards; dry appears first (kind tiebreak)."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_problems(
+            [
+                _raw_problem(problem_type="wind_slab", danger_rating_value="moderate"),
+                _raw_problem(problem_type="wet_snow", danger_rating_value="moderate"),
+            ]
         )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert content.count('data-testid="rating-block"') == 2
+        # Scope to the problems section to avoid matching labels embedded in
+        # the DEBUG raw-data JSON script block that appears earlier in the page.
+        probs_start = content.index('data-testid="avalanche-problems-heading"')
+        dry_idx = content.index("Wind slab", probs_start)
+        wet_idx = content.index("Wet snow", probs_start)
+        assert dry_idx < wet_idx
+
+    def test_different_levels_produces_two_blocks_high_danger_first(
+        self, client: Client, region
+    ):
+        """Higher danger level appears first — aggregation order drives display order."""
+        day = date(2026, 3, 15)
+        # Put the higher-danger problem first in the aggregation (and problems list).
+        raw = _raw_data_with_problems(
+            [
+                _raw_problem(
+                    problem_type="wet_snow", danger_rating_value="considerable"
+                ),
+                _raw_problem(problem_type="wind_slab", danger_rating_value="low"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert content.count('data-testid="rating-block"') == 2
+        # Scope to the problems section to avoid matching labels embedded in
+        # the DEBUG raw-data JSON script block that appears earlier in the page.
+        probs_start = content.index('data-testid="avalanche-problems-heading"')
+        wet_idx = content.index("Wet snow", probs_start)
+        dry_idx = content.index("Wind slab", probs_start)
+        assert wet_idx < dry_idx
+
+    def test_three_problems_produce_three_blocks_in_order(self, client: Client, region):
+        """Three problems → 3 cards in aggregation order (highest danger first)."""
+        day = date(2026, 3, 15)
+        # Put wet_snow (considerable) first in the aggregation order.
+        raw = _raw_data_with_problems(
+            [
+                _raw_problem(
+                    problem_type="wet_snow", danger_rating_value="considerable"
+                ),
+                _raw_problem(problem_type="wind_slab", danger_rating_value="moderate"),
+                _raw_problem(problem_type="new_snow", danger_rating_value="moderate"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert content.count('data-testid="rating-block"') == 3
+        # wet/considerable ranks highest, so it appears before the two dry/moderate cards.
+        # Scope search to the problems section to avoid the DEBUG JSON embed.
+        probs_start = content.index('data-testid="avalanche-problems-heading"')
+        wet_idx = content.index("Wet snow", probs_start)
+        wind_idx = content.index("Wind slab", probs_start)
+        assert wet_idx < wind_idx
+
+    def test_prose_only_problem_shows_no_aspect_elevation_row(
+        self, client: Client, region
+    ):
+        """Problem with no aspects and no elevation → no aspect/elevation row."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_problems([_raw_problem_no_geo(problem_type="wet_snow")])
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="rating-block"' in content
+        assert 'data-testid="aspect-elevation-row"' not in content
+
+    def test_problem_labels_appear_in_cards(self, client: Client, region):
+        """Each problem type's display label appears in its card header."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_problems(
+            [
+                _raw_problem(problem_type="wind_slab", danger_rating_value="moderate"),
+                _raw_problem(problem_type="wet_snow", danger_rating_value="low"),
+                _raw_problem(problem_type="gliding_snow", danger_rating_value="low"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert content.count('data-testid="rating-block"') == 3
+        assert "Wind slab" in content
+        assert "Wet snow" in content
+        assert "Gliding snow" in content
+
+    def test_empty_problems_shows_no_problems_card(self, client: Client, region):
+        """Bulletin with avalancheProblems=[] → 'No avalanche problems reported.' empty state."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_problems([])
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="rating-block"' not in content
+        assert "No avalanche problems reported." in content
+
+
+# ---------------------------------------------------------------------------
+# Test: aggregation-driven card ordering and titles (SNOW-135)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestAggregationDriven:
+    """
+    When customData.CH.aggregation is present, cards are built from it:
+    one card per (aggregation entry, problem type), in aggregation order.
+    """
+
+    def test_aggregation_order_preserved(self, client: Client, region):
+        """Cards appear in aggregation order, not sorted by danger level."""
+        day = date(2026, 3, 15)
+        # aggregation lists wet first (at low), dry second (at considerable)
+        raw = _raw_data_with_aggregation(
+            aggregation=[
+                {
+                    "category": "wet",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["wet_snow"],
+                },
+                {
+                    "category": "dry",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["wind_slab"],
+                },
+            ],
+            problems=[
+                _raw_problem(problem_type="wet_snow", danger_rating_value="low"),
+                _raw_problem(
+                    problem_type="wind_slab", danger_rating_value="considerable"
+                ),
+            ],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        # aggregation order (wet first) overrides the fallback danger-level sort.
+        # Scope search to the problems section to avoid the DEBUG JSON embed.
+        probs_start = content.index('data-testid="avalanche-problems-heading"')
+        wet_idx = content.index("Wet snow", probs_start)
+        dry_idx = content.index("Wind slab", probs_start)
+        assert wet_idx < dry_idx
+
+    def test_two_problems_in_one_entry_produce_two_cards(self, client: Client, region):
+        """Each problemType in an aggregation entry becomes its own card."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_aggregation(
+            aggregation=[
+                {
+                    "category": "wet",
+                    "validTimePeriod": "later",
+                    "problemTypes": ["wet_snow", "gliding_snow"],
+                    "title": "Wet-snow and gliding avalanches, later",
+                }
+            ],
+            problems=[
+                _raw_problem(
+                    problem_type="wet_snow", danger_rating_value="considerable"
+                ),
+                _raw_problem(
+                    problem_type="gliding_snow", danger_rating_value="moderate"
+                ),
+            ],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert content.count('data-testid="rating-block"') == 2
+
+    def test_core_zone_text_as_aria_label(self, client: Client, region):
+        """coreZoneText from customData.CH appears as aria-label on aspect/elevation row."""
+        day = date(2026, 3, 15)
+        core_text = "Danger level moderate in N to E facing aspects above 2000m."
+        raw = _raw_data_with_aggregation(
+            aggregation=[
+                {
+                    "category": "dry",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["wind_slab"],
+                }
+            ],
+            problems=[
+                {
+                    "problemType": "wind_slab",
+                    "comment": "<p>Wind slab hazard.</p>",
+                    "aspects": ["N", "NE", "E"],
+                    "elevation": {"lowerBound": "2000"},
+                    "dangerRatingValue": "moderate",
+                    "validTimePeriod": "all_day",
+                    "customData": {"CH": {"coreZoneText": core_text}},
+                }
+            ],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert f'aria-label="{core_text}"' in content
 
 
 # ---------------------------------------------------------------------------
