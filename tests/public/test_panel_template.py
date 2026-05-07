@@ -216,6 +216,13 @@ class TestProblemCardRendering:
                             "comment": "<p>Wind slab hazard.</p>",
                         }
                     ],
+                    "customData": {
+                        "CH": {
+                            "aggregation": [
+                                {"category": "dry", "problemTypes": ["wind_slab"]}
+                            ]
+                        }
+                    },
                 },
             },
         )
@@ -263,6 +270,14 @@ class TestProblemCardRendering:
                             "comment": "<p>Wet hazard.</p>",
                         },
                     ],
+                    "customData": {
+                        "CH": {
+                            "aggregation": [
+                                {"category": "dry", "problemTypes": ["wind_slab"]},
+                                {"category": "wet", "problemTypes": ["wet_snow"]},
+                            ]
+                        }
+                    },
                 },
             },
         )

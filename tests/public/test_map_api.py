@@ -88,7 +88,6 @@ def _render_model(
                 "danger_level": 3,
             }
         ],
-        "fallback_key_message": None,
         "snowpack_structure": None,
         "metadata": {
             "publication_time": None,
@@ -650,6 +649,7 @@ def test_region_summary_expanded_html_includes_enriched_fields():
         "type": "Feature",
         "geometry": None,
         "properties": {
+            "dangerRatings": [{"mainValue": "considerable"}],
             "avalancheProblems": [
                 {
                     "problemType": "wet_snow",
@@ -659,7 +659,12 @@ def test_region_summary_expanded_html_includes_enriched_fields():
                     "dangerRatingValue": "considerable",
                     "validTimePeriod": "later",
                 }
-            ]
+            ],
+            "customData": {
+                "CH": {
+                    "aggregation": [{"category": "wet", "problemTypes": ["wet_snow"]}]
+                }
+            },
         },
     }
     _make_today_bulletin(region, rm, raw_data=raw_data)
@@ -691,6 +696,7 @@ def test_region_summary_expanded_html_renders_aspect_elevation_row():
         "type": "Feature",
         "geometry": None,
         "properties": {
+            "dangerRatings": [{"mainValue": "considerable"}],
             "avalancheProblems": [
                 {
                     "problemType": "persistent_weak_layers",
@@ -700,7 +706,14 @@ def test_region_summary_expanded_html_renders_aspect_elevation_row():
                     "dangerRatingValue": "considerable",
                     "validTimePeriod": "all_day",
                 }
-            ]
+            ],
+            "customData": {
+                "CH": {
+                    "aggregation": [
+                        {"category": "dry", "problemTypes": ["persistent_weak_layers"]}
+                    ]
+                }
+            },
         },
     }
     _make_today_bulletin(region, _render_model(), raw_data=raw_data)

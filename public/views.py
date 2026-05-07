@@ -1699,8 +1699,6 @@ _DANGER_RATING_INT: dict[str, int] = {
     "high": 4,
     "very_high": 5,
 }
-_TIME_PERIOD_ORDER: dict[str, int] = {"all_day": 0, "earlier": 1, "later": 2}
-
 # Map CAAML ``customData.CH.subdivision`` strings to display suffixes.
 _SUBDIVISION_SUFFIX: dict[str, str] = {
     "minus": "-",
@@ -1945,15 +1943,6 @@ def _problem_summary(
     return _gettext("Affects all aspects and elevations")
 
 
-def _problem_sort_key(p: dict[str, Any]) -> tuple[int, int, int]:
-    """Sort key: highest danger first, then kind order, then time period."""
-    drv = p.get("dangerRatingValue") or ""
-    level = _DANGER_RATING_INT.get(drv, 1)
-    kind = _KIND_MAP.get(p.get("problemType") or "", "dry")
-    tp = p.get("validTimePeriod") or ""
-    return (-level, _KIND_ORDER.get(kind, 0), _TIME_PERIOD_ORDER.get(tp, 0))
-
-
 def _enrich_avalanche_problem(
     problem: dict[str, Any],
     cluster: list[dict[str, Any]],
@@ -2047,33 +2036,31 @@ def build_problem_cards(
     aggregation: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """
-    Build one flat presentation card per avalancheProblem, in display order.
+    Build one flat presentation card per avalancheProblem, in aggregation order.
 
-    When ``aggregation`` is present it drives ordering (aggregation entry →
-    problem type).  When absent, falls back to sorting by danger level
-    high-to-low, then kind (dry → wet → gliding), then time period
-    (all_day → earlier → later).
+    Both ``raw_problems`` and ``aggregation`` are expected to be present
+    whenever the bulletin carries avalanche problems. Missing either logs
+    an ERROR and returns an empty list.
 
     Args:
         raw_problems: The CAAML ``avalancheProblems`` array.
-        aggregation: The ``customData.CH.aggregation`` array (may be empty).
+        aggregation: The ``customData.CH.aggregation`` array.
 
     Returns:
-        List of flat card dicts.  Empty list when ``raw_problems`` is empty.
+        List of flat card dicts in aggregation order, or empty list on error.
 
     """
     if not raw_problems:
+        logger.error("build_problem_cards: avalancheProblems is empty or missing")
         return []
-    if aggregation:
-        index = {p["problemType"]: p for p in raw_problems if p.get("problemType")}
-        return _problem_cards_from_aggregation(aggregation, index)
-    return [
-        _problem_card(
-            p,
-            _KIND_CATEGORY.get(_KIND_MAP.get(p.get("problemType") or "", "dry"), "dry"),
+    if not aggregation:
+        logger.error(
+            "build_problem_cards: customData.CH.aggregation is missing — "
+            "cannot determine display order"
         )
-        for p in sorted(raw_problems, key=_problem_sort_key)
-    ]
+        return []
+    index = {p["problemType"]: p for p in raw_problems if p.get("problemType")}
+    return _problem_cards_from_aggregation(aggregation, index)
 
 
 def _enrich_render_model_problem(
@@ -2273,6 +2260,11 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     aggregation: list[dict[str, Any]] = ch_data.get("aggregation") or []
     problem_cards = build_problem_cards(raw_problems, aggregation)
     ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
+    if not ratings:
+        logger.error(
+            "_build_panel_context: bulletin %s has no dangerRatings",
+            bulletin.pk,
+        )
     danger_key, danger_subdivision = _highest_danger_key(ratings)
     danger_meta = _DANGER_PANEL_META[danger_key]
 

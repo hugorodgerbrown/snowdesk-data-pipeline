@@ -54,7 +54,6 @@ def _render_model_with_traits(
         "version": 3,
         "danger": {"key": "moderate", "number": "2", "subdivision": None},
         "traits": traits,
-        "fallback_key_message": None,
         "snowpack_structure": None,
         "metadata": metadata
         or {
@@ -197,12 +196,30 @@ def _raw_problem_no_geo(
     }
 
 
-def _raw_data_with_problems(problems: list[dict]) -> dict:
-    """Build a minimal raw_data GeoJSON envelope with the given avalancheProblems."""
+def _raw_data_with_problems(
+    problems: list[dict], ratings: list[dict] | None = None
+) -> dict:
+    """Build a minimal raw_data GeoJSON envelope with the given avalancheProblems.
+
+    Auto-generates a one-entry-per-problem aggregation preserving the problems
+    list order, and includes a default dangerRatings if none is given.
+    """
+    _WET_TYPES = {"wet_snow", "gliding_snow"}
+    aggregation = [
+        {
+            "category": "wet" if p.get("problemType") in _WET_TYPES else "dry",
+            "problemTypes": [p.get("problemType", "wind_slab")],
+        }
+        for p in problems
+    ]
     return {
         "type": "Feature",
         "geometry": None,
-        "properties": {"avalancheProblems": problems},
+        "properties": {
+            "dangerRatings": ratings or [{"mainValue": "moderate"}],
+            "avalancheProblems": problems,
+            "customData": {"CH": {"aggregation": aggregation}},
+        },
     }
 
 
@@ -212,13 +229,15 @@ def _raw_data_with_aggregation(
     ratings: list[dict] | None = None,
 ) -> dict:
     """Build a raw_data envelope with both aggregation and avalancheProblems."""
-    properties: dict = {
-        "avalancheProblems": problems,
-        "customData": {"CH": {"aggregation": aggregation}},
+    return {
+        "type": "Feature",
+        "geometry": None,
+        "properties": {
+            "dangerRatings": ratings or [{"mainValue": "moderate"}],
+            "avalancheProblems": problems,
+            "customData": {"CH": {"aggregation": aggregation}},
+        },
     }
-    if ratings:
-        properties["dangerRatings"] = ratings
-    return {"type": "Feature", "geometry": None, "properties": properties}
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +299,14 @@ def variable_bulletin(region):
                     valid_time_period="later",
                 ),
             ],
+            "customData": {
+                "CH": {
+                    "aggregation": [
+                        {"category": "dry", "problemTypes": ["wind_slab"]},
+                        {"category": "wet", "problemTypes": ["wet_snow"]},
+                    ]
+                }
+            },
         },
     }
     return _make_am_bulletin(
@@ -825,14 +852,15 @@ class TestRatingBlockGrouping:
     def test_different_levels_produces_two_blocks_high_danger_first(
         self, client: Client, region
     ):
-        """Higher danger level appears first regardless of kind."""
+        """Higher danger level appears first — aggregation order drives display order."""
         day = date(2026, 3, 15)
+        # Put the higher-danger problem first in the aggregation (and problems list).
         raw = _raw_data_with_problems(
             [
-                _raw_problem(problem_type="wind_slab", danger_rating_value="low"),
                 _raw_problem(
                     problem_type="wet_snow", danger_rating_value="considerable"
                 ),
+                _raw_problem(problem_type="wind_slab", danger_rating_value="low"),
             ]
         )
         _make_am_bulletin(region, day, raw_data=raw)
@@ -846,15 +874,16 @@ class TestRatingBlockGrouping:
         assert wet_idx < dry_idx
 
     def test_three_problems_produce_three_blocks_in_order(self, client: Client, region):
-        """Three problems → 3 cards ordered by danger level desc, then kind."""
+        """Three problems → 3 cards in aggregation order (highest danger first)."""
         day = date(2026, 3, 15)
+        # Put wet_snow (considerable) first in the aggregation order.
         raw = _raw_data_with_problems(
             [
-                _raw_problem(problem_type="wind_slab", danger_rating_value="moderate"),
-                _raw_problem(problem_type="new_snow", danger_rating_value="moderate"),
                 _raw_problem(
                     problem_type="wet_snow", danger_rating_value="considerable"
                 ),
+                _raw_problem(problem_type="wind_slab", danger_rating_value="moderate"),
+                _raw_problem(problem_type="new_snow", danger_rating_value="moderate"),
             ]
         )
         _make_am_bulletin(region, day, raw_data=raw)

@@ -54,7 +54,6 @@ def _make_today_bulletin(region) -> object:
             "version": 3,
             "danger": {"key": "moderate", "number": "2", "subdivision": None},
             "traits": [],
-            "fallback_key_message": None,
             "snowpack_structure": None,
             "metadata": {
                 "publication_time": "2026-03-15T05:30:00+00:00",
