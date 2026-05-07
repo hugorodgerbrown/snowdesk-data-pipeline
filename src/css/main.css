@@ -502,8 +502,8 @@
  * problem card, coloured by EAWS danger level, no number inside. */
 .problem-roundel {
   display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 0.75rem;
+  height: 0.75rem;
   border-radius: 9999px;
 }
 .problem-roundel[data-level="low"]          { background-color: var(--color-eaws-low); }
