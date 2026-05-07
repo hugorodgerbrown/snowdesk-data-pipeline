@@ -498,6 +498,20 @@
 .danger-tile[data-level="high"]         { background: var(--color-eaws-high);         color: var(--color-eaws-high-fg); }
 .danger-tile[data-level="very_high"]    { background: var(--color-eaws-very-high);    color: var(--color-eaws-very-high-fg); }
 
+/* Coloured dot shown beside the "Avalanche Problems" heading — one per
+ * problem card, coloured by EAWS danger level, no number inside. */
+.problem-roundel {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+}
+.problem-roundel[data-level="low"]          { background-color: var(--color-eaws-low); }
+.problem-roundel[data-level="moderate"]     { background-color: var(--color-eaws-moderate); }
+.problem-roundel[data-level="considerable"] { background-color: var(--color-eaws-considerable); }
+.problem-roundel[data-level="high"]         { background-color: var(--color-eaws-high); }
+.problem-roundel[data-level="very-high"]    { background-color: var(--color-eaws-very-high); }
+
 /* Small inline variant of .danger-tile for use in running text —
  * e.g. the region-peek subtitle prefixes each trait title with a
  * level chip. Inherits the [data-level] colour rules above. */
