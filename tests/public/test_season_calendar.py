@@ -110,7 +110,7 @@ class TestBuildSeasonGrid:
         RegionDayRatingFactory.create(
             region=region,
             date=datetime.date(2025, 11, 4),
-            min_rating=RegionDayRating.Rating.MODERATE,
+            min_rating=RegionDayRating.Rating.CONSIDERABLE,
             max_rating=RegionDayRating.Rating.CONSIDERABLE,
             max_subdivision="+",
             source_bulletin=bulletin,
@@ -124,7 +124,7 @@ class TestBuildSeasonGrid:
             if c is not None and c.date == datetime.date(2025, 11, 4)
         )
         assert target.has_bulletin is True
-        assert target.min_rating_key == RegionDayRating.Rating.MODERATE
+        assert target.min_rating_key == RegionDayRating.Rating.CONSIDERABLE
         assert target.max_rating_key == RegionDayRating.Rating.CONSIDERABLE
         assert target.subdivision == "+"
 
