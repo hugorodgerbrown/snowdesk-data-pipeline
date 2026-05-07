@@ -1204,8 +1204,8 @@ class TestDayWindowsPanel:
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 2
 
-    def test_cross_category_later_down_renders_two_rows(self, client: Client, region):
-        """all_day considerable minus + later moderate (cross-category down) → 2 rows."""
+    def test_cross_category_later_down_suppressed(self, client: Client, region):
+        """all_day considerable minus + later moderate (cross-band lower) → 1 row (suppressed)."""
         day = date(2026, 3, 27)
         raw = _raw_data_with_ratings(
             [
@@ -1218,7 +1218,7 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-03-27")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 2
+        assert content.count('data-testid="day-window-row"') == 1
 
     # ------------------------------------------------------------------
     # later_ filter — within-category sublevel shift (always shown)
@@ -1251,8 +1251,8 @@ class TestDayWindowsPanel:
         panel_html = content[panel_start:panel_end]
         assert ">3<" in panel_html
 
-    def test_within_category_later_down_renders_two_rows(self, client: Client, region):
-        """all_day moderate plus + later moderate minus (within-category down) → 2 rows."""
+    def test_within_category_later_down_suppressed(self, client: Client, region):
+        """all_day moderate plus + later moderate minus (within-band lower) → 1 row (suppressed)."""
         day = date(2026, 3, 29)
         raw = _raw_data_with_ratings(
             [
@@ -1265,7 +1265,7 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-03-29")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 2
+        assert content.count('data-testid="day-window-row"') == 1
 
     # ------------------------------------------------------------------
     # later_ filter — same-band no-op (filtered)
@@ -1302,6 +1302,126 @@ class TestDayWindowsPanel:
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 1
+
+    # ------------------------------------------------------------------
+    # later_ filter — cross-band lower (always suppressed)
+    # ------------------------------------------------------------------
+
+    def test_cross_band_lower_considerable_to_moderate_suppressed(
+        self, client: Client, region
+    ):
+        """all_day considerable + later moderate (lower band) → 1 row."""
+        day = date(2026, 4, 1)
+        raw = _raw_data_with_ratings(
+            [
+                _rating("considerable", "all_day"),
+                _rating("moderate", "later"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-04-01")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 1
+
+    def test_same_band_plus_blocks_plain_later(self, client: Client, region):
+        """all_day moderate plus + later moderate plain (lower sub) → 1 row."""
+        day = date(2026, 4, 2)
+        raw = _raw_data_with_ratings(
+            [
+                _rating("moderate", "all_day", "plus"),
+                _rating("moderate", "later"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-04-02")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 1
+
+    def test_same_band_minus_to_plain_shows_two_rows(self, client: Client, region):
+        """all_day moderate minus + later moderate plain (higher sub) → 2 rows."""
+        day = date(2026, 4, 3)
+        raw = _raw_data_with_ratings(
+            [
+                _rating("moderate", "all_day", "minus"),
+                _rating("moderate", "later"),
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-04-03")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 2
+
+
+# ---------------------------------------------------------------------------
+# Test: Avalanche Problems heading roundels (SNOW-137)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestAvalancheProblemsRoundels:
+    """Coloured roundels in the Avalanche Problems heading."""
+
+    def test_two_problems_produce_two_roundels(self, client: Client, region):
+        """Two problem cards → two .problem-roundel elements in the heading."""
+        day = date(2026, 4, 10)
+        raw = _raw_data_with_aggregation(
+            aggregation=[
+                {
+                    "category": "dry",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["wind_slab", "new_snow"],
+                },
+            ],
+            problems=[
+                _raw_problem(
+                    problem_type="wind_slab", danger_rating_value="considerable"
+                ),
+                _raw_problem(problem_type="new_snow", danger_rating_value="moderate"),
+            ],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-04-10")).content.decode()
+        heading_start = content.index('data-testid="avalanche-problems-heading"')
+        heading_end = content.index(">", content.index("</h2>", heading_start))
+        heading_html = content[heading_start : heading_end + 1]
+        assert heading_html.count('class="problem-roundel"') == 2
+
+    def test_roundel_data_level_matches_card_danger_level_key(
+        self, client: Client, region
+    ):
+        """Roundel data-level attribute matches the card's danger_level_key."""
+        day = date(2026, 4, 11)
+        raw = _raw_data_with_aggregation(
+            aggregation=[
+                {
+                    "category": "dry",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["wind_slab"],
+                },
+            ],
+            problems=[
+                _raw_problem(
+                    problem_type="wind_slab", danger_rating_value="considerable"
+                ),
+            ],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-04-11")).content.decode()
+        assert 'class="problem-roundel" data-level="considerable"' in content
+
+    def test_no_problems_produces_no_roundels(self, client: Client, region):
+        """Empty problem cards → no roundel elements in the heading."""
+        day = date(2026, 4, 12)
+        raw = _raw_data_with_problems([])
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-04-12")).content.decode()
+        assert "problem-roundel" not in content
 
 
 # ---------------------------------------------------------------------------

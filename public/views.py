@@ -1214,15 +1214,28 @@ def _parse_danger_rating(rating: dict[str, Any]) -> tuple[str, str, str]:
     return period, level, raw_sub
 
 
+def _danger_rank(level: str, sub: str) -> tuple[int, int]:
+    """Return a sortable rank for a danger level + subdivision pair.
+
+    Band index from ``_DANGER_ORDER`` is the primary key; subdivision maps to
+    an integer offset (minus → -1, neutral/absent → 0, plus → +1).  Tuple
+    comparison gives the correct total ordering:
+    ``(2, -1) < (2, 0) < (2, 1) < (3, -1)``.
+    """
+    band = _DANGER_ORDER.index(level)
+    offset = {"minus": -1, "neutral": 0, "plus": 1}.get(sub, 0)
+    return (band, offset)
+
+
 def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
     """
     Return the list[Window] consumed by the day-windows panel partial.
 
     Reads ``dangerRatings`` directly from the bulletin's CAAML properties.
-    Always emits one row for the ``all_day_*`` rating. Conditionally emits
-    a second row for the ``later_*`` rating, filtered when it is a
-    same-band no-op (later main level equals the all-day main level and
-    later carries no ``plus`` / ``minus`` sublevel modifier). Returns an
+    Always emits one row for the ``all_day_*`` rating. Emits a second row for
+    the ``later_*`` rating only when its effective rank (band + subdivision
+    offset) is strictly higher than the ``all_day`` rank — a later rating that
+    is equal or lower is suppressed as it implies no improvement. Returns an
     empty list when no ``all_day`` rating is present — the template hides
     the panel in that case.
     """
@@ -1260,12 +1273,9 @@ def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
     if later_rating is not None:
         _, later_level, later_sub = _parse_danger_rating(later_rating)
         _, all_day_level, all_day_sub = _parse_danger_rating(all_day_rating)
-        same_band_noop = (
-            later_level == all_day_level
-            and later_sub not in ("plus", "minus")
-            and all_day_sub not in ("plus", "minus")
-        )
-        if not same_band_noop:
+        later_rank = _danger_rank(later_level, later_sub)
+        all_day_rank = _danger_rank(all_day_level, all_day_sub)
+        if later_rank > all_day_rank:
             windows.append(_row(later_rating, _DAY_WINDOW_PILL_LABELS["later"]))
 
     return windows
@@ -2001,8 +2011,14 @@ def _problem_card(raw_p: dict[str, Any], category: str) -> dict[str, Any]:
     """Build a flat presentation card dict from one raw CAAML avalancheProblem."""
     drv = raw_p.get("dangerRatingValue") or ""
     danger_level = _DANGER_RATING_INT.get(drv, 1)
+    danger_level_key = drv.replace("_", "-")
     enriched = _enrich_avalanche_problem(raw_p, [raw_p], 0)
-    return {"category": category, "danger_level": danger_level, **enriched}
+    return {
+        "category": category,
+        "danger_level": danger_level,
+        "danger_level_key": danger_level_key,
+        **enriched,
+    }
 
 
 def _problem_cards_from_aggregation(
