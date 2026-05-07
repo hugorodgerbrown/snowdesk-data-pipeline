@@ -678,7 +678,7 @@ def test_region_summary_expanded_html_includes_enriched_fields():
     assert "Wet snow" in expanded
     # ValidTimePeriod label for "later". The partial uppercases it via CSS,
     # so the underlying string is rendered as-is.
-    assert "Later (afternoon)" in expanded
+    assert "Later" in expanded
     # Formatted elevation string from ElevationBounds.display.
     assert "above 2400" in expanded
 

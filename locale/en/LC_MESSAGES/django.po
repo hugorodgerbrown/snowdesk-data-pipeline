@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-04-18 19:15+0000\n"
+"POT-Creation-Date: 2026-05-07 17:23+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,6 +17,39 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Stable day"
+msgstr ""
+
+msgid "Low danger and benign problems — manage as usual."
+msgstr ""
+
+msgid "Manageable day"
+msgstr ""
+
+msgid "Moderate to considerable danger — read the terrain carefully."
+msgstr ""
+
+msgid "Hard-to-read day"
+msgstr ""
+
+msgid "Persistent or gliding-snow problems can mask the real risk."
+msgstr ""
+
+msgid "Widespread danger"
+msgstr ""
+
+msgid "Considerable danger across many aspects, elevations, or problems."
+msgstr ""
+
+msgid "Dangerous conditions"
+msgstr ""
+
+msgid "High to very high danger — backcountry travel is not recommended."
+msgstr ""
+
+msgid "Fetch today's weather"
+msgstr ""
 
 msgid "Low (1)"
 msgstr ""
@@ -42,10 +75,10 @@ msgstr ""
 msgid "All day"
 msgstr ""
 
-msgid "Earlier (morning)"
+msgid "Earlier"
 msgstr ""
 
-msgid "Later (afternoon)"
+msgid "Later"
 msgstr ""
 
 msgid "New snow"
@@ -72,23 +105,71 @@ msgstr ""
 msgid "Favourable situation"
 msgstr ""
 
-msgid "Stable day"
+msgid "No avalanche problems reported."
 msgstr ""
 
-msgid "Dangerous conditions"
+msgid "Open full bulletin →"
 msgstr ""
 
-msgid "Hard-to-read day"
+msgid "Source:"
 msgstr ""
 
-msgid "Widespread danger"
-msgstr ""
-
-msgid "Manageable day"
+msgid "SLF"
 msgstr ""
 
 #, python-format
-msgid "Danger level %(number)s %(label)s"
+msgid "Published %(t)s UTC"
+msgstr ""
+
+msgid "Report observations ↗"
+msgstr ""
+
+#, python-format
+msgid "Open the %(region)s bulletin"
+msgstr ""
+
+#, python-format
+msgid ""
+"Avalanche data: <a class=\"underline hover:text-text-2\" href=\"https://"
+"www.slf.ch\" target=\"_blank\" rel=\"noopener\" >WSL Institute for Snow and "
+"Avalanche Research SLF</a> &middot; Licensed under <a class=\"underline "
+"hover:text-text-2\" href=\"https://creativecommons.org/licenses/by/4.0/\" "
+"target=\"_blank\" rel=\"noopener\" >CC BY 4.0</a> &middot; <a "
+"class=\"underline hover:text-text-2\" href=\"%(terms_url)s\">Terms</a> "
+"&middot; <a class=\"underline hover:text-text-2\" "
+"href=\"%(colophon_url)s\">Colophon</a>"
+msgstr ""
+
+msgid "An updated version is available."
+msgstr ""
+
+msgid "Reload"
+msgstr ""
+
+msgid "Dismiss"
+msgstr ""
+
+msgid "Install Snowdesk for one-tap access."
+msgstr ""
+
+msgid "Install"
+msgstr ""
+
+msgid ""
+"Install Snowdesk: tap the Share icon, then choose <strong>Add to Home "
+"Screen</strong>."
+msgstr ""
+
+#, python-format
+msgid ""
+"Avalanche bulletin for\n"
+"        %(name)s"
+msgstr ""
+
+msgid "Today"
+msgstr ""
+
+msgid "No bulletins available for this region."
 msgstr ""
 
 msgid "We couldn't process this bulletin."
@@ -102,55 +183,13 @@ msgid ""
 "an updated bulletin."
 msgstr ""
 
-msgid "No avalanche problems reported."
-msgstr ""
-
-msgid "The snowpack is stable. Conditions are favourable."
-msgstr ""
-
-msgid "SLF Bulletin"
-msgstr ""
-
-msgid "SLF Interpretation Guide"
-msgstr ""
-
-msgid "Day character:"
-msgstr ""
-
-msgid "Open this bulletin in the Django admin"
-msgstr ""
-
-msgid "Open in admin →"
-msgstr ""
-
-#, python-format
-msgid "Avalanche bulletin for %(name)s"
-msgstr ""
-
-msgid "Today"
-msgstr ""
-
-msgid "Bulletin navigation"
-msgstr ""
-
-#, python-format
-msgid "Previous day: %(date)s"
-msgstr ""
-
-#, python-format
-msgid "Next day: %(date)s"
-msgstr ""
-
-msgid "No bulletins available for this region."
-msgstr ""
-
-msgid "Morning"
-msgstr ""
-
-msgid "Later"
+msgid "Day Risk Profile"
 msgstr ""
 
 msgid "Avalanche Problems"
+msgstr ""
+
+msgid "The snowpack is stable. Conditions are favourable."
 msgstr ""
 
 msgid "Snowpack & Weather"
@@ -168,25 +207,106 @@ msgstr ""
 msgid "Next update"
 msgstr ""
 
-msgid "with"
+msgid "Adjoining regions"
 msgstr ""
 
-msgid "View history"
+msgid "Colophon"
 msgstr ""
 
-msgid "View full season"
+msgid ""
+"Technology credits and attribution for Snowdesk — frameworks, data sources, "
+"icons, fonts, and hosting."
 msgstr ""
 
-msgid "Open in admin"
+msgid "Frameworks"
 msgstr ""
 
-msgid "Avalanche bulletin data &copy;"
+msgid "— web framework"
 msgstr ""
 
-msgid "SLF — WSL Institute for Snow and Avalanche Research"
+msgid "— HTML-over-the-wire interactivity"
 msgstr ""
 
-msgid "Rendered by Snowdesk."
+msgid "— utility-first CSS framework"
+msgstr ""
+
+msgid "— Django integration for HTMX"
+msgstr ""
+
+msgid "— static file serving"
+msgstr ""
+
+msgid "Data"
+msgstr ""
+
+msgid ""
+"<a class=\"underline\" href=\"https://www.slf.ch\" target=\"_blank\" "
+"rel=\"noopener\" >WSL Institute for Snow and Avalanche Research SLF</a> — "
+"avalanche bulletins, licensed under <a class=\"underline\" href=\"https://"
+"creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\" "
+">CC BY 4.0</a>"
+msgstr ""
+
+msgid "— weather forecasts and historical archive"
+msgstr ""
+
+msgid "— region boundaries and danger/problem iconography"
+msgstr ""
+
+msgid "Basemap"
+msgstr ""
+
+msgid "— open-source map renderer"
+msgstr ""
+
+msgid "— Liberty vector tiles (production default)"
+msgstr ""
+
+msgid "— Winter and Light vector tile styles"
+msgstr ""
+
+msgid "Icons"
+msgstr ""
+
+msgid ""
+"<a class=\"underline\" href=\"https://bas.dev/work/meteocons\" "
+"target=\"_blank\" rel=\"noopener\" >Meteocons</a> by <a class=\"underline\" "
+"href=\"https://github.com/basmilius\" target=\"_blank\" rel=\"noopener\" "
+">Bas Milius</a> — weather condition icons, licensed under the <a "
+"class=\"underline\" href=\"https://opensource.org/licenses/MIT\" "
+"target=\"_blank\" rel=\"noopener\" >MIT licence</a>"
+msgstr ""
+
+msgid ""
+"<a class=\"underline\" href=\"https://www.avalanches.org/\" "
+"target=\"_blank\" rel=\"noopener\">EAWS</a> — avalanche problem and danger-"
+"level SVGs, licensed under <a class=\"underline\" href=\"https://"
+"creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\" "
+">CC BY 4.0</a>"
+msgstr ""
+
+msgid "Fonts"
+msgstr ""
+
+msgid ""
+"<a class=\"underline\" href=\"https://fonts.google.com/specimen/DM+Sans\" "
+"target=\"_blank\" rel=\"noopener\" >DM Sans</a> and <a class=\"underline\" "
+"href=\"https://fonts.google.com/specimen/DM+Mono\" target=\"_blank\" "
+"rel=\"noopener\" >DM Mono</a> — licensed under the <a class=\"underline\" "
+"href=\"https://scripts.sil.org/OFL\" target=\"_blank\" rel=\"noopener\" >SIL "
+"Open Font Licence 1.1</a>"
+msgstr ""
+
+msgid "Email"
+msgstr ""
+
+msgid "— transactional email delivery"
+msgstr ""
+
+msgid "Hosting"
+msgstr ""
+
+msgid "— web application hosting and cron jobs"
 msgstr ""
 
 msgid "Snowdesk — Avalanche bulletins for backcountry skiers"
@@ -194,8 +314,8 @@ msgstr ""
 
 msgid ""
 "Daily Swiss avalanche bulletins for backcountry skiers — per-region danger "
-"levels, avalanche problems, snowpack structure, and season archives, sourced "
-"from SLF."
+"levels, avalanche problems, snowpack structure, and a season-wide map "
+"timelapse, sourced from SLF."
 msgstr ""
 
 msgid "Snowdesk"
@@ -225,10 +345,12 @@ msgid ""
 "every forecast region."
 msgstr ""
 
-msgid "Season archives"
+msgid "Season at a glance"
 msgstr ""
 
-msgid "browse the full season history for any region."
+msgid ""
+"scrub through the whole season on the map to see how danger evolved across "
+"regions."
 msgstr ""
 
 msgid "View a sample bulletin →"
@@ -237,81 +359,151 @@ msgstr ""
 msgid "Explore the map →"
 msgstr ""
 
+msgid "Snowdesk — Avalanche map"
+msgstr ""
+
 msgid ""
 "Interactive map of Swiss avalanche regions — tap a region to see today's "
 "danger rating, headline problem, and nearby resorts."
 msgstr ""
 
-msgid "Snowdesk — Avalanche map"
+msgid "Find a region or resort"
 msgstr ""
 
-msgid "Find a region or resort"
+msgid "Choose basemap"
+msgstr ""
+
+msgid "Base map"
+msgstr ""
+
+msgid "Overlays"
+msgstr ""
+
+msgid "Major regions"
+msgstr ""
+
+msgid "Sub regions"
+msgstr ""
+
+msgid "Micro regions carry the avalanche danger ratings — required"
+msgstr ""
+
+msgid "Micro regions"
+msgstr ""
+
+msgid "Resorts"
+msgstr ""
+
+msgid "Options"
+msgstr ""
+
+msgid "Auto-zoom"
 msgstr ""
 
 msgid "Close"
 msgstr ""
 
-msgid "Read today's bulletin →"
+msgid "Avalanche danger legend"
 msgstr ""
 
-msgid "Pinch to zoom · tap a region"
+msgid "Show avalanche danger legend"
 msgstr ""
 
-msgid "Previous month"
+msgid "Season scrubber"
 msgstr ""
 
-msgid "Next month"
+msgid "Play season timelapse"
 msgstr ""
 
-msgid "Mon"
+msgid "Timelapse speed"
 msgstr ""
 
-msgid "Tue"
+msgid "Season heatmap"
 msgstr ""
 
-msgid "Wed"
+msgid "This season"
 msgstr ""
 
-msgid "Thu"
+msgid "Close season heatmap"
 msgstr ""
 
-msgid "Fri"
+msgid "Edit resorts panel"
 msgstr ""
 
-msgid "Sat"
+msgid "Edit resort coordinates"
 msgstr ""
 
-msgid "Sun"
+msgid ""
+"Pick a resort, click the map to drop a pin (or paste lat/lon), then Save. "
+"Run <code>manage.py dump_resorts_fixture --commit</code> to persist to git."
 msgstr ""
 
-#, python-format
-msgid "Avalanche bulletins for %(name)s, last %(count_val)s day."
-msgid_plural "Avalanche bulletins for %(name)s, last %(count_val)s days."
-msgstr[0] ""
-msgstr[1] ""
-
-#, python-format
-msgid "last %(count_val)s day"
-msgid_plural "last %(count_val)s days"
-msgstr[0] ""
-msgstr[1] ""
-
-msgid "Season test"
+msgid "Filter resorts…"
 msgstr ""
 
-msgid "Panel UI test"
+msgid "Hide already-set resorts"
 msgstr ""
 
-#, python-format
-msgid "%(count)s bulletin this season"
-msgid_plural "%(count)s bulletins this season"
-msgstr[0] ""
-msgstr[1] ""
-
-msgid "Subscribe to alerts"
+msgid "Current target"
 msgstr ""
 
-msgid "No bulletins for this region and season."
+msgid "No resort selected."
+msgstr ""
+
+msgid "Paste:"
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Loading…"
+msgstr ""
+
+msgid "Terms"
+msgstr ""
+
+msgid ""
+"Snowdesk terms of use, data-licence acknowledgement, and liability "
+"disclaimer."
+msgstr ""
+
+msgid "Terms of use"
+msgstr ""
+
+msgid "Data source and licence"
+msgstr ""
+
+msgid ""
+"Snowdesk renders avalanche bulletins published by the <a class=\"underline\" "
+"href=\"https://www.slf.ch\" target=\"_blank\" rel=\"noopener\" >WSL "
+"Institute for Snow and Avalanche Research SLF</a>. The underlying data is "
+"licensed under <a class=\"underline\" href=\"https://creativecommons.org/"
+"licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\" >CC BY 4.0</a>."
+msgstr ""
+
+msgid "Snowdesk is not a substitute for the official bulletin"
+msgstr ""
+
+msgid "[Awaiting legal copy — to be authored by Hugo.]"
+msgstr ""
+
+msgid "Always consult SLF and make your own on-site assessment"
+msgstr ""
+
+msgid "Limitation of liability"
+msgstr ""
+
+msgid "SLF's own no-liability clause"
+msgstr ""
+
+msgid ""
+"Per the SLF <a class=\"underline\" href=\"https://www.slf.ch/en/services-and-"
+"products/slf-data-service/\" target=\"_blank\" rel=\"noopener\" >data-"
+"service terms of use</a>, SLF accepts no liability for the delivery of "
+"bulletin data. [Detailed wording to be authored by Hugo.]"
 msgstr ""
 
 msgid "Elevation: above lower bound"
@@ -347,6 +539,15 @@ msgstr ""
 msgid "AVOID"
 msgstr ""
 
+msgid "Standard"
+msgstr ""
+
+msgid "Winter"
+msgstr ""
+
+msgid "Light"
+msgstr ""
+
 msgid "Stable snowpack"
 msgstr ""
 
@@ -369,6 +570,15 @@ msgid "No rating available"
 msgstr ""
 
 msgid "No distinct problem"
+msgstr ""
+
+msgid "Dry avalanches"
+msgstr ""
+
+msgid "Wet-snow avalanches"
+msgstr ""
+
+msgid "Gliding avalanches"
 msgstr ""
 
 msgid "Your Snowdesk account link"
@@ -403,8 +613,20 @@ msgid "Snowdesk — Swiss Avalanche Bulletins"
 msgstr ""
 
 msgid ""
+"Avalanche data: WSL Institute for Snow and Avalanche Research SLF (<a "
+"href=\"https://www.slf.ch\" style=\"color: #9ca3af\" >slf.ch</a>) &middot; "
+"Licensed under <a href=\"https://creativecommons.org/licenses/by/4.0/\" "
+"style=\"color: #9ca3af\" >CC BY 4.0</a>"
+msgstr ""
+
+msgid ""
 "Click the link below to access your Snowdesk account and manage your "
 "avalanche bulletin subscriptions."
+msgstr ""
+
+msgid ""
+"Avalanche data: WSL Institute for Snow and Avalanche Research SLF (slf.ch) · "
+"Licensed under CC BY 4.0"
 msgstr ""
 
 #, python-format
@@ -452,6 +674,12 @@ msgstr ""
 msgid "Update your Snowdesk avalanche bulletin region subscriptions."
 msgstr ""
 
+msgid "Something went wrong."
+msgstr ""
+
+msgid "Please reload the page and try again."
+msgstr ""
+
 msgid "Your subscription is confirmed."
 msgstr ""
 
@@ -462,10 +690,6 @@ msgid "Your subscription"
 msgid_plural "Your subscriptions"
 msgstr[0] ""
 msgstr[1] ""
-
-#, python-format
-msgid "Remove alerts for %(name)s?"
-msgstr ""
 
 msgid "Remove"
 msgstr ""
@@ -574,9 +798,6 @@ msgstr ""
 msgid "Yes, unsubscribe me"
 msgstr ""
 
-msgid "Cancel"
-msgstr ""
-
 msgid "Unsubscribed — Snowdesk"
 msgstr ""
 
@@ -591,11 +812,33 @@ msgstr ""
 msgid "You will no longer receive avalanche bulletin alerts for that region."
 msgstr ""
 
+msgid "Sunrise"
+msgstr ""
+
+msgid "Sunset"
+msgstr ""
+
+msgid "Avalanche conditions by window"
+msgstr ""
+
 msgid "Back"
 msgstr ""
 
-msgid "Show monthly calendar"
+#, python-format
+msgid "Show %(label)s season heatmap"
 msgstr ""
 
-msgid "Loading…"
+msgid "Season"
+msgstr ""
+
+msgid "Admin"
+msgstr ""
+
+msgid "Component library"
+msgstr ""
+
+msgid "Edit map"
+msgstr ""
+
+msgid "Django admin"
 msgstr ""

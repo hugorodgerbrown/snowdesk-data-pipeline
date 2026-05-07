@@ -45,8 +45,8 @@ class ValidTimePeriod(models.TextChoices):
     """Time-of-day qualifier used to scope a rating or problem."""
 
     ALL_DAY = "all_day", _("All day")
-    EARLIER = "earlier", _("Earlier (morning)")
-    LATER = "later", _("Later (afternoon)")
+    EARLIER = "earlier", _("Earlier")
+    LATER = "later", _("Later")
 
 
 class AvalancheProblemType(models.TextChoices):
