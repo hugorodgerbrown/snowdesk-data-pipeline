@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export DJANGO_SETTINGS_MODULE=config.settings.development
+
+# ensure this only runs in a Cloud environment
+[ -n "${CLAUDE_REMOTE:-}" ] || exit 0
+
+# 1. migrations
+poetry run python manage.py migrate --no-input
+
+# 2. fixtures (reference data that local-mirror depends on)
+poetry run python manage.py loaddata \
+  pipeline/fixtures/eaws_major_regions.json \
+  pipeline/fixtures/eaws_sub_regions.json \
+  pipeline/fixtures/regions.json \
+  pipeline/fixtures/resorts.json \
+
+
+# 3. dev server in a detached tmux session (attach if exists)
+tmux new-session -d -s -A devserver \
+  "poetry run python manage.py runserver 127.0.0.1:8000"
+
+# wait for it to bind (don't poll forever)
+for i in {1..30}; do
+  curl -fsS http://127.0.0.1:8000/ -o /dev/null && break
+  sleep 1
+done
+
+# 4. fetch via the local mirror
+poetry run python manage.py fetch_bulletins --source local-mirror --commit

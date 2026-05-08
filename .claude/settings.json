@@ -4,10 +4,7 @@
     "BASH_MAX_OUTPUT_LENGTH": "150000"
   },
   "permissions": {
-    "allow": [
-      "Bash(python3 -c ':*)",
-      "Bash(git commit -m ':*)"
-    ],
+    "allow": ["Bash(python3 -c ':*)", "Bash(git commit -m ':*)"],
     "deny": [
       "Read(./.venv/**)",
       "Read(./node_modules/**)",
@@ -32,6 +29,17 @@
           {
             "type": "command",
             "command": "bin/init-worktree 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && bin/bootstrap-cloud-session"
           }
         ]
       }
