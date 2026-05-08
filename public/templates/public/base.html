@@ -115,61 +115,8 @@ extra_js        : scripts loaded at end of <body>. Used by
                 ×
             </button>
         </div>
-        {# SNOW-118: PWA install affordance. Two banners share one fixed slot:  #}
-        {# the Chromium banner is revealed when ``beforeinstallprompt`` fires; #}
-        {# the iOS banner (separate copy explaining "Tap Share → Add to Home  #}
-        {# Screen") is revealed only on iOS Safari, since iOS ignores         #}
-        {# ``beforeinstallprompt``. Both auto-hide once the app is installed. #}
-        <div
-            id="pwa-install-banner"
-            role="status"
-            aria-live="polite"
-            class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 items-center gap-3 rounded-full border border-border bg-card text-text-1 shadow-lg px-4 py-2 text-sm"
-        >
-            <span>{% trans "Install Snowdesk for one-tap access." %}</span>
-            <button
-                type="button"
-                data-action="install"
-                class="rounded-full bg-accent text-accent-text px-3 py-1 text-xs font-medium hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-                {% trans "Install" %}
-            </button>
-            <button
-                type="button"
-                data-action="dismiss"
-                aria-label="{% trans 'Dismiss' %}"
-                class="text-text-3 hover:text-text-1 px-1 leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
-            >
-                ×
-            </button>
-        </div>
-        <div
-            id="pwa-install-ios-banner"
-            role="status"
-            aria-live="polite"
-            class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-[min(90vw,28rem)] flex-col gap-2 rounded-2xl border border-border bg-card text-text-1 shadow-lg px-4 py-3 text-sm"
-        >
-            <div class="flex items-start gap-2">
-                <p class="flex-1">
-                    {% blocktrans trimmed %}
-                        Install Snowdesk: tap the Share icon, then choose
-                        <strong>Add to Home Screen</strong>.
-                    {% endblocktrans %}
-                </p>
-                <button
-                    type="button"
-                    data-action="dismiss-ios"
-                    aria-label="{% trans 'Dismiss' %}"
-                    class="text-text-3 hover:text-text-1 px-1 leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
-                >
-                    ×
-                </button>
-            </div>
-        </div>
         {# SNOW-79: register the PWA shell SW from every public page. #}
         <script src="{% static 'js/sw_register.js' %}" defer></script>
-        {# SNOW-118: capture beforeinstallprompt + drive the install banners. #}
-        <script src="{% static 'js/pwa_install.js' %}" defer></script>
         {% block extra_js %}{% endblock %}
     </body>
 </html>
