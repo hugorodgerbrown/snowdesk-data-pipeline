@@ -3,7 +3,7 @@ set -euo pipefail
 export DJANGO_SETTINGS_MODULE=config.settings.development
 
 # ensure this only runs in a Cloud environment
-[ -n "${CLAUDE_REMOTE:-}" ] || exit 0
+[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0
 
 # 1. migrations
 poetry run python manage.py migrate --no-input
@@ -16,8 +16,8 @@ poetry run python manage.py loaddata \
   pipeline/fixtures/resorts.json \
 
 
-# 3. dev server in a detached tmux session (attach if exists)
-tmux new-session -d -s -A devserver \
+# 3. dev server in a detached tmux session (reuse if it already exists)
+tmux new-session -d -A -s devserver \
   "poetry run python manage.py runserver 127.0.0.1:8000"
 
 # wait for it to bind (don't poll forever)
