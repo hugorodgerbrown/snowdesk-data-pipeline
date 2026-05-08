@@ -19,26 +19,44 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch
 poetry run python manage.py runserver
 ```
 
+In local development, run `fetch_bulletins` against the dev mirror
+(`--source local-mirror`) so you don't hit the live SLF API. The mirror
+replays `sample_data/slf_archive.ndjson` via `/dev/slf-mirror/`. Full
+command catalogue: [docs/management-commands.md](docs/management-commands.md).
+
 ## Data source
 
 SLF CAAML bulletin list API (public, no auth required). Bulletins are stored
 as GeoJSON Feature envelopes wrapping the raw CAAML payload.
 
 ```bash
-poetry run python manage.py fetch_bulletins                       # read-only (no writes)
-poetry run python manage.py fetch_bulletins --commit              # season-to-date
+# Bulletin ingestion (dry-run by default; --commit to persist)
+poetry run python manage.py fetch_bulletins --source local-mirror --commit
 poetry run python manage.py fetch_bulletins --date 2024-06-15 --commit
 poetry run python manage.py fetch_bulletins \
     --start-date 2024-01-01 --end-date 2024-12-31 --commit
+
+# Render-model rebuild (after a RENDER_MODEL_VERSION bump)
+poetry run python manage.py rebuild_render_models --commit
+
+# Weather (drives the bulletin header — WMO bucket + day/night state)
+poetry run python manage.py fetch_weather --commit
+poetry run python manage.py backfill_weather --start 2024-11-01 --end 2025-05-01 --commit
 ```
 
 ## Stack
 
-- **Python / Django** — data pipeline, models, views
+- **Python / Django** — data pipeline, models, views, split across six
+  apps: `core` (abstract `BaseModel`), `pipeline` (regions, resorts,
+  HTTP plumbing), `bulletins` (SLF ingestion + render model + weather),
+  `subscriptions` (signed-token email flow), `public` (bulletin site),
+  `config` (split settings)
 - **Tailwind CSS v4** — compiled via `@tailwindcss/cli` from `src/css/main.css`
   to `static/css/output.css`
 - **HTMX** — dynamic fragments on the public site (bulletin calendar, subscription region search)
 - **MapLibre GL** — interactive choropleth on the public map
+- **PWA shell** — service worker + offline page so an open bulletin
+  stays readable on a flaky lift queue
 - **Render cron** — runs the `fetch_bulletins` management command on a schedule; the pipeline itself is just Django code, no in-process scheduler
 - **Poetry** — Python dependency management
 - **WhiteNoise** — static file serving in production
@@ -58,8 +76,8 @@ to find a specific area. All of it sources daily from SLF.
 ## Testing
 
 ```bash
-poetry run pytest                    # run tests
-poetry run tox                       # full CI (lint, type-check, test)
+poetry run tox -e test               # run tests with coverage (mirrors CI)
+poetry run tox                       # full CI (fmt, lint, mypy, django-checks, test)
 ```
 
 See [CODING_STANDARDS.md](CODING_STANDARDS.md) for conventions and
