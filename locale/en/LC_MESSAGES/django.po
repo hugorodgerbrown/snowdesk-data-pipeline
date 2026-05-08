@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-07 17:23+0000\n"
+"POT-Creation-Date: 2026-05-08 15:38+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,116 +18,154 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
+#: bulletins/services/render_model.py:730
 msgid "Stable day"
 msgstr ""
 
+#: bulletins/services/render_model.py:731
 msgid "Low danger and benign problems — manage as usual."
 msgstr ""
 
+#: bulletins/services/render_model.py:734
 msgid "Manageable day"
 msgstr ""
 
+#: bulletins/services/render_model.py:735
 msgid "Moderate to considerable danger — read the terrain carefully."
 msgstr ""
 
+#: bulletins/services/render_model.py:738
 msgid "Hard-to-read day"
 msgstr ""
 
+#: bulletins/services/render_model.py:739
 msgid "Persistent or gliding-snow problems can mask the real risk."
 msgstr ""
 
+#: bulletins/services/render_model.py:742
 msgid "Widespread danger"
 msgstr ""
 
+#: bulletins/services/render_model.py:744
 msgid "Considerable danger across many aspects, elevations, or problems."
 msgstr ""
 
+#: bulletins/services/render_model.py:748
 msgid "Dangerous conditions"
 msgstr ""
 
+#: bulletins/services/render_model.py:750
 msgid "High to very high danger — backcountry travel is not recommended."
 msgstr ""
 
+#: bulletins/templates/admin/bulletins/weathersnapshot/change_list.html:40
 msgid "Fetch today's weather"
 msgstr ""
 
+#: pipeline/schema.py:35 public/templates/public/map.html:294
 msgid "Low (1)"
 msgstr ""
 
+#: pipeline/schema.py:36 public/templates/public/map.html:300
 msgid "Moderate (2)"
 msgstr ""
 
+#: pipeline/schema.py:37 public/templates/public/map.html:306
 msgid "Considerable (3)"
 msgstr ""
 
+#: pipeline/schema.py:38 public/templates/public/map.html:312
 msgid "High (4)"
 msgstr ""
 
+#: pipeline/schema.py:39
 msgid "Very high (5)"
 msgstr ""
 
+#: pipeline/schema.py:40
 msgid "No snow"
 msgstr ""
 
+#: pipeline/schema.py:41 public/views.py:1656
 msgid "No rating"
 msgstr ""
 
+#: pipeline/schema.py:47 public/views.py:1204
 msgid "All day"
 msgstr ""
 
+#: pipeline/schema.py:48 public/views.py:1203
 msgid "Earlier"
 msgstr ""
 
+#: pipeline/schema.py:49 public/views.py:1205
 msgid "Later"
 msgstr ""
 
+#: pipeline/schema.py:55 public/views.py:1664
 msgid "New snow"
 msgstr ""
 
+#: pipeline/schema.py:56 public/views.py:1665
 msgid "Wind slab"
 msgstr ""
 
+#: pipeline/schema.py:57 public/views.py:1666
 msgid "Persistent weak layers"
 msgstr ""
 
+#: pipeline/schema.py:58 public/views.py:1667
 msgid "Wet snow"
 msgstr ""
 
+#: pipeline/schema.py:59 public/views.py:1668
 msgid "Gliding snow"
 msgstr ""
 
+#: pipeline/schema.py:60 public/views.py:1669
 msgid "Cornices"
 msgstr ""
 
+#: pipeline/schema.py:63
 msgid "No distinct avalanche problem"
 msgstr ""
 
+#: pipeline/schema.py:65 public/views.py:1671
 msgid "Favourable situation"
 msgstr ""
 
+#: public/templates/public/_region_expanded.html:30
+#: public/templates/public/bulletin.html:270
 msgid "No avalanche problems reported."
 msgstr ""
 
+#: public/templates/public/_region_expanded.html:34
 msgid "Open full bulletin →"
 msgstr ""
 
+#: public/templates/public/_region_expanded.html:38
 msgid "Source:"
 msgstr ""
 
+#: public/templates/public/_region_expanded.html:39
 msgid "SLF"
 msgstr ""
 
+#: public/templates/public/_region_expanded.html:41
 #, python-format
 msgid "Published %(t)s UTC"
 msgstr ""
 
+#: public/templates/public/_region_expanded.html:50
 msgid "Report observations ↗"
 msgstr ""
 
+#: public/templates/public/_region_peek.html:34
 #, python-format
 msgid "Open the %(region)s bulletin"
 msgstr ""
 
+#: public/templates/public/_site_footer.html:21
 #, python-format
 msgid ""
 "Avalanche data: <a class=\"underline hover:text-text-2\" href=\"https://"
@@ -140,102 +178,120 @@ msgid ""
 "href=\"%(colophon_url)s\">Colophon</a>"
 msgstr ""
 
+#: public/templates/public/base.html:101
 msgid "An updated version is available."
 msgstr ""
 
+#: public/templates/public/base.html:107
 msgid "Reload"
 msgstr ""
 
+#: public/templates/public/base.html:112
 msgid "Dismiss"
 msgstr ""
 
-msgid "Install Snowdesk for one-tap access."
-msgstr ""
-
-msgid "Install"
-msgstr ""
-
-msgid ""
-"Install Snowdesk: tap the Share icon, then choose <strong>Add to Home "
-"Screen</strong>."
-msgstr ""
-
+#: public/templates/public/bulletin.html:35
 #, python-format
 msgid ""
 "Avalanche bulletin for\n"
 "        %(name)s"
 msgstr ""
 
+#: public/templates/public/bulletin.html:42
+#: public/templates/public/map.html:289
 msgid "Today"
 msgstr ""
 
+#: public/templates/public/bulletin.html:189
 msgid "No bulletins available for this region."
 msgstr ""
 
+#: public/templates/public/bulletin.html:196
 msgid "We couldn't process this bulletin."
 msgstr ""
 
+#: public/templates/public/bulletin.html:209
 msgid "Inspect in admin →"
 msgstr ""
 
+#: public/templates/public/bulletin.html:213
 msgid ""
 "We are sorry for the inconvenience. Please try again later or check back for "
 "an updated bulletin."
 msgstr ""
 
+#: public/templates/public/bulletin.html:244
 msgid "Day Risk Profile"
 msgstr ""
 
+#: public/templates/public/bulletin.html:258
 msgid "Avalanche Problems"
 msgstr ""
 
+#: public/templates/public/bulletin.html:273
 msgid "The snowpack is stable. Conditions are favourable."
 msgstr ""
 
+#: public/templates/public/bulletin.html:298
 msgid "Snowpack & Weather"
 msgstr ""
 
+#: public/templates/public/bulletin.html:433
 msgid "Issued"
 msgstr ""
 
+#: public/templates/public/bulletin.html:446
 msgid "Valid until"
 msgstr ""
 
+#: public/templates/public/bulletin.html:458
 msgid "Next update"
 msgstr ""
 
+#: public/templates/public/bulletin.html:493
 msgid "Adjoining regions"
 msgstr ""
 
+#: public/templates/public/colophon.html:12
+#: public/templates/public/colophon.html:21
 msgid "Colophon"
 msgstr ""
 
+#: public/templates/public/colophon.html:15
 msgid ""
 "Technology credits and attribution for Snowdesk — frameworks, data sources, "
 "icons, fonts, and hosting."
 msgstr ""
 
+#: public/templates/public/colophon.html:26
 msgid "Frameworks"
 msgstr ""
 
+#: public/templates/public/colophon.html:32
 msgid "— web framework"
 msgstr ""
 
+#: public/templates/public/colophon.html:36
 msgid "— HTML-over-the-wire interactivity"
 msgstr ""
 
+#: public/templates/public/colophon.html:41
 msgid "— utility-first CSS framework"
 msgstr ""
 
+#: public/templates/public/colophon.html:46
 msgid "— Django integration for HTMX"
 msgstr ""
 
+#: public/templates/public/colophon.html:51
 msgid "— static file serving"
 msgstr ""
 
+#: public/templates/public/colophon.html:58
 msgid "Data"
 msgstr ""
 
+#: public/templates/public/colophon.html:62
 msgid ""
 "<a class=\"underline\" href=\"https://www.slf.ch\" target=\"_blank\" "
 "rel=\"noopener\" >WSL Institute for Snow and Avalanche Research SLF</a> — "
@@ -244,27 +300,35 @@ msgid ""
 ">CC BY 4.0</a>"
 msgstr ""
 
+#: public/templates/public/colophon.html:76
 msgid "— weather forecasts and historical archive"
 msgstr ""
 
+#: public/templates/public/colophon.html:81
 msgid "— region boundaries and danger/problem iconography"
 msgstr ""
 
+#: public/templates/public/colophon.html:88
 msgid "Basemap"
 msgstr ""
 
+#: public/templates/public/colophon.html:94
 msgid "— open-source map renderer"
 msgstr ""
 
+#: public/templates/public/colophon.html:98
 msgid "— Liberty vector tiles (production default)"
 msgstr ""
 
+#: public/templates/public/colophon.html:103
 msgid "— Winter and Light vector tile styles"
 msgstr ""
 
+#: public/templates/public/colophon.html:110
 msgid "Icons"
 msgstr ""
 
+#: public/templates/public/colophon.html:114
 msgid ""
 "<a class=\"underline\" href=\"https://bas.dev/work/meteocons\" "
 "target=\"_blank\" rel=\"noopener\" >Meteocons</a> by <a class=\"underline\" "
@@ -274,6 +338,7 @@ msgid ""
 "target=\"_blank\" rel=\"noopener\" >MIT licence</a>"
 msgstr ""
 
+#: public/templates/public/colophon.html:125
 msgid ""
 "<a class=\"underline\" href=\"https://www.avalanches.org/\" "
 "target=\"_blank\" rel=\"noopener\">EAWS</a> — avalanche problem and danger-"
@@ -282,9 +347,11 @@ msgid ""
 ">CC BY 4.0</a>"
 msgstr ""
 
+#: public/templates/public/colophon.html:142
 msgid "Fonts"
 msgstr ""
 
+#: public/templates/public/colophon.html:146
 msgid ""
 "<a class=\"underline\" href=\"https://fonts.google.com/specimen/DM+Sans\" "
 "target=\"_blank\" rel=\"noopener\" >DM Sans</a> and <a class=\"underline\" "
@@ -294,185 +361,243 @@ msgid ""
 "Open Font Licence 1.1</a>"
 msgstr ""
 
+#: public/templates/public/colophon.html:170
 msgid "Email"
 msgstr ""
 
+#: public/templates/public/colophon.html:175
 msgid "— transactional email delivery"
 msgstr ""
 
+#: public/templates/public/colophon.html:182
 msgid "Hosting"
 msgstr ""
 
+#: public/templates/public/colophon.html:187
 msgid "— web application hosting and cron jobs"
 msgstr ""
 
+#: public/templates/public/home.html:11
 msgid "Snowdesk — Avalanche bulletins for backcountry skiers"
 msgstr ""
 
+#: public/templates/public/home.html:15
 msgid ""
 "Daily Swiss avalanche bulletins for backcountry skiers — per-region danger "
 "levels, avalanche problems, snowpack structure, and a season-wide map "
 "timelapse, sourced from SLF."
 msgstr ""
 
+#: public/templates/public/home.html:21
 msgid "Snowdesk"
 msgstr ""
 
+#: public/templates/public/home.html:23
 msgid "Avalanche bulletins for backcountry skiers."
 msgstr ""
 
+#: public/templates/public/home.html:26
 msgid ""
 "We take the daily SLF avalanche forecast and present it in a clear, mobile-"
 "friendly format so you can make better decisions in the mountains."
 msgstr ""
 
+#: public/templates/public/home.html:33
 msgid "Daily bulletins"
 msgstr ""
 
+#: public/templates/public/home.html:34
 msgid ""
 "fetched automatically from the Swiss Institute for Snow and Avalanche "
 "Research (SLF)."
 msgstr ""
 
+#: public/templates/public/home.html:37
 msgid "Per-region detail"
 msgstr ""
 
+#: public/templates/public/home.html:38
 msgid ""
 "danger level, avalanche problems, snowpack structure, and field guidance for "
 "every forecast region."
 msgstr ""
 
+#: public/templates/public/home.html:41
 msgid "Season at a glance"
 msgstr ""
 
+#: public/templates/public/home.html:42
 msgid ""
 "scrub through the whole season on the map to see how danger evolved across "
 "regions."
 msgstr ""
 
+#: public/templates/public/home.html:50
 msgid "View a sample bulletin →"
 msgstr ""
 
+#: public/templates/public/home.html:56
 msgid "Explore the map →"
 msgstr ""
 
+#: public/templates/public/map.html:18
 msgid "Snowdesk — Avalanche map"
 msgstr ""
 
+#: public/templates/public/map.html:19
 msgid ""
 "Interactive map of Swiss avalanche regions — tap a region to see today's "
 "danger rating, headline problem, and nearby resorts."
 msgstr ""
 
+#: public/templates/public/map.html:70 public/templates/public/map.html:92
+#: public/templates/public/map.html:95
 msgid "Find a region or resort"
 msgstr ""
 
+#: public/templates/public/map.html:115
 msgid "Choose basemap"
 msgstr ""
 
+#: public/templates/public/map.html:138
 msgid "Base map"
 msgstr ""
 
+#: public/templates/public/map.html:163
 msgid "Overlays"
 msgstr ""
 
+#: public/templates/public/map.html:173
 msgid "Major regions"
 msgstr ""
 
+#: public/templates/public/map.html:184
 msgid "Sub regions"
 msgstr ""
 
+#: public/templates/public/map.html:196
 msgid "Micro regions carry the avalanche danger ratings — required"
 msgstr ""
 
+#: public/templates/public/map.html:198
 msgid "Micro regions"
 msgstr ""
 
+#: public/templates/public/map.html:214 public/templates/public/map.html:319
+#: public/templates/public/partials/edit_resorts_panel.html:108
 msgid "Resorts"
 msgstr ""
 
+#: public/templates/public/map.html:222
 msgid "Options"
 msgstr ""
 
+#: public/templates/public/map.html:232
 msgid "Auto-zoom"
 msgstr ""
 
+#: public/templates/public/map.html:250
 msgid "Close"
 msgstr ""
 
+#: public/templates/public/map.html:287
 msgid "Avalanche danger legend"
 msgstr ""
 
+#: public/templates/public/map.html:326
 msgid "Show avalanche danger legend"
 msgstr ""
 
+#: public/templates/public/map.html:351
 msgid "Season scrubber"
 msgstr ""
 
+#: public/templates/public/map.html:364
 msgid "Play season timelapse"
 msgstr ""
 
+#: public/templates/public/map.html:392
 msgid "Timelapse speed"
 msgstr ""
 
+#: public/templates/public/partials/_season_calendar.html:26
 msgid "Season heatmap"
 msgstr ""
 
+#: public/templates/public/partials/_season_calendar.html:31
 msgid "This season"
 msgstr ""
 
+#: public/templates/public/partials/_season_calendar.html:37
 msgid "Close season heatmap"
 msgstr ""
 
+#: public/templates/public/partials/edit_resorts_panel.html:21
 msgid "Edit resorts panel"
 msgstr ""
 
+#: public/templates/public/partials/edit_resorts_panel.html:29
 msgid "Edit resort coordinates"
 msgstr ""
 
+#: public/templates/public/partials/edit_resorts_panel.html:36
 msgid ""
 "Pick a resort, click the map to drop a pin (or paste lat/lon), then Save. "
 "Run <code>manage.py dump_resorts_fixture --commit</code> to persist to git."
 msgstr ""
 
+#: public/templates/public/partials/edit_resorts_panel.html:48
 msgid "Filter resorts…"
 msgstr ""
 
+#: public/templates/public/partials/edit_resorts_panel.html:58
 msgid "Hide already-set resorts"
 msgstr ""
 
+#: public/templates/public/partials/edit_resorts_panel.html:64
 msgid "Current target"
 msgstr ""
 
+#: public/templates/public/partials/edit_resorts_panel.html:67
 msgid "No resort selected."
 msgstr ""
 
+#: public/templates/public/partials/edit_resorts_panel.html:70
 msgid "Paste:"
 msgstr ""
 
+#: public/templates/public/partials/edit_resorts_panel.html:87
 msgid "Save"
 msgstr ""
 
+#: public/templates/public/partials/edit_resorts_panel.html:95
+#: subscriptions/templates/subscriptions/unsubscribe.html:41
 msgid "Cancel"
 msgstr ""
 
+#: public/templates/public/partials/edit_resorts_panel.html:111
 msgid "Loading…"
 msgstr ""
 
+#: public/templates/public/terms.html:18
 msgid "Terms"
 msgstr ""
 
+#: public/templates/public/terms.html:21
 msgid ""
 "Snowdesk terms of use, data-licence acknowledgement, and liability "
 "disclaimer."
 msgstr ""
 
+#: public/templates/public/terms.html:27
 msgid "Terms of use"
 msgstr ""
 
+#: public/templates/public/terms.html:32
 msgid "Data source and licence"
 msgstr ""
 
+#: public/templates/public/terms.html:35
 msgid ""
 "Snowdesk renders avalanche bulletins published by the <a class=\"underline\" "
 "href=\"https://www.slf.ch\" target=\"_blank\" rel=\"noopener\" >WSL "
@@ -481,21 +606,28 @@ msgid ""
 "licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\" >CC BY 4.0</a>."
 msgstr ""
 
+#: public/templates/public/terms.html:51
 msgid "Snowdesk is not a substitute for the official bulletin"
 msgstr ""
 
+#: public/templates/public/terms.html:54 public/templates/public/terms.html:63
+#: public/templates/public/terms.html:72
 msgid "[Awaiting legal copy — to be authored by Hugo.]"
 msgstr ""
 
+#: public/templates/public/terms.html:60
 msgid "Always consult SLF and make your own on-site assessment"
 msgstr ""
 
+#: public/templates/public/terms.html:69
 msgid "Limitation of liability"
 msgstr ""
 
+#: public/templates/public/terms.html:78
 msgid "SLF's own no-liability clause"
 msgstr ""
 
+#: public/templates/public/terms.html:81
 msgid ""
 "Per the SLF <a class=\"underline\" href=\"https://www.slf.ch/en/services-and-"
 "products/slf-data-service/\" target=\"_blank\" rel=\"noopener\" >data-"
@@ -503,112 +635,164 @@ msgid ""
 "bulletin data. [Detailed wording to be authored by Hugo.]"
 msgstr ""
 
+#: public/templatetags/card_tags.py:180
 msgid "Elevation: above lower bound"
 msgstr ""
 
+#: public/templatetags/card_tags.py:195
 msgid "Elevation: below upper bound"
 msgstr ""
 
+#: public/templatetags/card_tags.py:214
 msgid "Elevation: between bounds"
 msgstr ""
 
+#: public/templatetags/snowdesk_time.py:77 public/views.py:78
+#: public/views.py:1622
 msgid "Low"
 msgstr ""
 
+#: public/templatetags/snowdesk_time.py:78 public/views.py:84
+#: public/views.py:1628
 msgid "Moderate"
 msgstr ""
 
+#: public/templatetags/snowdesk_time.py:79 public/views.py:90
+#: public/views.py:1634
 msgid "Considerable"
 msgstr ""
 
+#: public/templatetags/snowdesk_time.py:80 public/views.py:96
+#: public/views.py:1640
 msgid "High"
 msgstr ""
 
+#: public/templatetags/snowdesk_time.py:81 public/views.py:102
 msgid "Very High"
 msgstr ""
 
+#: public/views.py:79 public/views.py:85
 msgid "GO"
 msgstr ""
 
+#: public/views.py:91
 msgid "CAUTION"
 msgstr ""
 
+#: public/views.py:97 public/views.py:103
 msgid "AVOID"
 msgstr ""
 
+#: public/views.py:647
 msgid "Standard"
 msgstr ""
 
+#: public/views.py:648
 msgid "Winter"
 msgstr ""
 
+#: public/views.py:649
 msgid "Light"
 msgstr ""
 
+#: public/views.py:1623
 msgid "Stable snowpack"
 msgstr ""
 
+#: public/views.py:1629
 msgid "Cautious route selection needed"
 msgstr ""
 
+#: public/views.py:1635
 msgid "Dangerous off-piste conditions"
 msgstr ""
 
+#: public/views.py:1641
 msgid "Very critical off-piste conditions"
 msgstr ""
 
+#: public/views.py:1646
 msgid "Very high"
 msgstr ""
 
+#: public/views.py:1647
 msgid "Do not enter avalanche terrain"
 msgstr ""
 
+#: public/views.py:1657
 msgid "No rating available"
 msgstr ""
 
+#: public/views.py:1670
 msgid "No distinct problem"
 msgstr ""
 
+#: public/views.py:1700
 msgid "Dry avalanches"
 msgstr ""
 
+#: public/views.py:1701
 msgid "Wet-snow avalanches"
 msgstr ""
 
+#: public/views.py:1702
 msgid "Gliding avalanches"
 msgstr ""
 
+#: subscriptions/services/email.py:56
+#: subscriptions/templates/subscriptions/emails/account_access.html:7
 msgid "Your Snowdesk account link"
 msgstr ""
 
+#: subscriptions/services/email.py:57
 #, python-format
 msgid "Snowdesk: you're subscribed to %(region_name)s"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_access.html:10
+#: subscriptions/templates/subscriptions/emails/account_access.txt:2
+#: subscriptions/templates/subscriptions/emails/account_subscribed.html:14
+#: subscriptions/templates/subscriptions/emails/account_subscribed.txt:2
 msgid "Hi,"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_access.html:12
 msgid ""
 "Click the button below to access your Snowdesk account and manage your "
 "avalanche bulletin subscriptions."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_access.html:18
 msgid "Access my Snowdesk account"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_access.html:21
+#: subscriptions/templates/subscriptions/emails/account_subscribed.html:27
 msgid "Or copy this link into your browser:"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_access.html:25
+#: subscriptions/templates/subscriptions/emails/account_access.txt:8
+#: subscriptions/templates/subscriptions/emails/account_subscribed.html:31
+#: subscriptions/templates/subscriptions/emails/account_subscribed.txt:12
 #, python-format
 msgid "This link expires in %(hours)s hours."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_access.html:28
+#: subscriptions/templates/subscriptions/emails/account_access.txt:12
 msgid "If you did not request this, you can safely ignore this email."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_access.html:31
+#: subscriptions/templates/subscriptions/emails/account_access.txt:15
+#: subscriptions/templates/subscriptions/emails/account_subscribed.html:36
+#: subscriptions/templates/subscriptions/emails/account_subscribed.txt:17
 msgid "Snowdesk — Swiss Avalanche Bulletins"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_access.html:33
+#: subscriptions/templates/subscriptions/emails/account_subscribed.html:38
 msgid ""
 "Avalanche data: WSL Institute for Snow and Avalanche Research SLF (<a "
 "href=\"https://www.slf.ch\" style=\"color: #9ca3af\" >slf.ch</a>) &middot; "
@@ -616,226 +800,301 @@ msgid ""
 "style=\"color: #9ca3af\" >CC BY 4.0</a>"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_access.txt:4
 msgid ""
 "Click the link below to access your Snowdesk account and manage your "
 "avalanche bulletin subscriptions."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_access.txt:16
+#: subscriptions/templates/subscriptions/emails/account_subscribed.txt:18
 msgid ""
 "Avalanche data: WSL Institute for Snow and Avalanche Research SLF (slf.ch) · "
 "Licensed under CC BY 4.0"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_subscribed.html:8
 #, python-format
 msgid "Snowdesk: you're subscribed to %(region)s"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_subscribed.html:16
 #, python-format
 msgid ""
 "You're now subscribed to avalanche bulletin alerts for <strong>%(region)s</"
 "strong>."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_subscribed.html:24
+#: subscriptions/templates/subscriptions/manage.html:176
+#: subscriptions/templates/subscriptions/partials/subscribe_success_added.html:17
+#: subscriptions/templates/subscriptions/partials/subscribe_success_already.html:15
 msgid "Manage your subscriptions"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_subscribed.txt:4
 #, python-format
 msgid "You're now subscribed to avalanche bulletin alerts for %(region)s."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/emails/account_subscribed.txt:8
 msgid "Use the link below to manage your subscriptions:"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/link_expired.html:11
 msgid "Link expired — Snowdesk"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/link_expired.html:13
 msgid ""
 "This account link has expired or is invalid. Request a new one to manage "
 "your Snowdesk subscriptions."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/link_expired.html:19
 msgid "This link has expired"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/link_expired.html:21
 msgid ""
 "Account links are only valid for 24 hours. This one has expired or is "
 "invalid."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/link_expired.html:27
 msgid "Request a new link"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:19
 msgid "Manage subscriptions — Snowdesk"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:21
 msgid "Update your Snowdesk avalanche bulletin region subscriptions."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:58
 msgid "Something went wrong."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:61
 msgid "Please reload the page and try again."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:69
 msgid "Your subscription is confirmed."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:72
 msgid "You'll receive alerts for the regions below."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:79
 msgid "Your subscription"
 msgid_plural "Your subscriptions"
 msgstr[0] ""
 msgstr[1] ""
 
+#: subscriptions/templates/subscriptions/manage.html:104
 msgid "Remove"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:121
 msgid "You have no active subscriptions."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:132
 msgid "Choose more regions on the map →"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:145
 msgid "Unsubscribe from all alerts and delete your account?"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:148
 msgid "Unsubscribe from all alerts"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:178
 msgid ""
 "Enter your email address and we'll send you a link to manage your regions."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:188
 msgid "Email address"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage.html:204
 msgid "Send account link"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage_saved.html:9
 msgid "Subscriptions saved — Snowdesk"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage_saved.html:11
 msgid ""
 "Your Snowdesk avalanche bulletin region subscriptions have been updated."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage_saved.html:17
 msgid "Regions saved"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage_saved.html:19
 msgid "Your bulletin subscriptions have been updated."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage_saved.html:25
+#: subscriptions/templates/subscriptions/unsubscribe_done.html:26
 msgid "Back to Snowdesk"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage_sent.html:10
 msgid "Check your inbox — Snowdesk"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage_sent.html:12
 msgid ""
 "We've sent you an account link. Check your inbox to manage your Snowdesk "
 "subscriptions."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage_sent.html:18
+#: subscriptions/templates/subscriptions/partials/subscribe_success.html:11
+#: subscriptions/templates/subscriptions/partials/subscribe_success_access.html:10
 msgid "Check your inbox"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/manage_sent.html:20
 msgid ""
 "If that address is registered, we've sent you a link to manage your "
 "subscriptions. It expires in 24 hours."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/partials/subscribe_error.html:11
 msgid "Something went wrong"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/partials/subscribe_error.html:13
 msgid "We couldn't find that region — please try again from the bulletin page."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/partials/subscribe_form.html:13
 msgid "Get avalanche alerts"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/partials/subscribe_form.html:15
 msgid "Enter your email to receive daily bulletin updates for this region."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/partials/subscribe_form.html:38
 msgid "Subscribe"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/partials/subscribe_form.html:44
 msgid "Sending…"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/partials/subscribe_success.html:13
+#: subscriptions/templates/subscriptions/partials/subscribe_success_access.html:12
 msgid "We've sent you a link to access your account. It expires in 24 hours."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/partials/subscribe_success_added.html:11
 #, python-format
 msgid "Added <strong>%(region)s</strong> to your alerts"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/partials/subscribe_success_added.html:16
 msgid "We've sent a confirmation to your email."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/partials/subscribe_success_already.html:10
 #, python-format
 msgid "You're already subscribed to <strong>%(region)s</strong>"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/unsubscribe.html:10
 msgid "Unsubscribe — Snowdesk"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/unsubscribe.html:12
 msgid ""
 "Confirm your unsubscribe request to stop receiving avalanche bulletin alerts "
 "for this region."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/unsubscribe.html:18
 msgid "Unsubscribe"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/unsubscribe.html:20
 #, python-format
 msgid "You are about to unsubscribe <strong>%(email)s</strong> from:"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/unsubscribe.html:34
 msgid "Yes, unsubscribe me"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/unsubscribe_done.html:10
 msgid "Unsubscribed — Snowdesk"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/unsubscribe_done.html:12
 msgid ""
 "You have been successfully unsubscribed from Snowdesk avalanche bulletin "
 "alerts."
 msgstr ""
 
+#: subscriptions/templates/subscriptions/unsubscribe_done.html:18
 msgid "You've been unsubscribed"
 msgstr ""
 
+#: subscriptions/templates/subscriptions/unsubscribe_done.html:20
 msgid "You will no longer receive avalanche bulletin alerts for that region."
 msgstr ""
 
+#: templates/includes/bulletin_header.html:91
+#: templates/includes/bulletin_header.html:96
 msgid "Sunrise"
 msgstr ""
 
+#: templates/includes/bulletin_header.html:105
+#: templates/includes/bulletin_header.html:107
 msgid "Sunset"
 msgstr ""
 
+#: templates/includes/day_windows.html:16
 msgid "Avalanche conditions by window"
 msgstr ""
 
+#: templates/includes/nav.html:49
 msgid "Back"
 msgstr ""
 
+#: templates/includes/nav.html:84
 #, python-format
 msgid "Show %(label)s season heatmap"
 msgstr ""
 
+#: templates/includes/nav.html:86
 msgid "Season"
 msgstr ""
 
+#: templates/includes/nav.html:115
 msgid "Admin"
 msgstr ""
 
+#: templates/includes/nav.html:142
 msgid "Component library"
 msgstr ""
 
+#: templates/includes/nav.html:151
 msgid "Edit map"
 msgstr ""
 
+#: templates/includes/nav.html:160
 msgid "Django admin"
 msgstr ""
