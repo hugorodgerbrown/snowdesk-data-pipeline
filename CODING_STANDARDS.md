@@ -15,12 +15,19 @@ is probably wrong — fix it rather than relaxing the rule.
 
 ```
 config/          Django project: split settings (base/development/production), urls, wsgi
-pipeline/        Core app — ingest, models, services, admin, management commands
-  services/      Pure-function modules; no Django request/response coupling
-  management/    Django management commands
-  templates/     App templates; partials/ holds HTMX fragment responses
-  migrations/    Generated — never edit by hand after squashing
-public/          Public-facing bulletin site (HTMX-driven)
+core/            Shared abstractions (BaseModel; abstract, no concrete tables)
+pipeline/        Geographic reference data — Region / EawsMajorRegion /
+                 EawsSubRegion / Resort, plus HTTP-layer middleware, the
+                 dev-only SLF mirror endpoint, and fixture/monitoring commands
+                 (dump_resorts_fixture, monitor_query_counts, refresh_eaws_fixtures)
+bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
+                 PipelineRun, RegionDayRating, WeatherSnapshot, the ingestion
+                 services (data_fetcher / render_model / day_rating /
+                 slf_archive / weather_fetcher / weather_display) and the six
+                 bulletin/weather management commands
+subscriptions/   Signed-token email subscription flow — Subscriber, Subscription
+public/          Public-facing bulletin site (HTMX-driven). Owns the JSON API
+                 used by the map page (api.py / api_urls.py)
 tests/           Mirrors the layout of the modules under test
   factories.py   FactoryBoy factories for every model
 sample_data/     Fixture JSON + CAAML schema documentation
@@ -29,9 +36,16 @@ static/          CSS/JS assets (includes compiled output.css)
 logs/            Runtime log files (gitignored except .gitkeep)
 ```
 
+The `bulletins/` ↔ `pipeline/` split is deliberate: `pipeline/` holds
+stable shared lookup data (regions, resorts) and HTTP plumbing;
+`bulletins/` holds everything that originates from the SLF API and the
+denormalisation that drives the calendar. `core/` exists so neither app
+needs to import abstract bases from the other.
+
 Tests live in a **top-level** `tests/` directory, not inside each app.
-The tree under `tests/` mirrors the source tree: `pipeline/models.py`
-has tests at `tests/pipeline/models/test_models.py`.
+The tree under `tests/` mirrors the source tree: `bulletins/models.py`
+has tests at `tests/bulletins/test_weather_snapshot_model.py` and
+`pipeline/models.py` has tests at `tests/pipeline/models/test_models.py`.
 
 ---
 
@@ -64,13 +78,13 @@ Follow the Zen of Python (h/t Tim Peters):
 Every module starts with a docstring block whose first line names the
 file and gives a one-line purpose, followed by a short description of
 what the module contains and why. See
-[pipeline/models.py](pipeline/models.py) or
-[pipeline/services/data_fetcher.py](pipeline/services/data_fetcher.py)
+[bulletins/models.py](bulletins/models.py) or
+[bulletins/services/data_fetcher.py](bulletins/services/data_fetcher.py)
 for the canonical shape:
 
 ```python
 """
-pipeline/services/data_fetcher.py — Fetching and persisting SLF bulletins.
+bulletins/services/data_fetcher.py — Fetching and persisting SLF bulletins.
 
 Contains pure-ish functions that:
   1. Fetch a page of bulletins from the SLF CAAML API (fetch_bulletin_page).
@@ -106,7 +120,8 @@ Contains pure-ish functions that:
   `**kwargs` are exempt but should still be typed where feasible
   (`*args: Any, **kwargs: Any`).
 - Use `from __future__ import annotations` in modules that reference
-  forward types (see [pipeline/models.py](pipeline/models.py),
+  forward types (see [bulletins/models.py](bulletins/models.py),
+  [pipeline/models.py](pipeline/models.py),
   [pipeline/schema.py](pipeline/schema.py),
   [public/views.py](public/views.py)).
 - Use `collections.abc` for `Callable`, `Iterable`, etc. — not `typing`.
@@ -138,10 +153,10 @@ Contains pure-ish functions that:
   `logger.info("Pipeline run %s started", run.pk)`.
 - Use `logger.exception(...)` inside `except` blocks to capture
   tracebacks; `logger.error("...", exc_info=True)` is also acceptable.
-- The `pipeline` logger is configured in
-  [config/settings/base.py](config/settings/base.py) to write to
-  `logs/pipeline.log` with rotation. Don't reconfigure handlers inside
-  app code.
+- The `pipeline`, `bulletins`, and `subscriptions` loggers are
+  configured in [config/settings/base.py](config/settings/base.py) to
+  write to `logs/pipeline.log` with rotation, and errors additionally
+  to `logs/errors.log`. Don't reconfigure handlers inside app code.
 - `print()` is a lint error (`T2` rule). Use the logger.
 - log API responses with `logger.debug()`
 
@@ -152,12 +167,15 @@ Contains pure-ish functions that:
 - Max cyclomatic complexity is 8 (`max-complexity = 8`). If you hit
   `C901`, **refactor** — don't `# noqa` it. The extracted-helper pattern
   in `_process_bulletin` / `run_pipeline` in
-  [pipeline/services/data_fetcher.py](pipeline/services/data_fetcher.py)
+  [bulletins/services/data_fetcher.py](bulletins/services/data_fetcher.py)
   is the reference example.
 - Only suppress lint warnings with `# noqa: <code>` when there is a good
   reason, and always leave an inline comment explaining why. See the
-  `mark_safe` calls in [pipeline/admin.py](pipeline/admin.py) for
-  acceptable usage.
+  `mark_safe` calls in
+  [public/templatetags/snowdesk_html.py](public/templatetags/snowdesk_html.py)
+  and
+  [public/templatetags/card_tags.py](public/templatetags/card_tags.py)
+  for acceptable usage.
 
 ### 2.7 Datetimes
 
@@ -165,7 +183,7 @@ Contains pure-ish functions that:
   settings; naive datetimes will raise warnings in tests.
 - Use `datetime.UTC` (Python 3.11+), not `timezone.utc` or `pytz`.
 - CAAML timestamps are parsed through `_parse_dt` in
-  [pipeline/services/data_fetcher.py](pipeline/services/data_fetcher.py)
+  [bulletins/services/data_fetcher.py](bulletins/services/data_fetcher.py)
   which always returns a UTC-aware datetime.
 - In factories, use `tzinfo=UTC` — see
   [tests/factories.py](tests/factories.py).
@@ -179,7 +197,7 @@ Contains pure-ish functions that:
 Every concrete model must:
 
 1. **Inherit from `BaseModel`**
-   ([pipeline/models.py](pipeline/models.py)), which provides `id`
+   ([core/models.py](core/models.py)), which provides `id`
    (BigAutoField), `uuid`, `created_at`, `updated_at`.
 2. **Define a `Meta`** that inherits from `BaseModel.Meta` and sets an
    explicit `ordering` (default is `-created_at` via BaseModel).
@@ -187,14 +205,19 @@ Every concrete model must:
 4. **Define a custom QuerySet** even if empty (`pass`), and expose it
    via `objects = XxxQuerySet.as_manager()`. Domain query methods live
    on the queryset — not on the model.
-5. **Have an AdminModel** registered in
-   [pipeline/admin.py](pipeline/admin.py) with at minimum
+5. **Have an AdminModel** registered in the owning app's `admin.py`
+   ([bulletins/admin.py](bulletins/admin.py),
+   [pipeline/admin.py](pipeline/admin.py),
+   [subscriptions/admin.py](subscriptions/admin.py)) with at minimum
    `list_display`, `search_fields` where useful, and `readonly_fields`
    for timestamp columns.
 6. **Have a Factory** in [tests/factories.py](tests/factories.py).
-7. **Have test coverage** in `tests/pipeline/models/test_{module}.py`.
+7. **Have test coverage** under `tests/<app>/` mirroring the source
+   path (e.g. `tests/pipeline/models/test_models.py`,
+   `tests/bulletins/test_weather_snapshot_model.py`).
 
-Keep business logic **out** of models. Put it in `pipeline/services/`.
+Keep business logic **out** of models. Put it in the owning app's
+`services/` subdirectory (e.g. [bulletins/services/](bulletins/services/)).
 Models may expose thin accessors (e.g. `Bulletin.get_danger_ratings()`
 which builds dataclass views over `raw_data`) but must not perform I/O,
 fetch, or mutate other records.
@@ -219,9 +242,11 @@ fetch, or mutate other records.
 
 - Full-page views return a complete HTML response.
 - HTMX fragment views return only the inner HTML snippet. They are
-  routed under a `partials/` prefix (see
-  [pipeline/urls.py](pipeline/urls.py)) and guarded with the
-  `require_htmx` decorator from [pipeline/views.py](pipeline/views.py).
+  routed under a `partials/` prefix in the owning app's `urls.py`
+  (e.g. [public/urls.py](public/urls.py),
+  [subscriptions/urls.py](subscriptions/urls.py)) and guarded with the
+  `require_htmx` decorator from
+  [pipeline/decorators.py](pipeline/decorators.py).
 - Views are thin: parse query params, enforce permissions, call the ORM or
   service layer, render a template. No business logic.
 - Use `@require_GET` / `@require_POST` from
@@ -234,7 +259,11 @@ fetch, or mutate other records.
 
 ### 3.6 Services
 
-- Located in `pipeline/services/`.
+- Located in each app's `services/` subdirectory (e.g.
+  [bulletins/services/](bulletins/services/)). The bulletin ingestion,
+  render-model, day-rating, weather, and SLF-archive services all live
+  under `bulletins/services/`; the `pipeline/services/` slot is reserved
+  for region/resort-shaped helpers and is currently empty.
 - Prefer plain functions over classes — composition over inheritance.
 - Pass collaborators as arguments rather than reaching for globals or
   building deep class hierarchies.
@@ -245,7 +274,9 @@ fetch, or mutate other records.
 
 ### 3.7 Management commands
 
-Every command under `pipeline/management/commands/` must:
+Every command under an app's `management/commands/` subdirectory
+(`bulletins/management/commands/`,
+`pipeline/management/commands/`) must:
 
 - Have a module header docstring and class docstring.
 - Override `add_arguments(self, parser: ArgumentParser) -> None` with
@@ -259,8 +290,10 @@ Every command under `pipeline/management/commands/` must:
 - Raise `CommandError` on fatal failure.
 
 See
-[pipeline/management/commands/fetch_bulletins.py](pipeline/management/commands/fetch_bulletins.py)
-for the reference shape.
+[bulletins/management/commands/fetch_bulletins.py](bulletins/management/commands/fetch_bulletins.py)
+for the reference shape, and
+[docs/management-commands.md](docs/management-commands.md) for the full
+catalogue and flag reference.
 
 ### 3.8 Settings
 
@@ -333,6 +366,8 @@ for the reference shape.
 - Include a short method docstring describing the invariant under test.
   See
   [tests/pipeline/models/test_models.py](tests/pipeline/models/test_models.py)
+  and
+  [tests/bulletins/services/test_data_fetcher.py](tests/bulletins/services/test_data_fetcher.py)
   for the reference style.
 
 ### 5.3 FactoryBoy
@@ -390,8 +425,11 @@ for the reference shape.
 - `ruff-format`
 - `trailing-whitespace`, `end-of-file-fixer`, `check-merge-conflict`,
   `debug-statements`
-- Local `mypy` hook via `.venv/bin/mypy pipeline/ public/ tests/
-  config/`
+- `gitleaks` for committed secrets
+- Local `djangofmt` hook via `.venv/bin/djangofmt`
+- Local `mypy` hook via `.venv/bin/mypy core/ bulletins/ pipeline/
+  public/ subscriptions/ tests/ config/` (kept in sync with the
+  `tox -e mypy` target)
 
 Install with `poetry run pre-commit install`. Do not bypass hooks with
 `--no-verify` — if a hook fails, fix the underlying issue and create a
@@ -399,17 +437,23 @@ Install with `poetry run pre-commit install`. Do not bypass hooks with
 
 ### 6.3 tox
 
-[tox.ini](tox.ini) defines five environments, all run in CI:
+[tox.ini](tox.ini) defines seven environments. The five default envs
+(`fmt`, `lint`, `mypy`, `django-checks`, `test`) run in CI on every
+push. `audit` and `sast` are also wired up as tox envs; run them
+locally before opening a PR that touches dependencies or security-
+sensitive code.
 
-| env              | purpose                                      |
-| ---------------- | -------------------------------------------- |
-| `fmt`            | `ruff format --check .`                      |
-| `lint`           | `ruff check .`                               |
-| `mypy`           | `mypy pipeline/ public/ tests/ config/`      |
-| `django-checks`  | `manage.py check` + `makemigrations --check` |
-| `test`           | `pytest --cov=pipeline --cov=public --cov=config tests/` |
+| env              | purpose                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| `fmt`            | `ruff format --check .`                                                                  |
+| `lint`           | `ruff check .`                                                                           |
+| `mypy`           | `mypy core/ bulletins/ pipeline/ public/ subscriptions/ tests/ config/`                  |
+| `django-checks`  | `manage.py check` + `makemigrations --check`                                             |
+| `test`           | `pytest --cov=core --cov=bulletins --cov=pipeline --cov=public --cov=subscriptions --cov=config tests/` |
+| `audit`          | `pip-audit` against the Poetry-exported requirements                                     |
+| `sast`           | `semgrep` with the Django + Python + security-audit rulesets                             |
 
-Run the whole suite locally with `tox` before pushing.
+Run the default suite locally with `tox` before pushing.
 
 ### 6.4 Configuration files
 
@@ -440,7 +484,7 @@ storage, so `Bulletin.raw_data` always looks like:
 Read it via `Bulletin._properties` (or the `get_danger_ratings()` /
 `get_avalanche_problems()` helpers) — do **not** access
 `raw_data["properties"]` directly from callers. See
-[pipeline/models.py](pipeline/models.py) and
+[bulletins/models.py](bulletins/models.py) and
 [pipeline/schema.py](pipeline/schema.py).
 
 ### 7.2 Dataclass views over JSON
@@ -455,7 +499,7 @@ become `None` or empty tuples.
 ### 7.3 Upserts
 
 Bulletin writes go through `upsert_bulletin` in
-[pipeline/services/data_fetcher.py](pipeline/services/data_fetcher.py),
+[bulletins/services/data_fetcher.py](bulletins/services/data_fetcher.py),
 which uses `Bulletin.objects.update_or_create` keyed on `bulletin_id`.
 Re-runs must be idempotent.
 
