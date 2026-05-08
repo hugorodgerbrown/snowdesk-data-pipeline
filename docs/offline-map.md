@@ -16,7 +16,6 @@ manifest icons.
 | `public.views.serve_manifest` | Web app manifest, served at `/manifest.webmanifest` with `Content-Type: application/manifest+json`. Declares name, `id`, `lang`, `description`, `categories`, icons, screenshots, theme/background colour, plus absolute `start_url`, `scope`, and `id` derived from `settings.SITE_BASE_URL` so each environment has a stable canonical identity (`http://localhost:8000` in dev, `https://snowdesk.info` in prod). Linked from `public/templates/public/base.html` via `{% url 'web_manifest' %}`. |
 | `static/js/sw.js` | The service worker itself. Stale-while-revalidate for static shell + the regions GeoJSON; network-first for HTML navigations (with a pre-cached `/static/offline.html` fallback); network-only for everything else. |
 | `static/js/sw_register.js` | Registers `/sw.js` at root scope on every public page. Loaded `defer` from `base.html`. Also drives the `#sw-update-banner` (see "Update strategy" below). |
-| `static/js/pwa_install.js` | Captures `beforeinstallprompt` and toggles the `#pwa-install-banner` / `#pwa-install-ios-banner` markup in `base.html` (SNOW-118). |
 | `static/offline.html` | Branded fallback page returned by the SW when an HTML navigation fails AND no cached copy exists (SNOW-118). Inline-styled, zero external assets. |
 | `public/views.py::serve_sw` | Serves `/sw.js` with the `Service-Worker-Allowed: /` and `Cache-Control: no-cache` headers required for root-scope control + prompt SW updates. URL is registered in `public/urls.py`. |
 | `static/icons/pwa/` | Manifest icons: 192, 512, 512 maskable, and a 180×180 opaque `apple-touch-icon-180.png` for iOS home-screen launching (SNOW-118). Generated from `static/favicon.svg` by `bin/build-pwa-icons`. |
@@ -181,25 +180,6 @@ iOS splash-screen images
 omitted: the matrix of device sizes is large and fiddly, and a launch
 on the brand `background_color` is acceptable.
 
-### Install-prompt UX
-
-The install affordance has two non-default surfaces (SNOW-118):
-
-- **Chromium** — `static/js/pwa_install.js` captures the
-  `beforeinstallprompt` event, suppresses the default mini-infobar,
-  and reveals `#pwa-install-banner` (markup in `base.html`). Clicking
-  "Install" calls `prompt()` once on the deferred event. Dismiss state
-  is sticky for the rest of the tab session via `sessionStorage`;
-  successful installs flip a `localStorage` flag so the banner stays
-  hidden across sessions.
-- **iOS Safari** — `pwa_install.js` detects iOS Safari via UA + the
-  `navigator.standalone` check, and reveals `#pwa-install-ios-banner`
-  with explicit "Tap Share → Add to Home Screen" copy (iOS ignores
-  `beforeinstallprompt`).
-
-Both banners auto-hide when `display-mode: standalone` matches (i.e.
-the page is already running as an installed PWA).
-
 ## Cache strategy
 
 The SW classifies every fetch into one of three buckets:
@@ -322,10 +302,9 @@ underlying PNGs.
   assertion: `#offline-toggle` must **not** appear in the rendered
   map page.
 
-There are no unit tests for the SW's runtime behaviour or the
-`pwa_install.js` module — service workers and the
-`beforeinstallprompt` event run inside a browser context that pytest
-can't replicate faithfully. Manual verification:
+There are no unit tests for the SW's runtime behaviour — service
+workers run inside a browser context that pytest can't replicate
+faithfully. Manual verification:
 
 1. `npm run lh` — Lighthouse PWA audit on `/` and a bulletin page.
 2. Open the page in Chrome, install via the address-bar affordance,
