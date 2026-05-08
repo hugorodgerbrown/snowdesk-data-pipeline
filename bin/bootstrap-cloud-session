@@ -16,9 +16,14 @@ poetry run python manage.py loaddata \
   pipeline/fixtures/resorts.json \
 
 
-# 3. dev server in a detached tmux session (reuse if it already exists)
-tmux new-session -d -A -s devserver \
-  "poetry run python manage.py runserver 127.0.0.1:8000"
+# 3. dev server, detached and surviving the hook's subshell.
+# Skip if something is already listening on :8000 (resume case).
+if ! curl -fsS http://127.0.0.1:8000/ -o /dev/null 2>&1; then
+  mkdir -p logs
+  nohup poetry run python manage.py runserver 127.0.0.1:8000 \
+    > logs/devserver.log 2>&1 &
+  disown
+fi
 
 # wait for it to bind (don't poll forever)
 for i in {1..30}; do
