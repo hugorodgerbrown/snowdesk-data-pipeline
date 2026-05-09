@@ -44,12 +44,16 @@ FIXTURE_PATH = (
 def backfill_neighbours(apps: Any, schema_editor: Any) -> None:
     """Read regions.json and write Region.neighbours for every existing row."""
     # SNOW-140: Region moved from pipeline to regions. Try the new
-    # location first; fall back to the historical location so the
-    # migration still works at its historical replay position.
+    # location first (SNOW-142: renamed to MicroRegion); fall back to
+    # the historical location so the migration still works when replayed
+    # before regions.0002 has run.
     try:
-        Region = apps.get_model("regions", "Region")  # noqa: N806
+        Region = apps.get_model("regions", "MicroRegion")  # noqa: N806
     except LookupError:
-        Region = apps.get_model("pipeline", "Region")  # noqa: N806
+        try:
+            Region = apps.get_model("regions", "Region")  # noqa: N806
+        except LookupError:
+            Region = apps.get_model("pipeline", "Region")  # noqa: N806
 
     if not FIXTURE_PATH.exists():
         logger.warning(
@@ -88,9 +92,12 @@ def backfill_neighbours(apps: Any, schema_editor: Any) -> None:
 def clear_neighbours(apps: Any, schema_editor: Any) -> None:
     """Reverse: detach all neighbour links so 0015 can drop the field cleanly."""
     try:
-        Region = apps.get_model("regions", "Region")  # noqa: N806
+        Region = apps.get_model("regions", "MicroRegion")  # noqa: N806
     except LookupError:
-        Region = apps.get_model("pipeline", "Region")  # noqa: N806
+        try:
+            Region = apps.get_model("regions", "Region")  # noqa: N806
+        except LookupError:
+            Region = apps.get_model("pipeline", "Region")  # noqa: N806
     for region in Region.objects.all():
         region.neighbours.clear()
 
