@@ -29,15 +29,15 @@ from django.db import migrations
 
 logger = logging.getLogger(__name__)
 
-# Originally ``pipeline/fixtures/regions.json``; the fixture moved to
-# ``regions/fixtures/regions.json`` in SNOW-140. Resolve relative to the
-# repo root (the migration file's grand-grand-parent) so the historical
-# data migration keeps finding the fixture after the app rename.
+# Originally ``pipeline/fixtures/regions.json``; moved to
+# ``regions/fixtures/regions.json`` in SNOW-140, then consolidated into
+# ``regions/fixtures/eaws.json`` in SNOW-142. Resolve relative to the
+# repo root so the historical data migration keeps finding the fixture.
 FIXTURE_PATH = (
     Path(__file__).resolve().parent.parent.parent
     / "regions"
     / "fixtures"
-    / "regions.json"
+    / "eaws.json"
 )
 
 
@@ -63,7 +63,13 @@ def backfill_neighbours(apps: Any, schema_editor: Any) -> None:
         )
         return
 
-    fixture = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    all_entries = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    # Filter to MicroRegion-only entries (eaws.json now contains L1/L2 entries too).
+    fixture = [
+        e for e in all_entries
+        if e.get("model") in ("regions.microregion", "regions.region", "pipeline.region")
+        or "region_id" in e.get("fields", {})
+    ]
     region_ids = {entry["fields"]["region_id"] for entry in fixture}
     pk_by_id = dict(
         Region.objects.filter(region_id__in=region_ids).values_list("region_id", "pk")

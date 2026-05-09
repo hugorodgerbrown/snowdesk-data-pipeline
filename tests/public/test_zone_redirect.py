@@ -24,7 +24,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from tests.factories import BulletinFactory, RegionBulletinFactory, RegionFactory
+from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +38,7 @@ def _clear_cache():
 @pytest.fixture()
 def region():
     """Return a Region with a human-readable name."""
-    return RegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
+    return MicroRegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
 @pytest.fixture()

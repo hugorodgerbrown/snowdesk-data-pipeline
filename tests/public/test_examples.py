@@ -20,7 +20,7 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
-from tests.factories import BulletinFactory, RegionBulletinFactory, RegionFactory
+from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 
 def _wrap(properties: dict) -> dict:
@@ -39,7 +39,7 @@ def _clear_cache():
 @pytest.fixture()
 def region():
     """Return a Region with a human-readable name."""
-    return RegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
+    return MicroRegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
 def _make_bulletin_with_region(region, danger_level: str, issued_at: datetime):

@@ -2,12 +2,12 @@
 tests/regions/migrations/test_0019_close_region_boundary_rings.py
 
 Covers the SNOW-115 data migration that closes open polygon rings on
-``Region.boundary``. Two layers of coverage:
+``MicroRegion.boundary``. Two layers of coverage:
 
 1. Pure-Python tests of the ``_close_rings`` helper (Polygon,
    MultiPolygon, idempotency, non-geometry passthrough).
 2. A Django-DB integration test that runs the forward function against
-   real ``Region`` rows and asserts only the open-ring rows are
+   real ``MicroRegion`` rows and asserts only the open-ring rows are
    rewritten.
 """
 
@@ -19,8 +19,8 @@ from typing import Any
 import pytest
 from django.apps import apps as django_apps
 
-from regions.models import Region
-from tests.factories import RegionFactory
+from regions.models import MicroRegion
+from tests.factories import MicroRegionFactory
 
 # The migration module name starts with a digit so it cannot be imported
 # with ``from … import`` — go through ``importlib`` instead.
@@ -92,13 +92,13 @@ class TestCloseOpenRingsMigration:
 
     def test_open_rings_are_closed_idempotently(self) -> None:
         """Open rows close, closed rows untouched, second run is a no-op."""
-        open_region = RegionFactory.create(
+        open_region = MicroRegionFactory.create(
             region_id="CH-9001", boundary=_polygon(closed=False)
         )
-        closed_region = RegionFactory.create(
+        closed_region = MicroRegionFactory.create(
             region_id="CH-9002", boundary=_polygon(closed=True)
         )
-        null_region = RegionFactory.create(region_id="CH-9003", boundary=None)
+        null_region = MicroRegionFactory.create(region_id="CH-9003", boundary=None)
 
         close_open_rings(django_apps, schema_editor=None)
 
@@ -117,6 +117,6 @@ class TestCloseOpenRingsMigration:
         assert null_region.boundary is None
 
         # Second run is a true no-op — the JSON value is byte-identical.
-        snapshot = Region.objects.get(pk=open_region.pk).boundary
+        snapshot = MicroRegion.objects.get(pk=open_region.pk).boundary
         close_open_rings(django_apps, schema_editor=None)
-        assert Region.objects.get(pk=open_region.pk).boundary == snapshot
+        assert MicroRegion.objects.get(pk=open_region.pk).boundary == snapshot

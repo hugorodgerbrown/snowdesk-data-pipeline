@@ -1,8 +1,8 @@
 """
-scripts/build_regions_fixture.py — Generates pipeline/fixtures/regions.json.
+scripts/build_regions_fixture.py — Builds the MicroRegion slice of eaws.json.
 
 Reads docs/eaws_regions_ch.csv and produces a Django fixture file for the
-pipeline.Region model. Each record omits pk and uuid (so Django assigns them)
+regions.MicroRegion model. Each record omits pk and uuid (so Django assigns them)
 and sets created_at/updated_at to 2026-04-13T00:00:00Z to match the existing
 resorts.json fixture pattern.
 
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CSV_PATH = REPO_ROOT / "docs" / "eaws_regions_ch.csv"
-FIXTURE_PATH = REPO_ROOT / "pipeline" / "fixtures" / "regions.json"
+FIXTURE_PATH = REPO_ROOT / "regions" / "fixtures" / "eaws.json"
 
 CREATED_AT = "2026-04-13T00:00:00Z"
 UPDATED_AT = "2026-04-13T00:00:00Z"
@@ -111,7 +111,7 @@ def _compute_neighbour_graph(
 
 def build_fixture(csv_path: Path, fixture_path: Path) -> None:
     """
-    Read the CSV and write a Django JSON fixture for pipeline.Region.
+    Read the CSV and write a Django JSON fixture for regions.MicroRegion.
 
     Args:
         csv_path: Path to the source CSV file.
@@ -157,14 +157,14 @@ def build_fixture(csv_path: Path, fixture_path: Path) -> None:
         region_id = row["region_id"]
         records.append(
             {
-                "model": "regions.region",
+                "model": "regions.microregion",
                 "fields": {
                     "region_id": region_id,
                     "name": row["name"],
                     "slug": row["slug"],
                     # Parent L2 sub-region natural key (region_id[:5]).
-                    # The referenced EawsSubRegion must exist in
-                    # pipeline/fixtures/eaws_sub_regions.json.
+                    # The referenced SubRegion must exist in
+                    # regions/fixtures/eaws.json.
                     "subregion": [region_id[:5]],
                     "centre": row["centre"],
                     "boundary": row["boundary"],

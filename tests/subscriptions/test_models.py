@@ -9,7 +9,7 @@ fields introduced in migration 0002.
 import pytest
 
 from subscriptions.models import Subscriber, Subscription
-from tests.factories import RegionFactory, SubscriberFactory, SubscriptionFactory
+from tests.factories import MicroRegionFactory, SubscriberFactory, SubscriptionFactory
 
 
 @pytest.mark.django_db
@@ -108,7 +108,7 @@ class TestSubscriptionModel:
         from django.db import IntegrityError
 
         subscriber = SubscriberFactory.create()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         with pytest.raises(IntegrityError):
             SubscriptionFactory.create(subscriber=subscriber, region=region)

@@ -29,7 +29,7 @@ from bulletins.services.weather_fetcher import (
     fetch_archive_for_region,
     fetch_weather_for_region,
 )
-from tests.factories import RegionFactory, WeatherSnapshotFactory
+from tests.factories import MicroRegionFactory, WeatherSnapshotFactory
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -128,7 +128,7 @@ class TestFetchWeatherForRegion:
 
     def test_commit_true_creates_snapshot(self) -> None:
         """commit=True creates a WeatherSnapshot in the database."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
 
@@ -150,7 +150,7 @@ class TestFetchWeatherForRegion:
 
     def test_commit_false_returns_none(self) -> None:
         """commit=False calls the API but does not write to the database."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
 
@@ -167,7 +167,7 @@ class TestFetchWeatherForRegion:
 
     def test_commit_false_still_calls_api(self) -> None:
         """commit=False still makes the HTTP request (real API probe)."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
         mock = _mock_get(api_data)
@@ -179,7 +179,7 @@ class TestFetchWeatherForRegion:
 
     def test_upsert_updates_existing_snapshot(self) -> None:
         """A second call updates the existing WeatherSnapshot row."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         WeatherSnapshotFactory.create(
             region=region, valid_for_date=target, weather_code=0
@@ -204,7 +204,7 @@ class TestFetchWeatherForRegion:
 
     def test_http_error_raises(self) -> None:
         """requests.HTTPError propagates to the caller."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = requests.HTTPError(
@@ -220,7 +220,7 @@ class TestFetchWeatherForRegion:
 
     def test_snapshot_datetimes_are_tz_aware(self) -> None:
         """sunrise and sunset on the saved snapshot are tz-aware."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
 
@@ -237,7 +237,7 @@ class TestFetchWeatherForRegion:
 
     def test_correct_lat_lon_passed_to_api(self) -> None:
         """The region's centre lat/lon are forwarded to the Open-Meteo API."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         region.centre = {"lon": 8.1, "lat": 47.2}
         region.save()
         target = datetime.date(2026, 5, 1)
@@ -255,7 +255,7 @@ class TestFetchWeatherForRegion:
 
     def test_forecast_params_shape(self) -> None:
         """Forecast params must not include a 'current' key; weather_code is in 'daily'."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
         mock = _mock_get(api_data)
@@ -282,8 +282,8 @@ class TestFetchAllRegions:
 
     def test_returns_correct_counters_on_success(self) -> None:
         """fetch_all_regions returns created/updated/failed/skipped counts."""
-        region = RegionFactory.create()
-        assert region.centre is not None  # RegionFactory default has centre
+        region = MicroRegionFactory.create()
+        assert region.centre is not None  # MicroRegionFactory default has centre
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
 
@@ -300,7 +300,7 @@ class TestFetchAllRegions:
 
     def test_skips_region_without_centre(self) -> None:
         """A region with centre=None is counted as skipped, not failed."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         region.centre = None
         region.save()
         target = datetime.date(2026, 5, 1)
@@ -317,7 +317,7 @@ class TestFetchAllRegions:
 
     def test_http_error_counts_as_failed(self) -> None:
         """A per-region HTTP failure is counted as failed; other regions continue."""
-        RegionFactory.create()
+        MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = requests.HTTPError("500")
@@ -333,7 +333,7 @@ class TestFetchAllRegions:
 
     def test_existing_snapshot_counted_as_updated(self) -> None:
         """When a snapshot already exists for (region, date), it is counted as updated."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         WeatherSnapshotFactory.create(region=region, valid_for_date=target)
         api_data = _make_forecast_response()
@@ -349,7 +349,7 @@ class TestFetchAllRegions:
 
     def test_commit_false_does_not_write(self) -> None:
         """commit=False returns zero created/updated and writes nothing."""
-        RegionFactory.create()
+        MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
 
@@ -375,7 +375,7 @@ class TestFetchArchiveForRegion:
 
     def test_commit_true_creates_snapshot_per_day(self) -> None:
         """One WeatherSnapshot is created for each day in the range."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         start = datetime.date(2026, 4, 28)
         end = datetime.date(2026, 4, 30)
         api_data = _make_archive_response(
@@ -412,7 +412,7 @@ class TestFetchArchiveForRegion:
 
     def test_commit_false_returns_empty_list_and_no_db(self) -> None:
         """commit=False makes the API call but writes nothing and returns []."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         start = datetime.date(2026, 4, 28)
         end = datetime.date(2026, 4, 30)
         api_data = _make_archive_response(
@@ -433,7 +433,7 @@ class TestFetchArchiveForRegion:
 
     def test_http_error_raises(self) -> None:
         """requests.HTTPError is propagated to the caller."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = requests.HTTPError("503")
 
@@ -451,7 +451,7 @@ class TestFetchArchiveForRegion:
 
     def test_upserts_existing_snapshots(self) -> None:
         """Existing snapshots are updated rather than duplicated."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 4, 28)
         WeatherSnapshotFactory.create(
             region=region, valid_for_date=target, weather_code=99
@@ -478,7 +478,7 @@ class TestFetchArchiveForRegion:
 
     def test_correct_date_range_params_passed_to_api(self) -> None:
         """start_date and end_date are forwarded to Open-Meteo as ISO strings."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         start = datetime.date(2026, 4, 1)
         end = datetime.date(2026, 4, 30)
         api_data = _make_archive_response(
@@ -508,8 +508,8 @@ class TestBackfillAllRegions:
 
     def test_creates_snapshots_for_all_regions(self) -> None:
         """Creates one snapshot per (region × day) for all regions with centres."""
-        RegionFactory.create()
-        RegionFactory.create()
+        MicroRegionFactory.create()
+        MicroRegionFactory.create()
         start = datetime.date(2026, 4, 28)
         end = datetime.date(2026, 4, 29)
         api_data = _make_archive_response(
@@ -534,7 +534,7 @@ class TestBackfillAllRegions:
 
     def test_skips_region_without_centre(self) -> None:
         """Regions with centre=None are counted as skipped."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         region.centre = None
         region.save()
         start = datetime.date(2026, 4, 28)
@@ -552,7 +552,7 @@ class TestBackfillAllRegions:
 
     def test_http_failure_counted_as_failed(self) -> None:
         """A per-region HTTP error is counted as failed; others continue."""
-        RegionFactory.create()
+        MicroRegionFactory.create()
         start = datetime.date(2026, 4, 28)
         end = datetime.date(2026, 4, 28)
         mock_response = MagicMock()
@@ -569,7 +569,7 @@ class TestBackfillAllRegions:
 
     def test_commit_false_writes_nothing(self) -> None:
         """commit=False returns all zeros for created/updated and nothing is written."""
-        RegionFactory.create()
+        MicroRegionFactory.create()
         start = datetime.date(2026, 4, 28)
         end = datetime.date(2026, 4, 28)
         api_data = _make_archive_response(
@@ -591,7 +591,7 @@ class TestBackfillAllRegions:
 
     def test_existing_snapshots_counted_as_updated(self) -> None:
         """Snapshots that already exist are counted as updated, not created."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 4, 28)
         WeatherSnapshotFactory.create(region=region, valid_for_date=target)
         start = end = target
@@ -614,9 +614,9 @@ class TestBackfillAllRegions:
     def test_delay_sleeps_between_regions(self) -> None:
         """``delay > 0`` sleeps between regions but never after the last one."""
         # Three regions with centres → two between-region gaps.
-        RegionFactory.create()
-        RegionFactory.create()
-        RegionFactory.create()
+        MicroRegionFactory.create()
+        MicroRegionFactory.create()
+        MicroRegionFactory.create()
         target = datetime.date(2026, 4, 28)
         api_data = _make_archive_response(
             dates=["2026-04-28"],
@@ -641,8 +641,8 @@ class TestBackfillAllRegions:
 
     def test_zero_delay_does_not_sleep(self) -> None:
         """``delay=0`` (the service default) skips ``time.sleep`` entirely."""
-        RegionFactory.create()
-        RegionFactory.create()
+        MicroRegionFactory.create()
+        MicroRegionFactory.create()
         target = datetime.date(2026, 4, 28)
         api_data = _make_archive_response(
             dates=["2026-04-28"],

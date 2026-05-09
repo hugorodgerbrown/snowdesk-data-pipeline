@@ -40,7 +40,7 @@ from subscriptions.services.token import (
     generate_unsubscribe_token,
 )
 from tests.factories import (
-    RegionFactory,
+    MicroRegionFactory,
     ResortFactory,
     SubscriberFactory,
     SubscriptionFactory,
@@ -84,7 +84,7 @@ class TestSubscribePartial:
     def test_non_htmx_post_returns_400(self):
         """Non-HTMX POST is rejected with 400."""
         client = Client()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         response = client.post(
             reverse("subscriptions:subscribe"),
             data={"email": "alice@example.com", "region_id": region.region_id},
@@ -123,7 +123,7 @@ class TestSubscribePartial:
     def test_invalid_email_returns_form_with_errors(self):
         """Invalid email address → form re-rendered with validation errors."""
         client = Client()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         response = client.post(
             reverse("subscriptions:subscribe"),
             data={"email": "not-an-email", "region_id": region.region_id},
@@ -153,7 +153,7 @@ class TestSubscribePartial:
     def test_case_a_new_subscriber_creates_pending_record(self):
         """Case A: new email → Subscriber created with status=pending."""
         client = Client()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         response = client.post(
             reverse("subscriptions:subscribe"),
             data={"email": "newuser@example.com", "region_id": region.region_id},
@@ -166,7 +166,7 @@ class TestSubscribePartial:
     def test_case_a_new_subscriber_creates_subscription_row(self):
         """Case A: new email + region → Subscription row created."""
         client = Client()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         client.post(
             reverse("subscriptions:subscribe"),
             data={"email": "newwithregion@example.com", "region_id": region.region_id},
@@ -178,7 +178,7 @@ class TestSubscribePartial:
     def test_case_a_new_subscriber_sends_account_access_email(self):
         """Case A: new email → account-access email sent (subject contains 'Snowdesk')."""
         client = Client()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         client.post(
             reverse("subscriptions:subscribe"),
             data={"email": "newuser@example.com", "region_id": region.region_id},
@@ -191,7 +191,7 @@ class TestSubscribePartial:
     def test_case_a_response_contains_check_your_inbox(self):
         """Case A: response fragment contains 'Check your inbox'."""
         client = Client()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         response = client.post(
             reverse("subscriptions:subscribe"),
             data={"email": "newuser@example.com", "region_id": region.region_id},
@@ -206,7 +206,7 @@ class TestSubscribePartial:
         subscriber = SubscriberFactory.create(
             email="pending@example.com", status=Subscriber.Status.PENDING
         )
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         client = Client()
         client.post(
             reverse("subscriptions:subscribe"),
@@ -222,7 +222,7 @@ class TestSubscribePartial:
         SubscriberFactory.create(
             email="pending@example.com", status=Subscriber.Status.PENDING
         )
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         client = Client()
         client.post(
             reverse("subscriptions:subscribe"),
@@ -237,7 +237,7 @@ class TestSubscribePartial:
         SubscriberFactory.create(
             email="pending@example.com", status=Subscriber.Status.PENDING
         )
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         client = Client()
         response = client.post(
             reverse("subscriptions:subscribe"),
@@ -253,7 +253,7 @@ class TestSubscribePartial:
         subscriber = SubscriberFactory.create(
             email="active@example.com", status=Subscriber.Status.ACTIVE
         )
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         client = Client()
         client.post(
             reverse("subscriptions:subscribe"),
@@ -269,7 +269,7 @@ class TestSubscribePartial:
         SubscriberFactory.create(
             email="active@example.com", status=Subscriber.Status.ACTIVE
         )
-        region = RegionFactory.create(name="Davos Region")
+        region = MicroRegionFactory.create(name="Davos Region")
         client = Client()
         client.post(
             reverse("subscriptions:subscribe"),
@@ -284,7 +284,7 @@ class TestSubscribePartial:
         SubscriberFactory.create(
             email="active@example.com", status=Subscriber.Status.ACTIVE
         )
-        region = RegionFactory.create(name="Davos Region")
+        region = MicroRegionFactory.create(name="Davos Region")
         client = Client()
         response = client.post(
             reverse("subscriptions:subscribe"),
@@ -301,7 +301,7 @@ class TestSubscribePartial:
         subscriber = SubscriberFactory.create(
             email="active2@example.com", status=Subscriber.Status.ACTIVE
         )
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         client = Client()
         client.post(
@@ -319,7 +319,7 @@ class TestSubscribePartial:
         subscriber = SubscriberFactory.create(
             email="active2@example.com", status=Subscriber.Status.ACTIVE
         )
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         client = Client()
         client.post(
@@ -334,7 +334,7 @@ class TestSubscribePartial:
         subscriber = SubscriberFactory.create(
             email="active2@example.com", status=Subscriber.Status.ACTIVE
         )
-        region = RegionFactory.create(name="Zermatt Region")
+        region = MicroRegionFactory.create(name="Zermatt Region")
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         client = Client()
         response = client.post(
@@ -623,7 +623,7 @@ class TestManageViewAuthenticated:
     def test_get_shows_subscribed_region_name(self):
         """Authenticated GET shows the subscribed region's name."""
         subscriber = SubscriberFactory.create()
-        region = RegionFactory.create(name="Zermatt Region")
+        region = MicroRegionFactory.create(name="Zermatt Region")
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         client = _make_session_client(subscriber)
         response = client.get(reverse("subscriptions:manage"))
@@ -633,7 +633,7 @@ class TestManageViewAuthenticated:
     def test_get_shows_subscribed_region_id(self):
         """Authenticated GET shows the subscribed region's region_id."""
         subscriber = SubscriberFactory.create()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         client = _make_session_client(subscriber)
         response = client.get(reverse("subscriptions:manage"))
@@ -643,7 +643,7 @@ class TestManageViewAuthenticated:
     def test_get_shows_resort_names_for_subscribed_region(self):
         """Authenticated GET lists resort names for subscribed regions."""
         subscriber = SubscriberFactory.create()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         ResortFactory.create(region=region, name="Verbier")
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         client = _make_session_client(subscriber)
@@ -653,8 +653,8 @@ class TestManageViewAuthenticated:
     def test_get_does_not_show_non_subscribed_region(self):
         """Non-subscribed regions must not appear in the manage page."""
         subscriber = SubscriberFactory.create()
-        subscribed_region = RegionFactory.create(name="Subscribed Region")
-        RegionFactory.create(name="Other Region Zephyr")
+        subscribed_region = MicroRegionFactory.create(name="Subscribed Region")
+        MicroRegionFactory.create(name="Other Region Zephyr")
         SubscriptionFactory.create(subscriber=subscriber, region=subscribed_region)
         client = _make_session_client(subscriber)
         response = client.get(reverse("subscriptions:manage"))
@@ -663,7 +663,7 @@ class TestManageViewAuthenticated:
     def test_get_shows_welcome_banner_when_just_confirmed(self):
         """?just_confirmed=1 querystring renders the welcome banner."""
         subscriber = SubscriberFactory.create()
-        RegionFactory.create()
+        MicroRegionFactory.create()
         client = _make_session_client(subscriber)
         response = client.get(reverse("subscriptions:manage") + "?just_confirmed=1")
         assert response.status_code == 200
@@ -708,8 +708,8 @@ class TestRemoveRegion:
     def test_removes_subscription_row(self):
         """Session-authenticated POST removes the Subscription row."""
         subscriber = SubscriberFactory.create()
-        region1 = RegionFactory.create()
-        region2 = RegionFactory.create()
+        region1 = MicroRegionFactory.create()
+        region2 = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region1)
         SubscriptionFactory.create(subscriber=subscriber, region=region2)
         client = _make_session_client(subscriber)
@@ -731,7 +731,7 @@ class TestRemoveRegion:
     def test_last_region_hard_deletes_subscriber(self):
         """Removing the last region hard-deletes the subscriber."""
         subscriber = SubscriberFactory.create()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         sub_pk = subscriber.pk
         client = _make_session_client(subscriber)
@@ -746,7 +746,7 @@ class TestRemoveRegion:
     def test_last_region_responds_with_hx_redirect(self):
         """Removing the last region responds with HX-Redirect header."""
         subscriber = SubscriberFactory.create()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         client = _make_session_client(subscriber)
         response = client.post(
@@ -760,7 +760,7 @@ class TestRemoveRegion:
 
     def test_no_session_returns_403(self):
         """Unauthenticated POST returns 403."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         client = Client()
         response = client.post(
             reverse(
@@ -773,7 +773,7 @@ class TestRemoveRegion:
     def test_non_htmx_returns_400(self):
         """Non-HTMX POST returns 400."""
         subscriber = SubscriberFactory.create()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         client = _make_session_client(subscriber)
         response = client.post(
@@ -810,7 +810,7 @@ class TestDeleteAccount:
     def test_hard_deletes_subscriber(self):
         """Session-authenticated POST hard-deletes the subscriber."""
         subscriber = SubscriberFactory.create()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         sub_pk = subscriber.pk
         client = _make_session_client(subscriber)
@@ -820,7 +820,7 @@ class TestDeleteAccount:
     def test_cascades_subscription_rows(self):
         """Subscriber deletion cascades to Subscription rows."""
         subscriber = SubscriberFactory.create()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         sub = SubscriptionFactory.create(subscriber=subscriber, region=region)
         sub_pk = sub.pk
         client = _make_session_client(subscriber)
@@ -881,7 +881,7 @@ class TestUnsubscribeView:
     def test_get_valid_token_renders_confirmation(self):
         """Valid token GET renders the unsubscribe confirmation page."""
         subscriber = SubscriberFactory.create(email="unsub@example.com")
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         token = generate_unsubscribe_token("unsub@example.com", region.region_id)
         client = Client()
@@ -894,7 +894,7 @@ class TestUnsubscribeView:
     def test_post_valid_token_removes_subscription(self):
         """Valid token POST deletes the matching Subscription row."""
         subscriber = SubscriberFactory.create(email="unsub2@example.com")
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         token = generate_unsubscribe_token("unsub2@example.com", region.region_id)
         client = Client()
@@ -909,7 +909,7 @@ class TestUnsubscribeView:
     def test_post_last_subscription_hard_deletes_subscriber(self):
         """Removing last subscription hard-deletes the Subscriber."""
         subscriber = SubscriberFactory.create(email="lastregion@example.com")
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         sub_pk = subscriber.pk
         token = generate_unsubscribe_token("lastregion@example.com", region.region_id)
@@ -920,8 +920,8 @@ class TestUnsubscribeView:
     def test_post_not_last_subscription_keeps_subscriber(self):
         """Removing one of multiple subscriptions keeps the subscriber."""
         subscriber = SubscriberFactory.create(email="keep@example.com")
-        region1 = RegionFactory.create()
-        region2 = RegionFactory.create()
+        region1 = MicroRegionFactory.create()
+        region2 = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region1)
         SubscriptionFactory.create(subscriber=subscriber, region=region2)
         token = generate_unsubscribe_token("keep@example.com", region1.region_id)
@@ -935,7 +935,7 @@ class TestUnsubscribeView:
     def test_post_idempotent_when_already_deleted(self):
         """Re-submitting after subscriber deletion renders done page without error."""
         subscriber = SubscriberFactory.create(email="gone@example.com")
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         token = generate_unsubscribe_token("gone@example.com", region.region_id)
         subscriber.delete()
@@ -957,7 +957,7 @@ class TestUnsubscribeView:
     def test_unsubscribe_token_does_not_expire(self):
         """Unsubscribe tokens must remain valid regardless of age."""
         subscriber = SubscriberFactory.create(email="old@example.com")
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
 
         with freeze_time("2020-01-01T00:00:00Z"):
@@ -973,7 +973,7 @@ class TestUnsubscribeView:
     def test_rate_limit_returns_429(self):
         """Exceeding rate limit returns 429."""
         rf = RequestFactory()
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         token = generate_unsubscribe_token("rl@example.com", region.region_id)
         request = rf.get(reverse("subscriptions:unsubscribe", kwargs={"token": token}))
         request.limited = True  # noqa: B010
@@ -1040,7 +1040,7 @@ class TestEmailNormalisation:
 
     def test_uppercase_and_lowercase_same_address_creates_one_subscriber(self):
         """Two POSTs for the same address in different case create one Subscriber."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         self._subscribe("User@Example.com", region.region_id)
         self._subscribe("user@example.com", region.region_id)
         assert Subscriber.objects.filter(email="user@example.com").count() == 1
@@ -1048,7 +1048,7 @@ class TestEmailNormalisation:
 
     def test_mixed_case_address_is_stored_lowercase(self):
         """The stored email address is the lowercase-normalised form."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         self._subscribe("ALICE@EXAMPLE.COM", region.region_id)
         assert Subscriber.objects.filter(email="alice@example.com").exists()
 

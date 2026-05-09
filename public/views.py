@@ -1036,7 +1036,10 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
         RegionBulletin.objects.filter(bulletin=bulletin)
         .select_related("region", "region__subregion")
         .prefetch_related(
-            Prefetch("region__neighbours", queryset=MicroRegion.objects.order_by("name")),
+            Prefetch(
+                "region__neighbours",
+                queryset=MicroRegion.objects.order_by("name"),
+            ),
         )
         .first()
     )

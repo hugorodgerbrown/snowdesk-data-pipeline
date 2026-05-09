@@ -32,8 +32,8 @@ from bulletins.services.data_fetcher import (
     upsert_bulletin,
 )
 from bulletins.services.render_model import RENDER_MODEL_VERSION, RenderModelBuildError
-from regions.models import Region
-from tests.factories import PipelineRunFactory, RegionFactory
+from regions.models import MicroRegion
+from tests.factories import MicroRegionFactory, PipelineRunFactory
 
 
 def _make_raw_bulletin(
@@ -203,7 +203,7 @@ class TestGetRegion:
 
     def test_returns_seeded_region(self):
         """Returns the Region when it exists."""
-        seeded = RegionFactory.create(region_id="CH-4115", name="Martigny-Verbier")
+        seeded = MicroRegionFactory.create(region_id="CH-4115", name="Martigny-Verbier")
         found = _get_region("CH-4115")
         assert found.pk == seeded.pk
 
@@ -218,16 +218,16 @@ class TestGetRegion:
         try:
             _get_region("CH-0000")
         except UnknownRegionError as exc:
-            assert isinstance(exc.__cause__, Region.DoesNotExist)
+            assert isinstance(exc.__cause__, MicroRegion.DoesNotExist)
         else:
             pytest.fail("UnknownRegionError was not raised")
 
     def test_is_read_only(self):
         """_get_region does not create any Region rows."""
-        assert Region.objects.count() == 0
+        assert MicroRegion.objects.count() == 0
         with pytest.raises(UnknownRegionError):
             _get_region("CH-4115")
-        assert Region.objects.count() == 0
+        assert MicroRegion.objects.count() == 0
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +244,7 @@ def _seed_test_regions(db: Any) -> None:
     auto-creation), so the test must pre-create them.
     """
     for rid in ("CH-4115", "CH-7111", "CH-9999"):
-        RegionFactory.create(region_id=rid, name=f"Test {rid}")
+        MicroRegionFactory.create(region_id=rid, name=f"Test {rid}")
 
 
 @pytest.mark.django_db
@@ -396,10 +396,10 @@ class TestUpsertBulletin:
         raw = json.loads(fixture_path.read_text())["properties"]
 
         # Seed the regions referenced by this real bulletin so _get_region
-        # finds them. RegionFactory generates a unique region_id per call by
+        # finds them. MicroRegionFactory generates a unique region_id per call by
         # default, so we override explicitly per region.
         for region in raw["regions"]:
-            RegionFactory.create(
+            MicroRegionFactory.create(
                 region_id=region["regionID"],
                 name=region["name"],
             )

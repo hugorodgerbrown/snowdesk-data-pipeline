@@ -28,9 +28,9 @@ from public.views import (
 )
 from tests.factories import (
     BulletinFactory,
+    MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
-    RegionFactory,
     WeatherSnapshotFactory,
 )
 
@@ -46,7 +46,7 @@ def _clear_cache():
 @pytest.fixture()
 def region():
     """Return a test Region."""
-    return RegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
+    return MicroRegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
 def _make_pm_bulletin(region, day, **kwargs):
@@ -639,9 +639,9 @@ class TestAdjoiningRegions:
         self, client: Client, region
     ) -> None:
         """``adjoining_regions`` is sorted by name regardless of insertion order."""
-        zoulou = RegionFactory.create(region_id="CH-9991", name="Zoulou", slug="zoulou")
-        alpha = RegionFactory.create(region_id="CH-9992", name="Alpha", slug="alpha")
-        mike = RegionFactory.create(region_id="CH-9993", name="Mike", slug="mike")
+        zoulou = MicroRegionFactory.create(region_id="CH-9991", name="Zoulou", slug="zoulou")
+        alpha = MicroRegionFactory.create(region_id="CH-9992", name="Alpha", slug="alpha")
+        mike = MicroRegionFactory.create(region_id="CH-9993", name="Mike", slug="mike")
         # Insert in non-alphabetical order to prove the view sorts.
         region.neighbours.set([zoulou, mike, alpha])
 
@@ -664,7 +664,7 @@ class TestAdjoiningRegions:
         self, client: Client, region
     ) -> None:
         """The Adjoining Regions section emits a link per neighbour."""
-        neighbour = RegionFactory.create(
+        neighbour = MicroRegionFactory.create(
             region_id="CH-9994", name="Bordering", slug="bordering"
         )
         region.neighbours.add(neighbour)
@@ -718,7 +718,7 @@ class TestAdjoiningRegions:
         self, client: Client, region
     ) -> None:
         """Even when there is no bulletin for the date, neighbours still render."""
-        neighbour = RegionFactory.create(
+        neighbour = MicroRegionFactory.create(
             region_id="CH-9995", name="Border", slug="border"
         )
         region.neighbours.add(neighbour)
@@ -1075,7 +1075,7 @@ class TestWeatherHeader:
         self, client: Client, region
     ) -> None:
         """A snapshot for a different region must not surface on this page."""
-        other = RegionFactory.create(region_id="CH-9999", name="Other", slug="other")
+        other = MicroRegionFactory.create(region_id="CH-9999", name="Other", slug="other")
         WeatherSnapshotFactory.create(
             region=other,
             valid_for_date=date(2026, 3, 15),
@@ -1142,7 +1142,7 @@ class TestCanonicalUrl:
         # Create a region whose name slug ("valais") differs from the
         # auto-generated ``Region.slug`` (``ch-4115``); a request that
         # uses any non-canonical slug must redirect to the name slug.
-        RegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
+        MicroRegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(

@@ -26,7 +26,7 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from waffle.testutils import override_flag
 
-from tests.factories import EawsSubRegionFactory, RegionFactory, ResortFactory
+from tests.factories import MicroRegionFactory, ResortFactory, SubRegionFactory
 
 # ---------------------------------------------------------------------------
 # resorts_geojson
@@ -106,9 +106,9 @@ class TestEditResortsQueue:
         groups L1s together because the L1 prefix is a prefix of the
         full region_id, and ``name`` breaks ties within a region.
         """
-        ch1 = RegionFactory.create(region_id="CH-1100")
-        ch4a = RegionFactory.create(region_id="CH-4115")
-        ch4b = RegionFactory.create(region_id="CH-4116")
+        ch1 = MicroRegionFactory.create(region_id="CH-1100")
+        ch4a = MicroRegionFactory.create(region_id="CH-4115")
+        ch4b = MicroRegionFactory.create(region_id="CH-4116")
         # Out-of-alphabetical-order names within and across regions —
         # the server's sort is what we're asserting on.
         ResortFactory.create(name="zzz", region=ch1)
@@ -137,12 +137,12 @@ class TestEditResortsQueue:
         has ``django_get_or_create=("prefix",)`` so reusing CH-41
         etc. would return the seeded row and ignore our overrides).
         """
-        EawsSubRegionFactory.create(
+        SubRegionFactory.create(
             prefix="ZZ-11",
             name_en="Western Lower Alps",
             name_native="Bas-Alpes occidentales",
         )
-        EawsSubRegionFactory.create(
+        SubRegionFactory.create(
             prefix="ZZ-41",
             name_en="",  # SLF doesn't publish an English name for this one.
             name_native="Unteres Wallis",
@@ -185,7 +185,7 @@ class TestEditResortsQueue:
         Aigle (set, in CH-1111) showed blank lat/lon and zoomed to the
         wrong region because the lookup path lost the data.
         """
-        region = RegionFactory.create(region_id="CH-1111", name="Lower Chablais")
+        region = MicroRegionFactory.create(region_id="CH-1111", name="Lower Chablais")
         resort = ResortFactory.create(
             name="Aigle",
             region=region,
@@ -339,7 +339,7 @@ class TestEditResortSaveCoords:
         # Two adjacent square polygons inside the Swiss bbox; the resort
         # is FK'd to ``wrong_region`` but the saved pin falls inside
         # ``correct_region``.
-        wrong_region = RegionFactory.create(
+        wrong_region = MicroRegionFactory.create(
             region_id="CH-1113",
             boundary={
                 "type": "Polygon",
@@ -348,7 +348,7 @@ class TestEditResortSaveCoords:
                 ],
             },
         )
-        correct_region = RegionFactory.create(
+        correct_region = MicroRegionFactory.create(
             region_id="CH-1114",
             boundary={
                 "type": "Polygon",
@@ -376,7 +376,7 @@ class TestEditResortSaveCoords:
         region's polygon — the existing region must be preserved, and
         ``region`` must NOT be in the update_fields side effects.
         """
-        region = RegionFactory.create(
+        region = MicroRegionFactory.create(
             region_id="CH-1111",
             boundary={
                 "type": "Polygon",
@@ -399,7 +399,7 @@ class TestEditResortSaveCoords:
         every region polygon), the FK is left alone rather than nulled.
         """
         # The only region with a boundary doesn't contain the saved pin.
-        far_region = RegionFactory.create(
+        far_region = MicroRegionFactory.create(
             region_id="CH-9999",
             boundary={
                 "type": "Polygon",
@@ -414,7 +414,7 @@ class TestEditResortSaveCoords:
                 ],
             },
         )
-        original_region = RegionFactory.create(region_id="CH-1100")
+        original_region = MicroRegionFactory.create(region_id="CH-1100")
         resort = ResortFactory.create(name="Edge", region=original_region)
         client = Client()
         # Pin in the middle of Switzerland, well outside far_region.
@@ -536,7 +536,7 @@ class TestRegionForPoint:
         """Returns the region whose polygon contains the test point."""
         from public.api import _region_for_point
 
-        target = RegionFactory.create(
+        target = MicroRegionFactory.create(
             region_id="CH-A",
             boundary={
                 "type": "Polygon",
@@ -546,7 +546,7 @@ class TestRegionForPoint:
             },
         )
         # An adjacent region that does not contain the test point.
-        RegionFactory.create(
+        MicroRegionFactory.create(
             region_id="CH-B",
             boundary={
                 "type": "Polygon",
@@ -561,7 +561,7 @@ class TestRegionForPoint:
         """Returns ``None`` when the point falls in no coverage."""
         from public.api import _region_for_point
 
-        RegionFactory.create(
+        MicroRegionFactory.create(
             region_id="CH-X",
             boundary={
                 "type": "Polygon",
@@ -576,7 +576,7 @@ class TestRegionForPoint:
         """Regions with ``boundary=None`` are excluded from the lookup."""
         from public.api import _region_for_point
 
-        RegionFactory.create(region_id="CH-NOBOUND", boundary=None)
+        MicroRegionFactory.create(region_id="CH-NOBOUND", boundary=None)
         assert _region_for_point(lat=46.5, lon=7.5) is None
 
 

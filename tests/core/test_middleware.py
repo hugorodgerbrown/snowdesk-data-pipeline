@@ -10,7 +10,7 @@ from subscriptions.services.token import (
     generate_token,
     generate_unsubscribe_token,
 )
-from tests.factories import RegionFactory, SubscriberFactory, SubscriptionFactory
+from tests.factories import MicroRegionFactory, SubscriberFactory, SubscriptionFactory
 
 
 @pytest.mark.django_db
@@ -80,7 +80,7 @@ def test_account_view_sets_no_referrer() -> None:
 @pytest.mark.django_db
 def test_unsubscribe_view_get_sets_no_referrer() -> None:
     """unsubscribe_view GET overrides Referrer-Policy to no-referrer."""
-    region = RegionFactory.create()
+    region = MicroRegionFactory.create()
     subscriber = SubscriberFactory.create()
     SubscriptionFactory.create(subscriber=subscriber, region=region)
     token = generate_unsubscribe_token(subscriber.email, region.region_id)
@@ -92,7 +92,7 @@ def test_unsubscribe_view_get_sets_no_referrer() -> None:
 @pytest.mark.django_db
 def test_view_override_takes_precedence_over_middleware_default() -> None:
     """A view-set no-referrer survives the middleware (not overwritten)."""
-    region = RegionFactory.create()
+    region = MicroRegionFactory.create()
     subscriber = SubscriberFactory.create()
     SubscriptionFactory.create(subscriber=subscriber, region=region)
     token = generate_unsubscribe_token(subscriber.email, region.region_id)

@@ -16,8 +16,8 @@ is probably wrong — fix it rather than relaxing the rule.
 ```
 config/          Django project: split settings (base/development/production), urls, wsgi
 core/            Shared abstractions (BaseModel; abstract, no concrete tables)
-pipeline/        Geographic reference data — Region / EawsMajorRegion /
-                 EawsSubRegion / Resort, plus HTTP-layer middleware, the
+pipeline/        Geographic reference data — MicroRegion / MajorRegion /
+                 SubRegion / Resort, plus HTTP-layer middleware, the
                  dev-only SLF mirror endpoint, and fixture/monitoring commands
                  (dump_resorts_fixture, monitor_query_counts, refresh_eaws_fixtures)
 bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,

@@ -27,7 +27,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from tests.factories import BulletinFactory, RegionBulletinFactory, RegionFactory
+from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -75,7 +75,7 @@ def _make_today_bulletin(region) -> object:
 @pytest.fixture()
 def region(db):
     """A test Region instance."""
-    return RegionFactory.create(
+    return MicroRegionFactory.create(
         region_id="CH-SLF1",
         name="Test Valley",
         slug="ch-slf1",

@@ -16,7 +16,7 @@ import pytest
 from django.core.management import call_command
 
 from regions.models import Resort
-from tests.factories import RegionFactory, ResortFactory
+from tests.factories import MicroRegionFactory, ResortFactory
 
 FIXTURE_PATH = Path("regions/fixtures/resorts.json")
 
@@ -47,7 +47,7 @@ class TestDumpResortsFixture:
         # not want to leave per-test data in a tracked fixture.
         original = FIXTURE_PATH.read_text(encoding="utf-8")
         try:
-            region = RegionFactory.create(region_id="CH-9999")
+            region = MicroRegionFactory.create(region_id="CH-9999")
             ResortFactory.create(
                 name="CommitTest",
                 region=region,
@@ -80,7 +80,7 @@ class TestDumpResortsFixture:
         """Dump → loaddata produces the same Resort set."""
         original = FIXTURE_PATH.read_text(encoding="utf-8")
         try:
-            region = RegionFactory.create(region_id="CH-9999")
+            region = MicroRegionFactory.create(region_id="CH-9999")
             ResortFactory.create(
                 name="RoundTrip",
                 region=region,
