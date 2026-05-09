@@ -329,7 +329,7 @@ class RegionBulletinQuerySet(models.QuerySet):
 
 class RegionBulletin(BaseModel):
     """
-    Through table linking a Bulletin to a ``regions.Region``.
+    Through table linking a Bulletin to a ``regions.MicroRegion``.
 
     Created automatically when a bulletin is processed. Stores the
     region name as it appeared in that specific bulletin (region names

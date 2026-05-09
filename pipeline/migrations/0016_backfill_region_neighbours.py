@@ -1,14 +1,15 @@
 """
-0016_backfill_region_neighbours — Populate Region.neighbours from regions.json.
+0016_backfill_region_neighbours — Populate Region.neighbours from eaws.json.
 
 Data migration only. Reads the ``neighbours`` natural-key list emitted on
-each entry of ``regions/fixtures/regions.json`` (post-SNOW-140; was at
-``pipeline/fixtures/regions.json`` when this migration was first written;
-see ``scripts/build_regions_fixture.py``) and writes the symmetric M2M
-for every existing Region row.
+each entry of ``regions/fixtures/eaws.json`` (post-SNOW-140; was at
+``pipeline/fixtures/regions.json`` when this migration was first written,
+then moved to ``regions/fixtures/regions.json``, and now consolidated at
+``regions/fixtures/eaws.json``; see ``scripts/build_regions_fixture.py``)
+and writes the symmetric M2M for every existing Region row.
 
 The preceding schema migration (0015) adds the M2M field but leaves the
-through table empty. On a fresh database, ``loaddata regions`` covers
+through table empty. On a fresh database, ``loaddata eaws`` covers
 neighbours via Django's natural-key M2M serialisation; on an already-
 seeded production database, ``loaddata`` would fail on the
 ``region_id`` unique constraint, so this migration takes the same data
