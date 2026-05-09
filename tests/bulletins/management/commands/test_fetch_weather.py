@@ -6,18 +6,26 @@ Covers:
   - --date YYYY-MM-DD overrides the default.
   - Read-only by default (commit=False forwarded to service).
   - --commit forwards commit=True to the service.
-  - Banner content (READ-ONLY flag, date, region count).
+  - Banner content (READ-ONLY flag, date, region count, SOURCE flag, STASH flag).
   - Raises CommandError with non-zero exit when failed > 0.
   - Success output when commit=True.
+  - --source live: base_url=None forwarded.
+  - --source local-mirror: base_url from settings forwarded; CommandError when
+    setting is missing.
+  - --stash: writes records to the archive; DB unchanged when commit=False.
 """
 
 from datetime import date
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.test import override_settings
 
+from bulletins.services.openmeteo_archive import read_archive
 from tests.factories import MicroRegionFactory
 
 PATCH_TARGET = "bulletins.management.commands.fetch_weather.fetch_all_regions"
@@ -209,3 +217,155 @@ class TestFetchWeatherCommand:
 
         out = capsys.readouterr().out
         assert "--commit" in out
+
+    # ------------------------------------------------------------------
+    # --source flag
+    # ------------------------------------------------------------------
+
+    @patch(PATCH_TARGET)
+    def test_source_live_passes_none_base_url(self, mock_fetch: MagicMock) -> None:
+        """--source live passes base_url=None to fetch_all_regions."""
+        mock_fetch.return_value = _make_counts()
+
+        call_command("fetch_weather", source="live")
+
+        assert mock_fetch.call_args[1]["base_url"] is None
+
+    @patch(PATCH_TARGET)
+    def test_source_local_mirror_passes_configured_url(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """--source local-mirror passes WEATHER_API_LOCAL_MIRROR_BASE_URL as base_url."""
+        mock_fetch.return_value = _make_counts()
+        mirror_url = "http://localhost:8000/dev/openmeteo-mirror/v1"
+
+        with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL=mirror_url):
+            call_command("fetch_weather", source="local-mirror")
+
+        assert mock_fetch.call_args[1]["base_url"] == mirror_url
+
+    @patch(PATCH_TARGET)
+    def test_source_local_mirror_raises_when_setting_missing(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """--source local-mirror raises CommandError when the setting is not configured."""
+        with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL=None):
+            with pytest.raises(CommandError, match="WEATHER_API_LOCAL_MIRROR_BASE_URL"):
+                call_command("fetch_weather", source="local-mirror")
+
+        mock_fetch.assert_not_called()
+
+    @patch(PATCH_TARGET)
+    def test_source_local_mirror_shown_in_banner(
+        self,
+        mock_fetch: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Banner includes SOURCE=LOCAL-MIRROR when --source local-mirror is passed."""
+        mock_fetch.return_value = _make_counts()
+        mirror_url = "http://localhost:8000/dev/openmeteo-mirror/v1"
+
+        with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL=mirror_url):
+            call_command("fetch_weather", source="local-mirror")
+
+        out = capsys.readouterr().out
+        assert "LOCAL-MIRROR" in out
+
+    # ------------------------------------------------------------------
+    # --stash flag
+    # ------------------------------------------------------------------
+
+    @patch(PATCH_TARGET)
+    def test_stash_writes_records_to_archive(
+        self, mock_fetch: MagicMock, tmp_path: Path
+    ) -> None:
+        """--stash causes on_fetched records to be merged into the archive."""
+        region = MicroRegionFactory.create()
+        archive_path = tmp_path / "om_archive.ndjson"
+        # Simulate fetch_all_regions calling on_fetched once per record.
+        captured_records: list[dict[str, Any]] = []
+
+        def fake_fetch_all_regions(
+            target_date: date,
+            *,
+            commit: bool,
+            base_url: Any,
+            on_fetched: Any,
+        ) -> dict[str, int]:
+            if on_fetched is not None:
+                on_fetched(
+                    {
+                        "region_id": region.region_id,
+                        "date": "2026-05-01",
+                        "weather_code": 3,
+                        "sunrise": "2026-05-01T05:32+02:00",
+                        "sunset": "2026-05-01T20:14+02:00",
+                        "captured_at": "2026-05-09T12:00:00Z",
+                    }
+                )
+            return _make_counts()
+
+        mock_fetch.side_effect = fake_fetch_all_regions
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            call_command("fetch_weather", stash=True)
+
+        records = list(read_archive(archive_path))
+        assert len(records) == 1
+        assert records[0]["region_id"] == region.region_id
+        assert records[0]["date"] == "2026-05-01"
+
+    @patch(PATCH_TARGET)
+    def test_stash_without_commit_leaves_db_unchanged(
+        self, mock_fetch: MagicMock, tmp_path: Path
+    ) -> None:
+        """--stash without --commit writes the archive but not the database."""
+        archive_path = tmp_path / "om_archive.ndjson"
+
+        def fake_fetch_all_regions(
+            target_date: date,
+            *,
+            commit: bool,
+            base_url: Any,
+            on_fetched: Any,
+        ) -> dict[str, int]:
+            if on_fetched is not None:
+                on_fetched(
+                    {
+                        "region_id": "CH-TEST",
+                        "date": "2026-05-01",
+                        "weather_code": 1,
+                        "sunrise": "2026-05-01T05:32+02:00",
+                        "sunset": "2026-05-01T20:14+02:00",
+                        "captured_at": "2026-05-09T12:00:00Z",
+                    }
+                )
+            return _make_counts()
+
+        mock_fetch.side_effect = fake_fetch_all_regions
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            call_command("fetch_weather", stash=True, commit=False)
+
+        # Archive was populated.
+        records = list(read_archive(archive_path))
+        assert len(records) == 1
+        # But commit=False was forwarded.
+        assert mock_fetch.call_args[1]["commit"] is False
+
+    @patch(PATCH_TARGET)
+    def test_stash_shown_in_banner(
+        self,
+        mock_fetch: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+    ) -> None:
+        """Banner includes STASH when --stash is passed."""
+        archive_path = tmp_path / "om_archive.ndjson"
+        mock_fetch.return_value = _make_counts()
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            call_command("fetch_weather", stash=True)
+
+        out = capsys.readouterr().out
+        assert "STASH" in out
