@@ -183,7 +183,9 @@ def openmeteo_mirror(
     payload = {
         "daily": {
             "time": requested_dates,
-            "weather_code": [archive_by_date[d]["weather_code"] for d in requested_dates],
+            "weather_code": [
+                archive_by_date[d]["weather_code"] for d in requested_dates
+            ],
             "sunrise": [archive_by_date[d]["sunrise"] for d in requested_dates],
             "sunset": [archive_by_date[d]["sunset"] for d in requested_dates],
         }

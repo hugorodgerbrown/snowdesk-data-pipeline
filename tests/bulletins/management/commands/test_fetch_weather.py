@@ -282,8 +282,6 @@ class TestFetchWeatherCommand:
         """--stash causes on_fetched records to be merged into the archive."""
         region = MicroRegionFactory.create()
         archive_path = tmp_path / "om_archive.ndjson"
-        # Simulate fetch_all_regions calling on_fetched once per record.
-        captured_records: list[dict[str, Any]] = []
 
         def fake_fetch_all_regions(
             target_date: date,

@@ -1,5 +1,5 @@
 """
-bulletins/services/openmeteo_archive.py — On-disk NDJSON archive of Open-Meteo weather data.
+bulletins/services/openmeteo_archive.py — On-disk NDJSON archive of Open-Meteo data.
 
 Reading and writing ``sample_data/openmeteo_archive.ndjson``: a single
 NDJSON file holding every weather record captured by ``fetch_weather
@@ -91,7 +91,10 @@ def merge(
     for record in new:
         key = (record["region_id"], record["date"])
         existing_record = by_key.get(key)
-        if existing_record is None or record["captured_at"] >= existing_record["captured_at"]:
+        if (
+            existing_record is None
+            or record["captured_at"] >= existing_record["captured_at"]
+        ):
             by_key[key] = record
     return sorted(by_key.values(), key=lambda r: (r["region_id"], r["date"]))
 

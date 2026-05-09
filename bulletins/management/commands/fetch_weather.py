@@ -134,6 +134,36 @@ class Command(BaseCommand):
         on_fetched = collected.append if stash else None
 
         region_count = MicroRegion.objects.count()
+        self._announce(target, region_count, commit=commit, stash=stash, source=source)
+
+        counts = fetch_all_regions(
+            target,
+            commit=commit,
+            base_url=base_url,
+            on_fetched=on_fetched,
+        )
+
+        if stash:
+            self._flush_stash(collected)
+
+        self._report_outcome(counts, target, commit=commit, verbosity=verbosity)
+
+        if counts["failed"] > 0:
+            raise CommandError(
+                f"fetch_weather completed with {counts['failed']} region failure(s) "
+                f"on {target}. Check logs for details."
+            )
+
+    def _announce(
+        self,
+        target: date,
+        region_count: int,
+        *,
+        commit: bool,
+        stash: bool,
+        source: str,
+    ) -> None:
+        """Write the start-of-run banner and matching log line."""
         flags: list[str] = []
         if not commit:
             flags.append("READ-ONLY")
@@ -157,16 +187,15 @@ class Command(BaseCommand):
             stash,
         )
 
-        counts = fetch_all_regions(
-            target,
-            commit=commit,
-            base_url=base_url,
-            on_fetched=on_fetched,
-        )
-
-        if stash:
-            self._flush_stash(collected)
-
+    def _report_outcome(
+        self,
+        counts: dict[str, int],
+        target: date,
+        *,
+        commit: bool,
+        verbosity: int,
+    ) -> None:
+        """Emit the post-run summary to stdout and the structured log."""
         if verbosity >= 1:
             if commit:
                 self.stdout.write(
@@ -195,12 +224,6 @@ class Command(BaseCommand):
             counts["failed"],
             commit,
         )
-
-        if counts["failed"] > 0:
-            raise CommandError(
-                f"fetch_weather completed with {counts['failed']} region failure(s) "
-                f"on {target}. Check logs for details."
-            )
 
     def _flush_stash(self, collected: list[dict[str, Any]]) -> None:
         """

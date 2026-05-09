@@ -11,17 +11,16 @@ does not swallow them.
 
 When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
 
-- ``/dev/slf-mirror/`` — SLF CAAML bulletin-list mirror, so
-  ``fetch_bulletins --source local-mirror`` can replay the on-disk archive
-  end-to-end. Routes have the ``dev`` namespace.
-- ``/dev/openmeteo-mirror/`` — Open-Meteo weather mirror, so
-  ``fetch_weather --source local-mirror`` and ``backfill_weather --source
-  local-mirror`` can replay ``sample_data/openmeteo_archive.ndjson``. Routes
-  have the ``dev_om`` namespace.
+- ``/dev/slf-mirror/`` — SLF CAAML bulletin-list mirror (``bulletins.dev_urls``,
+  namespace ``dev``), so ``fetch_bulletins --source local-mirror`` can replay
+  the on-disk archive end-to-end.
+- ``/dev/openmeteo-mirror/`` — Open-Meteo weather mirror
+  (``bulletins.dev_urls_openmeteo``, namespace ``dev_om``), so ``fetch_weather
+  --source local-mirror`` and ``backfill_weather --source local-mirror`` can
+  replay ``sample_data/openmeteo_archive.ndjson``.
 
-Both mirrors are in ``bulletins.dev_urls``; each mount gets its own
-namespace so ``reverse()`` calls are unambiguous. Production never imports
-``bulletins.dev_urls``.
+The two mirrors live in separate URL modules so Django's namespace-uniqueness
+check (``urls.W005``) is satisfied. Production never imports either module.
 """
 
 from django.conf import settings
@@ -41,15 +40,12 @@ urlpatterns = [
 
 # Dev-only routes must register BEFORE ``public.urls`` because that
 # include's generic ``<str:region_id>/`` pattern would otherwise swallow
-# the prefix. Production never imports ``bulletins.dev_urls``.
+# the prefix. Production never imports these modules.
 if settings.DEBUG:
     urlpatterns.extend(
         [
             path("dev/slf-mirror/", include("bulletins.dev_urls")),
-            path(
-                "dev/openmeteo-mirror/",
-                include(("bulletins.dev_urls", "dev_om")),
-            ),
+            path("dev/openmeteo-mirror/", include("bulletins.dev_urls_openmeteo")),
         ]
     )
 

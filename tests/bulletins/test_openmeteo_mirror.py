@@ -193,10 +193,11 @@ class TestOpenMeteoMirrorErrors:
 
     def test_no_records_for_region_returns_404(self, tmp_path: Path) -> None:
         """If the archive has no records for the matched region, return 404."""
-        region = RegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+        matched_region = RegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
         other_region_id = "CH-OTHER"
         archive_path = tmp_path / "om_archive.ndjson"
-        # Archive only has records for a different region.
+        # Archive only has records for a different region (not matched_region).
+        assert matched_region.region_id != other_region_id
         _make_archive(
             archive_path,
             [_om_record(other_region_id, "2026-05-01", weather_code=0)],

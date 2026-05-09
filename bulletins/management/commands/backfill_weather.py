@@ -184,6 +184,52 @@ class Command(BaseCommand):
         days = (end - start).days + 1
         region_count = MicroRegion.objects.count()
 
+        self._announce(
+            start,
+            end,
+            days,
+            region_count,
+            commit=commit,
+            delay=delay,
+            stash=stash,
+            source=source,
+        )
+
+        counts = backfill_all_regions(
+            start,
+            end,
+            commit=commit,
+            delay=delay,
+            base_url=base_url,
+            on_fetched=on_fetched,
+        )
+
+        if stash:
+            self._flush_stash(collected)
+
+        self._report_outcome(
+            counts, days, start, end, commit=commit, verbosity=verbosity
+        )
+
+        if counts["failed"] > 0:
+            raise CommandError(
+                f"backfill_weather completed with {counts['failed']} region failure(s) "
+                f"for range {start}–{end}. Check logs for details."
+            )
+
+    def _announce(
+        self,
+        start: date,
+        end: date,
+        days: int,
+        region_count: int,
+        *,
+        commit: bool,
+        delay: float,
+        stash: bool,
+        source: str,
+    ) -> None:
+        """Write the start-of-run banner and matching log line."""
         flags: list[str] = []
         if not commit:
             flags.append("READ-ONLY")
@@ -214,18 +260,17 @@ class Command(BaseCommand):
             stash,
         )
 
-        counts = backfill_all_regions(
-            start,
-            end,
-            commit=commit,
-            delay=delay,
-            base_url=base_url,
-            on_fetched=on_fetched,
-        )
-
-        if stash:
-            self._flush_stash(collected)
-
+    def _report_outcome(
+        self,
+        counts: dict[str, int],
+        days: int,
+        start: date,
+        end: date,
+        *,
+        commit: bool,
+        verbosity: int,
+    ) -> None:
+        """Emit the post-run summary to stdout and the structured log."""
         if verbosity >= 1:
             if commit:
                 self.stdout.write(
@@ -256,12 +301,6 @@ class Command(BaseCommand):
             counts["failed"],
             commit,
         )
-
-        if counts["failed"] > 0:
-            raise CommandError(
-                f"backfill_weather completed with {counts['failed']} region failure(s) "
-                f"for range {start}–{end}. Check logs for details."
-            )
 
     def _flush_stash(self, collected: list[dict[str, Any]]) -> None:
         """

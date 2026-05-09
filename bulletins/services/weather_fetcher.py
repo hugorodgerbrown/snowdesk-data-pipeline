@@ -23,7 +23,8 @@ Contains four fetch functions and a source resolver:
       Calls fetch_weather_for_region for every MicroRegion that has a centre
       coordinate; returns summary counters {created, updated, failed, skipped}.
 
-  fetch_archive_for_region(region, start_date, end_date, *, commit, base_url, on_fetched)
+  fetch_archive_for_region(region, start_date, end_date, *, commit, base_url,
+  on_fetched)
       Fetches historical weather for a date range from the Open-Meteo archive
       endpoint. Returns a list of ``(WeatherSnapshot, created)`` tuples when
       ``commit=True``, or an empty list when ``commit=False``. ``base_url``
@@ -98,7 +99,9 @@ def _resolve_weather_source(source: str) -> str | None:
     """
     if source == _SOURCE_LIVE:
         return None
-    mirror_url: str | None = getattr(settings, "WEATHER_API_LOCAL_MIRROR_BASE_URL", None)
+    mirror_url: str | None = getattr(
+        settings, "WEATHER_API_LOCAL_MIRROR_BASE_URL", None
+    )
     if not mirror_url:
         raise CommandError(
             "--source local-mirror requires settings.WEATHER_API_LOCAL_MIRROR_BASE_URL "

@@ -777,7 +777,9 @@ class TestOnFetchedCallback:
         api_data = _make_forecast_response(weather_code=7)
         captured: list[dict] = []
 
-        with patch("bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)):
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+        ):
             fetch_weather_for_region(
                 region,
                 target,
@@ -801,7 +803,9 @@ class TestOnFetchedCallback:
         api_data = _make_forecast_response()
 
         # Should not raise even without on_fetched.
-        with patch("bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)):
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+        ):
             fetch_weather_for_region(region, target, commit=False)
 
     def test_on_fetched_called_per_day_for_archive(self) -> None:
@@ -812,12 +816,22 @@ class TestOnFetchedCallback:
         api_data = _make_archive_response(
             dates=["2026-04-28", "2026-04-29", "2026-04-30"],
             weather_codes=[0, 1, 2],
-            sunrises=["2026-04-28T05:40+02:00", "2026-04-29T05:38+02:00", "2026-04-30T05:36+02:00"],
-            sunsets=["2026-04-28T20:30+02:00", "2026-04-29T20:32+02:00", "2026-04-30T20:34+02:00"],
+            sunrises=[
+                "2026-04-28T05:40+02:00",
+                "2026-04-29T05:38+02:00",
+                "2026-04-30T05:36+02:00",
+            ],
+            sunsets=[
+                "2026-04-28T20:30+02:00",
+                "2026-04-29T20:32+02:00",
+                "2026-04-30T20:34+02:00",
+            ],
         )
         captured: list[dict] = []
 
-        with patch("bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)):
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+        ):
             fetch_archive_for_region(
                 region,
                 start,
@@ -827,7 +841,11 @@ class TestOnFetchedCallback:
             )
 
         assert len(captured) == 3
-        assert [r["date"] for r in captured] == ["2026-04-28", "2026-04-29", "2026-04-30"]
+        assert [r["date"] for r in captured] == [
+            "2026-04-28",
+            "2026-04-29",
+            "2026-04-30",
+        ]
         assert [r["weather_code"] for r in captured] == [0, 1, 2]
         for record in captured:
             assert record["region_id"] == region.region_id
@@ -842,7 +860,9 @@ class TestOnFetchedCallback:
         api_data = _make_forecast_response()
         captured: list[dict] = []
 
-        with patch("bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)):
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+        ):
             result = fetch_weather_for_region(
                 region,
                 target,
@@ -871,7 +891,9 @@ class TestResolveWeatherSource:
         """'local-mirror' returns WEATHER_API_LOCAL_MIRROR_BASE_URL when configured."""
         from django.test import override_settings
 
-        with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL="http://localhost:8000/dev/openmeteo-mirror/v1"):
+        with override_settings(
+            WEATHER_API_LOCAL_MIRROR_BASE_URL="http://localhost:8000/dev/openmeteo-mirror/v1"
+        ):
             result = _resolve_weather_source("local-mirror")
 
         assert result == "http://localhost:8000/dev/openmeteo-mirror/v1"

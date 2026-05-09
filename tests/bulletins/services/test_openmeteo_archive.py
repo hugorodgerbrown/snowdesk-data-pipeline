@@ -78,8 +78,22 @@ class TestMerge:
         self,
     ) -> None:
         """When (region_id, date) matches, the later-captured_at record wins."""
-        existing = [_record("CH-1000", "2026-05-01", weather_code=0, captured_at="2026-05-09T10:00:00Z")]
-        new = [_record("CH-1000", "2026-05-01", weather_code=3, captured_at="2026-05-09T12:00:00Z")]
+        existing = [
+            _record(
+                "CH-1000",
+                "2026-05-01",
+                weather_code=0,
+                captured_at="2026-05-09T10:00:00Z",
+            )
+        ]
+        new = [
+            _record(
+                "CH-1000",
+                "2026-05-01",
+                weather_code=3,
+                captured_at="2026-05-09T12:00:00Z",
+            )
+        ]
 
         result = merge(existing, new)
 
@@ -88,8 +102,22 @@ class TestMerge:
 
     def test_existing_wins_if_newer_captured_at(self) -> None:
         """The existing record wins if its captured_at is strictly later than the new one."""
-        existing = [_record("CH-1000", "2026-05-01", weather_code=99, captured_at="2026-05-09T14:00:00Z")]
-        new = [_record("CH-1000", "2026-05-01", weather_code=0, captured_at="2026-05-09T12:00:00Z")]
+        existing = [
+            _record(
+                "CH-1000",
+                "2026-05-01",
+                weather_code=99,
+                captured_at="2026-05-09T14:00:00Z",
+            )
+        ]
+        new = [
+            _record(
+                "CH-1000",
+                "2026-05-01",
+                weather_code=0,
+                captured_at="2026-05-09T12:00:00Z",
+            )
+        ]
 
         result = merge(existing, new)
 
