@@ -21,6 +21,11 @@ class TestMicroRegionStr:
         region = MicroRegionFactory.create(region_id="CH-4115", name="Val Ferret")
         assert str(region) == "CH-4115 — Val Ferret"
 
+    def test_to_string(self) -> None:
+        """to_string() returns the canonical region_id + name form."""
+        region = MicroRegionFactory.create(region_id="CH-4115", name="Val Ferret")
+        assert region.to_string() == "CH-4115 Val Ferret"
+
 
 @pytest.mark.django_db
 class TestMicroRegionOrdering:

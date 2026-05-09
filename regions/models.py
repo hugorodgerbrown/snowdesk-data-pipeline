@@ -357,6 +357,10 @@ class MicroRegion(BaseModel):
         """Return a human-readable representation."""
         return f"{self.region_id} — {self.name}"
 
+    def to_string(self) -> str:
+        """Return a concise canonical string (region_id + name)."""
+        return f"{self.region_id} {self.name}"
+
     def natural_key(self) -> tuple[str]:
         """Return the natural key for serialization (region_id)."""
         return (self.region_id,)
