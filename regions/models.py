@@ -224,6 +224,50 @@ class SubRegion(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# MicroRegionNeighbour — explicit through model for the self-referential M2M
+# ---------------------------------------------------------------------------
+#
+# Django auto-names M2M through-table columns from the model class name, so
+# renaming Region → MicroRegion would make Django expect
+# ``from_microregion_id`` / ``to_microregion_id`` — but the physical column
+# names in the DB are ``from_region_id`` / ``to_region_id`` (created when the
+# model was still called Region, pinned by db_column).  An explicit through
+# model with db_column overrides keeps the physical schema unchanged while
+# letting Django's ORM generate correct SQL queries.
+#
+# The through table itself keeps the original name (``pipeline_region_neighbours``)
+# via Meta.db_table.
+
+
+class MicroRegionNeighbour(models.Model):
+    """Explicit through model for the MicroRegion.neighbours self-referential M2M.
+
+    Pins the column names to the physical schema that was created when the
+    model was called Region (``from_region_id`` / ``to_region_id``), so
+    that renaming the model does not require a DDL migration.
+    """
+
+    from_microregion = models.ForeignKey(
+        "MicroRegion",
+        on_delete=models.CASCADE,
+        db_column="from_region_id",
+        related_name="+",
+    )
+    to_microregion = models.ForeignKey(
+        "MicroRegion",
+        on_delete=models.CASCADE,
+        db_column="to_region_id",
+        related_name="+",
+    )
+
+    class Meta:
+        """Model metadata."""
+
+        db_table = "pipeline_region_neighbours"
+        unique_together = [("from_microregion", "to_microregion")]
+
+
+# ---------------------------------------------------------------------------
 # MicroRegion (L4 EAWS micro-region / SLF warning region)
 # ---------------------------------------------------------------------------
 
@@ -288,6 +332,7 @@ class MicroRegion(BaseModel):
     )
     neighbours = models.ManyToManyField(
         "self",
+        through="MicroRegionNeighbour",
         symmetrical=True,
         blank=True,
         help_text=(
