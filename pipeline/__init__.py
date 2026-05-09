@@ -1,1 +1,1 @@
-# pipeline/__init__.py — Core application package marker.
+# pipeline/__init__.py — Stub package marker; see ``pipeline/apps.py``.

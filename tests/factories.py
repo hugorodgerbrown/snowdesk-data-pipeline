@@ -26,7 +26,7 @@ from bulletins.models import (
     WeatherSnapshot,
 )
 from bulletins.services.day_rating import DAY_RATING_VERSION
-from pipeline.models import (
+from regions.models import (
     EawsMajorRegion,
     EawsSubRegion,
     Region,

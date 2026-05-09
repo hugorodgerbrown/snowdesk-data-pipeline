@@ -44,7 +44,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from bulletins.models import Bulletin, RegionBulletin, RegionDayRating
-from pipeline.models import (
+from regions.models import (
     EawsMajorRegion,
     EawsSubRegion,
     Region,

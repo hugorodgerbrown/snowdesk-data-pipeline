@@ -29,7 +29,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from bulletins.services.weather_fetcher import fetch_all_regions
-from pipeline.models import Region
+from regions.models import Region
 
 logger = logging.getLogger(__name__)
 

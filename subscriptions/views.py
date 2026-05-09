@@ -39,8 +39,8 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from django_ratelimit.core import get_usage
 from django_ratelimit.decorators import ratelimit
 
-from pipeline.decorators import require_htmx
-from pipeline.models import Region
+from core.decorators import require_htmx
+from regions.models import Region
 
 from .forms import EmailForm, SubscribeForm
 from .models import Subscriber, Subscription

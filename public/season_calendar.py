@@ -31,7 +31,7 @@ from django.conf import settings
 from bulletins.models import RegionDayRating
 
 if TYPE_CHECKING:
-    from pipeline.models import Region
+    from regions.models import Region
 
 logger = logging.getLogger(__name__)
 

@@ -33,7 +33,7 @@ from bulletins.services.render_model import (
     RenderModelBuildError,
     build_render_model,
 )
-from pipeline.models import Region
+from regions.models import Region
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +197,7 @@ def _get_region(region_id: str) -> Region:
     except Region.DoesNotExist as exc:
         raise UnknownRegionError(
             f"Bulletin references unknown region_id={region_id!r} — "
-            "add it to pipeline/fixtures/regions.json (and rerun "
+            "add it to regions/fixtures/regions.json (and rerun "
             "refresh_eaws_fixtures if the EAWS source has changed) before "
             "re-ingesting."
         ) from exc

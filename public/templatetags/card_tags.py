@@ -15,7 +15,7 @@ from django import template
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 
-from pipeline.schema import Elevation
+from bulletins.schema import Elevation
 
 register = template.Library()
 

@@ -1,7 +1,7 @@
 """
 core/models.py — Shared abstract Django models.
 
-Holds ``BaseModel`` so concrete-model apps (``pipeline``, ``bulletins``,
+Holds ``BaseModel`` so concrete-model apps (``regions``, ``bulletins``,
 ``subscriptions``, …) share a single source of truth for the standard
 fields without depending on each other.
 """

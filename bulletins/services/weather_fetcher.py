@@ -41,7 +41,7 @@ import requests
 from django.utils import timezone as django_timezone
 
 from bulletins.models import WeatherSnapshot
-from pipeline.models import Region
+from regions.models import Region
 
 logger = logging.getLogger(__name__)
 

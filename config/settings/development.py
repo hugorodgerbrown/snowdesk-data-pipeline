@@ -58,7 +58,7 @@ CSP_REPORT_ONLY = True
 # ---------------------------------------------------------------------------
 # Local SLF mirror (dev only)
 # ---------------------------------------------------------------------------
-# URL of the development-only view at ``pipeline.dev_views.slf_mirror``,
+# URL of the development-only view at ``bulletins.dev_views.slf_mirror``,
 # which replays ``sample_data/slf_archive.ndjson`` with the same
 # limit/offset paging contract as the upstream SLF API. Only defined in
 # development.py so that ``fetch_bulletins --source local-mirror`` errors
