@@ -35,7 +35,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from bulletins.services.weather_fetcher import backfill_all_regions
-from regions.models import Region
+from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ class Command(BaseCommand):
             raise CommandError("--end must be on or after --start.")
 
         days = (end - start).days + 1
-        region_count = Region.objects.count()
+        region_count = MicroRegion.objects.count()
 
         flags: list[str] = []
         if not commit:

@@ -29,7 +29,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from bulletins.services.weather_fetcher import fetch_all_regions
-from regions.models import Region
+from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class Command(BaseCommand):
         commit: bool = options["commit"]
         verbosity: int = options["verbosity"]
 
-        region_count = Region.objects.count()
+        region_count = MicroRegion.objects.count()
         flag_label = "" if commit else " [READ-ONLY]"
 
         self.stdout.write(

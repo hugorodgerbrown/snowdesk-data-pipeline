@@ -10,7 +10,7 @@ Owns the five bulletin-driven models:
     ``render_model_version`` integer used to trigger incremental rebuilds
     when the builder logic changes.
   - RegionBulletin: many-to-many through table linking bulletins to
-    ``regions.Region`` rows.
+    ``regions.MicroRegion`` rows.
   - RegionDayRating: denormalised per-(region, date) min and max danger
     ratings, updated whenever a bulletin covering that (region, date) is
     ingested or rebuilt. Drives the longitudinal calendar view.
@@ -18,7 +18,7 @@ Owns the five bulletin-driven models:
     code and sunrise/sunset times fetched from Open-Meteo. Used by the
     render model (SNOW-98) to determine whether a day is daytime or night.
 
-Region hierarchy (Region, EawsMajorRegion, EawsSubRegion, Resort) lives
+Region hierarchy (MicroRegion, MajorRegion, SubRegion, Resort) lives
 in ``regions.models`` — those are stable lookup tables shared across the
 whole project, not bulletin-derived data.
 
@@ -256,7 +256,7 @@ class Bulletin(BaseModel):
     lang = models.CharField(max_length=8, default="en")
     unscheduled = models.BooleanField(default=False)
     regions: models.ManyToManyField = models.ManyToManyField(
-        "regions.Region",
+        "regions.MicroRegion",
         through="RegionBulletin",
         related_name="bulletins",
         blank=True,
@@ -342,7 +342,7 @@ class RegionBulletin(BaseModel):
         related_name="region_links",
     )
     region = models.ForeignKey(
-        "regions.Region",
+        "regions.MicroRegion",
         on_delete=models.CASCADE,
         related_name="bulletin_links",
     )
@@ -448,7 +448,7 @@ class RegionDayRating(BaseModel):
         VERY_HIGH = "very_high", "Very high"
 
     region = models.ForeignKey(
-        "regions.Region",
+        "regions.MicroRegion",
         on_delete=models.CASCADE,
         related_name="day_ratings",
     )
@@ -569,7 +569,7 @@ class WeatherSnapshot(BaseModel):
     """
 
     region = models.ForeignKey(
-        "regions.Region",
+        "regions.MicroRegion",
         on_delete=CASCADE,
         related_name="weather_snapshots",
     )

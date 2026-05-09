@@ -45,10 +45,10 @@ from django.views.decorators.http import require_GET, require_POST
 
 from bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from regions.models import (
-    EawsMajorRegion,
-    EawsSubRegion,
-    Region,
+    MajorRegion,
+    MicroRegion,
     Resort,
+    SubRegion,
 )
 
 from .views import (
@@ -325,7 +325,7 @@ def resorts_by_region(request: HttpRequest) -> JsonResponse:
     # prefetch_related; the ``resorts`` relation is ordered alphabetically
     # by Resort.Meta.ordering so the output order is stable.
     result: dict[str, list[str]] = {}
-    regions = Region.objects.prefetch_related("resorts").all()
+    regions = MicroRegion.objects.prefetch_related("resorts").all()
     for region in regions:
         names = [r.name for r in region.resorts.all()]
         if names:
@@ -395,7 +395,7 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
 
     """
     features: list[dict[str, Any]] = []
-    for region in Region.objects.exclude(boundary__isnull=True).iterator():
+    for region in MicroRegion.objects.exclude(boundary__isnull=True).iterator():
         features.append(
             {
                 "type": "Feature",
@@ -431,7 +431,7 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
 
     """
     features: list[dict[str, Any]] = []
-    for major in EawsMajorRegion.objects.exclude(boundary__isnull=True).iterator():
+    for major in MajorRegion.objects.exclude(boundary__isnull=True).iterator():
         features.append(
             {
                 "type": "Feature",
@@ -465,7 +465,7 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
 
     """
     features: list[dict[str, Any]] = []
-    for sub in EawsSubRegion.objects.exclude(boundary__isnull=True).iterator():
+    for sub in SubRegion.objects.exclude(boundary__isnull=True).iterator():
         features.append(
             {
                 "type": "Feature",
@@ -523,7 +523,7 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
         bulletin covers the target date.
 
     """
-    region = get_object_or_404(Region, region_id__iexact=region_id)
+    region = get_object_or_404(MicroRegion, region_id__iexact=region_id)
     raw_date = request.GET.get("d")
     if raw_date:
         try:
@@ -681,12 +681,12 @@ def _bbox_of_polygon(
     return (w, s, e, n)
 
 
-def _region_for_point(lat: float, lon: float) -> Region | None:
-    """Return the Region whose boundary polygon contains (lat, lon).
+def _region_for_point(lat: float, lon: float) -> MicroRegion | None:
+    """Return the MicroRegion whose boundary polygon contains (lat, lon).
 
     Returns ``None`` if the point falls outside every region.
 
-    Iterates ``Region.objects.exclude(boundary__isnull=True)`` and runs
+    Iterates ``MicroRegion.objects.exclude(boundary__isnull=True)`` and runs
     a bbox pre-filter followed by a full ray-cast. Used by the
     edit-resorts save endpoint to auto-correct a resort's parent-region
     FK when the saved pin lands outside the FK's polygon — some
@@ -703,15 +703,15 @@ def _region_for_point(lat: float, lon: float) -> Region | None:
         lon: Longitude (WGS 84).
 
     Returns:
-        The first matching Region, or ``None``. "First" is in the
-        Region default ordering — ties (a point on a shared boundary)
+        The first matching MicroRegion, or ``None``. "First" is in the
+        MicroRegion default ordering — ties (a point on a shared boundary)
         are unlikely in practice and not worth disambiguating.
 
     """
-    for region in Region.objects.exclude(boundary__isnull=True).iterator():
+    for region in MicroRegion.objects.exclude(boundary__isnull=True).iterator():
         # The ``exclude(boundary__isnull=True)`` filter already drops
         # null rows; the explicit guard here is for mypy's benefit
-        # (``Region.boundary`` is typed as Optional) and as defence in
+        # (``MicroRegion.boundary`` is typed as Optional) and as defence in
         # depth against a future schema/migration that lets nulls back
         # in. ``assert`` would be the pythonic check but ruff's S101
         # rejects assertions outside test code.
@@ -803,7 +803,7 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
     # the section header is never blank.
     sub_regions = {
         prefix: (name_en or name_native)
-        for prefix, name_en, name_native in EawsSubRegion.objects.values_list(
+        for prefix, name_en, name_native in SubRegion.objects.values_list(
             "prefix",
             "name_en",
             "name_native",

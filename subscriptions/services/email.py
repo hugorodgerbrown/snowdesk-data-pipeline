@@ -41,7 +41,7 @@ from django.http import HttpRequest
 from django.template.loader import render_to_string
 from django.utils.translation import gettext_lazy
 
-from regions.models import Region
+from regions.models import MicroRegion
 
 from .token import SALT_ACCOUNT_ACCESS, generate_token
 
@@ -161,7 +161,7 @@ def send_account_access_email(
 def send_subscription_confirmation_email(
     email: str,
     *,
-    region: Region,
+    region: MicroRegion,
     request: HttpRequest | None = None,
 ) -> None:
     """
@@ -174,7 +174,7 @@ def send_subscription_confirmation_email(
 
     Args:
         email: Recipient email address.
-        region: The newly-added Region instance (provides ``region.name``).
+        region: The newly-added MicroRegion instance (provides ``region.name``).
         request: Optional HttpRequest used to derive the absolute base URL.
 
     """

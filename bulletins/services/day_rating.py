@@ -49,7 +49,7 @@ from bulletins.services.render_model import RENDER_MODEL_VERSION
 
 if TYPE_CHECKING:
     from bulletins.models import Bulletin
-    from regions.models import Region
+    from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ def _extract_headline_from_render_model(render_model: dict) -> tuple[str, str]:
 
 
 def recompute_region_day(
-    region: "Region",
+    region: "MicroRegion",
     day: date,
     *,
     commit: bool = True,
@@ -156,7 +156,7 @@ def recompute_region_day(
     chosen bulletin's render_model is entirely malformed.
 
     Args:
-        region: The Region to aggregate for.
+        region: The MicroRegion to aggregate for.
         day: The calendar date to aggregate.
         commit: When True (default), upsert the RegionDayRating row.
                 When False, log what would be written without touching the DB.

@@ -33,7 +33,7 @@ from bulletins.services.render_model import (
     RenderModelBuildError,
     build_render_model,
 )
-from regions.models import Region
+from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -174,9 +174,9 @@ class UnknownRegionError(LookupError):
     """
 
 
-def _get_region(region_id: str) -> Region:
+def _get_region(region_id: str) -> MicroRegion:
     """
-    Look up the Region for an ingested bulletin entry.
+    Look up the MicroRegion for an ingested bulletin entry.
 
     Regions are fixture-backed; unseen identifiers raise
     ``UnknownRegionError`` rather than being silently auto-created.
@@ -185,19 +185,19 @@ def _get_region(region_id: str) -> Region:
         region_id: SLF region identifier, e.g. "CH-4115".
 
     Returns:
-        The matching Region instance.
+        The matching MicroRegion instance.
 
     Raises:
         UnknownRegionError: The region_id does not correspond to any
-            seeded Region row.
+            seeded MicroRegion row.
 
     """
     try:
-        return Region.objects.get(region_id=region_id)
-    except Region.DoesNotExist as exc:
+        return MicroRegion.objects.get(region_id=region_id)
+    except MicroRegion.DoesNotExist as exc:
         raise UnknownRegionError(
             f"Bulletin references unknown region_id={region_id!r} — "
-            "add it to regions/fixtures/regions.json (and rerun "
+            "add it to regions/fixtures/eaws.json (and rerun "
             "refresh_eaws_fixtures if the EAWS source has changed) before "
             "re-ingesting."
         ) from exc
@@ -209,7 +209,7 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
 
     Wraps the raw bulletin in a GeoJSON Feature envelope (matching the
     format expected by downstream consumers) before storing. Creates or
-    looks up Region records and links them via RegionBulletin.
+    looks up MicroRegion records and links them via RegionBulletin.
 
     Args:
         raw: A single bulletin dict from the SLF CAAML API.

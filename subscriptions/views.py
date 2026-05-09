@@ -40,7 +40,7 @@ from django_ratelimit.core import get_usage
 from django_ratelimit.decorators import ratelimit
 
 from core.decorators import require_htmx
-from regions.models import Region
+from regions.models import MicroRegion
 
 from .forms import EmailForm, SubscribeForm
 from .models import Subscriber, Subscription
@@ -128,7 +128,7 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
        sub_created=False):
        No email → "You're already subscribed to {region}" fragment.
 
-    If ``region_id`` does not resolve to a known Region, returns a 400 error
+    If ``region_id`` does not resolve to a known MicroRegion, returns a 400 error
     fragment — this path should not occur in normal use.
 
     Rate limited to 5 POST requests per minute per IP.  Exceeding the
@@ -160,8 +160,8 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
     # This should not occur in normal use (region_id is set by the template),
     # but is a required defensive path.
     try:
-        region = Region.objects.get(region_id=region_id)
-    except Region.DoesNotExist:
+        region = MicroRegion.objects.get(region_id=region_id)
+    except MicroRegion.DoesNotExist:
         logger.warning(
             "subscribe_partial: region_id %s not found in DB",
             region_id,
@@ -448,7 +448,7 @@ def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
     if subscriber is None:
         return HttpResponse(status=403)
 
-    region = get_object_or_404(Region, region_id=region_id)
+    region = get_object_or_404(MicroRegion, region_id=region_id)
     Subscription.objects.filter(subscriber=subscriber, region=region).delete()
     logger.info(
         "Subscriber %s removed region %s via manage page",
@@ -581,7 +581,7 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
     email, region_id = result
 
     # Look up the region — 404 if deleted from the pipeline side.
-    region = get_object_or_404(Region, region_id=region_id)
+    region = get_object_or_404(MicroRegion, region_id=region_id)
 
     if request.method == "GET":
         response = render(

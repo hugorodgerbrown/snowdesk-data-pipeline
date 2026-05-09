@@ -31,7 +31,7 @@ from django.conf import settings
 from bulletins.models import RegionDayRating
 
 if TYPE_CHECKING:
-    from regions.models import Region
+    from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ class SeasonGrid:
 
 
 def build_season_grid(
-    region: Region,
+    region: "MicroRegion",
     page_date: datetime.date,
     today: datetime.date,
 ) -> SeasonGrid:
