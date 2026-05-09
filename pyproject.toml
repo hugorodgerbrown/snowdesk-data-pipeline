@@ -12,7 +12,7 @@ poetry-plugin-export = ">=1.8"
 
 [tool.poetry.dependencies]
 python = "^3.12"
-Django = "^5.2"
+Django = "^6.0"
 django-htmx = "^1.21.0"
 python-decouple = "^3.8"
 requests = "^2.32.3"
