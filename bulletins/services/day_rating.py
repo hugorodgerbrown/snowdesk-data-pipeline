@@ -49,7 +49,7 @@ from bulletins.services.render_model import RENDER_MODEL_VERSION
 
 if TYPE_CHECKING:
     from bulletins.models import Bulletin
-    from pipeline.models import Region
+    from regions.models import Region
 
 logger = logging.getLogger(__name__)
 

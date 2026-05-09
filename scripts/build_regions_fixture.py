@@ -157,7 +157,7 @@ def build_fixture(csv_path: Path, fixture_path: Path) -> None:
         region_id = row["region_id"]
         records.append(
             {
-                "model": "pipeline.region",
+                "model": "regions.region",
                 "fields": {
                     "region_id": region_id,
                     "name": row["name"],

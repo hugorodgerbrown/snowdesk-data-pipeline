@@ -20,7 +20,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound
 from django.shortcuts import render
 
-from pipeline.decorators import require_htmx
+from core.decorators import require_htmx
 from public.design_tokens import LIBRARY_GROUPS, get_category
 
 DEFAULT_SLUG = "typography"

@@ -1,12 +1,11 @@
 """
 bulletins/apps.py — AppConfig for the bulletins application.
 
-Owns SLF bulletin ingestion and storage. The pipeline app retains the
-region hierarchy and HTTP-layer concerns; this app holds bulletin-derived
-models and the fetch + denormalisation services that produce them.
-
-Currently a shell — models, services, admin, and management commands
-land in subsequent SNOW-88 child tickets.
+Owns every model sourced from an external API (SLF avalanche bulletins,
+Open-Meteo weather snapshots) plus the fetch and denormalisation
+services that produce them. The static reference data (EAWS hierarchy,
+resorts) lives in ``regions``; cross-cutting plumbing (HTMX
+decorators, security middleware, HTML utilities) lives in ``core``.
 """
 
 from django.apps import AppConfig

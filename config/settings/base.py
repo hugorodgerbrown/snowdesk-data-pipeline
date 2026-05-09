@@ -57,7 +57,13 @@ INSTALLED_APPS = [
     "waffle",
     # Local
     "core",
+    # ``pipeline`` is a stub since SNOW-140 — its models moved to
+    # ``regions`` (reference data) and ``bulletins`` (ingested data).
+    # The app remains installed so its migration history (0001–0020)
+    # stays attached to ``django_migrations`` and so dependencies on
+    # ``pipeline.0020_remove_reference_models`` resolve at migrate time.
     "pipeline",
+    "regions",
     "bulletins",
     "public",
     "subscriptions",
@@ -81,11 +87,11 @@ MIDDLEWARE = [
     # Exposes X-DB-Query-Count on responses when QUERY_COUNT_HEADER_ENABLED
     # is True (dev + perf). No-op otherwise, so it is safe to leave mounted
     # in production.
-    "pipeline.middleware.QueryCountMiddleware",
+    "core.middleware.QueryCountMiddleware",
     # Sets Referrer-Policy and Permissions-Policy on every response.
     # Per-view overrides (e.g. no-referrer on token-bearing views) are
     # applied by the view itself before this middleware runs.
-    "pipeline.middleware.SecurityHeadersMiddleware",
+    "core.middleware.SecurityHeadersMiddleware",
     # django-csp-plus. NonceMiddleware populates request.csp_nonce (used by
     # inline <script nonce="…"> tags in templates); HeaderMiddleware emits
     # the Content-Security-Policy(-Report-Only) header. The nonce middleware
@@ -191,7 +197,7 @@ SLF_ARCHIVE_PATH = BASE_DIR / "sample_data" / "slf_archive.ndjson"
 # ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------
-# When True, ``pipeline.middleware.QueryCountMiddleware`` forces the debug
+# When True, ``core.middleware.QueryCountMiddleware`` forces the debug
 # cursor and writes an ``X-DB-Query-Count`` header on every response. Off
 # by default so production pays no cost; development.py and perf.py turn
 # it on so local pages and the ``monitor_query_counts`` command can see
@@ -270,7 +276,7 @@ CSP_FILTER_REQUEST_FUNC = _csp_filter_request
 # Server-side feature flagging via the ``waffle`` app. Flags target users
 # (``superusers``, ``staff``, individual ``users``, ``groups``, percentages)
 # and live in the DB; toggle them at ``/admin/waffle/flag/``. New flags are
-# introduced via a data migration in ``pipeline/migrations/`` (see
+# introduced via a data migration in the relevant app's ``migrations/`` (see
 # ``docs/feature-flags.md`` for the template).
 #
 # ``WAFFLE_FLAG_DEFAULT = False`` — a flag with no DB row evaluates to off.
@@ -418,7 +424,12 @@ LOGGING = {
             "level": "ERROR",
             "propagate": False,
         },
-        "pipeline": {
+        "core": {
+            "handlers": ["console", "file_pipeline", "file_errors"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "regions": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",
             "propagate": False,

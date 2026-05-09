@@ -32,7 +32,7 @@ from bulletins.services.data_fetcher import (
     upsert_bulletin,
 )
 from bulletins.services.render_model import RENDER_MODEL_VERSION, RenderModelBuildError
-from pipeline.models import Region
+from regions.models import Region
 from tests.factories import PipelineRunFactory, RegionFactory
 
 

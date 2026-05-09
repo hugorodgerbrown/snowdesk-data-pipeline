@@ -35,7 +35,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from bulletins.services.weather_fetcher import backfill_all_regions
-from pipeline.models import Region
+from regions.models import Region
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ Owns the five bulletin-driven models:
     ``render_model_version`` integer used to trigger incremental rebuilds
     when the builder logic changes.
   - RegionBulletin: many-to-many through table linking bulletins to
-    ``pipeline.Region`` rows.
+    ``regions.Region`` rows.
   - RegionDayRating: denormalised per-(region, date) min and max danger
     ratings, updated whenever a bulletin covering that (region, date) is
     ingested or rebuilt. Drives the longitudinal calendar view.
@@ -18,8 +18,8 @@ Owns the five bulletin-driven models:
     code and sunrise/sunset times fetched from Open-Meteo. Used by the
     render model (SNOW-98) to determine whether a day is daytime or night.
 
-Region hierarchy (Region, EawsMajorRegion, EawsSubRegion, Resort) stays
-in ``pipeline.models`` — those are stable lookup tables shared across the
+Region hierarchy (Region, EawsMajorRegion, EawsSubRegion, Resort) lives
+in ``regions.models`` — those are stable lookup tables shared across the
 whole project, not bulletin-derived data.
 
 ``Meta.db_table`` on the four SNOW-92 models below is pinned to the
@@ -45,8 +45,8 @@ from django.db import models
 from django.db.models import CASCADE
 from django.utils import timezone
 
+from bulletins.schema import AvalancheProblem, DangerRating
 from core.models import BaseModel
-from pipeline.schema import AvalancheProblem, DangerRating
 
 logger = logging.getLogger(__name__)
 
@@ -256,7 +256,7 @@ class Bulletin(BaseModel):
     lang = models.CharField(max_length=8, default="en")
     unscheduled = models.BooleanField(default=False)
     regions: models.ManyToManyField = models.ManyToManyField(
-        "pipeline.Region",
+        "regions.Region",
         through="RegionBulletin",
         related_name="bulletins",
         blank=True,
@@ -329,7 +329,7 @@ class RegionBulletinQuerySet(models.QuerySet):
 
 class RegionBulletin(BaseModel):
     """
-    Through table linking a Bulletin to a ``pipeline.Region``.
+    Through table linking a Bulletin to a ``regions.Region``.
 
     Created automatically when a bulletin is processed. Stores the
     region name as it appeared in that specific bulletin (region names
@@ -342,7 +342,7 @@ class RegionBulletin(BaseModel):
         related_name="region_links",
     )
     region = models.ForeignKey(
-        "pipeline.Region",
+        "regions.Region",
         on_delete=models.CASCADE,
         related_name="bulletin_links",
     )
@@ -448,7 +448,7 @@ class RegionDayRating(BaseModel):
         VERY_HIGH = "very_high", "Very high"
 
     region = models.ForeignKey(
-        "pipeline.Region",
+        "regions.Region",
         on_delete=models.CASCADE,
         related_name="day_ratings",
     )
@@ -569,7 +569,7 @@ class WeatherSnapshot(BaseModel):
     """
 
     region = models.ForeignKey(
-        "pipeline.Region",
+        "regions.Region",
         on_delete=CASCADE,
         related_name="weather_snapshots",
     )

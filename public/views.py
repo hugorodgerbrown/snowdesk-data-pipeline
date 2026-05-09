@@ -54,6 +54,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition
 
 from bulletins.models import Bulletin, RegionBulletin, WeatherSnapshot
+from bulletins.schema import ValidTimePeriod
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -61,9 +62,8 @@ from bulletins.services.render_model import (
     compute_day_character,
 )
 from bulletins.services.weather_display import build_weather_display
-from pipeline.models import Region
-from pipeline.schema import ValidTimePeriod
-from pipeline.utils import html_to_markdown
+from core.utils import html_to_markdown
+from regions.models import Region
 
 from .guidance import load_field_guidance
 from .season_calendar import build_season_grid

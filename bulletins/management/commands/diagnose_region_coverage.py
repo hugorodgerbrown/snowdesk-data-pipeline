@@ -38,7 +38,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from bulletins.models import Bulletin, RegionDayRating
 from bulletins.services.day_rating import _target_day
-from pipeline.models import Region
+from regions.models import Region
 
 logger = logging.getLogger(__name__)
 

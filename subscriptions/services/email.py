@@ -41,7 +41,7 @@ from django.http import HttpRequest
 from django.template.loader import render_to_string
 from django.utils.translation import gettext_lazy
 
-from pipeline.models import Region
+from regions.models import Region
 
 from .token import SALT_ACCOUNT_ACCESS, generate_token
 

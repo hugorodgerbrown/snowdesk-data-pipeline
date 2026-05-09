@@ -116,7 +116,7 @@ class Subscription(BaseModel):
         related_name="subscriptions",
     )
     region = models.ForeignKey(
-        "pipeline.Region",
+        "regions.Region",
         on_delete=models.CASCADE,
         related_name="subscriptions",
     )

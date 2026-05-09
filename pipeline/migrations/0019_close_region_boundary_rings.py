@@ -8,7 +8,7 @@ copy of the first vertex so the ring satisfies RFC 7946 §3.1.6.
 Background: ``Region.boundary`` is a ``JSONField`` and is stored
 verbatim. SNOW-33 (commit ``c7de7bd``) closed the rings in the source
 CSV (``docs/eaws_regions_ch.csv``) and rebuilt
-``pipeline/fixtures/regions.json``, but the closing helper at
+``regions/fixtures/regions.json``, but the closing helper at
 ``scripts/build_regions_fixture.py:_close_polygon_rings`` runs at
 fixture build time, not at ingest or save time. A production database
 seeded from a pre-SNOW-33 fixture therefore still carries the open
@@ -24,7 +24,7 @@ operator-side drift on other fields (``name``, ``slug``, ``centre``,
 
 Reverse is a no-op: re-opening rings would re-introduce the SNOW-105
 visual gap and violate the regression test added by SNOW-33
-(``tests/pipeline/models/test_region.py``).
+(``tests/regions/models/test_region.py``).
 """
 
 from __future__ import annotations
@@ -82,7 +82,14 @@ def _close_ring_list(
 
 def close_open_rings(apps: Any, schema_editor: Any) -> None:
     """Close any open ``boundary`` rings on existing Region rows."""
-    Region = apps.get_model("pipeline", "Region")  # noqa: N806
+    # SNOW-140: Region moved from pipeline to regions. Try the new
+    # location first; fall back to the historical location so the
+    # migration still works when replayed at its historical position
+    # (where pipeline.Region is what Django's state graph holds).
+    try:
+        Region = apps.get_model("regions", "Region")  # noqa: N806
+    except LookupError:
+        Region = apps.get_model("pipeline", "Region")  # noqa: N806
 
     closed = 0
     skipped = 0

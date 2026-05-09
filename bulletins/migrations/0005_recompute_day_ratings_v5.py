@@ -26,7 +26,7 @@ def recompute_all_day_ratings(apps: Any, schema_editor: Any) -> None:
     """Re-derive every RegionDayRating row under the v5 headline-only policy."""
     from bulletins.models import RegionDayRating
     from bulletins.services.day_rating import recompute_region_day
-    from pipeline.models import Region
+    from regions.models import Region
 
     pairs = set(RegionDayRating.objects.values_list("region_id", "date"))
     region_cache: dict[Any, Any] = {}

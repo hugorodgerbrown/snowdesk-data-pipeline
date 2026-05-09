@@ -35,7 +35,7 @@ from bulletins.models import (
 )
 from bulletins.services.data_fetcher import run_pipeline
 from bulletins.services.weather_fetcher import fetch_all_regions
-from pipeline.utils import html_to_markdown
+from core.utils import html_to_markdown
 
 logger = logging.getLogger(__name__)
 

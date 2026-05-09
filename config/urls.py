@@ -32,10 +32,10 @@ urlpatterns = [
 
 # Dev-only routes must register BEFORE ``public.urls`` because that
 # include's generic ``<str:region_id>/`` pattern would otherwise swallow
-# the prefix. Production never imports ``pipeline.dev_urls``.
+# the prefix. Production never imports ``bulletins.dev_urls``.
 if settings.DEBUG:
     urlpatterns.append(
-        path("dev/slf-mirror/", include("pipeline.dev_urls")),
+        path("dev/slf-mirror/", include("bulletins.dev_urls")),
     )
 
 urlpatterns.append(path("", include("public.urls")))
