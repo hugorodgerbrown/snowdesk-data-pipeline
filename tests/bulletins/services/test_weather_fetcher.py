@@ -11,7 +11,7 @@ Covers:
     base_url threading, on_fetched callback shape.
   - backfill_all_regions: creates/updates correctly, per-region failure isolation,
     base_url and on_fetched forwarding.
-  - _resolve_weather_source: maps source strings to base URLs / raises on missing setting.
+  - resolve_weather_source: maps source strings to base URLs / raises on missing setting.
 
 All outbound HTTP calls are mocked via ``unittest.mock.patch`` so no network
 traffic is required. The mocking pattern mirrors test_data_fetcher.py.
@@ -29,11 +29,11 @@ import requests
 from bulletins.models import WeatherSnapshot
 from bulletins.services.weather_fetcher import (
     _parse_dt,
-    _resolve_weather_source,
     backfill_all_regions,
     fetch_all_regions,
     fetch_archive_for_region,
     fetch_weather_for_region,
+    resolve_weather_source,
 )
 from tests.factories import MicroRegionFactory, WeatherSnapshotFactory
 
@@ -875,16 +875,16 @@ class TestOnFetchedCallback:
 
 
 # ---------------------------------------------------------------------------
-# _resolve_weather_source
+# resolve_weather_source
 # ---------------------------------------------------------------------------
 
 
 class TestResolveWeatherSource:
-    """Tests for _resolve_weather_source."""
+    """Tests for resolve_weather_source."""
 
     def test_live_source_returns_none(self) -> None:
         """'live' source returns None so callers fall back to the module URL constants."""
-        result = _resolve_weather_source("live")
+        result = resolve_weather_source("live")
         assert result is None
 
     def test_local_mirror_returns_configured_url(self) -> None:
@@ -894,7 +894,7 @@ class TestResolveWeatherSource:
         with override_settings(
             WEATHER_API_LOCAL_MIRROR_BASE_URL="http://localhost:8000/dev/openmeteo-mirror/v1"
         ):
-            result = _resolve_weather_source("local-mirror")
+            result = resolve_weather_source("local-mirror")
 
         assert result == "http://localhost:8000/dev/openmeteo-mirror/v1"
 
@@ -905,7 +905,7 @@ class TestResolveWeatherSource:
 
         with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL=None):
             with pytest.raises(CommandError, match="WEATHER_API_LOCAL_MIRROR_BASE_URL"):
-                _resolve_weather_source("local-mirror")
+                resolve_weather_source("local-mirror")
 
     def test_local_mirror_raises_when_setting_absent(self) -> None:
         """'local-mirror' raises CommandError when the setting is completely absent."""
@@ -913,7 +913,7 @@ class TestResolveWeatherSource:
 
         from bulletins.services import weather_fetcher
 
-        original = getattr(weather_fetcher, "_resolve_weather_source", None)
+        original = getattr(weather_fetcher, "resolve_weather_source", None)
         # Simulate missing attribute by deleting the setting entirely.
         from django.test import override_settings  # noqa: F811
 
@@ -924,5 +924,5 @@ class TestResolveWeatherSource:
             if hasattr(djsettings, "WEATHER_API_LOCAL_MIRROR_BASE_URL"):
                 del djsettings.WEATHER_API_LOCAL_MIRROR_BASE_URL
             with pytest.raises(CommandError, match="WEATHER_API_LOCAL_MIRROR_BASE_URL"):
-                _resolve_weather_source("local-mirror")
+                resolve_weather_source("local-mirror")
         _ = original  # suppress unused warning

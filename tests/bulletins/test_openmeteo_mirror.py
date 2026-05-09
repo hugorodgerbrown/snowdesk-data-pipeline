@@ -239,6 +239,28 @@ class TestOpenMeteoMirrorErrors:
 
         assert response.status_code == 404
 
+    def test_date_range_exceeding_366_days_returns_400(self, tmp_path: Path) -> None:
+        """A date range of more than 366 days returns 400 to prevent runaway iteration."""
+        archive_path = tmp_path / "om_archive.ndjson"
+        archive_path.write_text("", encoding="utf-8")
+        RegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2020-01-01",
+                    "end_date": "2026-01-01",
+                },
+            )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert "error" in body
+        assert "366" in body["error"]
+
 
 @pytest.mark.django_db
 class TestOpenMeteoMirrorLatLonRoundTrip:

@@ -3,7 +3,7 @@ bulletins/services/weather_fetcher.py — Fetching and persisting Open-Meteo wea
 
 Contains four fetch functions and a source resolver:
 
-  _resolve_weather_source(source)
+  resolve_weather_source(source)
       Map a ``--source`` choice string (``"live"`` or ``"local-mirror"``) to a
       ``base_url`` suitable for passing to the fetch functions. Returns ``None``
       for the live source (falls back to the module-level URL constants). Raises
@@ -70,11 +70,11 @@ FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 REQUEST_TIMEOUT = 30  # seconds
 
-_SOURCE_LIVE = "live"
-_SOURCE_LOCAL_MIRROR = "local-mirror"
+SOURCE_LIVE = "live"
+SOURCE_LOCAL_MIRROR = "local-mirror"
 
 
-def _resolve_weather_source(source: str) -> str | None:
+def resolve_weather_source(source: str) -> str | None:
     """
     Map a ``--source`` choice to a base URL (or ``None`` for live).
 
@@ -86,7 +86,7 @@ def _resolve_weather_source(source: str) -> str | None:
     the resolver logic is not duplicated.
 
     Args:
-        source: One of ``_SOURCE_LIVE`` or ``_SOURCE_LOCAL_MIRROR``.
+        source: One of ``SOURCE_LIVE`` or ``SOURCE_LOCAL_MIRROR``.
 
     Returns:
         ``None`` for the live source, or the configured mirror base URL.
@@ -97,7 +97,7 @@ def _resolve_weather_source(source: str) -> str | None:
             (i.e. running outside ``development.py``).
 
     """
-    if source == _SOURCE_LIVE:
+    if source == SOURCE_LIVE:
         return None
     mirror_url: str | None = getattr(
         settings, "WEATHER_API_LOCAL_MIRROR_BASE_URL", None

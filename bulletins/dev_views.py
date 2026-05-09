@@ -146,6 +146,12 @@ def openmeteo_mirror(
             status=400,
         )
 
+    if (end_date - start_date).days > 366:
+        return JsonResponse(
+            {"error": "date range exceeds 366 days"},
+            status=400,
+        )
+
     # Build a lookup of date → record for this region.
     archive_by_date: dict[str, dict] = {
         record["date"]: record

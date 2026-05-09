@@ -55,16 +55,16 @@ from django.utils import timezone
 
 from bulletins.services.openmeteo_archive import merge, read_archive, write_archive
 from bulletins.services.weather_fetcher import (
-    _SOURCE_LIVE,
-    _SOURCE_LOCAL_MIRROR,
-    _resolve_weather_source,
+    SOURCE_LIVE,
+    SOURCE_LOCAL_MIRROR,
     fetch_all_regions,
+    resolve_weather_source,
 )
 from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
-_SOURCE_CHOICES = (_SOURCE_LIVE, _SOURCE_LOCAL_MIRROR)
+_SOURCE_CHOICES = (SOURCE_LIVE, SOURCE_LOCAL_MIRROR)
 
 
 class Command(BaseCommand):
@@ -96,7 +96,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--source",
             choices=_SOURCE_CHOICES,
-            default=_SOURCE_LIVE,
+            default=SOURCE_LIVE,
             help=(
                 "Where to fetch from. 'live' (default) hits the real Open-Meteo "
                 "forecast API; 'local-mirror' hits the development-only view that "
@@ -125,10 +125,7 @@ class Command(BaseCommand):
         stash: bool = options["stash"]
         verbosity: int = options["verbosity"]
 
-        try:
-            base_url = _resolve_weather_source(source)
-        except CommandError:
-            raise
+        base_url = resolve_weather_source(source)
 
         collected: list[dict[str, Any]] = []
         on_fetched = collected.append if stash else None
@@ -169,7 +166,7 @@ class Command(BaseCommand):
             flags.append("READ-ONLY")
         if stash:
             flags.append("STASH")
-        if source != _SOURCE_LIVE:
+        if source != SOURCE_LIVE:
             flags.append(f"SOURCE={source.upper()}")
         flag_label = " [" + ", ".join(flags) + "]" if flags else ""
 
