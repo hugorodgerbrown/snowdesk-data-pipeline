@@ -11,12 +11,13 @@ crowd a single file.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.test import Client, override_settings
 
 from bulletins.services.openmeteo_archive import write_archive
+from regions.models import Centre
 from tests.factories import RegionFactory
 
 
@@ -261,6 +262,46 @@ class TestOpenMeteoMirrorErrors:
         assert "error" in body
         assert "366" in body["error"]
 
+    def test_invalid_start_date_returns_400(self, tmp_path: Path) -> None:
+        """A non-ISO start_date returns 400 with an 'error' key."""
+        archive_path = tmp_path / "om_archive.ndjson"
+        archive_path.write_text("", encoding="utf-8")
+        RegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "not-a-date",
+                    "end_date": "2026-05-01",
+                },
+            )
+
+        assert response.status_code == 400
+        assert "error" in response.json()
+
+    def test_invalid_end_date_returns_400(self, tmp_path: Path) -> None:
+        """A non-ISO end_date returns 400 with an 'error' key."""
+        archive_path = tmp_path / "om_archive.ndjson"
+        archive_path.write_text("", encoding="utf-8")
+        RegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2026-05-01",
+                    "end_date": "not-a-date",
+                },
+            )
+
+        assert response.status_code == 400
+        assert "error" in response.json()
+
 
 @pytest.mark.django_db
 class TestOpenMeteoMirrorLatLonRoundTrip:
@@ -289,17 +330,18 @@ class TestOpenMeteoMirrorLatLonRoundTrip:
 
         with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
             for region in regions:
+                centre = cast(Centre, region.centre)
                 response = Client().get(
                     "/dev/openmeteo-mirror/v1/forecast",
                     {
-                        "latitude": str(region.centre["lat"]),  # type: ignore[index]
-                        "longitude": str(region.centre["lon"]),  # type: ignore[index]
+                        "latitude": str(centre["lat"]),
+                        "longitude": str(centre["lon"]),
                         "start_date": "2026-05-01",
                         "end_date": "2026-05-01",
                     },
                 )
                 assert response.status_code == 200, (
-                    f"Region {region.region_id} lat={region.centre['lat']} "  # type: ignore[index]
-                    f"lon={region.centre['lon']} failed round-trip. "  # type: ignore[index]
+                    f"Region {region.region_id} lat={centre['lat']} "
+                    f"lon={centre['lon']} failed round-trip. "
                     f"Response: {response.json()}"
                 )
