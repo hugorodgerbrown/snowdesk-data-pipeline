@@ -17,18 +17,24 @@
  *
  * The maskable variant pads the source artwork inside a "safe zone"
  * (80% of the canvas) so adaptive icon shapes on Android don't crop
- * the glyph. Background colour matches manifest.background_color so
- * the rounded SVG corners aren't visible after Android's rounded mask
- * crops them. The maskable PNG must be opaque (no alpha channel) —
- * Android's adaptive-icon mask leaks transparency at the masked
- * corners if the PNG retains an alpha channel, causing the logo to
- * appear shrunken on a white background. ``flatten`` composites
- * transparent pixels onto the supplied background colour; ``removeAlpha``
- * then drops the alpha channel so the PNG encoder writes RGB
- * (color_type 2) not RGBA (color_type 6). Both steps are required
- * under sharp >= 0.33 — ``flatten`` alone no longer drops the channel.
- * The apple-touch-icon variant uses the same two-step sequence so the
- * icon reads as a solid tile under iOS's automatic corner rounding.
+ * the glyph. The canvas is filled with MASKABLE_CANVAS_COLOUR (the
+ * brand green, #2d4a3e) rather than the manifest background_color
+ * (cream, #f4f1e8). Without this, Android's circular crop clips into
+ * the cream padding at the cardinal edges and shows a visible cream
+ * border against the launcher background — the green-on-green canvas
+ * ensures those clipped areas are indistinguishable from the icon's own
+ * green rect (SNOW-151). The apple-touch-icon and purpose:any variants
+ * are unaffected and continue to use BACKGROUND_COLOUR (cream). The
+ * maskable PNG must be opaque (no alpha channel) — Android's adaptive-
+ * icon mask leaks transparency at the masked corners if the PNG retains
+ * an alpha channel, causing the logo to appear shrunken on a white
+ * background. ``flatten`` composites transparent pixels onto the
+ * supplied background colour; ``removeAlpha`` then drops the alpha
+ * channel so the PNG encoder writes RGB (color_type 2) not RGBA
+ * (color_type 6). Both steps are required under sharp >= 0.33 —
+ * ``flatten`` alone no longer drops the channel. The apple-touch-icon
+ * variant uses the same two-step sequence so the icon reads as a solid
+ * tile under iOS's automatic corner rounding.
  */
 
 'use strict';
@@ -41,10 +47,15 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const SRC_SVG = path.join(REPO_ROOT, 'static', 'favicon.svg');
 const OUT_DIR = path.join(REPO_ROOT, 'static', 'icons', 'pwa');
 
-// Manifest background_color — used as the maskable padding fill so the
-// icon reads as a solid tile after Android's adaptive-icon mask crops
-// it. Keep in sync with static/manifest.webmanifest.
+// Manifest background_color — used as the padding fill for the
+// apple-touch-icon and purpose:any variants so the icon reads as a
+// solid tile. Keep in sync with static/manifest.webmanifest.
 const BACKGROUND_COLOUR = '#f4f1e8';
+
+// Brand green — must match the rect fill in static/favicon.svg.
+// Used as the maskable canvas fill so Android's circular crop clips
+// green-on-green and shows no cream border (SNOW-151).
+const MASKABLE_CANVAS_COLOUR = '#2d4a3e';
 
 const SAFE_ZONE_RATIO = 0.8;
 
@@ -64,17 +75,17 @@ async function buildMaskable(size, outName) {
       width: size,
       height: size,
       channels: 4,
-      background: BACKGROUND_COLOUR,
+      background: MASKABLE_CANVAS_COLOUR,
     },
   })
     .composite([{ input: innerBuffer, top: pad, left: pad }])
-    // Flatten fills transparent areas with the background colour, then
+    // Flatten fills transparent areas with the canvas colour, then
     // removeAlpha drops the alpha channel entirely so the PNG is written
     // as RGB (color_type 2) not RGBA (color_type 6). Both steps are needed:
     // flatten alone doesn't drop the channel in sharp >= 0.33; removeAlpha
     // alone would fill with black. Together they ensure Android's adaptive-
-    // icon mask doesn't leak transparency at the masked corners (SNOW-150).
-    .flatten({ background: BACKGROUND_COLOUR })
+    // icon mask doesn't leak transparency at the masked corners.
+    .flatten({ background: MASKABLE_CANVAS_COLOUR })
     .removeAlpha()
     .png()
     .toFile(outPath);
