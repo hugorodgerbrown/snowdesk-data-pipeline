@@ -25,10 +25,7 @@ logger = logging.getLogger(__name__)
 # The EAWS combined fixture. Resolve from the repo root so the path survives
 # after the fixture was consolidated from the old separate files in SNOW-142.
 _EAWS_FIXTURE = (
-    Path(__file__).resolve().parent.parent.parent
-    / "regions"
-    / "fixtures"
-    / "eaws.json"
+    Path(__file__).resolve().parent.parent.parent / "regions" / "fixtures" / "eaws.json"
 )
 
 
@@ -60,7 +57,11 @@ def load_eaws_parent_fixtures_and_backfill(apps: Any, schema_editor: Any) -> Non
         try:
             major = EawsMajorRegion.objects.get(prefix=major_prefix)
         except EawsMajorRegion.DoesNotExist:
-            logger.warning("0012: MajorRegion %s not found, skipping sub %s", major_prefix, f["prefix"])
+            logger.warning(
+                "0012: MajorRegion %s not found, skipping sub %s",
+                major_prefix,
+                f["prefix"],
+            )
             continue
         EawsSubRegion.objects.get_or_create(
             prefix=f["prefix"],

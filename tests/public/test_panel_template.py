@@ -42,7 +42,9 @@ def _make_am_bulletin(region, day, **kwargs):
 @pytest.fixture()
 def region():
     """Return a test Region."""
-    return MicroRegionFactory.create(region_id="CH-7777", name="Test Valley", slug="ch-7777")
+    return MicroRegionFactory.create(
+        region_id="CH-7777", name="Test Valley", slug="ch-7777"
+    )
 
 
 @pytest.fixture()

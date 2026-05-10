@@ -639,8 +639,12 @@ class TestAdjoiningRegions:
         self, client: Client, region
     ) -> None:
         """``adjoining_regions`` is sorted by name regardless of insertion order."""
-        zoulou = MicroRegionFactory.create(region_id="CH-9991", name="Zoulou", slug="zoulou")
-        alpha = MicroRegionFactory.create(region_id="CH-9992", name="Alpha", slug="alpha")
+        zoulou = MicroRegionFactory.create(
+            region_id="CH-9991", name="Zoulou", slug="zoulou"
+        )
+        alpha = MicroRegionFactory.create(
+            region_id="CH-9992", name="Alpha", slug="alpha"
+        )
         mike = MicroRegionFactory.create(region_id="CH-9993", name="Mike", slug="mike")
         # Insert in non-alphabetical order to prove the view sorts.
         region.neighbours.set([zoulou, mike, alpha])
@@ -1075,7 +1079,9 @@ class TestWeatherHeader:
         self, client: Client, region
     ) -> None:
         """A snapshot for a different region must not surface on this page."""
-        other = MicroRegionFactory.create(region_id="CH-9999", name="Other", slug="other")
+        other = MicroRegionFactory.create(
+            region_id="CH-9999", name="Other", slug="other"
+        )
         WeatherSnapshotFactory.create(
             region=other,
             valid_for_date=date(2026, 3, 15),

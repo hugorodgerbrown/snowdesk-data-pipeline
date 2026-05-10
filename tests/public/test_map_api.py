@@ -431,9 +431,7 @@ def test_major_regions_geojson_returns_feature_collection():
 @pytest.mark.django_db
 def test_sub_regions_geojson_returns_feature_collection():
     """L2 subs with a non-null boundary become Features; null boundary skipped."""
-    major = MajorRegionFactory.create(
-        prefix="AT-1", country="AT", name_en="Vorarlberg"
-    )
+    major = MajorRegionFactory.create(prefix="AT-1", country="AT", name_en="Vorarlberg")
     boundary = {
         "type": "Polygon",
         "coordinates": [
