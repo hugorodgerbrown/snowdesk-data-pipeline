@@ -62,7 +62,7 @@ from django.core.management.base import CommandError
 from django.utils import timezone as django_timezone
 
 from bulletins.models import WeatherSnapshot
-from regions.models import MicroRegion
+from regions.models import Centre, MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +202,7 @@ def fetch_weather_for_region(
         KeyError: If the expected fields are absent from the API response.
 
     """
-    centre: dict[str, float] = cast(dict[str, float], region.centre)
+    centre: Centre = cast(Centre, region.centre)
     url = f"{base_url}/forecast" if base_url else FORECAST_URL
     logger.debug(
         "Fetching forecast weather for region=%s date=%s commit=%s url=%s",
@@ -399,7 +399,7 @@ def fetch_archive_for_region(
         KeyError: If the expected fields are absent from the API response.
 
     """
-    centre: dict[str, float] = cast(dict[str, float], region.centre)
+    centre: Centre = cast(Centre, region.centre)
     url = f"{base_url}/archive" if base_url else ARCHIVE_URL
     logger.debug(
         "Fetching archive weather for region=%s start=%s end=%s commit=%s url=%s",
