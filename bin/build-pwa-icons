@@ -19,9 +19,13 @@
  * (80% of the canvas) so adaptive icon shapes on Android don't crop
  * the glyph. Background colour matches manifest.background_color so
  * the rounded SVG corners aren't visible after Android's rounded mask
- * crops them. The apple-touch-icon variant uses the same flat
- * background so the icon reads as a solid tile under iOS's automatic
- * corner rounding.
+ * crops them. The maskable PNG must be opaque (no alpha channel) —
+ * Android's adaptive-icon mask leaks transparency at the masked
+ * corners if the PNG retains an alpha channel, causing the logo to
+ * appear shrunken on a white background. ``flatten`` removes the alpha
+ * channel and fills transparencies with the background colour. The
+ * apple-touch-icon variant uses the same flat background so the icon
+ * reads as a solid tile under iOS's automatic corner rounding.
  */
 
 'use strict';
@@ -61,6 +65,14 @@ async function buildMaskable(size, outName) {
     },
   })
     .composite([{ input: innerBuffer, top: pad, left: pad }])
+    // Flatten fills transparent areas with the background colour, then
+    // removeAlpha drops the alpha channel entirely so the PNG is written
+    // as RGB (color_type 2) not RGBA (color_type 6). Both steps are needed:
+    // flatten alone doesn't drop the channel in sharp >= 0.33; removeAlpha
+    // alone would fill with black. Together they ensure Android's adaptive-
+    // icon mask doesn't leak transparency at the masked corners (SNOW-150).
+    .flatten({ background: BACKGROUND_COLOUR })
+    .removeAlpha()
     .png()
     .toFile(outPath);
   console.log(
