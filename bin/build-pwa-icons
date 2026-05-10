@@ -22,10 +22,13 @@
  * crops them. The maskable PNG must be opaque (no alpha channel) —
  * Android's adaptive-icon mask leaks transparency at the masked
  * corners if the PNG retains an alpha channel, causing the logo to
- * appear shrunken on a white background. ``flatten`` removes the alpha
- * channel and fills transparencies with the background colour. The
- * apple-touch-icon variant uses the same flat background so the icon
- * reads as a solid tile under iOS's automatic corner rounding.
+ * appear shrunken on a white background. ``flatten`` composites
+ * transparent pixels onto the supplied background colour; ``removeAlpha``
+ * then drops the alpha channel so the PNG encoder writes RGB
+ * (color_type 2) not RGBA (color_type 6). Both steps are required
+ * under sharp >= 0.33 — ``flatten`` alone no longer drops the channel.
+ * The apple-touch-icon variant uses the same two-step sequence so the
+ * icon reads as a solid tile under iOS's automatic corner rounding.
  */
 
 'use strict';
@@ -84,11 +87,14 @@ async function buildAppleTouchIcon(size, outName) {
   const outPath = path.join(OUT_DIR, outName);
   // iOS home-screen icons cannot be transparent — flatten the SVG over
   // the manifest background colour so corners don't render black after
-  // iOS's automatic corner rounding. ``flatten`` removes the alpha
-  // channel and fills the background with the supplied colour.
+  // iOS's automatic corner rounding. ``flatten`` composites transparent
+  // pixels onto the background; ``removeAlpha`` then drops the alpha
+  // channel so the PNG is written as opaque RGB (color_type 2). Both
+  // steps are required under sharp >= 0.33 (see buildMaskable).
   await sharp(SRC_SVG)
     .resize(size, size)
     .flatten({ background: BACKGROUND_COLOUR })
+    .removeAlpha()
     .png()
     .toFile(outPath);
   console.log(
