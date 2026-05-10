@@ -48,16 +48,15 @@ Usage:
         --start 2024-11-01 --end 2025-04-30 --delay 0 --commit
 """
 
-import argparse
 import logging
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentTypeError
 from datetime import date
 from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-from bulletins.services.openmeteo_archive import merge, read_archive, write_archive
+from bulletins.services.openmeteo_archive import flush_stash
 from bulletins.services.weather_fetcher import (
     SOURCE_LIVE,
     SOURCE_LOCAL_MIRROR,
@@ -76,15 +75,15 @@ def _non_negative_float(raw: str) -> float:
     Argparse ``type=`` helper for non-negative float arguments.
 
     Raises:
-        argparse.ArgumentTypeError: if the value is unparseable or negative.
+        ArgumentTypeError: if the value is unparseable or negative.
 
     """
     try:
         value = float(raw)
     except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"invalid float value: {raw!r}") from exc
+        raise ArgumentTypeError(f"invalid float value: {raw!r}") from exc
     if value < 0:
-        raise argparse.ArgumentTypeError(f"delay must be non-negative (got {value})")
+        raise ArgumentTypeError(f"delay must be non-negative (got {value})")
     return value
 
 
@@ -202,7 +201,13 @@ class Command(BaseCommand):
         )
 
         if stash:
-            self._flush_stash(collected)
+            flush_stash(
+                settings.OPENMETEO_ARCHIVE_PATH,
+                collected,
+                "backfill_weather",
+                stdout=self.stdout,
+                style=self.style,
+            )
 
         self._report_outcome(
             counts, days, start, end, commit=commit, verbosity=verbosity
@@ -297,30 +302,4 @@ class Command(BaseCommand):
             counts["skipped"],
             counts["failed"],
             commit,
-        )
-
-    def _flush_stash(self, collected: list[dict[str, Any]]) -> None:
-        """
-        Merge collected weather records into the on-disk Open-Meteo archive.
-
-        Reads the existing archive, overlays the freshly-collected records
-        (later ``captured_at`` wins per ``(region_id, date)`` key), sorts by
-        ``(region_id, date)``, and atomically writes the result back to
-        ``settings.OPENMETEO_ARCHIVE_PATH``.
-        """
-        path = settings.OPENMETEO_ARCHIVE_PATH
-        existing = list(read_archive(path))
-        merged = merge(existing, collected)
-        write_archive(path, merged)
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Stashed {len(collected)} fetched record(s) to {path}; "
-                f"archive now contains {len(merged)} record(s)."
-            )
-        )
-        logger.info(
-            "backfill_weather stash flush: collected=%d archive_total=%d path=%s",
-            len(collected),
-            len(merged),
-            path,
         )

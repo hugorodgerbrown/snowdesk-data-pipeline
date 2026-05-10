@@ -119,3 +119,54 @@ def write_archive(path: Path, records: Iterable[dict[str, Any]]) -> None:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
     os.replace(tmp, path)
     logger.debug("Wrote Open-Meteo archive: path=%s", path)
+
+
+def flush_stash(
+    path: Path,
+    collected: list[dict[str, Any]],
+    command_name: str,
+    *,
+    stdout: Any,
+    style: Any,
+) -> None:
+    """
+    Merge collected weather records into the on-disk Open-Meteo archive.
+
+    Reads the existing archive at ``path``, overlays the freshly-collected
+    records (later ``captured_at`` wins per ``(region_id, date)`` key),
+    sorts by ``(region_id, date)``, and atomically writes the result back.
+
+    Emits a success line to ``stdout`` and logs at INFO with ``command_name``
+    so production logs remain unambiguous about which command flushed.
+
+    Shared by ``fetch_weather`` and ``backfill_weather`` to avoid duplicating
+    the implementation. Accepts Django management-command ``stdout`` /
+    ``style`` objects (typed as ``Any`` to avoid noisy management-framework
+    imports in a Django-free module).
+
+    Args:
+        path: Filesystem path to the NDJSON archive
+            (typically ``settings.OPENMETEO_ARCHIVE_PATH``).
+        collected: Records gathered during the current ``--stash`` run.
+        command_name: Name of the calling command (e.g. ``"fetch_weather"``),
+            used in the log line for grep-ability.
+        stdout: The management command's ``self.stdout`` output wrapper.
+        style: The management command's ``self.style`` colour helper.
+
+    """
+    existing = list(read_archive(path))
+    merged = merge(existing, collected)
+    write_archive(path, merged)
+    stdout.write(
+        style.SUCCESS(
+            f"Stashed {len(collected)} fetched record(s) to {path}; "
+            f"archive now contains {len(merged)} record(s)."
+        )
+    )
+    logger.info(
+        "%s stash flush: collected=%d archive_total=%d path=%s",
+        command_name,
+        len(collected),
+        len(merged),
+        path,
+    )

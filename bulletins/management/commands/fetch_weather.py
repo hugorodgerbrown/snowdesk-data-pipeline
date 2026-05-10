@@ -53,7 +53,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from bulletins.services.openmeteo_archive import merge, read_archive, write_archive
+from bulletins.services.openmeteo_archive import flush_stash
 from bulletins.services.weather_fetcher import (
     SOURCE_LIVE,
     SOURCE_LOCAL_MIRROR,
@@ -141,7 +141,13 @@ class Command(BaseCommand):
         )
 
         if stash:
-            self._flush_stash(collected)
+            flush_stash(
+                settings.OPENMETEO_ARCHIVE_PATH,
+                collected,
+                "fetch_weather",
+                stdout=self.stdout,
+                style=self.style,
+            )
 
         self._report_outcome(counts, target, commit=commit, verbosity=verbosity)
 
@@ -220,30 +226,4 @@ class Command(BaseCommand):
             counts["skipped"],
             counts["failed"],
             commit,
-        )
-
-    def _flush_stash(self, collected: list[dict[str, Any]]) -> None:
-        """
-        Merge collected weather records into the on-disk Open-Meteo archive.
-
-        Reads the existing archive, overlays the freshly-collected records
-        (later ``captured_at`` wins per ``(region_id, date)`` key), sorts by
-        ``(region_id, date)``, and atomically writes the result back to
-        ``settings.OPENMETEO_ARCHIVE_PATH``.
-        """
-        path = settings.OPENMETEO_ARCHIVE_PATH
-        existing = list(read_archive(path))
-        merged = merge(existing, collected)
-        write_archive(path, merged)
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Stashed {len(collected)} fetched record(s) to {path}; "
-                f"archive now contains {len(merged)} record(s)."
-            )
-        )
-        logger.info(
-            "fetch_weather stash flush: collected=%d archive_total=%d path=%s",
-            len(collected),
-            len(merged),
-            path,
         )
