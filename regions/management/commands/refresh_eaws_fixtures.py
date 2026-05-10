@@ -1,14 +1,15 @@
 """refresh_eaws_fixtures — derive L1/L2 geometry from L4 children.
 
 Regenerates the ``centre``, ``bbox`` and ``boundary`` fields on the
-L1/L2 EAWS fixtures from the union of their L4 children stored in
-``regions/fixtures/regions.json``.
+L1/L2 EAWS entries in ``regions/fixtures/eaws.json`` from the union of
+their L4 children in the same file.
 
-The L4 (``regions.json``) data is the authoritative geographic source —
-one polygon per SLF warning region. L1/L2 don't have independently
-published geometry; their centre, bounding box and outer boundary are
-derived from their descendants. Pre-computing avoids runtime geometry
-math (per the project's pre-compute-over-runtime preference).
+The L4 (``regions.microregion``) data is the authoritative geographic
+source — one polygon per SLF warning region. L1/L2 don't have
+independently published geometry; their centre, bounding box and outer
+boundary are derived from their descendants. Pre-computing avoids
+runtime geometry math (per the project's pre-compute-over-runtime
+preference).
 
 Boundary computation uses ``shapely.ops.unary_union`` to merge L4
 polygons into a single Polygon (or MultiPolygon if disjoint). Shapely
@@ -21,7 +22,7 @@ lacks shapely raises a friendly RuntimeError pointing at
 This command does NOT:
   * Fetch from ``regions.avalanches.org`` — the authoritative dataset is
     already snapshotted under ``docs/`` and materialised in
-    ``regions/fixtures/regions.json``. Refreshing the L4 snapshot is a
+    ``regions/fixtures/eaws.json``. Refreshing the L4 snapshot is a
     separate, manual step handled by ``scripts/build_regions_fixture.py``.
   * Edit the L1/L2 ``name_native`` / ``name_en`` labels — those are
     hand-maintained and outside this command's remit.
@@ -51,17 +52,19 @@ from django.core.management.base import BaseCommand
 logger = logging.getLogger(__name__)
 
 _FIXTURES_DIR = Path("regions/fixtures")
-_REGIONS_FIXTURE = _FIXTURES_DIR / "regions.json"
-_MAJOR_FIXTURE = _FIXTURES_DIR / "eaws_major_regions.json"
-_SUB_FIXTURE = _FIXTURES_DIR / "eaws_sub_regions.json"
+_EAWS_FIXTURE = _FIXTURES_DIR / "eaws.json"
+
+_LABEL_MAJOR = "regions.majorregion"
+_LABEL_SUB = "regions.subregion"
+_LABEL_MICRO = "regions.microregion"
 
 
 class Command(BaseCommand):
     """Recompute L1/L2 centre + bbox from L4 unions. Read-only unless --commit."""
 
     help = (
-        "Recompute derived centre + bbox on the L1/L2 EAWS fixtures from the "
-        "union of their L4 children. Read-only unless --commit is passed."
+        "Recompute derived centre + bbox on the L1/L2 EAWS entries in eaws.json "
+        "from the union of their L4 children. Read-only unless --commit is passed."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -69,7 +72,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--commit",
             action="store_true",
-            help="Write the recomputed fixtures to disk. Without this flag "
+            help="Write the recomputed fixture to disk. Without this flag "
             "the command only reports what would change and exits 0.",
         )
 
@@ -78,9 +81,12 @@ class Command(BaseCommand):
         commit: bool = options["commit"]
         verbosity: int = options.get("verbosity", 1)
 
-        regions = _load_fixture(_REGIONS_FIXTURE)
-        majors = _load_fixture(_MAJOR_FIXTURE)
-        subs = _load_fixture(_SUB_FIXTURE)
+        all_entries = _load_fixture(_EAWS_FIXTURE)
+
+        # Split by model label.
+        regions = [e for e in all_entries if e["model"] == _LABEL_MICRO]
+        majors = [e for e in all_entries if e["model"] == _LABEL_MAJOR]
+        subs = [e for e in all_entries if e["model"] == _LABEL_SUB]
 
         l4_by_sub: dict[str, list[dict[str, Any]]] = defaultdict(list)
         l4_by_major: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -105,10 +111,9 @@ class Command(BaseCommand):
                 )
             return
 
-        if major_changes:
-            _write_fixture(_MAJOR_FIXTURE, majors)
-        if sub_changes:
-            _write_fixture(_SUB_FIXTURE, subs)
+        if major_changes or sub_changes:
+            combined = majors + subs + regions
+            _write_fixture(_EAWS_FIXTURE, combined)
 
         if verbosity >= 1:
             self.stdout.write(

@@ -63,7 +63,7 @@ from bulletins.services.render_model import (
 )
 from bulletins.services.weather_display import build_weather_display
 from core.utils import html_to_markdown
-from regions.models import Region
+from regions.models import MicroRegion
 
 from .guidance import load_field_guidance
 from .season_calendar import build_season_grid
@@ -361,7 +361,7 @@ def _render_bulletin_page(
 
 
 def _issues_for_date(
-    region: Region,
+    region: MicroRegion,
     target_date: datetime.date,
 ) -> list[Bulletin]:
     """
@@ -381,7 +381,7 @@ def _issues_for_date(
     issue times on the day.
 
     Args:
-        region: The Region to look up.
+        region: The MicroRegion to look up.
         target_date: Calendar date identifying the day to display.
 
     Returns:
@@ -451,7 +451,7 @@ def _select_default_issue(
 
 
 def _select_bulletin_for_date(
-    region: Region,
+    region: MicroRegion,
     target_date: datetime.date,
 ) -> Bulletin | None:
     """
@@ -463,7 +463,7 @@ def _select_bulletin_for_date(
     default without knowing about the full issue list.
 
     Args:
-        region: The Region to look up.
+        region: The MicroRegion to look up.
         target_date: Calendar date identifying the day to display.
 
     Returns:
@@ -503,7 +503,7 @@ def _resolve_selected_issue(
 
 
 def _get_nav_dates(
-    region: Region,
+    region: MicroRegion,
     current_date: datetime.date,
 ) -> tuple[datetime.date | None, datetime.date | None]:
     """
@@ -513,7 +513,7 @@ def _get_nav_dates(
     maps to exactly one page.
 
     Args:
-        region: The Region to navigate within.
+        region: The MicroRegion to navigate within.
         current_date: The date currently being viewed.
 
     Returns:
@@ -568,7 +568,7 @@ def _cache_key(zone_slug: str) -> str:
 _ZONE_NAME_CACHE_TIMEOUT = 60 * 60
 
 
-def _get_name_slug(region: Region) -> str:
+def _get_name_slug(region: MicroRegion) -> str:
     """
     Return a URL-safe slug derived from the region's human-readable name.
 
@@ -576,7 +576,7 @@ def _get_name_slug(region: Region) -> str:
     database entirely.
 
     Args:
-        region: A Region instance.
+        region: A MicroRegion instance.
 
     Returns:
         Slugified region name (e.g. "valais").
@@ -960,10 +960,10 @@ def examples_random(request: HttpRequest) -> HttpResponse:
     # Match the prefetch shape ``bulletin_detail`` uses so the core renders
     # at the same query budget the SNOW-13 monitor enforces.
     regions = list(
-        Region.objects.filter(pk__in=region_ids)
+        MicroRegion.objects.filter(pk__in=region_ids)
         .select_related("subregion")
         .prefetch_related(
-            Prefetch("neighbours", queryset=Region.objects.order_by("name")),
+            Prefetch("neighbours", queryset=MicroRegion.objects.order_by("name")),
         )
     )
     if not regions:
@@ -1036,7 +1036,10 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
         RegionBulletin.objects.filter(bulletin=bulletin)
         .select_related("region", "region__subregion")
         .prefetch_related(
-            Prefetch("region__neighbours", queryset=Region.objects.order_by("name")),
+            Prefetch(
+                "region__neighbours",
+                queryset=MicroRegion.objects.order_by("name"),
+            ),
         )
         .first()
     )
@@ -1059,7 +1062,7 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
 
 def _redirect_to_canonical(
     request: HttpRequest,
-    region: Region,
+    region: MicroRegion,
     target_date: datetime.date | None = None,
 ) -> HttpResponse:
     """
@@ -1082,7 +1085,7 @@ def _redirect_to_canonical(
     target = region.get_absolute_url(target_date)
     # The semgrep open-redirect rule fires on the syntactic taint flow
     # from ``request.META`` to ``redirect()``. The sink is provably safe:
-    # ``target`` is a server-relative path built via ``Region.get_absolute_url``
+    # ``target`` is a server-relative path built via ``MicroRegion.get_absolute_url``
     # (always lowercase region_id + slugified name + today's date), and
     # the query string is appended after a literal ``?`` separator — so
     # QUERY_STRING content cannot change the host of the redirect target.
@@ -1283,7 +1286,7 @@ def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
 
 def _build_canonical_url(
     request: HttpRequest,
-    region: Region,
+    region: MicroRegion,
     target_date: datetime.date | None,
 ) -> str:
     """
@@ -1294,15 +1297,15 @@ def _build_canonical_url(
     two canonical families (SNOW-99): pass ``None`` for the form-2
     "today" / evergreen URL ``/<region_id>/<slug>/``, or a ``date`` for
     the form-3 dated URL ``/<region_id>/<slug>/<YYYY-MM-DD>/``. Defers
-    to ``Region.get_absolute_url`` so the path components stay
+    to ``MicroRegion.get_absolute_url`` so the path components stay
     consistent with every other internal URL builder.
     """
     return request.build_absolute_uri(region.get_absolute_url(target_date))
 
 
-def _resolve_region_for_bulletin(region_id: str) -> Region:
+def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     """
-    Look up a Region with the prefetches the bulletin page needs.
+    Look up a MicroRegion with the prefetches the bulletin page needs.
 
     ``select_related("subregion")`` pre-loads the parent EAWS L2 row the
     masthead's H2 reads — without it, the subregion lookup adds a second
@@ -1312,8 +1315,8 @@ def _resolve_region_for_bulletin(region_id: str) -> Region:
     display order without a per-render sort.
     """
     return get_object_or_404(
-        Region.objects.select_related("subregion").prefetch_related(
-            Prefetch("neighbours", queryset=Region.objects.order_by("name")),
+        MicroRegion.objects.select_related("subregion").prefetch_related(
+            Prefetch("neighbours", queryset=MicroRegion.objects.order_by("name")),
         ),
         region_id__iexact=region_id,
     )
@@ -1321,7 +1324,7 @@ def _resolve_region_for_bulletin(region_id: str) -> Region:
 
 def _bulletin_detail_response(
     request: HttpRequest,
-    region: Region,
+    region: MicroRegion,
     target_date: datetime.date,
     *,
     requested_issue_id: str | None = None,
@@ -1355,7 +1358,7 @@ def _bulletin_detail_response(
 
     Args:
         request: The incoming HTTP request.
-        region: A pre-fetched ``Region`` with ``subregion`` selected and
+        region: A pre-fetched ``MicroRegion`` with ``subregion`` selected and
             ``neighbours`` prefetched.
         target_date: Calendar day the page represents.
         requested_issue_id: Optional bulletin id (UUID string) to pin
@@ -1433,7 +1436,7 @@ def _bulletin_detail_response(
     # same-day-evening issue would silently bump the header to D+1.
     page_date = target_date
 
-    # Region name as it appeared in this bulletin.
+    # MicroRegion name as it appeared in this bulletin.
     link = (
         RegionBulletin.objects.filter(bulletin=selected, region=region)
         .values_list("region_name_at_time", flat=True)
@@ -1460,7 +1463,7 @@ def _bulletin_detail_response(
     day_windows: list[dict[str, Any]] = _build_day_windows(selected)
     # The masthead subtitles the H1 with the parent EAWS L2 sub-region.
     # Prefer the English name where SLF publishes one, otherwise fall back
-    # to the locally-dominant native name. ``Region.subregion`` is
+    # to the locally-dominant native name. ``MicroRegion.subregion`` is
     # non-nullable so this lookup is always safe.
     subregion_name = (
         region.subregion.name_en or region.subregion.name_native

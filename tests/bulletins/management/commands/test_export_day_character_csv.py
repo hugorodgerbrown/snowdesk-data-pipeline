@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from django.core.management import call_command
 
-from tests.factories import BulletinFactory, RegionBulletinFactory, RegionFactory
+from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 
 def _problem(
@@ -233,8 +233,8 @@ class TestExportDayCharacterCsv:
             valid_to=datetime(2026, 3, 1, 18, 0, tzinfo=UTC),
             render_model=_render_model("1"),
         )
-        region_b = RegionFactory.create(region_id="CH-2222")
-        region_a = RegionFactory.create(region_id="CH-1111")
+        region_b = MicroRegionFactory.create(region_id="CH-2222")
+        region_a = MicroRegionFactory.create(region_id="CH-1111")
         RegionBulletinFactory.create(bulletin=bulletin, region=region_b)
         RegionBulletinFactory.create(bulletin=bulletin, region=region_a)
 

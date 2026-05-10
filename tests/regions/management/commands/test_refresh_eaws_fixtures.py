@@ -19,9 +19,8 @@ from pathlib import Path
 import pytest
 from django.core.management import call_command
 
-FIXTURES_DIR = Path("pipeline/fixtures")
-MAJOR_FIXTURE = FIXTURES_DIR / "eaws_major_regions.json"
-SUB_FIXTURE = FIXTURES_DIR / "eaws_sub_regions.json"
+FIXTURES_DIR = Path("regions/fixtures")
+EAWS_FIXTURE = FIXTURES_DIR / "eaws.json"
 
 
 class TestRefreshEawsFixtures:
@@ -31,57 +30,40 @@ class TestRefreshEawsFixtures:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Without --commit, the command prints a diff but writes nothing."""
-        tmp_regions = _seed_tmp_regions_fixture(tmp_path)
-        tmp_major = _seed_tmp_fixture(
-            tmp_path / "eaws_major_regions.json",
-            [_major_entry("CH-1", centre=None, bbox=None)],
-        )
-        tmp_sub = _seed_tmp_fixture(
-            tmp_path / "eaws_sub_regions.json",
-            [_sub_entry("CH-11", major="CH-1", centre=None, bbox=None)],
-        )
-        _patch_fixture_paths(monkeypatch, tmp_regions, tmp_major, tmp_sub)
+        tmp_eaws = _seed_tmp_eaws_fixture(tmp_path)
+        _patch_fixture_paths(monkeypatch, tmp_eaws)
 
-        major_before = tmp_major.read_text()
-        sub_before = tmp_sub.read_text()
+        eaws_before = tmp_eaws.read_text()
 
         out = StringIO()
         call_command("refresh_eaws_fixtures", stdout=out)
 
         # File contents unchanged.
-        assert tmp_major.read_text() == major_before
-        assert tmp_sub.read_text() == sub_before
+        assert tmp_eaws.read_text() == eaws_before
         # Output flags dry-run.
         assert "Dry-run" in out.getvalue()
 
     def test_commit_writes_geometry(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """--commit updates centre, bbox and boundary on L1 and L2 fixtures."""
-        tmp_regions = _seed_tmp_regions_fixture(tmp_path)
-        tmp_major = _seed_tmp_fixture(
-            tmp_path / "eaws_major_regions.json",
-            [_major_entry("CH-1", centre=None, bbox=None)],
-        )
-        tmp_sub = _seed_tmp_fixture(
-            tmp_path / "eaws_sub_regions.json",
-            [_sub_entry("CH-11", major="CH-1", centre=None, bbox=None)],
-        )
-        _patch_fixture_paths(monkeypatch, tmp_regions, tmp_major, tmp_sub)
+        """--commit updates centre, bbox and boundary on L1 and L2 entries."""
+        tmp_eaws = _seed_tmp_eaws_fixture(tmp_path)
+        _patch_fixture_paths(monkeypatch, tmp_eaws)
 
         call_command("refresh_eaws_fixtures", "--commit", stdout=StringIO())
 
-        major = json.loads(tmp_major.read_text())
-        sub = json.loads(tmp_sub.read_text())
-        assert major[0]["fields"]["centre"] is not None
-        assert major[0]["fields"]["bbox"] is not None
-        assert sub[0]["fields"]["centre"] is not None
-        assert sub[0]["fields"]["bbox"] is not None
+        entries = json.loads(tmp_eaws.read_text())
+        majors = [e for e in entries if e["model"] == "regions.majorregion"]
+        subs = [e for e in entries if e["model"] == "regions.subregion"]
+        assert majors[0]["fields"]["centre"] is not None
+        assert majors[0]["fields"]["bbox"] is not None
+        assert subs[0]["fields"]["centre"] is not None
+        assert subs[0]["fields"]["bbox"] is not None
         # SNOW-59: boundary populated as a GeoJSON Polygon (the two L4
         # children share an edge, so unary_union collapses them to one
         # contiguous Polygon rather than a MultiPolygon).
-        assert major[0]["fields"]["boundary"]["type"] == "Polygon"
-        assert sub[0]["fields"]["boundary"]["type"] == "Polygon"
+        assert majors[0]["fields"]["boundary"]["type"] == "Polygon"
+        assert subs[0]["fields"]["boundary"]["type"] == "Polygon"
 
 
 class TestBoundaryFromChildren:
@@ -200,23 +182,15 @@ class TestBoundaryFromChildren:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A second --commit after the first produces no further changes."""
-        tmp_regions = _seed_tmp_regions_fixture(tmp_path)
-        tmp_major = _seed_tmp_fixture(
-            tmp_path / "eaws_major_regions.json",
-            [_major_entry("CH-1", centre=None, bbox=None)],
-        )
-        tmp_sub = _seed_tmp_fixture(
-            tmp_path / "eaws_sub_regions.json",
-            [_sub_entry("CH-11", major="CH-1", centre=None, bbox=None)],
-        )
-        _patch_fixture_paths(monkeypatch, tmp_regions, tmp_major, tmp_sub)
+        tmp_eaws = _seed_tmp_eaws_fixture(tmp_path)
+        _patch_fixture_paths(monkeypatch, tmp_eaws)
 
         call_command("refresh_eaws_fixtures", "--commit", stdout=StringIO())
-        after_first = tmp_major.read_text(), tmp_sub.read_text()
+        after_first = tmp_eaws.read_text()
 
         out = StringIO()
         call_command("refresh_eaws_fixtures", "--commit", stdout=out)
-        after_second = tmp_major.read_text(), tmp_sub.read_text()
+        after_second = tmp_eaws.read_text()
 
         assert after_first == after_second
         assert "0 change(s)" in out.getvalue()
@@ -227,41 +201,40 @@ class TestBoundaryFromChildren:
 # ---------------------------------------------------------------------------
 
 
-def _seed_tmp_regions_fixture(tmp_path: Path) -> Path:
-    """Write a minimal two-L4-region fixture under ``tmp_path``."""
-    path = tmp_path / "regions.json"
-    path.write_text(
-        json.dumps(
-            [
-                _region_entry(
-                    "CH-1111",
-                    centre={"lon": 6.94, "lat": 46.47},
-                    boundary_poly=[
-                        [
-                            [6.8, 46.4],
-                            [7.0, 46.4],
-                            [7.0, 46.5],
-                            [6.8, 46.5],
-                            [6.8, 46.4],
-                        ]
-                    ],
-                ),
-                _region_entry(
-                    "CH-1112",
-                    centre={"lon": 7.14, "lat": 46.47},
-                    boundary_poly=[
-                        [
-                            [7.0, 46.4],
-                            [7.2, 46.4],
-                            [7.2, 46.5],
-                            [7.0, 46.5],
-                            [7.0, 46.4],
-                        ]
-                    ],
-                ),
-            ]
-        )
-    )
+def _seed_tmp_eaws_fixture(tmp_path: Path) -> Path:
+    """Write a minimal three-section EAWS fixture under ``tmp_path``."""
+    path = tmp_path / "eaws.json"
+    entries = [
+        _major_entry("CH-1", centre=None, bbox=None),
+        _sub_entry("CH-11", major="CH-1", centre=None, bbox=None),
+        _region_entry(
+            "CH-1111",
+            centre={"lon": 6.94, "lat": 46.47},
+            boundary_poly=[
+                [
+                    [6.8, 46.4],
+                    [7.0, 46.4],
+                    [7.0, 46.5],
+                    [6.8, 46.5],
+                    [6.8, 46.4],
+                ]
+            ],
+        ),
+        _region_entry(
+            "CH-1112",
+            centre={"lon": 7.14, "lat": 46.47},
+            boundary_poly=[
+                [
+                    [7.0, 46.4],
+                    [7.2, 46.4],
+                    [7.2, 46.5],
+                    [7.0, 46.5],
+                    [7.0, 46.4],
+                ]
+            ],
+        ),
+    ]
+    path.write_text(json.dumps(entries, indent=2, ensure_ascii=False) + "\n")
     return path
 
 
@@ -272,9 +245,9 @@ def _seed_tmp_fixture(path: Path, entries: list[dict]) -> Path:
 
 
 def _region_entry(region_id: str, centre: dict, boundary_poly: list) -> dict:
-    """Build a minimal pipeline.region fixture entry."""
+    """Build a minimal regions.microregion fixture entry."""
     return {
-        "model": "regions.region",
+        "model": "regions.microregion",
         "fields": {
             "region_id": region_id,
             "name": f"Test {region_id}",
@@ -289,9 +262,9 @@ def _region_entry(region_id: str, centre: dict, boundary_poly: list) -> dict:
 
 
 def _major_entry(prefix: str, centre: dict | None, bbox: list | None) -> dict:
-    """Build a minimal pipeline.eawsmajorregion fixture entry."""
+    """Build a minimal regions.majorregion fixture entry."""
     return {
-        "model": "regions.eawsmajorregion",
+        "model": "regions.majorregion",
         "fields": {
             "prefix": prefix,
             "country": "CH",
@@ -307,9 +280,9 @@ def _major_entry(prefix: str, centre: dict | None, bbox: list | None) -> dict:
 
 
 def _sub_entry(prefix: str, major: str, centre: dict | None, bbox: list | None) -> dict:
-    """Build a minimal pipeline.eawssubregion fixture entry."""
+    """Build a minimal regions.subregion fixture entry."""
     return {
-        "model": "regions.eawssubregion",
+        "model": "regions.subregion",
         "fields": {
             "prefix": prefix,
             "major": [major],
@@ -326,13 +299,9 @@ def _sub_entry(prefix: str, major: str, centre: dict | None, bbox: list | None) 
 
 def _patch_fixture_paths(
     monkeypatch: pytest.MonkeyPatch,
-    regions: Path,
-    major: Path,
-    sub: Path,
+    eaws: Path,
 ) -> None:
-    """Redirect the command's module-level fixture paths to tmp_path copies."""
+    """Redirect the command's module-level fixture path to the tmp_path copy."""
     from regions.management.commands import refresh_eaws_fixtures as mod
 
-    monkeypatch.setattr(mod, "_REGIONS_FIXTURE", regions)
-    monkeypatch.setattr(mod, "_MAJOR_FIXTURE", major)
-    monkeypatch.setattr(mod, "_SUB_FIXTURE", sub)
+    monkeypatch.setattr(mod, "_EAWS_FIXTURE", eaws)

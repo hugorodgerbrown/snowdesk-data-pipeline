@@ -25,7 +25,7 @@ from subscriptions.services.email import (
     simulate_account_access_work,
 )
 from subscriptions.services.token import SALT_ACCOUNT_ACCESS, verify_token
-from tests.factories import RegionFactory
+from tests.factories import MicroRegionFactory
 
 
 @pytest.fixture
@@ -126,43 +126,43 @@ class TestSendSubscriptionConfirmationEmail:
 
     def test_sends_one_email(self):
         """Exactly one email is dispatched."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert len(mail.outbox) == 1
 
     def test_recipient_is_correct(self):
         """Email is addressed to the supplied recipient."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert mail.outbox[0].to == ["alice@example.com"]
 
     def test_subject_contains_region_name(self):
         """Subject line includes the region name."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert "Engelberg Region" in mail.outbox[0].subject
 
     def test_subject_contains_snowdesk(self):
         """Subject line includes the 'Snowdesk' brand name."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert "Snowdesk" in mail.outbox[0].subject
 
     def test_body_contains_region_name(self):
         """Plain-text body includes the region name."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert "Engelberg Region" in mail.outbox[0].body
 
     def test_body_contains_account_path(self):
         """Plain-text body contains the account-access URL path."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert "/subscribe/account/" in mail.outbox[0].body
 
     def test_html_alternative_present(self):
         """Email includes an HTML alternative."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert len(mail.outbox[0].alternatives) == 1
         _, mimetype = mail.outbox[0].alternatives[0]
@@ -170,14 +170,14 @@ class TestSendSubscriptionConfirmationEmail:
 
     def test_html_body_contains_region_name(self):
         """HTML body includes the region name."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         html, _ = mail.outbox[0].alternatives[0]
         assert "Engelberg Region" in html
 
     def test_token_in_url_uses_account_access_salt(self):
         """The token embedded in the body URL verifies with SALT_ACCOUNT_ACCESS."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         body = mail.outbox[0].body
         url_line = next(
@@ -191,7 +191,7 @@ class TestSendSubscriptionConfirmationEmail:
 
     def test_uses_request_origin_when_provided(self):
         """When a request is supplied, the URL reflects its origin."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         rf = RequestFactory()
         request = rf.get("/")
         send_subscription_confirmation_email(
@@ -201,7 +201,7 @@ class TestSendSubscriptionConfirmationEmail:
 
     def test_text_body_includes_slf_attribution(self):
         """SLF licence credit appears in the plain-text body (SNOW-30)."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         body = mail.outbox[0].body
         assert "WSL Institute for Snow and Avalanche Research SLF" in body
@@ -209,7 +209,7 @@ class TestSendSubscriptionConfirmationEmail:
 
     def test_html_body_includes_slf_attribution(self):
         """SLF licence credit appears in the HTML alternative (SNOW-30)."""
-        region = RegionFactory.create(name="Engelberg Region")
+        region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         html, _ = mail.outbox[0].alternatives[0]
         assert "WSL Institute for Snow and Avalanche Research SLF" in html

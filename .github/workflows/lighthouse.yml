@@ -68,7 +68,7 @@ jobs:
 
       - name: Load fixtures
         run: |
-          poetry run python manage.py loaddata regions resorts bulletins region_bulletins
+          poetry run python manage.py loaddata eaws resorts bulletins region_bulletins
           poetry run python manage.py rebuild_render_models --commit
 
       - name: Check query-count baseline (SNOW-13)

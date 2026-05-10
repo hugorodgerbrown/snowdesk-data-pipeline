@@ -16,7 +16,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 from django.urls import reverse
 
-from tests.factories import BulletinFactory, RegionBulletinFactory, RegionFactory
+from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 User = get_user_model()
 
@@ -42,7 +42,9 @@ def _make_am_bulletin(region, day, **kwargs):
 @pytest.fixture()
 def region():
     """Return a test Region."""
-    return RegionFactory.create(region_id="CH-7777", name="Test Valley", slug="ch-7777")
+    return MicroRegionFactory.create(
+        region_id="CH-7777", name="Test Valley", slug="ch-7777"
+    )
 
 
 @pytest.fixture()

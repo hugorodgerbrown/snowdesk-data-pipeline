@@ -18,7 +18,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from tests.factories import RegionFactory
+from tests.factories import MicroRegionFactory
 
 PATCH_TARGET = "bulletins.management.commands.fetch_weather.fetch_all_regions"
 
@@ -141,8 +141,8 @@ class TestFetchWeatherCommand:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Banner includes the total number of regions."""
-        RegionFactory.create()
-        RegionFactory.create()
+        MicroRegionFactory.create()
+        MicroRegionFactory.create()
         mock_fetch.return_value = _make_counts()
 
         call_command("fetch_weather")

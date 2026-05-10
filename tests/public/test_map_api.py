@@ -25,12 +25,12 @@ from django.utils import timezone
 from bulletins.models import RegionDayRating
 from tests.factories import (
     BulletinFactory,
-    EawsMajorRegionFactory,
-    EawsSubRegionFactory,
+    MajorRegionFactory,
+    MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
-    RegionFactory,
     ResortFactory,
+    SubRegionFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -143,7 +143,7 @@ def test_today_summaries_empty_when_no_bulletins():
 @pytest.mark.django_db
 def test_today_summaries_returns_expected_shape():
     """A single bulletin today produces a correctly-shaped summary."""
-    region = RegionFactory.create(
+    region = MicroRegionFactory.create(
         region_id="CH-4115", name="Martigny – Verbier", slug="ch-4115"
     )
     _make_today_bulletin(region, _render_model())
@@ -169,10 +169,10 @@ def test_today_summaries_returns_expected_shape():
 @pytest.mark.django_db
 def test_today_summaries_skips_regions_without_bulletins():
     """Regions whose only bulletin lies outside today's window are omitted."""
-    included_region = RegionFactory.create(
+    included_region = MicroRegionFactory.create(
         region_id="CH-4115", name="Martigny", slug="ch-4115"
     )
-    excluded_region = RegionFactory.create(
+    excluded_region = MicroRegionFactory.create(
         region_id="CH-9999", name="Empty", slug="ch-9999"
     )
     _make_today_bulletin(included_region, _render_model())
@@ -202,7 +202,7 @@ def test_today_summaries_skips_regions_without_bulletins():
 @pytest.mark.django_db
 def test_today_summaries_elevation_below():
     """An upper-bound-only elevation renders as ``below N m``."""
-    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     rm = _render_model(
         elevation={"lower": None, "upper": 1800, "treeline": False},
     )
@@ -216,7 +216,7 @@ def test_today_summaries_elevation_below():
 @pytest.mark.django_db
 def test_today_summaries_partial_aspects():
     """A subset of aspects renders as a comma-joined list."""
-    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     rm = _render_model(aspects=["N", "NE", "E", "NW"])
     _make_today_bulletin(region, rm)
 
@@ -233,7 +233,7 @@ def test_today_summaries_prefers_morning_update_over_previous_evening():
     (valid from 08:00 today) — the morning update wins for queries made
     after it takes over, because it is the later refresh of the forecast.
     """
-    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     now = timezone.now()
     today = now.date()
 
@@ -290,7 +290,7 @@ def test_today_summaries_handles_error_sentinel_render_model():
     (``{"version": 0, "error": ...}``) must not 500 the endpoint — the
     summary degrades gracefully to ``no_rating`` with empty fields.
     """
-    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     vf, vt = _today_window()
     bulletin = BulletinFactory.create(
         issued_at=vf - timedelta(minutes=30),
@@ -331,12 +331,12 @@ def test_resorts_by_region_empty_when_no_resorts():
 @pytest.mark.django_db
 def test_resorts_by_region_groups_names_alphabetically():
     """Resorts are grouped by region_id and returned in alphabetical order."""
-    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     ResortFactory.create(region=region, name="Verbier")
     ResortFactory.create(region=region, name="La Chaux")
 
     # A region with no resorts should be absent from the response.
-    RegionFactory.create(region_id="CH-9999", slug="ch-9999")
+    MicroRegionFactory.create(region_id="CH-9999", slug="ch-9999")
 
     client = Client()
     data = client.get(reverse("api:resorts_by_region")).json()
@@ -357,14 +357,14 @@ def test_regions_geojson_returns_feature_collection():
             [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
         ],
     }
-    RegionFactory.create(
+    MicroRegionFactory.create(
         region_id="CH-4115",
         name="Valais",
         slug="ch-4115",
         boundary=boundary,
     )
     # Region without boundary — should be skipped.
-    RegionFactory.create(
+    MicroRegionFactory.create(
         region_id="CH-9999",
         name="No geometry",
         slug="ch-9999",
@@ -403,11 +403,11 @@ def test_major_regions_geojson_returns_feature_collection():
             [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
         ],
     }
-    EawsMajorRegionFactory.create(
+    MajorRegionFactory.create(
         prefix="AT-1", country="AT", name_en="Vorarlberg", boundary=boundary
     )
     # Major without boundary — should be skipped.
-    EawsMajorRegionFactory.create(
+    MajorRegionFactory.create(
         prefix="AT-2", country="AT", name_en="Tirol", boundary=None
     )
 
@@ -431,22 +431,20 @@ def test_major_regions_geojson_returns_feature_collection():
 @pytest.mark.django_db
 def test_sub_regions_geojson_returns_feature_collection():
     """L2 subs with a non-null boundary become Features; null boundary skipped."""
-    major = EawsMajorRegionFactory.create(
-        prefix="AT-1", country="AT", name_en="Vorarlberg"
-    )
+    major = MajorRegionFactory.create(prefix="AT-1", country="AT", name_en="Vorarlberg")
     boundary = {
         "type": "Polygon",
         "coordinates": [
             [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
         ],
     }
-    EawsSubRegionFactory.create(
+    SubRegionFactory.create(
         prefix="AT-11",
         major=major,
         name_en="Vorarlberg North",
         boundary=boundary,
     )
-    EawsSubRegionFactory.create(
+    SubRegionFactory.create(
         prefix="AT-12",
         major=major,
         name_en="Vorarlberg South",
@@ -488,8 +486,8 @@ def test_season_ratings_empty_when_no_day_ratings():
 @pytest.mark.django_db
 def test_season_ratings_returns_expected_shape():
     """Top-level keys are ISO dates; inner dicts map region_id → rating int."""
-    region_a = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    region_b = RegionFactory.create(region_id="CH-4116", slug="ch-4116")
+    region_a = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region_b = MicroRegionFactory.create(region_id="CH-4116", slug="ch-4116")
     day_one = dt.date(2026, 1, 15)
     day_two = dt.date(2026, 1, 16)
 
@@ -546,7 +544,7 @@ def _make_bulletin_for_date(region, day: dt.date, render_model: dict):
 @pytest.mark.django_db
 def test_region_summary_accepts_date_query_param():
     """``?d=YYYY-MM-DD`` returns the bulletin valid for that date, not today."""
-    region = RegionFactory.create(
+    region = MicroRegionFactory.create(
         region_id="CH-4115", name="Martigny – Verbier", slug="ch-4115"
     )
     # Today's bulletin: HIGH. Past date's bulletin: MODERATE. The ?d=
@@ -570,7 +568,7 @@ def test_region_summary_accepts_date_query_param():
 @pytest.mark.django_db
 def test_region_summary_rejects_bad_date():
     """An unparseable ``?d=`` returns 400 with a clear error code."""
-    RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     client = Client()
     response = client.get(
         reverse("api:region_summary", args=["CH-4115"]) + "?d=not-a-date",
@@ -582,7 +580,7 @@ def test_region_summary_rejects_bad_date():
 @pytest.mark.django_db
 def test_region_summary_404_when_no_bulletin_for_target_date():
     """A valid date with no bulletin coverage returns 404."""
-    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     # Bulletin only covers today; the past date has no coverage.
     _make_today_bulletin(region, _render_model())
     past_day = timezone.localdate() - timedelta(days=180)
@@ -597,7 +595,7 @@ def test_region_summary_404_when_no_bulletin_for_target_date():
 @pytest.mark.django_db
 def test_region_summary_defaults_to_today_when_no_date_param():
     """Without ``?d=`` the endpoint returns today's bulletin (legacy behaviour)."""
-    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     _make_today_bulletin(region, _render_model(rating="considerable"))
     client = Client()
     response = client.get(reverse("api:region_summary", args=["CH-4115"]))
@@ -612,7 +610,7 @@ def test_region_summary_peek_includes_bulletin_deep_link():
     Mirrors the map-pin link on the bulletin masthead so navigation
     between map and bulletin is one tap in either direction.
     """
-    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     _make_today_bulletin(region, _render_model(rating="moderate"))
     client = Client()
     response = client.get(reverse("api:region_summary", args=["CH-4115"]))
@@ -637,7 +635,7 @@ def test_region_summary_expanded_html_includes_enriched_fields():
     where the drawer was passing the raw ``render_model`` straight through
     and the partial silently skipped these rows.
     """
-    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     rm = _render_model(
         problem_type="wet_snow",
         elevation={"lower": 2400, "upper": None, "treeline": False},
@@ -691,7 +689,7 @@ def test_region_summary_expanded_html_renders_aspect_elevation_row():
     the drawer end-to-end and fails if the drawer ever drops the enrichment
     step again.
     """
-    region = RegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     raw_data = {
         "type": "Feature",
         "geometry": None,

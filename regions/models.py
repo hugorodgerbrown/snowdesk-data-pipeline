@@ -2,12 +2,12 @@
 regions/models.py — Region-hierarchy and resort reference-data models.
 
 Defines four concrete reference-data models:
-  - EawsMajorRegion: L1 EAWS region (e.g. "CH-4" Valais). Hand-maintained
+  - MajorRegion: L1 EAWS region (e.g. "CH-4" Valais). Hand-maintained
     reference data; geometry derived from the union of descendant L4
     polygons.
-  - EawsSubRegion: L2 EAWS region (e.g. "CH-41" Lower Valais). Hand-maintained
+  - SubRegion: L2 EAWS region (e.g. "CH-41" Lower Valais). Hand-maintained
     reference data; FK ``major`` to its parent L1; geometry derived.
-  - Region: SLF avalanche warning region — the L4 EAWS micro-region
+  - MicroRegion: SLF avalanche warning region — the L4 EAWS micro-region
     (e.g. "CH-4115"). FK ``subregion`` to its parent L2. Fixture-backed
     reference data; unknown region_ids seen during ingest raise rather
     than being auto-created.
@@ -50,15 +50,15 @@ from core.models import BaseModel
 #
 # Snowdesk models three tiers as first-class rows:
 #
-#   L1  EawsMajorRegion  prefix CH-4      ("Valais")
-#   L2  EawsSubRegion    prefix CH-41     ("Lower Valais")
-#   L4  Region           region_id CH-4115 (the SLF warning region)
+#   L1  MajorRegion  prefix CH-4      ("Valais")
+#   L2  SubRegion    prefix CH-41     ("Lower Valais")
+#   L4  MicroRegion  region_id CH-4115 (the SLF warning region)
 #
 # L3 is skipped — in practice the layer is thin (often 1–2 micro-regions
 # per L3 group) and can be derived from ``region_id[:6]`` if ever needed.
 #
 # All three models are fixture-backed and treated as static reference
-# data. ``Region`` is NOT auto-created at bulletin-ingest time (see
+# data. ``MicroRegion`` is NOT auto-created at bulletin-ingest time (see
 # ``bulletins.services.data_fetcher._get_region``); an unknown
 # ``region_id`` in an inbound bulletin raises ``UnknownRegionError`` so a
 # human can update the fixtures.
@@ -68,15 +68,15 @@ from core.models import BaseModel
 # L4 children and stored in the fixture. Never computed at request time.
 
 
-class EawsMajorRegionQuerySet(models.QuerySet["EawsMajorRegion"]):
-    """Custom queryset for EawsMajorRegion."""
+class MajorRegionQuerySet(models.QuerySet["MajorRegion"]):
+    """Custom queryset for MajorRegion."""
 
-    def get_by_natural_key(self, prefix: str) -> EawsMajorRegion:
-        """Look up an EawsMajorRegion by its prefix for fixture deserialisation."""
+    def get_by_natural_key(self, prefix: str) -> MajorRegion:
+        """Look up a MajorRegion by its prefix for fixture deserialisation."""
         return self.get(prefix=prefix)
 
 
-class EawsMajorRegion(BaseModel):
+class MajorRegion(BaseModel):
     """
     L1 EAWS region — e.g. "CH-4" Valais.
 
@@ -133,7 +133,7 @@ class EawsMajorRegion(BaseModel):
         ),
     )
 
-    objects = EawsMajorRegionQuerySet.as_manager()
+    objects = MajorRegionQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):
         """Model metadata."""
@@ -156,15 +156,15 @@ class EawsMajorRegion(BaseModel):
         return (self.prefix,)
 
 
-class EawsSubRegionQuerySet(models.QuerySet["EawsSubRegion"]):
-    """Custom queryset for EawsSubRegion."""
+class SubRegionQuerySet(models.QuerySet["SubRegion"]):
+    """Custom queryset for SubRegion."""
 
-    def get_by_natural_key(self, prefix: str) -> EawsSubRegion:
-        """Look up an EawsSubRegion by its prefix for fixture deserialisation."""
+    def get_by_natural_key(self, prefix: str) -> SubRegion:
+        """Look up a SubRegion by its prefix for fixture deserialisation."""
         return self.get(prefix=prefix)
 
 
-class EawsSubRegion(BaseModel):
+class SubRegion(BaseModel):
     """
     L2 EAWS region — e.g. "CH-41" Lower Valais.
 
@@ -180,7 +180,7 @@ class EawsSubRegion(BaseModel):
         help_text="EAWS L2 prefix, e.g. 'CH-41'.",
     )
     major = models.ForeignKey(
-        EawsMajorRegion,
+        MajorRegion,
         on_delete=models.PROTECT,
         related_name="subregions",
     )
@@ -200,7 +200,7 @@ class EawsSubRegion(BaseModel):
     bbox = models.JSONField(null=True, blank=True)
     boundary = models.JSONField(null=True, blank=True)
 
-    objects = EawsSubRegionQuerySet.as_manager()
+    objects = SubRegionQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):
         """Model metadata."""
@@ -224,25 +224,69 @@ class EawsSubRegion(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Region (L4 EAWS micro-region / SLF warning region)
+# MicroRegionNeighbour — explicit through model for the self-referential M2M
+# ---------------------------------------------------------------------------
+#
+# Django auto-names M2M through-table columns from the model class name, so
+# renaming Region → MicroRegion would make Django expect
+# ``from_microregion_id`` / ``to_microregion_id`` — but the physical column
+# names in the DB are ``from_region_id`` / ``to_region_id`` (created when the
+# model was still called Region, pinned by db_column).  An explicit through
+# model with db_column overrides keeps the physical schema unchanged while
+# letting Django's ORM generate correct SQL queries.
+#
+# The through table itself keeps the original name (``pipeline_region_neighbours``)
+# via Meta.db_table.
+
+
+class MicroRegionNeighbour(models.Model):
+    """Explicit through model for the MicroRegion.neighbours self-referential M2M.
+
+    Pins the column names to the physical schema that was created when the
+    model was called Region (``from_region_id`` / ``to_region_id``), so
+    that renaming the model does not require a DDL migration.
+    """
+
+    from_microregion = models.ForeignKey(
+        "MicroRegion",
+        on_delete=models.CASCADE,
+        db_column="from_region_id",
+        related_name="+",
+    )
+    to_microregion = models.ForeignKey(
+        "MicroRegion",
+        on_delete=models.CASCADE,
+        db_column="to_region_id",
+        related_name="+",
+    )
+
+    class Meta:
+        """Model metadata."""
+
+        db_table = "pipeline_region_neighbours"
+        unique_together = [("from_microregion", "to_microregion")]
+
+
+# ---------------------------------------------------------------------------
+# MicroRegion (L4 EAWS micro-region / SLF warning region)
 # ---------------------------------------------------------------------------
 
 
-class RegionQuerySet(models.QuerySet["Region"]):
-    """Custom queryset for Region."""
+class MicroRegionQuerySet(models.QuerySet["MicroRegion"]):
+    """Custom queryset for MicroRegion."""
 
-    def get_by_natural_key(self, region_id: str) -> Region:
-        """Look up a Region by its region_id for fixture deserialization."""
+    def get_by_natural_key(self, region_id: str) -> MicroRegion:
+        """Look up a MicroRegion by its region_id for fixture deserialization."""
         return self.get(region_id=region_id)
 
 
-class Region(BaseModel):
+class MicroRegion(BaseModel):
     """
     An SLF avalanche warning region (e.g. "CH-4115").
 
     Conceptually the **L4 EAWS micro-region** — the leaf of the EAWS
-    hierarchy. Its parent ``EawsSubRegion`` is resolved by ``region_id[:5]``
-    and its grand-parent ``EawsMajorRegion`` by ``region_id[:4]``, exposed
+    hierarchy. Its parent ``SubRegion`` is resolved by ``region_id[:5]``
+    and its grand-parent ``MajorRegion`` by ``region_id[:4]``, exposed
     via the ``major_region`` property.
 
     Treated as static, fixture-backed reference data. Unknown ``region_id``
@@ -261,7 +305,7 @@ class Region(BaseModel):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
     subregion = models.ForeignKey(
-        EawsSubRegion,
+        SubRegion,
         on_delete=models.PROTECT,
         related_name="micro_regions",
         help_text=(
@@ -288,6 +332,7 @@ class Region(BaseModel):
     )
     neighbours = models.ManyToManyField(
         "self",
+        through="MicroRegionNeighbour",
         symmetrical=True,
         blank=True,
         help_text=(
@@ -298,17 +343,23 @@ class Region(BaseModel):
         ),
     )
 
-    objects = RegionQuerySet.as_manager()
+    objects = MicroRegionQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
         db_table = "pipeline_region"
         ordering = ["region_id"]
+        verbose_name = "EAWS micro-region"
+        verbose_name_plural = "EAWS micro-regions"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""
         return f"{self.region_id} — {self.name}"
+
+    def to_string(self) -> str:
+        """Return a concise canonical string (region_id + name)."""
+        return f"{self.region_id} {self.name}"
 
     def natural_key(self) -> tuple[str]:
         """Return the natural key for serialization (region_id)."""
@@ -321,7 +372,7 @@ class Region(BaseModel):
         super().save(*args, **kwargs)
 
     @property
-    def major_region(self) -> EawsMajorRegion:
+    def major_region(self) -> MajorRegion:
         """Return the L1 major region this region belongs to."""
         return self.subregion.major
 
@@ -433,7 +484,7 @@ class Resort(BaseModel):
         help_text="Alternative or marketing name for the resort.",
     )
     region = models.ForeignKey(
-        Region,
+        MicroRegion,
         on_delete=models.CASCADE,
         related_name="resorts",
     )

@@ -9,7 +9,7 @@ Contains four functions:
       ``commit=True``, or ``None`` when ``commit=False``.
 
   fetch_all_regions(target_date, *, commit)
-      Calls fetch_weather_for_region for every Region that has a centre
+      Calls fetch_weather_for_region for every MicroRegion that has a centre
       coordinate; returns summary counters {created, updated, failed, skipped}.
 
   fetch_archive_for_region(region, start_date, end_date, *, commit)
@@ -18,7 +18,7 @@ Contains four functions:
       ``commit=True``, or an empty list when ``commit=False``.
 
   backfill_all_regions(start_date, end_date, *, commit)
-      Calls fetch_archive_for_region for every Region that has a centre
+      Calls fetch_archive_for_region for every MicroRegion that has a centre
       coordinate; returns summary counters {created, updated, failed, skipped}.
 
 Uses ``requests`` with a 30-second timeout (matching data_fetcher.py's pattern).
@@ -41,7 +41,7 @@ import requests
 from django.utils import timezone as django_timezone
 
 from bulletins.models import WeatherSnapshot
-from regions.models import Region
+from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ def _build_snapshot_defaults(
 
 
 def fetch_weather_for_region(
-    region: Region,
+    region: MicroRegion,
     target_date: date,
     *,
     commit: bool,
@@ -116,7 +116,7 @@ def fetch_weather_for_region(
     None if ``commit=False``.
 
     Args:
-        region: The Region to fetch weather for. Must have a non-None ``centre``
+        region: The MicroRegion to fetch weather for. Must have a non-None ``centre``
             field with shape ``{"lon": float, "lat": float}``.
         target_date: The calendar date to fetch weather for.
         commit: If True, write the snapshot to the database. If False, the
@@ -195,9 +195,9 @@ def fetch_all_regions(
     commit: bool,
 ) -> dict[str, int]:
     """
-    Fetch weather snapshots for every Region that has a centre coordinate.
+    Fetch weather snapshots for every MicroRegion that has a centre coordinate.
 
-    Iterates all Region rows. Regions without a ``centre`` value are skipped
+    Iterates all MicroRegion rows. Regions without a ``centre`` value are skipped
     (counter: ``skipped``). Per-region HTTP failures are caught, logged, and
     counted (counter: ``failed``) — they do not abort the batch.
 
@@ -221,7 +221,7 @@ def fetch_all_regions(
     }
 
     # Materialise once so we can use len() without a second DB round-trip.
-    regions = list(Region.objects.order_by("region_id"))
+    regions = list(MicroRegion.objects.order_by("region_id"))
     logger.info(
         "fetch_all_regions: date=%s regions=%d commit=%s",
         target_date,
@@ -263,7 +263,7 @@ def fetch_all_regions(
 
 
 def fetch_archive_for_region(
-    region: Region,
+    region: MicroRegion,
     start_date: date,
     end_date: date,
     *,
@@ -278,7 +278,7 @@ def fetch_archive_for_region(
     via update_or_create when ``commit=True``.
 
     Args:
-        region: The Region to fetch historical weather for. Must have a
+        region: The MicroRegion to fetch historical weather for. Must have a
             non-None ``centre`` field.
         start_date: First date in the range (inclusive).
         end_date: Last date in the range (inclusive).
@@ -361,9 +361,9 @@ def backfill_all_regions(
     delay: float = 0.0,
 ) -> dict[str, int]:
     """
-    Backfill historical weather snapshots for every Region with a centre.
+    Backfill historical weather snapshots for every MicroRegion with a centre.
 
-    Iterates all Region rows. Regions without a ``centre`` value are logged
+    Iterates all MicroRegion rows. Regions without a ``centre`` value are logged
     and counted as ``skipped``. Per-region archive failures are caught,
     logged, and counted as ``failed`` — they do not abort the batch.
 
@@ -393,7 +393,7 @@ def backfill_all_regions(
     }
 
     # Materialise once so we can use len() without a second DB round-trip.
-    regions = list(Region.objects.order_by("region_id"))
+    regions = list(MicroRegion.objects.order_by("region_id"))
     logger.info(
         "backfill_all_regions: start=%s end=%s regions=%d commit=%s delay=%s",
         start_date,

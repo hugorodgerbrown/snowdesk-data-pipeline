@@ -7,7 +7,7 @@ Covers:
   - WeatherSnapshotQuerySet.for_date() filter.
   - unique_together constraint raises IntegrityError on duplicate (region, date).
   - ordering: newest date first, then region_id ascending.
-  - Deleting the linked Region cascades to WeatherSnapshot.
+  - Deleting the linked MicroRegion cascades to WeatherSnapshot.
 """
 
 import datetime
@@ -16,7 +16,7 @@ import pytest
 from django.db import IntegrityError
 
 from bulletins.models import WeatherSnapshot
-from tests.factories import RegionFactory, WeatherSnapshotFactory
+from tests.factories import MicroRegionFactory, WeatherSnapshotFactory
 
 
 @pytest.mark.django_db
@@ -50,7 +50,7 @@ class TestWeatherSnapshotStr:
 
     def test_to_string_format(self) -> None:
         """to_string() returns '<region_id> <date> wmo=<code>'."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         snapshot = WeatherSnapshotFactory.create(
             region=region,
             valid_for_date=datetime.date(2026, 5, 1),
@@ -91,7 +91,7 @@ class TestWeatherSnapshotConstraints:
 
     def test_unique_together_region_date(self) -> None:
         """Inserting two snapshots for the same (region, date) raises IntegrityError."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         WeatherSnapshotFactory.create(region=region, valid_for_date=target)
 
@@ -100,8 +100,8 @@ class TestWeatherSnapshotConstraints:
 
     def test_different_regions_same_date_allowed(self) -> None:
         """Two snapshots with different regions but the same date are allowed."""
-        region_a = RegionFactory.create()
-        region_b = RegionFactory.create()
+        region_a = MicroRegionFactory.create()
+        region_b = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         WeatherSnapshotFactory.create(region=region_a, valid_for_date=target)
         snap_b = WeatherSnapshotFactory.create(region=region_b, valid_for_date=target)
@@ -109,7 +109,7 @@ class TestWeatherSnapshotConstraints:
 
     def test_same_region_different_dates_allowed(self) -> None:
         """Two snapshots for the same region on different dates are allowed."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         snap1 = WeatherSnapshotFactory.create(
             region=region, valid_for_date=datetime.date(2026, 5, 1)
         )
@@ -119,8 +119,8 @@ class TestWeatherSnapshotConstraints:
         assert snap1.pk != snap2.pk
 
     def test_cascade_delete_from_region(self) -> None:
-        """Deleting the linked Region also deletes the WeatherSnapshot."""
-        region = RegionFactory.create()
+        """Deleting the linked MicroRegion also deletes the WeatherSnapshot."""
+        region = MicroRegionFactory.create()
         snap = WeatherSnapshotFactory.create(region=region)
         snap_pk = snap.pk
         region.delete()
@@ -133,7 +133,7 @@ class TestWeatherSnapshotOrdering:
 
     def test_ordering_newest_date_first(self) -> None:
         """Queryset returns most recent valid_for_date first."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         snap_old = WeatherSnapshotFactory.create(
             region=region, valid_for_date=datetime.date(2026, 4, 30)
         )

@@ -20,7 +20,7 @@ from django.contrib import admin
 from django.db import IntegrityError
 
 from bulletins.models import RegionDayRating
-from tests.factories import RegionDayRatingFactory, RegionFactory
+from tests.factories import MicroRegionFactory, RegionDayRatingFactory
 
 
 @pytest.mark.django_db
@@ -29,7 +29,7 @@ class TestRegionDayRatingToString:
 
     def test_to_string_no_subdivision_uniform(self) -> None:
         """to_string returns '<region_id> <date> <rating>' for a uniform day."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         rdr = RegionDayRatingFactory.create(
             region=region,
             date=datetime.date(2026, 1, 15),
@@ -41,7 +41,7 @@ class TestRegionDayRatingToString:
 
     def test_to_string_with_subdivision_uniform(self) -> None:
         """to_string appends the subdivision suffix on a uniform day."""
-        region = RegionFactory.create(region_id="CH-7111")
+        region = MicroRegionFactory.create(region_id="CH-7111")
         rdr = RegionDayRatingFactory.create(
             region=region,
             date=datetime.date(2026, 2, 1),
@@ -53,7 +53,7 @@ class TestRegionDayRatingToString:
 
     def test_to_string_variable_day(self) -> None:
         """to_string uses '<min>..<max>' format when ratings differ."""
-        region = RegionFactory.create(region_id="CH-5000")
+        region = MicroRegionFactory.create(region_id="CH-5000")
         rdr = RegionDayRatingFactory.create(
             region=region,
             date=datetime.date(2026, 4, 16),
@@ -70,7 +70,7 @@ class TestRegionDayRatingToString:
 
     def test_to_string_no_rating(self) -> None:
         """to_string handles no_rating correctly."""
-        region = RegionFactory.create(region_id="CH-0001")
+        region = MicroRegionFactory.create(region_id="CH-0001")
         rdr = RegionDayRatingFactory.create(
             region=region,
             date=datetime.date(2026, 3, 5),
@@ -87,8 +87,8 @@ class TestRegionDayRatingOrdering:
 
     def test_ordering_by_date_desc_then_region(self) -> None:
         """Rows are ordered by -date, then region__region_id ascending."""
-        region_a = RegionFactory.create(region_id="CH-1111")
-        region_b = RegionFactory.create(region_id="CH-2222")
+        region_a = MicroRegionFactory.create(region_id="CH-1111")
+        region_b = MicroRegionFactory.create(region_id="CH-2222")
 
         rdr_old_a = RegionDayRatingFactory.create(
             region=region_a, date=datetime.date(2026, 1, 1)
@@ -112,7 +112,7 @@ class TestForRegionMonth:
 
     def test_returns_rows_within_month(self) -> None:
         """for_region_month returns all rows in the specified month."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         jan = RegionDayRatingFactory.create(
             region=region, date=datetime.date(2026, 1, 15)
         )
@@ -125,8 +125,8 @@ class TestForRegionMonth:
 
     def test_excludes_other_regions(self) -> None:
         """for_region_month excludes rows for different regions."""
-        region_a = RegionFactory.create(region_id="CH-4115")
-        region_b = RegionFactory.create(region_id="CH-9999")
+        region_a = MicroRegionFactory.create(region_id="CH-4115")
+        region_b = MicroRegionFactory.create(region_id="CH-9999")
         RegionDayRatingFactory.create(region=region_a, date=datetime.date(2026, 3, 10))
         RegionDayRatingFactory.create(region=region_b, date=datetime.date(2026, 3, 10))
 
@@ -138,7 +138,7 @@ class TestForRegionMonth:
 
     def test_covers_full_month_boundaries(self) -> None:
         """for_region_month includes rows on the 1st and last day of the month."""
-        region = RegionFactory.create(region_id="CH-5555")
+        region = MicroRegionFactory.create(region_id="CH-5555")
         first = RegionDayRatingFactory.create(
             region=region, date=datetime.date(2026, 4, 1)
         )
@@ -158,7 +158,7 @@ class TestForRegionRange:
 
     def test_includes_lower_bound(self) -> None:
         """for_region_range is inclusive of the start date."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         on_start = RegionDayRatingFactory.create(
             region=region, date=datetime.date(2025, 11, 1)
         )
@@ -174,7 +174,7 @@ class TestForRegionRange:
 
     def test_includes_upper_bound(self) -> None:
         """for_region_range is inclusive of the end date."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         on_end = RegionDayRatingFactory.create(
             region=region, date=datetime.date(2026, 4, 30)
         )
@@ -190,8 +190,8 @@ class TestForRegionRange:
 
     def test_excludes_other_regions(self) -> None:
         """for_region_range excludes rows for other regions in the same range."""
-        region_a = RegionFactory.create(region_id="CH-4115")
-        region_b = RegionFactory.create(region_id="CH-9999")
+        region_a = MicroRegionFactory.create(region_id="CH-4115")
+        region_b = MicroRegionFactory.create(region_id="CH-9999")
         RegionDayRatingFactory.create(region=region_a, date=datetime.date(2026, 1, 15))
         RegionDayRatingFactory.create(region=region_b, date=datetime.date(2026, 1, 15))
 
@@ -207,7 +207,7 @@ class TestForRegionRange:
 
     def test_empty_range_returns_no_rows(self) -> None:
         """for_region_range returns nothing when start > end."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 15))
 
         qs = RegionDayRating.objects.for_region_range(
@@ -224,7 +224,7 @@ class TestUniqueTogether:
 
     def test_duplicate_raises_integrity_error(self) -> None:
         """Creating two rows for the same (region, date) raises IntegrityError."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 1))
         with pytest.raises(IntegrityError):
             RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 1))

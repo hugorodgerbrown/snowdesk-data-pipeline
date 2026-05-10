@@ -25,8 +25,8 @@ from bulletins.models import RegionDayRating
 from public.season_calendar import build_season_grid
 from tests.factories import (
     BulletinFactory,
+    MicroRegionFactory,
     RegionDayRatingFactory,
-    RegionFactory,
 )
 
 
@@ -37,7 +37,7 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2026, 1, 5))
     def test_empty_when_today_before_season_start(self) -> None:
         """Returns an empty (falsy) grid when end < SEASON_START_DATE."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         # today + 1 = 2026-01-04, season starts 2026-01-05.
         today = datetime.date(2026, 1, 3)
         grid = build_season_grid(region, page_date=today, today=today)
@@ -48,7 +48,7 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_no_leading_pad_when_start_is_monday(self) -> None:
         """The leading column has no None padding when the season starts on Monday."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         # 2025-11-03 is a Monday; today = same Monday → end = Tue 2025-11-04.
         today = datetime.date(2025, 11, 3)
         grid = build_season_grid(region, page_date=today, today=today)
@@ -63,7 +63,7 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 5))
     def test_leading_pad_when_start_is_midweek(self) -> None:
         """Leading None cells fill the column when SEASON_START_DATE is not a Monday."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         # 2025-11-05 is a Wednesday → 2 leading Nones.
         today = datetime.date(2025, 11, 5)
         grid = build_season_grid(region, page_date=today, today=today)
@@ -77,7 +77,7 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_today_and_tomorrow_present(self) -> None:
         """Both today and today + 1 appear in the grid."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 10)
         grid = build_season_grid(region, page_date=today, today=today)
 
@@ -89,7 +89,7 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_missing_row_renders_as_no_rating(self) -> None:
         """Days without a RegionDayRating render as no_rating, has_bulletin=False."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 5)
         # No factory rows created.
         grid = build_season_grid(region, page_date=today, today=today)
@@ -104,7 +104,7 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_row_with_source_bulletin_is_interactive(self) -> None:
         """Days with a RegionDayRating row + source_bulletin set has_bulletin=True."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 5)
         bulletin = BulletinFactory.create()
         RegionDayRatingFactory.create(
@@ -131,7 +131,7 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_row_without_source_bulletin_is_inert(self) -> None:
         """A RegionDayRating row with source_bulletin=None still renders as inert."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 5)
         RegionDayRatingFactory.create(
             region=region,
@@ -153,7 +153,7 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_is_today_flag_set_only_on_today(self) -> None:
         """Only the cell whose date equals today carries is_today."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 5)
         grid = build_season_grid(region, page_date=today, today=today)
 
@@ -166,7 +166,7 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_is_selected_set_only_on_historic_page_date(self) -> None:
         """is_selected lights up only when page_date != today."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 10)
         page_date = datetime.date(2025, 11, 5)
         grid = build_season_grid(region, page_date=page_date, today=today)
@@ -181,7 +181,7 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_is_selected_suppressed_when_page_date_equals_today(self) -> None:
         """When page_date == today, only is_today is set (no double ring)."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 10)
         grid = build_season_grid(region, page_date=today, today=today)
 
@@ -198,7 +198,7 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_month_labels_parallel_to_columns(self) -> None:
         """month_labels has one entry per column, with month abbreviations on flips."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         # Span Nov → Dec → Jan to exercise three month boundaries.
         today = datetime.date(2026, 1, 12)
         grid = build_season_grid(region, page_date=today, today=today)
@@ -233,8 +233,8 @@ class TestBuildSeasonGrid:
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_excludes_other_regions(self) -> None:
         """Rows from other regions do not contaminate the focal region's grid."""
-        region_a = RegionFactory.create(region_id="CH-4115")
-        region_b = RegionFactory.create(region_id="CH-9999")
+        region_a = MicroRegionFactory.create(region_id="CH-4115")
+        region_b = MicroRegionFactory.create(region_id="CH-9999")
         today = datetime.date(2025, 11, 5)
         bulletin = BulletinFactory.create()
         RegionDayRatingFactory.create(

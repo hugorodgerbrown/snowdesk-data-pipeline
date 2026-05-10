@@ -80,9 +80,9 @@ poetry run python manage.py monitor_query_counts           # CI / local gate
 poetry run python manage.py monitor_query_counts --commit  # accept new counts
 
 # Recompute the derived centre + bbox on L1/L2 EAWS fixtures from the
-# union of their L4 children. Run after editing pipeline/fixtures/regions.json
+# union of their L4 children. Run after editing regions/fixtures/eaws.json
 # (e.g. when EAWS publishes a new season). Read-only by default; --commit
-# to write the L1/L2 fixtures.
+# to write the consolidated fixture.
 poetry run python manage.py refresh_eaws_fixtures           # diff-only
 poetry run python manage.py refresh_eaws_fixtures --commit  # persist
 

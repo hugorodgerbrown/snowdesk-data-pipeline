@@ -38,7 +38,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from bulletins.models import Bulletin, RegionDayRating
 from bulletins.services.day_rating import _target_day
-from regions.models import Region
+from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ class Command(BaseCommand):
     @staticmethod
     def _all_regions() -> set[str]:
         """Return the set of every ``region_id`` known to the system."""
-        return set(Region.objects.values_list("region_id", flat=True))
+        return set(MicroRegion.objects.values_list("region_id", flat=True))
 
     @staticmethod
     def _rated_region_ids(target_date: dt.date | None) -> set[str]:
@@ -199,7 +199,7 @@ class Command(BaseCommand):
         """Print a per-region row showing each region's bucket and name."""
         self.stdout.write("")
         self.stdout.write(self.style.MIGRATE_HEADING("Per-region table:"))
-        for region in Region.objects.order_by("region_id"):
+        for region in MicroRegion.objects.order_by("region_id"):
             if region.region_id in rated_ids:
                 bucket = "A"
             elif region.region_id in seen_ids:

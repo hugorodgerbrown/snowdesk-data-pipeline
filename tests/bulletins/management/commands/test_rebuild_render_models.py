@@ -21,7 +21,7 @@ from django.core.management.base import CommandError
 
 from bulletins.models import Bulletin, RegionDayRating
 from bulletins.services.render_model import RENDER_MODEL_VERSION
-from tests.factories import BulletinFactory, RegionBulletinFactory, RegionFactory
+from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 
 def _make_bulletin(
@@ -222,7 +222,7 @@ class TestRebuildRenderModelsDayRatings:
 
     def test_commit_refreshes_day_ratings(self) -> None:
         """After --commit, RegionDayRating rows are created for rebuilt bulletins."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         b = _make_bulletin(render_model_version=0, bulletin_id="dr-rebuild-001")
         RegionBulletinFactory.create(bulletin=b, region=region)
 
@@ -233,7 +233,7 @@ class TestRebuildRenderModelsDayRatings:
 
     def test_skip_day_ratings_flag(self) -> None:
         """--skip-day-ratings prevents day-rating rows from being created."""
-        region = RegionFactory.create(region_id="CH-skip-test")
+        region = MicroRegionFactory.create(region_id="CH-skip-test")
         b = _make_bulletin(render_model_version=0, bulletin_id="dr-skip-001")
         RegionBulletinFactory.create(bulletin=b, region=region)
 

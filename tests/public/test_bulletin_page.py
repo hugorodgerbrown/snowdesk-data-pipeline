@@ -19,8 +19,8 @@ from django.urls import reverse
 
 from tests.factories import (
     BulletinFactory,
+    MicroRegionFactory,
     RegionBulletinFactory,
-    RegionFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -248,7 +248,7 @@ def _raw_data_with_aggregation(
 @pytest.fixture()
 def region():
     """Return a test Region."""
-    return RegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
+    return MicroRegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
 @pytest.fixture()
@@ -667,7 +667,7 @@ class TestNoBulletinPageFooter:
         bulletin = _make_am_bulletin(
             region, day, render_model=rm, render_model_version=3
         )
-        other_region = RegionFactory.create(name="Münstertal", slug="ch-4116")
+        other_region = MicroRegionFactory.create(name="Münstertal", slug="ch-4116")
         RegionBulletinFactory.create(
             bulletin=bulletin,
             region=other_region,
@@ -1438,7 +1438,7 @@ class TestBulletinPageContent:
     """
 
     def test_subregion_uses_english_name_when_present(self, simple_bulletin, region):
-        """``EawsSubRegion.name_en`` wins over native when SLF publishes one."""
+        """``SubRegion.name_en`` wins over native when SLF publishes one."""
         sub = region.subregion
         sub.name_en = "Lower Valais"
         sub.name_native = "Bas-Valais"

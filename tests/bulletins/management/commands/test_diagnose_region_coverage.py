@@ -28,9 +28,9 @@ from django.core.management.base import CommandError
 from bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from tests.factories import (
     BulletinFactory,
+    MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
-    RegionFactory,
 )
 
 
@@ -76,7 +76,7 @@ class TestBucketAssignment:
         self, capsys: pytest.CaptureFixture
     ) -> None:
         """A region with a RegionDayRating row is reported in bucket A."""
-        region = RegionFactory.create(region_id="CH-A001")
+        region = MicroRegionFactory.create(region_id="CH-A001")
         bulletin = _bulletin_with_regions(["CH-A001"], bulletin_id="bul-a")
         RegionBulletinFactory.create(bulletin=bulletin, region=region)
         RegionDayRatingFactory.create(region=region)
@@ -94,7 +94,7 @@ class TestBucketAssignment:
         self, capsys: pytest.CaptureFixture
     ) -> None:
         """A region listed in raw_data but with no rating row is in bucket B."""
-        RegionFactory.create(region_id="CH-B001")
+        MicroRegionFactory.create(region_id="CH-B001")
         _bulletin_with_regions(["CH-B001"], bulletin_id="bul-b")
         # Deliberately no RegionBulletin and no RegionDayRating: the
         # diagnostic must rely on raw_data alone.
@@ -110,7 +110,7 @@ class TestBucketAssignment:
         self, capsys: pytest.CaptureFixture
     ) -> None:
         """A region absent from every bulletin's raw_data is in bucket C."""
-        RegionFactory.create(region_id="CH-C001")
+        MicroRegionFactory.create(region_id="CH-C001")
         # An unrelated bulletin that doesn't mention CH-C001.
         _bulletin_with_regions(["CH-OTHER"], bulletin_id="bul-c-other")
 
@@ -125,7 +125,7 @@ class TestBucketAssignment:
         self, capsys: pytest.CaptureFixture
     ) -> None:
         """Bucket B is computed from raw_data, ignoring the M2M join."""
-        RegionFactory.create(region_id="CH-B002")
+        MicroRegionFactory.create(region_id="CH-B002")
         # raw_data lists the region but no RegionBulletin row exists.
         _bulletin_with_regions(["CH-B002"], bulletin_id="bul-b2")
 
@@ -141,9 +141,9 @@ class TestBucketAssignment:
     ) -> None:
         """A + B + C equals the total number of regions."""
         # One in each bucket.
-        a_region = RegionFactory.create(region_id="CH-A777")
-        RegionFactory.create(region_id="CH-B777")
-        RegionFactory.create(region_id="CH-C777")
+        a_region = MicroRegionFactory.create(region_id="CH-A777")
+        MicroRegionFactory.create(region_id="CH-B777")
+        MicroRegionFactory.create(region_id="CH-C777")
         bulletin_a = _bulletin_with_regions(["CH-A777"], bulletin_id="bul-a777")
         RegionBulletinFactory.create(bulletin=bulletin_a, region=a_region)
         RegionDayRatingFactory.create(region=a_region)
@@ -171,8 +171,8 @@ class TestDateFlag:
         one valid on 2026-03-15 morning targets 2026-03-15. Asking
         ``--date 2026-03-15`` should pick up only the second.
         """
-        RegionFactory.create(region_id="CH-D001")
-        RegionFactory.create(region_id="CH-D002")
+        MicroRegionFactory.create(region_id="CH-D001")
+        MicroRegionFactory.create(region_id="CH-D002")
         # Bulletin targeting 2026-03-14 — should NOT be counted under --date 2026-03-15.
         _bulletin_with_regions(
             ["CH-D001"],
@@ -203,7 +203,7 @@ class TestDateFlag:
         by ``--date 2026-03-15``, mirroring the ``_target_day`` rule used
         elsewhere in the pipeline.
         """
-        RegionFactory.create(region_id="CH-E001")
+        MicroRegionFactory.create(region_id="CH-E001")
         _bulletin_with_regions(
             ["CH-E001"],
             bulletin_id="bul-e001",
@@ -233,7 +233,7 @@ class TestVerboseTable:
         self, capsys: pytest.CaptureFixture
     ) -> None:
         """--verbose-table prints a [bucket] line for every region."""
-        RegionFactory.create(region_id="CH-V001", name="Verbose region")
+        MicroRegionFactory.create(region_id="CH-V001", name="Verbose region")
 
         call_command("diagnose_region_coverage", verbose_table=True, verbosity=0)
 
@@ -245,7 +245,7 @@ class TestVerboseTable:
         self, capsys: pytest.CaptureFixture
     ) -> None:
         """Without --verbose-table the per-region table is suppressed."""
-        RegionFactory.create(region_id="CH-V002")
+        MicroRegionFactory.create(region_id="CH-V002")
 
         call_command("diagnose_region_coverage", verbosity=0)
 
@@ -259,7 +259,7 @@ class TestReadOnly:
 
     def test_command_does_not_create_rating_rows(self) -> None:
         """Running the diagnostic must not create any RegionDayRating rows."""
-        RegionFactory.create(region_id="CH-R001")
+        MicroRegionFactory.create(region_id="CH-R001")
         _bulletin_with_regions(["CH-R001"], bulletin_id="bul-r001")
         baseline_ratings = RegionDayRating.objects.count()
         baseline_links = RegionBulletin.objects.count()

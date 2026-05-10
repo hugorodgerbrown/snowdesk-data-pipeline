@@ -1,7 +1,7 @@
 """
 regions/admin.py — Django admin registrations for the regions app.
 
-Covers the geographic hierarchy (EawsMajorRegion, EawsSubRegion, Region)
+Covers the geographic hierarchy (MajorRegion, SubRegion, MicroRegion)
 and Resort. Bulletin-related admins live in ``bulletins/admin.py``.
 """
 
@@ -10,18 +10,18 @@ import logging
 from django.contrib import admin
 
 from .models import (
-    EawsMajorRegion,
-    EawsSubRegion,
-    Region,
+    MajorRegion,
+    MicroRegion,
     Resort,
+    SubRegion,
 )
 
 logger = logging.getLogger(__name__)
 
 
-@admin.register(EawsMajorRegion)
-class EawsMajorRegionAdmin(admin.ModelAdmin):
-    """Admin view for EawsMajorRegion (L1)."""
+@admin.register(MajorRegion)
+class MajorRegionAdmin(admin.ModelAdmin):
+    """Admin view for MajorRegion (L1)."""
 
     list_display = ["prefix", "name_native", "name_en", "country", "updated_at"]
     list_filter = ["country"]
@@ -38,9 +38,9 @@ class EawsMajorRegionAdmin(admin.ModelAdmin):
     ]
 
 
-@admin.register(EawsSubRegion)
-class EawsSubRegionAdmin(admin.ModelAdmin):
-    """Admin view for EawsSubRegion (L2)."""
+@admin.register(SubRegion)
+class SubRegionAdmin(admin.ModelAdmin):
+    """Admin view for SubRegion (L2)."""
 
     list_display = ["prefix", "name_native", "name_en", "major", "updated_at"]
     list_filter = ["major"]
@@ -57,9 +57,9 @@ class EawsSubRegionAdmin(admin.ModelAdmin):
     ]
 
 
-@admin.register(Region)
-class RegionAdmin(admin.ModelAdmin):
-    """Admin view for Region (L4 EAWS micro-region)."""
+@admin.register(MicroRegion)
+class MicroRegionAdmin(admin.ModelAdmin):
+    """Admin view for MicroRegion (L4 EAWS micro-region)."""
 
     list_display = ["region_id", "name", "subregion", "slug", "updated_at"]
     list_filter = ["subregion__major", "subregion"]

@@ -37,9 +37,9 @@ from bulletins.services.day_rating import (
 from bulletins.services.render_model import RENDER_MODEL_VERSION
 from tests.factories import (
     BulletinFactory,
+    MicroRegionFactory,
     PipelineRunFactory,
     RegionBulletinFactory,
-    RegionFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -176,7 +176,7 @@ class TestRecomputeRegionDay:
 
     def test_single_bulletin_two_traits_uses_headline_key(self) -> None:
         """Single bulletin with dry=1 and wet=3 → min=max=headline_key (considerable)."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 15)
         # Prior-evening issue: target day = 2026-01-15 (evening of Jan 14)
         vf = datetime.datetime(2026, 1, 14, 17, 0, tzinfo=UTC)
@@ -199,7 +199,7 @@ class TestRecomputeRegionDay:
 
     def test_single_bulletin_single_trait_stable(self) -> None:
         """Single bulletin with one trait (dry=3) → min=max=considerable (stable)."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 15)
         vf = datetime.datetime(2026, 1, 14, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
@@ -220,7 +220,7 @@ class TestRecomputeRegionDay:
 
     def test_empty_traits_falls_back_to_headline_key(self) -> None:
         """Bulletin with empty traits falls back to danger.key for min/max."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 15)
         vf = datetime.datetime(2026, 1, 14, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
@@ -250,7 +250,7 @@ class TestRecomputeRegionDay:
         Day X's row should reflect the morning bulletin only: min=max=moderate.
         source_bulletin must be the morning bulletin.
         """
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 3, 25)
 
         # Prior-evening (Mar 24 16:00) → target Mar 25, dry=3
@@ -288,7 +288,7 @@ class TestRecomputeRegionDay:
         When only prior-evening-of-(X-1) exists (no morning-of-X), it is used
         as the single chosen bulletin for day X.
         """
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 3, 25)
 
         # Prior-evening (Mar 24 16:00) → target Mar 25, dry=2 + wet=3
@@ -314,7 +314,7 @@ class TestRecomputeRegionDay:
         When only an evening-of-X bulletin exists, its target is X+1, so day X
         has no candidate and must produce no_rating.
         """
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 2, 10)
 
         # Evening-of-Feb-10 → target is Feb 11, not Feb 10.
@@ -333,7 +333,7 @@ class TestRecomputeRegionDay:
 
     def test_version_zero_bulletin_excluded(self) -> None:
         """Bulletins with render_model_version=0 are excluded; both ratings are no_rating."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 15)
         vf = datetime.datetime(2026, 1, 14, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
@@ -356,7 +356,7 @@ class TestRecomputeRegionDay:
 
     def test_trait_with_invalid_danger_level_skipped(self) -> None:
         """A trait with a missing/invalid danger_level is skipped; valid traits still count."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 15)
         vf = datetime.datetime(2026, 1, 14, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
@@ -380,7 +380,7 @@ class TestRecomputeRegionDay:
 
     def test_trait_with_out_of_range_danger_level_skipped(self) -> None:
         """A trait with danger_level=99 (out of range) is skipped without crashing."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 15)
         vf = datetime.datetime(2026, 1, 14, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
@@ -407,7 +407,7 @@ class TestRecomputeRegionDay:
         danger key, so _extract_headline_from_render_model defaults to "low"
         and the result is min=max=low (quiet-day fallback path).
         """
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 15)
         vf = datetime.datetime(2026, 1, 14, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
@@ -435,7 +435,7 @@ class TestRecomputeRegionDay:
 
     def test_no_bulletin_writes_no_rating(self) -> None:
         """When no qualifying bulletin exists, both min and max are no_rating."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 20)
 
         recompute_region_day(region, day, commit=True)
@@ -446,7 +446,7 @@ class TestRecomputeRegionDay:
 
     def test_dry_run_does_not_write(self) -> None:
         """commit=False logs but does not create a RegionDayRating row."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 15)
         vf = datetime.datetime(2026, 1, 14, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
@@ -460,7 +460,7 @@ class TestRecomputeRegionDay:
 
     def test_source_bulletin_is_chosen_bulletin(self) -> None:
         """source_bulletin is always the single chosen bulletin."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 15)
         vf = datetime.datetime(2026, 1, 14, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
@@ -490,7 +490,7 @@ class TestApplyBulletinDayRatings:
 
     def test_morning_bulletin_creates_one_row_for_target_day(self) -> None:
         """A morning bulletin (valid_from.hour < 12) creates exactly one row for its date."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         # Morning issue: target day = Jan 15
         vf = datetime.datetime(2026, 1, 15, 8, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
@@ -510,7 +510,7 @@ class TestApplyBulletinDayRatings:
 
     def test_evening_bulletin_creates_one_row_for_next_day(self) -> None:
         """An evening bulletin (valid_from.hour >= 12) creates exactly one row for day+1."""
-        region = RegionFactory.create(region_id="CH-4115")
+        region = MicroRegionFactory.create(region_id="CH-4115")
         # Evening issue: valid_from Jan 14 17:00 → target day = Jan 15
         vf = datetime.datetime(2026, 1, 14, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 1, 15, 17, 0, tzinfo=UTC)
@@ -531,8 +531,8 @@ class TestApplyBulletinDayRatings:
 
     def test_applies_to_all_linked_regions(self) -> None:
         """apply_bulletin_day_ratings touches every region linked to the bulletin."""
-        region_a = RegionFactory.create(region_id="CH-1111")
-        region_b = RegionFactory.create(region_id="CH-2222")
+        region_a = MicroRegionFactory.create(region_id="CH-1111")
+        region_b = MicroRegionFactory.create(region_id="CH-2222")
         # Morning issue → target Feb 10
         vf = datetime.datetime(2026, 2, 10, 8, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 2, 10, 17, 0, tzinfo=UTC)
@@ -576,7 +576,7 @@ class TestUpsertBulletinSwallowsException:
 
         run = PipelineRunFactory.create()
         # Seed the region first — regions are fixture-backed (no auto-create).
-        RegionFactory.create(region_id="CH-9999", name="Test Region")
+        MicroRegionFactory.create(region_id="CH-9999", name="Test Region")
 
         raw = {
             "bulletinID": "test-exc-001",

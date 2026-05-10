@@ -5,8 +5,8 @@ Each model has a corresponding factory that produces valid instances with
 sensible defaults. Use these in tests to avoid brittle fixture data.
 
 Factories are parameterised with their model type
-(e.g. ``DjangoModelFactory[Region]``) so that mypy infers the correct
-return type when calling ``RegionFactory(...)`` — no casts needed at
+(e.g. ``DjangoModelFactory[MicroRegion]``) so that mypy infers the correct
+return type when calling ``MicroRegionFactory(...)`` — no casts needed at
 call sites.
 """
 
@@ -27,10 +27,10 @@ from bulletins.models import (
 )
 from bulletins.services.day_rating import DAY_RATING_VERSION
 from regions.models import (
-    EawsMajorRegion,
-    EawsSubRegion,
-    Region,
+    MajorRegion,
+    MicroRegion,
     Resort,
+    SubRegion,
 )
 from subscriptions.models import Subscriber, Subscription
 
@@ -47,13 +47,13 @@ class PipelineRunFactory(factory.django.DjangoModelFactory[PipelineRun]):
     status = PipelineRun.Status.PENDING
 
 
-class EawsMajorRegionFactory(factory.django.DjangoModelFactory[EawsMajorRegion]):
-    """Factory for EawsMajorRegion (L1) instances."""
+class MajorRegionFactory(factory.django.DjangoModelFactory[MajorRegion]):
+    """Factory for MajorRegion (L1) instances."""
 
     class Meta:
         """Factory metadata."""
 
-        model = EawsMajorRegion
+        model = MajorRegion
         django_get_or_create = ("prefix",)
 
     prefix = factory.Sequence(lambda n: f"CH-{n % 9 + 1}")
@@ -62,37 +62,37 @@ class EawsMajorRegionFactory(factory.django.DjangoModelFactory[EawsMajorRegion])
     name_en = factory.LazyAttribute(lambda obj: f"Major {obj.prefix}")
 
 
-class EawsSubRegionFactory(factory.django.DjangoModelFactory[EawsSubRegion]):
-    """Factory for EawsSubRegion (L2) instances."""
+class SubRegionFactory(factory.django.DjangoModelFactory[SubRegion]):
+    """Factory for SubRegion (L2) instances."""
 
     class Meta:
         """Factory metadata."""
 
-        model = EawsSubRegion
+        model = SubRegion
         django_get_or_create = ("prefix",)
 
     prefix = factory.Sequence(lambda n: f"CH-{n % 9 + 1}{n % 3 + 1}")
     major = factory.SubFactory(
-        EawsMajorRegionFactory,
+        MajorRegionFactory,
         prefix=factory.LazyAttribute(lambda obj: obj.factory_parent.prefix[:4]),
     )
     name_native = factory.LazyAttribute(lambda obj: f"Sub {obj.prefix}")
     name_en = factory.LazyAttribute(lambda obj: f"Sub {obj.prefix}")
 
 
-class RegionFactory(factory.django.DjangoModelFactory[Region]):
-    """Factory for Region (L4 EAWS micro-region) instances."""
+class MicroRegionFactory(factory.django.DjangoModelFactory[MicroRegion]):
+    """Factory for MicroRegion (L4 EAWS micro-region) instances."""
 
     class Meta:
         """Factory metadata."""
 
-        model = Region
+        model = MicroRegion
 
     region_id = factory.Sequence(lambda n: f"CH-{1000 + n}")
     name = factory.LazyAttribute(lambda obj: f"Region {obj.region_id}")
     slug = factory.LazyAttribute(lambda obj: obj.region_id.lower().replace("-", "-"))
     subregion = factory.SubFactory(
-        EawsSubRegionFactory,
+        SubRegionFactory,
         prefix=factory.LazyAttribute(lambda obj: obj.factory_parent.region_id[:5]),
     )
     centre = factory.LazyFunction(lambda: {"lon": 7.5, "lat": 46.8})
@@ -109,7 +109,7 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
 
     name = factory.Sequence(lambda n: f"Resort {n}")
     name_alt = ""
-    region = factory.SubFactory(RegionFactory)
+    region = factory.SubFactory(MicroRegionFactory)
     canton = "VS"
     notes = ""
     latitude = None
@@ -149,7 +149,7 @@ class RegionBulletinFactory(factory.django.DjangoModelFactory[RegionBulletin]):
         model = RegionBulletin
 
     bulletin = factory.SubFactory(BulletinFactory)
-    region = factory.SubFactory(RegionFactory)
+    region = factory.SubFactory(MicroRegionFactory)
     region_name_at_time = factory.LazyAttribute(lambda obj: obj.region.name)
 
 
@@ -165,7 +165,7 @@ class RegionDayRatingFactory(factory.django.DjangoModelFactory[RegionDayRating])
 
         model = RegionDayRating
 
-    region = factory.SubFactory(RegionFactory)
+    region = factory.SubFactory(MicroRegionFactory)
     date = factory.LazyFunction(lambda: datetime.date.today())
     min_rating = RegionDayRating.Rating.LOW
     min_subdivision = ""
@@ -183,7 +183,7 @@ class WeatherSnapshotFactory(factory.django.DjangoModelFactory[WeatherSnapshot])
 
         model = WeatherSnapshot
 
-    region = factory.SubFactory(RegionFactory)
+    region = factory.SubFactory(MicroRegionFactory)
     valid_for_date = factory.LazyFunction(django_timezone.localdate)
     weather_code = 0  # clear sky
     sunrise = factory.LazyFunction(
@@ -215,7 +215,7 @@ class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):
         model = Subscription
 
     subscriber = factory.SubFactory(SubscriberFactory)
-    region = factory.SubFactory(RegionFactory)
+    region = factory.SubFactory(MicroRegionFactory)
 
 
 class UserFactory(factory.django.DjangoModelFactory[User]):

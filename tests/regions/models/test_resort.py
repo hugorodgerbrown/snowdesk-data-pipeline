@@ -2,14 +2,14 @@
 tests/regions/models/test_resort.py — Tests for the Resort model.
 
 Covers model creation, ordering, string representation, cascade
-deletion, natural key support on Region, and fixture loading.
+deletion, natural key support on MicroRegion, and fixture loading.
 """
 
 import pytest
 from django.core.management import call_command
 
-from regions.models import Region, Resort
-from tests.factories import RegionFactory, ResortFactory
+from regions.models import MicroRegion, Resort
+from tests.factories import MicroRegionFactory, ResortFactory
 
 
 @pytest.mark.django_db
@@ -23,7 +23,7 @@ class TestResortModel:
 
     def test_default_ordering_is_by_name(self) -> None:
         """Resorts are ordered alphabetically by name."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         ResortFactory.create(name="Zermatt", region=region)
         ResortFactory.create(name="Arosa", region=region)
         ResortFactory.create(name="Davos", region=region)
@@ -34,7 +34,7 @@ class TestResortModel:
         """Deleting a region cascades to its resorts."""
         resort = ResortFactory.create()
         region_pk = resort.region.pk
-        Region.objects.filter(pk=region_pk).delete()
+        MicroRegion.objects.filter(pk=region_pk).delete()
         assert not Resort.objects.filter(pk=resort.pk).exists()
 
     def test_name_alt_blank_allowed(self) -> None:
@@ -108,17 +108,17 @@ class TestResortQueryset:
 
 @pytest.mark.django_db
 class TestRegionNaturalKey:
-    """Tests for Region natural key support (used by fixture loading)."""
+    """Tests for MicroRegion natural key support (used by fixture loading)."""
 
     def test_natural_key_returns_region_id_tuple(self) -> None:
         """natural_key() returns a one-element tuple of region_id."""
-        region = RegionFactory.create(region_id="CH-9999")
+        region = MicroRegionFactory.create(region_id="CH-9999")
         assert region.natural_key() == ("CH-9999",)
 
     def test_get_by_natural_key_returns_correct_region(self) -> None:
         """get_by_natural_key() looks up by region_id."""
-        region = RegionFactory.create(region_id="CH-8888")
-        found = Region.objects.get_by_natural_key("CH-8888")
+        region = MicroRegionFactory.create(region_id="CH-8888")
+        found = MicroRegion.objects.get_by_natural_key("CH-8888")
         assert found.pk == region.pk
 
 
@@ -140,7 +140,7 @@ class TestResortFixture:
             region_ids.add(entry["fields"]["region"][0])
 
         for rid in region_ids:
-            RegionFactory.create(region_id=rid, name=f"Region {rid}")
+            MicroRegionFactory.create(region_id=rid, name=f"Region {rid}")
 
         call_command("loaddata", "resorts", verbosity=0)
         assert Resort.objects.count() == len(data)

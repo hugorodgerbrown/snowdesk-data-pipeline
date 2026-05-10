@@ -26,13 +26,13 @@ def recompute_all_day_ratings(apps: Any, schema_editor: Any) -> None:
     """Re-derive every RegionDayRating row under the v5 headline-only policy."""
     from bulletins.models import RegionDayRating
     from bulletins.services.day_rating import recompute_region_day
-    from regions.models import Region
+    from regions.models import MicroRegion
 
     pairs = set(RegionDayRating.objects.values_list("region_id", "date"))
     region_cache: dict[Any, Any] = {}
     for region_id, day in pairs:
         if region_id not in region_cache:
-            region_cache[region_id] = Region.objects.get(pk=region_id)
+            region_cache[region_id] = MicroRegion.objects.get(pk=region_id)
         recompute_region_day(region_cache[region_id], day, commit=True)
 
 

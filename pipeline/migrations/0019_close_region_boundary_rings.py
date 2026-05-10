@@ -82,14 +82,17 @@ def _close_ring_list(
 
 def close_open_rings(apps: Any, schema_editor: Any) -> None:
     """Close any open ``boundary`` rings on existing Region rows."""
-    # SNOW-140: Region moved from pipeline to regions. Try the new
-    # location first; fall back to the historical location so the
-    # migration still works when replayed at its historical position
-    # (where pipeline.Region is what Django's state graph holds).
+    # SNOW-140: Region moved from pipeline to regions. SNOW-142: renamed
+    # to MicroRegion. Try the new name first; fall back to the pre-rename
+    # name, then the historical pipeline location so the migration still
+    # works when replayed at its historical position.
     try:
-        Region = apps.get_model("regions", "Region")  # noqa: N806
+        Region = apps.get_model("regions", "MicroRegion")  # noqa: N806
     except LookupError:
-        Region = apps.get_model("pipeline", "Region")  # noqa: N806
+        try:
+            Region = apps.get_model("regions", "Region")  # noqa: N806
+        except LookupError:
+            Region = apps.get_model("pipeline", "Region")  # noqa: N806
 
     closed = 0
     skipped = 0
