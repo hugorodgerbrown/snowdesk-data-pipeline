@@ -64,6 +64,7 @@ from django.utils import timezone
 from bulletins.models import Bulletin, PipelineRun
 from bulletins.services.data_fetcher import run_pipeline
 from bulletins.services.slf_archive import merge, read_archive, write_archive
+from bulletins.services.weather_fetcher import SOURCE_LIVE, SOURCE_LOCAL_MIRROR
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +72,7 @@ _START_SOURCE_EXPLICIT = "explicit"
 _START_SOURCE_LATEST_BULLETIN = "latest_bulletin"
 _START_SOURCE_SEASON_BACKSTOP = "season_backstop"
 
-_SOURCE_LIVE = "live"
-_SOURCE_LOCAL_MIRROR = "local-mirror"
-_SOURCE_CHOICES = (_SOURCE_LIVE, _SOURCE_LOCAL_MIRROR)
+_SOURCE_CHOICES = (SOURCE_LIVE, SOURCE_LOCAL_MIRROR)
 
 
 def _non_negative_float(raw: str) -> float:
@@ -149,7 +148,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--source",
             choices=_SOURCE_CHOICES,
-            default=_SOURCE_LIVE,
+            default=SOURCE_LIVE,
             help=(
                 "Where to fetch from. 'live' (default) hits the real SLF "
                 "CAAML API; 'local-mirror' hits the development-only view "
@@ -252,7 +251,7 @@ class Command(BaseCommand):
                 (i.e. running outside development.py).
 
         """
-        if source == _SOURCE_LIVE:
+        if source == SOURCE_LIVE:
             return None
         mirror_url: str | None = getattr(settings, "SLF_API_LOCAL_MIRROR_URL", None)
         if not mirror_url:
@@ -377,7 +376,7 @@ class Command(BaseCommand):
             flags.append("FORCE")
         if stash:
             flags.append("STASH")
-        if source != _SOURCE_LIVE:
+        if source != SOURCE_LIVE:
             flags.append(f"SOURCE={source.upper()}")
         if delay > 0:
             flags.append(f"DELAY={delay:g}s")
