@@ -680,7 +680,7 @@ class TestBaseUrlThreading:
 
     def test_fetch_weather_for_region_uses_base_url_for_forecast(self) -> None:
         """When base_url is set, the forecast request goes to {base_url}/forecast."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
         mock = _mock_get(api_data)
@@ -702,7 +702,7 @@ class TestBaseUrlThreading:
         """When base_url=None, the module-level FORECAST_URL is used."""
         from bulletins.services.weather_fetcher import FORECAST_URL
 
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
         mock = _mock_get(api_data)
@@ -715,7 +715,7 @@ class TestBaseUrlThreading:
 
     def test_fetch_archive_for_region_uses_base_url_for_archive(self) -> None:
         """When base_url is set, the archive request goes to {base_url}/archive."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         start = datetime.date(2026, 4, 28)
         end = datetime.date(2026, 4, 28)
         api_data = _make_archive_response(
@@ -744,7 +744,7 @@ class TestBaseUrlThreading:
         """When base_url=None, the module-level ARCHIVE_URL is used."""
         from bulletins.services.weather_fetcher import ARCHIVE_URL
 
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         start = end = datetime.date(2026, 4, 28)
         api_data = _make_archive_response(
             dates=["2026-04-28"],
@@ -772,7 +772,7 @@ class TestOnFetchedCallback:
 
     def test_on_fetched_called_once_for_forecast(self) -> None:
         """on_fetched is called once with the right shape for a forecast request."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response(weather_code=7)
         captured: list[dict] = []
@@ -798,7 +798,7 @@ class TestOnFetchedCallback:
 
     def test_on_fetched_not_called_when_none(self) -> None:
         """When on_fetched is None (default), nothing is captured."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
 
@@ -810,7 +810,7 @@ class TestOnFetchedCallback:
 
     def test_on_fetched_called_per_day_for_archive(self) -> None:
         """on_fetched is called once per day for an archive request."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         start = datetime.date(2026, 4, 28)
         end = datetime.date(2026, 4, 30)
         api_data = _make_archive_response(
@@ -855,7 +855,7 @@ class TestOnFetchedCallback:
 
     def test_on_fetched_called_even_when_commit_false(self) -> None:
         """on_fetched fires regardless of the commit flag (stash without DB write)."""
-        region = RegionFactory.create()
+        region = MicroRegionFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_forecast_response()
         captured: list[dict] = []

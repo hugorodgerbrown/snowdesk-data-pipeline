@@ -33,7 +33,7 @@ from django.http import HttpRequest, JsonResponse
 from bulletins.services.data_fetcher import PAGE_SIZE
 from bulletins.services.openmeteo_archive import read_archive as read_openmeteo_archive
 from bulletins.services.slf_archive import read_archive
-from regions.models import Centre, Region
+from regions.models import Centre, MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -115,9 +115,9 @@ def openmeteo_mirror(
     start_date_str = request.GET.get("start_date", "")
     end_date_str = request.GET.get("end_date", "")
 
-    # Resolve lat/lon → Region using the same str() stringification as the fetcher.
-    matched_region: Region | None = None
-    for region in Region.objects.exclude(centre__isnull=True):
+    # Resolve lat/lon → MicroRegion using the same str() stringification as the fetcher.
+    matched_region: MicroRegion | None = None
+    for region in MicroRegion.objects.exclude(centre__isnull=True):
         centre = cast(Centre, region.centre)
         if str(centre["lat"]) == latitude and str(centre["lon"]) == longitude:
             matched_region = region

@@ -69,7 +69,10 @@ from core.models import BaseModel
 
 
 class Centre(TypedDict):
-    """Geographic centre point as returned by ``MicroRegion.centre`` and related fields."""
+    """Geographic centre point.
+
+    Returned by ``MicroRegion.centre`` and related JSON-field reads.
+    """
 
     lat: float
     lon: float
