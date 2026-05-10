@@ -3,10 +3,15 @@ tests/bulletins/services/test_weather_fetcher.py — Tests for the weather_fetch
 
 Covers:
   - _parse_dt: ISO-8601 parsing (tz-aware and naive inputs).
-  - fetch_weather_for_region: happy path, commit=False (no DB write), HTTP error.
-  - fetch_all_regions: creates/skips/fails correctly, returns accurate counters.
-  - fetch_archive_for_region: happy path multi-day, commit=False, HTTP error.
-  - backfill_all_regions: creates/updates correctly, per-region failure isolation.
+  - fetch_weather_for_region: happy path, commit=False (no DB write), HTTP error,
+    base_url threading, on_fetched callback.
+  - fetch_all_regions: creates/skips/fails correctly, returns accurate counters,
+    base_url and on_fetched forwarding.
+  - fetch_archive_for_region: happy path multi-day, commit=False, HTTP error,
+    base_url threading, on_fetched callback shape.
+  - backfill_all_regions: creates/updates correctly, per-region failure isolation,
+    base_url and on_fetched forwarding.
+  - resolve_weather_source: maps source strings to base URLs / raises on missing setting.
 
 All outbound HTTP calls are mocked via ``unittest.mock.patch`` so no network
 traffic is required. The mocking pattern mirrors test_data_fetcher.py.
@@ -28,6 +33,7 @@ from bulletins.services.weather_fetcher import (
     fetch_all_regions,
     fetch_archive_for_region,
     fetch_weather_for_region,
+    resolve_weather_source,
 )
 from tests.factories import MicroRegionFactory, WeatherSnapshotFactory
 
@@ -661,3 +667,262 @@ class TestBackfillAllRegions:
             backfill_all_regions(target, target, commit=True, delay=0.0)
 
         mock_sleep.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# base_url threading
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestBaseUrlThreading:
+    """Tests that base_url is correctly threaded to the underlying requests.get call."""
+
+    def test_fetch_weather_for_region_uses_base_url_for_forecast(self) -> None:
+        """When base_url is set, the forecast request goes to {base_url}/forecast."""
+        region = MicroRegionFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_forecast_response()
+        mock = _mock_get(api_data)
+
+        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_region(
+                region,
+                target,
+                commit=False,
+                base_url="http://localhost:8000/dev/openmeteo-mirror/v1",
+            )
+
+        called_url = mock.call_args[0][0]
+        assert called_url == "http://localhost:8000/dev/openmeteo-mirror/v1/forecast"
+
+    def test_fetch_weather_for_region_falls_back_to_forecast_url_when_none(
+        self,
+    ) -> None:
+        """When base_url=None, the module-level FORECAST_URL is used."""
+        from bulletins.services.weather_fetcher import FORECAST_URL
+
+        region = MicroRegionFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_forecast_response()
+        mock = _mock_get(api_data)
+
+        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_weather_for_region(region, target, commit=False)
+
+        called_url = mock.call_args[0][0]
+        assert called_url == FORECAST_URL
+
+    def test_fetch_archive_for_region_uses_base_url_for_archive(self) -> None:
+        """When base_url is set, the archive request goes to {base_url}/archive."""
+        region = MicroRegionFactory.create()
+        start = datetime.date(2026, 4, 28)
+        end = datetime.date(2026, 4, 28)
+        api_data = _make_archive_response(
+            dates=["2026-04-28"],
+            weather_codes=[0],
+            sunrises=["2026-04-28T05:40+02:00"],
+            sunsets=["2026-04-28T20:30+02:00"],
+        )
+        mock = _mock_get(api_data)
+
+        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_archive_for_region(
+                region,
+                start,
+                end,
+                commit=False,
+                base_url="http://localhost:8000/dev/openmeteo-mirror/v1",
+            )
+
+        called_url = mock.call_args[0][0]
+        assert called_url == "http://localhost:8000/dev/openmeteo-mirror/v1/archive"
+
+    def test_fetch_archive_for_region_falls_back_to_archive_url_when_none(
+        self,
+    ) -> None:
+        """When base_url=None, the module-level ARCHIVE_URL is used."""
+        from bulletins.services.weather_fetcher import ARCHIVE_URL
+
+        region = MicroRegionFactory.create()
+        start = end = datetime.date(2026, 4, 28)
+        api_data = _make_archive_response(
+            dates=["2026-04-28"],
+            weather_codes=[0],
+            sunrises=["2026-04-28T05:40+02:00"],
+            sunsets=["2026-04-28T20:30+02:00"],
+        )
+        mock = _mock_get(api_data)
+
+        with patch("bulletins.services.weather_fetcher.requests.get", mock):
+            fetch_archive_for_region(region, start, end, commit=False)
+
+        called_url = mock.call_args[0][0]
+        assert called_url == ARCHIVE_URL
+
+
+# ---------------------------------------------------------------------------
+# on_fetched callback
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestOnFetchedCallback:
+    """Tests that on_fetched is called with the right shape per record."""
+
+    def test_on_fetched_called_once_for_forecast(self) -> None:
+        """on_fetched is called once with the right shape for a forecast request."""
+        region = MicroRegionFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_forecast_response(weather_code=7)
+        captured: list[dict] = []
+
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+        ):
+            fetch_weather_for_region(
+                region,
+                target,
+                commit=False,
+                on_fetched=captured.append,
+            )
+
+        assert len(captured) == 1
+        record = captured[0]
+        assert record["region_id"] == region.region_id
+        assert record["date"] == "2026-05-01"
+        assert record["weather_code"] == 7
+        assert "sunrise" in record
+        assert "sunset" in record
+        assert "captured_at" in record
+
+    def test_on_fetched_not_called_when_none(self) -> None:
+        """When on_fetched is None (default), nothing is captured."""
+        region = MicroRegionFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_forecast_response()
+
+        # Should not raise even without on_fetched.
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+        ):
+            fetch_weather_for_region(region, target, commit=False)
+
+    def test_on_fetched_called_per_day_for_archive(self) -> None:
+        """on_fetched is called once per day for an archive request."""
+        region = MicroRegionFactory.create()
+        start = datetime.date(2026, 4, 28)
+        end = datetime.date(2026, 4, 30)
+        api_data = _make_archive_response(
+            dates=["2026-04-28", "2026-04-29", "2026-04-30"],
+            weather_codes=[0, 1, 2],
+            sunrises=[
+                "2026-04-28T05:40+02:00",
+                "2026-04-29T05:38+02:00",
+                "2026-04-30T05:36+02:00",
+            ],
+            sunsets=[
+                "2026-04-28T20:30+02:00",
+                "2026-04-29T20:32+02:00",
+                "2026-04-30T20:34+02:00",
+            ],
+        )
+        captured: list[dict] = []
+
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+        ):
+            fetch_archive_for_region(
+                region,
+                start,
+                end,
+                commit=False,
+                on_fetched=captured.append,
+            )
+
+        assert len(captured) == 3
+        assert [r["date"] for r in captured] == [
+            "2026-04-28",
+            "2026-04-29",
+            "2026-04-30",
+        ]
+        assert [r["weather_code"] for r in captured] == [0, 1, 2]
+        for record in captured:
+            assert record["region_id"] == region.region_id
+            assert "sunrise" in record
+            assert "sunset" in record
+            assert "captured_at" in record
+
+    def test_on_fetched_called_even_when_commit_false(self) -> None:
+        """on_fetched fires regardless of the commit flag (stash without DB write)."""
+        region = MicroRegionFactory.create()
+        target = datetime.date(2026, 5, 1)
+        api_data = _make_forecast_response()
+        captured: list[dict] = []
+
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get", _mock_get(api_data)
+        ):
+            result = fetch_weather_for_region(
+                region,
+                target,
+                commit=False,
+                on_fetched=captured.append,
+            )
+
+        assert result is None  # commit=False → no snapshot returned
+        assert len(captured) == 1  # but on_fetched still fired
+
+
+# ---------------------------------------------------------------------------
+# resolve_weather_source
+# ---------------------------------------------------------------------------
+
+
+class TestResolveWeatherSource:
+    """Tests for resolve_weather_source."""
+
+    def test_live_source_returns_none(self) -> None:
+        """'live' source returns None so callers fall back to the module URL constants."""
+        result = resolve_weather_source("live")
+        assert result is None
+
+    def test_local_mirror_returns_configured_url(self) -> None:
+        """'local-mirror' returns WEATHER_API_LOCAL_MIRROR_BASE_URL when configured."""
+        from django.test import override_settings
+
+        with override_settings(
+            WEATHER_API_LOCAL_MIRROR_BASE_URL="http://localhost:8000/dev/openmeteo-mirror/v1"
+        ):
+            result = resolve_weather_source("local-mirror")
+
+        assert result == "http://localhost:8000/dev/openmeteo-mirror/v1"
+
+    def test_local_mirror_raises_when_setting_missing(self) -> None:
+        """'local-mirror' raises CommandError when the setting is not configured."""
+        from django.core.management.base import CommandError
+        from django.test import override_settings
+
+        with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL=None):
+            with pytest.raises(CommandError, match="WEATHER_API_LOCAL_MIRROR_BASE_URL"):
+                resolve_weather_source("local-mirror")
+
+    def test_local_mirror_raises_when_setting_absent(self) -> None:
+        """'local-mirror' raises CommandError when the setting is completely absent."""
+        from django.core.management.base import CommandError
+
+        from bulletins.services import weather_fetcher
+
+        original = getattr(weather_fetcher, "resolve_weather_source", None)
+        # Simulate missing attribute by deleting the setting entirely.
+        from django.test import override_settings  # noqa: F811
+
+        # Remove the attribute from settings entirely (not just set to None).
+        with override_settings():
+            from django.conf import settings as djsettings
+
+            if hasattr(djsettings, "WEATHER_API_LOCAL_MIRROR_BASE_URL"):
+                del djsettings.WEATHER_API_LOCAL_MIRROR_BASE_URL
+            with pytest.raises(CommandError, match="WEATHER_API_LOCAL_MIRROR_BASE_URL"):
+                resolve_weather_source("local-mirror")
+        _ = original  # suppress unused warning

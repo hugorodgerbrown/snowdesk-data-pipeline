@@ -1,0 +1,347 @@
+"""
+tests/bulletins/test_openmeteo_mirror.py — Tests for the dev-only Open-Meteo mirror view.
+
+The mirror replays ``sample_data/openmeteo_archive.ndjson`` in an Open-Meteo-
+compatible response shape, resolved by lat/lon to a Region and filtered by
+date range. These tests exercise it via the Django test client (DEBUG is True
+under config.settings.development, so the URLs are mounted).
+
+Separate from ``test_dev_mirror.py`` so the two distinct mirrors' tests don't
+crowd a single file.
+"""
+
+from pathlib import Path
+from typing import Any, cast
+
+import pytest
+from django.test import Client, override_settings
+
+from bulletins.services.openmeteo_archive import write_archive
+from regions.models import Centre
+from tests.factories import MicroRegionFactory
+
+
+def _om_record(
+    region_id: str,
+    date: str,
+    weather_code: int = 3,
+    captured_at: str = "2026-05-09T12:00:00Z",
+) -> dict[str, Any]:
+    """Build a minimal Open-Meteo archive record."""
+    return {
+        "region_id": region_id,
+        "date": date,
+        "weather_code": weather_code,
+        "sunrise": f"{date}T05:32+02:00",
+        "sunset": f"{date}T20:14+02:00",
+        "captured_at": captured_at,
+    }
+
+
+def _make_archive(
+    path: Path,
+    records: list[dict[str, Any]],
+) -> None:
+    """Write the given records to an archive file at path."""
+    write_archive(path, records)
+
+
+@pytest.mark.django_db
+class TestOpenMeteoMirrorForecastEndpoint:
+    """Tests for the /dev/openmeteo-mirror/v1/forecast endpoint."""
+
+    def test_matching_region_and_date_returns_payload(self, tmp_path: Path) -> None:
+        """A request with a lat/lon that matches a region and a covered date returns 200."""
+        region = MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+        archive_path = tmp_path / "om_archive.ndjson"
+        _make_archive(
+            archive_path,
+            [_om_record(region.region_id, "2026-05-01", weather_code=1)],
+        )
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-01",
+                    "daily": "weather_code,sunrise,sunset",
+                    "timezone": "auto",
+                },
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert "daily" in body
+        daily = body["daily"]
+        assert daily["time"] == ["2026-05-01"]
+        assert daily["weather_code"] == [1]
+        assert daily["sunrise"] == ["2026-05-01T05:32+02:00"]
+        assert daily["sunset"] == ["2026-05-01T20:14+02:00"]
+
+    def test_multi_day_range_returns_all_days(self, tmp_path: Path) -> None:
+        """A multi-day request returns all days in order."""
+        region = MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+        archive_path = tmp_path / "om_archive.ndjson"
+        _make_archive(
+            archive_path,
+            [
+                _om_record(region.region_id, "2026-05-01", weather_code=0),
+                _om_record(region.region_id, "2026-05-02", weather_code=1),
+                _om_record(region.region_id, "2026-05-03", weather_code=2),
+            ],
+        )
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-03",
+                },
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["daily"]["time"] == ["2026-05-01", "2026-05-02", "2026-05-03"]
+        assert body["daily"]["weather_code"] == [0, 1, 2]
+
+
+@pytest.mark.django_db
+class TestOpenMeteoMirrorArchiveEndpoint:
+    """Tests for the /dev/openmeteo-mirror/v1/archive endpoint."""
+
+    def test_archive_endpoint_returns_same_payload_as_forecast(
+        self, tmp_path: Path
+    ) -> None:
+        """Both endpoint kinds serve the same archive data."""
+        region = MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+        archive_path = tmp_path / "om_archive.ndjson"
+        _make_archive(
+            archive_path,
+            [_om_record(region.region_id, "2026-04-01", weather_code=7)],
+        )
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/archive",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2026-04-01",
+                    "end_date": "2026-04-01",
+                },
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["daily"]["weather_code"] == [7]
+
+
+@pytest.mark.django_db
+class TestOpenMeteoMirrorErrors:
+    """Tests for error cases in the Open-Meteo mirror view."""
+
+    def test_unknown_lat_lon_returns_404(self, tmp_path: Path) -> None:
+        """A lat/lon that doesn't match any Region returns 404."""
+        archive_path = tmp_path / "om_archive.ndjson"
+        archive_path.write_text("", encoding="utf-8")
+        MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "99.99",
+                    "longitude": "99.99",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-01",
+                },
+            )
+
+        assert response.status_code == 404
+        assert "error" in response.json()
+
+    def test_partial_date_coverage_returns_404(self, tmp_path: Path) -> None:
+        """If any date in the range is missing from the archive, return 404."""
+        region = MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+        archive_path = tmp_path / "om_archive.ndjson"
+        # Only 2026-05-01 present; request asks for 2026-05-01 to 2026-05-02.
+        _make_archive(
+            archive_path,
+            [_om_record(region.region_id, "2026-05-01", weather_code=0)],
+        )
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-02",
+                },
+            )
+
+        assert response.status_code == 404
+        body = response.json()
+        assert "error" in body
+        assert "2026-05-02" in body["error"]
+
+    def test_no_records_for_region_returns_404(self, tmp_path: Path) -> None:
+        """If the archive has no records for the matched region, return 404."""
+        matched_region = MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+        other_region_id = "CH-OTHER"
+        archive_path = tmp_path / "om_archive.ndjson"
+        # Archive only has records for a different region (not matched_region).
+        assert matched_region.region_id != other_region_id
+        _make_archive(
+            archive_path,
+            [_om_record(other_region_id, "2026-05-01", weather_code=0)],
+        )
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-01",
+                },
+            )
+
+        assert response.status_code == 404
+        assert "error" in response.json()
+
+    def test_region_without_centre_is_not_matched(self, tmp_path: Path) -> None:
+        """A region with centre=None cannot be matched and returns 404."""
+        region = MicroRegionFactory.create(centre=None)
+        archive_path = tmp_path / "om_archive.ndjson"
+        _make_archive(
+            archive_path,
+            [_om_record(region.region_id, "2026-05-01", weather_code=0)],
+        )
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-01",
+                },
+            )
+
+        assert response.status_code == 404
+
+    def test_date_range_exceeding_366_days_returns_400(self, tmp_path: Path) -> None:
+        """A date range of more than 366 days returns 400 to prevent runaway iteration."""
+        archive_path = tmp_path / "om_archive.ndjson"
+        archive_path.write_text("", encoding="utf-8")
+        MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2020-01-01",
+                    "end_date": "2026-01-01",
+                },
+            )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert "error" in body
+        assert "366" in body["error"]
+
+    def test_invalid_start_date_returns_400(self, tmp_path: Path) -> None:
+        """A non-ISO start_date returns 400 with an 'error' key."""
+        archive_path = tmp_path / "om_archive.ndjson"
+        archive_path.write_text("", encoding="utf-8")
+        MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "not-a-date",
+                    "end_date": "2026-05-01",
+                },
+            )
+
+        assert response.status_code == 400
+        assert "error" in response.json()
+
+    def test_invalid_end_date_returns_400(self, tmp_path: Path) -> None:
+        """A non-ISO end_date returns 400 with an 'error' key."""
+        archive_path = tmp_path / "om_archive.ndjson"
+        archive_path.write_text("", encoding="utf-8")
+        MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36})
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            response = Client().get(
+                "/dev/openmeteo-mirror/v1/forecast",
+                {
+                    "latitude": "46.21",
+                    "longitude": "7.36",
+                    "start_date": "2026-05-01",
+                    "end_date": "not-a-date",
+                },
+            )
+
+        assert response.status_code == 400
+        assert "error" in response.json()
+
+
+@pytest.mark.django_db
+class TestOpenMeteoMirrorLatLonRoundTrip:
+    """Regression: lat/lon string round-trip is bit-exact for all Regions."""
+
+    def test_all_regions_round_trip_lat_lon_via_str(self, tmp_path: Path) -> None:
+        """
+        Every Region in the test DB can round-trip through the mirror.
+
+        Loads multiple regions, creates an archive record for each, then
+        posts each region's centre lat/lon (as str()) to the mirror and
+        asserts a 200. This guards against silent precision drift if the
+        regions fixture is regenerated.
+        """
+        # Create three regions with varied lat/lon values.
+        regions = [
+            MicroRegionFactory.create(centre={"lat": 46.21, "lon": 7.36}),
+            MicroRegionFactory.create(centre={"lat": 47.2, "lon": 8.1}),
+            MicroRegionFactory.create(centre={"lat": 46.5, "lon": 9.75}),
+        ]
+        archive_path = tmp_path / "om_archive.ndjson"
+        _make_archive(
+            archive_path,
+            [_om_record(r.region_id, "2026-05-01") for r in regions],
+        )
+
+        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
+            for region in regions:
+                centre = cast(Centre, region.centre)
+                response = Client().get(
+                    "/dev/openmeteo-mirror/v1/forecast",
+                    {
+                        "latitude": str(centre["lat"]),
+                        "longitude": str(centre["lon"]),
+                        "start_date": "2026-05-01",
+                        "end_date": "2026-05-01",
+                    },
+                )
+                assert response.status_code == 200, (
+                    f"Region {region.region_id} lat={centre['lat']} "
+                    f"lon={centre['lon']} failed round-trip. "
+                    f"Response: {response.json()}"
+                )

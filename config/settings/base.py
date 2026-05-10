@@ -194,6 +194,14 @@ SLF_API_BASE_URL = config(
 # the stash writer and the local mirror view read from this path.
 SLF_ARCHIVE_PATH = BASE_DIR / "sample_data" / "slf_archive.ndjson"
 
+# On-disk archive of every Open-Meteo weather record captured by
+# ``fetch_weather --stash`` and ``backfill_weather --stash`` runs.
+# NDJSON: one record per ``(region_id, date)`` pair per line, sorted
+# ascending by ``(region_id, date)``, deduped by ``(region_id, date)``
+# with the later ``captured_at`` winning. Both the stash writer and the
+# local Open-Meteo mirror view read from this path.
+OPENMETEO_ARCHIVE_PATH = BASE_DIR / "sample_data" / "openmeteo_archive.ndjson"
+
 # ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------

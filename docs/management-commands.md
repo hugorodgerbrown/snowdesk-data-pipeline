@@ -150,9 +150,26 @@ poetry run python manage.py fetch_weather --commit
 # Persist weather for a specific date.
 poetry run python manage.py fetch_weather --date 2026-05-01 --commit
 
+# Bootstrap against the on-disk archive instead of the live Open-Meteo API.
+# Requires the dev server to be running and
+# settings.WEATHER_API_LOCAL_MIRROR_BASE_URL to be configured (development.py).
+poetry run python manage.py fetch_weather --source local-mirror --commit
+
+# Capture today's weather to sample_data/openmeteo_archive.ndjson (no DB write).
+poetry run python manage.py fetch_weather --stash
+
+# Full-fidelity: persist and stash.
+poetry run python manage.py fetch_weather --commit --stash
+
 # Flags:
 #   --date   YYYY-MM-DD  date to fetch for; default: today (local timezone)
 #   --commit             persist WeatherSnapshot rows; omit for a read-only run
+#   --source {live,local-mirror}
+#                        default 'live' (real Open-Meteo forecast API).
+#                        'local-mirror' replays sample_data/openmeteo_archive.ndjson
+#                        via the dev-only view; errors out if the mirror URL
+#                        setting is not configured.
+#   --stash              append fetched weather records to the on-disk archive
 ```
 
 ---
@@ -187,10 +204,24 @@ poetry run python manage.py backfill_weather \
 poetry run python manage.py backfill_weather \
     --start 2025-12-01 --end 2026-04-30 --delay 0 --commit
 
+# Replay from the local mirror (instant; dev server must be running).
+poetry run python manage.py backfill_weather \
+    --start 2026-01-01 --end 2026-01-31 --source local-mirror --commit
+
+# Capture a range to sample_data/openmeteo_archive.ndjson (no DB write).
+poetry run python manage.py backfill_weather \
+    --start 2025-12-01 --end 2026-04-30 --stash
+
 # Flags:
 #   --start  YYYY-MM-DD  first date in the range (inclusive, required)
 #   --end    YYYY-MM-DD  last date in the range (inclusive, required)
 #   --commit             persist WeatherSnapshot rows; omit for read-only
 #   --delay  SECONDS     sleep N seconds between region archive calls
 #                        (default 1.0; pass 0 to disable pacing)
+#   --source {live,local-mirror}
+#                        default 'live' (real Open-Meteo archive API).
+#                        'local-mirror' replays sample_data/openmeteo_archive.ndjson
+#                        via the dev-only view; errors out if the mirror URL
+#                        setting is not configured.
+#   --stash              append fetched weather records to the on-disk archive
 ```

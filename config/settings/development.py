@@ -67,3 +67,17 @@ SLF_API_LOCAL_MIRROR_URL = config(
     "SLF_API_LOCAL_MIRROR_URL",
     default="http://localhost:8000/dev/slf-mirror/api/bulletin-list/caaml",
 )
+
+# ---------------------------------------------------------------------------
+# Local Open-Meteo mirror (dev only)
+# ---------------------------------------------------------------------------
+# Base URL of the development-only view at ``bulletins.dev_views.openmeteo_mirror``,
+# which replays ``sample_data/openmeteo_archive.ndjson`` in an Open-Meteo-
+# compatible response shape. Only defined in development.py so that
+# ``fetch_weather --source local-mirror`` and ``backfill_weather --source
+# local-mirror`` error loudly if anyone tries to run them against a
+# production-like environment.
+WEATHER_API_LOCAL_MIRROR_BASE_URL = config(
+    "WEATHER_API_LOCAL_MIRROR_BASE_URL",
+    default="http://localhost:8000/dev/openmeteo-mirror/v1",
+)

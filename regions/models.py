@@ -32,7 +32,7 @@ Keep business logic out of models.
 from __future__ import annotations
 
 import datetime
-from typing import Any
+from typing import Any, TypedDict
 
 from django.db import models
 from django.urls import reverse
@@ -66,6 +66,16 @@ from core.models import BaseModel
 # L1 and L2 geometry (``centre``, ``bbox``, ``boundary``) is derived —
 # pre-computed once by ``refresh_eaws_fixtures`` from the union of the
 # L4 children and stored in the fixture. Never computed at request time.
+
+
+class Centre(TypedDict):
+    """Geographic centre point.
+
+    Returned by ``MicroRegion.centre`` and related JSON-field reads.
+    """
+
+    lat: float
+    lon: float
 
 
 class MajorRegionQuerySet(models.QuerySet["MajorRegion"]):

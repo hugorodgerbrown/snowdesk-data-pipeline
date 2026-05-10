@@ -1,23 +1,37 @@
 """
 bulletins/services/weather_fetcher.py — Fetching and persisting Open-Meteo weather data.
 
-Contains four functions:
+Contains four fetch functions and a source resolver:
 
-  fetch_weather_for_region(region, target_date, *, commit)
+  resolve_weather_source(source)
+      Map a ``--source`` choice string (``"live"`` or ``"local-mirror"``) to a
+      ``base_url`` suitable for passing to the fetch functions. Returns ``None``
+      for the live source (falls back to the module-level URL constants). Raises
+      ``CommandError`` for ``"local-mirror"`` when
+      ``settings.WEATHER_API_LOCAL_MIRROR_BASE_URL`` is not configured. Imported
+      by both ``fetch_weather`` and ``backfill_weather`` commands to avoid
+      duplicating the resolver logic.
+
+  fetch_weather_for_region(region, target_date, *, commit, base_url, on_fetched)
       Fetches today's (or any single day's) weather for one region from the
       Open-Meteo forecast endpoint. Returns ``(WeatherSnapshot, created)`` when
-      ``commit=True``, or ``None`` when ``commit=False``.
+      ``commit=True``, or ``None`` when ``commit=False``. ``base_url`` overrides
+      the module-level ``FORECAST_URL``; ``on_fetched`` is called once per
+      fetched record (for ``--stash`` capture).
 
-  fetch_all_regions(target_date, *, commit)
+  fetch_all_regions(target_date, *, commit, base_url, on_fetched)
       Calls fetch_weather_for_region for every MicroRegion that has a centre
       coordinate; returns summary counters {created, updated, failed, skipped}.
 
-  fetch_archive_for_region(region, start_date, end_date, *, commit)
+  fetch_archive_for_region(region, start_date, end_date, *, commit, base_url,
+  on_fetched)
       Fetches historical weather for a date range from the Open-Meteo archive
       endpoint. Returns a list of ``(WeatherSnapshot, created)`` tuples when
-      ``commit=True``, or an empty list when ``commit=False``.
+      ``commit=True``, or an empty list when ``commit=False``. ``base_url``
+      overrides the module-level ``ARCHIVE_URL``; ``on_fetched`` is called once
+      per fetched record.
 
-  backfill_all_regions(start_date, end_date, *, commit)
+  backfill_all_regions(start_date, end_date, *, commit, delay, base_url, on_fetched)
       Calls fetch_archive_for_region for every MicroRegion that has a centre
       coordinate; returns summary counters {created, updated, failed, skipped}.
 
@@ -28,26 +42,72 @@ not abort the entire batch.
 
 When ``commit=False``, the HTTP requests still execute (real API probe) but no
 rows are written.
+
+``base_url`` defaults to ``None`` in every function; when ``None``, the function
+falls back to the module-level URL constants so existing callers keep working
+without change.
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any, cast
 
 import requests
+from django.conf import settings
+from django.core.management.base import CommandError
 from django.utils import timezone as django_timezone
 
 from bulletins.models import WeatherSnapshot
-from regions.models import MicroRegion
+from regions.models import Centre, MicroRegion
 
 logger = logging.getLogger(__name__)
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 REQUEST_TIMEOUT = 30  # seconds
+
+SOURCE_LIVE = "live"
+SOURCE_LOCAL_MIRROR = "local-mirror"
+
+
+def resolve_weather_source(source: str) -> str | None:
+    """
+    Map a ``--source`` choice to a base URL (or ``None`` for live).
+
+    Returning ``None`` for the live source lets callers fall back to the
+    module-level ``FORECAST_URL`` / ``ARCHIVE_URL`` constants, keeping the
+    live path identical to its pre-flag behaviour.
+
+    Imported by both ``fetch_weather`` and ``backfill_weather`` commands so
+    the resolver logic is not duplicated.
+
+    Args:
+        source: One of ``SOURCE_LIVE`` or ``SOURCE_LOCAL_MIRROR``.
+
+    Returns:
+        ``None`` for the live source, or the configured mirror base URL.
+
+    Raises:
+        CommandError: ``--source local-mirror`` was requested but
+            ``settings.WEATHER_API_LOCAL_MIRROR_BASE_URL`` is not configured
+            (i.e. running outside ``development.py``).
+
+    """
+    if source == SOURCE_LIVE:
+        return None
+    mirror_url: str | None = getattr(
+        settings, "WEATHER_API_LOCAL_MIRROR_BASE_URL", None
+    )
+    if not mirror_url:
+        raise CommandError(
+            "--source local-mirror requires settings.WEATHER_API_LOCAL_MIRROR_BASE_URL "
+            "to be configured. The mirror is only available in development.py."
+        )
+    return mirror_url
 
 
 def _parse_dt(value: str) -> datetime:
@@ -106,14 +166,16 @@ def fetch_weather_for_region(
     target_date: date,
     *,
     commit: bool,
+    base_url: str | None = None,
+    on_fetched: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[WeatherSnapshot, bool] | None:
     """
     Fetch and optionally persist today's weather snapshot for one region.
 
-    Calls the Open-Meteo forecast endpoint, extracts the weather code and
-    sunrise/sunset for ``target_date`` (index ``[0]`` of the daily arrays),
-    then either persists a WeatherSnapshot via update_or_create or returns
-    None if ``commit=False``.
+    Calls the Open-Meteo forecast endpoint (or a mirror when ``base_url``
+    is set), extracts the weather code and sunrise/sunset for ``target_date``
+    (index ``[0]`` of the daily arrays), then either persists a WeatherSnapshot
+    via update_or_create or returns None if ``commit=False``.
 
     Args:
         region: The MicroRegion to fetch weather for. Must have a non-None ``centre``
@@ -122,6 +184,13 @@ def fetch_weather_for_region(
         commit: If True, write the snapshot to the database. If False, the
             HTTP request still executes (real API probe) but no rows are
             written and None is returned.
+        base_url: When set, overrides ``FORECAST_URL`` as the endpoint base.
+            The actual request goes to ``f"{base_url}/forecast"``. Defaults to
+            ``None``, which falls back to the module-level ``FORECAST_URL``.
+        on_fetched: Optional callback called once after the response is parsed,
+            with a NDJSON-shape dict ``{region_id, date, weather_code, sunrise,
+            sunset, captured_at}``. Used by ``--stash`` to collect records for
+            the on-disk archive. Defaults to ``None`` (no-op).
 
     Returns:
         A ``(WeatherSnapshot, created)`` tuple when ``commit=True``, where
@@ -133,12 +202,14 @@ def fetch_weather_for_region(
         KeyError: If the expected fields are absent from the API response.
 
     """
-    centre: dict[str, float] = cast(dict[str, float], region.centre)
+    centre: Centre = cast(Centre, region.centre)
+    url = f"{base_url}/forecast" if base_url else FORECAST_URL
     logger.debug(
-        "Fetching forecast weather for region=%s date=%s commit=%s",
+        "Fetching forecast weather for region=%s date=%s commit=%s url=%s",
         region.region_id,
         target_date,
         commit,
+        url,
     )
 
     params: dict[str, str] = {
@@ -151,7 +222,7 @@ def fetch_weather_for_region(
         "start_date": target_date.isoformat(),
         "end_date": target_date.isoformat(),
     }
-    response = requests.get(FORECAST_URL, params=params, timeout=REQUEST_TIMEOUT)
+    response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     data: dict[str, Any] = response.json()
 
@@ -168,6 +239,18 @@ def fetch_weather_for_region(
         sunrise_str,
         sunset_str,
     )
+
+    if on_fetched is not None:
+        on_fetched(
+            {
+                "region_id": region.region_id,
+                "date": target_date.isoformat(),
+                "weather_code": weather_code,
+                "sunrise": sunrise_str,
+                "sunset": sunset_str,
+                "captured_at": django_timezone.now().isoformat(),
+            }
+        )
 
     if not commit:
         return None
@@ -193,6 +276,8 @@ def fetch_all_regions(
     target_date: date,
     *,
     commit: bool,
+    base_url: str | None = None,
+    on_fetched: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, int]:
     """
     Fetch weather snapshots for every MicroRegion that has a centre coordinate.
@@ -204,6 +289,11 @@ def fetch_all_regions(
     Args:
         target_date: The calendar date to fetch weather for.
         commit: If True, write snapshots to the database.
+        base_url: When set, overrides ``FORECAST_URL`` for all per-region
+            calls. Defaults to ``None`` (fall back to ``FORECAST_URL``).
+        on_fetched: Optional callback forwarded to each per-region call.
+            Called once per fetched ``(region, date)`` record. Defaults to
+            ``None`` (no-op).
 
     Returns:
         A dict with integer counters:
@@ -236,7 +326,13 @@ def fetch_all_regions(
             continue
 
         try:
-            result = fetch_weather_for_region(region, target_date, commit=commit)
+            result = fetch_weather_for_region(
+                region,
+                target_date,
+                commit=commit,
+                base_url=base_url,
+                on_fetched=on_fetched,
+            )
             if commit and result is not None:
                 _, created = result
                 if created:
@@ -268,14 +364,16 @@ def fetch_archive_for_region(
     end_date: date,
     *,
     commit: bool,
+    base_url: str | None = None,
+    on_fetched: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[tuple[WeatherSnapshot, bool]]:
     """
     Fetch historical weather for a date range for one region.
 
-    Calls the Open-Meteo archive endpoint (which supports multi-day ranges)
-    and iterates the ``daily.time`` array, pairing each date with its
-    weather code and sunrise/sunset. Persists a WeatherSnapshot per date
-    via update_or_create when ``commit=True``.
+    Calls the Open-Meteo archive endpoint (or a mirror when ``base_url`` is
+    set), iterates the ``daily.time`` array, pairing each date with its
+    weather code and sunrise/sunset. Persists a WeatherSnapshot per date via
+    update_or_create when ``commit=True``.
 
     Args:
         region: The MicroRegion to fetch historical weather for. Must have a
@@ -283,6 +381,13 @@ def fetch_archive_for_region(
         start_date: First date in the range (inclusive).
         end_date: Last date in the range (inclusive).
         commit: If True, persist snapshots to the database.
+        base_url: When set, overrides ``ARCHIVE_URL`` as the endpoint base.
+            The actual request goes to ``f"{base_url}/archive"``. Defaults to
+            ``None``, which falls back to the module-level ``ARCHIVE_URL``.
+        on_fetched: Optional callback called once per ``(region, date)`` record
+            in the response, with a NDJSON-shape dict ``{region_id, date,
+            weather_code, sunrise, sunset, captured_at}``. Used by ``--stash``.
+            Defaults to ``None`` (no-op).
 
     Returns:
         A list of ``(WeatherSnapshot, created)`` tuples — one per day — when
@@ -294,13 +399,15 @@ def fetch_archive_for_region(
         KeyError: If the expected fields are absent from the API response.
 
     """
-    centre: dict[str, float] = cast(dict[str, float], region.centre)
+    centre: Centre = cast(Centre, region.centre)
+    url = f"{base_url}/archive" if base_url else ARCHIVE_URL
     logger.debug(
-        "Fetching archive weather for region=%s start=%s end=%s commit=%s",
+        "Fetching archive weather for region=%s start=%s end=%s commit=%s url=%s",
         region.region_id,
         start_date,
         end_date,
         commit,
+        url,
     )
 
     archive_params: dict[str, str] = {
@@ -311,7 +418,7 @@ def fetch_archive_for_region(
         "daily": "weather_code,sunrise,sunset",
         "timezone": "auto",
     }
-    response = requests.get(ARCHIVE_URL, params=archive_params, timeout=REQUEST_TIMEOUT)
+    response = requests.get(url, params=archive_params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     data: dict[str, Any] = response.json()
 
@@ -320,6 +427,23 @@ def fetch_archive_for_region(
     weather_codes: list[int] = daily["weather_code"]
     sunrises: list[str] = daily["sunrise"]
     sunsets: list[str] = daily["sunset"]
+
+    captured_at = django_timezone.now().isoformat()
+
+    if on_fetched is not None:
+        for date_str, code, sunrise_str, sunset_str in zip(
+            dates, weather_codes, sunrises, sunsets
+        ):
+            on_fetched(
+                {
+                    "region_id": region.region_id,
+                    "date": date_str,
+                    "weather_code": code,
+                    "sunrise": sunrise_str,
+                    "sunset": sunset_str,
+                    "captured_at": captured_at,
+                }
+            )
 
     if not commit:
         logger.debug(
@@ -359,6 +483,8 @@ def backfill_all_regions(
     *,
     commit: bool,
     delay: float = 0.0,
+    base_url: str | None = None,
+    on_fetched: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, int]:
     """
     Backfill historical weather snapshots for every MicroRegion with a centre.
@@ -376,6 +502,11 @@ def backfill_all_regions(
             API to stay inside Open-Meteo's free-tier rate limit. The
             sleep happens between regions only — never before the first
             or after the last.
+        base_url: When set, overrides ``ARCHIVE_URL`` for all per-region
+            calls. Defaults to ``None`` (fall back to ``ARCHIVE_URL``).
+        on_fetched: Optional callback forwarded to each per-region call.
+            Called once per ``(region, date)`` record. Defaults to ``None``
+            (no-op).
 
     Returns:
         A dict with integer counters:
@@ -411,7 +542,12 @@ def backfill_all_regions(
 
         try:
             results = fetch_archive_for_region(
-                region, start_date, end_date, commit=commit
+                region,
+                start_date,
+                end_date,
+                commit=commit,
+                base_url=base_url,
+                on_fetched=on_fetched,
             )
 
             if commit:

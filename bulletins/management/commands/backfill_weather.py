@@ -12,12 +12,34 @@ successive per-region archive calls (~60 calls/minute, comfortably under the
 limit). Pass ``--delay 0`` to disable pacing if you have a paid Open-Meteo plan
 or are running a tiny region count.
 
+``--source`` selects the upstream:
+
+- ``live`` (default) — the real Open-Meteo archive API.
+- ``local-mirror`` — the development-only view at
+  ``/dev/openmeteo-mirror/v1/archive`` that replays
+  ``sample_data/openmeteo_archive.ndjson``. Requires
+  ``settings.WEATHER_API_LOCAL_MIRROR_BASE_URL`` (only defined in
+  ``development.py``); raises ``CommandError`` otherwise.
+
+``--stash`` captures every fetched ``(region, date)`` record into
+``sample_data/openmeteo_archive.ndjson`` (deduped by ``(region_id, date)``,
+sorted by ``(region_id, date)``). Independent of ``--commit`` — combine them
+for a full-fidelity capture, or use ``--stash`` alone for a read-only archive
+refresh.
+
 Usage:
     # Dry-run probe for a winter season window (paced at 1 s/region by default).
     python manage.py backfill_weather --start 2025-12-01 --end 2026-04-30
 
     # Persist historical weather for the full season.
     python manage.py backfill_weather --start 2025-12-01 --end 2026-04-30 --commit
+
+    # Replay from the local mirror (instant; dev server must be running).
+    python manage.py backfill_weather \
+        --start 2026-01-01 --end 2026-01-31 --source local-mirror --commit
+
+    # Capture a range to the archive without DB writes.
+    python manage.py backfill_weather --start 2025-12-01 --end 2026-04-30 --stash
 
     # Tighten or disable pacing.
     python manage.py backfill_weather \
@@ -26,18 +48,26 @@ Usage:
         --start 2024-11-01 --end 2025-04-30 --delay 0 --commit
 """
 
-import argparse
 import logging
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentTypeError
 from datetime import date
 from typing import Any
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-from bulletins.services.weather_fetcher import backfill_all_regions
+from bulletins.services.openmeteo_archive import flush_stash
+from bulletins.services.weather_fetcher import (
+    SOURCE_LIVE,
+    SOURCE_LOCAL_MIRROR,
+    backfill_all_regions,
+    resolve_weather_source,
+)
 from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
+
+_SOURCE_CHOICES = (SOURCE_LIVE, SOURCE_LOCAL_MIRROR)
 
 
 def _non_negative_float(raw: str) -> float:
@@ -45,15 +75,15 @@ def _non_negative_float(raw: str) -> float:
     Argparse ``type=`` helper for non-negative float arguments.
 
     Raises:
-        argparse.ArgumentTypeError: if the value is unparseable or negative.
+        ArgumentTypeError: if the value is unparseable or negative.
 
     """
     try:
         value = float(raw)
     except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"invalid float value: {raw!r}") from exc
+        raise ArgumentTypeError(f"invalid float value: {raw!r}") from exc
     if value < 0:
-        raise argparse.ArgumentTypeError(f"delay must be non-negative (got {value})")
+        raise ArgumentTypeError(f"delay must be non-negative (got {value})")
     return value
 
 
@@ -105,6 +135,29 @@ class Command(BaseCommand):
                 "backfills if you start to see 429 responses."
             ),
         )
+        parser.add_argument(
+            "--source",
+            choices=_SOURCE_CHOICES,
+            default=SOURCE_LIVE,
+            help=(
+                "Where to fetch from. 'live' (default) hits the real Open-Meteo "
+                "archive API; 'local-mirror' hits the development-only view that "
+                "replays sample_data/openmeteo_archive.ndjson. The mirror is only "
+                "available when settings.WEATHER_API_LOCAL_MIRROR_BASE_URL is "
+                "configured (development.py)."
+            ),
+        )
+        parser.add_argument(
+            "--stash",
+            action="store_true",
+            help=(
+                "Append every fetched weather record to "
+                "sample_data/openmeteo_archive.ndjson (deduped by (region_id, date), "
+                "sorted by (region_id, date)). Independent of --commit — combine them "
+                "for a full-fidelity capture, or use --stash alone for a read-only "
+                "archive refresh."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
@@ -112,19 +165,82 @@ class Command(BaseCommand):
         end: date = options["end"]
         commit: bool = options["commit"]
         delay: float = options["delay"]
+        source: str = options["source"]
+        stash: bool = options["stash"]
         verbosity: int = options["verbosity"]
 
         if end < start:
             raise CommandError("--end must be on or after --start.")
 
+        base_url = resolve_weather_source(source)
+
+        collected: list[dict[str, Any]] = []
+        on_fetched = collected.append if stash else None
+
         days = (end - start).days + 1
         region_count = MicroRegion.objects.count()
 
+        self._announce(
+            start,
+            end,
+            days,
+            region_count,
+            commit=commit,
+            delay=delay,
+            stash=stash,
+            source=source,
+        )
+
+        counts = backfill_all_regions(
+            start,
+            end,
+            commit=commit,
+            delay=delay,
+            base_url=base_url,
+            on_fetched=on_fetched,
+        )
+
+        if stash:
+            flush_stash(
+                settings.OPENMETEO_ARCHIVE_PATH,
+                collected,
+                "backfill_weather",
+                stdout=self.stdout,
+                style=self.style,
+            )
+
+        self._report_outcome(
+            counts, days, start, end, commit=commit, verbosity=verbosity
+        )
+
+        if counts["failed"] > 0:
+            raise CommandError(
+                f"backfill_weather completed with {counts['failed']} region failure(s) "
+                f"for range {start}–{end}. Check logs for details."
+            )
+
+    def _announce(
+        self,
+        start: date,
+        end: date,
+        days: int,
+        region_count: int,
+        *,
+        commit: bool,
+        delay: float,
+        stash: bool,
+        source: str,
+    ) -> None:
+        """Write the start-of-run banner and matching log line."""
         flags: list[str] = []
         if not commit:
             flags.append("READ-ONLY")
         if delay > 0:
             flags.append(f"DELAY={delay:g}s")
+        if stash:
+            flags.append("STASH")
+        if source != SOURCE_LIVE:
+            flags.append(f"SOURCE={source.upper()}")
         flag_label = " [" + ", ".join(flags) + "]" if flags else ""
 
         self.stdout.write(
@@ -135,17 +251,28 @@ class Command(BaseCommand):
         )
         logger.info(
             "backfill_weather started: start=%s end=%s days=%d regions=%d "
-            "commit=%s delay=%s",
+            "commit=%s delay=%s source=%s stash=%s",
             start,
             end,
             days,
             region_count,
             commit,
             delay,
+            source,
+            stash,
         )
 
-        counts = backfill_all_regions(start, end, commit=commit, delay=delay)
-
+    def _report_outcome(
+        self,
+        counts: dict[str, int],
+        days: int,
+        start: date,
+        end: date,
+        *,
+        commit: bool,
+        verbosity: int,
+    ) -> None:
+        """Emit the post-run summary to stdout and the structured log."""
         if verbosity >= 1:
             if commit:
                 self.stdout.write(
@@ -176,9 +303,3 @@ class Command(BaseCommand):
             counts["failed"],
             commit,
         )
-
-        if counts["failed"] > 0:
-            raise CommandError(
-                f"backfill_weather completed with {counts['failed']} region failure(s) "
-                f"for range {start}–{end}. Check logs for details."
-            )
