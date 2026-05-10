@@ -84,7 +84,7 @@ async function buildMaskable(size, outName) {
     // as RGB (color_type 2) not RGBA (color_type 6). Both steps are needed:
     // flatten alone doesn't drop the channel in sharp >= 0.33; removeAlpha
     // alone would fill with black. Together they ensure Android's adaptive-
-    // icon mask doesn't leak transparency at the masked corners (SNOW-150).
+    // icon mask doesn't leak transparency at the masked corners.
     .flatten({ background: MASKABLE_CANVAS_COLOUR })
     .removeAlpha()
     .png()
