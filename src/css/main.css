@@ -600,27 +600,30 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
           data-rating-max="considerable">
    ————————————————————————————————————————— */
 
-/* Stable-day fills */
-.calendar-cell[data-rating-min="no_rating"][data-rating-max="no_rating"] { background: transparent; }
-.calendar-cell[data-rating-min="low"][data-rating-max="low"]             { background: var(--color-eaws-low-tint); color: var(--color-eaws-low-text); }
-.calendar-cell[data-rating-min="moderate"][data-rating-max="moderate"]   { background: var(--color-eaws-moderate-tint); color: var(--color-eaws-moderate-text); }
-.calendar-cell[data-rating-min="considerable"][data-rating-max="considerable"] { background: var(--color-eaws-considerable-tint); color: var(--color-eaws-considerable-text); }
-.calendar-cell[data-rating-min="high"][data-rating-max="high"]           { background: var(--color-eaws-high-tint); color: var(--color-eaws-high-text); }
-.calendar-cell[data-rating-min="very_high"][data-rating-max="very_high"] { background: var(--color-eaws-very-high-tint); color: var(--color-eaws-very-high-text); }
+/* Stable-day fills — set --cell-bg; the ::before pseudo-element paints it.
+   Keeping colour off the element itself so the overflow:hidden clip on the
+   parent never touches a gradient boundary (the root cause of the bleed). */
+.calendar-cell[data-rating-min="no_rating"][data-rating-max="no_rating"] { --cell-bg: transparent; }
+.calendar-cell[data-rating-min="low"][data-rating-max="low"]             { --cell-bg: var(--color-eaws-low); color: var(--color-eaws-low-fg); }
+.calendar-cell[data-rating-min="moderate"][data-rating-max="moderate"]   { --cell-bg: var(--color-eaws-moderate); color: var(--color-eaws-moderate-fg); }
+.calendar-cell[data-rating-min="considerable"][data-rating-max="considerable"] { --cell-bg: var(--color-eaws-considerable); color: var(--color-eaws-considerable-fg); }
+.calendar-cell[data-rating-min="high"][data-rating-max="high"]           { --cell-bg: var(--color-eaws-high); color: var(--color-eaws-high-fg); }
+.calendar-cell[data-rating-min="very_high"][data-rating-max="very_high"] { --cell-bg: var(--color-eaws-very-high); color: var(--color-eaws-very-high-fg); }
 
-/* Variable-day diagonal triangle fills — one rule per (min, max) pair where min < max.
-   min colour fills the bottom-left triangle; max colour fills the top-right triangle.
-   Text colour uses the max-rating token for legibility on the dominant triangle. */
-.calendar-cell[data-rating-min="low"][data-rating-max="moderate"]           { background: linear-gradient(to top right, var(--color-eaws-low-tint) 50%, var(--color-eaws-moderate-tint) 50%); color: var(--color-eaws-moderate-text); }
-.calendar-cell[data-rating-min="low"][data-rating-max="considerable"]        { background: linear-gradient(to top right, var(--color-eaws-low-tint) 50%, var(--color-eaws-considerable-tint) 50%); color: var(--color-eaws-considerable-text); }
-.calendar-cell[data-rating-min="low"][data-rating-max="high"]                { background: linear-gradient(to top right, var(--color-eaws-low-tint) 50%, var(--color-eaws-high-tint) 50%); color: var(--color-eaws-high-text); }
-.calendar-cell[data-rating-min="low"][data-rating-max="very_high"]           { background: linear-gradient(to top right, var(--color-eaws-low-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
-.calendar-cell[data-rating-min="moderate"][data-rating-max="considerable"]   { background: linear-gradient(to top right, var(--color-eaws-moderate-tint) 50%, var(--color-eaws-considerable-tint) 50%); color: var(--color-eaws-considerable-text); }
-.calendar-cell[data-rating-min="moderate"][data-rating-max="high"]           { background: linear-gradient(to top right, var(--color-eaws-moderate-tint) 50%, var(--color-eaws-high-tint) 50%); color: var(--color-eaws-high-text); }
-.calendar-cell[data-rating-min="moderate"][data-rating-max="very_high"]      { background: linear-gradient(to top right, var(--color-eaws-moderate-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
-.calendar-cell[data-rating-min="considerable"][data-rating-max="high"]       { background: linear-gradient(to top right, var(--color-eaws-considerable-tint) 50%, var(--color-eaws-high-tint) 50%); color: var(--color-eaws-high-text); }
-.calendar-cell[data-rating-min="considerable"][data-rating-max="very_high"]  { background: linear-gradient(to top right, var(--color-eaws-considerable-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
-.calendar-cell[data-rating-min="high"][data-rating-max="very_high"]          { background: linear-gradient(to top right, var(--color-eaws-high-tint) 50%, var(--color-eaws-very-high-tint) 50%); color: var(--color-eaws-very-high-text); }
+/* Variable-day diagonal split fills — one rule per (min, max) pair where min < max.
+   min colour fills the bottom-left half; max colour fills the top-right half.
+   conic-gradient(from 135deg) = same 45° diagonal as linear-gradient(to top right).
+   Text colour uses the max-rating fg token for legibility on the dominant half. */
+.calendar-cell[data-rating-min="low"][data-rating-max="moderate"]           { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-low) 180deg, var(--color-eaws-moderate) 180deg); color: var(--color-eaws-moderate-fg); }
+.calendar-cell[data-rating-min="low"][data-rating-max="considerable"]        { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-low) 180deg, var(--color-eaws-considerable) 180deg); color: var(--color-eaws-considerable-fg); }
+.calendar-cell[data-rating-min="low"][data-rating-max="high"]                { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-low) 180deg, var(--color-eaws-high) 180deg); color: var(--color-eaws-high-fg); }
+.calendar-cell[data-rating-min="low"][data-rating-max="very_high"]           { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-low) 180deg, var(--color-eaws-very-high) 180deg); color: var(--color-eaws-very-high-fg); }
+.calendar-cell[data-rating-min="moderate"][data-rating-max="considerable"]   { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-moderate) 180deg, var(--color-eaws-considerable) 180deg); color: var(--color-eaws-considerable-fg); }
+.calendar-cell[data-rating-min="moderate"][data-rating-max="high"]           { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-moderate) 180deg, var(--color-eaws-high) 180deg); color: var(--color-eaws-high-fg); }
+.calendar-cell[data-rating-min="moderate"][data-rating-max="very_high"]      { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-moderate) 180deg, var(--color-eaws-very-high) 180deg); color: var(--color-eaws-very-high-fg); }
+.calendar-cell[data-rating-min="considerable"][data-rating-max="high"]       { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-considerable) 180deg, var(--color-eaws-high) 180deg); color: var(--color-eaws-high-fg); }
+.calendar-cell[data-rating-min="considerable"][data-rating-max="very_high"]  { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-considerable) 180deg, var(--color-eaws-very-high) 180deg); color: var(--color-eaws-very-high-fg); }
+.calendar-cell[data-rating-min="high"][data-rating-max="very_high"]          { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-high) 180deg, var(--color-eaws-very-high) 180deg); color: var(--color-eaws-very-high-fg); }
 
 /* —— Season heatmap sheet (SNOW-117) ————————————————————————————
    The season heatmap renders inside a slide-down sheet (not inline).
@@ -645,6 +648,16 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     justify-content: center;
     border: 1px solid transparent;
     box-sizing: border-box;
+    overflow: hidden;
+    position: relative;
+    isolation: isolate;
+}
+[data-testid="season-calendar"] .calendar-cell::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--cell-bg, transparent);
+    z-index: -1;
 }
 [data-testid="season-calendar"] .calendar-cell[data-rating-min] {
     border-color: rgba(0, 0, 0, 0.12);
@@ -748,6 +761,12 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 [data-season-sheet="open"] .season-sheet-backdrop {
     opacity: 1;
     pointer-events: auto;
+}
+[data-season-sheet="open"] .season-sheet-backdrop.is-pressing {
+    background: rgba(0, 0, 0, 0.55);
+}
+[data-season-scroll] {
+    touch-action: pan-x;
 }
 [data-season-sheet="open"] .season-sheet {
     transform: translateY(0);

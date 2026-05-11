@@ -1,7 +1,7 @@
 """
 tests/bulletins/services/test_day_rating.py — Tests for the day_rating service.
 
-Covers (v5 headline-only policy):
+Covers (v6 headline-only with afternoon-elevated split policy):
   - _target_day: morning/evening/boundary rules.
   - Single bulletin, two traits (dry=1, wet=3) → min=max=headline_key (considerable).
   - Single bulletin, single trait (dry=3) → min=max=considerable (stable).
@@ -17,6 +17,13 @@ Covers (v5 headline-only policy):
   - commit=False does not write.
   - apply_bulletin_day_ratings creates exactly one (region, target_day) row per region.
   - apply_bulletin_day_ratings exception inside upsert_bulletin is swallowed.
+  - _resolve_min_max_keys: split when afternoon > morning.
+  - _resolve_min_max_keys: no split when afternoon == morning.
+  - _resolve_min_max_keys: no split when no afternoon levels.
+  - _resolve_min_max_keys: no split when no morning levels.
+  - recompute_region_day: afternoon-elevated split produces min<max.
+  - recompute_region_day: equal afternoon/morning stays headline-only.
+  - recompute_region_day: later-only traits (no morning) stay headline-only.
 """
 
 from __future__ import annotations
@@ -30,6 +37,7 @@ import pytest
 from bulletins.models import RegionDayRating
 from bulletins.services.day_rating import (
     DAY_RATING_VERSION,
+    _resolve_min_max_keys,
     _target_day,
     apply_bulletin_day_ratings,
     recompute_region_day,
@@ -121,6 +129,106 @@ def _trait(danger_level: int, category: str = "dry") -> dict:
         "title": f"{category.capitalize()} avalanches",
         "problems": [],
     }
+
+
+def _split_trait(danger_level: int, time_period: str, category: str = "dry") -> dict:
+    """
+    Build a trait dict with an explicit time_period for split-logic tests.
+
+    Args:
+        danger_level: Integer 1–5.
+        time_period: "all_day", "earlier", or "later".
+        category: "dry" or "wet".
+
+    Returns:
+        A trait dict shaped for recompute_region_day.
+
+    """
+    return {
+        "category": category,
+        "danger_level": danger_level,
+        "time_period": time_period,
+        "title": f"{category.capitalize()} avalanches",
+        "problems": [],
+    }
+
+
+# ---------------------------------------------------------------------------
+# _resolve_min_max_keys (unit — no DB)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveMinMaxKeys:
+    """Unit tests for _resolve_min_max_keys() — no DB required."""
+
+    def test_split_when_afternoon_strictly_higher(self) -> None:
+        """Afternoon max > morning max → split: min=morning key, max=afternoon key."""
+        min_key, min_sub, max_key, max_sub = _resolve_min_max_keys(
+            morning_levels=[2],
+            afternoon_levels=[3],
+            headline_key="considerable",
+            headline_subdivision="+",
+        )
+        assert min_key == "moderate"
+        assert max_key == "considerable"
+        # Both subdivisions mirror the headline.
+        assert min_sub == "+"
+        assert max_sub == "+"
+
+    def test_no_split_when_afternoon_equals_morning(self) -> None:
+        """Afternoon max == morning max → fall back to headline-only."""
+        min_key, min_sub, max_key, max_sub = _resolve_min_max_keys(
+            morning_levels=[3],
+            afternoon_levels=[3],
+            headline_key="considerable",
+            headline_subdivision="",
+        )
+        assert min_key == "considerable"
+        assert max_key == "considerable"
+
+    def test_no_split_when_afternoon_lower_than_morning(self) -> None:
+        """Afternoon max < morning max → fall back to headline-only."""
+        min_key, min_sub, max_key, max_sub = _resolve_min_max_keys(
+            morning_levels=[4],
+            afternoon_levels=[2],
+            headline_key="high",
+            headline_subdivision="",
+        )
+        assert min_key == "high"
+        assert max_key == "high"
+
+    def test_no_split_when_no_afternoon_levels(self) -> None:
+        """Empty afternoon_levels → fall back to headline-only."""
+        min_key, _, max_key, _ = _resolve_min_max_keys(
+            morning_levels=[3],
+            afternoon_levels=[],
+            headline_key="considerable",
+            headline_subdivision="",
+        )
+        assert min_key == "considerable"
+        assert max_key == "considerable"
+
+    def test_no_split_when_no_morning_levels(self) -> None:
+        """Empty morning_levels → fall back to headline-only (cannot split)."""
+        min_key, _, max_key, _ = _resolve_min_max_keys(
+            morning_levels=[],
+            afternoon_levels=[4],
+            headline_key="high",
+            headline_subdivision="",
+        )
+        assert min_key == "high"
+        assert max_key == "high"
+
+    def test_split_uses_highest_from_each_bucket(self) -> None:
+        """Multiple levels in each bucket — uses max(), not first/last."""
+        min_key, _, max_key, _ = _resolve_min_max_keys(
+            morning_levels=[1, 2, 3],
+            afternoon_levels=[4, 5],
+            headline_key="very_high",
+            headline_subdivision="",
+        )
+        assert min_key == "considerable"  # max of [1,2,3] = 3
+        assert max_key == "very_high"  # max of [4,5] = 5
 
 
 # ---------------------------------------------------------------------------
@@ -477,6 +585,113 @@ class TestRecomputeRegionDay:
 
         rdr = RegionDayRating.objects.get(region=region, date=day)
         assert rdr.source_bulletin_id == b.pk
+
+    def test_split_when_afternoon_elevated(self) -> None:
+        """
+        Bulletin with all_day=moderate (2) and later=considerable (3) →
+        min_rating=moderate, max_rating=considerable.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        day = datetime.date(2026, 3, 10)
+        vf = datetime.datetime(2026, 3, 9, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 10, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[
+                _split_trait(2, "all_day", "dry"),
+                _split_trait(3, "later", "wet"),
+            ],
+            headline_key="considerable",
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.min_rating == "moderate"
+        assert rdr.max_rating == "considerable"
+
+    def test_no_split_when_afternoon_same_as_morning(self) -> None:
+        """
+        Bulletin with all_day=considerable (3) and later=considerable (3) →
+        both ratings stay at the headline key (considerable).
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        day = datetime.date(2026, 3, 11)
+        vf = datetime.datetime(2026, 3, 10, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 11, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[
+                _split_trait(3, "all_day", "dry"),
+                _split_trait(3, "later", "wet"),
+            ],
+            headline_key="considerable",
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.min_rating == "considerable"
+        assert rdr.max_rating == "considerable"
+
+    def test_no_split_when_only_later_traits(self) -> None:
+        """
+        Bulletin with only later traits (no all_day/earlier) → no morning_levels →
+        fall back to headline-only.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        day = datetime.date(2026, 3, 12)
+        vf = datetime.datetime(2026, 3, 11, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 12, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[
+                _split_trait(4, "later", "dry"),
+            ],
+            headline_key="high",
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.min_rating == "high"
+        assert rdr.max_rating == "high"
+
+    def test_split_with_earlier_time_period(self) -> None:
+        """
+        ``earlier`` time_period is treated the same as ``all_day`` for morning_levels.
+        Bulletin with earlier=low (1) and later=high (4) → min=low, max=high.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        day = datetime.date(2026, 3, 13)
+        vf = datetime.datetime(2026, 3, 12, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 13, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[
+                _split_trait(1, "earlier", "dry"),
+                _split_trait(4, "later", "dry"),
+            ],
+            headline_key="high",
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.min_rating == "low"
+        assert rdr.max_rating == "high"
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ Maintains the RegionDayRating denormalisation table. Each row stores both the
 minimum and maximum danger ratings (within one chosen bulletin) for a single
 (region, calendar day) pair.
 
-Aggregation policy (v5 — headline-only):
+Aggregation policy (v6 — headline-only with afternoon-elevated split):
   - For day X, pick the single bulletin that was most recently published by
     ~10am on day X:
     - Morning-of-X (valid_from.date() == X, hour < 12) takes priority.
@@ -17,12 +17,20 @@ Aggregation policy (v5 — headline-only):
     with the latest ``valid_from``.  Because morning-of-X has a later
     ``valid_from`` than prior-evening-of-(X-1), this naturally implements
     the morning-wins / prior-evening-fallback convention.
-  - Both ``min_rating`` and ``max_rating`` are always set to the bulletin's
-    headline ``render_model["danger"]["key"]`` (the CAAML aggregate).  This
-    keeps the heatmap tile in sync with the Day Risk Profile panel, which
-    also shows the headline rating (SNOW-138).
-  - Bulletins with an empty traits list (quiet day) use the same headline
-    key path (debug log).
+  - Split logic (afternoon-elevated):
+    - During the trait loop, collect ``morning_levels`` from traits with
+      ``time_period in ("all_day", "earlier")`` and ``afternoon_levels`` from
+      traits with ``time_period == "later"``.
+    - If both lists are non-empty and ``max(afternoon_levels) > max(morning_levels)``,
+      produce a split: ``min_rating = key of max(morning_levels)``,
+      ``max_rating = key of max(afternoon_levels)``.
+    - Otherwise (no ``later`` traits, or afternoon max not higher than morning
+      max), fall back to headline-only: both ``min_rating`` and ``max_rating``
+      are set to the bulletin's headline ``render_model["danger"]["key"]``
+      (the CAAML aggregate). This keeps the heatmap tile in sync with the
+      Day Risk Profile panel, which also shows the headline rating (SNOW-138).
+  - Bulletins with an empty traits list (quiet day) use the headline key path
+    (debug log).
   - Bulletins with a completely malformed render_model (empty dict or missing
     both ``danger`` and ``traits``) → write ``no_rating``.
   - Traits with missing or non-integer ``danger_level`` are skipped (debug log).
@@ -53,7 +61,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DAY_RATING_VERSION: int = 5
+DAY_RATING_VERSION: int = 6
 
 # Map trait danger_level int (1–5) to rating key string.
 _DANGER_LEVEL_TO_KEY: dict[int, str] = {
@@ -128,6 +136,47 @@ def _extract_headline_from_render_model(render_model: dict) -> tuple[str, str]:
     raw_sub: str = danger.get("subdivision") or ""
     subdivision = _SUBDIVISION_SUFFIX.get(raw_sub, "")
     return key, subdivision
+
+
+def _resolve_min_max_keys(
+    morning_levels: list[int],
+    afternoon_levels: list[int],
+    headline_key: str,
+    headline_subdivision: str,
+) -> tuple[str, str, str, str]:
+    """
+    Resolve the min/max rating keys and subdivisions from trait-level buckets.
+
+    When afternoon traits are strictly more dangerous than morning/all-day
+    traits, produce a split: ``min`` = morning max, ``max`` = afternoon max.
+    Otherwise fall back to headline-only so the heatmap tile stays in sync with
+    the Day Risk Profile panel (SNOW-138).
+
+    Both subdivision fields always mirror the headline bulletin subdivision
+    because the trait list does not carry per-period subdivision data.
+
+    Args:
+        morning_levels: Danger-level ints from ``all_day`` / ``earlier`` traits.
+        afternoon_levels: Danger-level ints from ``later`` traits.
+        headline_key: The pre-computed aggregate key from the render model.
+        headline_subdivision: The subdivision suffix from the render model.
+
+    Returns:
+        A ``(min_key, min_subdivision, max_key, max_subdivision)`` tuple.
+
+    """
+    if (
+        morning_levels
+        and afternoon_levels
+        and max(afternoon_levels) > max(morning_levels)
+    ):
+        return (
+            _DANGER_LEVEL_TO_KEY[max(morning_levels)],
+            headline_subdivision,
+            _DANGER_LEVEL_TO_KEY[max(afternoon_levels)],
+            headline_subdivision,
+        )
+    return headline_key, headline_subdivision, headline_key, headline_subdivision
 
 
 def recompute_region_day(
@@ -211,7 +260,11 @@ def recompute_region_day(
             source_bulletin = chosen
         else:
             # Verify the bulletin has at least one valid trait danger_level.
+            # Also collect morning (all_day/earlier) and afternoon (later)
+            # levels so we can detect an afternoon-elevated split.
             has_valid_trait = False
+            morning_levels: list[int] = []
+            afternoon_levels: list[int] = []
             for trait in traits:
                 raw_level = trait.get("danger_level")
                 if (
@@ -226,6 +279,11 @@ def recompute_region_day(
                     )
                     continue
                 has_valid_trait = True
+                time_period = trait.get("time_period", "all_day")
+                if time_period == "later":
+                    afternoon_levels.append(raw_level)
+                else:  # "all_day" or "earlier"
+                    morning_levels.append(raw_level)
 
             if not has_valid_trait:
                 # All trait levels were invalid — no usable data.
@@ -235,12 +293,16 @@ def recompute_region_day(
                 max_subdivision = ""
                 source_bulletin = None
             else:
-                # Use the headline danger key for both fields so the heatmap
-                # tile always matches the Day Risk Profile panel (SNOW-138).
-                min_key = headline_key
-                max_key = headline_key
-                max_subdivision = headline_subdivision
-                min_subdivision = headline_subdivision
+                # Resolve min/max keys — split when afternoon is elevated,
+                # otherwise headline-only (SNOW-138).
+                min_key, min_subdivision, max_key, max_subdivision = (
+                    _resolve_min_max_keys(
+                        morning_levels,
+                        afternoon_levels,
+                        headline_key,
+                        headline_subdivision,
+                    )
+                )
                 source_bulletin = chosen
 
     if not commit:
