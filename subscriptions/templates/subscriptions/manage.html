@@ -386,7 +386,7 @@ authenticated=True (session present):
                         }
 
                         document.addEventListener("passkey:auth-unknown-credential", function () {
-                            showAuthError("{% trans "This passkey wasn't recognised — it may have been removed. Please try a different passkey or use a magic link." %}");
+                            showAuthError("{% trans "The passkey you used could not be found on Snowdesk. Please try a different passkey or use a magic link." %}");
                         });
                         document.addEventListener("passkey:auth-error", function (e) {
                             showAuthError("{% trans "Sign-in failed. Please try again or use a magic link." %}");

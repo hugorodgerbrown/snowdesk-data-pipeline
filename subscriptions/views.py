@@ -513,6 +513,27 @@ def delete_account(request: HttpRequest) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
+# sign_out — clear subscriber session
+# ---------------------------------------------------------------------------
+
+
+@require_POST
+def sign_out(request: HttpRequest) -> HttpResponse:
+    """
+    Clear the subscriber session and redirect to the manage page.
+
+    Args:
+        request: POST request (CSRF-protected via the standard Django form token).
+
+    Returns:
+        Redirect to the manage page, which will render in unauthenticated mode.
+
+    """
+    request.session.pop(_SESSION_KEY, None)
+    return redirect("subscriptions:manage")
+
+
+# ---------------------------------------------------------------------------
 # unsubscribe_done — standalone page for post-unsubscribe landing
 # ---------------------------------------------------------------------------
 

@@ -11,6 +11,7 @@ URL map
 /subscribe/manage/remove/<region_id>/   remove_region          POST HTMX
 /subscribe/manage/delete/               delete_account         POST HTMX
 /subscribe/manage/passkeys/<uuid>/delete/ passkey_delete       POST HTMX
+/subscribe/sign-out/                    sign_out               POST
 /subscribe/unsubscribe/<token>/         unsubscribe            GET/POST
 /subscribe/unsubscribe-done/            unsubscribe_done       GET
 /subscribe/webauthn/auth-request/       passkey_auth_request   GET
@@ -31,6 +32,7 @@ urlpatterns = [
     path("manage/", views.manage_view, name="manage"),
     path("manage/remove/<str:region_id>/", views.remove_region, name="remove_region"),
     path("manage/delete/", views.delete_account, name="delete_account"),
+    path("sign-out/", views.sign_out, name="sign_out"),
     path(
         "manage/passkeys/<str:passkey_uuid>/delete/",
         views_passkey.passkey_delete,

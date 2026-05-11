@@ -103,16 +103,27 @@ state.
             </button>
         {% endif %}
         <div class="flex items-center gap-3 {% if not season_trigger %}ml-auto{% endif %}">
-            <a
-                href="{% url 'subscriptions:manage' %}"
-                class="text-sm text-text-2 hover:text-text-1"
-            >
-                {% if request.session.subscriber_uuid %}
+            {% if request.session.subscriber_uuid %}
+                <a
+                    href="{% url 'subscriptions:manage' %}"
+                    class="text-sm text-text-2 hover:text-text-1"
+                >
                     {% trans "Account" %}
-                {% else %}
+                </a>
+                <form method="post" action="{% url 'subscriptions:sign_out' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="text-sm text-text-3 hover:text-text-1">
+                        {% trans "Sign out" %}
+                    </button>
+                </form>
+            {% else %}
+                <a
+                    href="{% url 'subscriptions:manage' %}"
+                    class="text-sm text-text-2 hover:text-text-1"
+                >
                     {% trans "Sign in" %}
-                {% endif %}
-            </a>
+                </a>
+            {% endif %}
             {% if request.user.is_staff %}
                 <div class="relative" data-admin-menu>
                     <button

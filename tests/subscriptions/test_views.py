@@ -873,6 +873,37 @@ class TestDeleteAccount:
 
 
 # ---------------------------------------------------------------------------
+# sign_out
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSignOut:
+    """Tests for the sign_out view."""
+
+    def test_clears_session_and_redirects(self):
+        subscriber = SubscriberFactory.create()
+        client = Client()
+        session = client.session
+        session["subscriber_uuid"] = str(subscriber.uuid)
+        session.save()
+        response = client.post(reverse("subscriptions:sign_out"))
+        assert response.status_code == 302
+        assert response["Location"] == reverse("subscriptions:manage")
+        assert "subscriber_uuid" not in client.session
+
+    def test_get_not_allowed(self):
+        client = Client()
+        response = client.get(reverse("subscriptions:sign_out"))
+        assert response.status_code == 405
+
+    def test_works_when_not_signed_in(self):
+        client = Client()
+        response = client.post(reverse("subscriptions:sign_out"))
+        assert response.status_code == 302
+
+
+# ---------------------------------------------------------------------------
 # unsubscribe_view
 # ---------------------------------------------------------------------------
 
