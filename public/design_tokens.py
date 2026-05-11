@@ -33,6 +33,7 @@ from typing import Any
 from public._component_fixtures import (
     DAY_CHARACTER_VARIANTS,
     DAY_WINDOWS_VARIANTS,
+    SEASON_CALENDAR_VARIANTS,
     WEATHER_HEADER_VARIANTS,
 )
 
@@ -640,6 +641,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/day_character_callout.html",
         variants=DAY_CHARACTER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="season-calendar",
+        label="Season calendar",
+        description=(
+            "Full-season heatmap grid — one circle per day from SEASON_START_DATE "
+            "through today+1, weeks-as-columns. Synthetic fixture covers all cell "
+            "states: no-rating, every EAWS level solid, split pairs for "
+            "afternoon-elevated days, today ring, and selected ring."
+        ),
+        kind="components",
+        partial="public/partials/_season_calendar_demo.html",
+        variants=SEASON_CALENDAR_VARIANTS,
         panel_layout="stack",
     ),
 )
