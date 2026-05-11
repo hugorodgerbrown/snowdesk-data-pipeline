@@ -92,13 +92,19 @@ Guide, Edition November 2025. No runtime context is required.
                     numbers suggest. Around 50% of avalanche fatalities occur at level 3, 30% at level 2.
                 {% endblocktrans %}
             </p>
-            <p>
+            <p class="mb-4">
                 {% blocktrans trimmed %}
                     In Swiss bulletin data covering October 2025 to May 2026, the distribution across 2,159 bulletins
                     was: low 20%, moderate 54%, considerable 35%, high 5%, very high &lt;1%. (Some bulletins carry two
                     danger levels for different times of day; these percentages reflect the all-day rating.)
                 {% endblocktrans %}
             </p>
+            <figure data-testid="guide-example-window-single">
+                {% include "includes/day_windows.html" with day_windows=example_day_window_single %}
+                <figcaption class="mt-1.5 text-xs text-text-3">
+                    {% trans "A bulletin day at moderate danger — as it appears in the app." %}
+                </figcaption>
+            </figure>
         </section>
 
         {# ------------------------------------------------------------------ #}
@@ -220,6 +226,12 @@ Guide, Edition November 2025. No runtime context is required.
                     </tbody>
                 </table>
             </div>
+            <figure class="mb-6" data-testid="guide-example-dry-card">
+                {% include "public/_rating_block.html" with card=example_dry_card %}
+                <figcaption class="mt-1.5 text-xs text-text-3">
+                    {% trans "Wind slab at considerable danger — N to NW facing slopes above 2400m, active all day." %}
+                </figcaption>
+            </figure>
 
             <h3 class="text-sm font-semibold text-text-1 mt-6 mb-2">{% trans "Wet avalanches" %}</h3>
             <p class="mb-3">
@@ -270,6 +282,12 @@ Guide, Edition November 2025. No runtime context is required.
                     </tbody>
                 </table>
             </div>
+            <figure data-testid="guide-example-wet-card">
+                {% include "public/_rating_block.html" with card=example_wet_card %}
+                <figcaption class="mt-1.5 text-xs text-text-3">
+                    {% trans "Wet snow at moderate danger — E to W facing slopes below 2200m, emerging in the afternoon." %}
+                </figcaption>
+            </figure>
         </section>
 
         {# ------------------------------------------------------------------ #}
@@ -377,6 +395,12 @@ Guide, Edition November 2025. No runtime context is required.
                     </tbody>
                 </table>
             </div>
+            <figure class="mb-4" data-testid="guide-example-window-split">
+                {% include "includes/day_windows.html" with day_windows=example_day_window_split %}
+                <figcaption class="mt-1.5 text-xs text-text-3">
+                    {% trans "A day that evolves — considerable danger in the morning, moderate wet-snow risk developing later." %}
+                </figcaption>
+            </figure>
             <p>
                 {% blocktrans trimmed %}
                     When the afternoon brings a higher danger level than the morning, timing is critical: aim to

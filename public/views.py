@@ -639,6 +639,104 @@ def colophon(request: HttpRequest) -> HttpResponse:
     return render(request, "public/colophon.html")
 
 
+def _build_guide_examples() -> dict[str, Any]:
+    """
+    Build hardcoded example context for the how-to-read-a-bulletin page.
+
+    Returns a dict of synthetic data keyed by template variable name. Each
+    value is shaped to match the partial's expected context, following the
+    same pattern as ``_component_fixtures.py`` for the component library.
+    No database access — all values are hand-curated illustrative examples.
+
+    Returns:
+        Dict with keys:
+        - ``example_day_window_single``: one-row day_windows list (moderate, all-day)
+        - ``example_day_window_split``: two-row list (considerable− all-day + moderate
+          later)
+        - ``example_dry_card``: wind-slab card for the dry-avalanche section
+        - ``example_wet_card``: wet-snow card for the wet-avalanche section
+
+    """
+
+    def _dw(period: str, level: str, pill: str, modifier: str = "") -> dict[str, Any]:
+        """Build one day-window row dict matching ``_build_day_windows`` output."""
+        labels: dict[str, tuple[str, str]] = {
+            "low": ("Low", "1"),
+            "moderate": ("Moderate", "2"),
+            "considerable": ("Considerable", "3"),
+            "high": ("High", "4"),
+            "very_high": ("Very high", "5"),
+        }
+        label, number = labels[level]
+        return {
+            "type": period,
+            "level_key": level,
+            "level_css": level.replace("_", "-"),
+            "level_label": label,
+            "level_number": f"{number}{modifier}",
+            "caption": "",
+            "pill_label": pill,
+        }
+
+    # Danger-level section: single moderate all-day window.
+    single_moderate = [_dw("all_day", "moderate", "All day")]
+
+    # How-the-day-evolves section: split day (considerable− morning, moderate later).
+    split_day = [
+        _dw("all_day", "considerable", "All day", modifier="-"),
+        _dw("later", "moderate", "Later"),
+    ]
+
+    # Dry hazard card: wind slab, considerable, north-facing slopes above 2400m.
+    dry_card: dict[str, Any] = {
+        "category": "dry",
+        "danger_level": 3,
+        "danger_level_key": "considerable",
+        "problem_type": "wind_slab",
+        "time_period": "all_day",
+        "aspects": ["N", "NE", "NW"],
+        "elevation": ElevationBounds(
+            lower="2400",
+            upper="",
+            display="above 2400m",
+            bound_type=ELEVATION_LOWER,
+        ),
+        "comment_html": "",
+        "label": "Wind slab",
+        "time_period_label": "",
+        "hide_comment": False,
+        "core_zone_text": "N to NW aspects, above 2400m",
+    }
+
+    # Wet hazard card: wet snow, moderate, east-to-west slopes below 2200m, afternoon.
+    wet_card: dict[str, Any] = {
+        "category": "wet",
+        "danger_level": 2,
+        "danger_level_key": "moderate",
+        "problem_type": "wet_snow",
+        "time_period": "later",
+        "aspects": ["E", "SE", "S", "SW", "W"],
+        "elevation": ElevationBounds(
+            lower="",
+            upper="2200",
+            display="below 2200m",
+            bound_type=ELEVATION_UPPER,
+        ),
+        "comment_html": "",
+        "label": "Wet snow",
+        "time_period_label": "Later",
+        "hide_comment": False,
+        "core_zone_text": "E to W aspects, below 2200m",
+    }
+
+    return {
+        "example_day_window_single": single_moderate,
+        "example_day_window_split": split_day,
+        "example_dry_card": dry_card,
+        "example_wet_card": wet_card,
+    }
+
+
 def how_to_read_bulletin(request: HttpRequest) -> HttpResponse:
     """
     Render the /how-to-read-a-bulletin page.
@@ -647,8 +745,8 @@ def how_to_read_bulletin(request: HttpRequest) -> HttpResponse:
     subdivisions, dry/wet hazard categories, elevation and aspect
     conventions, how the day evolves, and the narrative sections.
     Content is derived from analysis of 2,159 Swiss avalanche bulletins
-    and the SLF Interpretation Guide (November 2025 edition). No runtime
-    context is required.
+    and the SLF Interpretation Guide (November 2025 edition). Inline
+    component examples are built by :func:`_build_guide_examples`.
 
     Args:
         request: The incoming HTTP request.
@@ -657,7 +755,7 @@ def how_to_read_bulletin(request: HttpRequest) -> HttpResponse:
         The rendered guide page.
 
     """
-    return render(request, "public/how_to_read_bulletin.html")
+    return render(request, "public/how_to_read_bulletin.html", _build_guide_examples())
 
 
 # User-facing labels for the basemap layer picker (SNOW-58). Keyed by the
