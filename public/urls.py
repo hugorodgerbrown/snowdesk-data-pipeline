@@ -44,6 +44,12 @@ urlpatterns = [
     path("terms/", views.terms, name="terms"),
     # Technology credits and attribution page (SNOW-122).
     path("colophon/", views.colophon, name="colophon"),
+    # Static reference guide: how to read the SLF avalanche bulletin.
+    path(
+        "how-to-read-a-bulletin/",
+        views.how_to_read_bulletin,
+        name="how_to_read_bulletin",
+    ),
     # Component library — staff-only design-system page (SNOW-103).
     # Underscore prefix follows the project convention for staff-only routes.
     path(

@@ -639,6 +639,27 @@ def colophon(request: HttpRequest) -> HttpResponse:
     return render(request, "public/colophon.html")
 
 
+def how_to_read_bulletin(request: HttpRequest) -> HttpResponse:
+    """
+    Render the /how-to-read-a-bulletin page.
+
+    Static reference guide explaining the five-level danger scale,
+    subdivisions, dry/wet hazard categories, elevation and aspect
+    conventions, how the day evolves, and the narrative sections.
+    Content is derived from analysis of 2,159 Swiss avalanche bulletins
+    and the SLF Interpretation Guide (November 2025 edition). No runtime
+    context is required.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered guide page.
+
+    """
+    return render(request, "public/how_to_read_bulletin.html")
+
+
 # User-facing labels for the basemap layer picker (SNOW-58). Keyed by the
 # same key as ``settings.BASEMAP_STYLES``; ``gettext_lazy`` so a future
 # i18n pass picks them up. Presentation, not config — lives here rather
