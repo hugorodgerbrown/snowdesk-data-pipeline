@@ -1,0 +1,552 @@
+{% extends "public/base.html" %}
+{% comment %}
+public/templates/public/how_to_read_bulletin.html — Static reference guide
+explaining how to read the SLF Swiss avalanche bulletin.
+
+Structured to mirror the three main sections of the bulletin page —
+"Day Risk Profile", "Avalanche Problems", "Snowpack & Weather" — so
+readers can follow both pages in tandem. Content is derived from
+analysis of 2,159 Swiss avalanche bulletins (October 2025 – May 2026)
+and the SLF Avalanche Bulletin Interpretation Guide, Edition November
+2025. Inline component examples are built by _build_guide_examples() in
+public/views.py.
+
+Each sub-section follows the pattern:
+  h3 heading → short description → live example component → detailed breakdown
+{% endcomment %}
+{% load i18n %}
+
+{% block title %}{% trans "How to read a bulletin" %} &middot; Snowdesk{% endblock %}
+
+{% block meta_description %}
+    {% trans "A guide to reading the SLF Swiss avalanche bulletin — danger levels, problem types, elevation and aspect, and how the day evolves." %}
+{% endblock %}
+
+{% block content %}
+    <main class="font-sans max-w-[720px] mx-auto px-4 py-8 flex-1">
+        <h1 class="text-2xl font-semibold tracking-tight mb-2" data-testid="guide-heading">
+            {% trans "How to read the avalanche bulletin" %}
+        </h1>
+        <p class="text-sm text-text-3 mb-10">
+            {% blocktrans trimmed %}
+                Published daily by the WSL Institute for Snow and Avalanche Research (SLF), the bulletin covers the
+                Swiss Alps and Jura. It is an informed forecast — not a guarantee — and cannot replace an on-site
+                assessment. This guide follows the same structure as the bulletin page itself: Day Risk Profile,
+                Avalanche Problems, and Snowpack &amp; Weather.
+            {% endblocktrans %}
+        </p>
+
+        {# ================================================================== #}
+        {# DAY RISK PROFILE                                                    #}
+        {# ================================================================== #}
+        <section class="mb-10 text-sm leading-relaxed text-text-2" data-testid="guide-day-risk-profile">
+            <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-6">
+                {% trans "Day Risk Profile" %}
+            </h2>
+
+            {# -- The danger level ------------------------------------------ #}
+            <div class="mb-8" data-testid="guide-danger-level">
+                <h3 class="text-base font-semibold text-text-1 mb-3">
+                    {% trans "The danger level" %}
+                </h3>
+                <p class="mb-4">
+                    {% trans "The bulletin uses the five-point European avalanche danger scale." %}
+                </p>
+                <figure class="mb-6" data-testid="guide-example-window-single">
+                    {% include "includes/day_windows.html" with day_windows=example_day_window_single %}
+                    <figcaption class="mt-1.5 text-xs text-text-3">
+                        {% trans "Level 2 — moderate — as it appears on the bulletin day strip." %}
+                    </figcaption>
+                </figure>
+                <p class="mb-3">
+                    {% blocktrans trimmed %}
+                        Danger increases disproportionately — the jump from level 2 to 3 is far more significant than
+                        the numbers suggest. Around 50% of avalanche fatalities occur at level 3, 30% at level 2.
+                    {% endblocktrans %}
+                </p>
+                <div class="overflow-x-auto mb-4">
+                    <table class="w-full text-left text-sm">
+                        <thead>
+                            <tr class="border-b border-border">
+                                <th class="py-2 font-semibold text-text-1 w-24">{% trans "Level" %}</th>
+                                <th class="py-2 px-4 font-semibold text-text-1 w-32">{% trans "Name" %}</th>
+                                <th class="py-2 font-semibold text-text-1">{% trans "Characteristics" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b border-border">
+                                <td class="py-3 align-middle">
+                                    <span class="danger-tile" data-level="low">1</span>
+                                </td>
+                                <td class="py-3 px-4">{% trans "Low" %}</td>
+                                <td class="py-3">
+                                    {% trans "Generally favourable. Avalanches only in isolated cases on extremely steep slopes." %}
+                                </td>
+                            </tr>
+                            <tr class="border-b border-border">
+                                <td class="py-3 align-middle">
+                                    <span class="danger-tile" data-level="moderate">2</span>
+                                </td>
+                                <td class="py-3 px-4">{% trans "Moderate" %}</td>
+                                <td class="py-3">
+                                    {% trans "Mostly favourable. Avalanches possible on steep slopes with the indicated aspects and elevation." %}
+                                </td>
+                            </tr>
+                            <tr class="border-b border-border">
+                                <td class="py-3 align-middle">
+                                    <span class="danger-tile" data-level="considerable">3</span>
+                                </td>
+                                <td class="py-3 px-4">{% trans "Considerable" %}</td>
+                                <td class="py-3">
+                                    {% trans "Critical. Avalanches can be easily triggered on steep slopes; natural avalanches and remote triggering possible." %}
+                                </td>
+                            </tr>
+                            <tr class="border-b border-border">
+                                <td class="py-3 align-middle">
+                                    <span class="danger-tile" data-level="high">4</span>
+                                </td>
+                                <td class="py-3 px-4">{% trans "High" %}</td>
+                                <td class="py-3">
+                                    {% trans "Very critical. Natural avalanches likely; easily triggered on many steep slopes." %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="py-3 align-middle">
+                                    <span class="danger-tile" data-level="very_high">5</span>
+                                </td>
+                                <td class="py-3 px-4">{% trans "Very high" %}</td>
+                                <td class="py-3">
+                                    {% trans "Extraordinary. Numerous very large natural avalanches expected." %}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p>
+                    {% blocktrans trimmed %}
+                        In Swiss bulletin data covering October 2025 to May 2026, the distribution across 2,159
+                        bulletins was: low 20%, moderate 54%, considerable 35%, high 5%, very high &lt;1%. (Some
+                        bulletins carry two danger levels for different times of day; these percentages reflect the
+                        all-day rating.)
+                    {% endblocktrans %}
+                </p>
+            </div>
+
+            {# -- Subdivisions ---------------------------------------------- #}
+            <div class="mb-8" data-testid="guide-subdivisions">
+                <h3 class="text-base font-semibold text-text-1 mb-3">
+                    {% trans "Subdivisions (–, =, +)" %}
+                </h3>
+                <p class="mb-4">
+                    {% blocktrans trimmed %}
+                        At level 2 and above with dry-snow danger, the SLF subdivides each level into three positions: –
+                        (minus) towards the bottom, = (neutral) in the middle, and + (plus) towards the top.
+                    {% endblocktrans %}
+                </p>
+                <figure class="mb-6" data-testid="guide-example-window-sub-minus">
+                    {% include "includes/day_windows.html" with day_windows=example_day_window_sub_minus %}
+                    <figcaption class="mt-1.5 text-xs text-text-3">
+                        {% trans "3– — considerable danger towards the lower end of the level, sitting just above the level 2/3 boundary." %}
+                    </figcaption>
+                </figure>
+                <p class="mb-3">
+                    {% blocktrans trimmed %}
+                        This reflects the fact that avalanche danger is a continuous spectrum, not a step function. A
+                        rating of 3– sits just above the level 2/3 boundary; 3+ is just below level 4.
+                    {% endblocktrans %}
+                </p>
+                <p class="mb-2">
+                    {% trans "Subdivision only applies to dry-snow danger. It is never assigned to:" %}
+                </p>
+                <ul class="list-disc pl-5 space-y-1 mb-3">
+                    <li>
+                        {% blocktrans trimmed %}Level 1 (low) — confirmed across all 2,159 bulletins in the dataset; not
+                            a single low rating carries a subdivision{% endblocktrans %}
+                    </li>
+                    <li>
+                        {% trans "Wet-snow hazards — wet snow and gliding snow are not assessed with subdivisions" %}
+                    </li>
+                    <li>
+                        {% trans "The afternoon period — the later danger rating is always wet, so subdivision never appears there" %}
+                    </li>
+                </ul>
+                <p class="italic text-text-3">
+                    {% trans 'A missing subdivision means "not applicable", not "neutral".' %}
+                </p>
+            </div>
+
+            {# -- How the day evolves --------------------------------------- #}
+            <div data-testid="guide-day-evolves">
+                <h3 class="text-base font-semibold text-text-1 mb-3">
+                    {% trans "How the day evolves" %}
+                </h3>
+                <p class="mb-4">
+                    {% blocktrans trimmed %}
+                        Most bulletins describe a single, stable hazard picture for the whole day. In about 8% of cases,
+                        a second danger level applies in the afternoon — always wet snow or gliding snow, emerging as
+                        temperatures rise.
+                    {% endblocktrans %}
+                </p>
+                <figure class="mb-6" data-testid="guide-example-window-split">
+                    {% include "includes/day_windows.html" with day_windows=example_day_window_split %}
+                    <figcaption class="mt-1.5 text-xs text-text-3">
+                        {% trans "Considerable– all morning; moderate wet-snow risk developing later in the afternoon." %}
+                    </figcaption>
+                </figure>
+                <p class="mb-3">
+                    {% trans "All bulletins where the afternoon differs from the morning involve wet snow or gliding snow. Dry hazards never appear as a later-in-the-day entry — dry snowpack problems are weather-independent within a single day, while wet hazards are driven by daytime heating." %}
+                </p>
+                <div class="overflow-x-auto mb-4">
+                    <table class="w-full text-left text-sm">
+                        <thead>
+                            <tr class="border-b border-border">
+                                <th class="py-2 px-4 font-semibold text-text-1 w-52">{% trans "Pattern" %}</th>
+                                <th class="py-2 px-4 font-semibold text-text-1 w-20">{% trans "Frequency" %}</th>
+                                <th class="py-2 font-semibold text-text-1">{% trans "Description" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b border-border">
+                                <td class="py-2 px-4">{% trans "Dry only, all day" %}</td>
+                                <td class="py-2 px-4">70%</td>
+                                <td class="py-2">{% trans "A single dry hazard with no wet component." %}</td>
+                            </tr>
+                            <tr class="border-b border-border">
+                                <td class="py-2 px-4">{% trans "Dry and wet simultaneously" %}</td>
+                                <td class="py-2 px-4">16%</td>
+                                <td class="py-2">
+                                    {% trans "Both dry (above an elevation) and wet (below it) are active all day — often after rain at lower elevations with new snow higher up." %}
+                                </td>
+                            </tr>
+                            <tr class="border-b border-border">
+                                <td class="py-2 px-4">{% trans "Dry all day, wet emerging later" %}</td>
+                                <td class="py-2 px-4">8%</td>
+                                <td class="py-2">
+                                    {% trans "Morning is dominated by dry hazard; afternoon brings wet snow as temperatures rise." %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 px-4">{% trans "Wet only, all day" %}</td>
+                                <td class="py-2 px-4">5%</td>
+                                <td class="py-2">
+                                    {% trans "No dry hazard — typically low-elevation regions or late spring." %}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p>
+                    {% blocktrans trimmed %}
+                        When the afternoon brings a higher danger level than the morning, timing is critical: aim to
+                        complete exposed terrain before the snow softens. On east-facing slopes this may mean before
+                        midday; on west-facing slopes it may be mid-afternoon. The bulletin cannot pin down the exact
+                        transition time — it depends on aspect, elevation, and conditions on the day.
+                    {% endblocktrans %}
+                </p>
+            </div>
+        </section>
+
+        {# ================================================================== #}
+        {# AVALANCHE PROBLEMS                                                  #}
+        {# ================================================================== #}
+        <section
+            class="mb-10 text-sm leading-relaxed text-text-2 border-t border-border pt-8"
+            data-testid="guide-avalanche-problems"
+        >
+            <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-6">
+                {% trans "Avalanche Problems" %}
+            </h2>
+            <p class="mb-6">
+                {% trans "The bulletin assesses dry and wet avalanche hazards separately. These are fundamentally different in cause, location, and behaviour." %}
+            </p>
+
+            {# -- Dry avalanches -------------------------------------------- #}
+            <div class="mb-8" data-testid="guide-dry-avalanches">
+                <h3 class="text-base font-semibold text-text-1 mb-3">{% trans "Dry avalanches" %}</h3>
+                <p class="mb-4">
+                    {% blocktrans trimmed %}
+                        Caused by structural weaknesses in the snowpack — new snow loading, wind-deposited slabs, or
+                        persistent buried weak layers. Dry hazard is always present throughout the day and always
+                        applies above a minimum elevation.
+                    {% endblocktrans %}
+                </p>
+                <div class="mb-6" data-testid="guide-example-dry-cards">
+                    <figure class="mb-3" data-testid="guide-example-new-snow">
+                        {% include "public/_rating_block.html" with card=example_new_snow_card %}
+                        <figcaption class="mt-1.5 text-xs text-text-3">
+                            {% trans "New snow at moderate danger — widespread across all aspects above 1600m." %}
+                        </figcaption>
+                    </figure>
+                    <figure data-testid="guide-example-persistent">
+                        {% include "public/_rating_block.html" with card=example_persistent_card %}
+                        <figcaption class="mt-1.5 text-xs text-text-3">
+                            {% trans "Persistent weak layers at considerable danger — shaded aspects above 2600m. This hazard can remain active for weeks and avalanche-prone terrain is hard to identify by eye." %}
+                        </figcaption>
+                    </figure>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead>
+                            <tr class="border-b border-border">
+                                <th class="py-2 px-4 font-semibold text-text-1 w-44">
+                                    {% trans "Problem type" %}
+                                </th>
+                                <th class="py-2 font-semibold text-text-1">{% trans "Description" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b border-border">
+                                <td class="py-2 px-4">{% trans "New snow" %}</td>
+                                <td class="py-2">
+                                    {% trans "Recent snowfall loading the existing snowpack. Typically widespread across all aspects." %}
+                                </td>
+                            </tr>
+                            <tr class="border-b border-border">
+                                <td class="py-2 px-4">{% trans "Wind slab" %}</td>
+                                <td class="py-2">
+                                    {% trans "Wind-deposited snow on leeward slopes, gullies, and bowls. Localised but often hard to spot when buried." %}
+                                </td>
+                            </tr>
+                            <tr class="border-b border-border">
+                                <td class="py-2 px-4">{% trans "Persistent weak layers" %}</td>
+                                <td class="py-2">
+                                    {% blocktrans trimmed %}
+                                        Buried weak layers — faceted crystals, depth hoar, surface hoar — that can
+                                        remain reactive for weeks. Dangerous because avalanche-prone locations are
+                                        barely recognisable even to trained eyes. The dominant winter hazard.
+                                    {% endblocktrans %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 px-4">{% trans "No distinct avalanche problem" %}</td>
+                                <td class="py-2">
+                                    {% trans "No clear dry hazard pattern. Not equivalent to no danger — any avalanche type remains possible. Typically used at level 1." %}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {# -- Wet avalanches -------------------------------------------- #}
+            <div class="mb-8" data-testid="guide-wet-avalanches">
+                <h3 class="text-base font-semibold text-text-1 mb-3">{% trans "Wet avalanches" %}</h3>
+                <p class="mb-4">
+                    {% blocktrans trimmed %}
+                        Caused by liquid water weakening the snowpack, from melt or rain. The only hazard type that is
+                        time-dependent — it can emerge or intensify as the day warms.
+                    {% endblocktrans %}
+                </p>
+                <div class="mb-6" data-testid="guide-example-wet-cards">
+                    <figure class="mb-3" data-testid="guide-example-wet-snow">
+                        {% include "public/_rating_block.html" with card=example_wet_card %}
+                        <figcaption class="mt-1.5 text-xs text-text-3">
+                            {% trans "Wet snow at moderate danger — E to W facing slopes below 2200m, emerging in the afternoon as solar heating progresses." %}
+                        </figcaption>
+                    </figure>
+                    <figure data-testid="guide-example-gliding">
+                        {% include "public/_rating_block.html" with card=example_gliding_card %}
+                        <figcaption class="mt-1.5 text-xs text-text-3">
+                            {% trans "Gliding snow at moderate danger — south-facing slopes below 1800m, active all day. Release timing is unpredictable; glide cracks are a warning sign but not a reliable predictor." %}
+                        </figcaption>
+                    </figure>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead>
+                            <tr class="border-b border-border">
+                                <th class="py-2 px-4 font-semibold text-text-1 w-44">
+                                    {% trans "Problem type" %}
+                                </th>
+                                <th class="py-2 font-semibold text-text-1">{% trans "Description" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b border-border">
+                                <td class="py-2 px-4">{% trans "Wet snow" %}</td>
+                                <td class="py-2">
+                                    {% blocktrans trimmed %}
+                                        Snowpack weakened by melt or rain. Mainly natural avalanches. Solar radiation
+                                        and aspect determine which slopes are affected first. Timing is critical —
+                                        east-facing slopes warm earlier than west-facing ones.
+                                    {% endblocktrans %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 px-4">{% trans "Gliding snow" %}</td>
+                                <td class="py-2">
+                                    {% blocktrans trimmed %}
+                                        The entire snowpack slides on a smooth substrate (grass, rock). Almost
+                                        exclusively natural; human triggering is virtually impossible. Glide cracks are
+                                        a warning sign but release timing is unpredictable. Can occur at any time of
+                                        day, including overnight.
+                                    {% endblocktrans %}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {# -- Elevation and aspect -------------------------------------- #}
+            <div class="mb-8" data-testid="guide-elevation-aspect">
+                <h3 class="text-base font-semibold text-text-1 mb-3">{% trans "Elevation and aspect" %}</h3>
+                <p class="mb-4">
+                    {% trans "Dry hazards apply above an elevation threshold; wet hazards apply below one — the same boundary approached from opposite sides." %}
+                </p>
+                <div class="mb-6" data-testid="guide-example-elevation">
+                    <figure class="mb-3">
+                        {% include "public/_rating_block.html" with card=example_dry_card %}
+                        <figcaption class="mt-1.5 text-xs text-text-3">
+                            {% trans "Wind slab: hazard above 2400m — dry problems always use a lower elevation bound." %}
+                        </figcaption>
+                    </figure>
+                    <figure>
+                        {% include "public/_rating_block.html" with card=example_wet_card %}
+                        <figcaption class="mt-1.5 text-xs text-text-3">
+                            {% trans "Wet snow: hazard below 2200m — wet problems always use an upper elevation bound, marking the freeze-thaw or rain/snow line." %}
+                        </figcaption>
+                    </figure>
+                </div>
+                <p class="mb-3">
+                    <strong class="font-semibold text-text-1">{% trans "Elevation" %}</strong>
+                    {% blocktrans trimmed %}
+                        boundaries are approximate — conditions change gradually, not sharply. A ±200 m margin is
+                        reasonable. A slope near the boundary may sit in a transition area where either the more or less
+                        favourable situation applies.
+                    {% endblocktrans %}
+                </p>
+                <p class="mb-3">
+                    <strong class="font-semibold text-text-1">{% trans "Aspects" %}</strong>
+                    {% blocktrans trimmed %}
+                        are compass directions of affected slopes. The convention is: a north-facing slope falls to the
+                        north — you stand at the top, facing north, and the slope drops away below you. North-facing
+                        slopes receive no direct solar radiation in mid-winter; south-facing slopes receive regular
+                        sunshine year-round.
+                    {% endblocktrans %}
+                </p>
+                <p class="mb-3">
+                    {% blocktrans trimmed %}
+                        When the bulletin cites specific aspects and an elevation, the stated danger level applies to
+                        slopes satisfying both criteria. A common rule of thumb for slopes outside the stated zone:
+                        assume one danger level lower. This is a guideline, not a guarantee.
+                    {% endblocktrans %}
+                </p>
+                <p>
+                    {% trans "When no aspects or elevation are given for a wet hazard, the danger is region-wide and not spatially constrained." %}
+                </p>
+            </div>
+
+            {# -- Multiple problem types ------------------------------------ #}
+            <div data-testid="guide-multiple-problems">
+                <h3 class="text-base font-semibold text-text-1 mb-3">
+                    {% trans "Multiple problem types" %}
+                </h3>
+                <p class="mb-4">
+                    {% blocktrans trimmed %}
+                        A single problem card can cite two problem types when both contribute to the danger in the same
+                        area, at the same elevation, on the same aspects.
+                    {% endblocktrans %}
+                </p>
+                <figure class="mb-6" data-testid="guide-example-multi">
+                    {% include "public/_rating_block.html" with card=example_multi_card %}
+                    <figcaption class="mt-1.5 text-xs text-text-3">
+                        {% trans "Wind slab and persistent weak layers sharing the same terrain — two labels, one danger zone." %}
+                    </figcaption>
+                </figure>
+                <p class="mb-3">
+                    {% blocktrans trimmed %}
+                        They are two labels for one danger zone, not two independent hazards with different locations.
+                        When two problem types are grouped together, they always share identical spatial constraints and
+                        description text.
+                    {% endblocktrans %}
+                </p>
+                <p>
+                    {% blocktrans trimmed %}
+                        Multiple problem types within one card occur in around 47% of bulletins. The most common pairing
+                        is wind slab and persistent weak layers.
+                    {% endblocktrans %}
+                </p>
+            </div>
+        </section>
+
+        {# ================================================================== #}
+        {# SNOWPACK & WEATHER                                                  #}
+        {# ================================================================== #}
+        <section
+            class="mb-10 text-sm leading-relaxed text-text-2 border-t border-border pt-8"
+            data-testid="guide-snowpack-weather"
+        >
+            <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-6">
+                {% trans "Snowpack &amp; Weather" %}
+            </h2>
+            <p class="mb-4">
+                {% trans "Each bulletin includes four prose sections, updated once daily in the evening. They expand on demand on the bulletin page." %}
+            </p>
+            <dl class="space-y-4">
+                <div>
+                    <dt class="font-semibold text-text-1">{% trans "Snowpack" %}</dt>
+                    <dd class="mt-1">
+                        {% trans "Describes the layering and stability of the snowpack across the region. Explains why the danger is as it is. Mentions observed avalanche activity. Most directly useful for planning." %}
+                    </dd>
+                </div>
+                <div>
+                    <dt class="font-semibold text-text-1">{% trans "Weather review" %}</dt>
+                    <dd class="mt-1">
+                        {% trans "Summarises what actually happened in the preceding period. Provides context for why the snowpack is in its current state." %}
+                    </dd>
+                </div>
+                <div>
+                    <dt class="font-semibold text-text-1">{% trans "Weather forecast" %}</dt>
+                    <dd class="mt-1">
+                        {% trans "Covers the next 24 hours: fresh snow amounts, temperature, wind. The danger assessment is built on this forecast; if actual weather deviates, the danger may differ." %}
+                    </dd>
+                </div>
+                <div>
+                    <dt class="font-semibold text-text-1">{% trans "Outlook" %}</dt>
+                    <dd class="mt-1">
+                        {% trans "Indicative assessment for the two days after the bulletin's validity period. Less detailed but useful for multi-day planning." %}
+                    </dd>
+                </div>
+            </dl>
+        </section>
+
+        {# ================================================================== #}
+        {# LIMITATIONS                                                         #}
+        {# ================================================================== #}
+        <section
+            class="mb-8 text-sm leading-relaxed text-text-2 border-t border-border pt-8"
+            data-testid="guide-limitations"
+        >
+            <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-6">
+                {% trans "Limitations" %}
+            </h2>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    The bulletin is a regional forecast. It cannot assess individual slopes — it can only indicate which
+                    types of terrain (aspect, elevation, steepness) carry the indicated danger. Local conditions always
+                    require on-site assessment.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Boundaries between regions, elevation bands, and aspects are gradual, not sharp. A slope near the
+                    boundary of the stated zone may sit in a transition area where either the more or less favourable
+                    situation applies.
+                {% endblocktrans %}
+            </p>
+            <p>
+                {% trans "The bulletin applies exclusively to unsecured terrain away from prepared pistes and marked ski runs." %}
+            </p>
+        </section>
+
+        {# Data source attribution #}
+        <p class="text-xs text-text-3 italic border-t border-border pt-4">
+            {% blocktrans trimmed %}
+                Data findings in this document are derived from analysis of 2,159 Swiss avalanche bulletins (October
+                2025 – May 2026) from the SLF CAAML API. Definitions and qualitative descriptions are drawn from the SLF
+                Avalanche Bulletin Interpretation Guide, Edition November 2025.
+            {% endblocktrans %}
+        </p>
+    </main>
+{% endblock %}

@@ -639,6 +639,231 @@ def colophon(request: HttpRequest) -> HttpResponse:
     return render(request, "public/colophon.html")
 
 
+def _build_guide_examples() -> dict[str, Any]:
+    """
+    Build hardcoded example context for the how-to-read-a-bulletin page.
+
+    Returns a dict of synthetic data keyed by template variable name. Each
+    value is shaped to match the partial's expected context, following the
+    same pattern as ``_component_fixtures.py`` for the component library.
+    No database access — all values are hand-curated illustrative examples.
+
+    Returns:
+        Dict with keys:
+        - ``example_day_window_single``: one-row day_windows list (moderate,
+          all-day) — danger-level section
+        - ``example_day_window_sub_minus``: one-row list showing 3– —
+          subdivisions section
+        - ``example_day_window_split``: two-row list (considerable– all-day +
+          moderate later) — how-the-day-evolves section
+        - ``example_new_snow_card``: new snow at moderate danger (all aspects)
+        - ``example_persistent_card``: persistent weak layers at considerable
+        - ``example_dry_card``: wind slab (used in elevation/aspect section)
+        - ``example_multi_card``: combined wind-slab + persistent-weak-layers
+          label to illustrate multiple-problem-types
+        - ``example_wet_card``: wet snow at moderate, later timing
+        - ``example_gliding_card``: gliding snow at moderate, all day
+
+    """
+
+    def _dw(period: str, level: str, pill: str, modifier: str = "") -> dict[str, Any]:
+        """Build one day-window row dict matching ``_build_day_windows`` output."""
+        labels: dict[str, tuple[str, str]] = {
+            "low": ("Low", "1"),
+            "moderate": ("Moderate", "2"),
+            "considerable": ("Considerable", "3"),
+            "high": ("High", "4"),
+            "very_high": ("Very high", "5"),
+        }
+        label, number = labels[level]
+        return {
+            "type": period,
+            "level_key": level,
+            "level_css": level.replace("_", "-"),
+            "level_label": label,
+            "level_number": f"{number}{modifier}",
+            "caption": "",
+            "pill_label": pill,
+        }
+
+    # Danger-level section: single moderate all-day window.
+    single_moderate = [_dw("all_day", "moderate", "All day")]
+
+    # Subdivisions section: considerable-minus — sits just above the 2/3 boundary.
+    sub_minus = [_dw("all_day", "considerable", "All day", modifier="-")]
+
+    # How-the-day-evolves section: split day (considerable– morning, moderate later).
+    split_day = [
+        _dw("all_day", "considerable", "All day", modifier="-"),
+        _dw("later", "moderate", "Later"),
+    ]
+
+    # --- Dry hazard cards ---
+
+    # New snow: moderate, widespread across all aspects above 1600m.
+    new_snow_card: dict[str, Any] = {
+        "category": "dry",
+        "danger_level": 2,
+        "danger_level_key": "moderate",
+        "problem_type": "new_snow",
+        "time_period": "all_day",
+        "aspects": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+        "elevation": ElevationBounds(
+            lower="1600",
+            upper="",
+            display="above 1600m",
+            bound_type=ELEVATION_LOWER,
+        ),
+        "comment_html": "",
+        "label": "New snow",
+        "time_period_label": "",
+        "hide_comment": False,
+        "core_zone_text": "All aspects, above 1600m",
+    }
+
+    # Persistent weak layers: considerable, north-facing aspects above 2600m.
+    persistent_card: dict[str, Any] = {
+        "category": "dry",
+        "danger_level": 3,
+        "danger_level_key": "considerable",
+        "problem_type": "persistent_weak_layers",
+        "time_period": "all_day",
+        "aspects": ["N", "NE", "NW", "E"],
+        "elevation": ElevationBounds(
+            lower="2600",
+            upper="",
+            display="above 2600m",
+            bound_type=ELEVATION_LOWER,
+        ),
+        "comment_html": "",
+        "label": "Persistent weak layers",
+        "time_period_label": "",
+        "hide_comment": False,
+        "core_zone_text": "N to E aspects, above 2600m",
+    }
+
+    # Wind slab: considerable, north-facing slopes above 2400m.
+    # Used in the elevation-and-aspect section as the lower-bound example.
+    dry_card: dict[str, Any] = {
+        "category": "dry",
+        "danger_level": 3,
+        "danger_level_key": "considerable",
+        "problem_type": "wind_slab",
+        "time_period": "all_day",
+        "aspects": ["N", "NE", "NW"],
+        "elevation": ElevationBounds(
+            lower="2400",
+            upper="",
+            display="above 2400m",
+            bound_type=ELEVATION_LOWER,
+        ),
+        "comment_html": "",
+        "label": "Wind slab",
+        "time_period_label": "",
+        "hide_comment": False,
+        "core_zone_text": "N to NW aspects, above 2400m",
+    }
+
+    # Multiple problem types: wind slab + persistent weak layers sharing the same
+    # terrain — same aspects and elevation, two contributing hazard types.
+    multi_card: dict[str, Any] = {
+        "category": "dry",
+        "danger_level": 3,
+        "danger_level_key": "considerable",
+        "problem_type": "wind_slab",
+        "time_period": "all_day",
+        "aspects": ["N", "NE", "NW", "W"],
+        "elevation": ElevationBounds(
+            lower="2400",
+            upper="",
+            display="above 2400m",
+            bound_type=ELEVATION_LOWER,
+        ),
+        "comment_html": "",
+        "label": "Wind slab + Persistent weak layers",
+        "time_period_label": "",
+        "hide_comment": False,
+        "core_zone_text": "N to W aspects, above 2400m",
+    }
+
+    # --- Wet hazard cards ---
+
+    # Wet snow: moderate, east-to-west slopes below 2200m, afternoon.
+    wet_card: dict[str, Any] = {
+        "category": "wet",
+        "danger_level": 2,
+        "danger_level_key": "moderate",
+        "problem_type": "wet_snow",
+        "time_period": "later",
+        "aspects": ["E", "SE", "S", "SW", "W"],
+        "elevation": ElevationBounds(
+            lower="",
+            upper="2200",
+            display="below 2200m",
+            bound_type=ELEVATION_UPPER,
+        ),
+        "comment_html": "",
+        "label": "Wet snow",
+        "time_period_label": "Later",
+        "hide_comment": False,
+        "core_zone_text": "E to W aspects, below 2200m",
+    }
+
+    # Gliding snow: moderate, south-facing slopes below 1800m, active all day.
+    gliding_card: dict[str, Any] = {
+        "category": "wet",
+        "danger_level": 2,
+        "danger_level_key": "moderate",
+        "problem_type": "gliding_snow",
+        "time_period": "all_day",
+        "aspects": ["S", "SE", "SW"],
+        "elevation": ElevationBounds(
+            lower="",
+            upper="1800",
+            display="below 1800m",
+            bound_type=ELEVATION_UPPER,
+        ),
+        "comment_html": "",
+        "label": "Gliding snow",
+        "time_period_label": "",
+        "hide_comment": False,
+        "core_zone_text": "S-facing aspects, below 1800m",
+    }
+
+    return {
+        "example_day_window_single": single_moderate,
+        "example_day_window_sub_minus": sub_minus,
+        "example_day_window_split": split_day,
+        "example_new_snow_card": new_snow_card,
+        "example_persistent_card": persistent_card,
+        "example_dry_card": dry_card,
+        "example_multi_card": multi_card,
+        "example_wet_card": wet_card,
+        "example_gliding_card": gliding_card,
+    }
+
+
+def how_to_read_bulletin(request: HttpRequest) -> HttpResponse:
+    """
+    Render the /how-to-read-a-bulletin page.
+
+    Static reference guide explaining the five-level danger scale,
+    subdivisions, dry/wet hazard categories, elevation and aspect
+    conventions, how the day evolves, and the narrative sections.
+    Content is derived from analysis of 2,159 Swiss avalanche bulletins
+    and the SLF Interpretation Guide (November 2025 edition). Inline
+    component examples are built by :func:`_build_guide_examples`.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered guide page.
+
+    """
+    return render(request, "public/how_to_read_bulletin.html", _build_guide_examples())
+
+
 # User-facing labels for the basemap layer picker (SNOW-58). Keyed by the
 # same key as ``settings.BASEMAP_STYLES``; ``gettext_lazy`` so a future
 # i18n pass picks them up. Presentation, not config — lives here rather
