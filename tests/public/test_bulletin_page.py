@@ -979,8 +979,10 @@ class TestAggregationDriven:
         dry_idx = content.index("Wind slab", probs_start)
         assert wet_idx < dry_idx
 
-    def test_two_problems_in_one_entry_produce_two_cards(self, client: Client, region):
-        """Each problemType in an aggregation entry becomes its own card."""
+    def test_two_problems_in_one_entry_produce_one_card_with_combined_label(
+        self, client: Client, region
+    ):
+        """Two problem types in one aggregation entry → one card with combined label."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_aggregation(
             aggregation=[
@@ -1002,7 +1004,9 @@ class TestAggregationDriven:
         )
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        assert content.count('data-testid="rating-block"') == 2
+        assert content.count('data-testid="rating-block"') == 1
+        probs_start = content.index('data-testid="avalanche-problems-heading"')
+        assert "Wet snow + Gliding snow" in content[probs_start:]
 
     def test_core_zone_text_as_aria_label(self, client: Client, region):
         """coreZoneText from customData.CH appears as aria-label on aspect/elevation row."""
@@ -1356,72 +1360,6 @@ class TestDayWindowsPanel:
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 2
-
-
-# ---------------------------------------------------------------------------
-# Test: Avalanche Problems heading roundels (SNOW-137)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestAvalancheProblemsRoundels:
-    """Coloured roundels in the Avalanche Problems heading."""
-
-    def test_two_problems_produce_two_roundels(self, client: Client, region):
-        """Two problem cards → two .problem-roundel elements in the heading."""
-        day = date(2026, 4, 10)
-        raw = _raw_data_with_aggregation(
-            aggregation=[
-                {
-                    "category": "dry",
-                    "validTimePeriod": "all_day",
-                    "problemTypes": ["wind_slab", "new_snow"],
-                },
-            ],
-            problems=[
-                _raw_problem(
-                    problem_type="wind_slab", danger_rating_value="considerable"
-                ),
-                _raw_problem(problem_type="new_snow", danger_rating_value="moderate"),
-            ],
-        )
-        _make_am_bulletin(region, day, raw_data=raw)
-        content = client.get(_url("ch-4115", "valais", "2026-04-10")).content.decode()
-        heading_start = content.index('data-testid="avalanche-problems-heading"')
-        heading_end = content.index(">", content.index("</h2>", heading_start))
-        heading_html = content[heading_start : heading_end + 1]
-        assert heading_html.count('class="problem-roundel"') == 2
-
-    def test_roundel_data_level_matches_card_danger_level_key(
-        self, client: Client, region
-    ):
-        """Roundel data-level attribute matches the card's danger_level_key."""
-        day = date(2026, 4, 11)
-        raw = _raw_data_with_aggregation(
-            aggregation=[
-                {
-                    "category": "dry",
-                    "validTimePeriod": "all_day",
-                    "problemTypes": ["wind_slab"],
-                },
-            ],
-            problems=[
-                _raw_problem(
-                    problem_type="wind_slab", danger_rating_value="considerable"
-                ),
-            ],
-        )
-        _make_am_bulletin(region, day, raw_data=raw)
-        content = client.get(_url("ch-4115", "valais", "2026-04-11")).content.decode()
-        assert 'class="problem-roundel" data-level="considerable"' in content
-
-    def test_no_problems_produces_no_roundels(self, client: Client, region):
-        """Empty problem cards → no roundel elements in the heading."""
-        day = date(2026, 4, 12)
-        raw = _raw_data_with_problems([])
-        _make_am_bulletin(region, day, raw_data=raw)
-        content = client.get(_url("ch-4115", "valais", "2026-04-12")).content.decode()
-        assert "problem-roundel" not in content
 
 
 # ---------------------------------------------------------------------------

@@ -272,17 +272,10 @@ reachable via the SNOW-81 deep-link in the masthead.
                        aspect/elevation row, and problem rows.
                     {% endcomment %}
                     <h2
-                        class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3 flex items-center gap-2"
+                        class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3"
                         data-testid="avalanche-problems-heading"
                     >
                         {% trans "Avalanche Problems" %}
-                        {% if panel.problem_cards %}
-                            <span class="flex items-center gap-1" aria-hidden="true">
-                                {% for card in panel.problem_cards %}
-                                    <span class="problem-roundel" data-level="{{ card.danger_level_key }}"></span>
-                                {% endfor %}
-                            </span>
-                        {% endif %}
                     </h2>
                     {% if not panel.problem_cards %}
                         <div class="rounded-[12px] border border-border bg-card px-4 py-5 text-center mb-4">

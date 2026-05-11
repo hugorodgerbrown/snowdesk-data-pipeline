@@ -2290,8 +2290,24 @@ def _problem_cards_from_aggregation(
     aggregation: list[dict[str, Any]],
     problem_index: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """
-    Build one card per (aggregation entry, problem type), preserving order.
+    """Build one card per aggregation entry.
+
+    Collapses multiple problem types within an entry into a single card
+    with a combined label (e.g. "Wet snow + Gliding snow").
+
+    Per the bulletin guide, multiple problems within one aggregation entry
+    always share identical spatial constraints. The only difference is the
+    problem type title, so labels are joined with " + ".
+
+    Data-backed assumptions (drawn from analysis of 2,159 SLF bulletins —
+    see docs/bulletin-guide.md):
+    - Every aggregation entry carries a ``category`` field.
+    - Every aggregation entry carries a non-empty ``problemTypes`` list.
+    - Every ``problemType`` token in aggregation resolves to a raw problem.
+
+    Raises:
+        ValueError: If any of the above invariants are violated, indicating
+            an unexpected change in the SLF schema.
 
     Args:
         aggregation: The ``customData.CH.aggregation`` list.
@@ -2299,16 +2315,49 @@ def _problem_cards_from_aggregation(
             ``avalancheProblems``.
 
     Returns:
-        Flat list of card dicts in aggregation order.
+        Flat list of card dicts in aggregation order, one per entry.
 
     """
     cards: list[dict[str, Any]] = []
-    for agg_entry in aggregation:
-        category: str = agg_entry.get("category") or "dry"
-        for pt in agg_entry.get("problemTypes") or []:
-            raw_p = problem_index.get(pt)
-            if raw_p is not None:
-                cards.append(_problem_card(raw_p, category))
+    for i, agg_entry in enumerate(aggregation):
+        category: str | None = agg_entry.get("category")
+        if not category:
+            raise ValueError(
+                f"aggregation entry {i} is missing 'category': {agg_entry!r}"
+            )
+        problem_types: list[str] = agg_entry.get("problemTypes") or []
+        if not problem_types:
+            raise ValueError(
+                f"aggregation entry {i} has empty 'problemTypes': {agg_entry!r}"
+            )
+        for pt in problem_types:
+            if pt not in problem_index:
+                raise ValueError(
+                    f"aggregation entry {i} references problem type {pt!r} "
+                    f"which is not in avalancheProblems"
+                )
+
+        # Use the first problem for spatial data (all share the same constraints).
+        card = _problem_card(problem_index[problem_types[0]], category)
+
+        if len(problem_types) > 1:
+            labels = [
+                str(_PROBLEM_LABELS.get(pt, pt.replace("_", " ").capitalize()))
+                for pt in problem_types
+            ]
+            card["label"] = " + ".join(labels)
+            # Use the max danger level across all problems in this entry.
+            danger_levels = [
+                _DANGER_RATING_INT.get(
+                    problem_index[pt].get("dangerRatingValue") or "", 1
+                )
+                for pt in problem_types
+            ]
+            max_level = max(danger_levels)
+            card["danger_level"] = max_level
+            card["danger_level_key"] = _DANGER_ORDER[max_level - 1].replace("_", "-")
+
+        cards.append(card)
     return cards
 
 
@@ -2317,11 +2366,12 @@ def build_problem_cards(
     aggregation: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """
-    Build one flat presentation card per avalancheProblem, in aggregation order.
+    Build one flat presentation card per aggregation entry, in aggregation order.
 
     Both ``raw_problems`` and ``aggregation`` are expected to be present
     whenever the bulletin carries avalanche problems. Missing either logs
-    an ERROR and returns an empty list.
+    an ERROR and returns an empty list. Schema violations (missing category,
+    empty problemTypes, unresolved problem type) are caught and logged.
 
     Args:
         raw_problems: The CAAML ``avalancheProblems`` array.
@@ -2341,7 +2391,11 @@ def build_problem_cards(
         )
         return []
     index = {p["problemType"]: p for p in raw_problems if p.get("problemType")}
-    return _problem_cards_from_aggregation(aggregation, index)
+    try:
+        return _problem_cards_from_aggregation(aggregation, index)
+    except ValueError:
+        logger.exception("build_problem_cards: unexpected aggregation schema")
+        return []
 
 
 def _enrich_render_model_problem(
