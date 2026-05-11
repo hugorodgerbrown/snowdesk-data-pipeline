@@ -107,6 +107,57 @@
   }
 
   /**
+   * Explicitly sign in with a passkey by showing the browser's passkey picker.
+   *
+   * Unlike startConditionalSignIn, this triggers an immediate modal prompt so
+   * the user can pick a passkey to use.  Intended for an explicit "Sign in
+   * with a passkey" button rather than autofill.
+   *
+   * Aborts any pending conditional sign-in first (the two flows share a session
+   * challenge — only one can be active at a time).
+   *
+   * @param {string} authRequestUrl  URL to GET authentication options from.
+   * @param {string} authResponseUrl URL to POST the credential to.
+   */
+  async function signInWithPasskey(authRequestUrl, authResponseUrl) {
+    if (!window.PublicKeyCredential) return;
+
+    abortConditionalSignIn();
+
+    let options;
+    try {
+      const resp = await fetch(authRequestUrl);
+      if (!resp.ok) return;
+      options = await resp.json();
+    } catch {
+      return;
+    }
+
+    let parsed;
+    try {
+      parsed = PublicKeyCredential.parseRequestOptionsFromJSON(options);
+    } catch {
+      return;
+    }
+
+    let credential;
+    try {
+      credential = await navigator.credentials.get({
+        publicKey: parsed,
+        mediation: 'required',
+      });
+    } catch (err) {
+      if (err.name === 'NotAllowedError' || err.name === 'AbortError') return;
+      console.error('[passkey] sign-in error:', err);
+      return;
+    }
+
+    if (credential) {
+      await _sendAuthResponse(authResponseUrl, credential);
+    }
+  }
+
+  /**
    * Register a new passkey for the currently signed-in subscriber.
    *
    * Fetches creation options from the server, calls navigator.credentials.create(),
@@ -202,6 +253,7 @@
       data = await resp.json();
     } catch (err) {
       console.error('[passkey] auth response error:', err);
+      _dispatch('passkey:auth-error', { message: err.message });
       return;
     }
 
@@ -221,7 +273,11 @@
           /* progressive enhancement — ignore failures */
         }
       }
+      _dispatch('passkey:auth-unknown-credential', { credentialId: data.credentialId });
+      return;
     }
+
+    _dispatch('passkey:auth-error', { message: data.error || 'Authentication failed.' });
   }
 
   /**
@@ -273,6 +329,7 @@
   window.Passkey = {
     startConditionalSignIn,
     abortConditionalSignIn,
+    signInWithPasskey,
     registerPasskey,
   };
 })();
