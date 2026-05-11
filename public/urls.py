@@ -44,6 +44,10 @@ urlpatterns = [
     path("terms/", views.terms, name="terms"),
     # Technology credits and attribution page (SNOW-122).
     path("colophon/", views.colophon, name="colophon"),
+    # Legal pages — registered before generic <str:region_id>/ patterns
+    # so these slugs never resolve as region IDs (SNOW-153).
+    path("privacy/", views.privacy, name="privacy"),
+    path("terms-of-service/", views.terms_of_service, name="terms_of_service"),
     # Static reference guide: how to read the SLF avalanche bulletin.
     path(
         "how-to-read-a-bulletin/",
