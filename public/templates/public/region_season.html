@@ -99,6 +99,79 @@ Shows, for the current avalanche season (Dec 1 through today):
             </div>
         </section>
 
+        {# --- Season bar chart (one bar per day, height = danger level) --- #}
+        {% comment %}
+          SVG layout (all units are viewBox px):
+            plot area: 120px tall (5 levels × 24px each), bars grow upward from y=120
+            label row: 20px below bars for month names
+            viewBox width: n_bars × 3 (2px bar + 1px gap each)
+          All geometry is pre-computed in the view — the template does no arithmetic.
+        {% endcomment %}
+        {% if chart_bars %}
+            <section class="mb-8 overflow-x-auto" data-testid="season-chart">
+                <h2 class="text-lg font-semibold mb-3">Season at a glance</h2>
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 {{ chart_svg_w }} {{ chart_svg_h }}"
+                    style="min-width: {{ chart_svg_w }}px; width: 100%; height: 140px; display: block"
+                    preserveAspectRatio="none"
+                    aria-label="Daily danger level for the season"
+                    role="img"
+                >
+                    {# Horizontal grid lines at each danger level (y = 120 - level*24) #}
+                    <line x1="0" y1="96" x2="{{ chart_svg_w }}" y2="96" stroke="#374151" stroke-width="0.5" />
+                    <line x1="0" y1="72" x2="{{ chart_svg_w }}" y2="72" stroke="#374151" stroke-width="0.5" />
+                    <line x1="0" y1="48" x2="{{ chart_svg_w }}" y2="48" stroke="#374151" stroke-width="0.5" />
+                    <line x1="0" y1="24" x2="{{ chart_svg_w }}" y2="24" stroke="#374151" stroke-width="0.5" />
+                    <line x1="0" y1="0" x2="{{ chart_svg_w }}" y2="0" stroke="#374151" stroke-width="0.5" />
+                    {# Bars: x and bar_h pre-computed in view; y = 120 - bar_h (bars grow up) #}
+                    {% for bar in chart_bars %}
+                        <rect
+                            x="{{ bar.bar_x }}"
+                            y="{{ bar.bar_y }}"
+                            width="2"
+                            height="{{ bar.bar_h }}"
+                            fill="{{ bar.fill }}"
+                        >
+                            <title>{{ bar.date|date:"j M Y" }}: {{ bar.label }}</title>
+                        </rect>
+                    {% endfor %}
+                    {# Month labels on x-axis — only at the first bar of each month #}
+                    {% for bar in chart_bars %}
+                        {% ifchanged bar.date.month %}
+                            <text
+                                x="{{ bar.bar_x }}"
+                                y="134"
+                                font-size="8"
+                                fill="#9ca3af"
+                                font-family="ui-sans-serif,system-ui,sans-serif"
+                            >
+                                {{ bar.date|date:"M" }}
+                            </text>
+                        {% endifchanged %}
+                    {% endfor %}
+                </svg>
+                {# Colour legend #}
+                <div class="flex gap-4 mt-2 text-xs text-text-2 flex-wrap">
+                    <span class="flex items-center gap-1"><span
+                            class="inline-block w-3 h-3 rounded-sm bg-green-500"
+                        ></span>Low</span>
+                    <span class="flex items-center gap-1"><span
+                            class="inline-block w-3 h-3 rounded-sm bg-yellow-400"
+                        ></span>Moderate</span>
+                    <span class="flex items-center gap-1"><span
+                            class="inline-block w-3 h-3 rounded-sm bg-orange-400"
+                        ></span>Considerable</span>
+                    <span class="flex items-center gap-1"><span
+                            class="inline-block w-3 h-3 rounded-sm bg-red-500"
+                        ></span>High</span>
+                    <span class="flex items-center gap-1"><span
+                            class="inline-block w-3 h-3 rounded-sm bg-purple-700"
+                        ></span>Very High</span>
+                </div>
+            </section>
+        {% endif %}
+
         {# --- Danger-level distribution bar chart --- #}
         <section class="mb-8" data-testid="danger-distribution">
             <h2 class="text-lg font-semibold mb-3">Danger distribution</h2>

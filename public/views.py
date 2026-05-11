@@ -1882,6 +1882,34 @@ def region_season(request: HttpRequest, region_id: str) -> HttpResponse:
     # Today's bulletin (may be None if not yet published).
     today_bulletin = _select_bulletin_for_date(region, today)
 
+    # Bar chart: one entry per day, pre-computed for the template.
+    # SVG plot area is 120px tall (5 levels × 24px each).
+    _PLOT_H = 120
+    _LABEL_H = 20  # space below bars for month labels
+    _BAR_W = 3  # px per bar in SVG viewBox units (2px bar + 1px gap)
+    _RATING_FILL: dict[str, str] = {
+        RegionDayRating.Rating.LOW: "#22c55e",
+        RegionDayRating.Rating.MODERATE: "#facc15",
+        RegionDayRating.Rating.CONSIDERABLE: "#fb923c",
+        RegionDayRating.Rating.HIGH: "#ef4444",
+        RegionDayRating.Rating.VERY_HIGH: "#7e22ce",
+    }
+    chart_bars = [
+        {
+            "date": r.date,
+            "label": r.get_max_rating_display(),
+            "level": _RATING_INT.get(r.max_rating, 0),
+            "fill": _RATING_FILL.get(r.max_rating, "#6b7280"),
+            # Pre-compute SVG geometry so the template needs no arithmetic.
+            "bar_h": _RATING_INT.get(r.max_rating, 0) * 24,  # 24px per level
+            "bar_y": _PLOT_H - _RATING_INT.get(r.max_rating, 0) * 24,  # top of bar
+            "bar_x": i * _BAR_W,
+        }
+        for i, r in enumerate(ratings)
+    ]
+    chart_svg_w = len(chart_bars) * _BAR_W
+    chart_svg_h = _PLOT_H + _LABEL_H
+
     context: dict[str, Any] = {
         "region": region,
         "season_start": season_start,
@@ -1895,6 +1923,9 @@ def region_season(request: HttpRequest, region_id: str) -> HttpResponse:
         "worst_day": worst_day,
         "today_bulletin": today_bulletin,
         "rating_labels": _RATING_LABELS,
+        "chart_bars": chart_bars,
+        "chart_svg_w": chart_svg_w,
+        "chart_svg_h": chart_svg_h,
     }
     return render(request, "public/region_season.html", context)
 
