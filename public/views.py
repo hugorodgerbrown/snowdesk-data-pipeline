@@ -1780,6 +1780,125 @@ def _bulletin_detail_response(
     return response
 
 
+def region_season(request: HttpRequest, region_id: str) -> HttpResponse:
+    """
+    Render the season-summary page for a region.
+
+    Shows a danger-level distribution, peak events (HIGH/VERY_HIGH days),
+    a 14-day rolling trend, and basic season stats for the current
+    avalanche season (Dec 1 of the previous year through today).
+
+    Args:
+        request: The incoming HTTP request.
+        region_id: SLF region identifier (e.g. ``"CH-4115"``).
+
+    Returns:
+        The rendered season-summary page, or 404 when the region is unknown.
+
+    """
+    region = get_object_or_404(
+        MicroRegion.objects.select_related("subregion__major"),
+        region_id__iexact=region_id,
+    )
+    today = timezone.localdate()
+
+    # Season runs Dec 1 of the previous calendar year through today.
+    # If today is already in December the season starts this December.
+    if today.month == 12:
+        season_start = datetime.date(today.year, 12, 1)
+    else:
+        season_start = datetime.date(today.year - 1, 12, 1)
+
+    from bulletins.models import RegionDayRating
+
+    ratings_qs = (
+        RegionDayRating.objects.filter(
+            region=region,
+            date__range=(season_start, today),
+        )
+        .exclude(max_rating=RegionDayRating.Rating.NO_RATING)
+        .select_related("source_bulletin")
+        .order_by("date")
+    )
+    ratings = list(ratings_qs)
+
+    # --- Season stats ---
+    total_days = len(ratings)
+
+    # Numeric order for aggregation: low=1 … very_high=5
+    _RATING_INT: dict[str, int] = {
+        RegionDayRating.Rating.LOW: 1,
+        RegionDayRating.Rating.MODERATE: 2,
+        RegionDayRating.Rating.CONSIDERABLE: 3,
+        RegionDayRating.Rating.HIGH: 4,
+        RegionDayRating.Rating.VERY_HIGH: 5,
+    }
+    # Distribution: count days at each named level (keyed by Rating value).
+    _RATING_LABELS: dict[str, str] = {
+        RegionDayRating.Rating.LOW: "Low",
+        RegionDayRating.Rating.MODERATE: "Moderate",
+        RegionDayRating.Rating.CONSIDERABLE: "Considerable",
+        RegionDayRating.Rating.HIGH: "High",
+        RegionDayRating.Rating.VERY_HIGH: "Very High",
+    }
+    _RATING_CSS: dict[str, str] = {
+        RegionDayRating.Rating.LOW: "bg-green-500",
+        RegionDayRating.Rating.MODERATE: "bg-yellow-400",
+        RegionDayRating.Rating.CONSIDERABLE: "bg-orange-400",
+        RegionDayRating.Rating.HIGH: "bg-red-500",
+        RegionDayRating.Rating.VERY_HIGH: "bg-purple-700",
+    }
+
+    _counts: dict[str, int] = {key: 0 for key in _RATING_LABELS}
+    for r in ratings:
+        if r.max_rating in _counts:
+            _counts[r.max_rating] += 1
+    distribution = {
+        key: {"label": label, "count": _counts[key], "css": _RATING_CSS[key]}
+        for key, label in _RATING_LABELS.items()
+    }
+
+    peak_days = [r for r in reversed(ratings) if _RATING_INT.get(r.max_rating, 0) >= 4]
+    recent_14 = list(reversed(ratings[-14:]))
+
+    avg_rating: float | None = None
+    worst_day: RegionDayRating | None = None
+    if ratings:
+        values = [
+            _RATING_INT[r.max_rating] for r in ratings if r.max_rating in _RATING_INT
+        ]
+        avg_rating = round(sum(values) / len(values), 1) if values else None
+        worst_val = max(values) if values else 0
+        # Pick the latest day at the worst level on ties.
+        worst_day = next(
+            (
+                r
+                for r in reversed(ratings)
+                if _RATING_INT.get(r.max_rating, 0) == worst_val
+            ),
+            None,
+        )
+
+    # Today's bulletin (may be None if not yet published).
+    today_bulletin = _select_bulletin_for_date(region, today)
+
+    context: dict[str, Any] = {
+        "region": region,
+        "season_start": season_start,
+        "today": today,
+        "total_days": total_days,
+        "distribution": distribution,
+        "distribution_items": list(distribution.values()),
+        "peak_days": peak_days,
+        "recent_14": recent_14,
+        "avg_rating": avg_rating,
+        "worst_day": worst_day,
+        "today_bulletin": today_bulletin,
+        "rating_labels": _RATING_LABELS,
+    }
+    return render(request, "public/region_season.html", context)
+
+
 def bulletin_detail(
     request: HttpRequest,
     region_id: str,

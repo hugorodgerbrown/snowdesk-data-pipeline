@@ -1,0 +1,214 @@
+{% extends "public/base.html" %}
+{% comment %}
+public/templates/public/region_season.html — Season-summary page for a micro-region.
+
+Shows, for the current avalanche season (Dec 1 through today):
+  - Region name + breadcrumb (MajorRegion > SubRegion > Region)
+  - Today's bulletin card (danger level + problem types)
+  - Danger-level distribution bar chart
+  - Peak-events list (HIGH / VERY_HIGH days), most recent first
+  - 14-day rolling trend (newest first)
+  - Resorts in this region
+  - Season stats: total days, average rating, worst day
+{% endcomment %}
+{% load i18n %}
+
+{% block title %}{{ region.name }} — Season Summary &middot; Snowdesk{% endblock %}
+
+{% block meta_description %}
+    Season avalanche danger summary for {{ region.name }},
+    {{ region.subregion.name_en|default:region.subregion.name_native }}.
+{% endblock %}
+
+{% block nav %}
+    {% url 'public:bulletin' region_id=region.canonical_region_id slug=region.name_slug as bulletin_url %}
+    {% include "includes/nav.html" with back_url=bulletin_url back_label=region.name %}
+{% endblock %}
+
+{% block content %}
+    <main class="font-sans max-w-[720px] mx-auto px-4 py-8 flex-1">
+        {# --- Breadcrumb --- #}
+        <nav class="text-xs text-text-2 mb-4 flex gap-1 flex-wrap items-center" aria-label="breadcrumb">
+            <span>{{ region.subregion.major.name_native }}</span>
+            <span aria-hidden="true">&rsaquo;</span>
+            <span>{{ region.subregion.name_en|default:region.subregion.name_native }}</span>
+            <span aria-hidden="true">&rsaquo;</span>
+            <span class="text-text-1 font-medium">{{ region.name }}</span>
+        </nav>
+
+        <h1 class="text-2xl font-semibold tracking-tight mb-1">
+            {{ region.name }}
+        </h1>
+        <p class="text-sm text-text-2 mb-6">
+            Season summary &middot;
+            {{ season_start|date:"M Y" }} &ndash; {{ today|date:"M Y" }}
+        </p>
+
+        {# --- Today's bulletin card --- #}
+        <section class="mb-8" data-testid="today-bulletin">
+            <h2 class="text-lg font-semibold mb-3">Today's bulletin</h2>
+            {% if today_bulletin %}
+                {% with props=today_bulletin.raw_data.properties %}
+                    <div class="rounded-lg border border-border p-4 bg-surface-2">
+                        {% if props.dangerRatings %}
+                            {% for r in props.dangerRatings %}
+                                {% if forloop.first %}
+                                    <p class="text-sm font-medium mb-2">
+                                        Danger: {{ r.mainValue|cut:"_"|capfirst }}
+                                    </p>
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                        {% if props.avalancheProblems %}
+                            <ul class="text-sm text-text-2 list-disc pl-4 space-y-1 mb-3">
+                                {% for p in props.avalancheProblems %}
+                                    <li>{{ p.problemType|cut:"_"|capfirst }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                        <a href="{{ region.get_absolute_url }}" class="text-sm underline text-text-2 hover:text-text-1">
+                            View full bulletin &rarr;
+                        </a>
+                    </div>
+                {% endwith %}
+            {% else %}
+                <p class="text-sm text-text-2 italic">No bulletin published yet for today.</p>
+            {% endif %}
+        </section>
+
+        {# --- Season stats strip --- #}
+        <section class="mb-8 grid grid-cols-3 gap-4 text-center" data-testid="season-stats">
+            <div class="rounded-lg border border-border p-4 bg-surface-2">
+                <p class="text-2xl font-bold">{{ total_days }}</p>
+                <p class="text-xs text-text-2 mt-1">Days tracked</p>
+            </div>
+            <div class="rounded-lg border border-border p-4 bg-surface-2">
+                <p class="text-2xl font-bold">
+                    {% if avg_rating %}{{ avg_rating }}{% else %}&mdash;{% endif %}
+                </p>
+                <p class="text-xs text-text-2 mt-1">Avg danger</p>
+            </div>
+            <div class="rounded-lg border border-border p-4 bg-surface-2">
+                {% if worst_day %}
+                    <p class="text-2xl font-bold">{{ worst_day.get_max_rating_display }}</p>
+                    <p class="text-xs text-text-2 mt-1">{{ worst_day.date|date:"j M" }}</p>
+                {% else %}
+                    <p class="text-2xl font-bold">&mdash;</p>
+                    <p class="text-xs text-text-2 mt-1">Worst day</p>
+                {% endif %}
+            </div>
+        </section>
+
+        {# --- Danger-level distribution bar chart --- #}
+        <section class="mb-8" data-testid="danger-distribution">
+            <h2 class="text-lg font-semibold mb-3">Danger distribution</h2>
+            {% if total_days %}
+                <div class="space-y-2">
+                    {% for item in distribution_items %}
+                        <div class="flex items-center gap-3 text-sm">
+                            <span class="w-24 text-right text-text-2 shrink-0">{{ item.label }}</span>
+                            <div class="flex-1 bg-surface-3 rounded h-5 overflow-hidden">
+                                {% if item.count %}
+                                    <div
+                                        class="{{ item.css }} h-full rounded"
+                                        style="width: {% widthratio item.count total_days 100 %}%"
+                                    >
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <span class="w-8 text-text-2 tabular-nums">{{ item.count }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-sm text-text-2 italic">No data for this season yet.</p>
+            {% endif %}
+        </section>
+
+        {# --- Peak events (HIGH / VERY_HIGH days) --- #}
+        <section class="mb-8" data-testid="peak-events">
+            <h2 class="text-lg font-semibold mb-3">Peak danger days</h2>
+            {% if peak_days %}
+                <ul class="space-y-2">
+                    {% for r in peak_days %}
+                        <li class="flex items-center gap-3 text-sm">
+                            <span class="w-24 text-text-2 shrink-0 tabular-nums">
+                                {{ r.date|date:"j M Y" }}
+                            </span>
+                            <span
+                                class="
+                                    font-medium
+                                    {% if r.max_rating == 'very_high' %}text-purple-400
+                                    {% else %}text-red-400{% endif %}
+                                "
+                            >
+                                {{ r.get_max_rating_display }}
+                            </span>
+                            {% if r.source_bulletin %}
+                                <a
+                                    href="{% url 'public:bulletin_date' region_id=region.canonical_region_id slug=region.name_slug date_str=r.date|date:'Y-m-d' %}"
+                                    class="ml-auto text-xs text-text-2 underline hover:text-text-1"
+                                >
+                                    View &rarr;
+                                </a>
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="text-sm text-text-2 italic">No HIGH or VERY HIGH danger days this season.</p>
+            {% endif %}
+        </section>
+
+        {# --- 14-day trend (newest first) --- #}
+        <section class="mb-8" data-testid="recent-trend">
+            <h2 class="text-lg font-semibold mb-3">Last 14 days</h2>
+            {% if recent_14 %}
+                <ul class="space-y-1">
+                    {% for r in recent_14 %}
+                        <li class="flex items-center gap-3 text-sm">
+                            <span class="w-24 text-text-2 shrink-0 tabular-nums">
+                                {{ r.date|date:"j M Y" }}
+                            </span>
+                            <span
+                                class="
+                                    {% if r.max_rating == 'low' %}text-green-400
+                                    {% elif r.max_rating == 'moderate' %}text-yellow-400
+                                    {% elif r.max_rating == 'considerable' %}text-orange-400
+                                    {% elif r.max_rating == 'high' %}text-red-400
+                                    {% elif r.max_rating == 'very_high' %}text-purple-400
+                                    {% endif %}
+                                    font-medium
+                                "
+                            >
+                                {{ r.get_max_rating_display }}
+                            </span>
+                            <a
+                                href="{% url 'public:bulletin_date' region_id=region.canonical_region_id slug=region.name_slug date_str=r.date|date:'Y-m-d' %}"
+                                class="ml-auto text-xs text-text-2 underline hover:text-text-1"
+                            >
+                                View &rarr;
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="text-sm text-text-2 italic">No data for the last 14 days.</p>
+            {% endif %}
+        </section>
+
+        {# --- Resorts in this region --- #}
+        {% with resorts=region.resorts.all %}
+            {% if resorts %}
+                <section class="mb-8" data-testid="resort-list">
+                    <h2 class="text-lg font-semibold mb-3">Resorts in this region</h2>
+                    <ul class="list-disc pl-5 space-y-1 text-sm text-text-2 columns-2">
+                        {% for resort in resorts %}
+                            <li>{{ resort.name }}</li>
+                        {% endfor %}
+                    </ul>
+                </section>
+            {% endif %}
+        {% endwith %}
+    </main>
+{% endblock %}

@@ -78,6 +78,13 @@ urlpatterns = [
 ]
 
 urlpatterns += [
+    # Season-summary page — registered before the generic region patterns so
+    # "season" is never mis-resolved as a slug component.
+    path(
+        "<str:region_id>/season/",
+        views.region_season,
+        name="region_season",
+    ),
     # Bulletin pages — three forms, all served by ``bulletin_detail``.
     # Forms 1 + 2 default to today and render in place; form 3 redirects
     # to canonical when the URL components don't match.
