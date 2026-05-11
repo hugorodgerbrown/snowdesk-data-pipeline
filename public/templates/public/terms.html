@@ -50,8 +50,13 @@ publishable but the gap is obvious to anyone reviewing it.
             <h2 class="text-base font-semibold text-text-1 mb-2">
                 {% trans "Snowdesk is not a substitute for the official bulletin" %}
             </h2>
-            <p class="italic text-text-3">
-                {% trans "[Awaiting legal copy — to be authored by Hugo.]" %}
+            <p>
+                {% blocktrans trimmed %}
+                    Snowdesk renders avalanche bulletins published by SLF. It is an information service only — it does
+                    not replace the official SLF bulletin, professional avalanche training, or your own assessment of
+                    conditions in the field. Always verify current conditions directly with SLF before venturing into
+                    avalanche terrain.
+                {% endblocktrans %}
             </p>
         </section>
 
@@ -59,8 +64,15 @@ publishable but the gap is obvious to anyone reviewing it.
             <h2 class="text-base font-semibold text-text-1 mb-2">
                 {% trans "Always consult SLF and make your own on-site assessment" %}
             </h2>
-            <p class="italic text-text-3">
-                {% trans "[Awaiting legal copy — to be authored by Hugo.]" %}
+            <p>
+                {% blocktrans trimmed %}
+                    Avalanche conditions change rapidly and vary with aspect, elevation, and recent weather. No digital
+                    service can capture every local hazard. Before entering avalanche terrain, check the official SLF
+                    bulletin at
+                    <a class="underline" href="https://www.avalanches.org" target="_blank" rel="noopener"
+                    >avalanches.org</a>, seek current local knowledge, and make your own on-site assessment. Your safety
+                    is your responsibility.
+                {% endblocktrans %}
             </p>
         </section>
 
@@ -68,8 +80,13 @@ publishable but the gap is obvious to anyone reviewing it.
             <h2 class="text-base font-semibold text-text-1 mb-2">
                 {% trans "Limitation of liability" %}
             </h2>
-            <p class="italic text-text-3">
-                {% trans "[Awaiting legal copy — to be authored by Hugo.]" %}
+            <p>
+                {% blocktrans trimmed %}
+                    To the maximum extent permitted by law, Snowdesk and its operator shall not be liable for any loss,
+                    injury, or damage arising from your use of, or reliance on, information displayed on this site.
+                    Snowdesk is provided "as is", without warranties of any kind, including accuracy, timeliness, or
+                    completeness.
+                {% endblocktrans %}
             </p>
         </section>
 
@@ -77,7 +94,7 @@ publishable but the gap is obvious to anyone reviewing it.
             <h2 class="text-base font-semibold text-text-1 mb-2">
                 {% trans "SLF's own no-liability clause" %}
             </h2>
-            <p class="italic text-text-3">
+            <p>
                 {% blocktrans trimmed %}
                     Per the SLF
                     <a
@@ -85,8 +102,8 @@ publishable but the gap is obvious to anyone reviewing it.
                         href="https://www.slf.ch/en/services-and-products/slf-data-service/"
                         target="_blank"
                         rel="noopener"
-                    >data-service terms of use</a>, SLF accepts no liability for the delivery of bulletin data.
-                    [Detailed wording to be authored by Hugo.]
+                    >data-service terms of use</a>, SLF makes bulletin data available for information purposes only and
+                    accepts no liability for the delivery of that data or for decisions made on the basis of it.
                 {% endblocktrans %}
             </p>
         </section>

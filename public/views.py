@@ -639,6 +639,43 @@ def colophon(request: HttpRequest) -> HttpResponse:
     return render(request, "public/colophon.html")
 
 
+def privacy(request: HttpRequest) -> HttpResponse:
+    """
+    Render the /privacy page.
+
+    Privacy policy for Snowdesk, covering data collection, legal bases,
+    retention periods, third-party providers, and user rights under UK GDPR.
+    Content is authored directly in the template; no runtime context required.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered privacy policy page.
+
+    """
+    return render(request, "public/privacy.html")
+
+
+def terms_of_service(request: HttpRequest) -> HttpResponse:
+    """
+    Render the /terms-of-service page.
+
+    Full Terms of Service for Snowdesk, covering the service description,
+    safety disclaimer, acceptable use, and limitation of liability.
+    Distinct from /terms/, which covers the SLF data-licence acknowledgement.
+    Content is authored directly in the template; no runtime context required.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered terms of service page.
+
+    """
+    return render(request, "public/terms_of_service.html")
+
+
 def _build_guide_examples() -> dict[str, Any]:
     """
     Build hardcoded example context for the how-to-read-a-bulletin page.

@@ -18,6 +18,8 @@ Visual weight should not compete with page content.
     <p>
         {% url 'public:terms' as terms_url %}
         {% url 'public:colophon' as colophon_url %}
+        {% url 'public:privacy' as privacy_url %}
+        {% url 'public:terms_of_service' as tos_url %}
         {% blocktrans trimmed %}
             Avalanche data:
             <a class="underline hover:text-text-2" href="https://www.slf.ch" target="_blank" rel="noopener"
@@ -31,6 +33,10 @@ Visual weight should not compete with page content.
             >CC BY 4.0</a>
             &middot;
             <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms</a>
+            &middot;
+            <a class="underline hover:text-text-2" href="{{ privacy_url }}">Privacy</a>
+            &middot;
+            <a class="underline hover:text-text-2" href="{{ tos_url }}">Terms of Service</a>
             &middot;
             <a class="underline hover:text-text-2" href="{{ colophon_url }}">Colophon</a>
         {% endblocktrans %}

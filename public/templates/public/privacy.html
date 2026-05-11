@@ -1,0 +1,226 @@
+{% extends "public/base.html" %}
+{% comment %}
+public/templates/public/privacy.html — Privacy Policy page (SNOW-153).
+
+Covers data collection, legal bases, retention periods, third-party
+providers, and user rights under UK GDPR. Content is authored directly
+in this template; no runtime context is required.
+{% endcomment %}
+{% load i18n %}
+
+{% block title %}{% trans "Privacy Policy" %} &middot; Snowdesk{% endblock %}
+
+{% block meta_description %}
+    {% trans "How Snowdesk collects, uses, and protects your personal data. UK GDPR privacy policy." %}
+{% endblock %}
+
+{% block content %}
+    <main class="font-sans max-w-[720px] mx-auto px-4 py-8 flex-1">
+        <h1 class="text-2xl font-semibold tracking-tight mb-2" data-testid="privacy-heading">
+            {% trans "Privacy Policy" %}
+        </h1>
+        <p class="text-xs text-text-3 mb-6">
+            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 1 November 2026 &middot; Version 1.0" %}
+        </p>
+
+        <div class="mb-6 p-4 bg-surface-2 rounded text-sm text-text-2 leading-relaxed">
+            <strong>{% trans "The short version:" %}</strong>
+            {% blocktrans trimmed %}
+                We collect your email address only if you choose to subscribe to bulletin notifications. We don't sell
+                your data. We don't track you across the web. We don't use advertising or analytics cookies.
+            {% endblocktrans %}
+        </div>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-who-we-are">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "1. Who we are" %}</h2>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Snowdesk is operated by Henri Tamboral, an individual based in London, UK. Snowdesk is a free
+                    service that displays Swiss avalanche bulletins published by the WSL Institute for Snow and
+                    Avalanche Research (SLF). There are no employees; all operations are carried out by the sole
+                    operator.
+                {% endblocktrans %}
+            </p>
+            <p>
+                {% blocktrans trimmed %}
+                    Questions about this policy? Email:
+                    <a class="underline" href="mailto:privacy@snowdesk.info">privacy@snowdesk.info</a>
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-what-we-collect">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "2. What data we collect" %}</h2>
+
+            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2a. Subscriptions" %}</h3>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    If you subscribe to bulletin email notifications, we collect your email address. That is the only
+                    personal data we ever ask for. We collect it only when you actively sign up — we never collect it
+                    passively.
+                {% endblocktrans %}
+            </p>
+
+            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2b. Location" %}</h3>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    The interactive map can use your browser's optional geolocation to centre the map on your current
+                    position. This happens entirely in your browser — your location is never transmitted to or stored by
+                    Snowdesk.
+                {% endblocktrans %}
+            </p>
+
+            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2c. Session data" %}</h3>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    We use a session cookie that is strictly necessary for the site to function. It contains no personal
+                    information and expires when you close your browser. No consent is required for this cookie under UK
+                    PECR.
+                {% endblocktrans %}
+            </p>
+
+            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2d. Server logs" %}</h3>
+            <p>
+                {% blocktrans trimmed %}
+                    Our server automatically records standard technical information when you visit: your IP address, the
+                    page you requested, and the time of the request. We use this only to keep the service running and to
+                    investigate errors. Logs are retained for 14 days and then deleted.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-why-we-use">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "3. Why we use your data" %}</h2>
+            <p class="mb-2">{% trans "We process your data under the following legal bases (UK GDPR):" %}</p>
+            <ul class="list-disc pl-5 space-y-1">
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Email address</strong> — consent. You gave it to us voluntarily when you subscribed, and
+                        you can withdraw it at any time by unsubscribing.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Session data and server logs</strong> — legitimate interest. We need these to keep the
+                        service secure and operational.
+                    {% endblocktrans %}
+                </li>
+            </ul>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-retention">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "4. How long we keep your data" %}</h2>
+            <ul class="list-disc pl-5 space-y-1">
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Email address</strong> — kept for as long as your subscription is active. Deleted within
+                        30 days of unsubscribing or on request.
+                    {% endblocktrans %}
+                </li>
+                <li>{% trans "<strong>Location</strong> — never stored." %}</li>
+                <li>{% trans "<strong>Server logs</strong> — 14 days." %}</li>
+            </ul>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-sharing">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "5. Who we share your data with" %}</h2>
+            <p class="mb-3 font-semibold text-text-1">
+                {% trans "We do not sell, rent, or trade your personal data with anyone." %}
+            </p>
+            <p class="mb-2">
+                {% trans "We use a small number of trusted service providers to operate Snowdesk:" %}
+            </p>
+            <ul class="list-disc pl-5 space-y-1 mb-3">
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Render</strong> (render.com) — hosts the Snowdesk servers. Your IP address and request
+                        data pass through their infrastructure.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Resend</strong> (resend.com) — sends your bulletin notification emails. They receive
+                        your email address for this purpose only.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Open-Meteo</strong> (open-meteo.com) — provides weather data displayed on bulletin
+                        pages. No personal data is shared with them.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>SLF / WSL</strong> — provides the avalanche bulletin data. No personal data is shared
+                        with them.
+                    {% endblocktrans %}
+                </li>
+            </ul>
+            <p>
+                {% blocktrans trimmed %}
+                    All providers are contractually required to handle your data in compliance with UK GDPR. We do not
+                    use any advertising networks or analytics platforms.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-rights">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "6. Your rights" %}</h2>
+            <p class="mb-2">{% trans "Under UK GDPR, you have the right to:" %}</p>
+            <ul class="list-disc pl-5 space-y-1 mb-3">
+                <li>{% trans "Access the personal data we hold about you" %}</li>
+                <li>{% trans "Correct inaccurate data" %}</li>
+                <li>{% trans "Request deletion of your data (&ldquo;right to be forgotten&rdquo;)" %}</li>
+                <li>{% trans "Object to processing" %}</li>
+                <li>{% trans "Withdraw consent at any time" %}</li>
+            </ul>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    To exercise any of these rights, email
+                    <a class="underline" href="mailto:privacy@snowdesk.info">privacy@snowdesk.info</a>. We will respond
+                    within 30 days.
+                {% endblocktrans %}
+            </p>
+            <p>
+                {% blocktrans trimmed %}
+                    You also have the right to lodge a complaint with the UK Information Commissioner's Office (ICO) at
+                    <a class="underline" href="https://ico.org.uk" target="_blank" rel="noopener">ico.org.uk</a>.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-children">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "7. Children" %}</h2>
+            <p>
+                {% blocktrans trimmed %}
+                    Snowdesk is a publicly accessible information service. We do not knowingly collect personal data
+                    from children under 13. If you believe a child under 13 has subscribed, please contact us at
+                    <a class="underline" href="mailto:privacy@snowdesk.info">privacy@snowdesk.info</a>
+                    and we will delete the data without delay.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-cookies">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "8. Cookies" %}</h2>
+            <p>
+                {% blocktrans trimmed %}
+                    Snowdesk uses one strictly necessary session cookie. It is set automatically when you visit the
+                    site, contains no personal information, and expires when you close your browser. Because it is
+                    strictly necessary, no consent banner is required under UK PECR. We do not use tracking, analytics,
+                    or advertising cookies of any kind.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-changes">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "9. Changes to this policy" %}</h2>
+            <p>
+                {% blocktrans trimmed %}
+                    If we make material changes to this policy, we will update the effective date at the top and notify
+                    subscribers by email. Continued use of Snowdesk after changes constitutes acceptance.
+                {% endblocktrans %}
+            </p>
+        </section>
+    </main>
+{% endblock %}

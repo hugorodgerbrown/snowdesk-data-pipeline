@@ -1,0 +1,218 @@
+{% extends "public/base.html" %}
+{% comment %}
+public/templates/public/terms_of_service.html — Terms of Service page (SNOW-153).
+
+Full terms covering the service description, safety disclaimer, acceptable
+use, intellectual property, subscriptions, and limitation of liability.
+Distinct from /terms/, which covers the SLF data-licence acknowledgement.
+Content is authored directly in this template; no runtime context required.
+{% endcomment %}
+{% load i18n %}
+
+{% block title %}{% trans "Terms of Service" %} &middot; Snowdesk{% endblock %}
+
+{% block meta_description %}
+    {% trans "Snowdesk Terms of Service — what the service is, how to use it safely, and the legal terms that apply." %}
+{% endblock %}
+
+{% block content %}
+    <main class="font-sans max-w-[720px] mx-auto px-4 py-8 flex-1">
+        <h1 class="text-2xl font-semibold tracking-tight mb-2" data-testid="tos-heading">
+            {% trans "Terms of Service" %}
+        </h1>
+        <p class="text-xs text-text-3 mb-6">
+            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 1 November 2026 &middot; Version 1.0" %}
+        </p>
+
+        <div class="mb-6 p-4 bg-surface-2 rounded text-sm text-text-2 leading-relaxed">
+            <strong>{% trans "Plain English first:" %}</strong>
+            {% blocktrans trimmed %}
+                Snowdesk is a free avalanche information service. It does not replace the official SLF bulletin,
+                professional avalanche training, or your own judgement in the mountains. Your safety is your
+                responsibility.
+            {% endblocktrans %}
+        </div>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-about">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "1. About Snowdesk" %}</h2>
+            <p>
+                {% blocktrans trimmed %}
+                    Snowdesk is operated by Henri Tamboral ("I", "me", "my"), an individual based in London, UK.
+                    Snowdesk displays Swiss avalanche bulletins published by the WSL Institute for Snow and Avalanche
+                    Research (SLF) and provides optional email notifications for subscribed regions. There are no
+                    employees; the service is run entirely by the sole operator.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-acceptance">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "2. Acceptance of terms" %}</h2>
+            <p>
+                {% blocktrans trimmed %}
+                    By accessing Snowdesk at snowdesk.info, you agree to these Terms of Service. If you do not agree,
+                    please do not use the service.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-service">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "3. The service" %}</h2>
+            <p class="mb-2">{% trans "Snowdesk provides:" %}</p>
+            <ul class="list-disc pl-5 space-y-1 mb-3">
+                <li>{% trans "A viewer for Swiss avalanche bulletins published by SLF" %}</li>
+                <li>{% trans "An interactive map showing current avalanche danger ratings by region" %}</li>
+                <li>
+                    {% trans "Optional email notifications when new bulletins are published for subscribed regions" %}
+                </li>
+            </ul>
+            <p>
+                {% blocktrans trimmed %}
+                    Snowdesk is provided free of charge. I reserve the right to change, suspend, or discontinue any part
+                    of the service at any time without notice.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-safety">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "4. Safety — please read this" %}</h2>
+            <div class="mb-3 p-3 border border-border rounded text-text-2">
+                ⚠️
+                {% blocktrans trimmed %}
+                    Avalanche bulletins are a forecast tool, not a guarantee of safe conditions. Snowdesk is an
+                    information service only — it does not replace the official SLF bulletin, professional avalanche
+                    training, or your own assessment of conditions in the field.
+                {% endblocktrans %}
+            </div>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    Avalanche conditions change rapidly and vary with aspect, elevation, and recent weather. No digital
+                    service can capture every local hazard.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    Before entering avalanche terrain, you should:
+                {% endblocktrans %}
+            </p>
+            <ul class="list-disc pl-5 space-y-1 mb-3">
+                <li>
+                    {% blocktrans trimmed %}
+                        Check the official SLF bulletin at
+                        <a class="underline" href="https://www.avalanches.org" target="_blank" rel="noopener"
+                        >avalanches.org</a>
+                    {% endblocktrans %}
+                </li>
+                <li>{% trans "Seek current local knowledge from guides, hut keepers, or ski patrol" %}</li>
+                <li>{% trans "Make your own on-site assessment of conditions" %}</li>
+            </ul>
+            <p>
+                {% trans "Your safety in the mountains is your own responsibility." %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-ip">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "5. Intellectual property" %}</h2>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    Snowdesk's original content — including the interface, design, and copy — is owned by Henri
+                    Tamboral. You may view it for personal, non-commercial use. You may not reproduce, redistribute, or
+                    republish it without permission.
+                {% endblocktrans %}
+            </p>
+            <p>
+                {% blocktrans trimmed %}
+                    The avalanche bulletin data displayed on Snowdesk is published by the
+                    <a class="underline" href="https://www.slf.ch" target="_blank" rel="noopener"
+                    >WSL Institute for Snow and Avalanche Research SLF</a>
+                    and licensed under
+                    <a
+                        class="underline"
+                        href="https://creativecommons.org/licenses/by/4.0/"
+                        target="_blank"
+                        rel="noopener"
+                    >CC BY 4.0</a>. That data remains SLF's intellectual property.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-subscriptions">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "6. Email subscriptions" %}</h2>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    You can subscribe to receive email notifications when new avalanche bulletins are published for one
+                    or more Swiss regions. To subscribe, you provide your email address. By subscribing you agree to
+                    receive those notifications.
+                {% endblocktrans %}
+            </p>
+            <p>
+                {% blocktrans trimmed %}
+                    You can unsubscribe at any time by clicking the unsubscribe link in any email we send you. We will
+                    not send you anything other than bulletin notifications and essential service messages.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-acceptable-use">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "7. Acceptable use" %}</h2>
+            <p class="mb-2">{% trans "You agree not to:" %}</p>
+            <ul class="list-disc pl-5 space-y-1">
+                <li>
+                    {% blocktrans trimmed %}
+                        Scrape or republish SLF bulletin data commercially without SLF's permission (the data is
+                        licensed under CC BY 4.0 and remains SLF's property)
+                    {% endblocktrans %}
+                </li>
+                <li>{% trans "Attempt to gain unauthorised access to Snowdesk's systems or data" %}</li>
+                <li>{% trans "Use the service in any way that violates applicable law" %}</li>
+            </ul>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-liability">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "8. Limitation of liability" %}</h2>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    To the maximum extent permitted by law, Snowdesk and its operator shall not be liable for any
+                    direct, indirect, incidental, or consequential loss arising from your use of — or inability to use —
+                    this service. This includes, without limitation, any decisions made on the basis of avalanche
+                    information displayed on Snowdesk.
+                {% endblocktrans %}
+            </p>
+            <p>
+                {% blocktrans trimmed %}
+                    Snowdesk is provided "as is" without warranties of any kind, including accuracy, timeliness, or
+                    fitness for a particular purpose.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-governing-law">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "9. Governing law" %}</h2>
+            <p>
+                {% blocktrans trimmed %}
+                    These terms are governed by the laws of England and Wales. Any disputes shall be subject to the
+                    exclusive jurisdiction of the courts of England and Wales.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-changes">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "10. Changes to these terms" %}</h2>
+            <p>
+                {% blocktrans trimmed %}
+                    We may update these terms from time to time. We will update the effective date at the top. Continued
+                    use of Snowdesk after changes constitutes acceptance of the revised terms.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-contact">
+            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "11. Contact" %}</h2>
+            <p>
+                {% blocktrans trimmed %}
+                    Questions about these terms? Email:
+                    <a class="underline" href="mailto:privacy@snowdesk.info">privacy@snowdesk.info</a>
+                {% endblocktrans %}
+            </p>
+        </section>
+    </main>
+{% endblock %}
