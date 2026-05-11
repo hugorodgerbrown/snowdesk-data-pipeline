@@ -19,6 +19,7 @@ import logging
 from django.db import models
 
 from core.models import BaseModel
+from subscriptions.aaguids import lookup as _aaguid_lookup
 
 logger = logging.getLogger(__name__)
 
@@ -218,9 +219,22 @@ class PasskeyCredential(BaseModel):
 
         ordering = ["-created_at"]
 
+    @property
+    def display_name(self) -> str:
+        """Return the provider name from AAGUID lookup, or fall back to stored name.
+
+        Retroactively corrects generic auto-generated names (e.g. "Synced passkey")
+        for passkeys whose AAGUID has since been added to the lookup table.
+        """
+        provider = _aaguid_lookup(self.aaguid)
+        if provider:
+            date_str = self.created_at.strftime("%-d %b %Y")
+            return f"{provider} \u2014 {date_str}"
+        return self.name
+
     def to_string(self) -> str:
         """Return a human-readable representation."""
-        return f"{self.subscriber.email} \u2014 {self.name}"
+        return f"{self.subscriber.email} \u2014 {self.display_name}"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""

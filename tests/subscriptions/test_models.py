@@ -5,8 +5,11 @@ Covers Subscriber, Subscription, and PasskeyCredential model behaviour,
 queryset methods, string representations, and field constraints.
 """
 
+import uuid
+
 import pytest
 
+from subscriptions.aaguids import lookup as aaguid_lookup
 from subscriptions.models import PasskeyCredential, Subscriber, Subscription
 from tests.factories import (
     MicroRegionFactory,
@@ -14,6 +17,22 @@ from tests.factories import (
     SubscriberFactory,
     SubscriptionFactory,
 )
+
+
+class TestAaguidLookup:
+    """Tests for subscriptions.aaguids.lookup."""
+
+    def test_returns_name_for_known_aaguid(self):
+        assert (
+            aaguid_lookup(uuid.UUID("bada5566-a7aa-401f-bd96-45619a55120d"))
+            == "1Password"
+        )
+
+    def test_returns_none_for_unknown_aaguid(self):
+        assert aaguid_lookup(uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")) is None
+
+    def test_returns_none_for_null_aaguid(self):
+        assert aaguid_lookup(None) is None
 
 
 @pytest.mark.django_db
@@ -204,6 +223,29 @@ class TestPasskeyCredentialModel:
     def test_aaguid_nullable(self):
         passkey = PasskeyCredentialFactory.create(aaguid=None)
         assert passkey.aaguid is None
+
+    def test_display_name_uses_aaguid_lookup_when_known(self):
+        _1password_aaguid = uuid.UUID("bada5566-a7aa-401f-bd96-45619a55120d")
+        passkey = PasskeyCredentialFactory.create(
+            aaguid=_1password_aaguid,
+            name="Synced passkey — 1 Jan 2025",
+        )
+        assert passkey.display_name.startswith("1Password — ")
+
+    def test_display_name_falls_back_to_stored_name_for_unknown_aaguid(self):
+        unknown_aaguid = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        passkey = PasskeyCredentialFactory.create(
+            aaguid=unknown_aaguid,
+            name="Device passkey — 1 Jan 2025",
+        )
+        assert passkey.display_name == "Device passkey — 1 Jan 2025"
+
+    def test_display_name_falls_back_to_stored_name_when_aaguid_is_none(self):
+        passkey = PasskeyCredentialFactory.create(
+            aaguid=None,
+            name="Synced passkey — 1 Jan 2025",
+        )
+        assert passkey.display_name == "Synced passkey — 1 Jan 2025"
 
 
 @pytest.mark.django_db

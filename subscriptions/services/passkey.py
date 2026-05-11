@@ -177,7 +177,7 @@ def verify_and_save_registration(
     device_type = (
         result.credential_device_type.value
     )  # "single_device" | "multi_device"
-    name = _auto_name(result.credential_backed_up)
+    name = _auto_name(aaguid, result.credential_backed_up)
 
     passkey = PasskeyCredential.objects.create(
         subscriber=subscriber,
@@ -341,11 +341,15 @@ def _parse_aaguid(aaguid_str: str) -> _uuid.UUID | None:
     return None if parsed.int == 0 else parsed
 
 
-def _auto_name(backed_up: bool) -> str:
+def _auto_name(aaguid: _uuid.UUID | None, backed_up: bool) -> str:
     """
     Generate a human-readable default name for a newly registered passkey.
 
+    Uses the AAGUID to look up the provider name when known; falls back to
+    a generic "Synced / Device passkey" label based on backup eligibility.
+
     Args:
+        aaguid: Parsed AAGUID UUID, or None for Apple / unknown platform.
         backed_up: True when the passkey is synced to the cloud.
 
     Returns:
@@ -354,6 +358,11 @@ def _auto_name(backed_up: bool) -> str:
     """
     from django.utils.timezone import now
 
+    from subscriptions.aaguids import lookup
+
     date_str = now().strftime("%-d %b %Y")
+    provider = lookup(aaguid)
+    if provider:
+        return f"{provider} — {date_str}"
     kind = "Synced passkey" if backed_up else "Device passkey"
     return f"{kind} — {date_str}"

@@ -174,7 +174,7 @@ authenticated=True (session present):
                                 <div class="passkey-card bg-card rounded-[12px] border border-text-3/10 shadow-sm p-4 mb-3 flex items-center justify-between gap-4">
                                     <div class="min-w-0">
                                         <p class="text-sm font-medium text-text-1 truncate">
-                                            {{ passkey.name }}
+                                            {{ passkey.display_name }}
                                         </p>
                                         <p class="text-xs text-text-3 mt-0.5">
                                             {% if passkey.last_used_at %}
@@ -361,13 +361,6 @@ authenticated=True (session present):
 
                         /* Conditional UI — passkeys surface in email-field autofill dropdown */
                         window.Passkey.startConditionalSignIn(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
-
-                        var emailInput = document.getElementById("{{ form.email.id_for_label }}");
-                        if (emailInput) {
-                            emailInput.addEventListener("input", function () {
-                                window.Passkey.abortConditionalSignIn();
-                            }, { once: true });
-                        }
 
                         /* Explicit passkey sign-in button — reveal only when WebAuthn is available */
                         var authFeedback = document.getElementById("passkey-auth-feedback");
