@@ -6,15 +6,18 @@ Two modes depending on whether the visitor has a valid session:
 
 authenticated=False (no session):
     Shows an email entry form. POST sends an account-access link.
+    The email input has autocomplete="username webauthn" so the browser
+    surfaces registered passkeys via conditional UI autofill.
 
 authenticated=True (session present):
     Shows one card per subscribed region, ordered by region name.
     Each card shows the region name, region ID, and resort list.
     A per-region "Remove" button POSTs to subscriptions:remove_region via HTMX.
     A "Choose more regions on the map" link routes to /map/.
+    A passkeys section lists registered platform passkeys with delete buttons.
     A destructive "Unsubscribe from all alerts" button hard-deletes the subscriber.
 {% endcomment %}
-{% load i18n %}
+{% load i18n static %}
 
 {% block title %}{% trans "Manage subscriptions — Snowdesk" %}{% endblock %}
 
@@ -132,6 +135,92 @@ authenticated=True (session present):
                     </div>
 
                     {% comment %}
+                        Passkeys section — lists registered platform passkeys with
+                        delete buttons, and offers a "add passkey" button.
+
+                        just_confirmed=True + no passkeys → show a prominent prompt
+                        to register this device right now.
+                    {% endcomment %}
+                    <div class="mb-10">
+                        <h2 class="text-lg font-semibold text-text-1 mb-4">
+                            {% trans "Passkeys" %}
+                        </h2>
+
+                        {% with passkeys=subscriber.passkeys.all %}
+                            {% if just_confirmed and not passkeys %}
+                                {# Prominent first-time registration prompt #}
+                                <div
+                                    id="passkey-prompt"
+                                    class="bg-card rounded-[12px] border border-text-3/10 shadow-sm px-5 py-4 mb-4"
+                                >
+                                    <p class="text-sm text-text-1 font-medium mb-1">
+                                        {% trans "Sign in faster with a passkey" %}
+                                    </p>
+                                    <p class="text-sm text-text-2 mb-3 leading-relaxed">
+                                        {% trans "Save a passkey for this device and you won't need a magic link next time." %}
+                                    </p>
+                                    <button
+                                        id="btn-register-passkey"
+                                        type="button"
+                                        class="text-sm bg-text-1 text-card px-4 py-2 rounded-[8px] font-medium hover:opacity-90 transition-opacity"
+                                    >
+                                        {% trans "Save a passkey for this device" %}
+                                    </button>
+                                </div>
+                            {% endif %}
+
+                            {# Existing passkey cards #}
+                            {% for passkey in passkeys %}
+                                <div class="passkey-card bg-card rounded-[12px] border border-text-3/10 shadow-sm p-4 mb-3 flex items-center justify-between gap-4">
+                                    <div class="min-w-0">
+                                        <p class="text-sm font-medium text-text-1 truncate">
+                                            {{ passkey.name }}
+                                        </p>
+                                        <p class="text-xs text-text-3 mt-0.5">
+                                            {% if passkey.last_used_at %}
+                                                {% blocktrans with date=passkey.last_used_at|date:"j N Y" trimmed %}
+                                                    Last used {{ date }}
+                                                {% endblocktrans %}
+                                            {% else %}
+                                                {% trans "Never used" %}
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                    <button
+                                        hx-post="{% url 'subscriptions:passkey_delete' passkey_uuid=passkey.uuid %}"
+                                        hx-target="closest .passkey-card"
+                                        hx-swap="outerHTML"
+                                        hx-confirm='{% trans "Remove this passkey?" %}'
+                                        class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-[6px] px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                                    >
+                                        {% trans "Remove" %}
+                                    </button>
+                                </div>
+                            {% endfor %}
+
+                            {# "Add a passkey" button — always shown when we have one or more #}
+                            {% if passkeys or not just_confirmed %}
+                                <button
+                                    id="btn-register-passkey"
+                                    type="button"
+                                    class="text-sm text-text-2 border border-text-3/30 rounded-[8px] px-4 py-2 hover:text-text-1 hover:border-text-2 transition-colors"
+                                >
+                                    {% trans "Add a passkey for this device" %}
+                                </button>
+                            {% endif %}
+                        {% endwith %}
+
+                        {# Passkey feedback banner — shown/hidden by JS #}
+                        <div
+                            id="passkey-feedback"
+                            role="status"
+                            aria-live="polite"
+                            class="hidden mt-4 text-sm text-text-2"
+                        >
+                        </div>
+                    </div>
+
+                    {% comment %}
                         Destructive account deletion — visually separated,
                         small, muted.  hx-confirm stays here: deleting the
                         whole account is irreversible.
@@ -148,21 +237,57 @@ authenticated=True (session present):
                 </div>{# /hx-headers wrapper #}
 
                 {% comment %}
-                    Reveal the error banner on any HTMX error (CSRF failure,
-                    rate-limit 429, network drop, 5xx).  Declarative listeners
-                    via hx-on::response-error would need one per button; a
-                    single document-level listener is cleaner.
+                    Passkey + HTMX error handling scripts.
                 {% endcomment %}
+                <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
                 <script nonce="{{ request.csp_nonce }}">
                     (function () {
+                        'use strict';
+
+                        /* HTMX error banner */
                         var banner = document.getElementById("htmx-error-banner");
-                        if (!banner) return;
-                        document.body.addEventListener("htmx:responseError", function () {
-                            banner.classList.remove("hidden");
-                            banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                        if (banner) {
+                            document.body.addEventListener("htmx:responseError", function () {
+                                banner.classList.remove("hidden");
+                                banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                            });
+                            document.body.addEventListener("htmx:sendError", function () {
+                                banner.classList.remove("hidden");
+                            });
+                        }
+
+                        /* Passkey registration */
+                        var regBtn = document.getElementById("btn-register-passkey");
+                        var feedback = document.getElementById("passkey-feedback");
+
+                        function showFeedback(msg) {
+                            if (!feedback) return;
+                            feedback.textContent = msg;
+                            feedback.classList.remove("hidden");
+                        }
+
+                        if (regBtn) {
+                            regBtn.addEventListener("click", function () {
+                                regBtn.disabled = true;
+                                window.Passkey.registerPasskey(
+                                    "{% url 'subscriptions:passkey_register_request' %}",
+                                    "{% url 'subscriptions:passkey_register_response' %}"
+                                );
+                            });
+                        }
+
+                        document.addEventListener("passkey:registered", function () {
+                            window.location.reload();
                         });
-                        document.body.addEventListener("htmx:sendError", function () {
-                            banner.classList.remove("hidden");
+                        document.addEventListener("passkey:cancelled", function () {
+                            if (regBtn) regBtn.disabled = false;
+                        });
+                        document.addEventListener("passkey:unsupported", function () {
+                            if (regBtn) regBtn.style.display = "none";
+                        });
+                        document.addEventListener("passkey:error", function (e) {
+                            if (regBtn) regBtn.disabled = false;
+                            showFeedback("{% trans "Passkey registration failed. Please try again." %}");
                         });
                     })();
                 </script>
@@ -200,7 +325,81 @@ authenticated=True (session present):
                             {% trans "Send account link" %}
                         </button>
                     </form>
+
+                    <div
+                        id="passkey-signin-wrap"
+                        class="hidden mt-4 pt-4 border-t border-text-3/10"
+                    >
+                        <button
+                            id="btn-passkey-signin"
+                            type="button"
+                            class="w-full text-sm text-text-2 border border-text-3/30 rounded-[8px] px-5 py-2.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                        >
+                            {% trans "Sign in with a passkey" %}
+                        </button>
+                        <p
+                            id="passkey-auth-feedback"
+                            role="alert"
+                            class="hidden mt-3 text-xs text-form-error"
+                        >
+                        </p>
+                    </div>
                 </div>
+
+                {% comment %}
+                    Passkey conditional UI — start on page load.
+                    Aborts when the user focuses the email field to type manually
+                    (the magic-link flow takes over).
+                {% endcomment %}
+                <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
+                <script nonce="{{ request.csp_nonce }}">
+                    (function () {
+                        'use strict';
+
+                        var AUTH_REQUEST_URL = "{% url 'subscriptions:passkey_auth_request' %}";
+                        var AUTH_RESPONSE_URL = "{% url 'subscriptions:passkey_auth_response' %}";
+
+                        /* Conditional UI — passkeys surface in email-field autofill dropdown */
+                        window.Passkey.startConditionalSignIn(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
+
+                        var emailInput = document.getElementById("{{ form.email.id_for_label }}");
+                        if (emailInput) {
+                            emailInput.addEventListener("input", function () {
+                                window.Passkey.abortConditionalSignIn();
+                            }, { once: true });
+                        }
+
+                        /* Explicit passkey sign-in button — reveal only when WebAuthn is available */
+                        var authFeedback = document.getElementById("passkey-auth-feedback");
+
+                        function showAuthError(msg) {
+                            if (!authFeedback) return;
+                            authFeedback.textContent = msg;
+                            authFeedback.classList.remove("hidden");
+                        }
+
+                        if (window.PublicKeyCredential) {
+                            var wrap = document.getElementById("passkey-signin-wrap");
+                            var btn = document.getElementById("btn-passkey-signin");
+                            if (wrap) wrap.classList.remove("hidden");
+                            if (btn) {
+                                btn.addEventListener("click", function () {
+                                    if (authFeedback) authFeedback.classList.add("hidden");
+                                    btn.disabled = true;
+                                    window.Passkey.signInWithPasskey(AUTH_REQUEST_URL, AUTH_RESPONSE_URL)
+                                        .finally(function () { btn.disabled = false; });
+                                });
+                            }
+                        }
+
+                        document.addEventListener("passkey:auth-unknown-credential", function () {
+                            showAuthError("{% trans "This passkey wasn't recognised — it may have been removed. Please try a different passkey or use a magic link." %}");
+                        });
+                        document.addEventListener("passkey:auth-error", function (e) {
+                            showAuthError("{% trans "Sign-in failed. Please try again or use a magic link." %}");
+                        });
+                    })();
+                </script>
             {% endif %}
         </div>
     </div>

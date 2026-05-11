@@ -507,15 +507,18 @@ class TestManageViewUnauthenticated:
         assert len(mail.outbox) == 1
         assert "Snowdesk" in mail.outbox[0].subject
 
-    def test_post_unknown_email_sends_no_email(self):
-        """Unknown email on unauthenticated POST → no email sent (no enumeration)."""
+    def test_post_unknown_email_creates_subscriber_and_sends_email(self):
+        """Unknown email on unauthenticated POST → subscriber created, email sent."""
+        from subscriptions.models import Subscriber
+
         client = Client()
         response = client.post(
             reverse("subscriptions:manage"),
-            data={"email": "unknown@example.com"},
+            data={"email": "brandnew@example.com"},
         )
         assert response.status_code == 200
-        assert len(mail.outbox) == 0
+        assert len(mail.outbox) == 1
+        assert Subscriber.objects.filter(email="brandnew@example.com").exists()
 
     def test_post_known_email_response_identical_to_unknown(self):
         """Responses for known and unknown emails must be byte-equal."""

@@ -47,7 +47,6 @@ from .models import Subscriber, Subscription
 from .services.email import (
     send_account_access_email,
     send_subscription_confirmation_email,
-    simulate_account_access_work,
 )
 from .services.token import (
     SALT_ACCOUNT_ACCESS,
@@ -362,16 +361,14 @@ def _manage_unauthenticated(request: HttpRequest) -> HttpResponse:
 
     email: str = form.cleaned_data["email"]
 
-    try:
-        Subscriber.objects.get(email=email)
-        send_account_access_email(email, request=request)
-        logger.info("Account-access email sent to existing subscriber %s", email)
-    except Subscriber.DoesNotExist:
-        # Unknown email — do not reveal account existence.  Perform the same
-        # token-gen + template-render CPU work as the real send path so the
-        # response timing profile does not leak whether the email is known.
-        simulate_account_access_work(email)
-        logger.debug("Manage POST for unknown email %s — no account found", email)
+    _, created = Subscriber.objects.get_or_create(
+        email=email,
+        defaults={"status": Subscriber.Status.PENDING},
+    )
+    if created:
+        logger.info("New subscriber created via manage page: %s", email)
+    send_account_access_email(email, request=request)
+    logger.info("Account-access email sent to %s", email)
 
     return render(request, "subscriptions/manage_sent.html", {})
 
