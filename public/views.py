@@ -650,11 +650,19 @@ def _build_guide_examples() -> dict[str, Any]:
 
     Returns:
         Dict with keys:
-        - ``example_day_window_single``: one-row day_windows list (moderate, all-day)
-        - ``example_day_window_split``: two-row list (considerable− all-day + moderate
-          later)
-        - ``example_dry_card``: wind-slab card for the dry-avalanche section
-        - ``example_wet_card``: wet-snow card for the wet-avalanche section
+        - ``example_day_window_single``: one-row day_windows list (moderate,
+          all-day) — danger-level section
+        - ``example_day_window_sub_minus``: one-row list showing 3– —
+          subdivisions section
+        - ``example_day_window_split``: two-row list (considerable– all-day +
+          moderate later) — how-the-day-evolves section
+        - ``example_new_snow_card``: new snow at moderate danger (all aspects)
+        - ``example_persistent_card``: persistent weak layers at considerable
+        - ``example_dry_card``: wind slab (used in elevation/aspect section)
+        - ``example_multi_card``: combined wind-slab + persistent-weak-layers
+          label to illustrate multiple-problem-types
+        - ``example_wet_card``: wet snow at moderate, later timing
+        - ``example_gliding_card``: gliding snow at moderate, all day
 
     """
 
@@ -681,13 +689,61 @@ def _build_guide_examples() -> dict[str, Any]:
     # Danger-level section: single moderate all-day window.
     single_moderate = [_dw("all_day", "moderate", "All day")]
 
-    # How-the-day-evolves section: split day (considerable− morning, moderate later).
+    # Subdivisions section: considerable-minus — sits just above the 2/3 boundary.
+    sub_minus = [_dw("all_day", "considerable", "All day", modifier="-")]
+
+    # How-the-day-evolves section: split day (considerable– morning, moderate later).
     split_day = [
         _dw("all_day", "considerable", "All day", modifier="-"),
         _dw("later", "moderate", "Later"),
     ]
 
-    # Dry hazard card: wind slab, considerable, north-facing slopes above 2400m.
+    # --- Dry hazard cards ---
+
+    # New snow: moderate, widespread across all aspects above 1600m.
+    new_snow_card: dict[str, Any] = {
+        "category": "dry",
+        "danger_level": 2,
+        "danger_level_key": "moderate",
+        "problem_type": "new_snow",
+        "time_period": "all_day",
+        "aspects": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+        "elevation": ElevationBounds(
+            lower="1600",
+            upper="",
+            display="above 1600m",
+            bound_type=ELEVATION_LOWER,
+        ),
+        "comment_html": "",
+        "label": "New snow",
+        "time_period_label": "",
+        "hide_comment": False,
+        "core_zone_text": "All aspects, above 1600m",
+    }
+
+    # Persistent weak layers: considerable, north-facing aspects above 2600m.
+    persistent_card: dict[str, Any] = {
+        "category": "dry",
+        "danger_level": 3,
+        "danger_level_key": "considerable",
+        "problem_type": "persistent_weak_layers",
+        "time_period": "all_day",
+        "aspects": ["N", "NE", "NW", "E"],
+        "elevation": ElevationBounds(
+            lower="2600",
+            upper="",
+            display="above 2600m",
+            bound_type=ELEVATION_LOWER,
+        ),
+        "comment_html": "",
+        "label": "Persistent weak layers",
+        "time_period_label": "",
+        "hide_comment": False,
+        "core_zone_text": "N to E aspects, above 2600m",
+    }
+
+    # Wind slab: considerable, north-facing slopes above 2400m.
+    # Used in the elevation-and-aspect section as the lower-bound example.
     dry_card: dict[str, Any] = {
         "category": "dry",
         "danger_level": 3,
@@ -708,7 +764,31 @@ def _build_guide_examples() -> dict[str, Any]:
         "core_zone_text": "N to NW aspects, above 2400m",
     }
 
-    # Wet hazard card: wet snow, moderate, east-to-west slopes below 2200m, afternoon.
+    # Multiple problem types: wind slab + persistent weak layers sharing the same
+    # terrain — same aspects and elevation, two contributing hazard types.
+    multi_card: dict[str, Any] = {
+        "category": "dry",
+        "danger_level": 3,
+        "danger_level_key": "considerable",
+        "problem_type": "wind_slab",
+        "time_period": "all_day",
+        "aspects": ["N", "NE", "NW", "W"],
+        "elevation": ElevationBounds(
+            lower="2400",
+            upper="",
+            display="above 2400m",
+            bound_type=ELEVATION_LOWER,
+        ),
+        "comment_html": "",
+        "label": "Wind slab + Persistent weak layers",
+        "time_period_label": "",
+        "hide_comment": False,
+        "core_zone_text": "N to W aspects, above 2400m",
+    }
+
+    # --- Wet hazard cards ---
+
+    # Wet snow: moderate, east-to-west slopes below 2200m, afternoon.
     wet_card: dict[str, Any] = {
         "category": "wet",
         "danger_level": 2,
@@ -729,11 +809,37 @@ def _build_guide_examples() -> dict[str, Any]:
         "core_zone_text": "E to W aspects, below 2200m",
     }
 
+    # Gliding snow: moderate, south-facing slopes below 1800m, active all day.
+    gliding_card: dict[str, Any] = {
+        "category": "wet",
+        "danger_level": 2,
+        "danger_level_key": "moderate",
+        "problem_type": "gliding_snow",
+        "time_period": "all_day",
+        "aspects": ["S", "SE", "SW"],
+        "elevation": ElevationBounds(
+            lower="",
+            upper="1800",
+            display="below 1800m",
+            bound_type=ELEVATION_UPPER,
+        ),
+        "comment_html": "",
+        "label": "Gliding snow",
+        "time_period_label": "",
+        "hide_comment": False,
+        "core_zone_text": "S-facing aspects, below 1800m",
+    }
+
     return {
         "example_day_window_single": single_moderate,
+        "example_day_window_sub_minus": sub_minus,
         "example_day_window_split": split_day,
+        "example_new_snow_card": new_snow_card,
+        "example_persistent_card": persistent_card,
         "example_dry_card": dry_card,
+        "example_multi_card": multi_card,
         "example_wet_card": wet_card,
+        "example_gliding_card": gliding_card,
     }
 
 
