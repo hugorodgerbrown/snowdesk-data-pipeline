@@ -979,8 +979,10 @@ class TestAggregationDriven:
         dry_idx = content.index("Wind slab", probs_start)
         assert wet_idx < dry_idx
 
-    def test_two_problems_in_one_entry_produce_two_cards(self, client: Client, region):
-        """Each problemType in an aggregation entry becomes its own card."""
+    def test_two_problems_in_one_entry_produce_one_card_with_combined_label(
+        self, client: Client, region
+    ):
+        """Two problem types in one aggregation entry → one card with combined label."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_aggregation(
             aggregation=[
@@ -1002,7 +1004,9 @@ class TestAggregationDriven:
         )
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        assert content.count('data-testid="rating-block"') == 2
+        assert content.count('data-testid="rating-block"') == 1
+        probs_start = content.index('data-testid="avalanche-problems-heading"')
+        assert "Wet snow + Gliding snow" in content[probs_start:]
 
     def test_core_zone_text_as_aria_label(self, client: Client, region):
         """coreZoneText from customData.CH appears as aria-label on aspect/elevation row."""
@@ -1367,8 +1371,10 @@ class TestDayWindowsPanel:
 class TestAvalancheProblemsRoundels:
     """Coloured roundels in the Avalanche Problems heading."""
 
-    def test_two_problems_produce_two_roundels(self, client: Client, region):
-        """Two problem cards → two .problem-roundel elements in the heading."""
+    def test_two_problems_in_one_entry_produce_one_roundel(
+        self, client: Client, region
+    ):
+        """Two problem types in one aggregation entry → one combined card → one roundel."""
         day = date(2026, 4, 10)
         raw = _raw_data_with_aggregation(
             aggregation=[
@@ -1390,7 +1396,7 @@ class TestAvalancheProblemsRoundels:
         heading_start = content.index('data-testid="avalanche-problems-heading"')
         heading_end = content.index(">", content.index("</h2>", heading_start))
         heading_html = content[heading_start : heading_end + 1]
-        assert heading_html.count('class="problem-roundel"') == 2
+        assert heading_html.count('class="problem-roundel"') == 1
 
     def test_roundel_data_level_matches_card_danger_level_key(
         self, client: Client, region
