@@ -32,7 +32,7 @@ from regions.models import (
     Resort,
     SubRegion,
 )
-from subscriptions.models import Subscriber, Subscription
+from subscriptions.models import PasskeyCredential, Subscriber, Subscription
 
 
 class PipelineRunFactory(factory.django.DjangoModelFactory[PipelineRun]):
@@ -216,6 +216,25 @@ class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):
 
     subscriber = factory.SubFactory(SubscriberFactory)
     region = factory.SubFactory(MicroRegionFactory)
+
+
+class PasskeyCredentialFactory(factory.django.DjangoModelFactory[PasskeyCredential]):
+    """Factory for PasskeyCredential instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = PasskeyCredential
+
+    subscriber = factory.SubFactory(SubscriberFactory)
+    credential_id = factory.Sequence(lambda n: f"cred-id-{n:04d}")
+    public_key = b"\x00" * 77
+    sign_count = 0
+    aaguid = None
+    name = factory.Sequence(lambda n: f"Device passkey — {n}")
+    device_type = "platform"
+    backed_up = False
+    last_used_at = None
 
 
 class UserFactory(factory.django.DjangoModelFactory[User]):

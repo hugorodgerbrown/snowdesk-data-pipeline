@@ -57,6 +57,9 @@ class EmailForm(forms.Form):
                     "focus:outline-none focus:ring-2 focus:ring-text-1/30"
                 ),
                 "autofocus": True,
+                # Required for WebAuthn conditional UI (passkey autofill).
+                # The browser surfaces registered passkeys inline in this field.
+                "autocomplete": "username webauthn",
             }
         ),
     )

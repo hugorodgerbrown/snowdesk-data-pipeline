@@ -507,15 +507,18 @@ class TestManageViewUnauthenticated:
         assert len(mail.outbox) == 1
         assert "Snowdesk" in mail.outbox[0].subject
 
-    def test_post_unknown_email_sends_no_email(self):
-        """Unknown email on unauthenticated POST → no email sent (no enumeration)."""
+    def test_post_unknown_email_creates_subscriber_and_sends_email(self):
+        """Unknown email on unauthenticated POST → subscriber created, email sent."""
+        from subscriptions.models import Subscriber
+
         client = Client()
         response = client.post(
             reverse("subscriptions:manage"),
-            data={"email": "unknown@example.com"},
+            data={"email": "brandnew@example.com"},
         )
         assert response.status_code == 200
-        assert len(mail.outbox) == 0
+        assert len(mail.outbox) == 1
+        assert Subscriber.objects.filter(email="brandnew@example.com").exists()
 
     def test_post_known_email_response_identical_to_unknown(self):
         """Responses for known and unknown emails must be byte-equal."""
@@ -867,6 +870,37 @@ class TestDeleteAccount:
 
         response = delete_account(request)
         assert response.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# sign_out
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSignOut:
+    """Tests for the sign_out view."""
+
+    def test_clears_session_and_redirects(self):
+        subscriber = SubscriberFactory.create()
+        client = Client()
+        session = client.session
+        session["subscriber_uuid"] = str(subscriber.uuid)
+        session.save()
+        response = client.post(reverse("subscriptions:sign_out"))
+        assert response.status_code == 302
+        assert response["Location"] == reverse("subscriptions:manage")
+        assert "subscriber_uuid" not in client.session
+
+    def test_get_not_allowed(self):
+        client = Client()
+        response = client.get(reverse("subscriptions:sign_out"))
+        assert response.status_code == 405
+
+    def test_works_when_not_signed_in(self):
+        client = Client()
+        response = client.post(reverse("subscriptions:sign_out"))
+        assert response.status_code == 302
 
 
 # ---------------------------------------------------------------------------

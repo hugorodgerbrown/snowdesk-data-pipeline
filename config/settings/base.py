@@ -279,6 +279,18 @@ CSP_FILTER_REQUEST_FUNC = _csp_filter_request
 
 
 # ---------------------------------------------------------------------------
+# WebAuthn / Passkeys (FIDO2)
+# ---------------------------------------------------------------------------
+# RP_ID must exactly match the domain served — e.g. "snowdesk.info".
+# ORIGIN must be the full https:// origin — e.g. "https://snowdesk.info".
+# Both default to localhost values so development works without extra config.
+
+WEBAUTHN_RP_ID = config("WEBAUTHN_RP_ID", default="localhost")
+WEBAUTHN_RP_NAME = config("WEBAUTHN_RP_NAME", default="Snowdesk")
+WEBAUTHN_ORIGIN = config("WEBAUTHN_ORIGIN", default="http://localhost:8000")
+
+
+# ---------------------------------------------------------------------------
 # Feature flags (django-waffle)
 # ---------------------------------------------------------------------------
 # Server-side feature flagging via the ``waffle`` app. Flags target users

@@ -102,67 +102,91 @@ state.
                 </svg>
             </button>
         {% endif %}
-        {% if request.user.is_staff %}
-            <div class="relative {% if not season_trigger %}ml-auto{% endif %}" data-admin-menu>
-                <button
-                    type="button"
-                    id="admin-menu-toggle"
-                    class="inline-flex items-center gap-1 px-1.5 py-1 text-text-2 hover:text-text-1 rounded text-sm"
-                    aria-haspopup="menu"
-                    aria-expanded="false"
-                    aria-controls="admin-menu"
+        <div class="flex items-center gap-3 {% if not season_trigger %}ml-auto{% endif %}">
+            {% if request.session.subscriber_uuid %}
+                <a
+                    href="{% url 'subscriptions:manage' %}"
+                    class="text-sm text-text-2 hover:text-text-1"
                 >
-                    {% trans "Admin" %}
-                    <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
+                    {% trans "Account" %}
+                </a>
+                <form method="post" action="{% url 'subscriptions:sign_out' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="text-sm text-text-3 hover:text-text-1">
+                        {% trans "Sign out" %}
+                    </button>
+                </form>
+            {% else %}
+                <a
+                    href="{% url 'subscriptions:manage' %}"
+                    class="text-sm text-text-2 hover:text-text-1"
+                >
+                    {% trans "Sign in" %}
+                </a>
+            {% endif %}
+            {% if request.user.is_staff %}
+                <div class="relative" data-admin-menu>
+                    <button
+                        type="button"
+                        id="admin-menu-toggle"
+                        class="inline-flex items-center gap-1 px-1.5 py-1 text-text-2 hover:text-text-1 rounded text-sm"
+                        aria-haspopup="menu"
+                        aria-expanded="false"
+                        aria-controls="admin-menu"
                     >
-                        <path d="m6 9 6 6 6-6" />
-                    </svg>
-                </button>
-                <ul
-                    id="admin-menu"
-                    role="menu"
-                    hidden
-                    class="absolute right-0 top-full mt-1 min-w-[160px] rounded border border-border bg-card shadow-sm py-1 z-50"
-                >
-                    <li role="none">
-                        <a
-                            role="menuitem"
-                            href="{% url 'public:components_index' %}"
-                            class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
+                        {% trans "Admin" %}
+                        <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
                         >
-                            {% trans "Component library" %}
-                        </a>
-                    </li>
-                    <li role="none">
-                        <a
-                            role="menuitem"
-                            href="{% url 'public:map' %}?edit=resorts"
-                            class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
-                        >
-                            {% trans "Edit map" %}
-                        </a>
-                    </li>
-                    <li role="none">
-                        <a
-                            role="menuitem"
-                            href="{% url 'admin:index' %}"
-                            class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
-                        >
-                            {% trans "Django admin" %}
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        {% endif %}
+                            <path d="m6 9 6 6 6-6" />
+                        </svg>
+                    </button>
+                    <ul
+                        id="admin-menu"
+                        role="menu"
+                        hidden
+                        class="absolute right-0 top-full mt-1 min-w-[160px] rounded border border-border bg-card shadow-sm py-1 z-50"
+                    >
+                        <li role="none">
+                            <a
+                                role="menuitem"
+                                href="{% url 'public:components_index' %}"
+                                class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
+                            >
+                                {% trans "Component library" %}
+                            </a>
+                        </li>
+                        <li role="none">
+                            <a
+                                role="menuitem"
+                                href="{% url 'public:map' %}?edit=resorts"
+                                class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
+                            >
+                                {% trans "Edit map" %}
+                            </a>
+                        </li>
+                        <li role="none">
+                            <a
+                                role="menuitem"
+                                href="{% url 'admin:index' %}"
+                                class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
+                            >
+                                {% trans "Django admin" %}
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            {% endif %}
+        </div>
+        {# /right-side wrapper #}
     </div>
 </nav>
 {% if request.user.is_staff %}
