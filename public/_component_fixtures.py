@@ -222,6 +222,211 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
 DAY_WINDOWS_VARIANTS: tuple[dict[str, Any], ...] = _build_day_windows_variants()
 
 
+def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
+    """Build the season calendar demo variant for the component library.
+
+    Constructs a synthetic 13-week SeasonGrid (Nov 2025 – Jan 2026) with
+    hand-picked cells covering every cell state: no-rating, all five EAWS
+    solid levels, split pairs (afternoon-elevated), today, and selected.
+    No database access — purely synthetic fixture data.
+    """
+    from public.season_calendar import SeasonCell, SeasonGrid
+
+    _KEY = {
+        "nr": "no_rating",
+        "L": "low",
+        "M": "moderate",
+        "C": "considerable",
+        "H": "high",
+        "VH": "very_high",
+    }
+    _today = datetime.date(2026, 1, 20)
+    _selected = datetime.date(2026, 1, 14)
+
+    # Nov 3 2025 is a Monday — zero leading padding.
+    _start = datetime.date(2025, 11, 3)
+
+    # 13 weeks × 7 days.  Each entry is a short-code string (solid cell) or
+    # a (min, max) tuple (split / afternoon-elevated cell).
+    _schedule: list[str | tuple[str, str]] = [
+        # Week 1  Nov 3–9    no data yet
+        "nr",
+        "nr",
+        "nr",
+        "nr",
+        "nr",
+        "nr",
+        "nr",
+        # Week 2  Nov 10–16  season opening
+        "nr",
+        "nr",
+        "nr",
+        "L",
+        "L",
+        "L",
+        "L",
+        # Week 3  Nov 17–23  low period
+        "L",
+        "L",
+        "L",
+        "L",
+        "L",
+        "L",
+        "L",
+        # Week 4  Nov 24–30  creeping up
+        "L",
+        "M",
+        "M",
+        "M",
+        "M",
+        "M",
+        "L",
+        # Week 5  Dec 1–7    considerable
+        "M",
+        "M",
+        "C",
+        "C",
+        "C",
+        "M",
+        "M",
+        # Week 6  Dec 8–14   high / very-high spike
+        "C",
+        "H",
+        "H",
+        "VH",
+        "VH",
+        "H",
+        "C",
+        # Week 7  Dec 15–21  split cells (afternoon-elevated days)
+        ("L", "M"),
+        ("L", "C"),
+        ("M", "C"),
+        ("M", "H"),
+        ("C", "H"),
+        "C",
+        "M",
+        # Week 8  Dec 22–28  settling
+        "M",
+        "M",
+        "L",
+        "L",
+        "M",
+        "M",
+        "C",
+        # Week 9  Dec 29–Jan 4
+        "M",
+        ("L", "M"),
+        "L",
+        "L",
+        ("L", "M"),
+        "M",
+        "M",
+        # Week 10 Jan 5–11   low period
+        "L",
+        "L",
+        "L",
+        "L",
+        "L",
+        "L",
+        "M",
+        # Week 11 Jan 12–18  selected date (Jan 14) in this week
+        "M",
+        ("M", "C"),
+        ("L", "C"),
+        "L",
+        "M",
+        "M",
+        "L",
+        # Week 12 Jan 19–25  today (Jan 20) in this week
+        ("L", "M"),
+        "M",
+        "M",
+        "M",
+        "L",
+        "L",
+        ("L", "M"),
+        # Week 13 Jan 26–Feb 1
+        "M",
+        "M",
+        "M",
+        "L",
+        "L",
+        ("L", "M"),
+        "M",
+    ]
+
+    month_parity = 0
+    prev_month: int | None = None
+    cells: list[SeasonCell] = []
+
+    for i, entry in enumerate(_schedule):
+        d = _start + datetime.timedelta(days=i)
+        if prev_month is not None and d.month != prev_month:
+            month_parity = 1 - month_parity
+        prev_month = d.month
+
+        if isinstance(entry, tuple):
+            min_key = _KEY[entry[0]]
+            max_key = _KEY[entry[1]]
+        else:
+            min_key = max_key = _KEY[entry]
+
+        has_bulletin = min_key != "no_rating"
+        cells.append(
+            SeasonCell(
+                date=d,
+                min_rating_key=min_key,
+                max_rating_key=max_key,
+                subdivision="dry",
+                has_bulletin=has_bulletin,
+                is_today=d == _today,
+                is_selected=d == _selected and d != _today,
+                month_parity=month_parity,
+            )
+        )
+
+    # Pack flat list into 7-row columns (start is Monday — no leading pad).
+    columns: list[tuple[SeasonCell | None, ...]] = [
+        tuple(cells[i : i + 7]) for i in range(0, len(cells), 7)
+    ]
+
+    # Build month labels: non-empty only on the first column of each month.
+    _MONTH_ABBR = (
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+    )
+    month_labels: list[str] = []
+    last_month: int | None = None
+    for column in columns:
+        first = next((c for c in column if c is not None), None)
+        if first is not None and first.date.month != last_month:
+            month_labels.append(_MONTH_ABBR[first.date.month - 1])
+            last_month = first.date.month
+        else:
+            month_labels.append("")
+
+    grid = SeasonGrid(columns=columns, month_labels=month_labels, season_label="25/26")
+    return (
+        {
+            "caption": "Full season — all cell states",
+            "context": {"season_calendar": grid},
+        },
+    )
+
+
+SEASON_CALENDAR_VARIANTS: tuple[dict[str, Any], ...] = _build_season_calendar_variants()
+
+
 DAY_CHARACTER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Hard-to-read day",

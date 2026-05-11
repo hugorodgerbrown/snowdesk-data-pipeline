@@ -1,0 +1,48 @@
+{% comment %}
+public/templates/public/partials/_season_calendar_demo.html
+
+Component-library–only view of the season heatmap grid. Shows the calendar
+inline without the slide-down sheet chrome (no backdrop, no dialog, no JS).
+Used by the /_components/?slug=season-calendar panel so designers can iterate
+on cell appearance without loading a real region page.
+
+Context:
+    season_calendar : SeasonGrid   — synthetic fixture from _component_fixtures.py
+{% endcomment %}
+<div class="overflow-x-auto bg-bg py-4 px-3">
+    <div data-testid="season-calendar" class="inline-block">
+        <div class="flex mb-1">
+            {% for label in season_calendar.month_labels %}
+                <div class="season-cell-wrap text-text-3 calendar-cell-label">{{ label }}</div>
+            {% endfor %}
+        </div>
+        <div class="flex">
+            {% for column in season_calendar.columns %}
+                <div class="flex flex-col shrink-0">
+                    {% for cell in column %}
+                        {% if cell is None %}
+                            <div class="season-cell-wrap">
+                                <div class="calendar-cell"></div>
+                            </div>
+                        {% else %}
+                            <div class="season-cell-wrap" data-month-parity="{{ cell.month_parity }}">
+                                <div
+                                    class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
+                                    {% if cell.has_bulletin %}
+                                        data-rating-min="{{ cell.min_rating_key }}"
+                                        data-rating-max="{{ cell.max_rating_key }}"
+                                        title="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
+                                    {% else %}
+                                        title="{{ cell.date|date:'D j N' }}"
+                                    {% endif %}
+                                >
+                                    {{ cell.date|date:'j' }}
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>

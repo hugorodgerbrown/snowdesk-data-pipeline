@@ -111,6 +111,30 @@ reachable via the SNOW-81 deep-link in the masthead.
                     setState(sheet.dataset.seasonSheet === 'open' ? 'closed' : 'open');
                 });
                 sheet.querySelectorAll('[data-season-dismiss]').forEach(function (el) {
+                    if (el.tagName === 'BUTTON') {
+                        // ✕ close button — plain click is fine, no scroll conflict.
+                        el.addEventListener('click', function () { setState('closed'); });
+                        return;
+                    }
+                    // Backdrop — touch-aware: only dismiss if finger didn't move (not a scroll).
+                    var t0x = 0, t0y = 0;
+                    el.addEventListener('touchstart', function (e) {
+                        t0x = e.touches[0].clientX;
+                        t0y = e.touches[0].clientY;
+                        el.classList.add('is-pressing');
+                    }, { passive: true });
+                    el.addEventListener('touchend', function (e) {
+                        el.classList.remove('is-pressing');
+                        var dx = e.changedTouches[0].clientX - t0x;
+                        var dy = e.changedTouches[0].clientY - t0y;
+                        if (dx * dx + dy * dy < 64) {
+                            e.preventDefault();
+                            setState('closed');
+                        }
+                    });
+                    el.addEventListener('touchcancel', function () {
+                        el.classList.remove('is-pressing');
+                    });
                     el.addEventListener('click', function () { setState('closed'); });
                 });
                 document.addEventListener('keydown', function (e) {
