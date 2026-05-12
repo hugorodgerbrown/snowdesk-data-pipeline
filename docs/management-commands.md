@@ -141,6 +141,12 @@ ignored downstream — it's the fetch that's being optimised).
 
 ## `fetch_weather` — fetch today's Open-Meteo weather for all regions
 
+> **Legacy batch path.** As of SNOW-159 the primary live path for per-region
+> weather data is the HTMX-triggered `public:weather_snippet` view, which
+> fires a just-in-time fetch when a bulletin page renders without a
+> `WeatherSnapshot`. `fetch_weather` is retained for manual probing and one-off
+> bulk fetches; use `backfill_weather` for historical catch-up runs.
+
 Reads weather data from the Open-Meteo forecast API and optionally
 writes `WeatherSnapshot` rows (one per region). Read-only by default;
 the API is always called even without `--commit`, making a bare
