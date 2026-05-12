@@ -51,6 +51,7 @@ without change.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime
@@ -579,3 +580,75 @@ def backfill_all_regions(
         counts["skipped"],
     )
     return counts
+
+
+def fetch_weather_async(region: MicroRegion, target_date: date) -> None:
+    """
+    Schedule an inline weather fetch on a background daemon thread.
+
+    Used by ``bulletin_detail`` on past-date renders when no snapshot exists:
+    the page returns immediately; the worker thread checks the DB (idempotent
+    guard against thundering herd), then calls the archive or forecast
+    fetcher and persists the snapshot. By the time the user clicks the
+    prefetched link the snapshot is almost always in the DB and the fresh
+    render bakes weather inline — no HTMX swap, no flash.
+
+    Runs synchronously when ``settings.WEATHER_FETCH_ASYNC`` is ``False``
+    (tests pin this in tests/conftest.py) so the fetch outcome is
+    deterministic in tests.
+
+    Failures inside the worker are caught and logged at WARNING; they never
+    propagate to the caller (the response has already been sent). The
+    ``finally`` clause closes the per-thread DB connection so the connection
+    pool does not leak entries on long-running gunicorn workers. The close
+    is skipped on the main thread (e.g. sync-mode tests) to avoid closing
+    the test's transaction connection mid-test.
+
+    Args:
+        region: MicroRegion the bulletin page is for.
+        target_date: Calendar day the page represents.
+
+    """
+
+    def _worker() -> None:
+        try:
+            # Re-check DB inside the worker — another request may have
+            # scheduled (and completed) the same fetch in the meantime.
+            if (
+                WeatherSnapshot.objects.for_date(target_date)
+                .filter(region=region)
+                .exists()
+            ):
+                return
+            today = django_timezone.localdate()
+            if target_date < today:
+                fetch_archive_for_region(region, target_date, target_date, commit=True)
+            else:
+                fetch_weather_for_region(region, target_date, commit=True)
+        except Exception:  # noqa: BLE001 — broad catch intentional: async failure must not surface to caller
+            logger.warning(
+                "fetch_weather_async failed: region=%s date=%s",
+                region.region_id,
+                target_date,
+                exc_info=True,
+            )
+        finally:
+            # Each background thread opens its own DB connection lazily;
+            # close it before exit so the pool does not accumulate idle
+            # connections under sustained traffic. Skip on the main thread
+            # (sync mode in tests) to avoid closing the test's transaction
+            # connection mid-test.
+            if threading.current_thread() is not threading.main_thread():
+                from django.db import connections
+
+                connections.close_all()
+
+    if not getattr(settings, "WEATHER_FETCH_ASYNC", True):
+        _worker()
+        return
+
+    threading.Thread(
+        target=_worker,
+        daemon=True,
+        name=f"weather-{region.region_id}-{target_date.isoformat()}",
+    ).start()
