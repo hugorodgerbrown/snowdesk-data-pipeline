@@ -74,6 +74,16 @@ poetry run python manage.py rebuild_render_models --commit  # persist
 
 # Flags: --commit, --all (every row), --bulletin-id <id> (single row), --batch-size N
 
+# Re-derive every RegionDayRating row under the current v5 headline-only policy
+# (min_rating = max_rating = headline danger key). Intended as a post-deployment
+# step after a day-rating policy change. Read-only by default.
+poetry run python manage.py recompute_day_ratings                    # read-only
+poetry run python manage.py recompute_day_ratings --commit           # persist all pairs
+poetry run python manage.py recompute_day_ratings \
+    --start-date 2026-01-01 --end-date 2026-04-30 --commit          # narrow window
+
+# Flags: --commit, --start-date YYYY-MM-DD, --end-date YYYY-MM-DD
+
 # Compare SQL query counts against the committed baseline (SNOW-13).
 # Read-only by default — --commit rewrites perf/query_counts.txt.
 poetry run python manage.py monitor_query_counts           # CI / local gate
