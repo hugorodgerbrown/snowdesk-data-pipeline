@@ -53,7 +53,10 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third-party
     "django_htmx",
-    "csp",
+    # ``core.apps.BootstrapTolerantCSPTrackerConfig`` is a thin subclass of
+    # ``csp.apps.CSPTrackerConfig`` that tolerates a missing ``django_cache``
+    # table on first boot — see core/apps.py for the why.
+    "core.apps.BootstrapTolerantCSPTrackerConfig",
     "waffle",
     # Local
     "core",
