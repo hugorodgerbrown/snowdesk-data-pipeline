@@ -53,12 +53,13 @@ from tests.factories import (
 _HTMX_HEADERS = {"HTTP_HX_REQUEST": "true"}
 
 
+_TOKEN_BACKEND = "subscriptions.backends.TokenBackend"
+
+
 def _make_session_client(subscriber: Subscriber) -> Client:
-    """Return a test client with subscriber_uuid set in the session."""
+    """Return a test client logged in as subscriber via Django auth."""
     client = Client()
-    session = client.session
-    session["subscriber_uuid"] = str(subscriber.uuid)
-    session.save()
+    client.force_login(subscriber, backend=_TOKEN_BACKEND)
     return client
 
 
@@ -396,7 +397,7 @@ class TestAccountView:
         assert sub.confirmed_at.tzinfo is not None
 
     def test_valid_token_sets_session(self):
-        """Session is populated with subscriber_uuid after successful token click."""
+        """Django auth session is established after successful token click."""
         SubscriberFactory.create(
             email="session@example.com", status=Subscriber.Status.PENDING
         )
@@ -404,7 +405,7 @@ class TestAccountView:
         client = Client()
         client.get(reverse("subscriptions:account", kwargs={"token": token}))
         sub = Subscriber.objects.get(email="session@example.com")
-        assert client.session.get("subscriber_uuid") == str(sub.uuid)
+        assert client.session.get("_auth_user_id") == str(sub.pk)
 
     def test_idempotent_on_re_click_does_not_re_stamp_confirmed_at(self):
         """Re-clicking the same link for an already-active subscriber does not re-stamp confirmed_at."""
@@ -481,7 +482,19 @@ class TestAccountView:
 
 @pytest.mark.django_db
 class TestManageViewUnauthenticated:
-    """Tests for manage_view without a session."""
+    """Unauthenticated GET on manage_view redirects to sign_in."""
+
+    def test_get_redirects_to_sign_in(self):
+        """Unauthenticated GET on manage redirects to the sign-in page."""
+        client = Client()
+        response = client.get(reverse("subscriptions:manage"))
+        assert response.status_code == 302
+        assert response["Location"] == reverse("subscriptions:sign_in")
+
+
+@pytest.mark.django_db
+class TestSignInView:
+    """Tests for the dedicated sign_in_view."""
 
     @pytest.fixture(autouse=True)
     def use_locmem_backend(self, settings):
@@ -489,18 +502,26 @@ class TestManageViewUnauthenticated:
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def test_get_returns_200_with_email_form(self):
-        """Unauthenticated GET renders the email entry form."""
+        """GET renders the email entry form."""
         client = Client()
-        response = client.get(reverse("subscriptions:manage"))
+        response = client.get(reverse("subscriptions:sign_in"))
         assert response.status_code == 200
         assert b"email" in response.content.lower()
 
+    def test_authenticated_get_redirects_to_manage(self):
+        """Authenticated subscriber hitting sign-in is redirected to manage."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("subscriptions:sign_in"))
+        assert response.status_code == 302
+        assert "/subscribe/manage/" in response["Location"]
+
     def test_post_known_email_sends_account_access_email(self):
-        """Known email on unauthenticated POST → account access email sent."""
+        """Known email on POST → account access email sent."""
         SubscriberFactory.create(email="known@example.com")
         client = Client()
         response = client.post(
-            reverse("subscriptions:manage"),
+            reverse("subscriptions:sign_in"),
             data={"email": "known@example.com"},
         )
         assert response.status_code == 200
@@ -508,12 +529,10 @@ class TestManageViewUnauthenticated:
         assert "Snowdesk" in mail.outbox[0].subject
 
     def test_post_unknown_email_creates_subscriber_and_sends_email(self):
-        """Unknown email on unauthenticated POST → subscriber created, email sent."""
-        from subscriptions.models import Subscriber
-
+        """Unknown email on POST → subscriber created, email sent."""
         client = Client()
         response = client.post(
-            reverse("subscriptions:manage"),
+            reverse("subscriptions:sign_in"),
             data={"email": "brandnew@example.com"},
         )
         assert response.status_code == 200
@@ -521,21 +540,17 @@ class TestManageViewUnauthenticated:
         assert Subscriber.objects.filter(email="brandnew@example.com").exists()
 
     def test_post_known_email_response_identical_to_unknown(self):
-        """Responses for known and unknown emails must be byte-equal."""
+        """Responses for known and unknown emails must be byte-equal (anti-enumeration)."""
         SubscriberFactory.create(email="exists@example.com")
         client = Client()
         resp_known = client.post(
-            reverse("subscriptions:manage"),
+            reverse("subscriptions:sign_in"),
             data={"email": "exists@example.com"},
         )
         resp_unknown = client.post(
-            reverse("subscriptions:manage"),
+            reverse("subscriptions:sign_in"),
             data={"email": "nosuchuser@example.com"},
         )
-        # CSP nonces are request-scoped, so every response embeds a unique
-        # random value — strip nonce="…" attributes before comparing, so
-        # the email-enumeration check stays tight without falsely tripping
-        # on the per-request CSP noise.
         import re
 
         nonce_re = re.compile(rb'\s?nonce="[^"]+"')
@@ -544,36 +559,39 @@ class TestManageViewUnauthenticated:
         )
 
     def test_post_invalid_email_rerenders_form(self):
-        """Invalid email on unauthenticated POST re-renders the form with errors."""
+        """Invalid email on POST re-renders the form with validation errors."""
         client = Client()
         response = client.post(
-            reverse("subscriptions:manage"),
+            reverse("subscriptions:sign_in"),
             data={"email": "not-valid"},
         )
         assert response.status_code == 200
         assert b"valid email" in response.content.lower()
 
     def test_rate_limit_returns_429(self):
-        """Exceeding rate limit on the unauthenticated manage POST returns 429."""
+        """Exceeding rate limit on sign-in POST returns 429."""
+        from django.contrib.auth.models import AnonymousUser
+
+        from subscriptions.views import sign_in_view
+
         rf = RequestFactory()
         request = rf.post(
-            reverse("subscriptions:manage"),
+            reverse("subscriptions:sign_in"),
             data={"email": "rl@example.com"},
         )
-
-        from subscriptions.views import _manage_unauthenticated
+        request.user = AnonymousUser()  # noqa: B010 — set on test request object
 
         with patch(
             "subscriptions.views.get_usage",
             return_value={"should_limit": True},
         ):
-            response = _manage_unauthenticated(request)
+            response = sign_in_view(request)
         assert response.status_code == 429
 
 
 @pytest.mark.django_db
-class TestManagePostTimingSideChannel:
-    """SNOW-26: known vs unknown email POST must not leak via response time."""
+class TestSignInPostTimingSideChannel:
+    """SNOW-26: known vs unknown email POST on sign_in must not leak via response time."""
 
     @override_settings(
         SUBSCRIPTIONS_EMAIL_ASYNC=True,
@@ -585,7 +603,7 @@ class TestManagePostTimingSideChannel:
         client = Client()
         # Warm-up — first request pays template-cache and DB-connection cost.
         client.post(
-            reverse("subscriptions:manage"),
+            reverse("subscriptions:sign_in"),
             data={"email": "warm@example.com"},
         )
 
@@ -595,13 +613,13 @@ class TestManagePostTimingSideChannel:
         for i in range(n):
             t0 = time.perf_counter()
             client.post(
-                reverse("subscriptions:manage"),
+                reverse("subscriptions:sign_in"),
                 data={"email": "known@example.com"},
             )
             known_times.append(time.perf_counter() - t0)
             t0 = time.perf_counter()
             client.post(
-                reverse("subscriptions:manage"),
+                reverse("subscriptions:sign_in"),
                 data={"email": f"u{i}@example.com"},
             )
             unknown_times.append(time.perf_counter() - t0)
@@ -681,14 +699,14 @@ class TestManageViewAuthenticated:
         # The banner contains a specific phrase; assert it's absent
         assert b"Your subscription is confirmed" not in response.content
 
-    def test_stale_session_uuid_returns_unauthenticated_view(self):
-        """A session with a deleted subscriber UUID should show email entry form."""
+    def test_stale_session_redirects_to_sign_in(self):
+        """A session whose subscriber was deleted redirects to sign-in."""
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         subscriber.delete()
         response = client.get(reverse("subscriptions:manage"))
-        assert response.status_code == 200
-        assert b"Send account link" in response.content
+        assert response.status_code == 302
+        assert reverse("subscriptions:sign_in") in response["Location"]
 
     def test_get_shows_map_cta_link(self):
         """Authenticated manage page contains the 'Choose more regions on the map' link."""
@@ -835,7 +853,7 @@ class TestDeleteAccount:
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         client.post(reverse("subscriptions:delete_account"), **_HTMX_HEADERS)
-        assert "subscriber_uuid" not in client.session
+        assert "_auth_user_id" not in client.session
 
     def test_responds_with_hx_redirect(self):
         """Response includes HX-Redirect header pointing to unsubscribe-done."""
@@ -883,14 +901,11 @@ class TestSignOut:
 
     def test_clears_session_and_redirects(self):
         subscriber = SubscriberFactory.create()
-        client = Client()
-        session = client.session
-        session["subscriber_uuid"] = str(subscriber.uuid)
-        session.save()
+        client = _make_session_client(subscriber)
         response = client.post(reverse("subscriptions:sign_out"))
         assert response.status_code == 302
-        assert response["Location"] == reverse("subscriptions:manage")
-        assert "subscriber_uuid" not in client.session
+        assert response["Location"] == reverse("subscriptions:sign_in")
+        assert "_auth_user_id" not in client.session
 
     def test_get_not_allowed(self):
         client = Client()
@@ -1086,15 +1101,15 @@ class TestEmailNormalisation:
         self._subscribe("ALICE@EXAMPLE.COM", region.region_id)
         assert Subscriber.objects.filter(email="alice@example.com").exists()
 
-    def test_manage_view_post_looks_up_normalised_email(self):
-        """manage_view POST for a mixed-case address finds the lowercase subscriber."""
+    def test_sign_in_post_looks_up_normalised_email(self):
+        """sign_in_view POST for a mixed-case address finds the lowercase subscriber."""
         subscriber = SubscriberFactory.create(
             email="bob@example.com", status=Subscriber.Status.ACTIVE
         )
         client = Client()
         with patch("subscriptions.views.send_account_access_email") as mock_send:
             client.post(
-                reverse("subscriptions:manage"),
+                reverse("subscriptions:sign_in"),
                 data={"email": "BOB@EXAMPLE.COM"},
             )
         mock_send.assert_called_once_with(

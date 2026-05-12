@@ -32,12 +32,13 @@ from tests.factories import PasskeyCredentialFactory, SubscriberFactory
 _HTMX_HEADERS = {"HTTP_HX_REQUEST": "true"}
 
 
+_TOKEN_BACKEND = "subscriptions.backends.TokenBackend"
+
+
 def _make_session_client(subscriber) -> Client:
-    """Return a test Client with subscriber_uuid in the session."""
+    """Return a test Client logged in as subscriber via Django auth."""
     client = Client()
-    session = client.session
-    session["subscriber_uuid"] = str(subscriber.uuid)
-    session.save()
+    client.force_login(subscriber, backend=_TOKEN_BACKEND)
     return client
 
 
@@ -114,7 +115,7 @@ class TestPasskeyAuthResponse:
         assert resp.status_code == 200
         data = json.loads(resp.content)
         assert data["ok"] is True
-        assert client.session.get("subscriber_uuid") == str(subscriber.uuid)
+        assert client.session.get("_auth_user_id") == str(subscriber.pk)
 
     def test_unknown_credential_returns_404(self):
         client = Client()

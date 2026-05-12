@@ -23,14 +23,12 @@ entry inside the library.
 from __future__ import annotations
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.contrib.staticfiles.finders import find as find_static
 from django.test import Client
 from django.urls import reverse
 
 from public.design_tokens import LIBRARY_GROUPS, IconToken
-
-User = get_user_model()
+from tests.factories import SubscriberFactory, UserFactory
 
 
 def _all_categories():
@@ -45,22 +43,14 @@ def _all_slugs() -> list[str]:
 
 @pytest.fixture()
 def staff_user(db):
-    """Return a staff Django user."""
-    return User.objects.create_user(
-        username="staff",
-        password="pass",  # noqa: S106 — test-only credential, not real
-        is_staff=True,
-    )
+    """Return a staff Subscriber."""
+    return UserFactory.create()
 
 
 @pytest.fixture()
 def regular_user(db):
-    """Return a non-staff Django user."""
-    return User.objects.create_user(
-        username="regular",
-        password="pass",  # noqa: S106 — test-only credential, not real
-        is_staff=False,
-    )
+    """Return a non-staff Subscriber."""
+    return SubscriberFactory.create()
 
 
 @pytest.fixture()

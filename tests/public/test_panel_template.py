@@ -12,13 +12,15 @@ tests against ``_enrich_render_model_problem``.
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.test import Client
 from django.urls import reverse
 
-from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
-
-User = get_user_model()
+from tests.factories import (
+    BulletinFactory,
+    MicroRegionFactory,
+    RegionBulletinFactory,
+    UserFactory,
+)
 
 
 def _make_am_bulletin(region, day, **kwargs):
@@ -49,12 +51,8 @@ def region():
 
 @pytest.fixture()
 def staff_user(db):
-    """Return a staff Django user."""
-    return User.objects.create_user(
-        username="staff",
-        password="pass",  # noqa: S106  — test-only credential, not real
-        is_staff=True,
-    )
+    """Return a staff Subscriber."""
+    return UserFactory.create()
 
 
 @pytest.fixture()

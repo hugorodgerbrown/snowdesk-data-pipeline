@@ -114,6 +114,8 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "django.template.context_processors.i18n",
+                # Injects nav_subscriptions for the subscriber avatar dropdown.
+                "subscriptions.context_processors.nav_subscriptions",
             ],
         },
     },
@@ -159,6 +161,21 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # ---------------------------------------------------------------------------
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# ---------------------------------------------------------------------------
+# Custom user model
+# ---------------------------------------------------------------------------
+# Subscriber is the single identity for both end users (magic-link / passkey
+# auth) and staff (password auth via Django admin).
+
+AUTH_USER_MODEL = "subscriptions.Subscriber"
+
+AUTHENTICATION_BACKENDS = [
+    # Verifies signed magic-link tokens; used by account_view and passkey auth.
+    "subscriptions.backends.TokenBackend",
+    # Standard Django password backend; used by the admin login form for staff.
+    "django.contrib.auth.backends.ModelBackend",
+]
 
 # ---------------------------------------------------------------------------
 # Logging

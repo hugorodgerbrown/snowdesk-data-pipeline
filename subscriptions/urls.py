@@ -6,8 +6,9 @@ All URLs are mounted under the ``/subscribe/`` prefix by the root URLconf.
 URL map
 -------
 /subscribe/                              subscribe              POST-only HTMX form
+/subscribe/sign-in/                     sign_in                GET/POST — sign-in page
 /subscribe/account/<token>/             account                GET — verify token
-/subscribe/manage/                      manage                 GET/POST — mgmt page
+/subscribe/manage/                      manage                 GET — authenticated
 /subscribe/manage/remove/<region_id>/   remove_region          POST HTMX
 /subscribe/manage/delete/               delete_account         POST HTMX
 /subscribe/manage/passkeys/<uuid>/delete/ passkey_delete       POST HTMX
@@ -28,6 +29,7 @@ app_name = "subscriptions"
 
 urlpatterns = [
     path("", views.subscribe_partial, name="subscribe"),
+    path("sign-in/", views.sign_in_view, name="sign_in"),
     path("account/<str:token>/", views.account_view, name="account"),
     path("manage/", views.manage_view, name="manage"),
     path("manage/remove/<str:region_id>/", views.remove_region, name="remove_region"),

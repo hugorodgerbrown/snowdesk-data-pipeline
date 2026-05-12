@@ -2,20 +2,16 @@
 {% comment %}
 subscriptions/templates/subscriptions/manage.html — Subscription management page.
 
-Two modes depending on whether the visitor has a valid session:
+Always rendered for an authenticated subscriber (the view redirects
+unauthenticated visitors to /subscribe/sign-in/ before this template is
+reached).
 
-authenticated=False (no session):
-    Shows an email entry form. POST sends an account-access link.
-    The email input has autocomplete="username webauthn" so the browser
-    surfaces registered passkeys via conditional UI autofill.
-
-authenticated=True (session present):
-    Shows one card per subscribed region, ordered by region name.
-    Each card shows the region name, region ID, and resort list.
-    A per-region "Remove" button POSTs to subscriptions:remove_region via HTMX.
-    A "Choose more regions on the map" link routes to /map/.
-    A passkeys section lists registered platform passkeys with delete buttons.
-    A destructive "Unsubscribe from all alerts" button hard-deletes the subscriber.
+Shows one card per subscribed region, ordered by region name. Each card
+shows the region name, region ID, and resort list. A per-region "Remove"
+button POSTs to subscriptions:remove_region via HTMX. A "Choose more
+regions on the map" link routes to /map/. A passkeys section lists
+registered platform passkeys with delete buttons. A destructive
+"Unsubscribe from all alerts" button hard-deletes the subscriber.
 {% endcomment %}
 {% load i18n static %}
 
@@ -34,366 +30,261 @@ authenticated=True (session present):
 {% block content %}
     <div class="px-4 py-10">
         <div class="max-w-[640px] mx-auto">
-            {% if authenticated %}
+            {% comment %}
+                hx-headers on this wrapper injects the CSRF token on every
+                HTMX POST below (Remove, Unsubscribe-from-all).  HTMX
+                inherits hx-headers from ancestors, so we set it once here
+                rather than on each button.
+            {% endcomment %}
+            <div hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
                 {% comment %}
-                    Authenticated: subscriptions dashboard.
-
-                    hx-headers on this wrapper injects the CSRF token on every
-                    HTMX POST below (Remove, Unsubscribe-from-all).  HTMX
-                    inherits hx-headers from ancestors, so we set it once here
-                    rather than on each button.
+                    Silent error banner — revealed by JS on htmx:responseError
+                    so users see feedback when a Remove/Delete POST fails
+                    (e.g. CSRF rejection, rate limit, network).
                 {% endcomment %}
-                <div hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-                    {% comment %}
-                        Silent error banner — revealed by JS on htmx:responseError
-                        so users see feedback when a Remove/Delete POST fails
-                        (e.g. CSRF rejection, rate limit, network).
-                    {% endcomment %}
-                    <div
-                        id="htmx-error-banner"
-                        role="alert"
-                        aria-live="polite"
-                        class="hidden mb-6 bg-card rounded-[12px] border border-form-error/40 px-5 py-4 shadow-sm"
-                    >
+                <div
+                    id="htmx-error-banner"
+                    role="alert"
+                    aria-live="polite"
+                    class="hidden mb-6 bg-card rounded-[12px] border border-form-error/40 px-5 py-4 shadow-sm"
+                >
+                    <p class="text-sm text-text-1 font-medium">
+                        {% trans "Something went wrong." %}
+                    </p>
+                    <p class="text-sm text-text-2 mt-0.5">
+                        {% trans "Please reload the page and try again." %}
+                    </p>
+                </div>
+
+                {# Optional one-time welcome banner when arriving via confirmation link #}
+                {% if just_confirmed %}
+                    <div class="mb-6 bg-card rounded-[12px] border border-text-3/10 px-5 py-4 shadow-sm">
                         <p class="text-sm text-text-1 font-medium">
-                            {% trans "Something went wrong." %}
+                            {% trans "Your subscription is confirmed." %}
                         </p>
                         <p class="text-sm text-text-2 mt-0.5">
-                            {% trans "Please reload the page and try again." %}
+                            {% trans "You'll receive alerts for the regions below." %}
                         </p>
                     </div>
+                {% endif %}
 
-                    {# Optional one-time welcome banner when arriving via confirmation link #}
-                    {% if just_confirmed %}
-                        <div class="mb-6 bg-card rounded-[12px] border border-text-3/10 px-5 py-4 shadow-sm">
-                            <p class="text-sm text-text-1 font-medium">
-                                {% trans "Your subscription is confirmed." %}
-                            </p>
-                            <p class="text-sm text-text-2 mt-0.5">
-                                {% trans "You'll receive alerts for the regions below." %}
-                            </p>
+                {# Page heading — singular/plural based on subscription count #}
+                <h1 class="text-2xl font-semibold text-text-1 mb-6">
+                    {% blocktrans count count=subscriptions|length trimmed %}
+                        Your subscription
+                    {% plural %}
+                        Your subscriptions
+                    {% endblocktrans %}
+                </h1>
+
+                {# One card per subscribed region #}
+                {% for subscription in subscriptions %}
+                    <div class="subscription-card bg-card rounded-[12px] border border-text-3/10 shadow-sm p-6 mb-4">
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="min-w-0">
+                                <h2 class="text-lg font-semibold text-text-1 leading-snug">
+                                    {{ subscription.region.name }}
+                                </h2>
+                                <p class="font-mono text-xs text-text-3 mt-0.5">
+                                    {{ subscription.region.region_id }}
+                                </p>
+                            </div>
+                            <button
+                                hx-post="{% url 'subscriptions:remove_region' region_id=subscription.region.region_id %}"
+                                hx-target="closest .subscription-card"
+                                hx-swap="outerHTML"
+                                class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-[6px] px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                            >
+                                {% trans "Remove" %}
+                            </button>
                         </div>
-                    {% endif %}
 
-                    {# Page heading — singular/plural based on subscription count #}
-                    <h1 class="text-2xl font-semibold text-text-1 mb-6">
-                        {% blocktrans count count=subscriptions|length trimmed %}
-                            Your subscription
-                        {% plural %}
-                            Your subscriptions
-                        {% endblocktrans %}
-                    </h1>
+                        {# Resort list — omit entirely when empty #}
+                        {% with resorts=subscription.region.resorts.all %}
+                            {% if resorts %}
+                                <p class="mt-3 text-sm text-text-2 leading-relaxed">
+                                    {% for resort in resorts %}{{ resort.name }}{% if not forloop.last %},
+                                        {% endif %}{% endfor %}
+                                </p>
+                            {% endif %}
+                        {% endwith %}
+                    </div>
+                {% empty %}
+                    <div class="bg-card rounded-[12px] border border-text-3/10 shadow-sm px-6 py-8 text-center mb-4">
+                        <p class="text-sm text-text-2">
+                            {% trans "You have no active subscriptions." %}
+                        </p>
+                    </div>
+                {% endfor %}
 
-                    {# One card per subscribed region #}
-                    {% for subscription in subscriptions %}
-                        <div class="subscription-card bg-card rounded-[12px] border border-text-3/10 shadow-sm p-6 mb-4">
-                            <div class="flex items-start justify-between gap-4">
+                {# Map CTA — choose more regions #}
+                <div class="mt-2 mb-10">
+                    <a
+                        href="{% url 'public:map' %}"
+                        class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+                    >
+                        {% trans "Choose more regions on the map →" %}
+                    </a>
+                </div>
+
+                {% comment %}
+                    Passkeys section — lists registered platform passkeys with
+                    delete buttons, and offers a "add passkey" button.
+
+                    just_confirmed=True + no passkeys → show a prominent prompt
+                    to register this device right now.
+                {% endcomment %}
+                <div class="mb-10">
+                    <h2 class="text-lg font-semibold text-text-1 mb-4">
+                        {% trans "Passkeys" %}
+                    </h2>
+
+                    {% with passkeys=subscriber.passkeys.all %}
+                        {% if just_confirmed and not passkeys %}
+                            {# Prominent first-time registration prompt #}
+                            <div
+                                id="passkey-prompt"
+                                class="bg-card rounded-[12px] border border-text-3/10 shadow-sm px-5 py-4 mb-4"
+                            >
+                                <p class="text-sm text-text-1 font-medium mb-1">
+                                    {% trans "Sign in faster with a passkey" %}
+                                </p>
+                                <p class="text-sm text-text-2 mb-3 leading-relaxed">
+                                    {% trans "Save a passkey for this device and you won't need a magic link next time." %}
+                                </p>
+                                <button
+                                    id="btn-register-passkey"
+                                    type="button"
+                                    class="text-sm bg-text-1 text-card px-4 py-2 rounded-[8px] font-medium hover:opacity-90 transition-opacity"
+                                >
+                                    {% trans "Save a passkey for this device" %}
+                                </button>
+                            </div>
+                        {% endif %}
+
+                        {# Existing passkey cards #}
+                        {% for passkey in passkeys %}
+                            <div class="passkey-card bg-card rounded-[12px] border border-text-3/10 shadow-sm p-4 mb-3 flex items-center justify-between gap-4">
                                 <div class="min-w-0">
-                                    <h2 class="text-lg font-semibold text-text-1 leading-snug">
-                                        {{ subscription.region.name }}
-                                    </h2>
-                                    <p class="font-mono text-xs text-text-3 mt-0.5">
-                                        {{ subscription.region.region_id }}
+                                    <p class="text-sm font-medium text-text-1 truncate">
+                                        {{ passkey.display_name }}
+                                    </p>
+                                    <p class="text-xs text-text-3 mt-0.5">
+                                        {% if passkey.last_used_at %}
+                                            {% blocktrans with date=passkey.last_used_at|date:"j N Y" trimmed %}
+                                                Last used {{ date }}
+                                            {% endblocktrans %}
+                                        {% else %}
+                                            {% trans "Never used" %}
+                                        {% endif %}
                                     </p>
                                 </div>
                                 <button
-                                    hx-post="{% url 'subscriptions:remove_region' region_id=subscription.region.region_id %}"
-                                    hx-target="closest .subscription-card"
+                                    hx-post="{% url 'subscriptions:passkey_delete' passkey_uuid=passkey.uuid %}"
+                                    hx-target="closest .passkey-card"
                                     hx-swap="outerHTML"
+                                    hx-confirm='{% trans "Remove this passkey?" %}'
                                     class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-[6px] px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
                                 >
                                     {% trans "Remove" %}
                                 </button>
                             </div>
+                        {% endfor %}
 
-                            {# Resort list — omit entirely when empty #}
-                            {% with resorts=subscription.region.resorts.all %}
-                                {% if resorts %}
-                                    <p class="mt-3 text-sm text-text-2 leading-relaxed">
-                                        {% for resort in resorts %}{{ resort.name }}{% if not forloop.last %},
-                                            {% endif %}{% endfor %}
-                                    </p>
-                                {% endif %}
-                            {% endwith %}
-                        </div>
-                    {% empty %}
-                        <div class="bg-card rounded-[12px] border border-text-3/10 shadow-sm px-6 py-8 text-center mb-4">
-                            <p class="text-sm text-text-2">
-                                {% trans "You have no active subscriptions." %}
-                            </p>
-                        </div>
-                    {% endfor %}
-
-                    {# Map CTA — choose more regions #}
-                    <div class="mt-2 mb-10">
-                        <a
-                            href="{% url 'public:map' %}"
-                            class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
-                        >
-                            {% trans "Choose more regions on the map →" %}
-                        </a>
-                    </div>
-
-                    {% comment %}
-                        Passkeys section — lists registered platform passkeys with
-                        delete buttons, and offers a "add passkey" button.
-
-                        just_confirmed=True + no passkeys → show a prominent prompt
-                        to register this device right now.
-                    {% endcomment %}
-                    <div class="mb-10">
-                        <h2 class="text-lg font-semibold text-text-1 mb-4">
-                            {% trans "Passkeys" %}
-                        </h2>
-
-                        {% with passkeys=subscriber.passkeys.all %}
-                            {% if just_confirmed and not passkeys %}
-                                {# Prominent first-time registration prompt #}
-                                <div
-                                    id="passkey-prompt"
-                                    class="bg-card rounded-[12px] border border-text-3/10 shadow-sm px-5 py-4 mb-4"
-                                >
-                                    <p class="text-sm text-text-1 font-medium mb-1">
-                                        {% trans "Sign in faster with a passkey" %}
-                                    </p>
-                                    <p class="text-sm text-text-2 mb-3 leading-relaxed">
-                                        {% trans "Save a passkey for this device and you won't need a magic link next time." %}
-                                    </p>
-                                    <button
-                                        id="btn-register-passkey"
-                                        type="button"
-                                        class="text-sm bg-text-1 text-card px-4 py-2 rounded-[8px] font-medium hover:opacity-90 transition-opacity"
-                                    >
-                                        {% trans "Save a passkey for this device" %}
-                                    </button>
-                                </div>
-                            {% endif %}
-
-                            {# Existing passkey cards #}
-                            {% for passkey in passkeys %}
-                                <div class="passkey-card bg-card rounded-[12px] border border-text-3/10 shadow-sm p-4 mb-3 flex items-center justify-between gap-4">
-                                    <div class="min-w-0">
-                                        <p class="text-sm font-medium text-text-1 truncate">
-                                            {{ passkey.display_name }}
-                                        </p>
-                                        <p class="text-xs text-text-3 mt-0.5">
-                                            {% if passkey.last_used_at %}
-                                                {% blocktrans with date=passkey.last_used_at|date:"j N Y" trimmed %}
-                                                    Last used {{ date }}
-                                                {% endblocktrans %}
-                                            {% else %}
-                                                {% trans "Never used" %}
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                    <button
-                                        hx-post="{% url 'subscriptions:passkey_delete' passkey_uuid=passkey.uuid %}"
-                                        hx-target="closest .passkey-card"
-                                        hx-swap="outerHTML"
-                                        hx-confirm='{% trans "Remove this passkey?" %}'
-                                        class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-[6px] px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
-                                    >
-                                        {% trans "Remove" %}
-                                    </button>
-                                </div>
-                            {% endfor %}
-
-                            {# "Add a passkey" button — always shown when we have one or more #}
-                            {% if passkeys or not just_confirmed %}
-                                <button
-                                    id="btn-register-passkey"
-                                    type="button"
-                                    class="text-sm text-text-2 border border-text-3/30 rounded-[8px] px-4 py-2 hover:text-text-1 hover:border-text-2 transition-colors"
-                                >
-                                    {% trans "Add a passkey for this device" %}
-                                </button>
-                            {% endif %}
-                        {% endwith %}
-
-                        {# Passkey feedback banner — shown/hidden by JS #}
-                        <div
-                            id="passkey-feedback"
-                            role="status"
-                            aria-live="polite"
-                            class="hidden mt-4 text-sm text-text-2"
-                        >
-                        </div>
-                    </div>
-
-                    {% comment %}
-                        Destructive account deletion — visually separated,
-                        small, muted.  hx-confirm stays here: deleting the
-                        whole account is irreversible.
-                    {% endcomment %}
-                    <div class="border-t border-border pt-8">
-                        <button
-                            hx-post="{% url 'subscriptions:delete_account' %}"
-                            hx-confirm='{% trans "Unsubscribe from all alerts and delete your account?" %}'
-                            class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
-                        >
-                            {% trans "Unsubscribe from all alerts" %}
-                        </button>
-                    </div>
-                </div>{# /hx-headers wrapper #}
-
-                {% comment %}
-                    Passkey + HTMX error handling scripts.
-                {% endcomment %}
-                <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
-                <script nonce="{{ request.csp_nonce }}">
-                    (function () {
-                        'use strict';
-
-                        /* HTMX error banner */
-                        var banner = document.getElementById("htmx-error-banner");
-                        if (banner) {
-                            document.body.addEventListener("htmx:responseError", function () {
-                                banner.classList.remove("hidden");
-                                banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                            });
-                            document.body.addEventListener("htmx:sendError", function () {
-                                banner.classList.remove("hidden");
-                            });
-                        }
-
-                        /* Passkey registration */
-                        var regBtn = document.getElementById("btn-register-passkey");
-                        var feedback = document.getElementById("passkey-feedback");
-
-                        function showFeedback(msg) {
-                            if (!feedback) return;
-                            feedback.textContent = msg;
-                            feedback.classList.remove("hidden");
-                        }
-
-                        if (regBtn) {
-                            regBtn.addEventListener("click", function () {
-                                regBtn.disabled = true;
-                                window.Passkey.registerPasskey(
-                                    "{% url 'subscriptions:passkey_register_request' %}",
-                                    "{% url 'subscriptions:passkey_register_response' %}"
-                                );
-                            });
-                        }
-
-                        document.addEventListener("passkey:registered", function () {
-                            window.location.reload();
-                        });
-                        document.addEventListener("passkey:cancelled", function () {
-                            if (regBtn) regBtn.disabled = false;
-                        });
-                        document.addEventListener("passkey:unsupported", function () {
-                            if (regBtn) regBtn.style.display = "none";
-                        });
-                        document.addEventListener("passkey:error", function (e) {
-                            if (regBtn) regBtn.disabled = false;
-                            showFeedback("{% trans "Passkey registration failed. Please try again." %}");
-                        });
-                    })();
-                </script>
-            {% else %}
-                {# ── Unauthenticated: email entry ── #}
-                <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10">
-                    <h1 class="text-2xl font-semibold text-text-1 mb-2">{% trans "Manage your subscriptions" %}</h1>
-                    <p class="text-text-2 text-sm mb-6 leading-relaxed">
-                        {% trans "Enter your email address and we'll send you a link to manage your regions." %}
-                    </p>
-
-                    <form method="post" novalidate>
-                        {% csrf_token %}
-                        <div class="mb-4">
-                            <label
-                                for="{{ form.email.id_for_label }}"
-                                class="block text-sm font-medium text-text-1 mb-1.5"
+                        {# "Add a passkey" button — always shown when we have one or more #}
+                        {% if passkeys or not just_confirmed %}
+                            <button
+                                id="btn-register-passkey"
+                                type="button"
+                                class="text-sm text-text-2 border border-text-3/30 rounded-[8px] px-4 py-2 hover:text-text-1 hover:border-text-2 transition-colors"
                             >
-                                {% trans "Email address" %}
-                            </label>
-                            {{ form.email }}
-                            {% if form.email.errors %}
-                                <ul class="mt-1.5 space-y-0.5">
-                                    {% for error in form.email.errors %}
-                                        <li class="text-xs text-form-error">{{ error }}</li>
-                                    {% endfor %}
-                                </ul>
-                            {% endif %}
-                        </div>
+                                {% trans "Add a passkey for this device" %}
+                            </button>
+                        {% endif %}
+                    {% endwith %}
 
-                        <button
-                            type="submit"
-                            class="w-full bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
-                        >
-                            {% trans "Send account link" %}
-                        </button>
-                    </form>
-
+                    {# Passkey feedback banner — shown/hidden by JS #}
                     <div
-                        id="passkey-signin-wrap"
-                        class="hidden mt-4 pt-4 border-t border-text-3/10"
+                        id="passkey-feedback"
+                        role="status"
+                        aria-live="polite"
+                        class="hidden mt-4 text-sm text-text-2"
                     >
-                        <button
-                            id="btn-passkey-signin"
-                            type="button"
-                            class="w-full text-sm text-text-2 border border-text-3/30 rounded-[8px] px-5 py-2.5 hover:text-text-1 hover:border-text-2 transition-colors"
-                        >
-                            {% trans "Sign in with a passkey" %}
-                        </button>
-                        <p
-                            id="passkey-auth-feedback"
-                            role="alert"
-                            class="hidden mt-3 text-xs text-form-error"
-                        >
-                        </p>
                     </div>
                 </div>
 
                 {% comment %}
-                    Passkey conditional UI — start on page load.
-                    Aborts when the user focuses the email field to type manually
-                    (the magic-link flow takes over).
+                    Destructive account deletion — visually separated,
+                    small, muted.  hx-confirm stays here: deleting the
+                    whole account is irreversible.
                 {% endcomment %}
-                <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
-                <script nonce="{{ request.csp_nonce }}">
-                    (function () {
-                        'use strict';
+                <div class="border-t border-border pt-8">
+                    <button
+                        hx-post="{% url 'subscriptions:delete_account' %}"
+                        hx-confirm='{% trans "Unsubscribe from all alerts and delete your account?" %}'
+                        class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
+                    >
+                        {% trans "Unsubscribe from all alerts" %}
+                    </button>
+                </div>
+            </div>
+            {# /hx-headers wrapper #}
 
-                        var AUTH_REQUEST_URL = "{% url 'subscriptions:passkey_auth_request' %}";
-                        var AUTH_RESPONSE_URL = "{% url 'subscriptions:passkey_auth_response' %}";
+            {% comment %}
+                Passkey + HTMX error handling scripts.
+            {% endcomment %}
+            <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
+            <script nonce="{{ request.csp_nonce }}">
+                (function () {
+                    'use strict';
 
-                        /* Conditional UI — passkeys surface in email-field autofill dropdown */
-                        window.Passkey.startConditionalSignIn(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
-
-                        /* Explicit passkey sign-in button — reveal only when WebAuthn is available */
-                        var authFeedback = document.getElementById("passkey-auth-feedback");
-
-                        function showAuthError(msg) {
-                            if (!authFeedback) return;
-                            authFeedback.textContent = msg;
-                            authFeedback.classList.remove("hidden");
-                        }
-
-                        if (window.PublicKeyCredential) {
-                            var wrap = document.getElementById("passkey-signin-wrap");
-                            var btn = document.getElementById("btn-passkey-signin");
-                            if (wrap) wrap.classList.remove("hidden");
-                            if (btn) {
-                                btn.addEventListener("click", function () {
-                                    if (authFeedback) authFeedback.classList.add("hidden");
-                                    btn.disabled = true;
-                                    window.Passkey.signInWithPasskey(AUTH_REQUEST_URL, AUTH_RESPONSE_URL)
-                                        .finally(function () { btn.disabled = false; });
-                                });
-                            }
-                        }
-
-                        document.addEventListener("passkey:auth-unknown-credential", function () {
-                            showAuthError("{% trans "The passkey you used could not be found on Snowdesk. Please try a different passkey or use a magic link." %}");
+                    /* HTMX error banner */
+                    var banner = document.getElementById("htmx-error-banner");
+                    if (banner) {
+                        document.body.addEventListener("htmx:responseError", function () {
+                            banner.classList.remove("hidden");
+                            banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
                         });
-                        document.addEventListener("passkey:auth-error", function (e) {
-                            showAuthError("{% trans "Sign-in failed. Please try again or use a magic link." %}");
+                        document.body.addEventListener("htmx:sendError", function () {
+                            banner.classList.remove("hidden");
                         });
-                    })();
-                </script>
-            {% endif %}
+                    }
+
+                    /* Passkey registration */
+                    var regBtn = document.getElementById("btn-register-passkey");
+                    var feedback = document.getElementById("passkey-feedback");
+
+                    function showFeedback(msg) {
+                        if (!feedback) return;
+                        feedback.textContent = msg;
+                        feedback.classList.remove("hidden");
+                    }
+
+                    if (regBtn) {
+                        regBtn.addEventListener("click", function () {
+                            regBtn.disabled = true;
+                            window.Passkey.registerPasskey(
+                                "{% url 'subscriptions:passkey_register_request' %}",
+                                "{% url 'subscriptions:passkey_register_response' %}"
+                            );
+                        });
+                    }
+
+                    document.addEventListener("passkey:registered", function () {
+                        window.location.reload();
+                    });
+                    document.addEventListener("passkey:cancelled", function () {
+                        if (regBtn) regBtn.disabled = false;
+                    });
+                    document.addEventListener("passkey:unsupported", function () {
+                        if (regBtn) regBtn.style.display = "none";
+                    });
+                    document.addEventListener("passkey:error", function () {
+                        if (regBtn) regBtn.disabled = false;
+                        showFeedback("{% trans "Passkey registration failed. Please try again." %}");
+                    });
+                })();
+            </script>
         </div>
     </div>
 {% endblock %}

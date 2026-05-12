@@ -1,0 +1,137 @@
+{% extends "public/base.html" %}
+{% comment %}
+subscriptions/templates/subscriptions/sign_in.html — Dedicated sign-in page.
+
+Accepts an email address and sends a magic link. Also surfaces registered
+passkeys via the browser's conditional UI on the email field, and shows an
+explicit "Sign in with a passkey" button when WebAuthn is available.
+
+This page replaces the unauthenticated path of /subscribe/manage/ so that
+the manage page can be authenticated-only.
+{% endcomment %}
+{% load i18n static %}
+
+{% block title %}{% trans "Sign in — Snowdesk" %}{% endblock %}
+
+{% block meta_description %}{% trans "Sign in to manage your Snowdesk avalanche bulletin subscriptions." %}{% endblock %}
+
+{% block extra_head %}
+    <script
+        src="https://unpkg.com/htmx.org@2.0.4"
+        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+        crossorigin="anonymous"
+    ></script>
+{% endblock %}
+
+{% block content %}
+    <div class="px-4 py-10">
+        <div class="max-w-[640px] mx-auto">
+            <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10">
+                <h1 class="text-2xl font-semibold text-text-1 mb-2">
+                    {% trans "Sign in" %}
+                </h1>
+                <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                    {% trans "Enter your email address and we'll send you a sign-in link." %}
+                </p>
+
+                <form method="post" novalidate>
+                    {% csrf_token %}
+                    <div class="mb-4">
+                        <label
+                            for="{{ form.email.id_for_label }}"
+                            class="block text-sm font-medium text-text-1 mb-1.5"
+                        >
+                            {% trans "Email address" %}
+                        </label>
+                        {{ form.email }}
+                        {% if form.email.errors %}
+                            <ul class="mt-1.5 space-y-0.5">
+                                {% for error in form.email.errors %}
+                                    <li class="text-xs text-form-error">{{ error }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="w-full bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
+                    >
+                        {% trans "Send sign-in link" %}
+                    </button>
+                </form>
+
+                <div
+                    id="passkey-signin-wrap"
+                    class="hidden mt-4 pt-4 border-t border-text-3/10"
+                >
+                    <button
+                        id="btn-passkey-signin"
+                        type="button"
+                        class="w-full text-sm text-text-2 border border-text-3/30 rounded-[8px] px-5 py-2.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                    >
+                        {% trans "Sign in with a passkey" %}
+                    </button>
+                    <p
+                        id="passkey-auth-feedback"
+                        role="alert"
+                        class="hidden mt-3 text-xs text-form-error"
+                    >
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% comment %}
+        Passkey conditional UI — start on page load.
+        On successful passkey sign-in the page is reloaded; the sign_in_view
+        then detects request.user.is_authenticated and redirects to manage.
+    {% endcomment %}
+    <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
+    <script nonce="{{ request.csp_nonce }}">
+        (function () {
+            'use strict';
+
+            var AUTH_REQUEST_URL = "{% url 'subscriptions:passkey_auth_request' %}";
+            var AUTH_RESPONSE_URL = "{% url 'subscriptions:passkey_auth_response' %}";
+            var authFeedback = document.getElementById("passkey-auth-feedback");
+
+            /* Conditional UI — passkeys surface in email-field autofill dropdown */
+            window.Passkey.startConditionalSignIn(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
+
+            function showAuthError(msg) {
+                if (!authFeedback) return;
+                authFeedback.textContent = msg;
+                authFeedback.classList.remove("hidden");
+            }
+
+            /* Explicit passkey sign-in button — reveal only when WebAuthn is available */
+            if (window.PublicKeyCredential) {
+                var wrap = document.getElementById("passkey-signin-wrap");
+                var btn = document.getElementById("btn-passkey-signin");
+                if (wrap) wrap.classList.remove("hidden");
+                if (btn) {
+                    btn.addEventListener("click", function () {
+                        if (authFeedback) authFeedback.classList.add("hidden");
+                        btn.disabled = true;
+                        window.Passkey.signInWithPasskey(AUTH_REQUEST_URL, AUTH_RESPONSE_URL)
+                            .finally(function () { btn.disabled = false; });
+                    });
+                }
+            }
+
+            document.addEventListener("passkey:auth-unknown-credential", function () {
+                showAuthError("{% trans "The passkey you used could not be found on Snowdesk. Please try a different passkey or use the sign-in link." %}");
+            });
+            document.addEventListener("passkey:auth-error", function () {
+                showAuthError("{% trans "Sign-in failed. Please try again or use the sign-in link." %}");
+            });
+
+            /* After a successful passkey auth, reload so sign_in_view can redirect */
+            document.addEventListener("passkey:signed-in", function () {
+                window.location.reload();
+            });
+        })();
+    </script>
+{% endblock %}

@@ -15,7 +15,6 @@ from datetime import UTC
 
 import factory
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import User
 from django.utils import timezone as django_timezone
 
 from bulletins.models import (
@@ -237,14 +236,15 @@ class PasskeyCredentialFactory(factory.django.DjangoModelFactory[PasskeyCredenti
     last_used_at = None
 
 
-class UserFactory(factory.django.DjangoModelFactory[User]):
-    """Factory for the auth User model."""
+class UserFactory(factory.django.DjangoModelFactory[Subscriber]):
+    """Factory for a staff Subscriber (used in admin/staff tests)."""
 
     class Meta:
         """Factory metadata."""
 
         model = get_user_model()
 
-    username = factory.Sequence(lambda n: f"user{n}")
+    email = factory.Sequence(lambda n: f"staff{n}@example.com")
     password = factory.django.Password("pass")
-    is_staff = False
+    is_staff = True
+    status = Subscriber.Status.ACTIVE
