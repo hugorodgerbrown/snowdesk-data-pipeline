@@ -14,6 +14,8 @@ Test matrix:
   - Archive path success (target_date < today)
   - Fetch failure — response is 200 with no-weather fallback, no hx-post attr
   - Integration: bulletin_detail includes hx-post on header when no snapshot exists
+  - CSRF: POST without token is rejected with 403 (enforce_csrf_checks=True)
+  - CSRF: POST with valid X-CSRFToken header returns 200
 """
 
 from __future__ import annotations
@@ -23,7 +25,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import requests
 from django.core.cache import cache
-from django.test import Client
+from django.middleware.csrf import get_token
+from django.test import Client, RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
@@ -257,6 +260,62 @@ class TestFetchWeatherSnippetFailure:
         content = response.content.decode()
         assert 'data-weather-bucket="none"' in content
         assert "hx-post" not in content
+
+
+# ---------------------------------------------------------------------------
+# CSRF tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFetchWeatherSnippetCsrf:
+    """CSRF enforcement: the endpoint must reject requests missing a valid token."""
+
+    def test_post_without_csrf_token_returns_403(self, monkeypatch):
+        """POST without X-CSRFToken header is rejected with 403 when CSRF checks are enforced."""
+        region = MicroRegionFactory.create()
+        today = timezone.localdate()
+
+        monkeypatch.setattr(
+            "public.views.fetch_weather_for_region",
+            lambda *args, **kwargs: (None, False),
+        )
+
+        client = Client(enforce_csrf_checks=True)
+        url = _weather_url(region.region_id, today.isoformat())
+        response = client.post(url, HTTP_HX_REQUEST="true")
+
+        assert response.status_code == 403
+
+    def test_post_with_valid_csrf_token_returns_200(self, monkeypatch):
+        """POST with a valid X-CSRFToken header returns 200 when CSRF checks are enforced."""
+        region = MicroRegionFactory.create()
+        today = timezone.localdate()
+
+        monkeypatch.setattr(
+            "public.views.fetch_weather_for_region",
+            lambda *args, **kwargs: (None, False),
+        )
+
+        client = Client(enforce_csrf_checks=True)
+        # Obtain a real CSRF token by running get_token() against a throwaway
+        # request and injecting the resulting cookie into the test client.  The
+        # Django test Client only sets csrftoken when a response actually calls
+        # get_token() or uses the {% csrf_token %} tag; using get_token()
+        # directly is the simplest way to bootstrap the cookie in a unit test.
+        dummy_request = RequestFactory().get("/")
+        dummy_request.META["SERVER_NAME"] = "testserver"
+        csrf_token = get_token(dummy_request)
+        client.cookies["csrftoken"] = csrf_token
+
+        url = _weather_url(region.region_id, today.isoformat())
+        response = client.post(
+            url,
+            HTTP_HX_REQUEST="true",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+
+        assert response.status_code == 200
 
 
 # ---------------------------------------------------------------------------

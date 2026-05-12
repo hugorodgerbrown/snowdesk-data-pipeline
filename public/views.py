@@ -41,7 +41,7 @@ from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
 from django.db.models import Max, Prefetch
-from django.http import Http404, HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -1917,14 +1917,12 @@ def fetch_weather_snippet(
         Rendered ``includes/bulletin_header.html`` fragment.
 
     """
-    from datetime import date as date_type
-
-    region = get_object_or_404(MicroRegion, region_id=region_id)
+    region = get_object_or_404(
+        MicroRegion.objects.select_related("subregion"), region_id=region_id
+    )
     try:
-        target_date = date_type.fromisoformat(date_str)
+        target_date = datetime.date.fromisoformat(date_str)
     except ValueError:
-        from django.http import HttpResponseBadRequest
-
         return HttpResponseBadRequest("Invalid date.")
 
     today = timezone.localdate()

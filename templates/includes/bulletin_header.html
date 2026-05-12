@@ -41,6 +41,7 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
             hx-trigger="load"
             hx-swap="outerHTML"
             hx-target="this"
+            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
         {% endif %}
     {% endif %}
     data-testid="bulletin-header"
