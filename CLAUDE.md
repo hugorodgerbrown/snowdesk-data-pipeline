@@ -307,6 +307,7 @@ Read these when working in the relevant area:
 
 | Area | Doc |
 |------|-----|
+| User personas and core journeys | [`docs/user-journeys.md`](docs/user-journeys.md) |
 | Subscriptions (signed tokens, rate limits, email) | [`docs/subscriptions.md`](docs/subscriptions.md) |
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
 | Weather-driven bulletin header (WMO buckets, is_day projection) | [`docs/weather-header.md`](docs/weather-header.md) |
