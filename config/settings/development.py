@@ -11,7 +11,30 @@ from .base import *  # noqa: F401, F403
 
 DEBUG = True
 
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
+# Default dev hosts plus wildcard subdomains for ngrok and Render-style
+# preview tunnels. ngrok's free tier rotates the public hostname on each
+# restart, so we use leading-dot wildcards (``.ngrok-free.app``) — Django
+# matches any subdomain when ALLOWED_HOSTS entries start with a dot.
+# Override via the ``ALLOWED_HOSTS`` env var if a specific host list is
+# needed (e.g. to test a non-tunnelled deployment).
+ALLOWED_HOSTS = config(
+    "ALLOWED_HOSTS",
+    default="localhost,127.0.0.1,.ngrok-free.app,.ngrok.io,.ngrok.app,.ngrok.dev",
+).split(",")
+
+# CSRF Origin checks require the *scheme + host* of the inbound request to
+# appear here for POSTs to succeed. Without this, an HTMX POST to e.g.
+# ``fetch_weather_snippet`` over an ngrok tunnel fails with HTTP 403.
+# Wildcards are supported on the host portion (``https://*.ngrok-free.app``).
+CSRF_TRUSTED_ORIGINS = config(
+    "CSRF_TRUSTED_ORIGINS",
+    default=(
+        "https://*.ngrok-free.app,"
+        "https://*.ngrok.io,"
+        "https://*.ngrok.app,"
+        "https://*.ngrok.dev"
+    ),
+).split(",")
 
 INTERNAL_IPS = ["127.0.0.1"]
 
