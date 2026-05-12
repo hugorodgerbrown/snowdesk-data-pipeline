@@ -7,4 +7,4 @@ map 1
 api_today_summaries 1
 api_resorts_by_region 2
 api_regions_geojson 1
-bulletin_historic 13
+bulletin_historic 12
