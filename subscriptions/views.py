@@ -3,28 +3,31 @@ subscriptions/views.py — HTTP views for the subscriptions application.
 
 Implements the subscription flow built around Django's TimestampSigner:
 
+  sign_in_view        GET/POST — dedicated sign-in page (email entry / passkey).
+                               POST: rate-limited (3/m per IP); sends magic link.
   subscribe_partial   POST — inline HTMX subscribe CTA on bulletin pages.
                             Requires a region_id; uses a four-case matrix keyed
                             on (subscriber_created, subscription_created) to
                             decide which email to send and which fragment to
                             return.
   account_view        GET  — verify account-access token; activate subscriber;
-                            redirect to /subscribe/manage/?just_confirmed=1.
-  manage_view         GET/POST — unauthenticated email entry OR
-                               authenticated "your subscriptions" page.
+                            log in via Django auth; redirect to /subscribe/manage/.
+  manage_view         GET  — authenticated "your subscriptions" page.
+                            Unauthenticated requests redirect to /sign-in/.
   remove_region       POST — HTMX: remove one subscribed region card.
   delete_account      POST — HTMX: hard-delete subscriber and redirect to done.
   unsubscribe_view    GET/POST — token-verified one-click unsubscribe.
 
 Rate limiting via django-ratelimit (block=False pattern):
   subscribe_partial:  5 requests/min per IP.
-  manage_view POST (unauthenticated): 3 requests/min per IP.
+  sign_in_view POST:  3 requests/min per IP.
   remove_region POST: 10 requests/min per IP.
   delete_account POST: 3 requests/min per IP.
   unsubscribe_view: 10 requests/min per IP.
 
-Session key ``subscriber_uuid`` carries the authenticated subscriber's UUID
-across the manage page steps.
+Authentication uses Django's standard session auth (request.user).  After
+a token is verified in account_view or passkey authentication completes in
+views_passkey.py, django.contrib.auth.login() establishes the session.
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
+from django.contrib.auth import login, logout
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -57,8 +61,8 @@ from .services.token import (
 
 logger = logging.getLogger(__name__)
 
-# Session key that stores the authenticated subscriber's UUID string.
-_SESSION_KEY = "subscriber_uuid"
+# The backend used when calling login() after token/passkey verification.
+_TOKEN_BACKEND = "subscriptions.backends.TokenBackend"  # noqa: S105 — backend path, not a password
 
 # Template for the generic link-expired / bad-token error page.
 _LINK_EXPIRED_TEMPLATE = "subscriptions/link_expired.html"
@@ -70,32 +74,67 @@ _MANAGE_URL = "/subscribe/manage/"
 _UNSUBSCRIBE_DONE_URL = "/subscribe/unsubscribe-done/"
 
 
-def _get_subscriber_from_session(request: HttpRequest) -> Subscriber | None:
-    """
-    Look up an active Subscriber from the session, or return None.
+def _get_subscriber(request: HttpRequest) -> Subscriber | None:
+    """Return the authenticated Subscriber from request.user, or None."""
+    if request.user.is_authenticated:
+        return request.user
+    return None
 
-    Reads ``session['subscriber_uuid']``, attempts to fetch the matching
-    active Subscriber, and returns it.  Returns None when the key is absent,
-    the UUID is malformed, or no active subscriber is found.
+
+# ---------------------------------------------------------------------------
+# sign_in_view — dedicated sign-in page
+# ---------------------------------------------------------------------------
+
+
+@require_http_methods(["GET", "POST"])
+def sign_in_view(request: HttpRequest) -> HttpResponse:
+    """
+    Dedicated sign-in page for returning subscribers.
+
+    GET: render the email entry form with passkey conditional UI.
+    If the user is already authenticated, redirect to the manage page.
+
+    POST: rate-limited (3/m per IP); always returns the same "check your
+    inbox" response regardless of whether the email is known.
 
     Args:
-        request: The incoming HTTP request with an attached session.
+        request: Incoming HTTP request.
 
     Returns:
-        The active Subscriber instance, or None.
+        Rendered sign-in page or redirect.
 
     """
-    uuid_str = request.session.get(_SESSION_KEY)
-    if not uuid_str:
-        return None
-    try:
-        subscriber: Subscriber = Subscriber.objects.active().get(uuid=uuid_str)
-        return subscriber
-    except (Subscriber.DoesNotExist, ValueError):
-        logger.debug("Subscriber not found for session uuid %s", uuid_str)
-        # Purge the stale session key so subsequent requests start clean.
-        request.session.pop(_SESSION_KEY, None)
-        return None
+    if request.user.is_authenticated:
+        return redirect("subscriptions:manage")
+
+    if request.method == "GET":
+        return render(request, "subscriptions/sign_in.html", {"form": EmailForm()})
+
+    # POST — rate-limit then send (or noop).
+    usage = get_usage(
+        request,
+        group="subscriptions.sign_in.post",
+        key="ip",
+        rate="3/m",
+        method=["POST"],
+        increment=True,
+    )
+    if usage is not None and usage["should_limit"]:
+        return HttpResponse(status=429)
+
+    form = EmailForm(request.POST)
+    if not form.is_valid():
+        return render(request, "subscriptions/sign_in.html", {"form": form})
+
+    email: str = form.cleaned_data["email"]
+    Subscriber.objects.get_or_create(
+        email=email,
+        defaults={"status": Subscriber.Status.PENDING},
+    )
+    send_account_access_email(email, request=request)
+    logger.info("Account-access email sent to %s via sign-in page", email)
+
+    return render(request, "subscriptions/manage_sent.html", {})
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +195,6 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
     region_id: str = form.cleaned_data["region_id"]
 
     # Resolve the region — return a 400 error fragment if not found.
-    # This should not occur in normal use (region_id is set by the template),
-    # but is a required defensive path.
     try:
         region = MicroRegion.objects.get(region_id=region_id)
     except MicroRegion.DoesNotExist:
@@ -233,12 +270,12 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
 @require_GET
 def account_view(request: HttpRequest, token: str) -> HttpResponse:
     """
-    Verify an account-access token and activate the subscriber.
+    Verify an account-access token, activate the subscriber, and log them in.
 
     On success: if the subscriber is pending, flip to active and stamp
     ``confirmed_at`` (idempotent — re-clicking the same link does not
-    re-stamp).  Stores the subscriber UUID in the session and redirects
-    to ``/subscribe/manage/?just_confirmed=1``.
+    re-stamp).  Calls ``django.contrib.auth.login()`` to establish the
+    Django session and redirects to ``/subscribe/manage/?just_confirmed=1``.
 
     On failure (bad, tampered, or expired token): renders ``link_expired.html``
     with status 400.
@@ -261,7 +298,6 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
         try:
             subscriber = Subscriber.objects.get(email__iexact=email)
         except Subscriber.DoesNotExist:
-            # Token was valid but the subscriber was deleted — treat as expired.
             logger.warning("account_view: valid token for unknown email %s", email)
             response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
         else:
@@ -270,7 +306,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
                 subscriber.confirmed_at = timezone.now()
                 subscriber.save(update_fields=["status", "confirmed_at", "updated_at"])
                 logger.info("Subscriber %s activated via account link", email)
-            request.session[_SESSION_KEY] = str(subscriber.uuid)
+            login(request, subscriber, backend=_TOKEN_BACKEND)
             response = redirect(f"{_MANAGE_URL}?just_confirmed=1")
 
     # Tokens appear in this view's URL path — suppress Referer leakage.
@@ -279,115 +315,32 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# manage_view — unauthenticated email entry OR subscriptions dashboard
+# manage_view — authenticated subscriptions dashboard
 # ---------------------------------------------------------------------------
 
 
-@require_http_methods(["GET", "POST"])
+@require_GET
 def manage_view(request: HttpRequest) -> HttpResponse:
     """
-    Manage subscriptions — dual-mode view.
+    Show the subscriptions dashboard for the authenticated subscriber.
 
-    Without a session (unauthenticated):
-      - GET: render an email entry form.
-      - POST: rate-limited (3/m per IP); always returns an identical
-        "check your inbox" response regardless of whether the email is
-        known.  Known email → ``send_account_access_email``; unknown →
-        ``send_noop_email``.
+    Unauthenticated visitors are redirected to the sign-in page.
 
-    With a valid session (authenticated):
-      - GET: render the subscriptions dashboard (one card per subscribed
-        region, with resort list and per-region remove button).
-      - POST: not used — region management is now done via HTMX partials.
+    GET: render the subscriptions dashboard (one card per subscribed
+    region, with resort list and per-region remove button).
 
     Args:
         request: Incoming HTTP request.
 
     Returns:
-        Rendered page or HTTP response.
+        Rendered page or redirect to sign-in.
 
     """
-    subscriber = _get_subscriber_from_session(request)
+    subscriber = _get_subscriber(request)
 
-    # --- Authenticated path ---
-    if subscriber is not None:
-        return _manage_authenticated(request, subscriber)
+    if subscriber is None:
+        return redirect("subscriptions:sign_in")
 
-    # --- Unauthenticated path ---
-    return _manage_unauthenticated(request)
-
-
-def _manage_unauthenticated(request: HttpRequest) -> HttpResponse:
-    """
-    Handle manage page for visitors without a valid session.
-
-    GET renders an email entry form.  POST rate-limits at 3/m per IP and
-    always returns the same "check your inbox" fragment.
-
-    Args:
-        request: Incoming HTTP request.
-
-    Returns:
-        Rendered email-entry page or "check your inbox" page.
-
-    """
-    if request.method == "GET":
-        return render(
-            request,
-            "subscriptions/manage.html",
-            {"form": EmailForm(), "authenticated": False},
-        )
-
-    # POST — rate-limit then send (or noop).
-    # We apply ratelimit programmatically here so it only fires on POST.
-    usage = get_usage(
-        request,
-        group="subscriptions.manage.post",
-        key="ip",
-        rate="3/m",
-        method=["POST"],
-        increment=True,
-    )
-    if usage is not None and usage["should_limit"]:
-        return HttpResponse(status=429)
-
-    form = EmailForm(request.POST)
-    if not form.is_valid():
-        return render(
-            request,
-            "subscriptions/manage.html",
-            {"form": form, "authenticated": False},
-        )
-
-    email: str = form.cleaned_data["email"]
-
-    _, created = Subscriber.objects.get_or_create(
-        email=email,
-        defaults={"status": Subscriber.Status.PENDING},
-    )
-    if created:
-        logger.info("New subscriber created via manage page: %s", email)
-    send_account_access_email(email, request=request)
-    logger.info("Account-access email sent to %s", email)
-
-    return render(request, "subscriptions/manage_sent.html", {})
-
-
-def _manage_authenticated(request: HttpRequest, subscriber: Subscriber) -> HttpResponse:
-    """
-    Handle manage page for visitors with a valid session.
-
-    GET shows the subscriptions dashboard: one card per subscribed region,
-    ordered by region name, with a resort list and per-region remove button.
-
-    Args:
-        request: Incoming HTTP request.
-        subscriber: The authenticated Subscriber from the session.
-
-    Returns:
-        Rendered subscriptions dashboard.
-
-    """
     just_confirmed = request.GET.get("just_confirmed") == "1"
 
     subscriptions = (
@@ -403,7 +356,6 @@ def _manage_authenticated(request: HttpRequest, subscriber: Subscriber) -> HttpR
         {
             "subscriber": subscriber,
             "subscriptions": subscriptions,
-            "authenticated": True,
             "just_confirmed": just_confirmed,
         },
     )
@@ -419,14 +371,14 @@ def _manage_authenticated(request: HttpRequest, subscriber: Subscriber) -> HttpR
 @ratelimit(key="ip", rate="10/m", block=False)
 def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
     """
-    Remove a single subscribed region for the session-authenticated subscriber.
+    Remove a single subscribed region for the authenticated subscriber.
 
     Deletes the ``(subscriber, region)`` Subscription row.  If this was the
     subscriber's last region, hard-deletes the subscriber row too (CASCADE
     handles the Subscription rows) and responds with an ``HX-Redirect``
     header pointing to the unsubscribe-done page.
 
-    Guarded by session authentication (no session → 403), ``@require_POST``,
+    Guarded by authentication (no session → 403), ``@require_POST``,
     ``@require_htmx``, and rate-limited at 10 requests/min per IP.
 
     Args:
@@ -441,7 +393,7 @@ def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
     if getattr(request, "limited", False):
         return HttpResponse(status=429)
 
-    subscriber = _get_subscriber_from_session(request)
+    subscriber = _get_subscriber(request)
     if subscriber is None:
         return HttpResponse(status=403)
 
@@ -457,7 +409,7 @@ def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
     if not subscriber.subscriptions.exists():
         email = subscriber.email
         subscriber.delete()
-        request.session.pop(_SESSION_KEY, None)
+        logout(request)
         logger.info(
             "Subscriber %s hard-deleted (last region removed via manage page)", email
         )
@@ -479,12 +431,13 @@ def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
 @ratelimit(key="ip", rate="3/m", block=False)
 def delete_account(request: HttpRequest) -> HttpResponse:
     """
-    Hard-delete the session-authenticated subscriber and all their subscriptions.
+    Hard-delete the authenticated subscriber and all their subscriptions.
 
-    Clears the session and responds with an ``HX-Redirect`` header pointing
-    to the unsubscribe-done page.
+    Calls ``django.contrib.auth.logout()`` to clear the Django session and
+    responds with an ``HX-Redirect`` header pointing to the unsubscribe-done
+    page.
 
-    Guarded by session authentication (no session → 403), ``@require_POST``,
+    Guarded by authentication (no session → 403), ``@require_POST``,
     ``@require_htmx``, and rate-limited at 3 requests/min per IP.
 
     Args:
@@ -498,13 +451,13 @@ def delete_account(request: HttpRequest) -> HttpResponse:
     if getattr(request, "limited", False):
         return HttpResponse(status=429)
 
-    subscriber = _get_subscriber_from_session(request)
+    subscriber = _get_subscriber(request)
     if subscriber is None:
         return HttpResponse(status=403)
 
     email = subscriber.email
     subscriber.delete()
-    request.session.pop(_SESSION_KEY, None)
+    logout(request)
     logger.info("Subscriber %s hard-deleted via delete_account", email)
 
     response = HttpResponse(status=200)
@@ -513,24 +466,24 @@ def delete_account(request: HttpRequest) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# sign_out — clear subscriber session
+# sign_out — log out the subscriber
 # ---------------------------------------------------------------------------
 
 
 @require_POST
 def sign_out(request: HttpRequest) -> HttpResponse:
     """
-    Clear the subscriber session and redirect to the manage page.
+    Log out the subscriber and redirect to the sign-in page.
 
     Args:
         request: POST request (CSRF-protected via the standard Django form token).
 
     Returns:
-        Redirect to the manage page, which will render in unauthenticated mode.
+        Redirect to the sign-in page.
 
     """
-    request.session.pop(_SESSION_KEY, None)
-    return redirect("subscriptions:manage")
+    logout(request)
+    return redirect("subscriptions:sign_in")
 
 
 # ---------------------------------------------------------------------------

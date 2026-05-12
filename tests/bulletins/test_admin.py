@@ -13,19 +13,18 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.admin import site
-from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
 from bulletins.admin import BulletinAdmin
 from bulletins.models import Bulletin, PipelineRun
-from tests.factories import BulletinFactory, PipelineRunFactory
+from tests.factories import BulletinFactory, PipelineRunFactory, UserFactory
 
 
 @pytest.fixture()
 def admin_client() -> Client:
     """Return a Django test client logged in as a superuser."""
-    user = User.objects.create_superuser("admin", "admin@test.com", "password")
+    user = UserFactory.create(is_superuser=True)
     client = Client()
     client.force_login(user)
     return client

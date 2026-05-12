@@ -12,10 +12,11 @@ Covers the "Fetch today's weather" button:
 from unittest.mock import patch
 
 import pytest
-from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+
+from tests.factories import UserFactory
 
 FETCH_URL = reverse("admin:bulletins_weathersnapshot_fetch_today")
 CHANGELIST_URL = reverse("admin:bulletins_weathersnapshot_changelist")
@@ -24,9 +25,7 @@ CHANGELIST_URL = reverse("admin:bulletins_weathersnapshot_changelist")
 @pytest.fixture()
 def staff_client() -> Client:
     """Return a Django test client logged in as a staff user."""
-    user = User.objects.create_user(
-        username="staff", password="pwd", is_staff=True, is_superuser=True
-    )
+    user = UserFactory.create(is_superuser=True)
     client = Client()
     client.force_login(user)
     return client

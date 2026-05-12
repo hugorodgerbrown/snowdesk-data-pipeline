@@ -1,4 +1,4 @@
-# subscriptions/migrations/0003_create_cache_table.py
+# subscriptions/migrations/0002_create_cache_table.py
 #
 # Creates the django_cache table used by Django's DatabaseCache backend.
 # DatabaseCache is the baseline shared cache for django-ratelimit across
@@ -25,7 +25,7 @@ class Migration(migrations.Migration):
     """Ensure the shared DatabaseCache table exists for django-ratelimit."""
 
     dependencies = [
-        ("subscriptions", "0002_subscriber_status_confirmed_at"),
+        ("subscriptions", "0001_initial"),
     ]
 
     operations = [

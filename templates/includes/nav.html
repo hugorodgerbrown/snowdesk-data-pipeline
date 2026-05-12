@@ -1,10 +1,24 @@
 {% comment %}
 templates/includes/nav.html — Persistent top navigation bar.
 
-Renders the Snowdesk wordmark plus an optional back link and an
-optional Season trigger button. Kept deliberately minimal: no
-hamburger menu, no right-hand nav items, no secondary links — the
-bulletin site is mobile-first and ships one concept per page.
+Renders the Snowdesk wordmark plus an optional back link, an optional Season
+trigger button, and a right-side auth/admin area.
+
+Right-side auth area
+--------------------
+Authenticated subscriber:
+  An avatar button (first letter of email) opens a dropdown showing up to
+  three subscribed region links, a "Manage alerts" link, and a "Sign out"
+  button.  Region links are provided by the nav_subscriptions context
+  processor (subscriptions/context_processors.py).
+
+Not authenticated:
+  A "Sign in" link routes to /subscribe/sign-in/.
+
+Staff overlay (separate from subscriber auth):
+  A cog-icon button opens an admin dropdown: Component library, Edit map,
+  Django admin.  Rendered in addition to the subscriber avatar — a staff
+  user who is also a subscriber sees both.
 
 Parameters
 ----------
@@ -17,30 +31,13 @@ back_label : str, optional
     destination-specific label ("Map", "Season") where possible so the
     user knows where the arrow leads.
 season_trigger : bool, optional
-    When truthy, a labelled "🗓 SEASON" button is rendered right-aligned.
-    The button's only job is to flip the sibling [data-season-sheet]
-    element between "closed" and "open"; the toggle script lives in
-    bulletin.html alongside the sheet itself, so this partial stays
-    template-only.
+    When truthy, a labelled "SEASON" button is rendered right-aligned.
 
 Usage
 -----
     {% include "includes/nav.html" %}
     {% include "includes/nav.html" with back_url="/map/" back_label="Map" %}
     {% include "includes/nav.html" with back_url=map_url back_label="Map" season_trigger=True %}
-
-Layout
-------
-The <nav> spans the full page width so its border-bottom forms an
-edge-to-edge rule. Content sits inside a max-w-[640px] inner container
-that matches the bulletin-family page width, so the wordmark aligns
-with the body copy on wider viewports. On narrower phone-frame pages
-(/map/) the max-width is never hit — the inner container just inherits
-the frame's width.
-
-The wordmark font-size drops from 18px (standalone) to 15px (paired
-with a back link) so the back chevron is the lead visual in the paired
-state.
 {% endcomment %}
 {% load i18n %}
 <nav class="border-b border-border">
@@ -102,42 +99,101 @@ state.
                 </svg>
             </button>
         {% endif %}
-        <div class="flex items-center gap-3 {% if not season_trigger %}ml-auto{% endif %}">
-            {% if request.session.subscriber_uuid %}
-                <a
-                    href="{% url 'subscriptions:manage' %}"
-                    class="text-sm text-text-2 hover:text-text-1"
-                >
-                    {% trans "Account" %}
-                </a>
-                <form method="post" action="{% url 'subscriptions:sign_out' %}">
-                    {% csrf_token %}
-                    <button type="submit" class="text-sm text-text-3 hover:text-text-1">
-                        {% trans "Sign out" %}
+
+        {# ── Right-side auth + admin area ── #}
+        <div class="flex items-center gap-2 {% if not season_trigger %}ml-auto{% endif %}">
+            {% if request.user.is_authenticated %}
+                {# ── Subscriber avatar dropdown ── #}
+                <div class="relative" data-subscriber-menu>
+                    <button
+                        type="button"
+                        id="subscriber-menu-toggle"
+                        class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-text-3/15 hover:bg-text-3/25 text-text-1 text-xs font-semibold transition-colors"
+                        aria-haspopup="menu"
+                        aria-expanded="false"
+                        aria-controls="subscriber-menu"
+                        aria-label='{% trans "Account menu" %}'
+                    >
+                        {{ request.user.email|first|upper }}
                     </button>
-                </form>
+                    <div
+                        id="subscriber-menu"
+                        role="menu"
+                        hidden
+                        class="absolute right-0 top-full mt-1.5 min-w-[200px] rounded-[10px] border border-border bg-card shadow-md py-1.5 z-50"
+                    >
+                        {# Subscribed region links from context processor #}
+                        {% for sub in nav_subscriptions %}
+                            <a
+                                role="menuitem"
+                                href="/{{ sub.region.region_id }}/"
+                                class="flex items-center gap-2 px-3 py-1.5 text-sm text-text-1 hover:bg-tag"
+                            >
+                                <svg
+                                    width="13"
+                                    height="13"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    aria-hidden="true"
+                                    class="shrink-0 text-text-3"
+                                >
+                                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                                    <circle cx="12" cy="10" r="3" />
+                                </svg>
+                                <span class="truncate">{{ sub.region.name }}</span>
+                            </a>
+                        {% endfor %}
+                        {% if nav_subscriptions %}
+                            <div class="my-1 border-t border-border" aria-hidden="true"></div>
+                        {% endif %}
+                        <a
+                            role="menuitem"
+                            href="{% url 'subscriptions:manage' %}"
+                            class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+                        >
+                            {% trans "Manage alerts" %}
+                        </a>
+                        <div class="my-1 border-t border-border" aria-hidden="true"></div>
+                        <form method="post" action="{% url 'subscriptions:sign_out' %}" class="contents">
+                            {% csrf_token %}
+                            <button
+                                type="submit"
+                                role="menuitem"
+                                class="w-full text-left block px-3 py-1.5 text-sm text-text-3 hover:bg-tag hover:text-text-1"
+                            >
+                                {% trans "Sign out" %}
+                            </button>
+                        </form>
+                    </div>
+                </div>
             {% else %}
                 <a
-                    href="{% url 'subscriptions:manage' %}"
+                    href="{% url 'subscriptions:sign_in' %}"
                     class="text-sm text-text-2 hover:text-text-1"
                 >
                     {% trans "Sign in" %}
                 </a>
             {% endif %}
+
             {% if request.user.is_staff %}
+                {# ── Staff admin dropdown (cog icon) ── #}
                 <div class="relative" data-admin-menu>
                     <button
                         type="button"
                         id="admin-menu-toggle"
-                        class="inline-flex items-center gap-1 px-1.5 py-1 text-text-2 hover:text-text-1 rounded text-sm"
+                        class="inline-flex items-center justify-center w-7 h-7 rounded-full text-text-3 hover:text-text-1 hover:bg-text-3/15 transition-colors"
                         aria-haspopup="menu"
                         aria-expanded="false"
                         aria-controls="admin-menu"
+                        aria-label='{% trans "Admin menu" %}'
                     >
-                        {% trans "Admin" %}
                         <svg
-                            width="12"
-                            height="12"
+                            width="15"
+                            height="15"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
@@ -146,20 +202,21 @@ state.
                             stroke-linejoin="round"
                             aria-hidden="true"
                         >
-                            <path d="m6 9 6 6 6-6" />
+                            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                            <circle cx="12" cy="12" r="3" />
                         </svg>
                     </button>
                     <ul
                         id="admin-menu"
                         role="menu"
                         hidden
-                        class="absolute right-0 top-full mt-1 min-w-[160px] rounded border border-border bg-card shadow-sm py-1 z-50"
+                        class="absolute right-0 top-full mt-1.5 min-w-[180px] rounded-[10px] border border-border bg-card shadow-md py-1.5 z-50"
                     >
                         <li role="none">
                             <a
                                 role="menuitem"
                                 href="{% url 'public:components_index' %}"
-                                class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
+                                class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag"
                             >
                                 {% trans "Component library" %}
                             </a>
@@ -168,7 +225,7 @@ state.
                             <a
                                 role="menuitem"
                                 href="{% url 'public:map' %}?edit=resorts"
-                                class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
+                                class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag"
                             >
                                 {% trans "Edit map" %}
                             </a>
@@ -177,7 +234,7 @@ state.
                             <a
                                 role="menuitem"
                                 href="{% url 'admin:index' %}"
-                                class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag rounded"
+                                class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag"
                             >
                                 {% trans "Django admin" %}
                             </a>
@@ -189,13 +246,14 @@ state.
         {# /right-side wrapper #}
     </div>
 </nav>
-{% if request.user.is_staff %}
-    <script>
-        (function () {
-            var wrapper = document.querySelector('[data-admin-menu]');
+<script>
+    (function () {
+        function initDropdown(wrapperAttr, toggleId, menuId) {
+            var wrapper = document.querySelector('[' + wrapperAttr + ']');
             if (!wrapper) return;
-            var toggle = document.getElementById('admin-menu-toggle');
-            var menu = document.getElementById('admin-menu');
+            var toggle = document.getElementById(toggleId);
+            var menu = document.getElementById(menuId);
+            if (!toggle || !menu) return;
             function setOpen(open) {
                 toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
                 menu.hidden = !open;
@@ -215,6 +273,8 @@ state.
                     toggle.focus();
                 }
             });
-        })();
-    </script>
-{% endif %}
+        }
+        initDropdown('data-subscriber-menu', 'subscriber-menu-toggle', 'subscriber-menu');
+        initDropdown('data-admin-menu', 'admin-menu-toggle', 'admin-menu');
+    })();
+</script>

@@ -17,7 +17,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.test import Client
 
 REPORT_ONLY_HEADER = "Content-Security-Policy-Report-Only"
@@ -89,12 +88,11 @@ def test_csp_defaults_are_locked_down() -> None:
 @pytest.mark.django_db
 def test_csp_header_absent_on_admin() -> None:
     """CSP is intentionally skipped on /admin/ via CSP_FILTER_REQUEST_FUNC."""
-    User = get_user_model()
-    User.objects.create_superuser(
-        username="admin", email="admin@example.com", password="p"
-    )
+    from tests.factories import UserFactory
+
+    UserFactory.create(email="admin@example.com", is_superuser=True)
     client = Client()
-    client.login(username="admin", password="p")  # noqa: S106
+    client.login(email="admin@example.com", password="pass")  # noqa: S106
     response = client.get("/admin/")
     assert response.status_code == 200
     assert REPORT_ONLY_HEADER not in response.headers

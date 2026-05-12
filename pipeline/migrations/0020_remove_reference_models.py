@@ -11,7 +11,7 @@ to back the new models defined in ``regions.models`` via
 Runs as the closing step of the SNOW-140 cutover, after
 ``regions.0001_initial`` has registered the new ownership and after
 ``bulletins.0006_repoint_region_fks`` and
-``subscriptions.0004_alter_subscription_region`` have cleared every
+``subscriptions.0001_initial`` has been applied and every
 remaining FK reference to ``pipeline.region``.
 
 Mirrors the SNOW-92 pattern (see
@@ -27,7 +27,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("bulletins", "0006_repoint_region_fks"),
         ("pipeline", "0019_close_region_boundary_rings"),
-        ("subscriptions", "0004_alter_subscription_region"),
+        ("subscriptions", "0003_add_subscription"),
     ]
 
     operations = [
