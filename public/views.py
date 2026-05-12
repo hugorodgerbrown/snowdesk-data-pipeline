@@ -1689,6 +1689,7 @@ def _bulletin_detail_response(
                 "adjoining_regions": adjoining_regions,
                 "season_calendar": build_season_grid(region, target_date, today),
                 "weather_display": weather_display,
+                "weather_htmx_trigger": weather_display is None,
                 "canonical_url": canonical_url,
             },
             bulletin=None,
@@ -1762,6 +1763,8 @@ def _bulletin_detail_response(
         "adjoining_regions": adjoining_regions,
         # Weather-driven header — see SNOW-98.
         "weather_display": weather_display,
+        # Trigger HTMX just-in-time fetch when no snapshot exists (SNOW-159).
+        "weather_htmx_trigger": weather_display is None,
         # Canonical form-3 URL — see SNOW-99.
         "canonical_url": canonical_url,
     }
