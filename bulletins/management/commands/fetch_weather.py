@@ -45,6 +45,7 @@ Usage:
 """
 
 import logging
+import warnings
 from argparse import ArgumentParser
 from datetime import date
 from typing import Any
@@ -119,6 +120,14 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
+        warnings.warn(
+            "fetch_weather is the legacy batch path. The primary live path for "
+            "fetching weather data is now the HTMX-triggered public:weather_snippet "
+            "view, which fetches just-in-time when a bulletin page renders without "
+            "a WeatherSnapshot. Use backfill_weather for historical catch-up runs.",
+            PendingDeprecationWarning,
+            stacklevel=2,
+        )
         target: date = options["date"] or timezone.localdate()
         commit: bool = options["commit"]
         source: str = options["source"]
