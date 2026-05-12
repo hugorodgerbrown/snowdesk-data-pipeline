@@ -321,3 +321,4 @@ Read these when working in the relevant area:
 | Nav partial implementation spec | [`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) |
 | Feature flags (django-waffle) | [`docs/feature-flags.md`](docs/feature-flags.md) |
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |
+| Async operations (background threads, failure modes) | [`docs/async-operations.md`](docs/async-operations.md) |
