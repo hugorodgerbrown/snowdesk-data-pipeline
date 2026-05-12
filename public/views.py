@@ -45,7 +45,7 @@ from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBadReque
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.cache import patch_cache_control
+from django.utils.cache import add_never_cache_headers, patch_cache_control
 from django.utils.functional import Promise
 from django.utils.html import strip_tags
 from django.utils.text import slugify
@@ -1696,7 +1696,15 @@ def _bulletin_detail_response(
         )
         # Empty-state: cache briefly so a freshly-ingested bulletin surfaces
         # within a minute without re-running the view on every pageview.
-        patch_cache_control(response, public=True, max_age=60)
+        # Exception: when the response bakes in the HTMX weather trigger
+        # (``weather_display is None``), bypass the cache entirely so the
+        # browser does not serve the stale HMTL-with-trigger on reload after
+        # the snapshot has been populated — that would re-fire HTMX and cause
+        # a visible header swap (flash). See SNOW-161 follow-up.
+        if weather_display is None:
+            add_never_cache_headers(response)
+        else:
+            patch_cache_control(response, public=True, max_age=60)
         return response
 
     # The page represents the calendar day chosen in the URL, independent
@@ -1771,7 +1779,14 @@ def _bulletin_detail_response(
     response = _render_bulletin_page(request, context, bulletin=selected)
 
     # Cache-Control — branch on whether the page date is in the past.
-    if page_date < today:
+    # Exception (above either branch): when the response bakes in the HTMX
+    # weather trigger (``weather_display is None``), bypass the cache so the
+    # browser does not serve stale HTML-with-trigger on reload after the
+    # snapshot has been populated — that would re-fire HTMX and cause a
+    # visible header swap (flash). See SNOW-161 follow-up.
+    if weather_display is None:
+        add_never_cache_headers(response)
+    elif page_date < today:
         # Historic bulletins are truly immutable by (bulletin_id, render
         # model version). Cache aggressively at both the browser and any
         # upstream CDN.
