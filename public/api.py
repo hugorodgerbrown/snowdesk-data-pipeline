@@ -229,9 +229,15 @@ def today_summaries(request: HttpRequest) -> JsonResponse:
     for link in links:
         region_id = link.region.region_id
         issues_by_region.setdefault(region_id, []).append(link.bulletin)
-        # Prefer the region_name_at_time from the latest bulletin; falls
-        # back to the Region.name via the FK.
-        names_by_region[region_id] = link.region_name_at_time or link.region.name
+        # Always use the EAWS canonical name from MicroRegion.
+        # ``RegionBulletin.region_name_at_time`` carries the per-bulletin
+        # label SLF publishes alongside each ``regionID`` — those labels
+        # are not the EAWS canonical name (SLF labels CH-2133 "Stoos"
+        # whereas the EAWS reference calls it "Küssnacht - Arth"), so
+        # they produced visibly-wrong region labels on the map and
+        # bulletin page. The field is kept on the model as an
+        # ingestion-time audit trail but is no longer used for display.
+        names_by_region[region_id] = link.region.name
 
     summaries: dict[str, dict[str, Any]] = {}
     for region_id, issues in issues_by_region.items():

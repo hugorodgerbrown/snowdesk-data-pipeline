@@ -1712,13 +1712,17 @@ def _bulletin_detail_response(
     # same-day-evening issue would silently bump the header to D+1.
     page_date = target_date
 
-    # MicroRegion name as it appeared in this bulletin.
-    link = (
-        RegionBulletin.objects.filter(bulletin=selected, region=region)
-        .values_list("region_name_at_time", flat=True)
-        .first()
-    )
-    region_name = link or region.name
+    # Always use the EAWS canonical name from MicroRegion. The
+    # ``RegionBulletin.region_name_at_time`` field stores the per-bulletin
+    # label SLF publishes alongside each ``regionID`` — but those labels
+    # are not the EAWS canonical names (e.g. SLF labels CH-2133 "Stoos"
+    # whereas the EAWS reference calls it "Küssnacht - Arth"). Falling
+    # back to that field produced visibly-wrong headers for affected
+    # regions; preferring ``region.name`` keeps the page consistent with
+    # the URL, the map, and any other view that derives names from the
+    # MicroRegion fixture. The field is retained on the model as an
+    # ingestion-time audit trail but is no longer used for display.
+    region_name = region.name
 
     # Day-based prev/next navigation.
     prev_date, next_date = _get_nav_dates(region, page_date)

@@ -680,6 +680,54 @@ class TestNoBulletinPageFooter:
         assert "Münstertal" not in content
 
 
+@pytest.mark.django_db
+class TestRegionNameSource:
+    """The page header uses the EAWS canonical name, not SLF's per-bulletin label.
+
+    SLF's CAAML payload includes a ``name`` for every region entry inside a
+    bulletin's ``regions[]`` array. That label is **not** the EAWS canonical
+    name — SLF sometimes uses a sub-region or marketing label that disagrees
+    with the EAWS reference data we load from the fixture. Previously the
+    view fell back to ``RegionBulletin.region_name_at_time`` (the stored SLF
+    label) and only used ``region.name`` when the column was empty; that
+    produced visibly-wrong headers like "Stoos" on the page for CH-2133
+    (whose EAWS name is "Küssnacht - Arth"). This test locks the post-fix
+    behaviour: when the two disagree, the EAWS canonical name wins.
+    """
+
+    def test_header_uses_eaws_canonical_name_not_slf_label(
+        self, client: Client, region
+    ) -> None:
+        """region.name is shown on the page header even when region_name_at_time disagrees."""
+        rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
+        bulletin = BulletinFactory.create(
+            issued_at=datetime(2026, 3, 15, 6, 0, tzinfo=UTC) - timedelta(minutes=30),
+            valid_from=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 3, 15, 15, 0, tzinfo=UTC),
+            render_model=rm,
+            render_model_version=3,
+        )
+        # SLF labels this region "Stoos" in its CAAML payload, but the
+        # EAWS canonical name (loaded from the fixture into ``region.name``)
+        # is "Valais". The page header must show the EAWS canonical name.
+        RegionBulletinFactory.create(
+            bulletin=bulletin,
+            region=region,
+            region_name_at_time="Stoos",
+        )
+
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+
+        # Header carries the canonical name…
+        assert (
+            ">\n                Valais\n            <" in content or "Valais" in content
+        )
+        # …and never the disagreeing SLF label.
+        assert "Stoos" not in content
+
+
 # ---------------------------------------------------------------------------
 # Test: font-sans class on outermost container
 # ---------------------------------------------------------------------------
