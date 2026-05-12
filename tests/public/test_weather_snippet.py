@@ -414,13 +414,9 @@ class TestBulletinDetailWeatherTrigger:
         yield
         cache.clear()
 
-    def test_bulletin_detail_includes_hx_post_when_no_snapshot(self):
-        """When bulletin_detail renders with no WeatherSnapshot, hx-post is in the HTML."""
-        region = MicroRegionFactory.create(
-            region_id="CH-4115", name="Valais", slug="ch-4115"
-        )
+    def _make_today_bulletin_for_region(self, region):
+        """Create a bulletin valid today for ``region`` (happy-path render)."""
         today = timezone.localdate()
-        # Create a bulletin valid today so the page renders in the happy path.
         vf = datetime(today.year, today.month, today.day, 6, 0, tzinfo=UTC)
         vt = datetime(today.year, today.month, today.day, 15, 0, tzinfo=UTC)
         bulletin = BulletinFactory.create(
@@ -431,18 +427,30 @@ class TestBulletinDetailWeatherTrigger:
         RegionBulletinFactory.create(
             bulletin=bulletin, region=region, region_name_at_time=region.name
         )
-        # Deliberately do NOT create a WeatherSnapshot.
+        return bulletin
 
-        client = Client()
-        url = reverse(
+    def _bulletin_url(self, region, target_date):
+        """Build the canonical bulletin URL for ``(region, target_date)``."""
+        return reverse(
             "public:bulletin_date",
             kwargs={
                 "region_id": region.region_id,
                 "slug": region.slug,
-                "date_str": today.isoformat(),
+                "date_str": target_date.isoformat(),
             },
         )
-        response = client.get(url, follow=True)
+
+    def test_bulletin_detail_includes_hx_post_when_no_snapshot(self):
+        """When bulletin_detail renders with no WeatherSnapshot, hx-post is in the HTML."""
+        region = MicroRegionFactory.create(
+            region_id="CH-4115", name="Valais", slug="ch-4115"
+        )
+        today = timezone.localdate()
+        self._make_today_bulletin_for_region(region)
+        # Deliberately do NOT create a WeatherSnapshot.
+
+        client = Client()
+        response = client.get(self._bulletin_url(region, today), follow=True)
 
         assert response.status_code == 200
         content = response.content.decode()
@@ -452,3 +460,54 @@ class TestBulletinDetailWeatherTrigger:
             kwargs={"region_id": region.region_id, "date_str": today.isoformat()},
         )
         assert expected_snippet_url in content
+
+    def test_no_snapshot_response_is_uncacheable(self):
+        """The no-snapshot response must not be browser-cacheable.
+
+        SNOW-161 follow-up: when the page bakes in the HTMX trigger, the
+        browser must hit the server on every reload — otherwise the cached
+        HTML-with-trigger fires HTMX again after the snapshot has landed,
+        producing a visible header swap (flash). Assert the Cache-Control
+        header carries the strict never-cache directives Django emits via
+        ``add_never_cache_headers``.
+        """
+        region = MicroRegionFactory.create(
+            region_id="CH-4118", name="Glarus", slug="ch-4118"
+        )
+        today = timezone.localdate()
+        self._make_today_bulletin_for_region(region)
+        # Deliberately do NOT create a WeatherSnapshot.
+
+        client = Client()
+        response = client.get(self._bulletin_url(region, today), follow=True)
+
+        assert response.status_code == 200
+        cache_control = response.headers.get("Cache-Control", "")
+        assert "no-store" in cache_control
+        assert "no-cache" in cache_control
+        assert "must-revalidate" in cache_control
+
+    def test_snapshot_present_response_is_cacheable(self):
+        """When weather_display is populated, the existing Cache-Control strategy is preserved."""
+        region = MicroRegionFactory.create(
+            region_id="CH-4119", name="Uri", slug="ch-4119"
+        )
+        today = timezone.localdate()
+        self._make_today_bulletin_for_region(region)
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=today,
+            weather_code=0,
+            sunrise=datetime(today.year, today.month, today.day, 6, 0, tzinfo=UTC),
+            sunset=datetime(today.year, today.month, today.day, 20, 0, tzinfo=UTC),
+        )
+
+        client = Client()
+        response = client.get(self._bulletin_url(region, today), follow=True)
+
+        assert response.status_code == 200
+        cache_control = response.headers.get("Cache-Control", "")
+        # Public, with a non-zero max-age — exactly the regular today-page policy.
+        assert "public" in cache_control
+        assert "max-age=" in cache_control
+        assert "no-store" not in cache_control
