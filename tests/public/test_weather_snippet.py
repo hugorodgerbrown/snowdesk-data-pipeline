@@ -103,7 +103,11 @@ class TestFetchWeatherSnippetForecastPath:
         """Forecast path returns the weather header with icon and condition label."""
         region = MicroRegionFactory.create()
         today = timezone.localdate()
-        snapshot = WeatherSnapshotFactory.create(
+        # Use .build() (no DB write) so the view does not find a snapshot in the
+        # DB and short-circuits before reaching the monkeypatched fetcher.  This
+        # keeps the test covering the "no snapshot → call API" path.  CLAUDE.md
+        # normally requires .create(); this is a deliberate exception.
+        snapshot = WeatherSnapshotFactory.build(
             region=region,
             valid_for_date=today,
             weather_code=0,  # clear sky
@@ -133,7 +137,9 @@ class TestFetchWeatherSnippetForecastPath:
         """weather_htmx_trigger is always False in the snippet response."""
         region = MicroRegionFactory.create()
         today = timezone.localdate()
-        snapshot = WeatherSnapshotFactory.create(
+        # Use .build() so there is no DB row — the API path is exercised.
+        # Deliberate exception to the .create() rule; see sibling test above.
+        snapshot = WeatherSnapshotFactory.build(
             region=region,
             valid_for_date=today,
             weather_code=1,
@@ -159,7 +165,9 @@ class TestFetchWeatherSnippetArchivePath:
         """Archive path returns the weather header with icon and condition label."""
         region = MicroRegionFactory.create()
         past_date = timezone.localdate().replace(year=2026, month=1, day=10)
-        snapshot = WeatherSnapshotFactory.create(
+        # Use .build() so no DB row exists — the API path is exercised.
+        # Deliberate exception to the .create() rule; see forecast sibling tests.
+        snapshot = WeatherSnapshotFactory.build(
             region=region,
             valid_for_date=past_date,
             weather_code=3,  # overcast
@@ -207,6 +215,78 @@ class TestFetchWeatherSnippetArchivePath:
         content = response.content.decode()
         assert 'data-weather-bucket="none"' in content
         assert "hx-post" not in content
+
+
+# ---------------------------------------------------------------------------
+# Existing-snapshot path (DB-first guard — SNOW-161)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFetchWeatherSnippetExistingSnapshot:
+    """DB-first guard: if a snapshot already exists the API must not be called."""
+
+    def test_existing_snapshot_skips_forecast_fetch(self, monkeypatch):
+        """When a snapshot exists for (region, today) the forecast API is not called."""
+        region = MicroRegionFactory.create()
+        today = timezone.localdate()
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=today,
+            weather_code=0,  # clear sky
+            sunrise=datetime(today.year, today.month, today.day, 6, 0, tzinfo=UTC),
+            sunset=datetime(today.year, today.month, today.day, 20, 0, tzinfo=UTC),
+        )
+
+        def _must_not_be_called(*args, **kwargs):
+            raise AssertionError("API must not be called")
+
+        monkeypatch.setattr(
+            "public.views.fetch_weather_for_region", _must_not_be_called
+        )
+
+        client = Client()
+        url = _weather_url(region.region_id, today.isoformat())
+        response = client.post(url, HTTP_HX_REQUEST="true")
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Snapshot was present → populated header rendered.
+        assert 'data-testid="bulletin-header-hero-icon"' in content
+        assert 'data-weather-bucket="none"' not in content
+
+    def test_existing_snapshot_skips_archive_fetch(self, monkeypatch):
+        """When a snapshot exists for (region, past_date) the archive API is not called."""
+        region = MicroRegionFactory.create()
+        past_date = timezone.localdate().replace(year=2026, month=1, day=10)
+        WeatherSnapshotFactory.create(
+            region=region,
+            valid_for_date=past_date,
+            weather_code=3,  # overcast
+            sunrise=datetime(
+                past_date.year, past_date.month, past_date.day, 7, 0, tzinfo=UTC
+            ),
+            sunset=datetime(
+                past_date.year, past_date.month, past_date.day, 17, 0, tzinfo=UTC
+            ),
+        )
+
+        def _must_not_be_called(*args, **kwargs):
+            raise AssertionError("API must not be called")
+
+        monkeypatch.setattr(
+            "public.views.fetch_archive_for_region", _must_not_be_called
+        )
+
+        client = Client()
+        url = _weather_url(region.region_id, past_date.isoformat())
+        response = client.post(url, HTTP_HX_REQUEST="true")
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Snapshot was present → populated header rendered.
+        assert 'data-testid="bulletin-header-hero-icon"' in content
+        assert 'data-weather-bucket="none"' not in content
 
 
 # ---------------------------------------------------------------------------

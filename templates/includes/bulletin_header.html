@@ -49,13 +49,15 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
     {# Dark overlay normalises text contrast across all bucket × time-of-day combinations. #}
     <div class="absolute inset-0 bg-black/35" aria-hidden="true"></div>
 
-    {# Right padding lives on subregion + H1 only — preserved from the variant   #}
-    {# that previously hosted an absolutely-positioned calendar trigger so the   #}
-    {# layout stays stable in case a future top-right glyph (back to map, etc.) #}
-    {# returns. The meta strip sits well below and runs full flex-1 width.       #}
-    {# Left padding is tighter (pl-2) when an icon is present, looser (pl-4)    #}
-    {# when ``weather_display`` is None so the text isn't stuck to the edge.    #}
-    <div class="relative flex items-center gap-3 {% if weather_display %}pl-2{% else %}pl-4{% endif %} py-4 min-h-[112px]">
+    {# Right padding lives on subregion + H1 only — preserved from the variant     #}
+    {# that previously hosted an absolutely-positioned calendar trigger so the     #}
+    {# layout stays stable in case a future top-right glyph (back to map, etc.)   #}
+    {# returns. The meta strip sits well below and runs full flex-1 width.         #}
+    {# The icon slot (64×64) is reserved in BOTH states — with an invisible        #}
+    {# placeholder div when ``weather_display`` is None — so that ``pl-2`` can     #}
+    {# remain unconditional and the subregion label / H1 text column does not      #}
+    {# jump rightwards when the HTMX swap lands (SNOW-161 layout-shift fix).       #}
+    <div class="relative flex items-center gap-3 pl-2 py-4 min-h-[112px]">
         {% if weather_display %}
             <img
                 src="{% static 'icons/weather/'|add:weather_display.icon_filename %}"
@@ -63,6 +65,8 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
                 alt=""
                 data-testid="bulletin-header-hero-icon"
             >
+        {% else %}
+            <div class="w-16 h-16 flex-shrink-0" aria-hidden="true"></div>
         {% endif %}
         <div class="flex-1 min-w-0 text-white">
             {% if subregion_name %}
