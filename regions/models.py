@@ -13,12 +13,6 @@ Defines four concrete reference-data models:
     than being auto-created.
   - Resort: ski resorts mapped to their SLF avalanche warning region.
 
-Split from the legacy ``pipeline`` app in SNOW-140; per the same SNOW-92
-pattern that re-attributed the bulletin models, every ``Meta.db_table``
-below is pinned to the existing ``pipeline_*`` table name so that the
-move is state-only — no DDL runs. A future cleanup ticket can rename
-the physical tables.
-
 Bulletin-derived models (PipelineRun, Bulletin, RegionBulletin,
 RegionDayRating, WeatherSnapshot) live in ``bulletins.models``.
 
@@ -148,7 +142,6 @@ class MajorRegion(BaseModel):
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
-        db_table = "pipeline_eawsmajorregion"
         ordering = ["prefix"]
         verbose_name = "EAWS major region"
         verbose_name_plural = "EAWS major regions"
@@ -215,7 +208,6 @@ class SubRegion(BaseModel):
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
-        db_table = "pipeline_eawssubregion"
         ordering = ["prefix"]
         verbose_name = "EAWS sub-region"
         verbose_name_plural = "EAWS sub-regions"
@@ -236,44 +228,25 @@ class SubRegion(BaseModel):
 # ---------------------------------------------------------------------------
 # MicroRegionNeighbour — explicit through model for the self-referential M2M
 # ---------------------------------------------------------------------------
-#
-# Django auto-names M2M through-table columns from the model class name, so
-# renaming Region → MicroRegion would make Django expect
-# ``from_microregion_id`` / ``to_microregion_id`` — but the physical column
-# names in the DB are ``from_region_id`` / ``to_region_id`` (created when the
-# model was still called Region, pinned by db_column).  An explicit through
-# model with db_column overrides keeps the physical schema unchanged while
-# letting Django's ORM generate correct SQL queries.
-#
-# The through table itself keeps the original name (``pipeline_region_neighbours``)
-# via Meta.db_table.
 
 
 class MicroRegionNeighbour(models.Model):
-    """Explicit through model for the MicroRegion.neighbours self-referential M2M.
-
-    Pins the column names to the physical schema that was created when the
-    model was called Region (``from_region_id`` / ``to_region_id``), so
-    that renaming the model does not require a DDL migration.
-    """
+    """Explicit through model for the MicroRegion.neighbours self-referential M2M."""
 
     from_microregion = models.ForeignKey(
         "MicroRegion",
         on_delete=models.CASCADE,
-        db_column="from_region_id",
         related_name="+",
     )
     to_microregion = models.ForeignKey(
         "MicroRegion",
         on_delete=models.CASCADE,
-        db_column="to_region_id",
         related_name="+",
     )
 
     class Meta:
         """Model metadata."""
 
-        db_table = "pipeline_region_neighbours"
         unique_together = [("from_microregion", "to_microregion")]
 
 
@@ -319,8 +292,7 @@ class MicroRegion(BaseModel):
         on_delete=models.PROTECT,
         related_name="micro_regions",
         help_text=(
-            "Parent L2 sub-region. Populated from ``region_id[:5]`` in the "
-            "fixture; migration 0012 back-fills historical rows."
+            "Parent L2 sub-region. Populated from ``region_id[:5]`` in the fixture."
         ),
     )
     centre = models.JSONField(
@@ -340,17 +312,19 @@ class MicroRegion(BaseModel):
             "Stored as JSON rather than a PostGIS geometry type."
         ),
     )
-    neighbours = models.ManyToManyField(
-        "self",
-        through="MicroRegionNeighbour",
-        symmetrical=True,
-        blank=True,
-        help_text=(
-            "Geographic neighbours — other regions whose polygons share "
-            "a border with this one. Computed at fixture-build time from "
-            "the boundary geometry (see scripts/build_regions_fixture.py); "
-            "not maintained at runtime."
-        ),
+    neighbours: models.ManyToManyField[MicroRegion, MicroRegionNeighbour] = (
+        models.ManyToManyField(
+            "self",
+            through="MicroRegionNeighbour",
+            symmetrical=True,
+            blank=True,
+            help_text=(
+                "Geographic neighbours — other regions whose polygons share "
+                "a border with this one. Computed at fixture-build time from "
+                "the boundary geometry (see scripts/build_regions_fixture.py); "
+                "not maintained at runtime."
+            ),
+        )
     )
 
     objects = MicroRegionQuerySet.as_manager()
@@ -358,7 +332,6 @@ class MicroRegion(BaseModel):
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
-        db_table = "pipeline_region"
         ordering = ["region_id"]
         verbose_name = "EAWS micro-region"
         verbose_name_plural = "EAWS micro-regions"
@@ -521,7 +494,6 @@ class Resort(BaseModel):
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
-        db_table = "pipeline_resort"
         ordering = ["name"]
 
     def __str__(self) -> str:

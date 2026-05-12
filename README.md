@@ -47,10 +47,10 @@ poetry run python manage.py backfill_weather --start 2024-11-01 --end 2025-05-01
 ## Stack
 
 - **Python / Django** — data pipeline, models, views, split across six
-  apps: `core` (abstract `BaseModel`), `pipeline` (regions, resorts,
-  HTTP plumbing), `bulletins` (SLF ingestion + render model + weather),
-  `subscriptions` (signed-token email flow), `public` (bulletin site),
-  `config` (split settings)
+  apps: `core` (abstract `BaseModel`, middleware), `regions` (region and
+  resort reference data), `bulletins` (SLF ingestion + render model +
+  weather), `subscriptions` (signed-token email flow + custom user
+  model), `public` (bulletin site), `config` (split settings)
 - **Tailwind CSS v4** — compiled via `@tailwindcss/cli` from `src/css/main.css`
   to `static/css/output.css`
 - **HTMX** — dynamic fragments on the public site (bulletin calendar, subscription region search)

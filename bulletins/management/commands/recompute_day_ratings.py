@@ -31,10 +31,10 @@ from datetime import date
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
-from pipeline.models import Region
 
 from bulletins.models import RegionDayRating
 from bulletins.services.day_rating import recompute_region_day
+from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class Command(BaseCommand):
         verbosity: int,
     ) -> tuple[int, int]:
         """Recompute each pair; return (processed, failed) counts."""
-        region_cache: dict[Any, Region] = {}
+        region_cache: dict[Any, MicroRegion] = {}
         total = len(pairs)
         processed = 0
         failed = 0
@@ -100,8 +100,8 @@ class Command(BaseCommand):
         for region_id, day in pairs:
             if region_id not in region_cache:
                 try:
-                    region_cache[region_id] = Region.objects.get(pk=region_id)
-                except Region.DoesNotExist:
+                    region_cache[region_id] = MicroRegion.objects.get(pk=region_id)
+                except MicroRegion.DoesNotExist:
                     logger.error(
                         "Region pk=%s not found — skipping pair(s) for this region",
                         region_id,

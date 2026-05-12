@@ -1,5 +1,5 @@
 """
-0018_seed_edit_map_flag — Create the ``edit_map`` django-waffle Flag.
+0002_seed_edit_map_flag — Create the ``edit_map`` django-waffle Flag.
 
 Data migration only. Seeds a ``waffle.Flag`` row idempotently so that
 on first deploy the in-map resort editor (SNOW-74,
@@ -20,9 +20,7 @@ Toggle / extend behaviour at runtime via the admin:
 * ``everyone=False``   — kill switch; turns the editor off for
   everybody including superusers, without unticking ``superusers``.
 
-Reverse migration deletes the row by name. Future schema changes to
-``waffle.Flag`` (rare — the app is mature) would land in waffle's own
-migrations and be picked up via the ``("waffle", ...)`` dependency.
+Reverse migration deletes the row by name.
 """
 
 from __future__ import annotations
@@ -63,7 +61,7 @@ class Migration(migrations.Migration):
     """Seed the ``edit_map`` Flag for SNOW-86."""
 
     dependencies = [
-        ("pipeline", "0017_remove_bulletin_models"),
+        ("regions", "0001_initial"),
         # Pin to the latest waffle schema migration so the Flag model
         # exists at the point this RunPython executes.
         ("waffle", "0004_update_everyone_nullbooleanfield"),

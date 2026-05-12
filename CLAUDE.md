@@ -11,17 +11,19 @@ updates without a full JavaScript framework.
 
 ```
 config/          Django project settings (split base/development/production)
-core/            Shared abstractions (BaseModel; abstract, no concrete tables)
-pipeline/        Geographic reference data — MicroRegion / MajorRegion /
-                 SubRegion / Resort, plus HTTP-layer middleware, the
-                 dev-only SLF mirror endpoint, and fixture/monitoring commands
-                 (dump_resorts_fixture, monitor_query_counts, refresh_eaws_fixtures)
+core/            Shared abstractions (BaseModel; abstract, no concrete tables),
+                 plus HTTP-layer middleware and the monitor_query_counts command
+regions/         Geographic reference data — MicroRegion / MajorRegion /
+                 SubRegion / Resort, plus the fixture-maintenance commands
+                 (dump_resorts_fixture, refresh_eaws_fixtures)
 bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
-                 PipelineRun, RegionDayRating, the four ingestion services
-                 (data_fetcher, render_model, day_rating, slf_archive), the six
-                 bulletin and weather ingestion commands (see docs/management-commands.md),
-                 and the admin classes for those models
-subscriptions/   Signed-token subscription flow (see docs/subscriptions.md)
+                 PipelineRun, RegionDayRating, WeatherSnapshot, the ingestion
+                 services (data_fetcher, render_model, day_rating, slf_archive,
+                 weather_fetcher), the bulletin and weather ingestion commands
+                 (see docs/management-commands.md), and the admin classes for
+                 those models
+subscriptions/   Signed-token subscription flow (see docs/subscriptions.md);
+                 also owns the custom ``Subscriber`` user model
 public/          Public-facing bulletin site
   api.py         Plain JsonResponse endpoints consumed by the map page
   api_urls.py    URL routing for /api/ (namespace: api:)
@@ -33,11 +35,10 @@ static/          CSS/JS assets (includes compiled output.css)
 logs/            Log files (gitignored except .gitkeep)
 ```
 
-The `bulletins/` ↔ `pipeline/` split is deliberate: `pipeline/` holds
-stable shared lookup data (regions, resorts) and HTTP plumbing; `bulletins/`
-holds everything that originates from the SLF API and the denormalisation
-that drives the calendar. `core/` exists so neither app needs to import
-abstract bases from the other.
+The `bulletins/` ↔ `regions/` split is deliberate: `regions/` holds stable
+shared lookup data (regions, resorts); `bulletins/` holds everything that
+originates from the SLF API and the denormalisation that drives the calendar.
+`core/` exists so neither app needs to import abstract bases from the other.
 
 ## Running locally
 
@@ -172,7 +173,7 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 **HTMX** patterns:
 - Full-page views return a complete HTML response.
 - Partial/fragment views return only the inner HTML snippet; they are routed under
-  `pipeline/urls.py` with a `partials/` prefix and guarded by `require_htmx`.
+  `public/urls.py` with a `partials/` prefix and guarded by `require_htmx`.
 - Use `hx-target`, `hx-swap="innerHTML"`, and `hx-indicator` for all dynamic
   requests.
 

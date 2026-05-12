@@ -57,12 +57,6 @@ INSTALLED_APPS = [
     "waffle",
     # Local
     "core",
-    # ``pipeline`` is a stub since SNOW-140 — its models moved to
-    # ``regions`` (reference data) and ``bulletins`` (ingested data).
-    # The app remains installed so its migration history (0001–0020)
-    # stays attached to ``django_migrations`` and so dependencies on
-    # ``pipeline.0020_remove_reference_models`` resolve at migrate time.
-    "pipeline",
     "regions",
     "bulletins",
     "public",
