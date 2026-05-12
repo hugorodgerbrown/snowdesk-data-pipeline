@@ -1896,10 +1896,14 @@ def fetch_weather_snippet(
     Fetch and return the weather header fragment for a given region and date.
 
     Called by HTMX on load when the bulletin page renders without a
-    ``WeatherSnapshot`` for the current ``(region, date)`` pair.  The view
-    fetches from Open-Meteo (forecast endpoint for today/future, archive
-    endpoint for past dates), persists the result, and returns the rendered
-    ``includes/bulletin_header.html`` fragment.
+    ``WeatherSnapshot`` for the current ``(region, date)`` pair.
+
+    The view first queries the DB for an existing snapshot (belt-and-braces
+    guard against race conditions — a concurrent request may have already
+    persisted one by the time this endpoint is reached).  Only when no
+    snapshot is found does the view hit Open-Meteo (forecast endpoint for
+    today/future, archive endpoint for past dates), persist the result, and
+    return the rendered ``includes/bulletin_header.html`` fragment.
 
     ``weather_htmx_trigger`` is always ``False`` in the returned fragment so
     that a fetch failure never triggers an infinite retry loop — HTMX will not
@@ -1926,25 +1930,31 @@ def fetch_weather_snippet(
         return HttpResponseBadRequest("Invalid date.")
 
     today = timezone.localdate()
+    snapshot = (
+        WeatherSnapshot.objects.for_date(target_date).filter(region=region).first()
+    )
     weather_display = None
-    try:
-        if target_date < today:
-            results = fetch_archive_for_region(
-                region, target_date, target_date, commit=True
+    if snapshot is not None:
+        weather_display = build_weather_display(snapshot, timezone.now())
+    else:
+        try:
+            if target_date < today:
+                results = fetch_archive_for_region(
+                    region, target_date, target_date, commit=True
+                )
+                snapshot = results[0][0] if results else None
+            else:
+                result = fetch_weather_for_region(region, target_date, commit=True)
+                snapshot = result[0] if result is not None else None
+            if snapshot is not None:
+                weather_display = build_weather_display(snapshot, timezone.now())
+        except Exception:
+            logger.warning(
+                "weather_snippet fetch failed: region=%s date=%s",
+                region_id,
+                target_date,
+                exc_info=True,
             )
-            snapshot = results[0][0] if results else None
-        else:
-            result = fetch_weather_for_region(region, target_date, commit=True)
-            snapshot = result[0] if result is not None else None
-        if snapshot is not None:
-            weather_display = build_weather_display(snapshot, timezone.now())
-    except Exception:
-        logger.warning(
-            "weather_snippet fetch failed: region=%s date=%s",
-            region_id,
-            target_date,
-            exc_info=True,
-        )
 
     subregion_name = (
         region.subregion.name_en or region.subregion.name_native
