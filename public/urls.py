@@ -78,6 +78,14 @@ urlpatterns = [
 ]
 
 urlpatterns += [
+    # Weather snippet — HTMX-triggered just-in-time weather fetch (SNOW-159).
+    # Registered before the generic <str:region_id>/ pattern so "partials"
+    # is never mistaken for a region ID.
+    path(
+        "partials/weather/<str:region_id>/<str:date_str>/",
+        views.fetch_weather_snippet,
+        name="weather_snippet",
+    ),
     # Bulletin pages — three forms, all served by ``bulletin_detail``.
     # Forms 1 + 2 default to today and render in place; form 3 redirects
     # to canonical when the URL components don't match.

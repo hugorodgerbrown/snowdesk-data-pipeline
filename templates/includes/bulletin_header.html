@@ -36,6 +36,13 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
         data-weather-code="{{ weather_display.weather.weather_code }}"
     {% else %}
         data-weather-bucket="none"
+        {% if weather_htmx_trigger %}
+            hx-post="{% url 'public:weather_snippet' region_id=region_id date_str=page_date|date:'Y-m-d' %}"
+            hx-trigger="load"
+            hx-swap="outerHTML"
+            hx-target="this"
+            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+        {% endif %}
     {% endif %}
     data-testid="bulletin-header"
 >

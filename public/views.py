@@ -41,7 +41,7 @@ from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
 from django.db.models import Max, Prefetch
-from django.http import Http404, HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -51,7 +51,7 @@ from django.utils.html import strip_tags
 from django.utils.text import slugify
 from django.utils.translation import gettext as _gettext, gettext_lazy as _
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import condition
+from django.views.decorators.http import condition, require_POST
 
 from bulletins.models import Bulletin, RegionBulletin, WeatherSnapshot
 from bulletins.schema import ValidTimePeriod
@@ -62,6 +62,11 @@ from bulletins.services.render_model import (
     compute_day_character,
 )
 from bulletins.services.weather_display import build_weather_display
+from bulletins.services.weather_fetcher import (
+    fetch_archive_for_region,
+    fetch_weather_for_region,
+)
+from core.decorators import require_htmx
 from core.utils import html_to_markdown
 from regions.models import MicroRegion
 
@@ -1684,6 +1689,7 @@ def _bulletin_detail_response(
                 "adjoining_regions": adjoining_regions,
                 "season_calendar": build_season_grid(region, target_date, today),
                 "weather_display": weather_display,
+                "weather_htmx_trigger": weather_display is None,
                 "canonical_url": canonical_url,
             },
             bulletin=None,
@@ -1757,6 +1763,8 @@ def _bulletin_detail_response(
         "adjoining_regions": adjoining_regions,
         # Weather-driven header — see SNOW-98.
         "weather_display": weather_display,
+        # Trigger HTMX just-in-time fetch when no snapshot exists (SNOW-159).
+        "weather_htmx_trigger": weather_display is None,
         # Canonical form-3 URL — see SNOW-99.
         "canonical_url": canonical_url,
     }
@@ -1871,6 +1879,89 @@ def _bulletin_detail_render(
         target_date,
         requested_issue_id=requested_issue_id,
         canonical_is_today=date_str is None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Weather snippet — HTMX-triggered just-in-time weather fetch (SNOW-159)
+# ---------------------------------------------------------------------------
+
+
+@require_htmx
+@require_POST
+def fetch_weather_snippet(
+    request: HttpRequest, region_id: str, date_str: str
+) -> HttpResponse:
+    """
+    Fetch and return the weather header fragment for a given region and date.
+
+    Called by HTMX on load when the bulletin page renders without a
+    ``WeatherSnapshot`` for the current ``(region, date)`` pair.  The view
+    fetches from Open-Meteo (forecast endpoint for today/future, archive
+    endpoint for past dates), persists the result, and returns the rendered
+    ``includes/bulletin_header.html`` fragment.
+
+    ``weather_htmx_trigger`` is always ``False`` in the returned fragment so
+    that a fetch failure never triggers an infinite retry loop — HTMX will not
+    re-fire the trigger on the swapped-in response.
+
+    On any error the view still returns HTTP 200 with the no-weather fragment
+    (``data-weather-bucket="none"``); the failure is logged server-side only.
+
+    Args:
+        request: The incoming HTMX POST request.
+        region_id: EAWS micro-region identifier (e.g. ``"CH-4115"``).
+        date_str: ISO-8601 date string (``"YYYY-MM-DD"``).
+
+    Returns:
+        Rendered ``includes/bulletin_header.html`` fragment.
+
+    """
+    region = get_object_or_404(
+        MicroRegion.objects.select_related("subregion"), region_id=region_id
+    )
+    try:
+        target_date = datetime.date.fromisoformat(date_str)
+    except ValueError:
+        return HttpResponseBadRequest("Invalid date.")
+
+    today = timezone.localdate()
+    weather_display = None
+    try:
+        if target_date < today:
+            results = fetch_archive_for_region(
+                region, target_date, target_date, commit=True
+            )
+            snapshot = results[0][0] if results else None
+        else:
+            result = fetch_weather_for_region(region, target_date, commit=True)
+            snapshot = result[0] if result is not None else None
+        if snapshot is not None:
+            weather_display = build_weather_display(snapshot, timezone.now())
+    except Exception:
+        logger.warning(
+            "weather_snippet fetch failed: region=%s date=%s",
+            region_id,
+            target_date,
+            exc_info=True,
+        )
+
+    subregion_name = (
+        region.subregion.name_en or region.subregion.name_native
+        if region.subregion
+        else ""
+    )
+    return render(
+        request,
+        "includes/bulletin_header.html",
+        {
+            "weather_display": weather_display,
+            "weather_htmx_trigger": False,
+            "region_name": region.name,
+            "subregion_name": subregion_name,
+            "page_date": target_date,
+            "region_id": region.region_id,
+        },
     )
 
 
