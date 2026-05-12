@@ -35,7 +35,7 @@ repos:
 
       - id: mypy
         name: mypy
-        entry: .venv/bin/mypy core/ bulletins/ pipeline/ public/ subscriptions/ tests/ config/
+        entry: .venv/bin/mypy core/ bulletins/ regions/ public/ subscriptions/ tests/ config/
         language: system
         types: [python]
         pass_filenames: false

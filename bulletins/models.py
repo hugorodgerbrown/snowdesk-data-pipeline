@@ -22,11 +22,6 @@ Region hierarchy (MicroRegion, MajorRegion, SubRegion, Resort) lives
 in ``regions.models`` — those are stable lookup tables shared across the
 whole project, not bulletin-derived data.
 
-``Meta.db_table`` on the four SNOW-92 models below is pinned to the
-existing ``pipeline_*`` table names so that migration was state-only:
-no DDL ran, no data moved. WeatherSnapshot is a new table and does NOT
-pin ``db_table`` — Django defaults to ``bulletins_weathersnapshot``.
-
 Each model uses a custom Manager + QuerySet pair so that domain-specific
 query methods live on the queryset and are accessible via both
 ``Model.objects`` and chained querysets.
@@ -109,7 +104,6 @@ class PipelineRun(BaseModel):
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
-        db_table = "pipeline_pipelinerun"
         ordering = ["-started_at"]
 
     def __str__(self) -> str:
@@ -274,7 +268,6 @@ class Bulletin(BaseModel):
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
-        db_table = "pipeline_bulletin"
         ordering = ["-issued_at"]
 
     def __str__(self) -> str:
@@ -357,7 +350,6 @@ class RegionBulletin(BaseModel):
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
-        db_table = "pipeline_regionbulletin"
         unique_together = [("bulletin", "region")]
         ordering = ["region__region_id"]
 
@@ -503,7 +495,6 @@ class RegionDayRating(BaseModel):
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
-        db_table = "pipeline_regiondayrating"
         unique_together = [("region", "date")]
         ordering = ["-date", "region__region_id"]
         indexes = [
