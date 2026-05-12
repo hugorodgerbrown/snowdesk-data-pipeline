@@ -32,6 +32,7 @@ from bulletins.services.weather_fetcher import (
     backfill_all_regions,
     fetch_all_regions,
     fetch_archive_for_region,
+    fetch_weather_async,
     fetch_weather_for_region,
     resolve_weather_source,
 )
@@ -926,3 +927,87 @@ class TestResolveWeatherSource:
             with pytest.raises(CommandError, match="WEATHER_API_LOCAL_MIRROR_BASE_URL"):
                 resolve_weather_source("local-mirror")
         _ = original  # suppress unused warning
+
+
+# ---------------------------------------------------------------------------
+# fetch_weather_async
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFetchWeatherAsync:
+    """Tests for fetch_weather_async (background-thread weather warmup — SNOW-164).
+
+    All tests rely on the ``_force_sync_weather_fetch`` autouse fixture in
+    conftest.py which pins ``WEATHER_FETCH_ASYNC = False``.  In sync mode
+    the helper runs ``_worker`` directly on the calling thread, so DB
+    assertions see the written snapshot immediately and the main-thread
+    guard in ``finally`` skips ``connections.close_all()``.
+    """
+
+    def test_sync_mode_persists_snapshot(self) -> None:
+        """When WEATHER_FETCH_ASYNC is False, the call runs inline and writes a snapshot."""
+        region = MicroRegionFactory.create()
+        target = datetime.date.today() - datetime.timedelta(
+            days=2
+        )  # past → archive path
+        api_data = _make_archive_response(
+            dates=[target.isoformat()],
+            weather_codes=[3],
+            sunrises=[f"{target.isoformat()}T07:00+02:00"],
+            sunsets=[f"{target.isoformat()}T17:00+02:00"],
+        )
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get",
+            _mock_get(api_data),
+        ):
+            fetch_weather_async(region, target)
+
+        assert WeatherSnapshot.objects.filter(
+            region=region, valid_for_date=target
+        ).exists()
+
+    def test_sync_mode_swallows_inner_exception(self, monkeypatch) -> None:
+        """A failure inside the worker is caught and logged; the caller still returns."""
+        region = MicroRegionFactory.create()
+        target = datetime.date.today() - datetime.timedelta(days=2)
+
+        def _boom(*args, **kwargs):
+            raise requests.HTTPError("503")
+
+        monkeypatch.setattr(
+            "bulletins.services.weather_fetcher.fetch_archive_for_region", _boom
+        )
+
+        # Must not raise.
+        fetch_weather_async(region, target)
+        assert not WeatherSnapshot.objects.filter(
+            region=region, valid_for_date=target
+        ).exists()
+
+    def test_sync_mode_skips_when_snapshot_already_exists(self, monkeypatch) -> None:
+        """Idempotent guard: a pre-existing snapshot means no API call."""
+        region = MicroRegionFactory.create()
+        target = datetime.date.today() - datetime.timedelta(days=2)
+        WeatherSnapshotFactory.create(
+            region=region, valid_for_date=target, weather_code=0
+        )
+
+        def _boom(*args, **kwargs):
+            raise AssertionError("API must not be called when snapshot already exists")
+
+        monkeypatch.setattr(
+            "bulletins.services.weather_fetcher.fetch_archive_for_region", _boom
+        )
+        monkeypatch.setattr(
+            "bulletins.services.weather_fetcher.fetch_weather_for_region", _boom
+        )
+
+        fetch_weather_async(region, target)
+        # Existing snapshot's weather_code is unchanged (no overwrite).
+        assert (
+            WeatherSnapshot.objects.get(
+                region=region, valid_for_date=target
+            ).weather_code
+            == 0
+        )
