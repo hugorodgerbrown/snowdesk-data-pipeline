@@ -377,7 +377,7 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
                 date=d,
                 min_rating_key=min_key,
                 max_rating_key=max_key,
-                subdivision="dry",
+                subdivision="",
                 has_bulletin=has_bulletin,
                 is_today=d == _today,
                 is_selected=d == _selected and d != _today,

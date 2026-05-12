@@ -125,10 +125,14 @@ reachable via the SNOW-81 deep-link in the masthead.
                     }, { passive: true });
                     el.addEventListener('touchend', function (e) {
                         el.classList.remove('is-pressing');
+                        // Always suppress the synthetic click — the click listener
+                        // below is a desktop fallback only. Without this, a scroll
+                        // gesture (movement >= 8 px) leaks a ghost click and the
+                        // sheet closes when the user lifts their finger.
+                        e.preventDefault();
                         var dx = e.changedTouches[0].clientX - t0x;
                         var dy = e.changedTouches[0].clientY - t0y;
                         if (dx * dx + dy * dy < 64) {
-                            e.preventDefault();
                             setState('closed');
                         }
                     });
