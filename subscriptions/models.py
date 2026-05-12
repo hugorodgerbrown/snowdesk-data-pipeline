@@ -25,6 +25,7 @@ from django.contrib.auth.models import (
     BaseUserManager,
     PermissionsMixin,
 )
+from django.contrib.auth.password_validation import validate_password
 from django.db import models
 
 from subscriptions.aaguids import lookup as _aaguid_lookup
@@ -62,6 +63,7 @@ class SubscriberManager(BaseUserManager.from_queryset(SubscriberQuerySet)):  # t
         email = self.normalize_email(email)
         user: Subscriber = self.model(email=email, **extra_fields)
         if password:
+            validate_password(password, user=user)
             user.set_password(password)
         else:
             user.set_unusable_password()
