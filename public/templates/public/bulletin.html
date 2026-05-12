@@ -180,12 +180,17 @@ reachable via the SNOW-81 deep-link in the masthead.
 
             var touchStartX = null;
             document.addEventListener('touchstart', function (e) {
+                // Skip gesture tracking when the season sheet is open; scrolling
+                // its horizontal date strip otherwise registers as a page swipe
+                // and navigates to prev/next day on touchend.
+                if (sheetOpen()) { touchStartX = null; return; }
                 touchStartX = e.touches[0].clientX;
             }, { passive: true });
             document.addEventListener('touchend', function (e) {
                 if (touchStartX === null) return;
                 var delta = touchStartX - e.changedTouches[0].clientX;
                 touchStartX = null;
+                if (sheetOpen()) return;
                 if (Math.abs(delta) < 50) return;
                 navigate(delta > 0 ? nextUrl : prevUrl);
             }, { passive: true });
