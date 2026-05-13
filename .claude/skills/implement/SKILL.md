@@ -91,26 +91,32 @@ only cares about PR open / merge, not branch existence.
 
 ## Step 3 — Produce plan and wait for approval
 
-Now produce an implementation plan. Do NOT write code yet. The plan should
-cover:
+Now produce an implementation plan. **Use plan mode** so the plan renders
+in the sidebar UI with a proper approval button — not as a wall of
+conversational text:
 
-- **Files to touch** — concrete paths in the Snowdesk repo
-- **Order of changes** — what gets built first, second, third
-- **Test strategy** — what tests to write or update, what existing tests
-  cover this surface
-- **Risks / open questions** — anything that might bite during implementation
+1. Call `EnterPlanMode` to enter plan mode. While in plan mode, read the
+   relevant parts of the codebase to ground the plan and reference the
+   scope (from the Linear comment) for acceptance criteria. Edits and
+   writes are blocked in plan mode, which is the point — research only.
+2. When the plan is ready, call `ExitPlanMode` with the full plan as the
+   `plan` argument. The plan should cover:
 
-Read the relevant parts of the codebase to ground the plan. Reference the
-scope (from the Linear comment) for acceptance criteria.
+   - **Files to touch** — concrete paths in the Snowdesk repo
+   - **Order of changes** — what gets built first, second, third
+   - **Test strategy** — what tests to write or update, what existing tests
+     cover this surface
+   - **Risks / open questions** — anything that might bite during
+     implementation
 
-Present the plan and ask:
+   `ExitPlanMode` renders the plan in the sidebar with an approve / reject
+   control. The user reviews and acts via the UI.
 
-> "Approve the plan? Reply **go** to start implementation, or push back on
-> anything you want changed."
+If the user pushes back, revise and re-present via `ExitPlanMode` again —
+each revision goes through the sidebar, not as inline text.
 
-**Hard gate:** do not write any code, do not invoke the implementer, do not
-exit plan mode without explicit approval. If the user pushes back, revise
-the plan and ask again.
+**Hard gate:** do not write any code or invoke the implementer until the
+user has approved a plan via the sidebar.
 
 **Pause check:** if the directive is `plan-only`, stop here after approval
 with the resume message. Otherwise continue to step 4.
