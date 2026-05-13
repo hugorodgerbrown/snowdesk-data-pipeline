@@ -10,10 +10,15 @@ own integration tests in ``test_map_api.py``.
 
 from __future__ import annotations
 
+import datetime
+
 import pytest
 from django.conf import settings
 from django.test import Client, override_settings
 from django.urls import reverse
+from freezegun import freeze_time
+
+from tests.factories import MicroRegionFactory, RegionDayRatingFactory
 
 
 @pytest.mark.django_db
@@ -229,3 +234,47 @@ def test_map_page_loads_vendored_maplibre_assets() -> None:
     assert "maplibre-gl.min" in content
     assert "maplibre-gl.css" in content
     assert "unpkg.com" not in content
+
+
+@pytest.mark.django_db
+class TestMapPageDataDrivenSeasonBounds:
+    """
+    SNOW-173: data-season-start / data-season-end reflect the actual
+    RegionDayRating min/max dates when rows exist for the season, rather
+    than always using the calendar Nov 1 / May 31 boundaries.
+    """
+
+    @freeze_time("2026-02-15")
+    def test_season_bounds_reflect_data_min_max(self) -> None:
+        """
+        When RegionDayRating rows exist for the current season, the map page
+        renders data-season-start and data-season-end matching the earliest
+        and latest dates in those rows — not the calendar-window boundaries.
+        """
+        region = MicroRegionFactory.create(region_id="CH-5500")
+        # Season 2025/2026: rows spanning Dec 2025 – Mar 2026 (narrower than
+        # the Nov 1 – May 31 calendar window)
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2025, 12, 10))
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 20))
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 5))
+
+        client = Client()
+        response = client.get(reverse("public:map"))
+        content = response.content.decode()
+
+        assert 'data-season-start="2025-12-10"' in content
+        assert 'data-season-end="2026-03-05"' in content
+
+    @freeze_time("2026-02-15")
+    def test_season_bounds_fall_back_to_calendar_when_no_data(self) -> None:
+        """
+        When no RegionDayRating rows exist for the season, data-season-start
+        and data-season-end fall back to the calendar Nov 1 / May 31 window.
+        """
+        client = Client()
+        response = client.get(reverse("public:map"))
+        content = response.content.decode()
+
+        # Calendar fallback for the 2025/2026 season
+        assert 'data-season-start="2025-11-01"' in content
+        assert 'data-season-end="2026-05-31"' in content

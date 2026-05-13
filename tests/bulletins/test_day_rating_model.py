@@ -7,6 +7,8 @@ Covers:
   - Queryset ordering
   - for_region_month() returns only in-range rows
   - for_region_range() returns only in-range rows (inclusive bounds)
+  - season_date_bounds() returns (None, None) for empty window; min/max for
+    rows inside; ignores rows outside [start, end]
   - unique_together raises IntegrityError on duplicate (region, date)
   - Admin is registered for the model
 """
@@ -216,6 +218,64 @@ class TestForRegionRange:
             datetime.date(2026, 1, 1),
         )
         assert qs.count() == 0
+
+
+@pytest.mark.django_db
+class TestSeasonDateBounds:
+    """Tests for RegionDayRatingQuerySet.season_date_bounds()."""
+
+    def test_empty_queryset_returns_none_none(self) -> None:
+        """season_date_bounds returns (None, None) when no rows exist in the window."""
+        bounds = RegionDayRating.objects.season_date_bounds(
+            datetime.date(2025, 11, 1),
+            datetime.date(2026, 5, 31),
+        )
+        assert bounds == (None, None)
+
+    def test_returns_min_and_max_for_rows_in_window(self) -> None:
+        """season_date_bounds returns (earliest, latest) date across all regions."""
+        region_a = MicroRegionFactory.create(region_id="CH-1001")
+        region_b = MicroRegionFactory.create(region_id="CH-1002")
+        RegionDayRatingFactory.create(region=region_a, date=datetime.date(2026, 1, 10))
+        RegionDayRatingFactory.create(region=region_b, date=datetime.date(2026, 3, 20))
+        RegionDayRatingFactory.create(region=region_a, date=datetime.date(2026, 2, 5))
+
+        first, last = RegionDayRating.objects.season_date_bounds(
+            datetime.date(2025, 11, 1),
+            datetime.date(2026, 5, 31),
+        )
+        assert first == datetime.date(2026, 1, 10)
+        assert last == datetime.date(2026, 3, 20)
+
+    def test_ignores_rows_outside_window(self) -> None:
+        """season_date_bounds excludes rows whose date falls outside [start, end]."""
+        region = MicroRegionFactory.create(region_id="CH-2001")
+        # Inside the window
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 2, 1))
+        # Before the window
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2025, 10, 31))
+        # After the window
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 6, 1))
+
+        first, last = RegionDayRating.objects.season_date_bounds(
+            datetime.date(2025, 11, 1),
+            datetime.date(2026, 5, 31),
+        )
+        assert first == datetime.date(2026, 2, 1)
+        assert last == datetime.date(2026, 2, 1)
+
+    def test_includes_window_boundary_dates(self) -> None:
+        """season_date_bounds includes rows exactly on the start and end dates."""
+        region = MicroRegionFactory.create(region_id="CH-3001")
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2025, 11, 1))
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 5, 31))
+
+        first, last = RegionDayRating.objects.season_date_bounds(
+            datetime.date(2025, 11, 1),
+            datetime.date(2026, 5, 31),
+        )
+        assert first == datetime.date(2025, 11, 1)
+        assert last == datetime.date(2026, 5, 31)
 
 
 @pytest.mark.django_db

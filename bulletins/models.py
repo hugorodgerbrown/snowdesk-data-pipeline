@@ -407,6 +407,33 @@ class RegionDayRatingQuerySet(models.QuerySet["RegionDayRating"]):
         """
         return self.filter(region=region, date__gte=start, date__lte=end)
 
+    def season_date_bounds(
+        self, start: _date, end: _date
+    ) -> tuple[_date | None, _date | None]:
+        """
+        Return (min_date, max_date) of rows whose date falls inside [start, end].
+
+        Aggregates across all regions — callers use this to find the
+        data-driven edges of the season window regardless of which region
+        each row belongs to.
+
+        Both values are None when no rows exist for the season, and callers
+        should fall back to the calendar window in that case.
+
+        Args:
+            start: Season window start date (inclusive).
+            end: Season window end date (inclusive).
+
+        Returns:
+            A ``(min_date, max_date)`` tuple, or ``(None, None)`` if the
+            queryset contains no rows within ``[start, end]``.
+
+        """
+        agg = self.filter(date__gte=start, date__lte=end).aggregate(
+            first=models.Min("date"), last=models.Max("date")
+        )
+        return agg["first"], agg["last"]
+
 
 class RegionDayRating(BaseModel):
     """
