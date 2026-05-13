@@ -1590,15 +1590,19 @@ const clearRegionRepaint = () => {
     const pct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
     thumb.style.left = pct + '%';
     liveDate = pctToDateKey(pct);
-    // Lightweight UI hint — no URL write, no region repaint. The
-    // map-date-pill listens and updates live; commitDate (on release)
-    // overrides with the snapped data day.
+    // Dispatch raw liveDate so the date pill follows the thumb exactly.
     document.dispatchEvent(new CustomEvent('snowdesk:date-preview', {
       detail: { date: liveDate, source: 'scrubber' },
     }));
+    // Repaint the choropleth live during drag, snapped to the nearest data
+    // day so off-data days don't flash everything to no_rating mid-drag.
+    if (ratingsCache) {
+      const snapped = snapToNearestDataDay(liveDate);
+      repaintRegionsForDate(snapped, ratingsCache);
+    }
   };
 
-  thumb.addEventListener('pointerdown', (e) => {
+  track.addEventListener('pointerdown', (e) => {
     dragging = true;
     pointerId = e.pointerId;
     track.classList.add('dragging');
@@ -1782,14 +1786,9 @@ const clearRegionRepaint = () => {
     }
     button.dataset.state = 'stopped';
     button.setAttribute('aria-label', 'Play season timelapse');
-    // Revert to today's colours — clearing feature-state lets the
-    // ``coalesce`` fall through to the property-based ``rating`` that
-    // was written at page load.
-    if (cache) clearRegionRepaint();
-    if (scrubberThumb && Number.isFinite(todayPct)) {
-      scrubberThumb.style.left = todayPct + '%';
-    }
-    if (todayKey) announce(todayKey);
+    // Leave the map painted on the current frame — do not clear feature-state,
+    // reset the thumb, or announce today. The user sees exactly what the
+    // timelapse was showing when they pressed stop.
   };
 
   const start = async () => {
