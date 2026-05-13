@@ -11,6 +11,9 @@ Covers:
   - Happy paths: both empty, empty title fallback, 3+ aggregation warning.
   - Version 3: metadata and prose extraction, _parse_iso_timestamp helper,
     tendency list, back-compat top-level snowpack_structure.
+  - Version 4: source detection, EUREGIO aggregation synthesis,
+    danger-pattern resolution, avalanche activity prose, per-problem
+    avalanche_type and extras fields.
 """
 
 from __future__ import annotations
@@ -26,9 +29,15 @@ from bulletins.services.render_model import (
     RenderModelBuildError,
     _build_metadata,
     _build_prose,
+    _detect_source,
     _parse_elevation,
     _parse_iso_timestamp,
+    _resolve_aggregations,
+    _resolve_avalanche_activity,
     _resolve_danger,
+    _resolve_danger_patterns,
+    _resolve_problem_extras,
+    _resolve_problem_rating,
     build_render_model,
     compute_day_character,
 )
@@ -203,7 +212,7 @@ class TestBuildRenderModelStableDay:
     """Tests for build_render_model against a stable day fixture."""
 
     def test_output_shape(self) -> None:
-        """Output has required top-level keys."""
+        """Output has required top-level keys (v4 includes source, danger_patterns)."""
         props = _load_sample("sample_stable_day.json")
         rm = build_render_model(props)
 
@@ -213,6 +222,8 @@ class TestBuildRenderModelStableDay:
         assert "snowpack_structure" in rm
         assert "metadata" in rm
         assert "prose" in rm
+        assert "source" in rm
+        assert "danger_patterns" in rm
 
     def test_danger_is_low(self) -> None:
         """Stable day has danger=low."""
@@ -1038,17 +1049,17 @@ class TestComputeDayCharacterRoundTrip:
 
 
 class TestRenderModelVersion:
-    """Tests that RENDER_MODEL_VERSION and built version are both 3."""
+    """Tests that RENDER_MODEL_VERSION and built version are both 4."""
 
-    def test_constant_is_3(self) -> None:
-        """RENDER_MODEL_VERSION constant equals 3."""
-        assert RENDER_MODEL_VERSION == 3
+    def test_constant_is_4(self) -> None:
+        """RENDER_MODEL_VERSION constant equals 4."""
+        assert RENDER_MODEL_VERSION == 4
 
-    def test_build_render_model_returns_version_3(self) -> None:
-        """build_render_model returns a dict with version == 3."""
+    def test_build_render_model_returns_version_4(self) -> None:
+        """build_render_model returns a dict with version == 4."""
         props = _load_sample("sample_variable_day.json")
         rm = build_render_model(props)
-        assert rm["version"] == 3
+        assert rm["version"] == 4
 
 
 # ---------------------------------------------------------------------------
@@ -1224,7 +1235,7 @@ class TestBuildProseHappyPath:
     """Tests for _build_prose using sample_variable_day.json."""
 
     def test_all_keys_present(self) -> None:
-        """Prose dict has all four keys."""
+        """Prose dict has all five keys (including avalanche_activity)."""
         props = _load_sample("sample_variable_day.json")
         prose = _build_prose(props)
         assert set(prose.keys()) == {
@@ -1232,6 +1243,7 @@ class TestBuildProseHappyPath:
             "weather_review",
             "weather_forecast",
             "tendency",
+            "avalanche_activity",
         }
 
     def test_snowpack_structure_is_html_string(self) -> None:
@@ -1497,3 +1509,503 @@ class TestQuietDayV3:
         assert rm["prose"]["weather_review"] == "<p>Clear skies.</p>"
         assert rm["prose"]["weather_forecast"] == "<p>Continuing fine.</p>"
         assert len(rm["prose"]["tendency"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Version 4 — _detect_source
+# ---------------------------------------------------------------------------
+
+
+class TestDetectSource:
+    """Tests for _detect_source helper."""
+
+    def test_slf_via_ch_custom_data(self) -> None:
+        """Properties with customData.CH → 'slf'."""
+        props: dict[str, Any] = {
+            "customData": {"CH": {"aggregation": []}},
+        }
+        assert _detect_source(props) == "slf"
+
+    def test_euregio_via_albina_custom_data(self) -> None:
+        """Properties with customData.ALBINA → 'euregio'."""
+        props: dict[str, Any] = {
+            "customData": {"ALBINA": {"mainDate": "2026-05-03"}},
+        }
+        assert _detect_source(props) == "euregio"
+
+    def test_euregio_via_lwd_key(self) -> None:
+        """Properties with customData.LWD_Tyrol → 'euregio'."""
+        props: dict[str, Any] = {
+            "customData": {"LWD_Tyrol": {"dangerPatterns": ["DP10"]}},
+        }
+        assert _detect_source(props) == "euregio"
+
+    def test_euregio_via_combined_custom_data(self) -> None:
+        """Properties with both ALBINA and LWD_Tyrol → 'euregio'."""
+        props: dict[str, Any] = {
+            "customData": {
+                "ALBINA": {"mainDate": "2026-05-03"},
+                "LWD_Tyrol": {"dangerPatterns": ["DP10"]},
+            },
+        }
+        assert _detect_source(props) == "euregio"
+
+    def test_fallback_to_slf_when_no_custom_data(self) -> None:
+        """No customData → defaults to 'slf'."""
+        props: dict[str, Any] = {}
+        assert _detect_source(props) == "slf"
+
+    def test_fallback_to_slf_when_unknown_custom_data(self) -> None:
+        """Unrecognised customData keys → defaults to 'slf'."""
+        props: dict[str, Any] = {
+            "customData": {"UNKNOWN": {"foo": "bar"}},
+        }
+        assert _detect_source(props) == "slf"
+
+
+# ---------------------------------------------------------------------------
+# Version 4 — _resolve_aggregations
+# ---------------------------------------------------------------------------
+
+
+class TestResolveAggregations:
+    """Tests for _resolve_aggregations helper."""
+
+    def test_slf_returns_ch_aggregation(self) -> None:
+        """SLF source reads customData.CH.aggregation verbatim."""
+        agg = [
+            {
+                "category": "dry",
+                "problemTypes": ["new_snow"],
+                "validTimePeriod": "all_day",
+            }
+        ]
+        props: dict[str, Any] = {"customData": {"CH": {"aggregation": agg}}}
+        result = _resolve_aggregations(props, "slf")
+        assert result == agg
+
+    def test_slf_empty_aggregation(self) -> None:
+        """SLF source with no aggregation returns empty list."""
+        props: dict[str, Any] = {}
+        result = _resolve_aggregations(props, "slf")
+        assert result == []
+
+    def test_euregio_single_dry_problem(self) -> None:
+        """EUREGIO with one dry problem synthesises one dry aggregation entry."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wind_slab",
+                    "validTimePeriod": "all_day",
+                    "aspects": ["N"],
+                }
+            ]
+        }
+        result = _resolve_aggregations(props, "euregio")
+        assert len(result) == 1
+        assert result[0]["category"] == "dry"
+        assert result[0]["problemTypes"] == ["wind_slab"]
+        assert result[0]["validTimePeriod"] == "all_day"
+
+    def test_euregio_single_wet_problem(self) -> None:
+        """EUREGIO with one wet problem synthesises one wet aggregation entry."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wet_snow",
+                    "validTimePeriod": "later",
+                    "aspects": ["S"],
+                }
+            ]
+        }
+        result = _resolve_aggregations(props, "euregio")
+        assert len(result) == 1
+        assert result[0]["category"] == "wet"
+        assert result[0]["problemTypes"] == ["wet_snow"]
+        assert result[0]["validTimePeriod"] == "later"
+
+    def test_euregio_dry_split_across_time_periods(self) -> None:
+        """EUREGIO dry problems in different time periods produce two entries."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "persistent_weak_layers",
+                    "validTimePeriod": "earlier",
+                    "aspects": ["NW"],
+                },
+                {
+                    "problemType": "persistent_weak_layers",
+                    "validTimePeriod": "later",
+                    "aspects": ["NW"],
+                },
+            ]
+        }
+        result = _resolve_aggregations(props, "euregio")
+        assert len(result) == 2
+        assert result[0]["validTimePeriod"] == "earlier"
+        assert result[1]["validTimePeriod"] == "later"
+        assert all(e["category"] == "dry" for e in result)
+
+    def test_euregio_mixed_dry_and_wet(self) -> None:
+        """EUREGIO with dry + wet problems synthesises two separate entries."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wind_slab",
+                    "validTimePeriod": "all_day",
+                    "aspects": ["N"],
+                },
+                {
+                    "problemType": "wet_snow",
+                    "validTimePeriod": "later",
+                    "aspects": ["S"],
+                },
+            ]
+        }
+        result = _resolve_aggregations(props, "euregio")
+        assert len(result) == 2
+        categories = {e["category"] for e in result}
+        assert categories == {"dry", "wet"}
+
+    def test_euregio_empty_problems(self) -> None:
+        """EUREGIO with no problems returns empty aggregation."""
+        props: dict[str, Any] = {"avalancheProblems": []}
+        result = _resolve_aggregations(props, "euregio")
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Version 4 — _resolve_problem_rating (EUREGIO branch)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveProblemRatingEuregio:
+    """Tests for _resolve_problem_rating EUREGIO branch."""
+
+    def _ratings_low_earlier_moderate_later_above_2600(
+        self,
+    ) -> list[dict[str, Any]]:
+        """Return the danger rating set from the euregio_data.json sample."""
+        return [
+            {"mainValue": "low", "validTimePeriod": "earlier"},
+            {
+                "mainValue": "low",
+                "elevation": {"upperBound": "2600"},
+                "validTimePeriod": "later",
+            },
+            {
+                "mainValue": "moderate",
+                "elevation": {"lowerBound": "2600"},
+                "validTimePeriod": "later",
+            },
+        ]
+
+    def test_earlier_problem_matches_earlier_low_rating(self) -> None:
+        """Problem in 'earlier' period gets the low rating."""
+        problem: dict[str, Any] = {
+            "problemType": "persistent_weak_layers",
+            "validTimePeriod": "earlier",
+            "elevation": {"lowerBound": "2800"},
+        }
+        result = _resolve_problem_rating(
+            problem, self._ratings_low_earlier_moderate_later_above_2600(), "euregio"
+        )
+        assert result == "low"
+
+    def test_later_high_elevation_problem_gets_moderate(self) -> None:
+        """Problem in 'later' at high elevation (>= 2600) gets moderate."""
+        problem: dict[str, Any] = {
+            "problemType": "wet_snow",
+            "validTimePeriod": "later",
+            "elevation": {"lowerBound": "2600"},
+        }
+        result = _resolve_problem_rating(
+            problem, self._ratings_low_earlier_moderate_later_above_2600(), "euregio"
+        )
+        assert result == "moderate"
+
+    def test_slf_reads_danger_rating_value_directly(self) -> None:
+        """SLF problem reads dangerRatingValue directly."""
+        problem: dict[str, Any] = {
+            "problemType": "new_snow",
+            "dangerRatingValue": "considerable",
+        }
+        result = _resolve_problem_rating(problem, [], "slf")
+        assert result == "considerable"
+
+    def test_slf_missing_danger_rating_value_returns_none(self) -> None:
+        """SLF problem with no dangerRatingValue returns None."""
+        problem: dict[str, Any] = {"problemType": "wet_snow"}
+        result = _resolve_problem_rating(problem, [], "slf")
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Version 4 — _resolve_problem_extras
+# ---------------------------------------------------------------------------
+
+
+class TestResolveProblemExtras:
+    """Tests for _resolve_problem_extras helper."""
+
+    def test_slf_returns_subdivision_and_core_zone_text(self) -> None:
+        """SLF problem returns subdivision and core_zone_text extras."""
+        problem: dict[str, Any] = {
+            "customData": {
+                "CH": {
+                    "subdivision": "plus",
+                    "coreZoneText": "Danger level 3+ above 2800m.",
+                }
+            }
+        }
+        extras = _resolve_problem_extras(problem, "slf")
+        assert extras["subdivision"] == "plus"
+        assert extras["core_zone_text"] == "Danger level 3+ above 2800m."
+
+    def test_slf_missing_ch_data_returns_defaults(self) -> None:
+        """SLF problem missing CH data returns empty subdivision and None core_zone_text."""
+        problem: dict[str, Any] = {}
+        extras = _resolve_problem_extras(problem, "slf")
+        assert extras["subdivision"] == ""
+        assert extras["core_zone_text"] is None
+
+    def test_euregio_returns_avalanche_type_slab(self) -> None:
+        """EUREGIO problem with slab type returns avalanche_type='slab'."""
+        problem: dict[str, Any] = {"customData": {"ALBINA": {"avalancheType": "slab"}}}
+        extras = _resolve_problem_extras(problem, "euregio")
+        assert extras["avalanche_type"] == "slab"
+
+    def test_euregio_returns_avalanche_type_loose(self) -> None:
+        """EUREGIO problem with loose type returns avalanche_type='loose'."""
+        problem: dict[str, Any] = {"customData": {"ALBINA": {"avalancheType": "loose"}}}
+        extras = _resolve_problem_extras(problem, "euregio")
+        assert extras["avalanche_type"] == "loose"
+
+    def test_euregio_missing_albina_data_returns_none_type(self) -> None:
+        """EUREGIO problem missing ALBINA data returns avalanche_type=None."""
+        problem: dict[str, Any] = {}
+        extras = _resolve_problem_extras(problem, "euregio")
+        assert extras["avalanche_type"] is None
+
+    def test_euregio_extras_do_not_include_slf_fields(self) -> None:
+        """EUREGIO extras do not include subdivision or core_zone_text."""
+        problem: dict[str, Any] = {}
+        extras = _resolve_problem_extras(problem, "euregio")
+        assert "subdivision" not in extras
+        assert "core_zone_text" not in extras
+
+
+# ---------------------------------------------------------------------------
+# Version 4 — _resolve_avalanche_activity
+# ---------------------------------------------------------------------------
+
+
+class TestResolveAvalancheActivity:
+    """Tests for _resolve_avalanche_activity helper."""
+
+    def test_slf_returns_empty_strings(self) -> None:
+        """SLF source always returns empty highlights and comment."""
+        props: dict[str, Any] = {
+            "avalancheActivity": {
+                "highlights": "Some highlights.",
+                "comment": "Some comment.",
+            }
+        }
+        result = _resolve_avalanche_activity(props, "slf")
+        assert result == {"highlights": "", "comment": ""}
+
+    def test_euregio_returns_populated_activity(self) -> None:
+        """EUREGIO source returns populated highlights and comment."""
+        props: dict[str, Any] = {
+            "avalancheActivity": {
+                "highlights": "Weak layers require caution.",
+                "comment": "Wet slides possible in afternoon.",
+            }
+        }
+        result = _resolve_avalanche_activity(props, "euregio")
+        assert result["highlights"] == "Weak layers require caution."
+        assert result["comment"] == "Wet slides possible in afternoon."
+
+    def test_euregio_missing_activity_returns_empty_strings(self) -> None:
+        """EUREGIO source with no avalancheActivity returns empty strings."""
+        props: dict[str, Any] = {}
+        result = _resolve_avalanche_activity(props, "euregio")
+        assert result == {"highlights": "", "comment": ""}
+
+
+# ---------------------------------------------------------------------------
+# Version 4 — _resolve_danger_patterns
+# ---------------------------------------------------------------------------
+
+
+class TestResolveDangerPatterns:
+    """Tests for _resolve_danger_patterns helper."""
+
+    def test_slf_returns_empty_list(self) -> None:
+        """SLF source always returns empty list."""
+        props: dict[str, Any] = {
+            "customData": {"LWD_Tyrol": {"dangerPatterns": ["DP10"]}}
+        }
+        result = _resolve_danger_patterns(props, "slf")
+        assert result == []
+
+    def test_euregio_returns_lwd_tyrol_patterns(self) -> None:
+        """EUREGIO source returns dangerPatterns from LWD_Tyrol."""
+        props: dict[str, Any] = {
+            "customData": {"LWD_Tyrol": {"dangerPatterns": ["DP10", "DP1"]}}
+        }
+        result = _resolve_danger_patterns(props, "euregio")
+        assert result == ["DP10", "DP1"]
+
+    def test_euregio_missing_patterns_returns_empty(self) -> None:
+        """EUREGIO source with no patterns returns empty list."""
+        props: dict[str, Any] = {"customData": {"ALBINA": {"mainDate": "2026-05-03"}}}
+        result = _resolve_danger_patterns(props, "euregio")
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Version 4 — end-to-end with euregio_data.json
+# ---------------------------------------------------------------------------
+
+
+# Load the EUREGIO sample data for end-to-end tests.
+_EUREGIO_SAMPLE_PATH = Path("/Users/hugo/Downloads/euregio_data.json")
+
+
+@pytest.mark.skipif(
+    not _EUREGIO_SAMPLE_PATH.exists(),
+    reason="euregio_data.json not present at /Users/hugo/Downloads/euregio_data.json",
+)
+class TestBuildRenderModelEuregio:
+    """End-to-end tests using the EUREGIO sample bulletin."""
+
+    def _load_euregio_props(self) -> dict[str, Any]:
+        """Load euregio_data.json and return it as properties dict."""
+        data: dict[str, Any] = json.loads(_EUREGIO_SAMPLE_PATH.read_text())
+        return data
+
+    def test_source_is_euregio(self) -> None:
+        """EUREGIO bulletin produces source='euregio'."""
+        props = self._load_euregio_props()
+        rm = build_render_model(props)
+        assert rm["source"] == "euregio"
+
+    def test_has_populated_traits(self) -> None:
+        """EUREGIO bulletin produces traits (non-empty)."""
+        props = self._load_euregio_props()
+        rm = build_render_model(props)
+        assert len(rm["traits"]) > 0
+
+    def test_has_danger(self) -> None:
+        """EUREGIO bulletin produces a danger dict."""
+        props = self._load_euregio_props()
+        rm = build_render_model(props)
+        assert rm["danger"]["key"] in {
+            "low",
+            "moderate",
+            "considerable",
+            "high",
+            "very_high",
+        }
+
+    def test_avalanche_activity_populated(self) -> None:
+        """EUREGIO bulletin prose has non-empty avalanche_activity."""
+        props = self._load_euregio_props()
+        rm = build_render_model(props)
+        activity = rm["prose"]["avalanche_activity"]
+        assert activity["highlights"] != "" or activity["comment"] != ""
+
+    def test_danger_patterns_present(self) -> None:
+        """EUREGIO bulletin has danger_patterns (at least one)."""
+        props = self._load_euregio_props()
+        rm = build_render_model(props)
+        assert len(rm["danger_patterns"]) > 0
+
+    def test_problems_have_avalanche_type(self) -> None:
+        """EUREGIO problems carry avalanche_type in their extras."""
+        props = self._load_euregio_props()
+        rm = build_render_model(props)
+        all_problems = [p for t in rm["traits"] for p in t["problems"]]
+        # At least one problem should have a non-None avalanche_type.
+        types = {p.get("avalanche_type") for p in all_problems}
+        assert types - {None}, (
+            f"Expected at least one non-None avalanche_type; got {types!r}"
+        )
+
+    def test_version_is_4(self) -> None:
+        """EUREGIO bulletin render model has version 4."""
+        props = self._load_euregio_props()
+        rm = build_render_model(props)
+        assert rm["version"] == 4
+
+
+# ---------------------------------------------------------------------------
+# Version 4 — regression: SLF bulletins produce v4 shape with empty new fields
+# ---------------------------------------------------------------------------
+
+
+class TestV4SlFRegressionNewEmptySlots:
+    """Regression tests: SLF bulletins produce v4 shape with empty new slots."""
+
+    def test_slf_bulletin_source_is_slf(self) -> None:
+        """SLF bulletin has source='slf'."""
+        props = _load_sample("sample_variable_day.json")
+        rm = build_render_model(props)
+        assert rm["source"] == "slf"
+
+    def test_slf_bulletin_danger_patterns_is_empty(self) -> None:
+        """SLF bulletin has empty danger_patterns list."""
+        props = _load_sample("sample_variable_day.json")
+        rm = build_render_model(props)
+        assert rm["danger_patterns"] == []
+
+    def test_slf_bulletin_avalanche_activity_is_empty_strings(self) -> None:
+        """SLF bulletin has empty avalanche_activity strings in prose."""
+        props = _load_sample("sample_variable_day.json")
+        rm = build_render_model(props)
+        activity = rm["prose"]["avalanche_activity"]
+        assert activity == {"highlights": "", "comment": ""}
+
+    def test_slf_problem_has_avalanche_type_none(self) -> None:
+        """SLF problems have avalanche_type=None."""
+        props = _load_sample("sample_variable_day.json")
+        rm = build_render_model(props)
+        for trait in rm["traits"]:
+            for problem in trait["problems"]:
+                assert problem["avalanche_type"] is None
+
+    def test_slf_problem_extras_contains_subdivision_and_core_zone_text(self) -> None:
+        """SLF problems have extras with 'subdivision' and 'core_zone_text' keys."""
+        props = _load_sample("sample_variable_day.json")
+        rm = build_render_model(props)
+        for trait in rm["traits"]:
+            for problem in trait["problems"]:
+                assert "subdivision" in problem["extras"]
+                assert "core_zone_text" in problem["extras"]
+
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            p.name
+            for p in (_SAMPLE_DIR).iterdir()
+            if p.name.startswith("sample_") and p.name.endswith(".json")
+        ],
+    )
+    def test_sample_bulletins_v4_shape(self, filename: str) -> None:
+        """Every SLF sample produces a v4 render model with the new slots."""
+        path = _SAMPLE_DIR / filename
+        data = json.loads(path.read_text())
+        props = data["properties"]
+        try:
+            rm = build_render_model(props)
+        except RenderModelBuildError:
+            pytest.skip(f"{filename} is expected to raise RenderModelBuildError")
+        # v4 fields present.
+        assert "source" in rm
+        assert "danger_patterns" in rm
+        assert "avalanche_activity" in rm["prose"]
+        # SLF-specific empty values.
+        assert rm["source"] == "slf"
+        assert rm["danger_patterns"] == []
+        assert rm["prose"]["avalanche_activity"] == {"highlights": "", "comment": ""}
