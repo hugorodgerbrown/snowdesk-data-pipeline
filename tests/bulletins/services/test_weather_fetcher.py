@@ -1011,3 +1011,32 @@ class TestFetchWeatherAsync:
             ).weather_code
             == 0
         )
+
+    def test_sync_mode_forecast_branch_for_today(self) -> None:
+        """target_date == today routes through fetch_weather_for_region (forecast).
+
+        The production call site in ``bulletin_detail`` guards with
+        ``target_date < today`` so this branch is unreachable from the page
+        render today, but the helper itself dispatches on ``target_date`` so
+        the forecast branch needs direct coverage. A future caller that
+        passes today's or a future date must continue to hit the forecast
+        endpoint rather than the archive one.
+        """
+        region = MicroRegionFactory.create()
+        target = datetime.date.today()
+        api_data = _make_forecast_response(target_date=target.isoformat())
+
+        with patch(
+            "bulletins.services.weather_fetcher.requests.get",
+            _mock_get(api_data),
+        ) as mock_get:
+            fetch_weather_async(region, target)
+
+        # Snapshot persisted via the forecast path.
+        assert WeatherSnapshot.objects.filter(
+            region=region, valid_for_date=target
+        ).exists()
+        # And the forecast endpoint (not archive) was the one hit.
+        called_url = mock_get.call_args[0][0]
+        assert "forecast" in called_url
+        assert "archive" not in called_url
