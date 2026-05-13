@@ -127,6 +127,21 @@ def test_csp_nonce_token_not_double_wrapped() -> None:
 
 
 @pytest.mark.django_db
+def test_csp_no_unpkg_origin() -> None:
+    """unpkg.com must not appear in CSP headers now that assets are self-hosted.
+
+    htmx and MapLibre GL are vendored into static/ (SNOW-169), so there is no
+    longer any reason to allowlist the unpkg CDN in script-src or style-src.
+    """
+    for path in ("/", "/map/"):
+        response = Client().get(path)
+        policy = _csp(response)
+        assert "unpkg.com" not in policy, (
+            f"unpkg.com unexpectedly present in CSP header for {path}: {policy}"
+        )
+
+
+@pytest.mark.django_db
 def test_home_template_renders_nonce_on_inline_script() -> None:
     """templates/includes/theme_head.html injects request.csp_nonce."""
     response = Client().get("/")

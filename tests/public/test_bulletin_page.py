@@ -1622,3 +1622,26 @@ class TestDayCharacterEyebrow:
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="day-character"' not in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-169: self-hosted asset smoke tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_bulletin_page_loads_htmx_from_static(client: Client) -> None:
+    """bulletin.html must reference the vendored htmx from /static/, not unpkg.
+
+    SNOW-169 vendored htmx 2.0.4 into static/js/htmx.min.js so the page no
+    longer depends on an external CDN at runtime or in the CSP allow-list.
+    """
+    region = MicroRegionFactory.create(region_id="ch-4115", name="Valais")
+    day = date(2026, 3, 15)
+    _make_am_bulletin(region, day)
+    url = _url("ch-4115", "valais", "2026-03-15")
+    response = client.get(url)
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "htmx.min" in body
+    assert "unpkg.com" not in body

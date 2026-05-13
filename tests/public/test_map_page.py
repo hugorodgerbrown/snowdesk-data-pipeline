@@ -214,3 +214,18 @@ def test_map_page_inherits_pwa_manifest_link():
     assert 'rel="manifest"' in content
     assert "manifest.webmanifest" in content
     assert "sw_register.js" in content
+
+
+@pytest.mark.django_db
+def test_map_page_loads_vendored_maplibre_assets() -> None:
+    """map.html must reference the vendored maplibre-gl assets from /static/, not unpkg.
+
+    SNOW-169 vendored maplibre-gl 4.7.1 JS and CSS into static/ so the page
+    no longer depends on an external CDN at runtime or in the CSP allow-list.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "maplibre-gl.min" in content
+    assert "maplibre-gl.css" in content
+    assert "unpkg.com" not in content
