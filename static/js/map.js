@@ -672,10 +672,13 @@ const clearRegionRepaint = () => {
       sheet.dataset.snap = state;
     };
 
-    // Canonical SLF region-ID shape (e.g. "CH-4115"). Anything else is rejected
-    // before it reaches the CTA href to prevent a malformed GeoJSON payload
-    // turning into an open-redirect / javascript: URL on the client.
-    const REGION_ID_RE = /^[A-Za-z]{2}-[A-Za-z0-9]+$/;
+    // Canonical EAWS region-ID shape: 2-letter country code followed by one
+    // or more hyphen-separated alphanumeric segments. Covers SLF (e.g.
+    // "CH-4115"), EUREGIO/ALBINA (e.g. "AT-07-05", "IT-32-BZ-08-03"), and
+    // any other feeds following the EAWS naming convention. Rejection
+    // before the CTA href prevents a malformed GeoJSON payload turning
+    // into an open-redirect / javascript: URL on the client.
+    const REGION_ID_RE = /^[A-Za-z]{2}(-[A-Za-z0-9]+)+$/;
 
     // Fetch + inject the server-rendered peek + expanded HTML for a region.
     // Returns true on success, false on 404 / network error. The summarySeq
