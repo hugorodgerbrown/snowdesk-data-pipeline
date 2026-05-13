@@ -1685,7 +1685,7 @@ class TestResolveProblemRatingEuregio:
     def _ratings_low_earlier_moderate_later_above_2600(
         self,
     ) -> list[dict[str, Any]]:
-        """Return the danger rating set from the euregio_data.json sample."""
+        """Return the danger rating set from sample_data/EUREGIO_en_CAAMLv6.json."""
         return [
             {"mainValue": "low", "validTimePeriod": "earlier"},
             {
@@ -1865,41 +1865,40 @@ class TestResolveDangerPatterns:
 
 
 # ---------------------------------------------------------------------------
-# Version 4 — end-to-end with euregio_data.json
+# Version 4 — end-to-end with sample_data/EUREGIO_en_CAAMLv6.json
 # ---------------------------------------------------------------------------
 
 
-# Load the EUREGIO sample data for end-to-end tests.
-_EUREGIO_SAMPLE_PATH = Path("/Users/hugo/Downloads/euregio_data.json")
-
-
-@pytest.mark.skipif(
-    not _EUREGIO_SAMPLE_PATH.exists(),
-    reason="euregio_data.json not present at /Users/hugo/Downloads/euregio_data.json",
-)
 class TestBuildRenderModelEuregio:
-    """End-to-end tests using the EUREGIO sample bulletin."""
+    """End-to-end tests using the committed EUREGIO sample bulletin."""
 
-    def _load_euregio_props(self) -> dict[str, Any]:
-        """Load euregio_data.json and return it as properties dict."""
-        data: dict[str, Any] = json.loads(_EUREGIO_SAMPLE_PATH.read_text())
-        return data
+    def _load_euregio_bulletin(self) -> dict[str, Any]:
+        """Load the first bulletin from sample_data/EUREGIO_en_CAAMLv6.json.
+
+        The file contains ``{"bulletins": [...]}`` with 5 ALBINA bulletin
+        dicts.  Each dict is a raw CAAMLv6 properties object — the same shape
+        that ``build_render_model`` accepts.  We pick the first entry.
+        """
+        path = _SAMPLE_DIR / "EUREGIO_en_CAAMLv6.json"
+        data: dict[str, Any] = json.loads(path.read_text())
+        bulletin: dict[str, Any] = data["bulletins"][0]
+        return bulletin
 
     def test_source_is_euregio(self) -> None:
         """EUREGIO bulletin produces source='euregio'."""
-        props = self._load_euregio_props()
+        props = self._load_euregio_bulletin()
         rm = build_render_model(props)
         assert rm["source"] == "euregio"
 
     def test_has_populated_traits(self) -> None:
         """EUREGIO bulletin produces traits (non-empty)."""
-        props = self._load_euregio_props()
+        props = self._load_euregio_bulletin()
         rm = build_render_model(props)
         assert len(rm["traits"]) > 0
 
     def test_has_danger(self) -> None:
         """EUREGIO bulletin produces a danger dict."""
-        props = self._load_euregio_props()
+        props = self._load_euregio_bulletin()
         rm = build_render_model(props)
         assert rm["danger"]["key"] in {
             "low",
@@ -1911,20 +1910,20 @@ class TestBuildRenderModelEuregio:
 
     def test_avalanche_activity_populated(self) -> None:
         """EUREGIO bulletin prose has non-empty avalanche_activity."""
-        props = self._load_euregio_props()
+        props = self._load_euregio_bulletin()
         rm = build_render_model(props)
         activity = rm["prose"]["avalanche_activity"]
         assert activity["highlights"] != "" or activity["comment"] != ""
 
     def test_danger_patterns_present(self) -> None:
         """EUREGIO bulletin has danger_patterns (at least one)."""
-        props = self._load_euregio_props()
+        props = self._load_euregio_bulletin()
         rm = build_render_model(props)
         assert len(rm["danger_patterns"]) > 0
 
     def test_problems_have_avalanche_type(self) -> None:
         """EUREGIO problems carry avalanche_type in their extras."""
-        props = self._load_euregio_props()
+        props = self._load_euregio_bulletin()
         rm = build_render_model(props)
         all_problems = [p for t in rm["traits"] for p in t["problems"]]
         # At least one problem should have a non-None avalanche_type.
@@ -1935,7 +1934,7 @@ class TestBuildRenderModelEuregio:
 
     def test_version_is_4(self) -> None:
         """EUREGIO bulletin render model has version 4."""
-        props = self._load_euregio_props()
+        props = self._load_euregio_bulletin()
         rm = build_render_model(props)
         assert rm["version"] == 4
 
