@@ -51,6 +51,21 @@
             </button>
         </div>
         <div class="overflow-x-auto" data-season-scroll>
+            {% comment %}
+               Two idempotency guards work together here:
+               - hx-trigger="snowdesk:load once": HTMX fires the GET only the
+                 first time the event is received; subsequent events are ignored
+                 by HTMX (the "once" modifier removes the listener after first
+                 use). This prevents a second network request if HTMX somehow
+                 dispatches the event twice.
+               - data-loaded="false": the toggle script in bulletin.html checks
+                 this attribute before dispatching snowdesk:load at all. On the
+                 first open it dispatches the event and flips the flag to "true";
+                 on every subsequent open it skips the dispatch entirely, so the
+                 loaded grid (now in the DOM) is reused without any network
+                 round-trip. The "once" HTMX modifier is a belt-and-suspenders
+                 guard; data-loaded is the primary gate.
+            {% endcomment %}
             <div
                 id="season-grid"
                 data-selected-date="{{ page_date|date:'Y-m-d' }}"
