@@ -9,7 +9,7 @@ description: |
   use for: starting work on an already-scoped ticket, asking questions about a
   ticket without producing a scope, or any message that doesn't explicitly
   reference a SNOW-NN identifier.
-allowed-tools: Task, Bash, Read, Grep, Glob, mcp__linear
+allowed-tools: Task, Bash, Read, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__linear
 ---
 
 # Scope SNOW-$1
@@ -39,19 +39,34 @@ The scoper runs in an isolated context. It will explore the codebase to ground
 the scope in what actually exists. Its working tokens stay in its own context —
 you only see the final scope document.
 
-## Step 3 — Show the scope to the user, ask for approval
+## Step 3 — Present the scope via plan mode for approval
 
-Once the scoper returns, present the scope verbatim to the user. Then ask:
+Once the scoper returns, present the scope through plan mode so it renders
+in the sidebar UI with a proper approve / reject control — not as inline
+conversational text the user has to reply to:
 
-> "Approve this scope? Reply **go** to post it to Linear and move the ticket
-> to Ready for dec,  **edit** to refine, or paste specific changes."
+1. Call `EnterPlanMode` to enter plan mode. No research needed here — the
+   scoper already did it. Edits and writes are blocked in plan mode, which
+   keeps this step strictly read-only.
+2. Immediately call `ExitPlanMode` with the **full scope document verbatim**
+   as the `plan` argument. Do not summarise, reformat, or wrap it in extra
+   commentary — the sidebar should show exactly what would be posted to
+   Linear.
 
-**Do not proceed without explicit approval.** "go", "yes", "ship it", "approve"
-all count. Anything else means iterate.
+`ExitPlanMode` renders the scope in the sidebar with an approve / reject
+control. The user reviews and acts via the UI.
+
+If the user rejects with edits, revise and re-present via `ExitPlanMode`
+again — each revision goes through the sidebar, not as inline text. Do not
+invoke the scoper again unless the user explicitly asks for a fresh take —
+refinements are usually small and you can handle them in the main thread.
+
+**Hard gate:** do not post to Linear or transition the ticket until the
+user has approved the scope via the sidebar.
 
 ## Step 4 — On approval, post and transition
 
-When approved:
+When the sidebar approval comes through:
 
 1. Post the scope as a comment on the Linear ticket using `save_comment` (the
    comment's `issueId` is the internal `id` from `get_issue`, NOT the `SNOW-NN`
@@ -59,7 +74,3 @@ When approved:
 2. Transition the ticket to `Ready for dev` using `save_issue` with the existing
    `id` and the new `stateId`.
 3. Confirm to the user: "Scope posted, SNOW-$1 moved to Ready for dev."
-
-If the user asked for edits, loop back to step 3 with the revised scope. Do not
-invoke the scoper again unless the user explicitly asks for a fresh take —
-refinements are usually small and you can handle them in the main thread.
