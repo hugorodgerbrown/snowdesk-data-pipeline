@@ -53,6 +53,10 @@ import logging
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
+from django.core.cache import cache
+from django.core.cache.utils import make_template_fragment_key
+from django.utils import timezone
+
 from bulletins.services.render_model import RENDER_MODEL_VERSION
 
 if TYPE_CHECKING:
@@ -361,9 +365,6 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> None:
         bulletin: The Bulletin whose linked (region, target_day) pairs to refresh.
 
     """
-    from django.core.cache import cache
-    from django.utils import timezone
-
     target = _target_day(bulletin)
 
     # Gather distinct regions linked to this bulletin.
@@ -372,14 +373,12 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> None:
     for region in regions:
         recompute_region_day(region, target, commit=True)
 
-    # Invalidate the season-calendar fragment cache for each affected region so
+    # Invalidate the season-calendar response cache for each affected region so
     # the next HTMX open re-queries with the freshly written RegionDayRating rows.
-    # Keyed to today (the date the fragment was cached on), not the bulletin's
+    # Keyed to today (the date the response was cached on), not the bulletin's
     # target day — the cache is per-calendar-day, not per-bulletin.
-    # Uses make_template_fragment_key so the key matches exactly what the
-    # {% cache season_calendar region.canonical_region_id today_iso %} tag wrote.
-    from django.core.cache.utils import make_template_fragment_key
-
+    # Uses make_template_fragment_key to produce the same key that
+    # season_calendar_partial stores on a cache miss.
     today_iso = timezone.localdate().isoformat()
     for region in regions:
         cache_key = make_template_fragment_key(
