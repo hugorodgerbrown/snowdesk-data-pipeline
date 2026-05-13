@@ -1952,7 +1952,7 @@ def fetch_weather_snippet(
 
     """
     region = get_object_or_404(
-        MicroRegion.objects.select_related("subregion"), region_id=region_id
+        MicroRegion.objects.select_related("subregion"), region_id__iexact=region_id
     )
     try:
         target_date = datetime.date.fromisoformat(date_str)
