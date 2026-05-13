@@ -5,13 +5,24 @@
     {{ block.super }}
     <li>
         <form
+            id="bulletin-backfill-form"
             action="{% url 'admin:bulletins_bulletin_backfill' %}"
             method="post"
             style="display: inline"
-            onsubmit="return confirm('Run backfill from 2025-12-01 to today?')"
         >
             {% csrf_token %}
             <button type="submit" class="button">Backfill season</button>
         </form>
     </li>
+    <script nonce="{{ request.csp_nonce }}">
+        (function () {
+            var form = document.getElementById('bulletin-backfill-form');
+            if (!form) return;
+            form.addEventListener('submit', function (e) {
+                if (!confirm('Run backfill from 2025-12-01 to today?')) {
+                    e.preventDefault();
+                }
+            });
+        })();
+    </script>
 {% endblock object-tools-items %}
