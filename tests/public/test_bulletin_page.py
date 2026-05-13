@@ -1182,6 +1182,47 @@ class TestDayWindowsPanel:
         assert "dw-tile lv-considerable" in content
         assert "Considerable" in content
 
+    def test_euregio_shape_renders_earlier_and_later_rows(self, client: Client, region):
+        """
+        EUREGIO bulletins split dangerRatings by period + elevation
+        rather than an all_day rating. The panel falls back to one row
+        per period, picking the highest-rank rating across elevation
+        bands. Without this, an all-EUREGIO bulletin would render the
+        Day Risk Profile heading above an empty panel.
+        """
+        day = date(2026, 3, 21)
+        raw = _raw_data_with_ratings(
+            [
+                _rating("low", "earlier"),
+                {
+                    "mainValue": "low",
+                    "validTimePeriod": "later",
+                    "elevation": {"upperBound": "2600"},
+                },
+                {
+                    "mainValue": "moderate",
+                    "validTimePeriod": "later",
+                    "elevation": {"lowerBound": "2600"},
+                },
+            ]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-21")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 2
+        earlier_idx = content.index('data-window="earlier"')
+        later_idx = content.index('data-window="later"')
+        assert earlier_idx < later_idx
+        panel_start = content.index('data-testid="day-windows-panel"')
+        panel_end = content.index('data-testid="avalanche-problems-heading"')
+        panel_html = content[panel_start:panel_end]
+        assert ">Earlier<" in panel_html
+        assert ">Later<" in panel_html
+        # The later row picks the higher of the two elevation-split ratings.
+        assert "lv-moderate" in panel_html
+
     def test_caption_is_absent(self, client: Client, region):
         """No dw-caption element renders — captions are dropped in this design."""
         day = date(2026, 3, 21)

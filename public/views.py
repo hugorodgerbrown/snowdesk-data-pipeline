@@ -1499,58 +1499,87 @@ def _danger_rank(level: str, sub: str) -> tuple[int, int]:
     return (band, offset)
 
 
+def _max_rating_per_period(
+    ratings: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Group ``dangerRatings`` by ``validTimePeriod``, keeping the highest-rank.
+
+    For each period, picks the rating with the highest (band, subdivision)
+    rank — so elevation-split ratings within a single period are collapsed
+    to the more dangerous of the two. Ratings with an unknown ``mainValue``
+    are skipped.
+    """
+    by_period: dict[str, dict[str, Any]] = {}
+    for r in ratings:
+        period, level, sub = _parse_danger_rating(r)
+        if level not in _DANGER_ORDER:
+            continue
+        incumbent = by_period.get(period)
+        if incumbent is None:
+            by_period[period] = r
+            continue
+        _, inc_level, inc_sub = _parse_danger_rating(incumbent)
+        if _danger_rank(level, sub) > _danger_rank(inc_level, inc_sub):
+            by_period[period] = r
+    return by_period
+
+
+def _day_window_row(rating: dict[str, Any]) -> dict[str, Any]:
+    """Build one day-window row dict from a CAAML dangerRating."""
+    period, level, sub = _parse_danger_rating(rating)
+    suffix = _SUBDIVISION_SUFFIX.get(sub, "")
+    number = _DANGER_PANEL_META[level]["number"]
+    return {
+        "type": period,
+        "level_key": level,
+        "level_css": level.replace("_", "-"),
+        "level_label": _DANGER_PANEL_META[level]["label"],
+        "level_number": f"{number}{suffix}",
+        "caption": "",
+        "pill_label": _DAY_WINDOW_PILL_LABELS.get(period, period),
+    }
+
+
 def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
     """
     Return the list[Window] consumed by the day-windows panel partial.
 
     Reads ``dangerRatings`` directly from the bulletin's CAAML properties.
-    Always emits one row for the ``all_day_*`` rating. Emits a second row for
-    the ``later_*`` rating only when its effective rank (band + subdivision
-    offset) is strictly higher than the ``all_day`` rank — a later rating that
-    is equal or lower is suppressed as it implies no improvement. Returns an
-    empty list when no ``all_day`` rating is present — the template hides
-    the panel in that case.
+
+    SLF editorial style: always one ``all_day`` rating, optionally a
+    ``later`` overlay when the day deteriorates. Emits one row for the
+    ``all_day`` rating; emits the ``later`` overlay only when its rank
+    is strictly higher than ``all_day`` — equal or lower implies no
+    change, so the overlay would be noise.
+
+    EUREGIO / ALBINA style: no ``all_day``; ratings split by
+    ``validTimePeriod`` (and often by elevation within a period). When
+    no ``all_day`` rating exists, fall back to one row per period found
+    in the source, picking the highest-rank rating across any elevation
+    bands for that period. The bulletin's problem cards below the panel
+    carry the full per-trait + elevation detail.
+
+    Returns an empty list only when ``dangerRatings`` carries no usable
+    rating at all — the template hides the panel in that case.
     """
     props = _get_properties(bulletin)
     ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
+    by_period = _max_rating_per_period(ratings)
 
-    all_day_rating: dict[str, Any] | None = None
-    later_rating: dict[str, Any] | None = None
-    for r in ratings:
-        period, level, _ = _parse_danger_rating(r)
-        if period == "all_day" and level in _DANGER_ORDER:
-            all_day_rating = r
-        elif period == "later" and level in _DANGER_ORDER:
-            later_rating = r
+    all_day_rating = by_period.get("all_day")
+    if all_day_rating is not None:
+        windows = [_day_window_row(all_day_rating)]
+        later_rating = by_period.get("later")
+        if later_rating is not None:
+            _, later_level, later_sub = _parse_danger_rating(later_rating)
+            _, ad_level, ad_sub = _parse_danger_rating(all_day_rating)
+            if _danger_rank(later_level, later_sub) > _danger_rank(ad_level, ad_sub):
+                windows.append(_day_window_row(later_rating))
+        return windows
 
-    if all_day_rating is None:
-        return []
-
-    def _row(rating: dict[str, Any], chip: str | Promise) -> dict[str, Any]:
-        _, level, sub = _parse_danger_rating(rating)
-        suffix = _SUBDIVISION_SUFFIX.get(sub, "")
-        number = _DANGER_PANEL_META[level]["number"]
-        return {
-            "type": (rating.get("validTimePeriod") or "all_day"),
-            "level_key": level,
-            "level_css": level.replace("_", "-"),
-            "level_label": _DANGER_PANEL_META[level]["label"],
-            "level_number": f"{number}{suffix}",
-            "caption": "",
-            "pill_label": chip,
-        }
-
-    windows = [_row(all_day_rating, _DAY_WINDOW_PILL_LABELS["all_day"])]
-
-    if later_rating is not None:
-        _, later_level, later_sub = _parse_danger_rating(later_rating)
-        _, all_day_level, all_day_sub = _parse_danger_rating(all_day_rating)
-        later_rank = _danger_rank(later_level, later_sub)
-        all_day_rank = _danger_rank(all_day_level, all_day_sub)
-        if later_rank > all_day_rank:
-            windows.append(_row(later_rating, _DAY_WINDOW_PILL_LABELS["later"]))
-
-    return windows
+    # EUREGIO-style fallback: one row per period, ordered earlier → later.
+    period_order = ("earlier", "later")
+    return [_day_window_row(by_period[p]) for p in period_order if p in by_period]
 
 
 def _build_canonical_url(
