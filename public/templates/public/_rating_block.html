@@ -3,9 +3,11 @@ public/templates/public/_rating_block.html — Single problem card for the
 bulletin page layout.
 
 Expects the following variables in scope:
-  card   — one entry from panel.problem_cards (produced by build_problem_cards)
+  card   — one entry from panel.problem_cards (produced by build_problem_cards
+            or _problem_cards_from_render_model_traits for EUREGIO bulletins).
             Keys: problem_type, category, danger_level, label, time_period_label,
-                  aspects, elevation, core_zone_text, comment_html
+                  aspects, elevation, core_zone_text, comment_html,
+                  avalanche_type (optional — "slab", "loose", or None)
 
 Renders:
   1. Card header — danger-band colour strip carrying the EAWS hazard
@@ -16,7 +18,7 @@ Renders:
      present for screen readers.  Absent for prose-only problems.
   3. Prose — the problem's comment field rendered in full, no truncation.
 {% endcomment %}
-{% load static card_tags hazard_icons snowdesk_html snowdesk_time %}
+{% load i18n static card_tags hazard_icons snowdesk_html snowdesk_time %}
 
 {# ── Problem card ───────────────────────────────────────────────────────── #}
 <div
@@ -44,6 +46,14 @@ Renders:
                     data-testid="category-pill"
                 >
                     {{ card.category }}
+                </span>
+            {% endif %}
+            {% if card.avalanche_type %}
+                <span
+                    class="font-mono text-[9.5px] tracking-[0.08em] uppercase bg-black/[0.08] px-1.5 py-0.5 rounded shrink-0"
+                    data-testid="avalanche-type-chip"
+                >
+                    {% if card.avalanche_type == "slab" %}{% trans "Slab" %}{% else %}{% trans "Loose" %}{% endif %}
                 </span>
             {% endif %}
             {% if card.time_period_label %}

@@ -2592,6 +2592,87 @@ def build_problem_cards(
         return []
 
 
+def _resolve_problem_cards(
+    raw_problems: list[dict[str, Any]],
+    aggregation: list[dict[str, Any]],
+    traits: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Resolve problem cards from either the CAAML aggregation or render model traits.
+
+    SLF bulletins carry ``customData.CH.aggregation`` so ``build_problem_cards``
+    produces a non-empty list.  EUREGIO bulletins have no aggregation; in that
+    case the enriched render-model traits are used as the card source instead.
+
+    Args:
+        raw_problems: CAAML avalancheProblems list from the bulletin properties.
+        aggregation: SLF aggregation list (may be empty for EUREGIO).
+        traits: Enriched render-model traits (used as fallback).
+
+    Returns:
+        Flat list of card dicts ready for ``_rating_block.html``.
+
+    """
+    cards = build_problem_cards(raw_problems, aggregation)
+    if not cards and traits:
+        cards = _problem_cards_from_render_model_traits(traits)
+    return cards
+
+
+def _problem_cards_from_render_model_traits(
+    traits: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Build one problem card per render-model trait.
+
+    Used as a fallback for EUREGIO bulletins which carry no
+    ``customData.CH.aggregation``, so ``build_problem_cards`` returns [].
+    The traits list comes from the **enriched** render model (already processed
+    by ``enrich_render_model``), so elevation and label fields are already in
+    the presentation-ready shape the ``_rating_block.html`` partial expects.
+
+    One card is emitted per trait using the first problem in each trait for
+    spatial data (aspects / elevation) — EUREGIO aggregation entries always
+    contain a single problem type per time-period group.
+
+    Args:
+        traits: Enriched render model traits list.
+
+    Returns:
+        Flat list of card dicts, one per trait, in trait order.
+
+    """
+    cards: list[dict[str, Any]] = []
+    for trait in traits:
+        category: str = trait.get("category") or ""
+        danger_level: int = trait.get("danger_level") or 1
+        time_period: str = trait.get("time_period") or "all_day"
+        time_period_label: str | Promise = _TIME_PERIOD_LABELS.get(time_period, "")
+        title: str = trait.get("title") or ""
+        problems: list[dict[str, Any]] = trait.get("problems") or []
+        if not problems:
+            continue
+        # Use the first problem for spatial data; label from the trait title.
+        first = problems[0]
+        cards.append(
+            {
+                "category": category,
+                "danger_level": danger_level,
+                "danger_level_key": _DANGER_ORDER[danger_level - 1].replace("_", "-"),
+                "label": title,
+                "time_period_label": time_period_label,
+                "aspects": first.get("aspects") or [],
+                "elevation": first.get("elevation"),
+                "comment_html": first.get("comment_html") or "",
+                "core_zone_text": first.get("core_zone_text") or "",
+                "hide_comment": False,
+                # v4: avalanche_type for slab/loose chip (may be None).
+                "avalanche_type": first.get("avalanche_type"),
+            }
+        )
+    return cards
+
+
 def _enrich_render_model_problem(
     rm_problem: dict[str, Any],
     guidance: dict[str, Any],
@@ -2787,7 +2868,6 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     raw_problems: list[dict[str, Any]] = props.get("avalancheProblems") or []
     ch_data: dict[str, Any] = (props.get("customData") or {}).get("CH") or {}
     aggregation: list[dict[str, Any]] = ch_data.get("aggregation") or []
-    problem_cards = build_problem_cards(raw_problems, aggregation)
     ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
     if not ratings:
         logger.error(
@@ -2828,6 +2908,9 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     render_model = enrich_render_model(raw_render_model)
 
     traits: list[dict[str, Any]] = render_model.get("traits") or []
+
+    # SLF bulletins use CH aggregation; EUREGIO bulletins fall back to traits.
+    problem_cards = _resolve_problem_cards(raw_problems, aggregation, traits)
 
     # Per-half danger resolution for the AM/PM split headline.  Mirrors
     # WhiteRisk's "Morning" + "As the day progresses" maps: the half's

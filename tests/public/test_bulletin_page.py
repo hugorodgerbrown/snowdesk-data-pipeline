@@ -49,9 +49,23 @@ def _make_am_bulletin(region, day, **kwargs):
 def _render_model_with_traits(
     traits: list, metadata: dict | None = None, prose: dict | None = None
 ) -> dict:
-    """Build a minimal v3 render_model dict for testing."""
+    """Build a minimal v4 render_model dict for testing."""
+    base_prose: dict = {
+        "snowpack_structure": "<p>The snowpack is generally stable.</p>",
+        "weather_review": None,
+        "weather_forecast": None,
+        "tendency": [],
+        "avalanche_activity": {"highlights": None, "comment": None},
+    }
+    if prose:
+        # Merge supplied prose over defaults so callers need not specify
+        # the avalanche_activity key explicitly.
+        base_prose.update(prose)
+        if "avalanche_activity" not in prose:
+            base_prose["avalanche_activity"] = {"highlights": None, "comment": None}
     return {
-        "version": 3,
+        "version": 4,
+        "source": "slf",
         "danger": {"key": "moderate", "number": "2", "subdivision": None},
         "traits": traits,
         "snowpack_structure": None,
@@ -64,13 +78,8 @@ def _render_model_with_traits(
             "unscheduled": False,
             "lang": "en",
         },
-        "prose": prose
-        or {
-            "snowpack_structure": "<p>The snowpack is generally stable.</p>",
-            "weather_review": None,
-            "weather_forecast": None,
-            "tendency": [],
-        },
+        "prose": base_prose,
+        "danger_patterns": [],
     }
 
 
@@ -258,7 +267,7 @@ def simple_bulletin(region):
     rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
     raw = _raw_data_with_problems([_raw_problem()])
     return _make_am_bulletin(
-        region, day, render_model=rm, render_model_version=3, raw_data=raw
+        region, day, render_model=rm, render_model_version=4, raw_data=raw
     )
 
 
@@ -310,7 +319,7 @@ def variable_bulletin(region):
         },
     }
     return _make_am_bulletin(
-        region, day, render_model=rm, render_model_version=3, raw_data=raw_data
+        region, day, render_model=rm, render_model_version=4, raw_data=raw_data
     )
 
 
@@ -465,7 +474,7 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -485,7 +494,7 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -506,7 +515,7 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -526,7 +535,7 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -554,7 +563,7 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -587,7 +596,7 @@ class TestMetadataStrip:
             [_dry_trait_problems([_problem()])],
             metadata=metadata,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -610,7 +619,7 @@ class TestMetadataStrip:
             [_dry_trait_problems([_problem()])],
             metadata=metadata,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -665,7 +674,7 @@ class TestNoBulletinPageFooter:
         day = date(2026, 3, 15)
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
         bulletin = _make_am_bulletin(
-            region, day, render_model=rm, render_model_version=3
+            region, day, render_model=rm, render_model_version=4
         )
         other_region = MicroRegionFactory.create(name="Münstertal", slug="ch-4116")
         RegionBulletinFactory.create(
@@ -705,7 +714,7 @@ class TestRegionNameSource:
             valid_from=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
             valid_to=datetime(2026, 3, 15, 15, 0, tzinfo=UTC),
             render_model=rm,
-            render_model_version=3,
+            render_model_version=4,
         )
         # SLF labels this region "Stoos" in its CAAML payload, but the
         # EAWS canonical name (loaded from the fixture into ``region.name``)
@@ -785,7 +794,7 @@ class TestDebuggingAids:
             region,
             day,
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
-            render_model_version=3,
+            render_model_version=4,
             raw_data={"properties": {"bulletinID": "sentinel-uuid-12345"}},
         )
         url = _url("ch-4115", "valais", "2026-03-17")
@@ -820,7 +829,7 @@ class TestDebuggingAids:
             region,
             day,
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
-            render_model_version=3,
+            render_model_version=4,
             raw_data={"properties": {"comment": "hostile </script><b>pwn</b>"}},
         )
         url = _url("ch-4115", "valais", "2026-03-18")
@@ -1573,7 +1582,7 @@ class TestDayCharacterEyebrow:
         }
         rm = _render_model_with_traits([trait])
         rm["danger"] = {"key": "considerable", "number": "3", "subdivision": None}
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=3)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
 
         url = _url("ch-4115", "valais", "2026-03-20")
         response = client.get(url)
@@ -1641,3 +1650,285 @@ def test_bulletin_page_loads_htmx_from_static(client: Client) -> None:
     body = response.content.decode()
     assert "htmx.min" in body
     assert "unpkg.com" not in body
+
+
+# ---------------------------------------------------------------------------
+# SNOW-171: EUREGIO bulletins — avalanche-activity section and slab/loose chip
+# ---------------------------------------------------------------------------
+
+
+def _render_model_v4_euregio(
+    traits: list,
+    avalanche_activity: dict | None = None,
+    prose: dict | None = None,
+) -> dict:
+    """Build a minimal v4 EUREGIO render_model dict for testing."""
+    base_prose: dict = {
+        "snowpack_structure": None,
+        "weather_review": None,
+        "weather_forecast": None,
+        "tendency": [],
+        "avalanche_activity": avalanche_activity
+        or {"highlights": None, "comment": None},
+    }
+    if prose:
+        base_prose.update(prose)
+    return {
+        "version": 4,
+        "source": "euregio",
+        "danger": {"key": "moderate", "number": "2", "subdivision": None},
+        "traits": traits,
+        "snowpack_structure": None,
+        "metadata": {
+            "publication_time": "2026-03-15T06:00:00+00:00",
+            "valid_from": "2026-03-15T06:00:00+00:00",
+            "valid_until": "2026-03-15T15:00:00+00:00",
+            "next_update": None,
+            "unscheduled": False,
+            "lang": "en",
+        },
+        "prose": base_prose,
+        "danger_patterns": [],
+    }
+
+
+def _euregio_trait(
+    problem_type: str = "wind_slab",
+    avalanche_type: str | None = "slab",
+    category: str = "dry",
+    time_period: str = "all_day",
+) -> dict:
+    """Build a minimal EUREGIO render-model trait dict."""
+    return {
+        "category": category,
+        "time_period": time_period,
+        "title": "Wind slab",
+        "geography": {"source": "problems"},
+        "problems": [
+            {
+                "problem_type": problem_type,
+                "comment_html": "<p>Wind slab on shaded aspects.</p>",
+                "aspects": ["N", "NE", "E"],
+                "elevation": {"lower": 2000, "upper": None, "treeline": False},
+                "time_period": time_period,
+                "core_zone_text": None,
+                "danger_rating_value": "moderate",
+                "avalanche_type": avalanche_type,
+            }
+        ],
+        "prose": None,
+        "danger_level": 2,
+    }
+
+
+def _raw_data_euregio(problems: list | None = None) -> dict:
+    """Build a minimal EUREGIO raw_data envelope (no customData.CH)."""
+    return {
+        "type": "Feature",
+        "geometry": None,
+        "properties": {
+            "dangerRatings": [{"mainValue": "moderate", "validTimePeriod": "all_day"}],
+            "avalancheProblems": problems or [],
+            "customData": {"ALBINA": {}},
+        },
+    }
+
+
+@pytest.mark.django_db
+class TestEuregioAvalancheActivitySection:
+    """SNOW-171: avalanche-activity prose section appears on EUREGIO bulletins."""
+
+    def test_activity_section_rendered_when_highlights_present(
+        self, client: Client, region
+    ) -> None:
+        """avalanche-activity section renders when highlights is non-empty."""
+        day = date(2026, 3, 15)
+        activity = {
+            "highlights": "Slab avalanches are the main problem.",
+            "comment": None,
+        }
+        rm = _render_model_v4_euregio(
+            [_euregio_trait()],
+            avalanche_activity=activity,
+        )
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=4,
+            raw_data=_raw_data_euregio(),
+        )
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="avalanche-activity-section"' in content
+        assert 'data-testid="avalanche-activity-highlights"' in content
+        assert "Slab avalanches are the main problem." in content
+
+    def test_activity_section_rendered_when_comment_present(
+        self, client: Client, region
+    ) -> None:
+        """avalanche-activity section renders when comment is non-empty."""
+        day = date(2026, 3, 15)
+        activity = {
+            "highlights": None,
+            "comment": "<p>Fresh wind slabs were deposited overnight.</p>",
+        }
+        rm = _render_model_v4_euregio(
+            [_euregio_trait()],
+            avalanche_activity=activity,
+        )
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=4,
+            raw_data=_raw_data_euregio(),
+        )
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="avalanche-activity-section"' in content
+        assert 'data-testid="avalanche-activity-comment"' in content
+        assert "Fresh wind slabs were deposited overnight." in content
+
+    def test_activity_section_absent_when_both_empty(
+        self, client: Client, region
+    ) -> None:
+        """avalanche-activity section is absent when highlights and comment are both None."""
+        day = date(2026, 3, 15)
+        activity = {"highlights": None, "comment": None}
+        rm = _render_model_v4_euregio(
+            [_euregio_trait()],
+            avalanche_activity=activity,
+        )
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=4,
+            raw_data=_raw_data_euregio(),
+        )
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="avalanche-activity-section"' not in content
+
+    def test_activity_section_absent_for_slf_bulletin(
+        self, client: Client, simple_bulletin, region
+    ) -> None:
+        """SLF (CH) bulletins do not render the avalanche-activity section."""
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="avalanche-activity-section"' not in content
+
+
+@pytest.mark.django_db
+class TestSlabLooseChip:
+    """SNOW-171: slab/loose chip appears in rating blocks when avalanche_type is set."""
+
+    def test_slab_chip_rendered_for_slab_problem(self, client: Client, region) -> None:
+        """avalanche_type='slab' → 'Slab' chip rendered in rating block header."""
+        day = date(2026, 3, 15)
+        rm = _render_model_v4_euregio([_euregio_trait(avalanche_type="slab")])
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=4,
+            raw_data=_raw_data_euregio(),
+        )
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="avalanche-type-chip"' in content
+        # Template renders "Slab" inside whitespace; check text content directly.
+        chip_start = content.index('data-testid="avalanche-type-chip"')
+        chip_region = content[chip_start : chip_start + 200]
+        assert "Slab" in chip_region
+
+    def test_loose_chip_rendered_for_loose_problem(
+        self, client: Client, region
+    ) -> None:
+        """avalanche_type='loose' → 'Loose' chip rendered in rating block header."""
+        day = date(2026, 3, 15)
+        rm = _render_model_v4_euregio(
+            [
+                _euregio_trait(
+                    problem_type="wet_snow", avalanche_type="loose", category="wet"
+                )
+            ]
+        )
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=4,
+            raw_data=_raw_data_euregio(),
+        )
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="avalanche-type-chip"' in content
+        chip_start = content.index('data-testid="avalanche-type-chip"')
+        chip_region = content[chip_start : chip_start + 200]
+        assert "Loose" in chip_region
+
+    def test_no_chip_when_avalanche_type_none(self, client: Client, region) -> None:
+        """avalanche_type=None → no avalanche-type chip in rating block header."""
+        day = date(2026, 3, 15)
+        rm = _render_model_v4_euregio([_euregio_trait(avalanche_type=None)])
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=4,
+            raw_data=_raw_data_euregio(),
+        )
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="avalanche-type-chip"' not in content
+
+    def test_slf_bulletin_has_no_chip(
+        self, client: Client, simple_bulletin, region
+    ) -> None:
+        """SLF (CH) bulletins do not render the avalanche-type chip."""
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="avalanche-type-chip"' not in content
+
+
+@pytest.mark.django_db
+class TestProblemCardsFromRenderModelTraits:
+    """Unit tests for _problem_cards_from_render_model_traits helper."""
+
+    def test_builds_one_card_per_trait(self, region) -> None:
+        """One card is emitted per trait."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        traits = [
+            _euregio_trait("wind_slab"),
+            _euregio_trait("wet_snow", category="wet"),
+        ]
+        cards = _problem_cards_from_render_model_traits(traits)
+        assert len(cards) == 2
+
+    def test_card_carries_avalanche_type(self, region) -> None:
+        """Card carries the avalanche_type from the first problem."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        traits = [_euregio_trait("wind_slab", avalanche_type="slab")]
+        cards = _problem_cards_from_render_model_traits(traits)
+        assert cards[0]["avalanche_type"] == "slab"
+
+    def test_card_none_avalanche_type_when_not_set(self, region) -> None:
+        """Card avalanche_type is None when the first problem has no avalanche_type."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        traits = [_euregio_trait("wet_snow", avalanche_type=None)]
+        cards = _problem_cards_from_render_model_traits(traits)
+        assert cards[0]["avalanche_type"] is None
+
+    def test_trait_with_no_problems_is_skipped(self, region) -> None:
+        """A trait with an empty problems list contributes no card."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        empty_trait: dict = {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Wind slab",
+            "geography": {"source": "problems"},
+            "problems": [],
+            "prose": None,
+            "danger_level": 2,
+        }
+        traits = [empty_trait, _euregio_trait("wind_slab")]
+        cards = _problem_cards_from_render_model_traits(traits)
+        assert len(cards) == 1
