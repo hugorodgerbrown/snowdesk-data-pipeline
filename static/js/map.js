@@ -570,6 +570,17 @@ const clearRegionRepaint = () => {
     // Tracks the most recent inflight summary fetch so a slow tap-A
     // followed by a fast tap-B never lets A's response overwrite B's.
     let summarySeq = 0;
+    // Most recent date the choropleth is showing — seeded from any
+    // ``?d=`` on the URL, then kept in sync by every
+    // ``snowdesk:date-changed`` event (scrubber commit, timelapse frame,
+    // popstate). ``selectFeature`` reads this when opening the sheet so
+    // a tap on a region after the timelapse stops on a past frame fetches
+    // that frame's bulletin rather than today's. ``null`` means "today" —
+    // ``loadRegionSummary`` treats a missing ``dateKey`` as today.
+    let currentDisplayedDate = (() => {
+      const d = new URL(location.href).searchParams.get('d');
+      return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+    })();
 
     const sheet = document.getElementById('sheet');
     const sheetPeek = document.getElementById('sheet-peek');
@@ -817,7 +828,7 @@ const clearRegionRepaint = () => {
       map.setFeatureState({ source: 'regions', id: selectedId }, { selected: true });
 
       const props = REGION_LOOKUP[numericId];
-      const ok = await loadRegionSummary(props.regionID);
+      const ok = await loadRegionSummary(props.regionID, currentDisplayedDate);
       // If the user dismissed the sheet (or selected a different region)
       // while the fetch was in flight, selectedId may no longer match.
       // loadRegionSummary already discards stale data; here we just bail
@@ -1428,10 +1439,15 @@ const clearRegionRepaint = () => {
     // and ``REGION_LOOKUP`` are closures over the main IIFE; the
     // scrubber doesn't see them, so the bridge is an event.
     document.addEventListener('snowdesk:date-changed', (e) => {
+      const dateKey = e.detail && e.detail.date;
+      // Keep the module-level tracker in sync so a subsequent tap on a
+      // different region also fetches the right date — not just refreshes
+      // of an already-open sheet.
+      currentDisplayedDate = dateKey || null;
       if (selectedId === null) return;
       const props = REGION_LOOKUP[selectedId];
       if (!props) return;
-      loadRegionSummary(props.regionID, e.detail && e.detail.date);
+      loadRegionSummary(props.regionID, dateKey);
     });
 
     // ---- Initial-load hash → sheet (SNOW-39) ----
