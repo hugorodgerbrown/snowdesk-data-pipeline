@@ -22,13 +22,18 @@ Usage:
     # Overwrite existing bulletins (re-ingest even if already present).
     python manage.py load_euregio_bulletin --commit --force
 
+    # Load from a local JSON file instead of the API (useful for testing).
+    python manage.py load_euregio_bulletin --file /path/to/bulletin.json --commit
+
 API documentation:
   https://avalanche.report/albina_files/latest_bulletins.json
   (returns a JSON array of CAAML bulletin objects, English)
 """
 
+import json
 import logging
 from argparse import ArgumentParser
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -73,6 +78,40 @@ def fetch_euregio_bulletins(url: str = EUREGIO_API_URL) -> list[dict[str, Any]]:
     return []
 
 
+def load_euregio_bulletins_from_file(path: Path) -> list[dict[str, Any]]:
+    """
+    Load EUREGIO bulletins from a local JSON file.
+
+    Supports both the top-level list format (``[{…}, …]``) and the
+    ``{"bulletins": [{…}, …]}`` envelope used by CAAML v6 exports.
+
+    Args:
+        path: Filesystem path to the JSON file.
+
+    Returns:
+        A flat list of raw bulletin dicts.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        ValueError: If the file cannot be parsed as JSON or has an
+            unexpected shape.
+
+    """
+    logger.debug("Loading EUREGIO bulletins from local file %s", path)
+    with path.open(encoding="utf-8") as fh:
+        data: Any = json.load(fh)
+    if isinstance(data, list):
+        result: list[dict[str, Any]] = data
+        return result
+    if isinstance(data, dict) and "bulletins" in data:
+        result = data["bulletins"]
+        return result
+    raise ValueError(
+        f"Unexpected JSON shape in {path}: expected list or "
+        '{"bulletins": [...]} object'
+    )
+
+
 class Command(BaseCommand):
     """Fetch and load the latest EUREGIO bulletin from avalanche.report."""
 
@@ -102,28 +141,45 @@ class Command(BaseCommand):
             metavar="URL",
             help=(f"Override the ALBINA API endpoint. Default: {EUREGIO_API_URL}"),
         )
+        parser.add_argument(
+            "--file",
+            default=None,
+            metavar="PATH",
+            help=(
+                "Load bulletins from a local JSON file instead of the API. "
+                "Useful for testing with the sample file at "
+                "sample_data/EUREGIO_en_CAAMLv6.json."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
         commit: bool = options["commit"]
         force: bool = options["force"]
         url: str = options["url"]
+        file_path: str | None = options["file"]
 
+        source_label = file_path or url
         mode_label = "COMMIT" if commit else "DRY-RUN"
         self.stdout.write(
             self.style.MIGRATE_HEADING(
-                f"Loading EUREGIO bulletins from {url} [{mode_label}]"
+                f"Loading EUREGIO bulletins from {source_label} [{mode_label}]"
             )
         )
         logger.info(
-            "load_euregio_bulletin started: url=%s commit=%s force=%s",
-            url,
+            "load_euregio_bulletin started: source=%s commit=%s force=%s",
+            source_label,
             commit,
             force,
         )
 
         try:
-            bulletins = fetch_euregio_bulletins(url)
+            if file_path is not None:
+                bulletins = load_euregio_bulletins_from_file(Path(file_path))
+            else:
+                bulletins = fetch_euregio_bulletins(url)
+        except FileNotFoundError as exc:
+            raise CommandError(f"File not found: {exc}") from exc
         except requests.HTTPError as exc:
             raise CommandError(f"Failed to fetch EUREGIO bulletins: {exc}") from exc
         except Exception as exc:

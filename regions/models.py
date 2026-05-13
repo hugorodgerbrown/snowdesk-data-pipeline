@@ -177,7 +177,7 @@ class SubRegion(BaseModel):
     """
 
     prefix = models.CharField(
-        max_length=10,
+        max_length=12,
         unique=True,
         db_index=True,
         help_text="EAWS L2 prefix, e.g. 'CH-41' (CH) or 'IT-32-BZ' (EUREGIO).",
