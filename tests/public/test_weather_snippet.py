@@ -511,3 +511,60 @@ class TestBulletinDetailWeatherTrigger:
         assert "public" in cache_control
         assert "max-age=" in cache_control
         assert "no-store" not in cache_control
+
+    def test_past_date_no_snapshot_schedules_async_fetch(self, monkeypatch):
+        """Visiting a past-date URL with no snapshot calls fetch_weather_async."""
+        calls: list[tuple] = []
+
+        def _spy(region, target_date):
+            calls.append((region.region_id, target_date))
+
+        monkeypatch.setattr("public.views.fetch_weather_async", _spy)
+
+        region = MicroRegionFactory.create(region_id="CH-9001", name="Spy", slug="spy")
+        past = timezone.localdate() - timedelta(days=2)
+        # Bulletin for the past date so the happy-path render fires.
+        vf = datetime(past.year, past.month, past.day, 6, 0, tzinfo=UTC)
+        vt = datetime(past.year, past.month, past.day, 15, 0, tzinfo=UTC)
+        bulletin = BulletinFactory.create(
+            valid_from=vf,
+            valid_to=vt,
+            issued_at=vf - timedelta(minutes=30),
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin, region=region, region_name_at_time=region.name
+        )
+
+        client = Client()
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": region.region_id,
+                "slug": region.slug,
+                "date_str": past.isoformat(),
+            },
+        )
+        response = client.get(url, follow=True)
+
+        assert response.status_code == 200
+        assert calls == [("CH-9001", past)]
+
+    def test_today_no_snapshot_does_not_schedule_async_fetch(self, monkeypatch):
+        """Today's page keeps the HTMX path; the async warmup only covers past dates."""
+        calls: list = []
+        monkeypatch.setattr(
+            "public.views.fetch_weather_async",
+            lambda *a, **kw: calls.append(a),
+        )
+
+        region = MicroRegionFactory.create(
+            region_id="CH-9002", name="Today", slug="today"
+        )
+        self._make_today_bulletin_for_region(region)
+
+        today = timezone.localdate()
+        client = Client()
+        response = client.get(self._bulletin_url(region, today), follow=True)
+
+        assert response.status_code == 200
+        assert calls == []

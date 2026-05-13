@@ -347,6 +347,16 @@ SUBSCRIPTIONS_EMAIL_ASYNC = config(
     cast=bool,
 )
 
+# Warm weather snapshots on a background daemon thread when bulletin_detail
+# renders a past-date page with no snapshot (SNOW-164). Default True; tests
+# pin this False in tests/conftest.py so the fetch runs synchronously and
+# the test assertion sees the written snapshot.
+WEATHER_FETCH_ASYNC = config(
+    "WEATHER_FETCH_ASYNC",
+    default=True,
+    cast=bool,
+)
+
 # ---------------------------------------------------------------------------
 # Email — SMTP everywhere.  Dev uses Mailhog (localhost:1025, no auth, no
 # TLS); prod uses Resend's SMTP relay (smtp.resend.com:587, STARTTLS).

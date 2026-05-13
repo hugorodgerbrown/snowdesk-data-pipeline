@@ -64,6 +64,7 @@ from bulletins.services.render_model import (
 from bulletins.services.weather_display import build_weather_display
 from bulletins.services.weather_fetcher import (
     fetch_archive_for_region,
+    fetch_weather_async,
     fetch_weather_for_region,
 )
 from core.decorators import require_htmx
@@ -1668,6 +1669,15 @@ def _bulletin_detail_response(
         WeatherSnapshot.objects.for_date(target_date).filter(region=region).first()
     )
     weather_display = build_weather_display(weather_snapshot, timezone.now())
+
+    # When the page would otherwise emit the HTMX trigger for a past date,
+    # warm the snapshot on a background thread so the user's actual click —
+    # which comes seconds after the browser prefetch — lands on a server
+    # render that bakes weather inline (no HTMX swap, no flash). The HTMX
+    # trigger stays in the no-weather template as a safety net for the rare
+    # click-before-worker-finishes case. SNOW-164.
+    if weather_snapshot is None and target_date < today:
+        fetch_weather_async(region, target_date)
 
     # Collect every issue that touches the target day and pick the one
     # the caller asked for; otherwise fall back to the 10:00-rule
