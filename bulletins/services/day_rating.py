@@ -349,6 +349,10 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> None:
     candidate (morning + prior-evening pair) so the chosen bulletin for the day
     is always up to date.
 
+    After recomputing, invalidates the season-calendar fragment cache key for
+    each affected region so the next HTMX open re-queries rather than serving
+    stale markup. Cache failures are logged and never abort ingest.
+
     Designed to be called inline from ``upsert_bulletin`` after the
     RegionBulletin links are created.  Callers must wrap this in a
     try/except so that day-rating failures never abort ingest.
@@ -357,6 +361,9 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> None:
         bulletin: The Bulletin whose linked (region, target_day) pairs to refresh.
 
     """
+    from django.core.cache import cache
+    from django.utils import timezone
+
     target = _target_day(bulletin)
 
     # Gather distinct regions linked to this bulletin.
@@ -364,6 +371,29 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> None:
 
     for region in regions:
         recompute_region_day(region, target, commit=True)
+
+    # Invalidate the season-calendar fragment cache for each affected region so
+    # the next HTMX open re-queries with the freshly written RegionDayRating rows.
+    # Keyed to today (the date the fragment was cached on), not the bulletin's
+    # target day — the cache is per-calendar-day, not per-bulletin.
+    # Uses make_template_fragment_key so the key matches exactly what the
+    # {% cache season_calendar region.canonical_region_id today_iso %} tag wrote.
+    from django.core.cache.utils import make_template_fragment_key
+
+    today_iso = timezone.localdate().isoformat()
+    for region in regions:
+        cache_key = make_template_fragment_key(
+            "season_calendar", [region.canonical_region_id, today_iso]
+        )
+        try:
+            cache.delete(cache_key)
+        except Exception:
+            logger.warning(
+                "Failed to invalidate season_calendar cache key for region=%s;"
+                " ingest continues.",
+                region.canonical_region_id,
+                exc_info=True,
+            )
 
     logger.debug(
         "apply_bulletin_day_ratings: bulletin=%s target_day=%s regions=%d",

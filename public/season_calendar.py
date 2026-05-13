@@ -17,6 +17,14 @@ bulletin. Tiles for days without a row render as inert ``no_rating``
 placeholders. This is a pure presentation reshape of the already
 pre-computed ``RegionDayRating`` rows — no caching, no pre-compute, no
 signals.
+
+``build_season_grid`` no longer accepts ``page_date`` — selected-day
+highlighting is applied client-side after the HTMX swap so the fragment
+cache is not keyed on the current page date.
+
+``season_header`` is a cheap helper that returns ``{"season_label": "<NN/NN>"}``
+when the season has started (used by the bulletin view to decide whether
+to render the shell + trigger without building the full grid).
 """
 
 from __future__ import annotations
@@ -61,9 +69,10 @@ class SeasonCell:
     date and the tile should render as an interactive link. Otherwise the
     tile renders as an inert ``no_rating`` placeholder.
 
-    ``is_today`` and ``is_selected`` are mutually exclusive: when the page
-    date matches today, only ``is_today`` is set — otherwise the tile
-    would render with two stacked rings.
+    ``is_today`` is set only when the cell date equals today. ``is_selected``
+    is always ``False`` from the builder — selected-day highlighting is applied
+    client-side after the HTMX swap, keyed off ``data-selected-date`` on the
+    grid container and ``data-date`` on each cell anchor/div.
 
     ``month_parity`` alternates 0/1 across calendar months (the first
     dated month is 0). The template paints a subtle backdrop on cells
@@ -111,17 +120,17 @@ class SeasonGrid:
 
 def build_season_grid(
     region: "MicroRegion",
-    page_date: datetime.date,
     today: datetime.date,
 ) -> SeasonGrid:
     """
     Build the season-long heatmap grid for ``region``.
 
+    Selected-day highlighting is applied client-side after the HTMX swap
+    (keyed off ``data-selected-date`` on the grid container), so ``page_date``
+    is no longer an input — this keeps the cache key clean.
+
     Args:
         region: The region whose ratings to render.
-        page_date: The date currently displayed on the bulletin page. When
-            this differs from ``today`` the matching tile is flagged
-            ``is_selected``.
         today: Current date — the day after this is the last column of
             the grid (the SLF afternoon bulletin targets ``today + 1``).
 
@@ -163,7 +172,6 @@ def build_season_grid(
                 and max_key != RegionDayRating.Rating.NO_RATING
             )
         is_today = cursor == today
-        is_selected = cursor == page_date and not is_today
         cells.append(
             SeasonCell(
                 date=cursor,
@@ -172,7 +180,6 @@ def build_season_grid(
                 subdivision=subdivision,
                 has_bulletin=has_bulletin,
                 is_today=is_today,
-                is_selected=is_selected,
                 month_parity=month_parity,
             )
         )
@@ -186,6 +193,29 @@ def build_season_grid(
         month_labels=month_labels,
         season_label=season_label,
     )
+
+
+def season_header(today: datetime.date) -> dict[str, str] | None:
+    """
+    Return a minimal context dict for the season trigger/shell, or ``None``.
+
+    Returns ``{"season_label": "<NN/NN>"}`` when the season has started
+    (i.e. ``today + 1 >= SEASON_START_DATE``), so the bulletin view can
+    decide whether to render the trigger and shell without building the full
+    grid. Returns ``None`` before the season start.
+
+    Args:
+        today: Current calendar date.
+
+    Returns:
+        ``{"season_label": "<NN/NN>"}`` or ``None``.
+
+    """
+    start: datetime.date = settings.SEASON_START_DATE
+    end = today + datetime.timedelta(days=1)
+    if end < start:
+        return None
+    return {"season_label": _season_label(start)}
 
 
 def _season_label(start: datetime.date) -> str:

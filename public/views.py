@@ -72,7 +72,7 @@ from core.utils import html_to_markdown
 from regions.models import MicroRegion
 
 from .guidance import load_field_guidance
-from .season_calendar import build_season_grid
+from .season_calendar import build_season_grid, season_header
 
 logger = logging.getLogger(__name__)
 
@@ -1697,7 +1697,7 @@ def _bulletin_detail_response(
                 "page_date": target_date,
                 "year": datetime.date.today().year,
                 "adjoining_regions": adjoining_regions,
-                "season_calendar": build_season_grid(region, target_date, today),
+                "season_calendar": season_header(today),
                 "weather_display": weather_display,
                 "weather_htmx_trigger": weather_display is None,
                 "canonical_url": canonical_url,
@@ -1761,7 +1761,7 @@ def _bulletin_detail_response(
         else ""
     )
 
-    season_calendar = build_season_grid(region, page_date, today)
+    season_calendar = season_header(today)
 
     context = {
         "region": region,
@@ -2000,6 +2000,49 @@ def fetch_weather_snippet(
             "subregion_name": subregion_name,
             "page_date": target_date,
             "region_id": region.region_id,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Season calendar partial — HTMX-deferred heatmap grid (SNOW-170)
+# ---------------------------------------------------------------------------
+
+
+@require_htmx
+def season_calendar_partial(request: HttpRequest, region_id: str) -> HttpResponse:
+    """
+    Return the season heatmap grid fragment for a given region.
+
+    Called by HTMX on the first open of the season sheet. Subsequent opens
+    reuse the cached DOM — no second request fires.
+
+    The fragment is wrapped in a ``{% cache %}`` tag inside the template,
+    keyed on ``(region_id, today_iso)``, so the DB is only hit once per
+    calendar day per region (or when ingest invalidates the key via
+    ``apply_bulletin_day_ratings``).
+
+    Args:
+        request: The incoming HTMX GET request.
+        region_id: EAWS micro-region identifier (e.g. ``"CH-4115"``).
+
+    Returns:
+        Rendered ``public/partials/_season_calendar.html`` fragment.
+
+    """
+    region = get_object_or_404(
+        MicroRegion.objects.select_related("subregion"), region_id__iexact=region_id
+    )
+    today = timezone.localdate()
+    today_iso = today.isoformat()
+    grid = build_season_grid(region, today)
+    return render(
+        request,
+        "public/partials/_season_calendar.html",
+        {
+            "region": region,
+            "season_calendar": grid,
+            "today_iso": today_iso,
         },
     )
 

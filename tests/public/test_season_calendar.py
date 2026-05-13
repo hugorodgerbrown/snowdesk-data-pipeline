@@ -1,5 +1,5 @@
 """
-tests/public/test_season_calendar.py — Tests for build_season_grid.
+tests/public/test_season_calendar.py — Tests for build_season_grid and season_header.
 
 Covers:
   - Empty grid when ``today + 1`` precedes ``SEASON_START_DATE``.
@@ -10,8 +10,9 @@ Covers:
   - Missing-row dates render as inert ``no_rating`` cells.
   - Rows with a ``source_bulletin`` render as interactive (``has_bulletin``).
   - ``is_today`` flag set only on the today cell.
-  - ``is_selected`` set when ``page_date != today``, suppressed otherwise.
+  - ``is_selected`` always ``False`` from the builder (selection is client-side).
   - Month-label boundaries align with the column where the month flips.
+  - ``season_header`` returns the label dict or None.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import pytest
 from django.test import override_settings
 
 from bulletins.models import RegionDayRating
-from public.season_calendar import build_season_grid
+from public.season_calendar import build_season_grid, season_header
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -40,7 +41,7 @@ class TestBuildSeasonGrid:
         region = MicroRegionFactory.create(region_id="CH-4115")
         # today + 1 = 2026-01-04, season starts 2026-01-05.
         today = datetime.date(2026, 1, 3)
-        grid = build_season_grid(region, page_date=today, today=today)
+        grid = build_season_grid(region, today=today)
         assert grid.columns == []
         assert grid.month_labels == []
         assert not grid
@@ -51,7 +52,7 @@ class TestBuildSeasonGrid:
         region = MicroRegionFactory.create(region_id="CH-4115")
         # 2025-11-03 is a Monday; today = same Monday → end = Tue 2025-11-04.
         today = datetime.date(2025, 11, 3)
-        grid = build_season_grid(region, page_date=today, today=today)
+        grid = build_season_grid(region, today=today)
 
         # Two days fit in a single column with 5 trailing Nones.
         assert len(grid.columns) == 1
@@ -66,7 +67,7 @@ class TestBuildSeasonGrid:
         region = MicroRegionFactory.create(region_id="CH-4115")
         # 2025-11-05 is a Wednesday → 2 leading Nones.
         today = datetime.date(2025, 11, 5)
-        grid = build_season_grid(region, page_date=today, today=today)
+        grid = build_season_grid(region, today=today)
 
         column = grid.columns[0]
         assert column[0] is None
@@ -79,7 +80,7 @@ class TestBuildSeasonGrid:
         """Both today and today + 1 appear in the grid."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 10)
-        grid = build_season_grid(region, page_date=today, today=today)
+        grid = build_season_grid(region, today=today)
 
         all_cells = [c for col in grid.columns for c in col if c is not None]
         dates = {c.date for c in all_cells}
@@ -92,7 +93,7 @@ class TestBuildSeasonGrid:
         region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 5)
         # No factory rows created.
-        grid = build_season_grid(region, page_date=today, today=today)
+        grid = build_season_grid(region, today=today)
 
         cells = [c for col in grid.columns for c in col if c is not None]
         assert len(cells) > 0
@@ -116,7 +117,7 @@ class TestBuildSeasonGrid:
             source_bulletin=bulletin,
         )
 
-        grid = build_season_grid(region, page_date=today, today=today)
+        grid = build_season_grid(region, today=today)
         target = next(
             c
             for col in grid.columns
@@ -141,7 +142,7 @@ class TestBuildSeasonGrid:
             source_bulletin=None,
         )
 
-        grid = build_season_grid(region, page_date=today, today=today)
+        grid = build_season_grid(region, today=today)
         target = next(
             c
             for col in grid.columns
@@ -155,7 +156,7 @@ class TestBuildSeasonGrid:
         """Only the cell whose date equals today carries is_today."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 5)
-        grid = build_season_grid(region, page_date=today, today=today)
+        grid = build_season_grid(region, today=today)
 
         today_cells = [
             c for col in grid.columns for c in col if c is not None and c.is_today
@@ -164,35 +165,15 @@ class TestBuildSeasonGrid:
         assert today_cells[0].date == today
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
-    def test_is_selected_set_only_on_historic_page_date(self) -> None:
-        """is_selected lights up only when page_date != today."""
+    def test_is_selected_always_false_from_builder(self) -> None:
+        """is_selected is always False from the builder — selection is client-side."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 10)
-        page_date = datetime.date(2025, 11, 5)
-        grid = build_season_grid(region, page_date=page_date, today=today)
-
-        selected = [
-            c for col in grid.columns for c in col if c is not None and c.is_selected
-        ]
-        assert len(selected) == 1
-        assert selected[0].date == page_date
-        assert selected[0].is_today is False
-
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
-    def test_is_selected_suppressed_when_page_date_equals_today(self) -> None:
-        """When page_date == today, only is_today is set (no double ring)."""
-        region = MicroRegionFactory.create(region_id="CH-4115")
-        today = datetime.date(2025, 11, 10)
-        grid = build_season_grid(region, page_date=today, today=today)
+        grid = build_season_grid(region, today=today)
 
         for col in grid.columns:
             for c in col:
-                if c is None:
-                    continue
-                if c.date == today:
-                    assert c.is_today is True
-                    assert c.is_selected is False
-                else:
+                if c is not None:
                     assert c.is_selected is False
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
@@ -201,7 +182,7 @@ class TestBuildSeasonGrid:
         region = MicroRegionFactory.create(region_id="CH-4115")
         # Span Nov → Dec → Jan to exercise three month boundaries.
         today = datetime.date(2026, 1, 12)
-        grid = build_season_grid(region, page_date=today, today=today)
+        grid = build_season_grid(region, today=today)
 
         assert len(grid.month_labels) == len(grid.columns)
         # First labelled column = Nov.
@@ -245,7 +226,7 @@ class TestBuildSeasonGrid:
             source_bulletin=bulletin,
         )
 
-        grid = build_season_grid(region_a, page_date=today, today=today)
+        grid = build_season_grid(region_a, today=today)
         target = next(
             c
             for col in grid.columns
@@ -254,3 +235,38 @@ class TestBuildSeasonGrid:
         )
         assert target.has_bulletin is False
         assert target.max_rating_key == RegionDayRating.Rating.NO_RATING
+
+
+@pytest.mark.django_db
+class TestSeasonHeader:
+    """Tests for the season_header helper."""
+
+    @override_settings(SEASON_START_DATE=datetime.date(2026, 1, 5))
+    def test_returns_none_before_season_start(self) -> None:
+        """Returns None when today + 1 < SEASON_START_DATE."""
+        today = datetime.date(2026, 1, 3)  # today + 1 = Jan 4, start = Jan 5
+        assert season_header(today) is None
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_returns_dict_when_season_active(self) -> None:
+        """Returns a dict with season_label when today + 1 >= SEASON_START_DATE."""
+        today = datetime.date(2025, 11, 3)
+        result = season_header(today)
+        assert result is not None
+        assert result["season_label"] == "25/26"
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_season_label_format(self) -> None:
+        """season_label is two-digit years separated by a slash."""
+        today = datetime.date(2026, 3, 15)
+        result = season_header(today)
+        assert result is not None
+        assert result["season_label"] == "25/26"
+
+    @override_settings(SEASON_START_DATE=datetime.date(2026, 1, 4))
+    def test_returns_dict_on_season_start_day(self) -> None:
+        """Returns a dict when today + 1 == SEASON_START_DATE (boundary)."""
+        today = datetime.date(2026, 1, 3)  # today + 1 = Jan 4 = start
+        result = season_header(today)
+        assert result is not None
+        assert "season_label" in result
