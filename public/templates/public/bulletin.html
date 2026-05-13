@@ -51,11 +51,7 @@ reachable via the SNOW-81 deep-link in the masthead.
             rel="prefetch"
             href="{% url 'public:bulletin_date' region_id=region.canonical_region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
         >{% endif %}
-    <script
-        src="https://unpkg.com/htmx.org@2.0.4"
-        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-        crossorigin="anonymous"
-    ></script>
+    <script src="{% static 'js/htmx.min.js' %}"></script>
     {% if raw_data_json %}
         {# DEBUG-only: raw CAAML payload embedded for source-level inspection. #}
         {# Not rendered visibly; removed in production where DEBUG=False.     #}

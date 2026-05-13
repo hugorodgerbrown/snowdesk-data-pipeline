@@ -254,8 +254,7 @@ CSP_DEFAULTS = {
     "frame-ancestors": ["'none'"],
     "script-src": [
         "'self'",
-        "'nonce-{nonce}'",
-        "https://unpkg.com",
+        "{nonce}",
     ],
     # 'unsafe-inline' is required because (a) map.html uses inline style=""
     # attributes on legend swatches and the debug pill, and (b) map.js +
@@ -265,7 +264,6 @@ CSP_DEFAULTS = {
     "style-src": [
         "'self'",
         "'unsafe-inline'",
-        "https://unpkg.com",
     ],
     "img-src": ["'self'", "data:"],
     "font-src": ["'self'", "data:"],

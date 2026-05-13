@@ -16,11 +16,7 @@ the manage page can be authenticated-only.
 {% block meta_description %}{% trans "Sign in to manage your Snowdesk avalanche bulletin subscriptions." %}{% endblock %}
 
 {% block extra_head %}
-    <script
-        src="https://unpkg.com/htmx.org@2.0.4"
-        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-        crossorigin="anonymous"
-    ></script>
+    <script src="{% static 'js/htmx.min.js' %}"></script>
 {% endblock %}
 
 {% block content %}
