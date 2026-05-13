@@ -230,11 +230,14 @@ const clearRegionRepaint = () => {
   const map = new maplibregl.Map({
     container: 'map',
     style: initialBasemapUrl,
-    bounds: [[5.9, 45.8], [10.5, 47.9]],
+    bounds: [[5.9, 45.6], [13.0, 48.0]],
     fitBoundsOptions: { padding: 20 },
     minZoom: 5,
     maxZoom: 12,
-    maxBounds: [[3.5, 43.5], [13.0, 49.5]],
+    // maxBounds widened east (13.0→14.5) and south (43.5→43.0) to include
+    // the EUREGIO regions: Tyrol (AT-07), South Tyrol (IT-32-BZ), Trentino
+    // (IT-32-TN). The initial bounds now frames CH + EUREGIO together.
+    maxBounds: [[3.5, 43.0], [14.5, 49.5]],
     attributionControl: { compact: true },
   });
   // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
