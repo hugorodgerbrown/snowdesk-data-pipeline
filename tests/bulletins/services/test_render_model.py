@@ -1724,6 +1724,66 @@ class TestResolveProblemRatingEuregio:
         )
         assert result == "moderate"
 
+    def test_no_elevation_problem_falls_back_to_unbound_rating(self) -> None:
+        """Problem with no elevation field uses the no-bound rating as fallback.
+
+        When a problem carries no ``elevation`` key, _filter_ratings_by_elevation
+        finds no specific (elevation-bounded) matches.  The fallback set consists
+        of ratings with no elevation bounds; _highest_danger picks among those.
+        This mirrors real EUREGIO data where all_day problems sometimes omit
+        elevation while ratings carry altitude bands.
+        """
+        # Ratings: two elevation-bounded plus one unbounded (the expected pick).
+        ratings: list[dict[str, Any]] = [
+            {
+                "mainValue": "low",
+                "elevation": {"upperBound": "2000"},
+                "validTimePeriod": "all_day",
+            },
+            {
+                "mainValue": "moderate",
+                "elevation": {"lowerBound": "2000"},
+                "validTimePeriod": "all_day",
+            },
+            {
+                "mainValue": "considerable",
+                "validTimePeriod": "all_day",
+            },
+        ]
+        problem: dict[str, Any] = {
+            "problemType": "wet_snow",
+            "validTimePeriod": "all_day",
+            # no 'elevation' key — exercises the no-elevation fallback path
+        }
+        result = _resolve_problem_rating(problem, ratings, "euregio")
+        assert result == "considerable"
+
+    def test_no_vtp_match_falls_back_to_highest_danger(self) -> None:
+        """When no rating matches the problem's validTimePeriod, use all ratings.
+
+        The EUREGIO fallback at render_model.py:477-478 re-uses the full
+        ``danger_ratings`` list when no rating shares the problem's
+        validTimePeriod.  Among those ratings we still apply elevation
+        filtering, then pick _highest_danger.
+        """
+        # Ratings are 'earlier' only; problem is 'later' — no direct vtp match.
+        ratings: list[dict[str, Any]] = [
+            {"mainValue": "low", "validTimePeriod": "earlier"},
+            {
+                "mainValue": "considerable",
+                "elevation": {"lowerBound": "2600"},
+                "validTimePeriod": "earlier",
+            },
+        ]
+        problem: dict[str, Any] = {
+            "problemType": "wet_snow",
+            "validTimePeriod": "later",
+            "elevation": {"lowerBound": "2600"},
+        }
+        result = _resolve_problem_rating(problem, ratings, "euregio")
+        # Falls back to all ratings → elevation-bounded 'considerable' wins.
+        assert result == "considerable"
+
     def test_slf_reads_danger_rating_value_directly(self) -> None:
         """SLF problem reads dangerRatingValue directly."""
         problem: dict[str, Any] = {
@@ -1862,6 +1922,23 @@ class TestResolveDangerPatterns:
         props: dict[str, Any] = {"customData": {"ALBINA": {"mainDate": "2026-05-03"}}}
         result = _resolve_danger_patterns(props, "euregio")
         assert result == []
+
+    def test_euregio_fallback_to_other_lwd_key(self) -> None:
+        """EUREGIO source falls back to any LWD_* key when LWD_Tyrol is absent.
+
+        _resolve_danger_patterns at render_model.py:614-618 iterates
+        customData looking for any LWD_* key when LWD_Tyrol is missing.
+        Bulletins from other LWD partners (e.g. LWD_Bayern) carry the same
+        dangerPatterns shape and must be surfaced.
+        """
+        props: dict[str, Any] = {
+            "customData": {
+                "ALBINA": {"mainDate": "2026-05-03"},
+                "LWD_Bayern": {"dangerPatterns": ["DP6", "DP2"]},
+            }
+        }
+        result = _resolve_danger_patterns(props, "euregio")
+        assert result == ["DP6", "DP2"]
 
 
 # ---------------------------------------------------------------------------
