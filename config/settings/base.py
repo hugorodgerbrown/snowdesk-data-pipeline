@@ -254,7 +254,7 @@ CSP_DEFAULTS = {
     "frame-ancestors": ["'none'"],
     "script-src": [
         "'self'",
-        "'nonce-{nonce}'",
+        "{nonce}",
         "https://unpkg.com",
     ],
     # 'unsafe-inline' is required because (a) map.html uses inline style=""
