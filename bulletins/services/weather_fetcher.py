@@ -1,7 +1,8 @@
 """
 bulletins/services/weather_fetcher.py — Fetching and persisting Open-Meteo weather data.
 
-Contains four fetch functions and a source resolver:
+Contains five fetch functions, a source resolver, and a background-thread
+dispatcher used by the bulletin page render:
 
   resolve_weather_source(source)
       Map a ``--source`` choice string (``"live"`` or ``"local-mirror"``) to a
@@ -34,6 +35,17 @@ Contains four fetch functions and a source resolver:
   backfill_all_regions(start_date, end_date, *, commit, delay, base_url, on_fetched)
       Calls fetch_archive_for_region for every MicroRegion that has a centre
       coordinate; returns summary counters {created, updated, failed, skipped}.
+
+  fetch_weather_async(region, target_date)
+      Schedules an idempotent inline fetch on a background daemon thread so
+      ``bulletin_detail`` can return immediately on prefetched past-date page
+      renders. Routes to the archive or forecast fetcher based on whether
+      ``target_date`` is in the past. Mirrors the
+      ``subscriptions.services.email._dispatch_async`` pattern: settings toggle
+      ``WEATHER_FETCH_ASYNC`` flips the work synchronous for tests, exceptions
+      are swallowed at WARNING, and the per-thread DB connection is closed in
+      ``finally`` (skipped on the main thread to keep sync-mode tests' own
+      transaction connection alive). See ``docs/async-operations.md``.
 
 Uses ``requests`` with a 30-second timeout (matching data_fetcher.py's pattern).
 Per-region HTTP failures bubble up from the single-region functions; the wrapper
