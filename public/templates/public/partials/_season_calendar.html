@@ -1,77 +1,77 @@
-{% load i18n cache %}
+{% load i18n %}
 {% comment %}
    Season heatmap grid (SNOW-170) — inner grid only, served as an HTMX
    partial from the season_calendar_partial view.
 
-   Wrapped in {% cache %} keyed by (region.canonical_region_id, today_iso)
-   so the DB is only hit once per calendar day per region. The cache key is
-   invalidated by apply_bulletin_day_ratings after ingest.
+   Caching is handled entirely in the view (season_calendar_partial), not
+   here. The view caches the full rendered response body keyed on
+   (canonical_region_id, today_iso) so cache hits issue zero DB queries and
+   return byte-for-byte identical content. The cache key is invalidated by
+   apply_bulletin_day_ratings after ingest.
 
    Selected-day highlighting is applied client-side after the HTMX swap,
    keyed off data-selected-date on the #season-grid container and
    data-date="YYYY-MM-DD" on each cell anchor/div.
 {% endcomment %}
-{% cache 90000 season_calendar region.canonical_region_id today_iso %}
-    <div data-testid="season-calendar" class="inline-block">
-        {# Month labels row — one cell per column, parallel to the grid below. #}
-        {# A non-empty entry marks the column where a new calendar month       #}
-        {# begins; the label sits above the first column of its month.         #}
-        <div class="flex mb-1">
-            {% for label in season_calendar.month_labels %}
-                <div class="season-cell-wrap text-text-3 calendar-cell-label">
-                    {{ label }}
-                </div>
-            {% endfor %}
-        </div>
-        {# Grid — one flex column per week, 7 cells per column (Mon..Sun).    #}
-        {# Each cell is wrapped in .season-cell-wrap, which carries           #}
-        {# data-month-parity so the alternate-background tint flips on the    #}
-        {# exact day boundary — including mid-column for weeks that span a    #}
-        {# month-end. Wrappers butt flush (no gap) so the parity tint reads   #}
-        {# as a continuous band behind the rounded-full rating tiles.         #}
-        <div class="flex">
-            {% for column in season_calendar.columns %}
-                <div class="flex flex-col shrink-0">
-                    {% for cell in column %}
-                        {% if cell is None %}
-                            <div class="season-cell-wrap">
-                                <div class="calendar-cell"></div>
-                            </div>
-                        {% elif cell.has_bulletin %}
-                            <div
-                                class="season-cell-wrap"
-                                data-month-parity="{{ cell.month_parity }}"
-                            >
-                                <a
-                                    href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
-                                    class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}"
-                                    data-date="{{ cell.date|date:'Y-m-d' }}"
-                                    data-rating-min="{{ cell.min_rating_key }}"
-                                    data-rating-max="{{ cell.max_rating_key }}"
-                                    title="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
-                                    aria-label="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
-                                >{{ cell.date|date:'j' }}</a>
-                            </div>
-                        {% else %}
-                            <div
-                                class="season-cell-wrap"
-                                data-month-parity="{{ cell.month_parity }}"
-                            >
-                                <div
-                                    class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}"
-                                    data-date="{{ cell.date|date:'Y-m-d' }}"
-                                    data-rating-min="{{ cell.min_rating_key }}"
-                                    data-rating-max="{{ cell.max_rating_key }}"
-                                    title="{{ cell.date|date:'D j N' }}"
-                                    aria-label="{{ cell.date|date:'D j N' }}"
-                                >
-                                    {{ cell.date|date:'j' }}
-                                </div>
-                            </div>
-                        {% endif %}
-                    {% endfor %}
-                </div>
-            {% endfor %}
-        </div>
+<div data-testid="season-calendar" class="inline-block">
+    {# Month labels row — one cell per column, parallel to the grid below. #}
+    {# A non-empty entry marks the column where a new calendar month       #}
+    {# begins; the label sits above the first column of its month.         #}
+    <div class="flex mb-1">
+        {% for label in season_calendar.month_labels %}
+            <div class="season-cell-wrap text-text-3 calendar-cell-label">
+                {{ label }}
+            </div>
+        {% endfor %}
     </div>
-{% endcache %}
+    {# Grid — one flex column per week, 7 cells per column (Mon..Sun).    #}
+    {# Each cell is wrapped in .season-cell-wrap, which carries           #}
+    {# data-month-parity so the alternate-background tint flips on the    #}
+    {# exact day boundary — including mid-column for weeks that span a    #}
+    {# month-end. Wrappers butt flush (no gap) so the parity tint reads   #}
+    {# as a continuous band behind the rounded-full rating tiles.         #}
+    <div class="flex">
+        {% for column in season_calendar.columns %}
+            <div class="flex flex-col shrink-0">
+                {% for cell in column %}
+                    {% if cell is None %}
+                        <div class="season-cell-wrap">
+                            <div class="calendar-cell"></div>
+                        </div>
+                    {% elif cell.has_bulletin %}
+                        <div
+                            class="season-cell-wrap"
+                            data-month-parity="{{ cell.month_parity }}"
+                        >
+                            <a
+                                href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
+                                class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}"
+                                data-date="{{ cell.date|date:'Y-m-d' }}"
+                                data-rating-min="{{ cell.min_rating_key }}"
+                                data-rating-max="{{ cell.max_rating_key }}"
+                                title="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
+                                aria-label="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
+                            >{{ cell.date|date:'j' }}</a>
+                        </div>
+                    {% else %}
+                        <div
+                            class="season-cell-wrap"
+                            data-month-parity="{{ cell.month_parity }}"
+                        >
+                            <div
+                                class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}"
+                                data-date="{{ cell.date|date:'Y-m-d' }}"
+                                data-rating-min="{{ cell.min_rating_key }}"
+                                data-rating-max="{{ cell.max_rating_key }}"
+                                title="{{ cell.date|date:'D j N' }}"
+                                aria-label="{{ cell.date|date:'D j N' }}"
+                            >
+                                {{ cell.date|date:'j' }}
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        {% endfor %}
+    </div>
+</div>

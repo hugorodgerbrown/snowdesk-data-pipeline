@@ -40,6 +40,7 @@ import waffle
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
+from django.core.cache.utils import make_template_fragment_key
 from django.db.models import Max, Prefetch
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
@@ -2018,9 +2019,13 @@ def season_calendar_partial(request: HttpRequest, region_id: str) -> HttpRespons
     reuse the cached DOM — no second request fires.
 
     The fragment is wrapped in a ``{% cache %}`` tag inside the template,
-    keyed on ``(region_id, today_iso)``, so the DB is only hit once per
-    calendar day per region (or when ingest invalidates the key via
-    ``apply_bulletin_day_ratings``).
+    keyed on ``(canonical_region_id, today_iso)``. To guarantee zero DB
+    queries on a cache hit, this view checks the template fragment cache
+    directly before calling ``build_season_grid``. On a hit, the cached HTML
+    is returned immediately; on a miss, ``build_season_grid`` runs and the
+    template renders normally (the ``{% cache %}`` tag populates the cache as a
+    side effect).  The key is invalidated by ``apply_bulletin_day_ratings``
+    after each ingest so the next open re-queries with fresh data.
 
     Args:
         request: The incoming HTMX GET request.
@@ -2030,13 +2035,25 @@ def season_calendar_partial(request: HttpRequest, region_id: str) -> HttpRespons
         Rendered ``public/partials/_season_calendar.html`` fragment.
 
     """
+    today = timezone.localdate()
+    today_iso = today.isoformat()
+
+    # Check the response cache before touching the DB.  ``canonical_region_id``
+    # is ``slugify(region_id)`` — computable from the URL parameter alone — so
+    # the cache hit path issues zero DB queries.  The key is shared with
+    # ``apply_bulletin_day_ratings`` (which deletes it after ingest) so fresh
+    # data is always served after the next bulletin lands.
+    canonical_id = slugify(region_id)
+    cache_key = make_template_fragment_key("season_calendar", [canonical_id, today_iso])
+    cached_html: str | None = cache.get(cache_key)
+    if cached_html is not None:
+        return HttpResponse(cached_html)
+
     region = get_object_or_404(
         MicroRegion.objects.select_related("subregion"), region_id__iexact=region_id
     )
-    today = timezone.localdate()
-    today_iso = today.isoformat()
     grid = build_season_grid(region, today)
-    return render(
+    response = render(
         request,
         "public/partials/_season_calendar.html",
         {
@@ -2045,6 +2062,11 @@ def season_calendar_partial(request: HttpRequest, region_id: str) -> HttpRespons
             "today_iso": today_iso,
         },
     )
+    # Cache the full rendered body so subsequent hits are byte-for-byte
+    # identical and issue zero DB queries.  25 hours — safe because ingest
+    # invalidates the key via apply_bulletin_day_ratings.
+    cache.set(cache_key, response.content, 90000)
+    return response
 
 
 # ---------------------------------------------------------------------------

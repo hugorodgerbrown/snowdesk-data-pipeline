@@ -158,16 +158,25 @@ class TestSeasonPartialCache:
         cache.clear()
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_second_request_returns_cached_html(self, client: Client):
-        """Second HTMX GET for the same (region, today) returns identical HTML from cache."""
+    def test_second_request_issues_zero_db_queries(
+        self, client: Client, django_assert_num_queries
+    ):
+        """Second HTMX GET for the same (region, today) hits zero RegionDayRating queries.
+
+        The view checks the template fragment cache directly before calling
+        build_season_grid. On a cache hit it returns the cached HTML immediately,
+        so no DB queries are issued at all on the second call.
+        """
         region = MicroRegionFactory.create()
         url = _url(region.region_id)
-        # Prime the cache.
+        # Prime the cache — first request populates the template fragment cache.
         response1 = client.get(url, HTTP_HX_REQUEST="true")
         assert response1.status_code == 200
 
-        # Second request — the fragment HTML is identical (served from template cache).
-        response2 = client.get(url, HTTP_HX_REQUEST="true")
+        # Second request — must issue zero RegionDayRating queries (cache hit path
+        # bypasses build_season_grid entirely).
+        with django_assert_num_queries(0):
+            response2 = client.get(url, HTTP_HX_REQUEST="true")
         assert response2.status_code == 200
         assert response1.content == response2.content
 
