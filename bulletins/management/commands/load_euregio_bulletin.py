@@ -82,24 +82,38 @@ def fetch_euregio_bulletins(url: str = EUREGIO_API_URL) -> list[dict[str, Any]]:
 
 def load_euregio_bulletins_from_file(path: Path) -> list[dict[str, Any]]:
     """
-    Load EUREGIO bulletins from a local JSON file.
+    Load EUREGIO bulletins from a local JSON or NDJSON file.
 
-    Supports both the top-level list format (``[{…}, …]``) and the
-    ``{"bulletins": [{…}, …]}`` envelope used by CAAML v6 exports.
+    Three input shapes are supported, picked by file extension:
+
+    * ``.ndjson`` — one bulletin dict per line (the
+      ``sample_data/euregio_archive.ndjson`` shape produced by
+      ``scripts/fetch_euregio_archive.py``).
+    * ``.json`` containing ``[{…}, …]`` — a top-level list.
+    * ``.json`` containing ``{"bulletins": [{…}, …]}`` — the envelope
+      used by ALBINA's CAAMLv6 exports.
 
     Args:
-        path: Filesystem path to the JSON file.
+        path: Filesystem path to the file.
 
     Returns:
         A flat list of raw bulletin dicts.
 
     Raises:
         FileNotFoundError: If ``path`` does not exist.
-        ValueError: If the file cannot be parsed as JSON or has an
-            unexpected shape.
+        ValueError: If the file cannot be parsed or has an unexpected shape.
 
     """
     logger.debug("Loading EUREGIO bulletins from local file %s", path)
+    if path.suffix == ".ndjson":
+        results: list[dict[str, Any]] = []
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                results.append(json.loads(stripped))
+        return results
     with path.open(encoding="utf-8") as fh:
         data: Any = json.load(fh)
     if isinstance(data, list):
