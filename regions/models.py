@@ -90,10 +90,10 @@ class MajorRegion(BaseModel):
     """
 
     prefix = models.CharField(
-        max_length=4,
+        max_length=10,
         unique=True,
         db_index=True,
-        help_text="EAWS L1 prefix, e.g. 'CH-4'.",
+        help_text="EAWS L1 prefix, e.g. 'CH-4' (CH) or 'AT-07' (EUREGIO).",
     )
     country = models.CharField(
         max_length=2,
@@ -177,10 +177,10 @@ class SubRegion(BaseModel):
     """
 
     prefix = models.CharField(
-        max_length=5,
+        max_length=10,
         unique=True,
         db_index=True,
-        help_text="EAWS L2 prefix, e.g. 'CH-41'.",
+        help_text="EAWS L2 prefix, e.g. 'CH-41' (CH) or 'IT-32-BZ' (EUREGIO).",
     )
     major = models.ForeignKey(
         MajorRegion,
@@ -292,7 +292,9 @@ class MicroRegion(BaseModel):
         on_delete=models.PROTECT,
         related_name="micro_regions",
         help_text=(
-            "Parent L2 sub-region. Populated from ``region_id[:5]`` in the fixture."
+            "Parent L2 sub-region. For CH regions, derived from ``region_id[:5]``; "
+            "for EUREGIO regions (AT, IT) the mapping is set explicitly in the "
+            "fixture because the prefix length differs."
         ),
     )
     centre = models.JSONField(
