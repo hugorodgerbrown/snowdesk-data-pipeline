@@ -88,7 +88,7 @@ django_settings_module = "config.settings.development"
 DJANGO_SETTINGS_MODULE = "config.settings.development"
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "--cov=core --cov=bulletins --cov=pipeline --cov=public --cov=subscriptions"
+addopts = "--cov=core --cov=bulletins --cov=regions --cov=public --cov=subscriptions"
 # pytest-django defaults to DEBUG=False at test time, which silently
 # drops URL-conf entries gated on ``if settings.DEBUG:`` (the dev-only
 # SLF mirror in config/urls.py, the scrubber-perf debug page in
@@ -98,8 +98,8 @@ addopts = "--cov=core --cov=bulletins --cov=pipeline --cov=public --cov=subscrip
 django_debug_mode = "keep"
 
 [tool.coverage.run]
-source = ["core", "bulletins", "pipeline", "public", "subscriptions"]
-omit = ["bulletins/migrations/*", "pipeline/migrations/*", "public/migrations/*", "subscriptions/migrations/*", "config/*", "__init__.py"]
+source = ["core", "bulletins", "regions", "public", "subscriptions"]
+omit = ["bulletins/migrations/*", "regions/migrations/*", "public/migrations/*", "subscriptions/migrations/*", "config/*", "__init__.py"]
 
 [tool.coverage.report]
 fail_under = 0
