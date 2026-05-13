@@ -2576,13 +2576,14 @@ def build_problem_cards(
 
     """
     if not raw_problems:
-        logger.error("build_problem_cards: avalancheProblems is empty or missing")
+        # Empty avalancheProblems is normal on quiet days and for any
+        # bulletin whose risk is described purely in prose. Callers fall
+        # back to the render-model traits when this returns [].
         return []
     if not aggregation:
-        logger.error(
-            "build_problem_cards: customData.CH.aggregation is missing — "
-            "cannot determine display order"
-        )
+        # EUREGIO bulletins never carry customData.CH.aggregation — that's
+        # source-specific to SLF. Callers (_resolve_problem_cards) fall back
+        # to the render-model traits in that case.
         return []
     index = {p["problemType"]: p for p in raw_problems if p.get("problemType")}
     try:

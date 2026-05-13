@@ -53,9 +53,9 @@ from regions.models import (
 
 from .views import (
     _PROBLEM_LABELS,
+    _resolve_problem_cards,
     _select_bulletin_for_date,
     _select_default_issue,
-    build_problem_cards,
     enrich_render_model,
 )
 
@@ -551,9 +551,10 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     bulletin_url = region.get_absolute_url(None if raw_date is None else target_date)
     raw_props = (bulletin.raw_data or {}).get("properties") or {}
     ch_data = (raw_props.get("customData") or {}).get("CH") or {}
-    problem_cards = build_problem_cards(
+    problem_cards = _resolve_problem_cards(
         raw_props.get("avalancheProblems") or [],
         ch_data.get("aggregation") or [],
+        rm.get("traits") or [],
     )
 
     ctx = {
