@@ -26,8 +26,8 @@ Usage:
     python manage.py load_euregio_bulletin --file /path/to/bulletin.json --commit
 
 API documentation:
-  https://avalanche.report/albina_files/latest_bulletins.json
-  (returns a JSON array of CAAML bulletin objects, English)
+  https://static.avalanche.report/bulletins/latest/EUREGIO_en_CAAMLv6.json
+  (returns a ``{"bulletins": [...]}`` envelope of CAAML v6 bulletins, English)
 """
 
 import json
@@ -45,7 +45,9 @@ from bulletins.services.render_model import build_render_model
 
 logger = logging.getLogger(__name__)
 
-EUREGIO_API_URL = "https://avalanche.report/albina_files/latest_bulletins.json"
+EUREGIO_API_URL = (
+    "https://static.avalanche.report/bulletins/latest/EUREGIO_en_CAAMLv6.json"
+)
 REQUEST_TIMEOUT = 30  # seconds
 
 
