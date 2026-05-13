@@ -1,0 +1,72 @@
+[
+  {
+    "model": "regions.majorregion",
+    "fields": {
+      "prefix": "AT-07",
+      "country": "AT",
+      "name_native": "Tirol",
+      "name_en": "Tyrol",
+      "centre": null,
+      "bbox": null,
+      "boundary": null,
+      "created_at": "2026-05-13T00:00:00Z",
+      "updated_at": "2026-05-13T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.majorregion",
+    "fields": {
+      "prefix": "IT-32",
+      "country": "IT",
+      "name_native": "Trentino-Alto Adige",
+      "name_en": "Trentino-South Tyrol",
+      "centre": null,
+      "bbox": null,
+      "boundary": null,
+      "created_at": "2026-05-13T00:00:00Z",
+      "updated_at": "2026-05-13T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.subregion",
+    "fields": {
+      "prefix": "AT-07",
+      "major": ["AT-07"],
+      "name_native": "Tirol",
+      "name_en": "Tyrol",
+      "centre": null,
+      "bbox": null,
+      "boundary": null,
+      "created_at": "2026-05-13T00:00:00Z",
+      "updated_at": "2026-05-13T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.subregion",
+    "fields": {
+      "prefix": "IT-32-BZ",
+      "major": ["IT-32"],
+      "name_native": "Südtirol",
+      "name_en": "South Tyrol",
+      "centre": null,
+      "bbox": null,
+      "boundary": null,
+      "created_at": "2026-05-13T00:00:00Z",
+      "updated_at": "2026-05-13T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.subregion",
+    "fields": {
+      "prefix": "IT-32-TN",
+      "major": ["IT-32"],
+      "name_native": "Trentino",
+      "name_en": "Trentino",
+      "centre": null,
+      "bbox": null,
+      "boundary": null,
+      "created_at": "2026-05-13T00:00:00Z",
+      "updated_at": "2026-05-13T00:00:00Z"
+    }
+  }
+]
