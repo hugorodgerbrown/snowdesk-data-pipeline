@@ -31,11 +31,13 @@ def test_home_renders_apple_touch_icon_link() -> None:
     assert "apple-touch-icon-180.png" in body
 
 
-def test_home_declares_apple_web_app_capable() -> None:
-    """``apple-mobile-web-app-capable=yes`` lets iOS launch in standalone (SNOW-118)."""
+def test_home_declares_web_app_capable() -> None:
+    """``mobile-web-app-capable=yes`` lets iOS launch in standalone (SNOW-118)."""
     response = Client().get(reverse("public:home"))
     body = response.content.decode("utf-8")
-    assert 'name="apple-mobile-web-app-capable"' in body
+    assert 'name="mobile-web-app-capable"' in body
+    # this version is deprecated in favour of the generic name above
+    assert 'name="apple-mobile-web-app-capable"' not in body
     assert 'content="yes"' in body
 
 
