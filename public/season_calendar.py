@@ -15,8 +15,10 @@ so all seven rows align.
 Tiles for days that have a ``RegionDayRating`` row link to the day's
 bulletin. Tiles for days without a row render as inert ``no_rating``
 placeholders. This is a pure presentation reshape of the already
-pre-computed ``RegionDayRating`` rows — no caching, no pre-compute, no
-signals.
+pre-computed ``RegionDayRating`` rows — no Python-level caching in this
+module; the rendered grid is cached at the view layer in
+``season_calendar_partial`` (keyed on ``(canonical_region_id, today_iso)``)
+and invalidated by ``apply_bulletin_day_ratings`` after ingest.
 
 ``build_season_grid`` no longer accepts ``page_date`` — selected-day
 highlighting is applied client-side after the HTMX swap so the fragment
