@@ -249,3 +249,28 @@ class TestLoadEuregioBulletinCommit:
             call_command("load_euregio_bulletin", commit=True, force=True)
 
         mock_upsert.assert_called_once()
+
+    @patch(PATCH_FETCH)
+    @patch(PATCH_UPSERT)
+    def test_partial_failure_marks_pipeline_run_failed(
+        self,
+        mock_upsert: MagicMock,
+        mock_fetch: MagicMock,
+    ) -> None:
+        """When some bulletins fail, PipelineRun ends with FAILED status."""
+        from bulletins.models import PipelineRun
+        from bulletins.services.data_fetcher import UnknownRegionError
+
+        # One bulletin succeeds, one has an unknown region (fails).
+        mock_fetch.return_value = [
+            _make_raw_bulletin("good-bulletin"),
+            _make_raw_bulletin("bad-bulletin"),
+        ]
+        mock_upsert.side_effect = [True, UnknownRegionError("AT-99-01 not seeded")]
+
+        with pytest.raises(CommandError, match="failed to import"):
+            call_command("load_euregio_bulletin", commit=True)
+
+        run = PipelineRun.objects.order_by("-started_at").first()
+        assert run is not None
+        assert run.status == PipelineRun.Status.FAILED

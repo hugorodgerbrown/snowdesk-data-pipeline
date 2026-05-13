@@ -276,8 +276,6 @@ class Command(BaseCommand):
             else:
                 updated_count += 1
 
-        run.mark_success(created_count, updated_count)
-
         self.stdout.write(
             self.style.SUCCESS(
                 f"Done: {created_count} created, {updated_count} updated, "
@@ -294,7 +292,11 @@ class Command(BaseCommand):
         )
 
         if failed_ids:
-            raise CommandError(
+            error = CommandError(
                 f"{len(failed_ids)} bulletin(s) failed to import: "
                 f"{', '.join(failed_ids)}"
             )
+            run.mark_failed(error)
+            raise error
+
+        run.mark_success(created_count, updated_count)
