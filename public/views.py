@@ -54,7 +54,7 @@ from django.utils.translation import gettext as _gettext, gettext_lazy as _
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition, require_POST
 
-from bulletins.models import Bulletin, RegionBulletin, WeatherSnapshot
+from bulletins.models import Bulletin, RegionBulletin, RegionDayRating, WeatherSnapshot
 from bulletins.schema import ValidTimePeriod
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
@@ -1003,6 +1003,16 @@ def map_view(request: HttpRequest) -> HttpResponse:
     """
     today = datetime.date.today()
     season_start, season_end = _season_date_range(today)
+    # Narrow the season window to the actual data if any RegionDayRating rows
+    # exist for this season. Falls back to the calendar window when the season
+    # hasn't started yet or the queryset is empty (e.g. development with no
+    # ingested data).
+    data_start, data_end = RegionDayRating.objects.season_date_bounds(
+        season_start, season_end
+    )
+    if data_start is not None and data_end is not None:
+        season_start = data_start
+        season_end = data_end
     # Clamp so the thumb stays inside the track if the user loads the page
     # outside the nominal season window (e.g. mid-summer development).
     span = (season_end - season_start).days
