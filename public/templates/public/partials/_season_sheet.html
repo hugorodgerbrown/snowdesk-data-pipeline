@@ -1,0 +1,80 @@
+{% load i18n %}
+{% comment %}
+   Season heatmap sheet shell (SNOW-170) — fixed-position dialog frame,
+   backdrop, header, dismiss button, and scroll wrapper. The inner grid is
+   deferred: an empty #season-grid placeholder fires one HTMX GET to
+   partials/season/<region_id>/ on the first open (via the custom
+   snowdesk:load event dispatched by the toggle script in bulletin.html).
+   Subsequent opens reuse the cached DOM.
+
+   The shell starts in the closed state (data-season-sheet="closed") and
+   the toggle script flips it to "open" on trigger / Escape / backdrop /
+   ✕ click. Every cell in the loaded grid is a full WCAG 24×24 px target
+   carrying the day number, so the heatmap is keyboard-reachable in
+   addition to being a focus-trapped dialog.
+
+   Underscore prefix marks this as a plain include (not an HTMX response).
+{% endcomment %}
+<div data-season-sheet="closed">
+    <div class="season-sheet-backdrop" data-season-dismiss aria-hidden="true"></div>
+    <div
+        class="season-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="{% trans 'Season heatmap' %}"
+        data-testid="season-sheet"
+    >
+        <div class="season-sheet-header">
+            <span class="font-mono uppercase tracking-widest text-[9px] text-text-3">
+                {% trans "This season" %}
+            </span>
+            <button
+                type="button"
+                class="season-sheet-dismiss"
+                data-season-dismiss
+                aria-label="{% trans 'Close season heatmap' %}"
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                </svg>
+            </button>
+        </div>
+        <div class="overflow-x-auto" data-season-scroll>
+            {% comment %}
+               Two idempotency guards work together here:
+               - hx-trigger="snowdesk:load once": HTMX fires the GET only the
+                 first time the event is received; subsequent events are ignored
+                 by HTMX (the "once" modifier removes the listener after first
+                 use). This prevents a second network request if HTMX somehow
+                 dispatches the event twice.
+               - data-loaded="false": the toggle script in bulletin.html checks
+                 this attribute before dispatching snowdesk:load at all. On the
+                 first open it dispatches the event and flips the flag to "true";
+                 on every subsequent open it skips the dispatch entirely, so the
+                 loaded grid (now in the DOM) is reused without any network
+                 round-trip. The "once" HTMX modifier is a belt-and-suspenders
+                 guard; data-loaded is the primary gate.
+            {% endcomment %}
+            <div
+                id="season-grid"
+                data-selected-date="{{ page_date|date:'Y-m-d' }}"
+                hx-get="{% url 'public:season_partial' region.canonical_region_id %}"
+                hx-trigger="snowdesk:load once"
+                hx-swap="innerHTML"
+                data-loaded="false"
+            >
+            </div>
+        </div>
+    </div>
+</div>

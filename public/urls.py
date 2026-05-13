@@ -86,6 +86,13 @@ urlpatterns += [
         views.fetch_weather_snippet,
         name="weather_snippet",
     ),
+    # Season calendar partial — HTMX-deferred heatmap grid (SNOW-170).
+    # Registered before the generic <str:region_id>/ pattern for the same reason.
+    path(
+        "partials/season/<str:region_id>/",
+        views.season_calendar_partial,
+        name="season_partial",
+    ),
     # Bulletin pages — three forms, all served by ``bulletin_detail``.
     # Forms 1 + 2 default to today and render in place; form 3 redirects
     # to canonical when the URL components don't match.

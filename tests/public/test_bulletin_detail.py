@@ -745,11 +745,16 @@ class TestAdjoiningRegions:
 
 @pytest.mark.django_db
 class TestSeasonCalendar:
-    """Tests for the SNOW-83 season heatmap rendered on the bulletin page."""
+    """Tests for the SNOW-83/SNOW-170 season heatmap on the bulletin page.
+
+    The grid is now deferred via HTMX (SNOW-170): the bulletin page
+    renders a shell with an HTMX placeholder; the actual grid markup is
+    served by the season_calendar_partial view on first open.
+    """
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
     def test_context_has_season_calendar(self, client: Client, region) -> None:
-        """``season_calendar`` is in the response context on a normal page."""
+        """``season_calendar`` context is a truthy dict with season_label."""
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
@@ -762,12 +767,13 @@ class TestSeasonCalendar:
             )
             response = client.get(url)
 
-        assert response.context["season_calendar"] is not None
-        assert response.context["season_calendar"].columns
+        ctx = response.context["season_calendar"]
+        assert ctx is not None
+        assert ctx["season_label"]  # e.g. "25/26"
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
-    def test_section_renders_with_testid(self, client: Client, region) -> None:
-        """The rendered HTML contains the season-calendar test id."""
+    def test_section_renders_shell_not_grid(self, client: Client, region) -> None:
+        """The bulletin page renders the sheet shell but not the grid markup."""
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
@@ -780,11 +786,14 @@ class TestSeasonCalendar:
             )
             response = client.get(url)
 
-        assert b'data-testid="season-calendar"' in response.content
+        # Shell present.
+        assert b'data-testid="season-sheet"' in response.content
+        # Grid deferred — not in the initial response.
+        assert b'data-testid="season-calendar"' not in response.content
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
     def test_today_tile_carries_today_modifier(self, client: Client, region) -> None:
-        """Today's tile is flagged with the calendar-cell-today modifier (SNOW-117)."""
+        """Today's tile modifier is served by the partial, not the bulletin page (SNOW-170)."""
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
@@ -797,14 +806,16 @@ class TestSeasonCalendar:
             )
             response = client.get(url)
 
-        # The today modifier is applied to today's tile (and only today's).
-        assert b"calendar-cell-today" in response.content
+        # The grid is deferred — the bulletin page only contains the shell.
+        # calendar-cell-today is served by the partial (see test_season_partial.py).
+        assert b'id="season-grid"' in response.content
+        assert b'data-testid="season-calendar"' not in response.content
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
-    def test_historic_url_marks_page_date_tile_selected(
+    def test_historic_url_carries_selected_date_on_grid_placeholder(
         self, client: Client, region
     ) -> None:
-        """On a historic URL both the today and selected modifiers are present (SNOW-117)."""
+        """On a historic URL the #season-grid placeholder carries data-selected-date (SNOW-170)."""
         _make_am_bulletin(region, date(2026, 3, 5))
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
@@ -817,14 +828,13 @@ class TestSeasonCalendar:
             )
             response = client.get(url)
 
-        # Both modifiers are present: today (today's column) and selected
-        # (the page_date column).
-        assert b"calendar-cell-today" in response.content
-        assert b"calendar-cell-selected" in response.content
+        # The selected-date is encoded in the placeholder so the JS htmx:afterSwap
+        # handler can apply calendar-cell-selected client-side.
+        assert b'data-selected-date="2026-03-05"' in response.content
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
     def test_tomorrow_row_renders_when_present(self, client: Client, region) -> None:
-        """A RegionDayRating row for today + 1 surfaces with non-no_rating attrs."""
+        """A RegionDayRating row for today + 1 surfaces in the season partial (SNOW-170)."""
         bulletin = BulletinFactory.create()
         RegionDayRatingFactory.create(
             region=region,
@@ -833,18 +843,14 @@ class TestSeasonCalendar:
             max_rating=RegionDayRating.Rating.CONSIDERABLE,
             source_bulletin=bulletin,
         )
-        _make_am_bulletin(region, date(2026, 3, 15))
 
+        # The grid is now deferred — hit the partial endpoint directly.
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
+                "public:season_partial",
+                kwargs={"region_id": "ch-4115"},
             )
-            response = client.get(url)
+            response = client.get(url, HTTP_HX_REQUEST="true")
 
         # The link to tomorrow's bulletin includes the date in the URL.
         # SNOW-99: the calendar partial uses ``region.canonical_region_id``

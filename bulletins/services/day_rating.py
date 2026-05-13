@@ -53,6 +53,10 @@ import logging
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
+from django.core.cache import cache
+from django.core.cache.utils import make_template_fragment_key
+from django.utils import timezone
+
 from bulletins.services.render_model import RENDER_MODEL_VERSION
 
 if TYPE_CHECKING:
@@ -349,6 +353,10 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> None:
     candidate (morning + prior-evening pair) so the chosen bulletin for the day
     is always up to date.
 
+    After recomputing, invalidates the season-calendar fragment cache key for
+    each affected region so the next HTMX open re-queries rather than serving
+    stale markup. Cache failures are logged and never abort ingest.
+
     Designed to be called inline from ``upsert_bulletin`` after the
     RegionBulletin links are created.  Callers must wrap this in a
     try/except so that day-rating failures never abort ingest.
@@ -364,6 +372,27 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> None:
 
     for region in regions:
         recompute_region_day(region, target, commit=True)
+
+    # Invalidate the season-calendar response cache for each affected region so
+    # the next HTMX open re-queries with the freshly written RegionDayRating rows.
+    # Keyed to today (the date the response was cached on), not the bulletin's
+    # target day — the cache is per-calendar-day, not per-bulletin.
+    # Uses make_template_fragment_key to produce the same key that
+    # season_calendar_partial stores on a cache miss.
+    today_iso = timezone.localdate().isoformat()
+    for region in regions:
+        cache_key = make_template_fragment_key(
+            "season_calendar", [region.canonical_region_id, today_iso]
+        )
+        try:
+            cache.delete(cache_key)
+        except Exception:
+            logger.warning(
+                "Failed to invalidate season_calendar cache key for region=%s;"
+                " ingest continues.",
+                region.canonical_region_id,
+                exc_info=True,
+            )
 
     logger.debug(
         "apply_bulletin_day_ratings: bulletin=%s target_day=%s regions=%d",

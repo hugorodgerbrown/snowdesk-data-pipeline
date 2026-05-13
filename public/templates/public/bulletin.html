@@ -75,33 +75,64 @@ reachable via the SNOW-81 deep-link in the masthead.
 
 {% block content %}
     {# ── Season heatmap sheet ─────────────────────────────────────────── #}
-    {# The sheet itself is fixed-position; rendering it at the top of the #}
-    {# content area keeps it logically adjacent to the trigger and gives  #}
-    {# the toggle script a stable target. Hidden when build_season_grid   #}
-    {# returns an empty grid (e.g. before SEASON_START_DATE).             #}
+    {# The shell is fixed-position; rendering it at the top of the content #}
+    {# area keeps it logically adjacent to the trigger. The inner grid is  #}
+    {# deferred: a #season-grid placeholder fires one HTMX GET on first    #}
+    {# open via the custom snowdesk:load event (SNOW-170). Hidden when      #}
+    {# season_header returns None (e.g. before SEASON_START_DATE).          #}
     {% if season_calendar %}
-        {% include "public/partials/_season_calendar.html" %}
+        {% include "public/partials/_season_sheet.html" %}
         <script nonce="{{ request.csp_nonce }}">
             (function () {
                 var sheet = document.querySelector('[data-season-sheet]');
                 var trigger = document.querySelector('[data-season-trigger]');
                 if (!sheet || !trigger) return;
 
+                function scrollToSelected() {
+                    var scroller = sheet.querySelector('[data-season-scroll]');
+                    var target = sheet.querySelector('.calendar-cell-selected')
+                        || sheet.querySelector('.calendar-cell-today');
+                    if (scroller && target) {
+                        scroller.scrollLeft = Math.max(
+                            0,
+                            target.offsetLeft - (scroller.clientWidth / 2) + (target.clientWidth / 2)
+                        );
+                    }
+                }
+
                 function setState(state) {
                     sheet.dataset.seasonSheet = state;
                     trigger.setAttribute('aria-expanded', state === 'open' ? 'true' : 'false');
                     if (state === 'open') {
-                        var scroller = sheet.querySelector('[data-season-scroll]');
-                        var target = sheet.querySelector('.calendar-cell-selected')
-                            || sheet.querySelector('.calendar-cell-today');
-                        if (scroller && target) {
-                            scroller.scrollLeft = Math.max(
-                                0,
-                                target.offsetLeft - (scroller.clientWidth / 2) + (target.clientWidth / 2)
-                            );
+                        var grid = document.getElementById('season-grid');
+                        if (grid && grid.dataset.loaded !== 'true') {
+                            // First open — trigger the HTMX fetch. Scroll happens
+                            // in the htmx:afterSwap handler once the grid is in the DOM.
+                            grid.dataset.loaded = 'true';
+                            if (window.htmx) {
+                                htmx.trigger(grid, 'snowdesk:load');
+                            }
+                        } else {
+                            // Subsequent opens — grid already loaded, scroll now.
+                            scrollToSelected();
                         }
                     }
                 }
+
+                // After the HTMX swap completes: apply selected ring + scroll.
+                document.body.addEventListener('htmx:afterSwap', function (e) {
+                    if (!e.detail || e.detail.target.id !== 'season-grid') return;
+                    var grid = e.detail.target;
+                    // Apply the selected-day highlight client-side from data-selected-date.
+                    var selectedDate = grid.dataset.selectedDate;
+                    if (selectedDate) {
+                        var cell = grid.querySelector('[data-date="' + selectedDate + '"]');
+                        if (cell) {
+                            cell.classList.add('calendar-cell-selected');
+                        }
+                    }
+                    scrollToSelected();
+                });
 
                 trigger.addEventListener('click', function () {
                     setState(sheet.dataset.seasonSheet === 'open' ? 'closed' : 'open');

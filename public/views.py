@@ -40,6 +40,7 @@ import waffle
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
+from django.core.cache.utils import make_template_fragment_key
 from django.db.models import Max, Prefetch
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
@@ -72,7 +73,7 @@ from core.utils import html_to_markdown
 from regions.models import MicroRegion
 
 from .guidance import load_field_guidance
-from .season_calendar import build_season_grid
+from .season_calendar import build_season_grid, season_header
 
 logger = logging.getLogger(__name__)
 
@@ -1697,7 +1698,7 @@ def _bulletin_detail_response(
                 "page_date": target_date,
                 "year": datetime.date.today().year,
                 "adjoining_regions": adjoining_regions,
-                "season_calendar": build_season_grid(region, target_date, today),
+                "season_calendar": season_header(today),
                 "weather_display": weather_display,
                 "weather_htmx_trigger": weather_display is None,
                 "canonical_url": canonical_url,
@@ -1761,7 +1762,7 @@ def _bulletin_detail_response(
         else ""
     )
 
-    season_calendar = build_season_grid(region, page_date, today)
+    season_calendar = season_header(today)
 
     context = {
         "region": region,
@@ -1951,7 +1952,7 @@ def fetch_weather_snippet(
 
     """
     region = get_object_or_404(
-        MicroRegion.objects.select_related("subregion"), region_id=region_id
+        MicroRegion.objects.select_related("subregion"), region_id__iexact=region_id
     )
     try:
         target_date = datetime.date.fromisoformat(date_str)
@@ -2002,6 +2003,69 @@ def fetch_weather_snippet(
             "region_id": region.region_id,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Season calendar partial — HTMX-deferred heatmap grid (SNOW-170)
+# ---------------------------------------------------------------------------
+
+
+@require_htmx
+def season_calendar_partial(request: HttpRequest, region_id: str) -> HttpResponse:
+    """
+    Return the season heatmap grid fragment for a given region.
+
+    Called by HTMX on the first open of the season sheet. Subsequent opens
+    reuse the cached DOM — no second request fires.
+
+    To guarantee zero DB queries on a cache hit, this view calls
+    ``cache.get(cache_key)`` before touching the DB. On a hit it returns
+    ``HttpResponse(cached_body)`` immediately. On a miss, ``build_season_grid``
+    runs, the template renders, and ``cache.set(cache_key, response.content,
+    90000)`` stores the raw bytes for subsequent requests. The key is
+    invalidated by ``apply_bulletin_day_ratings`` after each ingest so the
+    next open re-queries with fresh data.
+
+    Args:
+        request: The incoming HTMX GET request.
+        region_id: EAWS micro-region identifier (e.g. ``"CH-4115"``).
+
+    Returns:
+        Rendered ``public/partials/_season_calendar.html`` fragment.
+
+    """
+    today = timezone.localdate()
+    today_iso = today.isoformat()
+
+    # Check the response cache before touching the DB.  ``canonical_region_id``
+    # is ``slugify(region_id)`` — computable from the URL parameter alone — so
+    # the cache hit path issues zero DB queries.  The key is shared with
+    # ``apply_bulletin_day_ratings`` (which deletes it after ingest) so fresh
+    # data is always served after the next bulletin lands.
+    canonical_id = slugify(region_id)
+    cache_key = make_template_fragment_key("season_calendar", [canonical_id, today_iso])
+    cached_body: bytes | None = cache.get(cache_key)
+    if cached_body is not None:
+        return HttpResponse(cached_body)
+
+    region = get_object_or_404(
+        MicroRegion.objects.select_related("subregion"), region_id__iexact=region_id
+    )
+    grid = build_season_grid(region, today)
+    response = render(
+        request,
+        "public/partials/_season_calendar.html",
+        {
+            "region": region,
+            "season_calendar": grid,
+            "today_iso": today_iso,
+        },
+    )
+    # Cache the full rendered body so subsequent hits are byte-for-byte
+    # identical and issue zero DB queries.  25 hours — safe because ingest
+    # invalidates the key via apply_bulletin_day_ratings.
+    cache.set(cache_key, response.content, 90000)
+    return response
 
 
 # ---------------------------------------------------------------------------

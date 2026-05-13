@@ -1473,23 +1473,36 @@ class TestSeasonSheet:
     backdrop and a `role="dialog"` body. The sheet only renders when
     ``season_calendar`` is non-empty — before SEASON_START_DATE the page
     drops the trigger and the sheet entirely.
+
+    The grid markup is deferred — served by the season_calendar_partial
+    view on first open. The bulletin page itself does NOT contain
+    data-testid="season-calendar", calendar-cell-today, or
+    calendar-cell-selected.
     """
 
     def test_renders_sheet_and_trigger_when_season_active(
         self, client: Client, simple_bulletin, region
     ):
-        """A bulletin with a populated season grid renders trigger + closed sheet."""
+        """A bulletin with a populated season header renders trigger + closed sheet shell."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert 'data-season-sheet="closed"' in content
         assert "data-season-trigger" in content
         assert 'data-testid="season-sheet"' in content
+        # Grid is deferred — the bulletin page must NOT contain the grid markup.
+        # The JS toggle script references '.calendar-cell-today' as a selector
+        # string, so we check for the HTML class attribute form specifically.
+        assert 'data-testid="season-calendar"' not in content
+        assert 'class="rounded-full calendar-cell calendar-cell-today"' not in content
+        assert (
+            'class="rounded-full calendar-cell calendar-cell-selected"' not in content
+        )
 
     def test_omits_sheet_when_season_grid_empty(
         self, client: Client, simple_bulletin, region
     ):
-        """With SEASON_START_DATE in the future, build_season_grid is empty and the sheet is omitted."""
+        """With SEASON_START_DATE in the future, season_header is None and the sheet is omitted."""
         future_start = date(2099, 12, 1)
         with patch("django.conf.settings.SEASON_START_DATE", future_start):
             url = _url("ch-4115", "valais", "2026-03-15")
@@ -1502,33 +1515,16 @@ class TestSeasonSheet:
         assert 'data-testid="season-sheet"' not in content
         assert "data-season-trigger" not in content
 
-    def test_today_cell_carries_today_modifier(
+    def test_season_grid_placeholder_in_sheet(
         self, client: Client, simple_bulletin, region
     ):
-        """Today's cell in the heatmap is flagged with calendar-cell-today."""
-        # The cell is keyed by date alone — no RegionDayRating row needed
-        # for the modifier class to render.
+        """When the season is active the shell contains the #season-grid HTMX placeholder."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert "calendar-cell-today" in content
-
-    def test_selected_cell_carries_selected_modifier(self, client: Client, region):
-        """A non-today page_date renders the cell with calendar-cell-selected."""
-        # Pin "today" two days after the page date so is_selected is True
-        # for the page-date cell (the SeasonGrid suppresses is_selected
-        # when the page date coincides with today).
-        page_day = date(2026, 3, 13)
-        rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
-        _make_am_bulletin(region, page_day, render_model=rm, render_model_version=3)
-        with patch(
-            "public.views.timezone.now",
-            return_value=datetime(2026, 3, 15, 12, 0, tzinfo=UTC),
-        ):
-            url = _url("ch-4115", "valais", "2026-03-13")
-            response = client.get(url)
-        content = response.content.decode()
-        assert "calendar-cell-selected" in content
+        assert 'id="season-grid"' in content
+        assert "hx-trigger" in content
+        assert "snowdesk:load" in content
 
 
 # ---------------------------------------------------------------------------
