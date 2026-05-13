@@ -1,6 +1,6 @@
 ---
 name: qa
-description: Use after the developer agent has implemented a feature, or on-demand to produce a full-site user testing document. Generates manual testing scenarios covering happy paths and common handled failures. Read-only — never modifies code. Produces a structured test document that a human tester can follow step by step.
+description: Use after the implementer agent has built a feature, or on-demand to produce a full-site user testing document. Generates manual testing scenarios covering happy paths and common handled failures. Read-only — never modifies code. Produces a structured test document that a human tester can follow step by step.
 tools: Read, Grep, Glob
 model: claude-sonnet-4-6
 ---
@@ -31,7 +31,7 @@ Focus on what a real user would do:
 - Edge cases that only affect internal state (no visible UI impact).
 - API or backend errors that result in generic 500 pages.
 - Performance or load testing.
-- Automated test coverage (that's the developer's job).
+- Automated test coverage (that's the implementer's job).
 - Security testing (that's the reviewer's job).
 
 ## How to explore the codebase
