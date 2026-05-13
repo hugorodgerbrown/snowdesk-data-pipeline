@@ -823,7 +823,16 @@ const clearRegionRepaint = () => {
       map.setFeatureState({ source: 'regions', id: selectedId }, { selected: true });
 
       const props = REGION_LOOKUP[numericId];
-      const ok = await loadRegionSummary(props.regionID);
+      // Forward the active scrubber date (URL's ``?d=``) so the sheet
+      // shows the same date the user is browsing. Without this, clicking
+      // a region defaults the fetch to today — out-of-season for any
+      // feed past its last bulletin, returning 404 and leaving the sheet
+      // empty even on a date where data exists.
+      const dateKey = new URL(location.href).searchParams.get('d');
+      const validDate = dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
+        ? dateKey
+        : undefined;
+      const ok = await loadRegionSummary(props.regionID, validDate);
       // If the user dismissed the sheet (or selected a different region)
       // while the fetch was in flight, selectedId may no longer match.
       // loadRegionSummary already discards stale data; here we just bail
