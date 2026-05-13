@@ -246,7 +246,7 @@ Usage
         {# /right-side wrapper #}
     </div>
 </nav>
-<script>
+<script nonce="{{ request.csp_nonce }}">
     (function () {
         function initDropdown(wrapperAttr, toggleId, menuId) {
             var wrapper = document.querySelector('[' + wrapperAttr + ']');
