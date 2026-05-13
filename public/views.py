@@ -58,6 +58,7 @@ from bulletins.models import Bulletin, RegionBulletin, WeatherSnapshot
 from bulletins.schema import ValidTimePeriod
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
+    DayCharacter,
     RenderModelBuildError,
     build_render_model,
     compute_day_character,
@@ -2999,5 +3000,30 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "afternoon_subdivision": afternoon_subdivision,
         "problem_cards": problem_cards,
     }
-    panel["day_character"] = compute_day_character(raw_render_model)
+    panel["day_character"] = _resolve_day_lead(props, raw_render_model)
     return panel
+
+
+def _resolve_day_lead(
+    props: dict[str, Any], raw_render_model: dict[str, Any]
+) -> DayCharacter:
+    """
+    Return the eyebrow callout to show above the rating blocks.
+
+    SLF bulletins carry no top-of-bulletin tendency summary, so we
+    classify the day via the five-rule cascade in ``compute_day_character``
+    (Stable / Manageable / Hard-to-read / Widespread / Dangerous).
+
+    EUREGIO bulletins, by contrast, ship a short editorial lead at
+    ``properties.tendency[0].highlights`` — a forecaster-authored
+    one-liner describing how the day is expected to play out. When
+    that lead is present, use it verbatim and suppress the computed
+    label. The callout template renders the label as a bold prefix
+    when non-empty and as a single explainer paragraph when empty.
+    """
+    tendency = props.get("tendency") or []
+    if tendency:
+        highlights = (tendency[0] or {}).get("highlights") or ""
+        if highlights.strip():
+            return DayCharacter(label="", explainer=highlights)
+    return compute_day_character(raw_render_model)

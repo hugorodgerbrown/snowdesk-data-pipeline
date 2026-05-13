@@ -16,10 +16,12 @@
         class="shrink-0 rounded-[6px]"
     >
     <p class="text-callout-info-text leading-snug">
-        <strong
-            class="font-semibold text-text-1"
-            data-testid="day-character-label"
-        >{{ day_character.label }}.</strong>
+        {% if day_character.label %}
+            <strong
+                class="font-semibold text-text-1"
+                data-testid="day-character-label"
+            >{{ day_character.label }}.</strong>
+        {% endif %}
         <span data-testid="day-character-explainer">{{ day_character.explainer }}</span>
     </p>
 </div>

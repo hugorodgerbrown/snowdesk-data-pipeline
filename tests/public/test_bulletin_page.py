@@ -1669,6 +1669,52 @@ class TestDayCharacterEyebrow:
         content = response.content.decode()
         assert 'data-testid="day-character"' not in content
 
+    def test_tendency_highlights_replace_computed_label(self, client: Client, region):
+        """
+        A bulletin with ``tendency[0].highlights`` uses that text verbatim
+        as the eyebrow explainer and suppresses the bold computed label.
+
+        EUREGIO/ALBINA bulletins ship a forecaster-authored one-liner at
+        this path that summarises the day's outlook better than our
+        rule-based cascade ever could — so when present it wins.
+        """
+        day = date(2026, 3, 24)
+        rm = _render_model_with_traits([])
+        rm["danger"] = {"key": "moderate", "number": "2", "subdivision": None}
+        highlights = "Early morning favourable; wet-snow danger rises with warming."
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=4,
+            raw_data={
+                "type": "Feature",
+                "geometry": None,
+                "properties": {
+                    "dangerRatings": [{"mainValue": "moderate"}],
+                    "tendency": [
+                        {
+                            "highlights": highlights,
+                            "tendencyType": "steady",
+                        }
+                    ],
+                },
+            },
+        )
+
+        url = _url("ch-4115", "valais", "2026-03-24")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="day-character"' in content
+        assert "favicon.svg" in content
+        assert highlights in content
+        # Computed labels ("Manageable day" etc.) must be absent — the
+        # forecaster lead is the sole label-position content. The bold
+        # <strong> wrapper around the label is omitted when label is "".
+        assert 'data-testid="day-character-label"' not in content
+        assert "Manageable day" not in content
+        assert "Hard-to-read day" not in content
+
 
 # ---------------------------------------------------------------------------
 # SNOW-169: self-hosted asset smoke tests
