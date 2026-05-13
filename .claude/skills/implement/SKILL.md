@@ -1,75 +1,210 @@
 ---
 name: implement
 description: |
-  Implement an approved plan: invoke the implementer agent to write code, then
-  the reviewer agent to check it, looping until the reviewer is satisfied. Use
-  when the user says "implement", "go", or "run the implementation" AND the
-  current branch is not main and has an approved plan in context. Do NOT use
-  for: writing code without a plan, ad-hoc edits to existing code, or any work
-  not tied to a Snowdesk feature(/chore/bug) branch.
-allowed-tools: Task, Bash, Read, Edit, Write, Grep, Glob
+  Take a scoped Linear ticket from Ready-for-dev through to an open PR in one
+  flow: create the branch, plan, wait for plan approval, implement + review,
+  push, and open the PR. Use when the user says "implement SNOW-NN", "implement
+  this", "go on SNOW-NN", or just "implement" / "go" / "continue" when a
+  feature branch is already checked out. Do NOT use for: scoping a ticket
+  (`scope` skill), ad-hoc edits unrelated to a ticket, or any message without
+  either a SNOW-NN reference or an existing SNOW-NN branch checked out.
+allowed-tools: Task, Bash, Read, Edit, Write, Grep, Glob, mcp__linear
 ---
 
-# Implement
+# Implement SNOW-$1
 
-## Step 1 — Verify branch state
+End-to-end implementation flow. The **only** mandatory stop is plan approval.
+Everything after that runs through to an open PR without prompting the user,
+unless they appended a pause directive to the trigger.
 
-Run:
+## Optional pause directives
+
+The user may append a pause directive, e.g. *"implement SNOW-123, but stop
+before pushing"*. Parse it against the table below and treat the matched
+checkpoint as a hard stop. If the phrasing is ambiguous, ask which checkpoint
+they mean — do not guess.
+
+- **plan-only** — phrases like "plan only", "stop after the plan", "just the
+  plan", "don't implement yet". Stop after step 3 (plan approval). Do not
+  invoke the implementer.
+- **stop-before-push** — phrases like "stop before pushing", "stop before the
+  PR", "don't open the PR yet", "review only". Run through step 4
+  (implement + review). Stop before step 5.
+
+When stopping at a non-default checkpoint, tell the user explicitly:
+
+> "Stopped at <checkpoint>. Say `continue` (or `push the PR` / `open the PR`)
+> to resume — the branch is ready."
+
+Resuming uses the existing branch state. No re-plan, no re-review.
+
+## Step 1 — Detect mode
+
+Two entry modes:
+
+- **Fresh ticket mode** — trigger included `SNOW-NN`. Run steps 2 onward.
+- **Resume mode** — no ticket number in the trigger. Run:
+
+  ```bash
+  git branch --show-current
+  git status --short
+  ```
+
+  - Current branch must include `SNOW-NN`. If on `main`, stop and ask the user
+    which ticket they want.
+  - Working tree should be clean. If dirty, ask how to proceed.
+  - Skip to whichever step the user is resuming from (usually step 4 or 5,
+    based on the context of the previous session).
+
+## Step 2 — Set up the branch (fresh-ticket mode only)
+
+### 2a. Verify ticket is Ready
+
+Use Linear MCP `get_issue` to fetch SNOW-$1.
+
+**Hard precondition:** state must be `Ready for dev`. If it is `Todo` or
+`Backlog`, tell the user the ticket needs scoping first and stop. If it is
+`In Progress`, ask whether they want to resume existing work (in which case
+they should switch branches manually, not run this skill). If `In Review`
+or `Done`, stop.
+
+Read the ticket description AND comments — the scope lives in a comment
+posted by the `scope` skill. If there is no scoping comment, stop and tell
+the user to scope first. Store the Linear-supplied git branch name.
+
+### 2b. Create local branch
 
 ```bash
-git branch --show-current
-git status --short
+git checkout main && \
+git pull --ff-only && \
+git checkout -b {{git_branch_name}}
 ```
 
-**Hard preconditions:**
+If branch creation fails because the branch already exists, stop and ask the
+user how to proceed. Do not silently switch to an existing branch.
 
-- Current branch name must include SNOW-NN . If on `main` or anywhere else,
-  stop and tell the user to run `start` first.
-- Working tree should be clean (no uncommitted changes from a previous session).
-  If dirty, ask the user how to proceed.
+### 2c. Transition ticket to In Progress
 
-Extract the ticket number from the branch name for downstream use.
+Use Linear MCP `save_issue` with the ticket's internal `id` and the
+`In Progress` state. Do not push the branch — Linear's GitHub integration
+only cares about PR open / merge, not branch existence.
 
-## Step 2 — Invoke the implementer agent
+## Step 3 — Produce plan and wait for approval
+
+Now produce an implementation plan. Do NOT write code yet. The plan should
+cover:
+
+- **Files to touch** — concrete paths in the Snowdesk repo
+- **Order of changes** — what gets built first, second, third
+- **Test strategy** — what tests to write or update, what existing tests
+  cover this surface
+- **Risks / open questions** — anything that might bite during implementation
+
+Read the relevant parts of the codebase to ground the plan. Reference the
+scope (from the Linear comment) for acceptance criteria.
+
+Present the plan and ask:
+
+> "Approve the plan? Reply **go** to start implementation, or push back on
+> anything you want changed."
+
+**Hard gate:** do not write any code, do not invoke the implementer, do not
+exit plan mode without explicit approval. If the user pushes back, revise
+the plan and ask again.
+
+**Pause check:** if the directive is `plan-only`, stop here after approval
+with the resume message. Otherwise continue to step 4.
+
+## Step 4 — Implement and review
+
+### 4a. Implementer agent
 
 Use the Task tool to invoke the `implementer` subagent. Pass it:
+
 - The Linear ticket number & branch name
-- A reminder to consult the Linear ticket scope (in comments) and the approved
-  plan from this session's context
-- An instruction to commit incrementally with conventional commit messages, run
-  tests as it goes, and report back when the plan is fully implemented
+- A reminder to consult the Linear ticket scope (in comments) and the
+  approved plan from this session's context
+- An instruction to commit incrementally with conventional commit messages,
+  run tests as it goes, and report back when the plan is fully implemented
 
-The implementer runs in its own context. Its exploration and intermediate work
-do not pollute the main thread.
+The implementer runs in its own context. Its exploration and intermediate
+work do not pollute the main thread.
 
-## Step 3 — Invoke the reviewer agent
+### 4b. Reviewer agent
 
 Once the implementer reports done, invoke the `reviewer` subagent in a fresh
 forked context. Pass it:
+
 - The ticket number
 - The branch name
-- An instruction to check: tests pass, linter clean, scope acceptance criteria
-  met, no obvious mistakes or omissions
+- An instruction to check: tests pass, linter clean, scope acceptance
+  criteria met, no obvious mistakes or omissions
 
 The reviewer returns one of: **clean**, **blockers** (with specifics), or
 **suggestions** (non-blocking).
 
-## Step 4 — Loop if needed
+### 4c. Blocker loop
 
 - If reviewer returns **blockers**: pass them back to the implementer with a
-  request to address them. Re-invoke the reviewer when done. Loop until clean or
-  until the same blocker appears twice (in which case stop and surface to the
-  user — something is structurally wrong).
-- If reviewer returns **clean** or **suggestions only**: stop the loop.
+  request to address them. Re-invoke the reviewer when done. Loop until
+  clean or until the same blocker appears twice — in which case stop and
+  surface to the user; something is structurally wrong.
+- If reviewer returns **clean** or **suggestions only**: continue.
 
-## Step 5 — Report back
+**Pause check:** if the directive is `stop-before-push`, stop here with the
+resume message. List any non-blocking suggestions so the user can decide
+whether to address them before the PR. Otherwise continue to step 5.
 
-Tell the user:
+## Step 5 — Push and open the PR
 
-> "Implementation complete. Reviewer says: [clean / suggestions]. Run `raise-pr`
-> (or just say 'raise the PR') when ready."
+### 5a. Push
 
-If the reviewer left non-blocking suggestions, list them so the user can decide
-whether to address them before the PR or punt to a follow-up.
+```bash
+git log origin/main..HEAD --oneline
+git push
+```
 
-Do not auto-chain into raising the PR — that's the user's call.
+If there are zero commits ahead of `origin/main`, stop — there's nothing to
+PR (this should not happen after a successful step 4, so investigate).
+
+### 5b. Generate PR title and body
+
+Read:
+
+- The Linear ticket scope (from `get_issue` + comments)
+- The commit log on this branch
+
+Produce:
+
+- **Title:** `SNOW-NN: <short summary, sentence case, no trailing period>`
+- **Body:** structured as:
+  - **What** — one-paragraph summary of the change
+  - **Why** — link to the Linear ticket, brief context
+  - **How** — bullet list of the main changes
+  - **Testing** — what tests cover this, anything to verify manually
+  - `Closes SNOW-NN` (Linear's GitHub integration auto-transitions on merge)
+
+Print the title and body to the transcript before opening the PR — purely
+informational, not a gate. The PR can be edited cheaply with `gh pr edit`
+afterwards if anything needs tweaking.
+
+### 5c. Open the PR
+
+Use `gh pr create` with the title and body via HEREDOC. Capture the PR URL
+from the output.
+
+### 5d. Transition ticket to In Review
+
+Use Linear MCP `save_issue` with the ticket's internal `id` and `In Review`
+state. Post a comment on the ticket with the PR URL via `save_comment`.
+
+## Step 6 — Report
+
+> "PR opened: <url>. SNOW-NN is now In Review."
+
+If the reviewer left non-blocking suggestions earlier, list them again here
+so the user can decide whether to address them in a follow-up.
+
+Stop. The user takes it from here — review, merge. Linear's GitHub
+integration will auto-transition to Done on merge if the `Closes SNOW-NN`
+line is in the PR body.
