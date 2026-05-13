@@ -3,7 +3,7 @@
 #   poetry run python manage.py monitor_query_counts --commit
 # Format: <name> <count>
 home 1
-map 1
+map 2
 api_today_summaries 1
 api_resorts_by_region 2
 api_regions_geojson 1
