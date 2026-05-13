@@ -219,23 +219,21 @@ class TestLoadEuregioBulletinCommit:
 
     @patch(PATCH_FETCH)
     @patch(PATCH_UPSERT)
-    def test_unknown_region_skipped_not_exception(
+    def test_per_bulletin_exception_caught_and_reported(
         self,
         mock_upsert: MagicMock,
         mock_fetch: MagicMock,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Unknown region causes a warning + CommandError, not an uncaught exception."""
-        from bulletins.services.data_fetcher import UnknownRegionError
-
-        mock_fetch.return_value = [_make_raw_bulletin("bad-region-bulletin")]
-        mock_upsert.side_effect = UnknownRegionError("AT-99-01 not seeded")
+        """An unhandled per-bulletin exception is logged and the run fails."""
+        mock_fetch.return_value = [_make_raw_bulletin("bad-bulletin")]
+        mock_upsert.side_effect = RuntimeError("synthetic upsert failure")
 
         with pytest.raises(CommandError, match="failed to import"):
             call_command("load_euregio_bulletin", commit=True)
 
         captured = capsys.readouterr()
-        assert "unknown region" in captured.out.lower()
+        assert "synthetic upsert failure" in captured.out.lower()
 
     @patch(PATCH_FETCH)
     def test_force_skips_existence_check(
@@ -259,14 +257,13 @@ class TestLoadEuregioBulletinCommit:
     ) -> None:
         """When some bulletins fail, PipelineRun ends with FAILED status."""
         from bulletins.models import PipelineRun
-        from bulletins.services.data_fetcher import UnknownRegionError
 
-        # One bulletin succeeds, one has an unknown region (fails).
+        # One bulletin succeeds, one raises an unhandled error.
         mock_fetch.return_value = [
             _make_raw_bulletin("good-bulletin"),
             _make_raw_bulletin("bad-bulletin"),
         ]
-        mock_upsert.side_effect = [True, UnknownRegionError("AT-99-01 not seeded")]
+        mock_upsert.side_effect = [True, RuntimeError("synthetic upsert failure")]
 
         with pytest.raises(CommandError, match="failed to import"):
             call_command("load_euregio_bulletin", commit=True)

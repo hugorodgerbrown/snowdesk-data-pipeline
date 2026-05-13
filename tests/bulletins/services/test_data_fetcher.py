@@ -313,15 +313,38 @@ class TestUpsertBulletin:
         )
         assert region_ids == ["CH-4115", "CH-7111"]
 
-    def test_raises_on_unknown_region(self):
-        """upsert_bulletin raises UnknownRegionError for unseeded region_ids."""
+    def test_skips_unknown_regions_with_warning(self):
+        """
+        upsert_bulletin skips unknown regions, logs a warning, and still
+        creates the Bulletin row.
+
+        Multi-feed bulletins (e.g. cross-border ALBINA) can reference
+        regions outside our fixture coverage. Failing the whole bulletin
+        would discard usable data for the regions we *do* know. Instead,
+        link the known regions and warn loudly about the rest.
+        """
+        from unittest.mock import patch
+
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin(
-            regions=[{"regionID": "CH-XXXX", "name": "Nonexistent"}],
+            regions=[
+                {"regionID": "CH-4115", "name": "Piz Buin"},
+                {"regionID": "CH-XXXX", "name": "Nonexistent"},
+            ],
         )
-        with pytest.raises(UnknownRegionError) as exc_info:
-            upsert_bulletin(raw, run)
-        assert "CH-XXXX" in str(exc_info.value)
+        with patch("bulletins.services.data_fetcher.logger") as mock_logger:
+            created = upsert_bulletin(raw, run)
+
+        assert created is True
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        linked = list(bulletin.regions.values_list("region_id", flat=True))
+        assert linked == ["CH-4115"]
+
+        warning_calls = [c for c in mock_logger.warning.call_args_list]
+        assert warning_calls, "expected at least one warning log"
+        msg = warning_calls[0][0][0] % warning_calls[0][0][1:]
+        assert "CH-XXXX" in msg
+        assert "skipped" in msg
 
     def test_stores_region_name_at_time(self):
         """RegionBulletin records store the name from the bulletin."""

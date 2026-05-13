@@ -53,9 +53,10 @@ from core.models import BaseModel
 #
 # All three models are fixture-backed and treated as static reference
 # data. ``MicroRegion`` is NOT auto-created at bulletin-ingest time (see
-# ``bulletins.services.data_fetcher._get_region``); an unknown
-# ``region_id`` in an inbound bulletin raises ``UnknownRegionError`` so a
-# human can update the fixtures.
+# ``bulletins.services.data_fetcher._get_region``). A direct ``_get_region``
+# call on an unknown ``region_id`` raises ``UnknownRegionError``;
+# ``upsert_bulletin`` catches that, logs a warning, and skips the link
+# so a cross-feed bulletin still ingests the regions we do know.
 #
 # L1 and L2 geometry (``centre``, ``bbox``, ``boundary``) is derived —
 # pre-computed once by ``refresh_eaws_fixtures`` from the union of the
@@ -272,11 +273,12 @@ class MicroRegion(BaseModel):
     and its grand-parent ``MajorRegion`` by ``region_id[:4]``, exposed
     via the ``major_region`` property.
 
-    Treated as static, fixture-backed reference data. Unknown ``region_id``
-    values encountered during bulletin ingest raise ``UnknownRegionError``
-    rather than being silently auto-created — the data source is
-    authoritative and surprises should surface as errors so the fixtures
-    can be updated deliberately.
+    Treated as static, fixture-backed reference data. Direct
+    ``_get_region`` lookups on unknown ``region_id`` values raise
+    ``UnknownRegionError``; ``upsert_bulletin`` catches that and logs a
+    warning so cross-feed bulletins (which often reference regions
+    outside the local fixture set) still ingest the regions we do know
+    rather than being discarded wholesale.
     """
 
     region_id = models.CharField(

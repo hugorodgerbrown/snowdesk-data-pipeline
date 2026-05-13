@@ -40,7 +40,7 @@ import requests
 from django.core.management.base import BaseCommand, CommandError
 
 from bulletins.models import Bulletin, PipelineRun
-from bulletins.services.data_fetcher import UnknownRegionError, upsert_bulletin
+from bulletins.services.data_fetcher import upsert_bulletin
 from bulletins.services.render_model import build_render_model
 
 logger = logging.getLogger(__name__)
@@ -264,19 +264,6 @@ class Command(BaseCommand):
 
             try:
                 created = upsert_bulletin(raw, run)
-            except UnknownRegionError as exc:
-                logger.error(
-                    "Skipping bulletin %s: unknown region — %s",
-                    bulletin_id,
-                    exc,
-                )
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"  Skipped {bulletin_id}: unknown region — {exc}"
-                    )
-                )
-                failed_ids.append(bulletin_id)
-                continue
             except Exception as exc:
                 logger.exception(
                     "Failed to upsert bulletin %s: %s",
