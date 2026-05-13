@@ -130,3 +130,32 @@ def prose_body(value: str | None) -> str:
     if not value:
         return ""
     return _LEADING_H1_RE.sub("", value, count=1).lstrip()
+
+
+@register.filter
+def tendency_has_comment(prose: dict | None) -> bool:
+    """
+    Return True when ``prose.tendency`` contains at least one non-empty comment.
+
+    EUREGIO/ALBINA bulletins ship a ``tendency`` list whose entries carry
+    ``highlights`` text but an empty ``comment``. The Outlook panel renders
+    from ``comment``, so it would otherwise show an empty body. This filter
+    lets the template fall back to the "No data supplied" placeholder when
+    no entry has usable comment text.
+
+    Usage::
+
+        {% with has_outlook=prose|tendency_has_comment %}
+            {% if has_outlook %}
+                …
+            {% else %}
+                {% include "includes/_no_data_supplied.html" %}
+            {% endif %}
+        {% endwith %}
+    """
+    if not prose:
+        return False
+    tendency = prose.get("tendency") if isinstance(prose, dict) else None
+    if not tendency:
+        return False
+    return any((entry or {}).get("comment") for entry in tendency)

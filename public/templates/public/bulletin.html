@@ -477,17 +477,23 @@ reachable via the SNOW-81 deep-link in the masthead.
                                                     >&#x25BE;</span>
                                                 </summary>
                                                 <div class="px-4 pb-4 pt-3 border-t border-border">
-                                                    {% for entry in prose.tendency %}
-                                                        {% if entry.comment %}
-                                                            <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-3{% endif %}">
-                                                                {% if forloop.first %}
-                                                                    {{ entry.comment|prose_body|snowdesk_html }}
-                                                                {% else %}
-                                                                    {{ entry.comment|snowdesk_html }}
+                                                    {% with tendency_has_content=prose|tendency_has_comment %}
+                                                        {% if tendency_has_content %}
+                                                            {% for entry in prose.tendency %}
+                                                                {% if entry.comment %}
+                                                                    <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-3{% endif %}">
+                                                                        {% if forloop.first %}
+                                                                            {{ entry.comment|prose_body|snowdesk_html }}
+                                                                        {% else %}
+                                                                            {{ entry.comment|snowdesk_html }}
+                                                                        {% endif %}
+                                                                    </div>
                                                                 {% endif %}
-                                                            </div>
+                                                            {% endfor %}
+                                                        {% else %}
+                                                            {% include "includes/_no_data_supplied.html" %}
                                                         {% endif %}
-                                                    {% endfor %}
+                                                    {% endwith %}
                                                 </div>
                                             </details>
                                         {% endwith %}
