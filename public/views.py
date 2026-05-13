@@ -2018,14 +2018,13 @@ def season_calendar_partial(request: HttpRequest, region_id: str) -> HttpRespons
     Called by HTMX on the first open of the season sheet. Subsequent opens
     reuse the cached DOM — no second request fires.
 
-    The fragment is wrapped in a ``{% cache %}`` tag inside the template,
-    keyed on ``(canonical_region_id, today_iso)``. To guarantee zero DB
-    queries on a cache hit, this view checks the template fragment cache
-    directly before calling ``build_season_grid``. On a hit, the cached HTML
-    is returned immediately; on a miss, ``build_season_grid`` runs and the
-    template renders normally (the ``{% cache %}`` tag populates the cache as a
-    side effect).  The key is invalidated by ``apply_bulletin_day_ratings``
-    after each ingest so the next open re-queries with fresh data.
+    To guarantee zero DB queries on a cache hit, this view calls
+    ``cache.get(cache_key)`` before touching the DB. On a hit it returns
+    ``HttpResponse(cached_body)`` immediately. On a miss, ``build_season_grid``
+    runs, the template renders, and ``cache.set(cache_key, response.content,
+    90000)`` stores the raw bytes for subsequent requests. The key is
+    invalidated by ``apply_bulletin_day_ratings`` after each ingest so the
+    next open re-queries with fresh data.
 
     Args:
         request: The incoming HTMX GET request.
@@ -2045,9 +2044,9 @@ def season_calendar_partial(request: HttpRequest, region_id: str) -> HttpRespons
     # data is always served after the next bulletin lands.
     canonical_id = slugify(region_id)
     cache_key = make_template_fragment_key("season_calendar", [canonical_id, today_iso])
-    cached_html: str | None = cache.get(cache_key)
-    if cached_html is not None:
-        return HttpResponse(cached_html)
+    cached_body: bytes | None = cache.get(cache_key)
+    if cached_body is not None:
+        return HttpResponse(cached_body)
 
     region = get_object_or_404(
         MicroRegion.objects.select_related("subregion"), region_id__iexact=region_id

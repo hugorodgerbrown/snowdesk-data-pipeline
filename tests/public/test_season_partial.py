@@ -194,7 +194,7 @@ class TestSeasonPartialCache:
         url = _url(region.region_id)
         response = client.get(url, HTTP_HX_REQUEST="true")
         assert response.status_code == 200
-        # The cache key should exist now (the {% cache %} tag stores it).
+        # The cache key should exist now (the view's cache.set() call stores it on a miss).
         assert cache.get(cache_key) is not None
 
         # Build a minimal bulletin linked to the region and call apply.
