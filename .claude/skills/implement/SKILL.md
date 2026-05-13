@@ -163,7 +163,33 @@ whether to address them before the PR. Otherwise continue to step 5.
 
 ## Step 5 — Push and open the PR
 
-### 5a. Push
+### 5a. Confirm query counts
+
+Query-count drift is the single most common reason this branch fails CI
+once it's pushed. Always check before pushing — not after — so the fix
+lands in the same PR rather than a follow-up.
+
+Run:
+
+```bash
+poetry run python manage.py monitor_query_counts
+```
+
+(Prefix with `PATH=~/.local/bin:$PATH` if poetry isn't on the shell's
+PATH.) The command is read-only by default and exits non-zero on any
+mismatch against `perf/query_counts.txt`.
+
+- **Exit 0, no diff:** continue to 5b.
+- **Exit non-zero, counts changed:** decide whether the change is
+  legitimate (new prefetch, new query, an N+1 introduced or removed).
+  - If legitimate, re-run with `--commit` to update the baseline, then
+    commit `perf/query_counts.txt` to the branch (see
+    [`docs/query-counts.md`](docs/query-counts.md)).
+  - If unintended, the implementer needs to fix it before push — loop
+    back into step 4 with the diff as a blocker. Do not push a known
+    regression.
+
+### 5b. Push
 
 ```bash
 git log origin/main..HEAD --oneline
@@ -173,7 +199,7 @@ git push
 If there are zero commits ahead of `origin/main`, stop — there's nothing to
 PR (this should not happen after a successful step 4, so investigate).
 
-### 5b. Generate PR title and body
+### 5c. Generate PR title and body
 
 Read:
 
@@ -194,12 +220,12 @@ Print the title and body to the transcript before opening the PR — purely
 informational, not a gate. The PR can be edited cheaply with `gh pr edit`
 afterwards if anything needs tweaking.
 
-### 5c. Open the PR
+### 5d. Open the PR
 
 Use `gh pr create` with the title and body via HEREDOC. Capture the PR URL
 from the output.
 
-### 5d. Transition ticket to In Review
+### 5e. Transition ticket to In Review
 
 Use Linear MCP `save_issue` with the ticket's internal `id` and `In Review`
 state. Post a comment on the ticket with the PR URL via `save_comment`.
