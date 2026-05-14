@@ -17,9 +17,9 @@ from django.utils.safestring import SafeString
 
 from public.templatetags.snowdesk_html import prose_body, prose_title, snowdesk_html
 
-# Absolute path to the sample data fixture used in the real-SLF test.
+# Absolute path to the test fixture used in the real-SLF test.
 _SAMPLE_PATH = (
-    Path(__file__).resolve().parents[3] / "sample_data" / "sample_variable_day.json"
+    Path(__file__).resolve().parents[2] / "fixtures" / "sample_variable_day.json"
 )
 
 

@@ -33,8 +33,8 @@ from bulletins.services.render_model import (
     compute_day_character,
 )
 
-# Path to sample data fixtures.
-_SAMPLE_DIR = Path(__file__).parents[3] / "sample_data"
+# Path to test fixtures directory.
+_SAMPLE_DIR = Path(__file__).parents[2] / "fixtures"
 
 
 def _load_sample(filename: str) -> dict[str, Any]:
