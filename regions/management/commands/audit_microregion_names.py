@@ -16,11 +16,11 @@ drift-detector (e.g. on Render cron).
      mismatch set.
   2. Calls ``scripts.build_regions_fixture.build_fixture(...)`` to
      regenerate the ``regions.microregion`` (L4) entries in
-     ``regions/fixtures/eaws_ch.json``.
+     ``regions/fixtures/eaws_CH.json``.
 
 The caller should then run:
   poetry run python manage.py refresh_eaws_fixtures --commit
-  poetry run python manage.py loaddata regions/fixtures/eaws_ch.json
+  poetry run python manage.py loaddata regions/fixtures/eaws_CH.json
 
 Safe-by-default (CLAUDE.md Option A): read-only unless ``--commit`` is
 passed; no dry-run flag needed.
@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _CSV_PATH = _REPO_ROOT / "docs" / "eaws_regions_ch.csv"
-_FIXTURE_PATH = _REPO_ROOT / "regions" / "fixtures" / "eaws_ch.json"
+_FIXTURE_PATH = _REPO_ROOT / "regions" / "fixtures" / "eaws_CH.json"
 
 
 class Command(BaseCommand):
@@ -62,7 +62,7 @@ class Command(BaseCommand):
         "Compare MicroRegion.name against the most-recent RegionBulletin "
         "region_name_at_time (the SLF-authoritative name). Report mismatches. "
         "With --commit: patch docs/eaws_regions_ch.csv and regenerate the "
-        "regions/fixtures/eaws_ch.json L4 entries. Read-only unless --commit."
+        "regions/fixtures/eaws_CH.json L4 entries. Read-only unless --commit."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -155,7 +155,7 @@ class Command(BaseCommand):
                 "  poetry run python manage.py refresh_eaws_fixtures --commit"
             )
             self.stdout.write(
-                "  poetry run python manage.py loaddata regions/fixtures/eaws_ch.json"
+                "  poetry run python manage.py loaddata regions/fixtures/eaws_CH.json"
             )
 
 
@@ -291,7 +291,7 @@ def _patch_csv(
 
 
 def _rebuild_fixture(csv_path: Path, fixture_path: Path) -> None:
-    """Regenerate the L4 entries in eaws_ch.json from the patched CSV.
+    """Regenerate the L4 entries in eaws_CH.json from the patched CSV.
 
     The existing fixture may also contain L1 (MajorRegion) and L2 (SubRegion)
     entries. This helper:

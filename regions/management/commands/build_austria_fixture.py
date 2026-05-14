@@ -1,4 +1,4 @@
-"""build_austria_fixture — build regions/fixtures/eaws_at.json from EAWS source data.
+"""build_austria_fixture — build regions/fixtures/eaws_AT.json from EAWS source data.
 
 Reads the vendored EAWS micro-region GeoJSON files for Austria's seven
 avalanche-service states and produces a Django fixture with one L1
@@ -37,7 +37,7 @@ Usage:
     # Preview only (default — no writes).
     poetry run python manage.py build_austria_fixture
 
-    # Write regions/fixtures/eaws_at.json.
+    # Write regions/fixtures/eaws_AT.json.
     poetry run python manage.py build_austria_fixture --commit
 """
 
@@ -62,19 +62,19 @@ _EAWS_DIR = Path("sample_data") / "eaws"
 
 _AT_STATE_CODES = ["AT-02", "AT-03", "AT-04", "AT-05", "AT-06", "AT-07", "AT-08"]
 
-_AUSTRIA_FIXTURE = Path("regions/fixtures/eaws_at.json")
+_AUSTRIA_FIXTURE = Path("regions/fixtures/eaws_AT.json")
 
 _FIXTURE_TIMESTAMP = "2026-05-14T00:00:00Z"
 
 
 class Command(BaseCommand):
-    """Build regions/fixtures/eaws_at.json from EAWS micro-region source files.
+    """Build regions/fixtures/eaws_AT.json from EAWS micro-region source files.
 
     Read-only by default; pass ``--commit`` to write the fixture.
     """
 
     help = (
-        "Build regions/fixtures/eaws_at.json from the vendored EAWS Austria "
+        "Build regions/fixtures/eaws_AT.json from the vendored EAWS Austria "
         "micro-region GeoJSON files. Read-only unless --commit is passed."
     )
 

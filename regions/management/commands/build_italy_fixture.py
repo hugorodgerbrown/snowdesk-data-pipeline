@@ -1,4 +1,4 @@
-"""build_italy_fixture — build regions/fixtures/eaws_it.json from EAWS source data.
+"""build_italy_fixture — build regions/fixtures/eaws_IT.json from EAWS source data.
 
 Reads the vendored EAWS micro-region GeoJSON files for Italy's seven
 alpine avalanche-service regions and produces a Django fixture with one L1
@@ -37,7 +37,7 @@ Usage:
     # Preview only (default — no writes).
     poetry run python manage.py build_italy_fixture
 
-    # Write regions/fixtures/eaws_it.json.
+    # Write regions/fixtures/eaws_IT.json.
     poetry run python manage.py build_italy_fixture --commit
 """
 
@@ -70,19 +70,19 @@ _IT_REGION_CODES = [
     "IT-36",
 ]
 
-_ITALY_FIXTURE = Path("regions/fixtures/eaws_it.json")
+_ITALY_FIXTURE = Path("regions/fixtures/eaws_IT.json")
 
 _FIXTURE_TIMESTAMP = "2026-05-14T00:00:00Z"
 
 
 class Command(BaseCommand):
-    """Build regions/fixtures/eaws_it.json from EAWS micro-region source files.
+    """Build regions/fixtures/eaws_IT.json from EAWS micro-region source files.
 
     Read-only by default; pass ``--commit`` to write the fixture.
     """
 
     help = (
-        "Build regions/fixtures/eaws_it.json from the vendored EAWS Italy "
+        "Build regions/fixtures/eaws_IT.json from the vendored EAWS Italy "
         "micro-region GeoJSON files. Read-only unless --commit is passed."
     )
 

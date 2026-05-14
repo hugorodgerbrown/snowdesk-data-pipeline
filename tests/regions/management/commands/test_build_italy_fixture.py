@@ -116,7 +116,7 @@ def _seed_sources(tmp_path: Path) -> tuple[Path, Path]:
         ),
     )
 
-    fixture_path = tmp_path / "eaws_it.json"
+    fixture_path = tmp_path / "eaws_IT.json"
     return eaws_dir, fixture_path
 
 
@@ -184,7 +184,7 @@ class TestBuildItalyFixtureCommit:
     def test_commit_writes_fixture(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """--commit writes eaws_it.json containing L1 + L2 + L4 entries."""
+        """--commit writes eaws_IT.json containing L1 + L2 + L4 entries."""
         eaws_dir, fixture = _seed_sources(tmp_path)
         _patch_paths(monkeypatch, eaws_dir, fixture)
 
