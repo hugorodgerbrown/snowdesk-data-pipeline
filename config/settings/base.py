@@ -7,6 +7,7 @@ environment-specific values live in development.py / production.py and are
 read from the environment via python-decouple.
 """
 
+import logging
 from datetime import date
 from pathlib import Path
 
@@ -486,9 +487,19 @@ LOGGING = {
             "level": "DEBUG",
             "propagate": False,
         },
+        # Python `warnings.warn(...)` calls are routed here via
+        # `logging.captureWarnings(True)` below, so DeprecationWarning and
+        # friends land in errors.log alongside everything else.
+        "py.warnings": {
+            "handlers": ["console", "file_errors"],
+            "level": "WARNING",
+            "propagate": False,
+        },
     },
     "root": {
         "handlers": ["console", "file_errors"],
         "level": "WARNING",
     },
 }
+
+logging.captureWarnings(True)
