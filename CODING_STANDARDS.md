@@ -30,7 +30,7 @@ public/          Public-facing bulletin site (HTMX-driven). Owns the JSON API
                  used by the map page (api.py / api_urls.py)
 tests/           Mirrors the layout of the modules under test
   factories.py   FactoryBoy factories for every model
-sample_data/     Fixture JSON + CAAML schema documentation
+reference_data/  EAWS + MF reference geometry, the EAWS OpenAPI schema, and the CAAML schema doc
 src/             Tailwind CSS source (main.css — not served directly)
 static/          CSS/JS assets (includes compiled output.css)
 logs/            Runtime log files (gitignored except .gitkeep)

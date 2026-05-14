@@ -34,12 +34,12 @@ from bulletins.services.render_model import (
 )
 
 # Path to test fixtures directory.
-_SAMPLE_DIR = Path(__file__).parents[2] / "fixtures"
+_FIXTURE_DIR = Path(__file__).parents[2] / "fixtures"
 
 
 def _load_sample(filename: str) -> dict[str, Any]:
     """Load a sample JSON fixture and return its ``properties`` dict."""
-    path = _SAMPLE_DIR / filename
+    path = _FIXTURE_DIR / filename
     data = json.loads(path.read_text())
     return data["properties"]  # type: ignore[no-any-return]
 
@@ -1411,7 +1411,7 @@ class TestDayCharacterAcrossAllSamples:
         "filename",
         [
             p.name
-            for p in (_SAMPLE_DIR).iterdir()
+            for p in (_FIXTURE_DIR).iterdir()
             if p.name.startswith("sample_") and p.name.endswith(".json")
         ],
     )
@@ -1424,7 +1424,7 @@ class TestDayCharacterAcrossAllSamples:
             "Widespread danger",
             "Dangerous conditions",
         }
-        path = _SAMPLE_DIR / filename
+        path = _FIXTURE_DIR / filename
         data = json.loads(path.read_text())
         props = data["properties"]
         # Skip fixtures we know raise RenderModelBuildError.

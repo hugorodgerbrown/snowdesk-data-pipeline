@@ -4,7 +4,7 @@ tests/public/templatetags/test_snowdesk_html.py — Tests for the snowdesk_html 
 Covers sanitisation behaviour (tag allowlist, attribute stripping, disallowed
 tag removal), edge cases (None/empty input), return type guarantees, and a
 template-integration smoke test.  One test case uses a real SLF prose sample
-from ``sample_data/sample_variable_day.json`` to guard against regressions
+from ``tests/fixtures/sample_variable_day.json`` to guard against regressions
 with actual field data.
 """
 
