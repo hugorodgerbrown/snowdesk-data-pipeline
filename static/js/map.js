@@ -904,6 +904,19 @@ const clearRegionRepaint = () => {
       }
     };
 
+    // Silent dismissal helper — removes the current popup without bumping
+    // summarySeq. Used for region-to-region transitions where the caller
+    // immediately starts a new fetch (summarySeq++ happens there). The
+    // 'close' listener is detached first so clearTooltip is not triggered,
+    // which would bump summarySeq a second time and invalidate the new fetch.
+    const dismissActivePopupSilently = () => {
+      if (!activePopup) return;
+      const p = activePopup;
+      activePopup = null;
+      p.off('close', clearTooltip);
+      p.remove();
+    };
+
     // Fetch the server-rendered tooltip HTML for a region, open a
     // MapLibre Popup anchored to the click point (when supplied) or the
     // region's bbox centre (deep-link / resort-pin path), and wire its
@@ -912,11 +925,13 @@ const clearRegionRepaint = () => {
     // responses when the user taps a different region mid-flight.
     // Returns true on success, false on 404 / network error.
     //
-    // closeOnClick: true makes MapLibre auto-dismiss the popup on any
-    // map canvas click, so region-to-region transitions don't stack
-    // and tapping empty map area auto-dismisses without a separate handler.
+    // closeOnClick: false — we manage popup lifetime explicitly.
+    // dismissActivePopupSilently() removes any open popup before the fetch
+    // starts; this avoids the race where closeOnClick's 'close' event would
+    // bump summarySeq after the new fetch's seq is already captured.
     const loadRegionSummary = async (regionID, { dateKey, clickPoint } = {}) => {
       if (!REGION_ID_RE.test(regionID)) return false;
+      dismissActivePopupSilently();
       let url = REGION_SUMMARY_URL_TEMPLATE.replace(
         '__REGION__', encodeURIComponent(regionID),
       );
@@ -935,7 +950,7 @@ const clearRegionRepaint = () => {
         // user-supplied values escaped by autoescape — safe for setHTML.
         const popup = new maplibregl.Popup({
           closeButton: true,
-          closeOnClick: true,
+          closeOnClick: false,
           // SNOW-174: use 'bottom' so the popup tip always points down to
           // the tap point and the body floats above it. 'auto' can flip the
           // popup to an unexpected side when near the viewport edge, and it
@@ -1061,9 +1076,9 @@ const clearRegionRepaint = () => {
     map.on('click', 'regions-fill', (e) => {
       if (!e.features.length) return;
       // Pass the click's lngLat so the popup opens over the tapped point,
-      // not the region bbox centre. closeOnClick: true on the Popup means
-      // MapLibre auto-dismisses any previous popup before this handler
-      // fires, so no manual swap is needed.
+      // not the region bbox centre. dismissActivePopupSilently() at the top
+      // of loadRegionSummary handles swapping away any existing popup without
+      // bumping summarySeq, so region-to-region transitions open in one tap.
       selectFeature(e.features[0].id, { clickPoint: e.lngLat });
     });
 
@@ -1082,10 +1097,18 @@ const clearRegionRepaint = () => {
       }
     });
 
-    // NOTE: the previous "dismiss popup on map tap outside a region" handler
-    // (map.on('click', e => ...)) is intentionally removed. closeOnClick: true
-    // on the MapLibre Popup handles both taps on empty map area and
-    // region-to-region transitions without a separate handler.
+    // Dismiss the popup when the user taps empty map area (no region or resort
+    // feature under the cursor). This is the generic map click — MapLibre fires
+    // it AFTER layer-scoped clicks, so by the time it runs the layer handler
+    // has already called loadRegionSummary → dismissActivePopupSilently and
+    // started a new fetch. queryRenderedFeatures returns non-empty for those
+    // clicks, so this handler only fires for true empty-area taps.
+    map.on('click', (e) => {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['regions-fill', 'resorts-pin'],
+      });
+      if (features.length === 0) clearTooltip();
+    });
 
     map.on('mouseenter', 'regions-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'regions-fill', () => { map.getCanvas().style.cursor = ''; });
