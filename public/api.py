@@ -42,7 +42,9 @@ from django.http import Http404, HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.vary import vary_on_headers
 
 from bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from regions.models import (
@@ -71,8 +73,10 @@ COUNTRY_NAMES: dict[str, str] = {
 _VALID_GEOJSON_COUNTRIES: frozenset[str] = frozenset(COUNTRY_NAMES)
 
 # Cache lifetime for static region GeoJSON — region geometry is fixture-backed
-# and essentially never changes between deploys.
-_REGION_CACHE_CONTROL = "public, max-age=86400"
+# and essentially never changes between deploys. Applied via decorator rather
+# than a manual header assignment so Django's cache framework tracks it
+# correctly and the session middleware cannot append Vary: Cookie.
+_GEOJSON_CACHE_MAX_AGE = 86400
 
 logger = logging.getLogger(__name__)
 
@@ -400,6 +404,8 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
     )
 
 
+@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
 def regions_geojson(request: HttpRequest) -> JsonResponse:
     """
     Return a FeatureCollection of L4 region polygons for a single country.
@@ -408,6 +414,11 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
     Returns 400 on an unrecognised value. Each feature carries
     ``properties.id``, ``properties.name``, and ``properties.country``.
     Regions without a boundary are skipped.
+
+    The ``@cache_control(public=True, max_age=86400)`` + ``@vary_on_headers``
+    pair prevents Django's ``SessionMiddleware`` from appending
+    ``Vary: Cookie`` on the response.  Region geometry is fixture-backed and
+    anonymous — it is safe to cache publicly for 24 hours.
 
     Args:
         request: The incoming HTTP request.
@@ -444,16 +455,16 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
                 },
             }
         )
-    response = JsonResponse(
+    return JsonResponse(
         {
             "type": "FeatureCollection",
             "features": features,
         }
     )
-    response["Cache-Control"] = _REGION_CACHE_CONTROL
-    return response
 
 
+@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
 def major_regions_geojson(request: HttpRequest) -> JsonResponse:
     """
     Return a FeatureCollection of L1 EAWS major regions for a single country.
@@ -462,6 +473,10 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
     Returns 400 on an unrecognised value. Each feature carries
     ``properties.prefix``, ``properties.name_en``, and ``properties.country``.
     Entries without a boundary are skipped.
+
+    The ``@cache_control`` + ``@vary_on_headers`` pair prevents Django's
+    ``SessionMiddleware`` from appending ``Vary: Cookie``.  See
+    ``regions_geojson`` for the full rationale.
 
     Args:
         request: The incoming HTTP request.
@@ -492,16 +507,16 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
                 },
             }
         )
-    response = JsonResponse(
+    return JsonResponse(
         {
             "type": "FeatureCollection",
             "features": features,
         }
     )
-    response["Cache-Control"] = _REGION_CACHE_CONTROL
-    return response
 
 
+@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
 def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
     """
     Return a FeatureCollection of L2 EAWS sub-regions for a single country.
@@ -510,6 +525,10 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
     Returns 400 on an unrecognised value. Each feature carries
     ``properties.prefix``, ``properties.name_en``, and ``properties.country``.
     Entries without a boundary are skipped.
+
+    The ``@cache_control`` + ``@vary_on_headers`` pair prevents Django's
+    ``SessionMiddleware`` from appending ``Vary: Cookie``.  See
+    ``regions_geojson`` for the full rationale.
 
     Args:
         request: The incoming HTTP request.
@@ -546,14 +565,12 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
                 },
             }
         )
-    response = JsonResponse(
+    return JsonResponse(
         {
             "type": "FeatureCollection",
             "features": features,
         }
     )
-    response["Cache-Control"] = _REGION_CACHE_CONTROL
-    return response
 
 
 def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:

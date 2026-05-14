@@ -1020,6 +1020,39 @@ def test_regions_geojson_sets_cache_control() -> None:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url_name",
+    ["api:regions_geojson", "api:major_regions_geojson", "api:sub_regions_geojson"],
+)
+def test_geojson_endpoints_have_public_cache_headers(url_name: str) -> None:
+    """GeoJSON endpoints carry public Cache-Control and Vary: Accept-Encoding.
+
+    ``public`` makes the response eligible for shared caches (CDNs, proxies).
+    ``Vary: Accept-Encoding`` prevents Django's SessionMiddleware from
+    appending ``Vary: Cookie``, which would prevent cross-navigation caching
+    in most browsers even for identical requests.
+    """
+    client = Client()
+    url = reverse(url_name) + "?country=ch"
+    response = client.get(url)
+    assert response.status_code == 200
+    cache_control = response.get("Cache-Control", "")
+    assert "public" in cache_control, (
+        f"Expected 'public' in Cache-Control; got: {cache_control!r}"
+    )
+    assert "max-age=86400" in cache_control, (
+        f"Expected 'max-age=86400' in Cache-Control; got: {cache_control!r}"
+    )
+    vary = response.get("Vary", "")
+    assert "Cookie" not in vary, (
+        f"Vary: Cookie must not be set on GeoJSON endpoints; got Vary: {vary!r}"
+    )
+    assert "Accept-Encoding" in vary, (
+        f"Expected 'Accept-Encoding' in Vary; got: {vary!r}"
+    )
+
+
+@pytest.mark.django_db
 def test_regions_geojson_query_count() -> None:
     """Regions GeoJSON for a country issues a bounded number of DB queries."""
     boundary = {
