@@ -4,27 +4,43 @@ MapLibre Popup on /map/.
 
 Server-rendered by ``public.api.region_summary`` and injected into a
 ``maplibregl.Popup`` via ``popup.setHTML(data.html)`` in
-``static/js/map.js``. The popup is anchored to the region's bbox centre
-so it floats over the relevant area on pan and zoom.
+``static/js/map.js``. The popup is anchored to the click point (or the
+region's bbox centre for deep-link / resort-pin paths).
 
-Content is structural region metadata only — name, geographic breadcrumb
-(country › major › sub-region › micro-region), and the alphabetically-sorted
-resort list. No bulletin data, no date dependency.
+Content:
+  1. Headline danger-rating chip — a danger-tile linked to the day's bulletin
+     URL (dated when ?d= was supplied, evergreen otherwise). Falls back to
+     the no_rating state when no RegionDayRating row exists for the date.
+  2. Geographic breadcrumb — four levels in English:
+     country › major (L1) › sub-region (L2) › micro-region name (L4).
+     Uses ``name_en`` on MajorRegion / SubRegion, falling back to
+     ``name_native`` for any future entry that lacks an English variant.
+  3. Alphabetically-sorted resort list (or a "No resorts" placeholder).
+  4. An empty editorial slot for future JS-injected content.
 
 Context variables expected:
-  region — MicroRegion instance, with subregion__major select_related and
-            resorts prefetch_related.
+  region      — MicroRegion instance, with subregion__major select_related
+                and resorts prefetch_related.
+  day_rating  — RegionDayRating instance for the displayed date, or None.
+  bulletin_url — Absolute URL for the day's bulletin (dated or evergreen).
+  country_name — Human-readable country name (e.g. "Switzerland").
 {% endcomment %}
-{% load i18n %}
+{% load i18n snowdesk_time %}
 
 <div class="region-tooltip" data-region-id="{{ region.region_id }}">
+    <a href="{{ bulletin_url }}" class="region-tooltip-rating-link" data-testid="region-tooltip-rating-link">
+        <span
+            class="danger-tile"
+            data-level="{{ day_rating.max_rating|default:'no_rating' }}"
+        >{{ day_rating.max_rating|default:'no_rating'|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+    </a>
     <h2 class="region-tooltip-name">{{ region.name }}</h2>
     <p class="region-tooltip-breadcrumb">
-        {{ region.subregion.major.country }}
+        {{ country_name }}
         <span aria-hidden="true"> › </span>
-        {{ region.subregion.major.name_native }}
+        {{ region.subregion.major.name_en|default:region.subregion.major.name_native }}
         <span aria-hidden="true"> › </span>
-        {{ region.subregion.name_native }}
+        {{ region.subregion.name_en|default:region.subregion.name_native }}
         <span aria-hidden="true"> › </span>
         {{ region.name }}
     </p>

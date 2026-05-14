@@ -13,6 +13,10 @@ process:
 
 The filter returns ``None`` on any parse failure so that downstream filters
 (or ``|default:"—"``) can handle missing values gracefully.
+
+Also provides ``danger_level_key`` / ``danger_level_label`` for integer→string
+mapping and ``danger_level_digit`` for rating-key→display-digit mapping (used
+by the region tooltip danger chip).
 """
 
 import logging
@@ -104,6 +108,41 @@ def danger_level_key(level: int | None) -> str:
         return _DANGER_LEVEL_TO_KEY.get(int(level), "")
     except (ValueError, TypeError):
         return ""
+
+
+_RATING_KEY_TO_DIGIT: dict[str, str] = {
+    "low": "1",
+    "moderate": "2",
+    "considerable": "3",
+    "high": "4",
+    "very_high": "5",
+}
+
+
+@register.filter
+def danger_level_digit(key: str | None) -> str:
+    """
+    Convert a danger-rating key string to its display digit (1–5).
+
+    Accepts the CSS data-level keys stored in ``RegionDayRating.max_rating``
+    (e.g. ``"considerable"``). Returns ``""`` for ``None``, ``"no_rating"``,
+    or any unrecognised value so downstream ``|default`` filters can fall back
+    gracefully.
+
+    Usage::
+
+        {{ day_rating.max_rating|danger_level_digit }}  {# → "3" #}
+
+    Args:
+        key: Rating key string (e.g. ``"considerable"``), or ``None``.
+
+    Returns:
+        Single-character digit string (``"1"``–``"5"``), or ``""``.
+
+    """
+    if not key:
+        return ""
+    return _RATING_KEY_TO_DIGIT.get(key, "")
 
 
 @register.filter
