@@ -20,9 +20,12 @@ module; the rendered grid is cached at the view layer in
 ``season_calendar_partial`` (keyed on ``(canonical_region_id, today_iso)``)
 and invalidated by ``apply_bulletin_day_ratings`` after ingest.
 
-``build_season_grid`` no longer accepts ``page_date`` — selected-day
-highlighting is applied client-side after the HTMX swap so the fragment
-cache is not keyed on the current page date.
+``build_season_grid`` accepts an optional ``selected_date`` parameter. When
+supplied it sets ``is_selected=True`` on the matching cell — used by the
+region drawer on ``/map/`` to highlight the currently displayed date. The
+bulletin-page heatmap passes ``selected_date=None`` and applies highlighting
+client-side after the HTMX swap, so the fragment cache is not keyed on the
+current page date.
 
 ``season_header`` is a cheap helper that returns ``{"season_label": "<NN/NN>"}``
 when the season has started (used by the bulletin view to decide whether
@@ -123,18 +126,26 @@ class SeasonGrid:
 def build_season_grid(
     region: "MicroRegion",
     today: datetime.date,
+    selected_date: datetime.date | None = None,
 ) -> SeasonGrid:
     """
     Build the season-long heatmap grid for ``region``.
 
-    Selected-day highlighting is applied client-side after the HTMX swap
-    (keyed off ``data-selected-date`` on the grid container), so ``page_date``
-    is no longer an input — this keeps the cache key clean.
+    When ``selected_date`` is supplied the cell whose date matches it has
+    ``is_selected=True`` set, giving the template a hook for the selected-day
+    outline (used by the region drawer on ``/map/`` to mark the currently
+    displayed date inside the heatmap).
+
+    The bulletin-page heatmap still passes ``selected_date=None`` and applies
+    highlighting client-side (keyed off ``data-selected-date`` on the grid
+    container) so the fragment cache is not keyed on the current page date.
 
     Args:
         region: The region whose ratings to render.
         today: Current date — the day after this is the last column of
             the grid (the SLF afternoon bulletin targets ``today + 1``).
+        selected_date: Optional date to flag ``is_selected=True`` on. When
+            ``None`` all cells have ``is_selected=False``.
 
     Returns:
         A :class:`SeasonGrid` ready to render. Empty when the computed
@@ -174,6 +185,7 @@ def build_season_grid(
                 and max_key != RegionDayRating.Rating.NO_RATING
             )
         is_today = cursor == today
+        is_selected = selected_date is not None and cursor == selected_date
         cells.append(
             SeasonCell(
                 date=cursor,
@@ -182,6 +194,7 @@ def build_season_grid(
                 subdivision=subdivision,
                 has_bulletin=has_bulletin,
                 is_today=is_today,
+                is_selected=is_selected,
                 month_parity=month_parity,
             )
         )
