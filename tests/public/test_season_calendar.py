@@ -10,7 +10,7 @@ Covers:
   - Missing-row dates render as inert ``no_rating`` cells.
   - Rows with a ``source_bulletin`` render as interactive (``has_bulletin``).
   - ``is_today`` flag set only on the today cell.
-  - ``is_selected`` always ``False`` from the builder (selection is client-side).
+  - ``is_selected`` always ``False`` from the builder (selection is client-side only).
   - Month-label boundaries align with the column where the month flips.
   - ``season_header`` returns the label dict or None.
 """
@@ -170,45 +170,6 @@ class TestBuildSeasonGrid:
         region = MicroRegionFactory.create(region_id="CH-4115")
         today = datetime.date(2025, 11, 10)
         grid = build_season_grid(region, today=today)
-
-        for col in grid.columns:
-            for c in col:
-                if c is not None:
-                    assert c.is_selected is False
-
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
-    def test_selected_date_flags_matching_cell(self) -> None:
-        """When selected_date is supplied, exactly one cell has is_selected=True."""
-        region = MicroRegionFactory.create(region_id="CH-4115")
-        today = datetime.date(2025, 11, 10)
-        selected = datetime.date(2025, 11, 7)
-        grid = build_season_grid(region, today=today, selected_date=selected)
-
-        selected_cells = [
-            c for col in grid.columns for c in col if c is not None and c.is_selected
-        ]
-        assert len(selected_cells) == 1
-        assert selected_cells[0].date == selected
-
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
-    def test_selected_date_none_means_no_cell_selected(self) -> None:
-        """Passing selected_date=None leaves all cells with is_selected=False."""
-        region = MicroRegionFactory.create(region_id="CH-4115")
-        today = datetime.date(2025, 11, 10)
-        grid = build_season_grid(region, today=today, selected_date=None)
-
-        for col in grid.columns:
-            for c in col:
-                if c is not None:
-                    assert c.is_selected is False
-
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
-    def test_selected_date_outside_season_selects_nothing(self) -> None:
-        """A selected_date before SEASON_START_DATE selects no cell."""
-        region = MicroRegionFactory.create(region_id="CH-4115")
-        today = datetime.date(2025, 11, 10)
-        selected = datetime.date(2025, 10, 1)  # before season start
-        grid = build_season_grid(region, today=today, selected_date=selected)
 
         for col in grid.columns:
             for c in col:

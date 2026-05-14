@@ -1,0 +1,43 @@
+{% comment %}
+public/templates/public/_region_tooltip.html — Tooltip body for the region
+MapLibre Popup on /map/.
+
+Server-rendered by ``public.api.region_summary`` and injected into a
+``maplibregl.Popup`` via ``popup.setHTML(data.html)`` in
+``static/js/map.js``. The popup is anchored to the region's bbox centre
+so it floats over the relevant area on pan and zoom.
+
+Content is structural region metadata only — name, geographic breadcrumb
+(country › major › sub-region › micro-region), and the alphabetically-sorted
+resort list. No bulletin data, no date dependency.
+
+Context variables expected:
+  region — MicroRegion instance, with subregion__major select_related and
+            resorts prefetch_related.
+{% endcomment %}
+{% load i18n %}
+
+<div class="region-tooltip" data-region-id="{{ region.region_id }}">
+    <h2 class="region-tooltip-name">{{ region.name }}</h2>
+    <p class="region-tooltip-breadcrumb">
+        {{ region.subregion.major.country }}
+        <span aria-hidden="true"> › </span>
+        {{ region.subregion.major.name_native }}
+        <span aria-hidden="true"> › </span>
+        {{ region.subregion.name_native }}
+        <span aria-hidden="true"> › </span>
+        {{ region.name }}
+    </p>
+    {% with resorts=region.resorts.all|dictsort:"name" %}
+        {% if resorts %}
+            <ul class="region-tooltip-resorts">
+                {% for resort in resorts %}
+                    <li>{{ resort.name }}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="region-tooltip-no-resorts">{% trans "No resorts in this region." %}</p>
+        {% endif %}
+    {% endwith %}
+    <div class="region-tooltip-editorial" data-testid="region-tooltip-editorial"></div>
+</div>

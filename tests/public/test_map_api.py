@@ -9,8 +9,8 @@ Covers the endpoints consumed by the /map/ page:
 * ``api:regions_geojson``       — FeatureCollection of L4 region polygons.
 * ``api:major_regions_geojson`` — FeatureCollection of L1 region polygons (SNOW-59).
 * ``api:sub_regions_geojson``   — FeatureCollection of L2 region polygons (SNOW-59).
-* ``api:region_summary``        — structural region panel: breadcrumb, resorts,
-                                  season heatmap, headline-rating chip (SNOW-174).
+* ``api:region_summary``        — structural region tooltip: breadcrumb + resorts,
+                                  no bulletin data dependency (SNOW-174 pivot).
 """
 
 from __future__ import annotations
@@ -522,130 +522,34 @@ def test_season_ratings_returns_expected_shape():
 
 
 # ---------------------------------------------------------------------------
-# region-summary  (SNOW-174: structural panel, no bulletin dependency)
+# region-summary  (SNOW-174 pivot: tooltip, no bulletin dependency)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_region_summary_accepts_date_query_param():
-    """``?d=YYYY-MM-DD`` fetches the panel for that date, returning 200."""
+def test_region_summary_returns_html_for_known_region():
+    """200 response with a single ``html`` key containing the region name."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
         prefix="CH-41", major=major, name_native="Lower Valais"
     )
-    region = MicroRegionFactory.create(
+    MicroRegionFactory.create(
         region_id="CH-4115",
         name="Martigny – Verbier",
         slug="ch-4115",
         subregion=sub,
     )
-    past_day = timezone.localdate() - timedelta(days=30)
-    RegionDayRatingFactory.create(
-        region=region,
-        date=past_day,
-        min_rating=RegionDayRating.Rating.MODERATE,
-        max_rating=RegionDayRating.Rating.MODERATE,
-    )
-    client = Client()
-    response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=" + past_day.isoformat(),
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert "peek" in data
-    assert "expanded" in data
-
-
-@pytest.mark.django_db
-def test_region_summary_rejects_bad_date():
-    """An unparseable ``?d=`` returns 400 with a clear error code."""
-    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
-    sub = SubRegionFactory.create(
-        prefix="CH-41", major=major, name_native="Lower Valais"
-    )
-    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
-    client = Client()
-    response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=not-a-date",
-    )
-    assert response.status_code == 400
-    assert response.json() == {"error": "bad_date"}
-
-
-@pytest.mark.django_db
-def test_region_summary_defaults_to_today_when_no_date_param():
-    """Without ``?d=`` the endpoint returns 200 and renders the panel for today."""
-    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
-    sub = SubRegionFactory.create(
-        prefix="CH-41", major=major, name_native="Lower Valais"
-    )
-    region = MicroRegionFactory.create(
-        region_id="CH-4115", slug="ch-4115", subregion=sub
-    )
-    RegionDayRatingFactory.create(
-        region=region,
-        date=timezone.localdate(),
-        min_rating=RegionDayRating.Rating.CONSIDERABLE,
-        max_rating=RegionDayRating.Rating.CONSIDERABLE,
-    )
     client = Client()
     response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200
     data = response.json()
-    assert "peek" in data
-    assert "expanded" in data
+    assert list(data.keys()) == ["html"]
+    assert "Martigny" in data["html"]
 
 
 @pytest.mark.django_db
-def test_region_summary_always_200_when_no_bulletin_for_target_date():
-    """A valid date with no bulletin coverage returns 200 (panel always renders)."""
-    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
-    sub = SubRegionFactory.create(
-        prefix="CH-41", major=major, name_native="Lower Valais"
-    )
-    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
-    past_day = timezone.localdate() - timedelta(days=180)
-    client = Client()
-    response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=" + past_day.isoformat(),
-    )
-    # No bulletin, no RegionDayRating — panel still renders (chip in no_rating state).
-    assert response.status_code == 200
-    data = response.json()
-    assert "peek" in data
-    assert "expanded" in data
-
-
-@pytest.mark.django_db
-def test_region_summary_peek_includes_bulletin_deep_link():
-    """The peek HTML carries a deep-link to the full bulletin (SNOW-81).
-
-    Mirrors the map-pin link on the bulletin masthead so navigation
-    between map and bulletin is one tap in either direction. The peek
-    must NOT contain a danger-tile chip (SNOW-174).
-    """
-    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
-    sub = SubRegionFactory.create(
-        prefix="CH-41", major=major, name_native="Lower Valais"
-    )
-    region = MicroRegionFactory.create(
-        region_id="CH-4115", slug="ch-4115", subregion=sub
-    )
-    client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
-    assert response.status_code == 200
-    peek = response.json()["peek"]
-    assert 'data-testid="region-peek-bulletin-link"' in peek
-    # SNOW-99: canonical form-2 URL (no ?d=) when no date param.
-    expected_href = region.get_absolute_url()
-    assert f'href="{expected_href}"' in peek
-    # SNOW-174: peek state no longer carries the danger chip.
-    assert "danger-tile" not in peek
-
-
-@pytest.mark.django_db
-def test_region_summary_expanded_shows_geographic_breadcrumb():
-    """The expanded panel shows the country › major › sub › micro breadcrumb."""
+def test_region_summary_includes_geographic_breadcrumb():
+    """The tooltip HTML includes all four breadcrumb labels in order."""
     major = MajorRegionFactory.create(
         prefix="CH-4", country="CH", name_native="Wallis", name_en="Valais"
     )
@@ -661,18 +565,24 @@ def test_region_summary_expanded_shows_geographic_breadcrumb():
     client = Client()
     response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200
-    expanded = response.json()["expanded"]
-    # All breadcrumb segments must be present.
-    assert "CH" in expanded
-    assert "Wallis" in expanded
-    assert "Lower Valais" in expanded
-    assert "Martigny" in expanded
+    html = response.json()["html"]
+    # All breadcrumb segments present.
+    assert "CH" in html
+    assert "Wallis" in html
+    assert "Lower Valais" in html
+    assert "Martigny" in html
     # Chevron separator.
-    assert "›" in expanded
+    assert "›" in html
+    # The breadcrumb paragraph carries all four labels; check order within it.
+    breadcrumb_start = html.index("region-tooltip-breadcrumb")
+    breadcrumb = html[breadcrumb_start:]
+    assert breadcrumb.index("CH") < breadcrumb.index("Wallis")
+    assert breadcrumb.index("Wallis") < breadcrumb.index("Lower Valais")
+    assert breadcrumb.index("Lower Valais") < breadcrumb.index("Martigny")
 
 
 @pytest.mark.django_db
-def test_region_summary_expanded_lists_resorts_alphabetically():
+def test_region_summary_lists_resorts_alphabetically():
     """Two resorts linked to the region appear in alphabetical order."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -687,15 +597,15 @@ def test_region_summary_expanded_lists_resorts_alphabetically():
     client = Client()
     response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200
-    expanded = response.json()["expanded"]
-    assert "La Chaux" in expanded
-    assert "Verbier" in expanded
+    html = response.json()["html"]
+    assert "La Chaux" in html
+    assert "Verbier" in html
     # Alphabetical order: La Chaux before Verbier.
-    assert expanded.index("La Chaux") < expanded.index("Verbier")
+    assert html.index("La Chaux") < html.index("Verbier")
 
 
 @pytest.mark.django_db
-def test_region_summary_expanded_renders_no_resorts_placeholder():
+def test_region_summary_renders_no_resorts_placeholder():
     """A region with zero linked resorts shows the empty-state placeholder."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -705,74 +615,21 @@ def test_region_summary_expanded_renders_no_resorts_placeholder():
     client = Client()
     response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200
-    expanded = response.json()["expanded"]
-    assert "No resorts in this region." in expanded
+    html = response.json()["html"]
+    assert "No resorts in this region." in html
 
 
 @pytest.mark.django_db
-def test_region_summary_expanded_renders_season_heatmap():
-    """The expanded panel contains the season-calendar heatmap."""
-    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
-    sub = SubRegionFactory.create(
-        prefix="CH-41", major=major, name_native="Lower Valais"
-    )
-    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
+def test_region_summary_unknown_region_returns_404():
+    """An unknown region_id returns 404."""
     client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
-    assert response.status_code == 200
-    expanded = response.json()["expanded"]
-    assert 'data-testid="season-calendar"' in expanded
-
-
-@pytest.mark.django_db
-def test_region_summary_expanded_includes_headline_rating_shortcut():
-    """The expanded panel has a danger-tile chip inside a link to the bulletin."""
-    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
-    sub = SubRegionFactory.create(
-        prefix="CH-41", major=major, name_native="Lower Valais"
-    )
-    region = MicroRegionFactory.create(
-        region_id="CH-4115", slug="ch-4115", subregion=sub
-    )
-    today = timezone.localdate()
-    RegionDayRatingFactory.create(
-        region=region,
-        date=today,
-        min_rating=RegionDayRating.Rating.CONSIDERABLE,
-        max_rating=RegionDayRating.Rating.CONSIDERABLE,
-    )
-    client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
-    assert response.status_code == 200
-    expanded = response.json()["expanded"]
-    # The chip must be wrapped in a link.
-    assert 'data-testid="region-expanded-rating-link"' in expanded
-    assert "danger-tile" in expanded
-    # Rating level reflected on the chip.
-    assert 'data-level="considerable"' in expanded
-    # Link points to the bulletin URL.
-    bulletin_url = region.get_absolute_url()
-    assert f'href="{bulletin_url}"' in expanded
-
-
-@pytest.mark.django_db
-def test_region_summary_expanded_chip_no_rating_when_no_day_rating():
-    """When no RegionDayRating exists for the date, the chip is in no_rating state."""
-    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
-    sub = SubRegionFactory.create(
-        prefix="CH-41", major=major, name_native="Lower Valais"
-    )
-    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
-    client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
-    assert response.status_code == 200
-    expanded = response.json()["expanded"]
-    assert 'data-level="no_rating"' in expanded
+    response = client.get(reverse("api:region_summary", args=["CH-UNKNOWN"]))
+    assert response.status_code == 404
 
 
 @pytest.mark.django_db
 def test_region_summary_query_count():
-    """The view issues a bounded number of DB queries (≤ 5)."""
+    """The tooltip view issues at most 2 DB queries (region join + resorts prefetch)."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
         prefix="CH-41", major=major, name_native="Lower Valais"
@@ -781,19 +638,12 @@ def test_region_summary_query_count():
         region_id="CH-4115", slug="ch-4115", subregion=sub
     )
     ResortFactory.create(region=region, name="Verbier")
-    RegionDayRatingFactory.create(
-        region=region,
-        date=timezone.localdate(),
-        min_rating=RegionDayRating.Rating.LOW,
-        max_rating=RegionDayRating.Rating.LOW,
-    )
     client = Client()
     with CaptureQueriesContext(connection) as ctx:
         response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200
-    # Queries: region+subregion+major join, resorts prefetch,
-    # RegionDayRating for target date, RegionDayRating range for season grid.
-    assert len(ctx.captured_queries) <= 5
+    # Queries: region + subregion + major join (1), resorts prefetch (1).
+    assert len(ctx.captured_queries) <= 2
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 public/api.py — JSON endpoints for the interactive map.
 
 Lightweight endpoints consumed by ``static/js/map.js`` to render the
-Swiss region choropleth and back the per-region bottom sheet:
+Swiss region choropleth and back the per-region tooltip:
 
 * ``/api/today-summaries/``                — per-region danger summary for today.
 * ``/api/season-ratings/``                 — ``{date: {region_id: rating_int}}``
@@ -13,9 +13,9 @@ Swiss region choropleth and back the per-region bottom sheet:
 * ``/api/regions.geojson``                 — FeatureCollection of L4 region polygons.
 * ``/api/major-regions.geojson``           — FeatureCollection of L1 region polygons.
 * ``/api/sub-regions.geojson``             — FeatureCollection of L2 region polygons.
-* ``/api/region/<region_id>/summary/``     — pre-rendered peek + expanded HTML
-  for the region panel (consumed by the bottom sheet); shows structural
-  region info + headline rating chip, not full bulletin content.
+* ``/api/region/<region_id>/summary/``     — pre-rendered tooltip HTML for the
+  MapLibre Popup anchored to the region's bbox centre; shows structural region
+  info (breadcrumb, resorts) with no bulletin data dependency.
 * ``/api/offline-manifest/map/``           — precache manifest for the offline CTA.
 
 Flag-gated endpoints powering the in-map resort editor (SNOW-74,
@@ -32,7 +32,6 @@ endpoint is hit on demand when the user taps a region.
 
 from __future__ import annotations
 
-import datetime
 import json
 import logging
 from typing import Any
@@ -52,7 +51,6 @@ from regions.models import (
     SubRegion,
 )
 
-from .season_calendar import build_season_grid
 from .views import (
     _PROBLEM_LABELS,
     _select_default_issue,
@@ -491,27 +489,17 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
 
 def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     """
-    Return pre-rendered peek + expanded HTML for a region's summary panel.
+    Return pre-rendered tooltip HTML for a region's MapLibre Popup.
 
     Response shape::
 
-        {"peek": "<...>", "expanded": "<...>"}
+        {"html": "<...>"}
 
-    Both fragments are server-rendered so the bottom sheet on ``/map/``
-    can inject them as opaque HTML and let the existing drag controller
-    manage transitions. The expanded fragment shows structural region
-    information (geographic breadcrumb, linked resorts, season heatmap)
-    with a single headline-rating chip as a shortcut to the bulletin for
-    the displayed date. This removes the bulletin-data dependency from
-    the panel — the heatmap and breadcrumb render regardless of whether a
-    bulletin exists for the target date.
+    The single ``html`` key is a server-rendered snippet injected into a
+    ``maplibregl.Popup`` anchored to the region's bbox centre on ``/map/``.
+    Content is structural region metadata only (name, geographic breadcrumb,
+    resort list) — no bulletin data, no date dependency.
 
-    Accepts an optional ``?d=YYYY-MM-DD`` query parameter to display the
-    panel for a specific past or future date — used by the season
-    scrubber on ``/map/`` to refresh the open sheet when the displayed
-    date changes. Defaults to today.
-
-    Returns 400 when ``?d=`` is present but unparseable.
     Returns 404 when the region_id is unknown.
 
     Args:
@@ -519,8 +507,7 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
         region_id: SLF region identifier (e.g. ``"CH-4115"``).
 
     Returns:
-        A JsonResponse with ``peek`` and ``expanded`` HTML strings, or
-        a 400 ``{"error": "bad_date"}`` payload for an unparseable ``?d=``.
+        A JsonResponse with a single ``html`` key containing the tooltip markup.
 
     """
     region = get_object_or_404(
@@ -529,40 +516,12 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
         ),
         region_id__iexact=region_id,
     )
-    today = timezone.localdate()
-    raw_date = request.GET.get("d")
-    if raw_date:
-        try:
-            target_date = datetime.date.fromisoformat(raw_date)
-        except ValueError:
-            return JsonResponse({"error": "bad_date"}, status=400)
-    else:
-        target_date = today
-    # Single RegionDayRating lookup for the headline-rating chip. Falls
-    # back to None when the target date has no coverage — the template
-    # renders the chip in its no_rating state in that case.
-    day_rating = RegionDayRating.objects.filter(region=region, date=target_date).first()
-
-    # Two canonical URL families (SNOW-99): when the map page is at
-    # "today" (no ``?d=``), point the peek at the no-date form-2 URL —
-    # the live evergreen page. When the user has scrubbed to a specific
-    # date via ``?d=``, point at the form-3 dated URL — the historical
-    # record. Either way the link skips the 302 hop.
-    bulletin_url = region.get_absolute_url(None if raw_date is None else target_date)
-
-    season_calendar = build_season_grid(region, today, selected_date=target_date)
-
-    ctx = {
-        "region": region,
-        "bulletin_url": bulletin_url,
-        "day_rating": day_rating,
-        "season_calendar": season_calendar,
-    }
     return JsonResponse(
         {
-            "peek": render_to_string("public/_region_peek.html", ctx, request=request),
-            "expanded": render_to_string(
-                "public/_region_expanded.html", ctx, request=request
+            "html": render_to_string(
+                "public/_region_tooltip.html",
+                {"region": region},
+                request=request,
             ),
         }
     )
