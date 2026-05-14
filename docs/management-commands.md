@@ -152,6 +152,20 @@ poetry run python manage.py export_day_character_csv \
     --start-date 2026-01-01 --end-date 2026-01-31 --lang de --output dc.csv
 
 # Flags: --output PATH, --start-date YYYY-MM-DD, --end-date YYYY-MM-DD, --lang LANG
+
+# Build (or rebuild) regions/fixtures/france.json from three source files:
+#   sample_data/eaws/FR_micro-regions.geojson  — EAWS L4 IDs + geometry
+#   sample_data/eaws/fr_names.json             — EAWS canonical names
+#   sample_data/liste-massifs.geojson          — MF mountain groupings
+# Produces 4 L1 MajorRegion, 4 L2 SubRegion, 35 L4 MicroRegion entries.
+# Read-only by default — pass --commit to write the fixture.
+poetry run python manage.py build_france_fixture          # preview only
+poetry run python manage.py build_france_fixture --commit # write fixture
+
+# Load the committed fixture into the database:
+poetry run python manage.py loaddata regions/fixtures/france.json
+
+# Flags: --commit (write fixture; omit for a read-only summary)
 ```
 
 `SEASON_START_DATE` is read from the environment in

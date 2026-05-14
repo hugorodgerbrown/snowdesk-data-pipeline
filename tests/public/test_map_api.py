@@ -865,3 +865,45 @@ def test_endpoints_return_json_content_type():
         assert response["Content-Type"].startswith("application/json")
         # Body parses as JSON without raising.
         json.loads(response.content)
+
+
+# ---------------------------------------------------------------------------
+# French regions (SNOW-179)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_regions_geojson_includes_fr_regions() -> None:
+    """French L4 micro-regions appear in /api/regions.geojson with FR-NN ids.
+
+    The factory's auto-derived SubRegion prefix from ``region_id[:5]`` would
+    produce ``"FR-68"`` which is not a valid SubRegion prefix. We pass
+    ``subregion=`` explicitly so the FK points to a properly-prefixed row.
+    """
+    boundary = {
+        "type": "MultiPolygon",
+        "coordinates": [
+            [[[0.5, 42.8], [0.7, 42.8], [0.7, 43.0], [0.5, 43.0], [0.5, 42.8]]]
+        ],
+    }
+    major = MajorRegionFactory.create(prefix="FR-3", country="FR", name_en="Pyrenees")
+    sub = SubRegionFactory.create(prefix="FR-3A", major=major, name_en="Pyrenees")
+    MicroRegionFactory.create(
+        region_id="FR-68",
+        name="Louchonnais",
+        slug="fr-68",
+        subregion=sub,
+        boundary=boundary,
+    )
+
+    client = Client()
+    response = client.get(reverse("api:regions_geojson"))
+    assert response.status_code == 200
+    data = response.json()
+
+    ids = {f["properties"]["id"] for f in data["features"]}
+    assert "FR-68" in ids
+
+    fr_feature = next(f for f in data["features"] if f["properties"]["id"] == "FR-68")
+    assert fr_feature["properties"]["name"] == "Louchonnais"
+    assert fr_feature["geometry"] == boundary
