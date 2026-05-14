@@ -1426,6 +1426,16 @@ const clearRegionRepaint = () => {
     map.on('styledata', () => {
       if (!geojsonCache) return;          // initial load — handled above
       if (map.getSource('regions')) return;  // still installed on this style
+
+      // setStyle wipes every source and layer we added, including the
+      // merged multi-country caches. The per-install BASE_LAYER_FILTERS
+      // snapshot is also stale (it referenced layers that no longer exist).
+      // Re-install with whatever is currently in the caches, then clear
+      // loadedCountries (except CH, which is always present in geojsonCache)
+      // and re-fetch any country that was active but whose data lived only
+      // in the old merged source. Without this, re-toggling a country that
+      // was loaded before the basemap switch is a no-op (loadedCountries
+      // still has the code), so the data never comes back.
       installRegionsLayers(geojsonCache);
       // SNOW-59: overlays got wiped with the rest of the style. Re-add
       // them and let the install function re-apply the persisted
@@ -1433,6 +1443,31 @@ const clearRegionRepaint = () => {
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
       // SNOW-78: same story for the resorts pin layer.
       installResortsLayer(resortsGeojsonCache);
+
+      // SNOW-172: Re-apply country filters for the freshly-installed layers.
+      // The caches (geojsonCache, majorGeojsonCache, subGeojsonCache) still
+      // hold the merged multi-country data from before the basemap switch,
+      // so we only need to re-set the filters — no re-fetch required.
+      // Reset loadedCountries to just CH so ensureCountryLoaded will
+      // re-merge any previously-loaded country back into the reinstalled
+      // sources.
+      loadedCountries.clear();
+      loadedCountries.add('ch');
+      // Re-merge data for any country that is currently enabled and was
+      // previously loaded. geojsonCache already has the merged features but
+      // the fresh source only has CH (from the reinstalled cache).  Re-fetch
+      // so the source gets the full merged set again.
+      const countriesToReload = COUNTRY_KEYS.filter(
+        code => code !== 'ch' && countryState[code],
+      );
+      if (countriesToReload.length > 0) {
+        Promise.all(countriesToReload.map(code => ensureCountryLoaded(code)))
+          .then(() => applyCountryFilters())
+          .catch(() => applyCountryFilters());
+      } else {
+        applyCountryFilters();
+      }
+
       if (selectedId !== null) {
         map.setFeatureState(
           { source: 'regions', id: selectedId },
