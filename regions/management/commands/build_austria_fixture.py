@@ -61,11 +61,12 @@ logger = logging.getLogger(__name__)
 # Source / output paths (module-level so tests can monkeypatch them)
 # ---------------------------------------------------------------------------
 
-_EAWS_DIR = Path("reference_data") / "eaws" / "micro-regions"
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+_EAWS_DIR = _REPO_ROOT / "reference_data" / "eaws" / "micro-regions"
 
 _AT_STATE_CODES = ["AT-02", "AT-03", "AT-04", "AT-05", "AT-06", "AT-07", "AT-08"]
 
-_AUSTRIA_FIXTURE = Path("regions/fixtures/eaws_AT.json")
+_AUSTRIA_FIXTURE = _REPO_ROOT / "regions" / "fixtures" / "eaws_AT.json"
 
 _FIXTURE_TIMESTAMP = "2026-05-14T00:00:00Z"
 

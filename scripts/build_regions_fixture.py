@@ -62,7 +62,7 @@ def _get_eaws_name_de(region_id: str) -> str | None:
         Human-readable German name string, or ``None`` if not found.
 
     """
-    global _eaws_names_de  # noqa: PLW0603
+    global _eaws_names_de  # noqa: PLW0603 — module-level cache; script context, not importable library
     if _eaws_names_de is None:
         _eaws_names_de = json.loads(_EAWS_NAMES_DE_PATH.read_text(encoding="utf-8"))
     return _eaws_names_de.get(region_id)
