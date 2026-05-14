@@ -358,11 +358,17 @@ const clearRegionRepaint = () => {
     // a standalone layer lets us add line-blur (impossible inside a case).
     // Added immediately after regions-line so it sits above the base ring
     // but below the overlay tiers (sub-regions-line, major-regions-line).
+    //
+    // SNOW-172: MapLibre v4 rejects feature-state expressions inside layer
+    // filters entirely — "feature-state data expressions are not supported
+    // with filters."  Selection visibility is driven via line-opacity in
+    // paint instead.  The layer renders all features but is transparent
+    // (opacity 0) unless the feature-state 'selected' flag is true.  No
+    // filter is set, so applyCountryFilters leaves this layer alone.
     map.addLayer({
       id: 'regions-line-selected',
       type: 'line',
       source: 'regions',
-      filter: ['boolean', ['feature-state', 'selected'], false],
       layout: {
         'line-join': 'round',
         'line-cap': 'round',
@@ -372,9 +378,13 @@ const clearRegionRepaint = () => {
         'line-width': 4,
         // Soft halo so the outline reads against any choropleth fill colour.
         'line-blur': 0.5,
+        // Show only selected features; opacity 0 hides unselected ones
+        // without needing a filter (which cannot reference feature-state).
+        'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0],
       },
     });
-    BASE_LAYER_FILTERS['regions-line-selected'] = map.getFilter('regions-line-selected') ?? null;
+    // No BASE_LAYER_FILTERS entry for regions-line-selected: it has no filter
+    // (selection is paint-driven), so applyCountryFilters skips it entirely.
 
     // Labels — only from zoom 8.5 up, to avoid clutter at country view.
     map.addLayer({
@@ -581,8 +591,7 @@ const clearRegionRepaint = () => {
   // SNOW-172: Snapshot of each layer's filter expression as set during
   // installRegionsLayers / installOverlayLayers.  applyCountryFilters
   // wraps these with an 'all' expression so the country filter composes
-  // with — rather than overwrites — any pre-existing layer filter (e.g.
-  // the feature-state selection filter on regions-line-selected).
+  // with — rather than overwrites — any pre-existing layer filter.
   const BASE_LAYER_FILTERS = {};
 
   // SNOW-172: Compute the MapLibre filter expression that shows only
@@ -592,12 +601,12 @@ const clearRegionRepaint = () => {
   // receive the country filter alone.
   //
   // Note: 'regions-line-selected' is intentionally excluded from this list.
-  // Its filter uses a feature-state expression (['boolean',
-  // ['feature-state', 'selected'], false]) which MapLibre does not support
-  // when nested inside an ['all', ...] compound filter.  The selection ring
-  // only activates on features the user has actually clicked (which must
-  // already be visible through regions-fill), so skipping the country
-  // constraint here is safe — a user cannot click a hidden fill feature.
+  // It has no filter — selection visibility is driven entirely via paint
+  // (line-opacity with a feature-state case expression), since MapLibre v4
+  // does not support feature-state expressions inside layer filters.  The
+  // selection ring only appears on features the user has actually clicked
+  // (which must already be visible through regions-fill), so skipping the
+  // country filter here is safe — a user cannot click a hidden fill feature.
   //
   // 'match' is used instead of 'in' for the country filter because MapLibre's
   // 'in' expression requires a literal keyword as its first argument; passing
@@ -625,12 +634,11 @@ const clearRegionRepaint = () => {
       const composed = base ? ['all', base, countryFilter] : countryFilter;
       map.setFilter(layerId, composed);
     }
-    // regions-line-selected: restore its original feature-state filter without
-    // country composition (see note above).
-    if (map.getLayer('regions-line-selected')) {
-      const base = BASE_LAYER_FILTERS['regions-line-selected'];
-      map.setFilter('regions-line-selected', base ?? ['boolean', ['feature-state', 'selected'], false]);
-    }
+    // regions-line-selected is intentionally absent from layerIds above.
+    // It has no filter — selection visibility is paint-driven via line-opacity
+    // and feature-state, which cannot appear in filter expressions (MapLibre v4).
+    // Country filtering is implicit: only features visible through regions-fill
+    // (which does carry the country filter) can be clicked and selected.
   };
 
   // SNOW-172: Lazy-fetch a country's L1 + L2 + L4 GeoJSON and merge it
@@ -855,9 +863,9 @@ const clearRegionRepaint = () => {
     const clearPopupDom = () => {
       if (selectedId !== null) {
         map.setFeatureState({ source: 'regions', id: selectedId }, { selected: false });
-        // SNOW-174: the filter on regions-line-selected reads feature-state;
-        // triggerRepaint ensures the dedicated selection layer redraws
-        // immediately rather than waiting for the next idle frame.
+        // SNOW-174: triggerRepaint ensures the regions-line-selected layer
+        // (which reads feature-state via its paint line-opacity expression)
+        // redraws immediately rather than waiting for the next idle frame.
         map.triggerRepaint();
         selectedId = null;
       }
@@ -1014,7 +1022,7 @@ const clearRegionRepaint = () => {
       selectedId = numericId;
       map.setFeatureState({ source: 'regions', id: selectedId }, { selected: true });
       // SNOW-174: trigger an immediate repaint so the regions-line-selected
-      // filter (which reads feature-state) activates on this frame.
+      // layer (paint line-opacity reads feature-state) activates on this frame.
       map.triggerRepaint();
 
       const props = REGION_LOOKUP[numericId];
