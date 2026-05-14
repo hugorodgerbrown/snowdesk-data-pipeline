@@ -185,6 +185,22 @@ const clearRegionRepaint = () => {
   try { localStorage.setItem(OVERLAY_STORAGE_KEY.l4, 'true'); }
   catch (_) { /* private mode — fall through */ }
 
+  // SNOW-172: Country toggle state — which country's geometry is shown.
+  // Default: CH on, others off. Each key maps to a boolean (visible/hidden).
+  // Persisted in localStorage under snowdesk.map.overlay.country.<code>.
+  const COUNTRY_KEYS = ['ch', 'fr', 'at', 'it'];
+  const COUNTRY_STORAGE_KEY = (code) => `snowdesk.map.overlay.country.${code}`;
+  const countryState = { ch: true, fr: false, at: false, it: false };
+  for (const code of COUNTRY_KEYS) {
+    try {
+      const stored = localStorage.getItem(COUNTRY_STORAGE_KEY(code));
+      if (stored !== null) countryState[code] = stored === 'true';
+    } catch (_) { /* private mode — use defaults */ }
+  }
+  // loadedCountries tracks which countries' GeoJSON has been fetched already
+  // so we don't re-fetch on each toggle-on.
+  const loadedCountries = new Set();
+
   // SNOW-63: restore auto-zoom preference from localStorage.
   try { AUTOZOOM = localStorage.getItem('snowdesk.map.autozoom') === 'true'; }
   catch (_) { /* private mode — default off */ }
@@ -197,10 +213,15 @@ const clearRegionRepaint = () => {
       '.basemap-menu-item--overlay',
     )) {
       const key = btn.dataset.overlayKey;
-      btn.setAttribute(
-        'aria-checked',
-        overlayState[key] ? 'true' : 'false',
-      );
+      // SNOW-172: country toggle buttons use countryState, not overlayState.
+      let checked;
+      if (key && key.startsWith('country.')) {
+        const code = key.slice(8);
+        checked = countryState[code];
+      } else {
+        checked = overlayState[key];
+      }
+      btn.setAttribute('aria-checked', checked ? 'true' : 'false');
     }
   }
 
@@ -232,9 +253,13 @@ const clearRegionRepaint = () => {
     style: initialBasemapUrl,
     bounds: [[5.9, 45.8], [10.5, 47.9]],
     fitBoundsOptions: { padding: 20 },
-    minZoom: 5,
+    minZoom: 4,
     maxZoom: 12,
-    maxBounds: [[3.5, 43.5], [13.0, 49.5]],
+    // South bound 41.0: French alpine regions reach to ~41.7°N; giving a
+    // 1° visual buffer below the southernmost feature keeps the map from
+    // clipping at the edge.  Italian regions (min ~44.1°N) and CH are
+    // comfortably within this bound.
+    maxBounds: [[-2.0, 41.0], [17.0, 50.5]],
     attributionControl: { compact: true },
   });
   // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
@@ -289,6 +314,7 @@ const clearRegionRepaint = () => {
         ],
       },
     });
+    BASE_LAYER_FILTERS['regions-fill'] = map.getFilter('regions-fill') ?? null;
 
     // Outline — base unselected ring.
     //
@@ -324,6 +350,7 @@ const clearRegionRepaint = () => {
         ],
       },
     });
+    BASE_LAYER_FILTERS['regions-line'] = map.getFilter('regions-line') ?? null;
 
     // SNOW-174: dedicated selection-emphasis layer. A separate layer beats
     // a case expression inside interpolate because MapLibre's style spec
@@ -331,11 +358,17 @@ const clearRegionRepaint = () => {
     // a standalone layer lets us add line-blur (impossible inside a case).
     // Added immediately after regions-line so it sits above the base ring
     // but below the overlay tiers (sub-regions-line, major-regions-line).
+    //
+    // SNOW-172: MapLibre v4 rejects feature-state expressions inside layer
+    // filters entirely — "feature-state data expressions are not supported
+    // with filters."  Selection visibility is driven via line-opacity in
+    // paint instead.  The layer renders all features but is transparent
+    // (opacity 0) unless the feature-state 'selected' flag is true.  No
+    // filter is set, so applyCountryFilters leaves this layer alone.
     map.addLayer({
       id: 'regions-line-selected',
       type: 'line',
       source: 'regions',
-      filter: ['boolean', ['feature-state', 'selected'], false],
       layout: {
         'line-join': 'round',
         'line-cap': 'round',
@@ -345,8 +378,13 @@ const clearRegionRepaint = () => {
         'line-width': 4,
         // Soft halo so the outline reads against any choropleth fill colour.
         'line-blur': 0.5,
+        // Show only selected features; opacity 0 hides unselected ones
+        // without needing a filter (which cannot reference feature-state).
+        'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0],
       },
     });
+    // No BASE_LAYER_FILTERS entry for regions-line-selected: it has no filter
+    // (selection is paint-driven), so applyCountryFilters skips it entirely.
 
     // Labels — only from zoom 8.5 up, to avoid clutter at country view.
     map.addLayer({
@@ -366,6 +404,7 @@ const clearRegionRepaint = () => {
         'text-halo-width': 1.2,
       },
     });
+    BASE_LAYER_FILTERS['regions-label'] = map.getFilter('regions-label') ?? null;
   };
 
   // SNOW-59: install the L1 / L2 outline overlays plus their labels.
@@ -406,6 +445,7 @@ const clearRegionRepaint = () => {
           'line-opacity': 0.9,
         },
       });
+      BASE_LAYER_FILTERS['sub-regions-line'] = map.getFilter('sub-regions-line') ?? null;
       map.addLayer({
         id: 'sub-regions-label',
         type: 'symbol',
@@ -426,6 +466,7 @@ const clearRegionRepaint = () => {
           'text-halo-width': 1.4,
         },
       });
+      BASE_LAYER_FILTERS['sub-regions-label'] = map.getFilter('sub-regions-label') ?? null;
     }
     if (majorGeojson && !map.getSource('major-regions')) {
       map.addSource('major-regions', { type: 'geojson', data: majorGeojson });
@@ -445,6 +486,7 @@ const clearRegionRepaint = () => {
           'line-opacity': 0.95,
         },
       });
+      BASE_LAYER_FILTERS['major-regions-line'] = map.getFilter('major-regions-line') ?? null;
       map.addLayer({
         id: 'major-regions-label',
         type: 'symbol',
@@ -465,6 +507,7 @@ const clearRegionRepaint = () => {
           'text-halo-width': 1.6,
         },
       });
+      BASE_LAYER_FILTERS['major-regions-label'] = map.getFilter('major-regions-label') ?? null;
     }
   };
 
@@ -545,6 +588,146 @@ const clearRegionRepaint = () => {
   let subGeojsonCache = null;
   let resortsGeojsonCache = null;
 
+  // SNOW-172: Snapshot of each layer's filter expression as set during
+  // installRegionsLayers / installOverlayLayers.  applyCountryFilters
+  // wraps these with an 'all' expression so the country filter composes
+  // with — rather than overwrites — any pre-existing layer filter.
+  const BASE_LAYER_FILTERS = {};
+
+  // SNOW-172: Compute the MapLibre filter expression that shows only
+  // enabled countries on all region layers.  Any layer that was given a
+  // filter at install time has its base filter preserved by composing
+  // ['all', baseFilter, countryFilter]; layers with no base filter
+  // receive the country filter alone.
+  //
+  // Note: 'regions-line-selected' is intentionally excluded from this list.
+  // It has no filter — selection visibility is driven entirely via paint
+  // (line-opacity with a feature-state case expression), since MapLibre v4
+  // does not support feature-state expressions inside layer filters.  The
+  // selection ring only appears on features the user has actually clicked
+  // (which must already be visible through regions-fill), so skipping the
+  // country filter here is safe — a user cannot click a hidden fill feature.
+  //
+  // 'match' is used instead of 'in' for the country filter because MapLibre's
+  // 'in' expression requires a literal keyword as its first argument; passing
+  // ['get', 'country'] (an expression) as the keyword causes the filter to
+  // evaluate incorrectly in MapLibre v4, hiding all features.
+  const applyCountryFilters = () => {
+    const enabled = COUNTRY_KEYS
+      .filter(code => countryState[code])
+      .map(code => code.toUpperCase());
+    // ['match', input, [values...], true, false] evaluates to true when the
+    // feature's country property is in the enabled list, false otherwise.
+    // When no countries are enabled use an always-false expression so every
+    // layer empties cleanly rather than showing stale data.
+    const countryFilter = enabled.length > 0
+      ? ['match', ['get', 'country'], enabled, true, false]
+      : ['==', false, true];
+    const layerIds = [
+      'regions-fill', 'regions-line', 'regions-label',
+      'sub-regions-line', 'sub-regions-label',
+      'major-regions-line', 'major-regions-label',
+    ];
+    for (const layerId of layerIds) {
+      if (!map.getLayer(layerId)) continue;
+      const base = BASE_LAYER_FILTERS[layerId];
+      const composed = base ? ['all', base, countryFilter] : countryFilter;
+      map.setFilter(layerId, composed);
+    }
+    // regions-line-selected is intentionally absent from layerIds above.
+    // It has no filter — selection visibility is paint-driven via line-opacity
+    // and feature-state, which cannot appear in filter expressions (MapLibre v4).
+    // Country filtering is implicit: only features visible through regions-fill
+    // (which does carry the country filter) can be clicked and selected.
+  };
+
+  // SNOW-172: Lazy-fetch a country's L1 + L2 + L4 GeoJSON and merge it
+  // into the existing MapLibre sources. loadedCountries prevents re-fetching.
+  const ensureCountryLoaded = async (code) => {
+    if (loadedCountries.has(code)) return;
+    const upper = code.toUpperCase();
+    try {
+      const [newRegions, newMajor, newSub] = await Promise.all([
+        REGIONS_URL ? fetch(REGIONS_URL + '?country=' + code).then(r => {
+          if (!r.ok) throw new Error('regions fetch failed');
+          return r.json();
+        }) : Promise.resolve(null),
+        MAJOR_REGIONS_URL ? fetch(MAJOR_REGIONS_URL + '?country=' + code).then(r => {
+          if (!r.ok) throw new Error('major fetch failed');
+          return r.json();
+        }).catch(() => null) : Promise.resolve(null),
+        SUB_REGIONS_URL ? fetch(SUB_REGIONS_URL + '?country=' + code).then(r => {
+          if (!r.ok) throw new Error('sub fetch failed');
+          return r.json();
+        }).catch(() => null) : Promise.resolve(null),
+      ]);
+
+      // Merge new features into the existing caches and update the sources.
+      if (newRegions && newRegions.features && geojsonCache) {
+        // Assign numeric ids to new features, continuing from the current max.
+        const startId = Object.keys(FEATURE_BY_ID).length;
+        newRegions.features.forEach((f, i) => {
+          f.id = startId + i;
+          const regionID = f.properties.id;
+          f.properties.regionID = regionID;
+          f.properties.rating = RATINGS[regionID] || 'no_rating';
+          REGION_LOOKUP[f.id] = f.properties;
+          FEATURE_BY_ID[f.id] = f;
+          FEATURE_BY_REGION_ID[regionID] = f;
+        });
+        geojsonCache = {
+          ...geojsonCache,
+          features: [...geojsonCache.features, ...newRegions.features],
+        };
+        const regionsSource = map.getSource('regions');
+        if (regionsSource) regionsSource.setData(geojsonCache);
+      }
+
+      if (newMajor && newMajor.features && majorGeojsonCache) {
+        majorGeojsonCache = {
+          ...majorGeojsonCache,
+          features: [...majorGeojsonCache.features, ...newMajor.features],
+        };
+        const majorSource = map.getSource('major-regions');
+        if (majorSource) majorSource.setData(majorGeojsonCache);
+      }
+
+      if (newSub && newSub.features && subGeojsonCache) {
+        subGeojsonCache = {
+          ...subGeojsonCache,
+          features: [...subGeojsonCache.features, ...newSub.features],
+        };
+        const subSource = map.getSource('sub-regions');
+        if (subSource) subSource.setData(subGeojsonCache);
+      }
+
+      loadedCountries.add(code);
+    } catch (err) {
+      console.warn('[map] Failed to load country', upper, err);
+      // Leave toggle visually on so the user can retry — don't reset countryState.
+    }
+  };
+
+  // SNOW-172: Bridge for the basemapPickerInit IIFE, which lives in a separate
+  // scope and cannot reference countryState / ensureCountryLoaded directly.
+  // The picker dispatches this event; we own the state mutation here.
+  document.addEventListener('snowdesk:country-toggle', (e) => {
+    const { code, next } = e.detail;
+    countryState[code] = next;
+    try {
+      localStorage.setItem(COUNTRY_STORAGE_KEY(code), String(next));
+    } catch (_) { /* private mode */ }
+    if (map) {
+      if (next) {
+        ensureCountryLoaded(code).then(() => {
+          applyCountryFilters();
+        }).catch(() => {});
+      } else {
+        applyCountryFilters();
+      }
+    }
+  });
+
   map.on('load', async () => {
     // Fetch everything in parallel. All requests are independent —
     // geometry, bulletin summaries, resort lists, and the L1/L2 overlay
@@ -553,14 +736,14 @@ const clearRegionRepaint = () => {
     // skips that layer install.
     const [geojson, summaries, resorts, majorGeojson, subGeojson, resortsGeojson] =
       await Promise.all([
-        fetch(REGIONS_URL).then(r => r.json()),
+        fetch(REGIONS_URL + '?country=ch').then(r => r.json()),
         fetch(SUMMARIES_URL).then(r => r.json()),
         fetch(RESORTS_URL).then(r => r.json()),
         MAJOR_REGIONS_URL
-          ? fetch(MAJOR_REGIONS_URL).then(r => r.json()).catch(() => null)
+          ? fetch(MAJOR_REGIONS_URL + '?country=ch').then(r => r.json()).catch(() => null)
           : Promise.resolve(null),
         SUB_REGIONS_URL
-          ? fetch(SUB_REGIONS_URL).then(r => r.json()).catch(() => null)
+          ? fetch(SUB_REGIONS_URL + '?country=ch').then(r => r.json()).catch(() => null)
           : Promise.resolve(null),
         RESORTS_GEOJSON_URL
           ? fetch(RESORTS_GEOJSON_URL).then(r => r.json()).catch(() => null)
@@ -593,6 +776,17 @@ const clearRegionRepaint = () => {
     installRegionsLayers(geojson);
     installOverlayLayers(majorGeojson, subGeojson);
     installResortsLayer(resortsGeojson);
+
+    // SNOW-172: CH geometry is now loaded; record it and apply initial filter.
+    loadedCountries.add('ch');
+    applyCountryFilters();
+
+    // Restore any countries that were previously enabled in localStorage.
+    for (const code of COUNTRY_KEYS) {
+      if (code !== 'ch' && countryState[code]) {
+        ensureCountryLoaded(code).catch(() => {});
+      }
+    }
 
     // Interaction
     let selectedId = null;
@@ -627,10 +821,11 @@ const clearRegionRepaint = () => {
     let popupHistoryOpen = false;
     let popstateInProgress = false;
 
-    // Canonical SLF region-ID shape (e.g. "CH-4115"). Anything else is
-    // rejected before it reaches any href to prevent a malformed GeoJSON
-    // payload turning into an open-redirect / javascript: URL on the client.
-    const REGION_ID_RE = /^[A-Za-z]{2}-[A-Za-z0-9]+$/;
+    // Canonical SLF region-ID shape (e.g. "CH-4115", "AT-02-14",
+    // "IT-32-BZ-15-02"). Anything else is rejected before it reaches any href
+    // to prevent a malformed GeoJSON payload turning into an open-redirect /
+    // javascript: URL on the client.
+    const REGION_ID_RE = /^[A-Za-z]{2}(-[A-Za-z0-9]+)+$/;
 
     // Compute the lng/lat bounding box of a GeoJSON Polygon or MultiPolygon.
     // MapLibre's fitBounds takes [[west, south], [east, north]].
@@ -669,9 +864,9 @@ const clearRegionRepaint = () => {
     const clearPopupDom = () => {
       if (selectedId !== null) {
         map.setFeatureState({ source: 'regions', id: selectedId }, { selected: false });
-        // SNOW-174: the filter on regions-line-selected reads feature-state;
-        // triggerRepaint ensures the dedicated selection layer redraws
-        // immediately rather than waiting for the next idle frame.
+        // SNOW-174: triggerRepaint ensures the regions-line-selected layer
+        // (which reads feature-state via its paint line-opacity expression)
+        // redraws immediately rather than waiting for the next idle frame.
         map.triggerRepaint();
         selectedId = null;
       }
@@ -710,6 +905,19 @@ const clearRegionRepaint = () => {
       }
     };
 
+    // Silent dismissal helper — removes the current popup without bumping
+    // summarySeq. Used for region-to-region transitions where the caller
+    // immediately starts a new fetch (summarySeq++ happens there). The
+    // 'close' listener is detached first so clearTooltip is not triggered,
+    // which would bump summarySeq a second time and invalidate the new fetch.
+    const dismissActivePopupSilently = () => {
+      if (!activePopup) return;
+      const p = activePopup;
+      activePopup = null;
+      p.off('close', clearTooltip);
+      p.remove();
+    };
+
     // Fetch the server-rendered tooltip HTML for a region, open a
     // MapLibre Popup anchored to the click point (when supplied) or the
     // region's bbox centre (deep-link / resort-pin path), and wire its
@@ -718,11 +926,13 @@ const clearRegionRepaint = () => {
     // responses when the user taps a different region mid-flight.
     // Returns true on success, false on 404 / network error.
     //
-    // closeOnClick: true makes MapLibre auto-dismiss the popup on any
-    // map canvas click, so region-to-region transitions don't stack
-    // and tapping empty map area auto-dismisses without a separate handler.
+    // closeOnClick: false — we manage popup lifetime explicitly.
+    // dismissActivePopupSilently() removes any open popup before the fetch
+    // starts; this avoids the race where closeOnClick's 'close' event would
+    // bump summarySeq after the new fetch's seq is already captured.
     const loadRegionSummary = async (regionID, { dateKey, clickPoint } = {}) => {
       if (!REGION_ID_RE.test(regionID)) return false;
+      dismissActivePopupSilently();
       let url = REGION_SUMMARY_URL_TEMPLATE.replace(
         '__REGION__', encodeURIComponent(regionID),
       );
@@ -741,7 +951,7 @@ const clearRegionRepaint = () => {
         // user-supplied values escaped by autoescape — safe for setHTML.
         const popup = new maplibregl.Popup({
           closeButton: true,
-          closeOnClick: true,
+          closeOnClick: false,
           // SNOW-174: use 'bottom' so the popup tip always points down to
           // the tap point and the body floats above it. 'auto' can flip the
           // popup to an unexpected side when near the viewport edge, and it
@@ -828,7 +1038,7 @@ const clearRegionRepaint = () => {
       selectedId = numericId;
       map.setFeatureState({ source: 'regions', id: selectedId }, { selected: true });
       // SNOW-174: trigger an immediate repaint so the regions-line-selected
-      // filter (which reads feature-state) activates on this frame.
+      // layer (paint line-opacity reads feature-state) activates on this frame.
       map.triggerRepaint();
 
       const props = REGION_LOOKUP[numericId];
@@ -867,9 +1077,9 @@ const clearRegionRepaint = () => {
     map.on('click', 'regions-fill', (e) => {
       if (!e.features.length) return;
       // Pass the click's lngLat so the popup opens over the tapped point,
-      // not the region bbox centre. closeOnClick: true on the Popup means
-      // MapLibre auto-dismisses any previous popup before this handler
-      // fires, so no manual swap is needed.
+      // not the region bbox centre. dismissActivePopupSilently() at the top
+      // of loadRegionSummary handles swapping away any existing popup without
+      // bumping summarySeq, so region-to-region transitions open in one tap.
       selectFeature(e.features[0].id, { clickPoint: e.lngLat });
     });
 
@@ -888,10 +1098,18 @@ const clearRegionRepaint = () => {
       }
     });
 
-    // NOTE: the previous "dismiss popup on map tap outside a region" handler
-    // (map.on('click', e => ...)) is intentionally removed. closeOnClick: true
-    // on the MapLibre Popup handles both taps on empty map area and
-    // region-to-region transitions without a separate handler.
+    // Dismiss the popup when the user taps empty map area (no region or resort
+    // feature under the cursor). This is the generic map click — MapLibre fires
+    // it AFTER layer-scoped clicks, so by the time it runs the layer handler
+    // has already called loadRegionSummary → dismissActivePopupSilently and
+    // started a new fetch. queryRenderedFeatures returns non-empty for those
+    // clicks, so this handler only fires for true empty-area taps.
+    map.on('click', (e) => {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['regions-fill', 'resorts-pin'],
+      });
+      if (features.length === 0) clearTooltip();
+    });
 
     map.on('mouseenter', 'regions-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'regions-fill', () => { map.getCanvas().style.cursor = ''; });
@@ -1244,6 +1462,16 @@ const clearRegionRepaint = () => {
     map.on('styledata', () => {
       if (!geojsonCache) return;          // initial load — handled above
       if (map.getSource('regions')) return;  // still installed on this style
+
+      // setStyle wipes every source and layer we added, including the
+      // merged multi-country caches. The per-install BASE_LAYER_FILTERS
+      // snapshot is also stale (it referenced layers that no longer exist).
+      // Re-install with whatever is currently in the caches, then clear
+      // loadedCountries (except CH, which is always present in geojsonCache)
+      // and re-fetch any country that was active but whose data lived only
+      // in the old merged source. Without this, re-toggling a country that
+      // was loaded before the basemap switch is a no-op (loadedCountries
+      // still has the code), so the data never comes back.
       installRegionsLayers(geojsonCache);
       // SNOW-59: overlays got wiped with the rest of the style. Re-add
       // them and let the install function re-apply the persisted
@@ -1251,6 +1479,31 @@ const clearRegionRepaint = () => {
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
       // SNOW-78: same story for the resorts pin layer.
       installResortsLayer(resortsGeojsonCache);
+
+      // SNOW-172: Re-apply country filters for the freshly-installed layers.
+      // The caches (geojsonCache, majorGeojsonCache, subGeojsonCache) still
+      // hold the merged multi-country data from before the basemap switch,
+      // so we only need to re-set the filters — no re-fetch required.
+      // Reset loadedCountries to just CH so ensureCountryLoaded will
+      // re-merge any previously-loaded country back into the reinstalled
+      // sources.
+      loadedCountries.clear();
+      loadedCountries.add('ch');
+      // Re-merge data for any country that is currently enabled and was
+      // previously loaded. geojsonCache already has the merged features but
+      // the fresh source only has CH (from the reinstalled cache).  Re-fetch
+      // so the source gets the full merged set again.
+      const countriesToReload = COUNTRY_KEYS.filter(
+        code => code !== 'ch' && countryState[code],
+      );
+      if (countriesToReload.length > 0) {
+        Promise.all(countriesToReload.map(code => ensureCountryLoaded(code)))
+          .then(() => applyCountryFilters())
+          .catch(() => applyCountryFilters());
+      } else {
+        applyCountryFilters();
+      }
+
       if (selectedId !== null) {
         map.setFeatureState(
           { source: 'regions', id: selectedId },
@@ -1728,14 +1981,24 @@ const clearRegionRepaint = () => {
     item.addEventListener('click', (e) => {
       e.stopPropagation();
 
-      // SNOW-59: overlay checkbox — toggle visibility on both the line
-      // and the (zoom-banded) label layer for this tier, then persist.
-      // Doesn't close the popover (Google-Maps-style: overlays are
-      // flipped freely while picking a basemap).
+      // SNOW-59 / SNOW-172: overlay checkbox — toggle visibility or country filter.
       const overlayKey = item.dataset.overlayKey;
       if (overlayKey) {
         const next = item.getAttribute('aria-checked') !== 'true';
         item.setAttribute('aria-checked', next ? 'true' : 'false');
+
+        // SNOW-172: handle country.* toggles by delegating to the main IIFE
+        // via a CustomEvent. countryState / ensureCountryLoaded / applyCountryFilters
+        // are all scoped to the main IIFE and are not accessible here.
+        if (overlayKey.startsWith('country.')) {
+          const code = overlayKey.slice(8); // 'country.fr' → 'fr'
+          document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+            detail: { code, next },
+          }));
+          return;
+        }
+
+        // Tier overlay — toggle layer visibility (existing SNOW-59 logic).
         try { localStorage.setItem(OVERLAY_STORAGE_KEY[overlayKey], String(next)); }
         catch (_) { /* private mode — choice still applies for this session */ }
         if (MAP) {

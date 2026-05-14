@@ -90,7 +90,7 @@ poetry run python manage.py monitor_query_counts           # CI / local gate
 poetry run python manage.py monitor_query_counts --commit  # accept new counts
 
 # Recompute the derived centre + bbox on L1/L2 EAWS fixtures from the
-# union of their L4 children. Run after editing regions/fixtures/eaws.json
+# union of their L4 children. Run after editing regions/fixtures/eaws_CH.json
 # (e.g. when EAWS publishes a new season). Read-only by default; --commit
 # to write the consolidated fixture.
 poetry run python manage.py refresh_eaws_fixtures           # diff-only
@@ -123,9 +123,9 @@ poetry run python manage.py dump_resorts_fixture --commit  # write the fixture
 # most-recent SLF name. Regions with no bulletin coverage are skipped.
 # Exits non-zero when mismatches are present and --commit was not passed.
 # --commit patches reference_data/eaws/CH_micro-regions.csv (name column only) and
-# regenerates regions/fixtures/eaws.json L4 entries. Then run:
+# regenerates regions/fixtures/eaws_CH.json L4 entries. Then run:
 #   refresh_eaws_fixtures --commit  (re-derive L1/L2 geometry)
-#   loaddata regions/fixtures/eaws.json
+#   loaddata regions/fixtures/eaws_CH.json
 poetry run python manage.py audit_microregion_names           # detect drift
 poetry run python manage.py audit_microregion_names --commit  # patch CSV + fixture
 
@@ -153,7 +153,7 @@ poetry run python manage.py export_day_character_csv \
 
 # Flags: --output PATH, --start-date YYYY-MM-DD, --end-date YYYY-MM-DD, --lang LANG
 
-# Build (or rebuild) regions/fixtures/france.json from three source files:
+# Build (or rebuild) regions/fixtures/eaws_FR.json from three source files:
 #   reference_data/eaws/FR_micro-regions.geojson  — EAWS L4 IDs + geometry
 #   reference_data/eaws/fr_names.json             — EAWS canonical names
 #   reference_data/liste-massifs.geojson          — MF mountain groupings
@@ -163,7 +163,31 @@ poetry run python manage.py build_france_fixture          # preview only
 poetry run python manage.py build_france_fixture --commit # write fixture
 
 # Load the committed fixture into the database:
-poetry run python manage.py loaddata regions/fixtures/france.json
+poetry run python manage.py loaddata regions/fixtures/eaws_FR.json
+
+# Flags: --commit (write fixture; omit for a read-only summary)
+
+# Build (or rebuild) regions/fixtures/eaws_AT.json from vendored EAWS source files:
+#   reference_data/eaws/AT-02_micro-regions.geojson.json … AT-08_micro-regions.geojson.json
+# Produces 7 L1 MajorRegion (one per Austrian state), N L2 SubRegion, N L4 MicroRegion.
+# Read-only by default — pass --commit to write the fixture.
+poetry run python manage.py build_austria_fixture          # preview only
+poetry run python manage.py build_austria_fixture --commit # write fixture
+
+# Load the committed fixture into the database:
+poetry run python manage.py loaddata regions/fixtures/eaws_AT.json
+
+# Flags: --commit (write fixture; omit for a read-only summary)
+
+# Build (or rebuild) regions/fixtures/eaws_IT.json from vendored EAWS source files:
+#   reference_data/eaws/IT-21_micro-regions.geojson.json … (7 files)
+# Produces 7 L1 MajorRegion, N L2 SubRegion, N L4 MicroRegion.
+# Read-only by default — pass --commit to write the fixture.
+poetry run python manage.py build_italy_fixture          # preview only
+poetry run python manage.py build_italy_fixture --commit # write fixture
+
+# Load the committed fixture into the database:
+poetry run python manage.py loaddata regions/fixtures/eaws_IT.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
 ```

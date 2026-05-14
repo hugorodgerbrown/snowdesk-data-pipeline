@@ -27,7 +27,7 @@
     {# region boundaries for the choropleth, and today's danger ratings  #}
     {# for the colour fill. On a cold first visit (no SW cache) these    #}
     {# would otherwise be a serial chain: HTML → JS parse → fetch.      #}
-    <link rel="prefetch" href="{% url 'api:regions_geojson' %}">
+    <link rel="prefetch" href="{% url 'api:regions_geojson' %}?country=ch">
     <link rel="prefetch" href="{% url 'api:today_summaries' %}">
     <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
     <link rel="stylesheet" href="{% static 'css/map.css' %}">
@@ -210,6 +210,58 @@
                             aria-checked="false"
                         >
                             {% trans "Resorts" %}
+                        </button>
+                    </li>
+                    {# SNOW-172: Country toggles — show/hide each country's region     #}
+                    {# outlines. CH is on by default. FR/AT/IT are off; their        #}
+                    {# GeoJSON is lazy-fetched on first toggle-on. State persists in  #}
+                    {# localStorage under snowdesk.map.overlay.country.<code>.       #}
+                    <li role="separator" class="basemap-menu-separator"></li>
+                    <li role="none" class="basemap-menu-section-label">
+                        {% trans "Countries" %}
+                    </li>
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            data-overlay-key="country.ch"
+                            aria-checked="true"
+                        >
+                            {% trans "Switzerland" %}
+                        </button>
+                    </li>
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            data-overlay-key="country.fr"
+                            aria-checked="false"
+                        >
+                            {% trans "France" %}
+                        </button>
+                    </li>
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            data-overlay-key="country.at"
+                            aria-checked="false"
+                        >
+                            {% trans "Austria" %}
+                        </button>
+                    </li>
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            data-overlay-key="country.it"
+                            aria-checked="false"
+                        >
+                            {% trans "Italy" %}
                         </button>
                     </li>
                     {# SNOW-65: Options section — behaviours that modify interaction   #}

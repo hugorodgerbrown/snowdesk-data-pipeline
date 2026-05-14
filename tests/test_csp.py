@@ -102,7 +102,7 @@ def test_csp_header_absent_on_admin() -> None:
 @pytest.mark.django_db
 def test_csp_header_absent_on_json_response() -> None:
     """The built-in response filter limits CSP to text/html responses."""
-    response = Client().get("/api/regions.geojson")
+    response = Client().get("/api/regions.geojson?country=ch")
     assert response.status_code == 200
     assert REPORT_ONLY_HEADER not in response.headers
     assert ENFORCING_HEADER not in response.headers

@@ -38,7 +38,7 @@ def test_header_counts_queries_on_db_view() -> None:
     # /map/ is a template-only view but the session + auth middleware
     # may not issue queries either. Use an API endpoint that is known to
     # query the database.
-    response = Client().get("/api/regions.geojson")
+    response = Client().get("/api/regions.geojson?country=ch")
     assert response.status_code == 200
     assert int(response["X-DB-Query-Count"]) >= 1
 
