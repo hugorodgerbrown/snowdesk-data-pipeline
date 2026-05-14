@@ -247,11 +247,11 @@
     "fields": {
       "uuid": "28c56f6f-ecdd-4b64-8709-bf588230d2ea",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T16:57:45.610Z",
+      "updated_at": "2026-05-14T13:33:15.435Z",
       "name": "Crans-Montana",
       "name_alt": "",
       "region": [
-        "CH-4215"
+        "CH-4121"
       ],
       "canton": "VS",
       "notes": "confirmed from bulletin",
@@ -709,11 +709,11 @@
     "fields": {
       "uuid": "e1b57e17-6684-4e16-94e3-a613fea77165",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:56:54.121Z",
+      "updated_at": "2026-05-14T13:33:15.434Z",
       "name": "Champéry",
       "name_alt": "Portes du Soleil",
       "region": [
-        "CH-4111"
+        "CH-1312"
       ],
       "canton": "VS",
       "notes": "",
@@ -1567,11 +1567,11 @@
     "fields": {
       "uuid": "e2b9b0bc-c32d-4118-8a61-0b6fb338bc35",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T16:48:25.400Z",
+      "updated_at": "2026-05-14T13:33:15.441Z",
       "name": "Klosters",
       "name_alt": "Davos Klosters",
       "region": [
-        "CH-5123"
+        "CH-5112"
       ],
       "canton": "GR",
       "notes": "",
@@ -1765,11 +1765,11 @@
     "fields": {
       "uuid": "34693526-1076-4f89-8a58-06ad1a54d88b",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-30T13:22:22.701Z",
+      "updated_at": "2026-05-14T13:33:15.437Z",
       "name": "Flims",
       "name_alt": "Flims Laax",
       "region": [
-        "CH-5211"
+        "CH-5124"
       ],
       "canton": "GR",
       "notes": "",
@@ -1787,11 +1787,11 @@
     "fields": {
       "uuid": "4d8ef9bc-8222-4d75-be92-2aff7f444897",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-30T13:11:51.321Z",
+      "updated_at": "2026-05-14T13:33:15.442Z",
       "name": "Laax",
       "name_alt": "Flims Laax",
       "region": [
-        "CH-5211"
+        "CH-5124"
       ],
       "canton": "GR",
       "notes": "",
@@ -2183,11 +2183,11 @@
     "fields": {
       "uuid": "7ba892a8-e129-46f5-9c95-fe1391e56efc",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T16:40:56.741Z",
+      "updated_at": "2026-05-14T13:33:15.439Z",
       "name": "Grindelwald",
       "name_alt": "Jungfrau Region",
       "region": [
-        "CH-1221"
+        "CH-1242"
       ],
       "canton": "BE",
       "notes": "",
@@ -2205,11 +2205,11 @@
     "fields": {
       "uuid": "10f80c71-bc57-4b07-8e79-9affe54a51ac",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T16:51:38.205Z",
+      "updated_at": "2026-05-14T13:33:15.447Z",
       "name": "Wengen",
       "name_alt": "Jungfrau Region",
       "region": [
-        "CH-1221"
+        "CH-1233"
       ],
       "canton": "BE",
       "notes": "",
@@ -2227,11 +2227,11 @@
     "fields": {
       "uuid": "1b199d73-600d-4921-9b15-4b45a6d67d9b",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:42:01.298Z",
+      "updated_at": "2026-05-14T13:33:15.444Z",
       "name": "Mürren",
       "name_alt": "Jungfrau Region",
       "region": [
-        "CH-1228"
+        "CH-1233"
       ],
       "canton": "BE",
       "notes": "",
@@ -2249,11 +2249,11 @@
     "fields": {
       "uuid": "54441499-cf6e-464a-aee4-14c9066e198a",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T16:51:21.642Z",
+      "updated_at": "2026-05-14T13:33:15.442Z",
       "name": "Lauterbrunnen",
       "name_alt": "Jungfrau Region",
       "region": [
-        "CH-1222"
+        "CH-1233"
       ],
       "canton": "BE",
       "notes": "",
@@ -2271,11 +2271,11 @@
     "fields": {
       "uuid": "797f974b-b55f-46cf-8244-3d1248682c34",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T16:58:13.008Z",
+      "updated_at": "2026-05-14T13:33:15.439Z",
       "name": "Gstaad",
       "name_alt": "Saanenland",
       "region": [
-        "CH-1223"
+        "CH-1222"
       ],
       "canton": "BE",
       "notes": "",
@@ -2293,11 +2293,11 @@
     "fields": {
       "uuid": "4e096ac2-15f3-4678-8ab5-dac15cc43c9f",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:36:41.420Z",
+      "updated_at": "2026-05-14T13:33:15.446Z",
       "name": "Saanen",
       "name_alt": "Saanenland",
       "region": [
-        "CH-1223"
+        "CH-1112"
       ],
       "canton": "BE",
       "notes": "",
@@ -2315,11 +2315,11 @@
     "fields": {
       "uuid": "4d0a2493-9148-424d-8d9b-4f89ab7704f9",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:36:47.058Z",
+      "updated_at": "2026-05-14T13:33:15.446Z",
       "name": "Schönried",
       "name_alt": "Saanenland",
       "region": [
-        "CH-1223"
+        "CH-1222"
       ],
       "canton": "BE",
       "notes": "",
@@ -2337,11 +2337,11 @@
     "fields": {
       "uuid": "579aefe6-fd6b-49c5-8e9e-39a079a58659",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:39:34.239Z",
+      "updated_at": "2026-05-14T13:33:15.447Z",
       "name": "Zweisimmen",
       "name_alt": "Simmental",
       "region": [
-        "CH-1225"
+        "CH-1228"
       ],
       "canton": "BE",
       "notes": "",
@@ -2359,11 +2359,11 @@
     "fields": {
       "uuid": "0b1d5b04-22da-48a2-967c-cbc28e7cf5f6",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:38:54.462Z",
+      "updated_at": "2026-05-14T13:33:15.442Z",
       "name": "Lenk",
       "name_alt": "Simmental",
       "region": [
-        "CH-1225"
+        "CH-1224"
       ],
       "canton": "BE",
       "notes": "",
@@ -2381,11 +2381,11 @@
     "fields": {
       "uuid": "0791db43-d986-42ef-a247-46b0da5b8021",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T16:40:05.933Z",
+      "updated_at": "2026-05-14T13:33:15.431Z",
       "name": "Adelboden",
       "name_alt": "",
       "region": [
-        "CH-1224"
+        "CH-1226"
       ],
       "canton": "BE",
       "notes": "",
@@ -2403,11 +2403,11 @@
     "fields": {
       "uuid": "7c2df3aa-9547-40c5-a839-8c7382353662",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:38:01.307Z",
+      "updated_at": "2026-05-14T13:33:15.441Z",
       "name": "Kandersteg",
       "name_alt": "Kandertal",
       "region": [
-        "CH-1224"
+        "CH-1231"
       ],
       "canton": "BE",
       "notes": "",
@@ -2425,11 +2425,11 @@
     "fields": {
       "uuid": "8b6163c0-29c3-4a62-9e6c-3926a5a392f5",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:45:35.929Z",
+      "updated_at": "2026-05-14T13:33:15.443Z",
       "name": "Meiringen",
       "name_alt": "Haslital",
       "region": [
-        "CH-1234"
+        "CH-1244"
       ],
       "canton": "BE",
       "notes": "",
@@ -2447,11 +2447,11 @@
     "fields": {
       "uuid": "4c982ac5-85e6-4aa7-aee5-7906c1e758f9",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:45:28.553Z",
+      "updated_at": "2026-05-14T13:33:15.440Z",
       "name": "Hasliberg",
       "name_alt": "Haslital",
       "region": [
-        "CH-1234"
+        "CH-1244"
       ],
       "canton": "BE",
       "notes": "",
@@ -2469,11 +2469,11 @@
     "fields": {
       "uuid": "b6854f15-652d-4f41-999b-d384fb496d00",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:51:53.994Z",
+      "updated_at": "2026-05-14T13:33:15.438Z",
       "name": "Grimmialp",
       "name_alt": "Niedersimmental",
       "region": [
-        "CH-1227"
+        "CH-1228"
       ],
       "canton": "BE",
       "notes": "",
@@ -2491,11 +2491,11 @@
     "fields": {
       "uuid": "ca8f664b-8bd7-40bf-8015-54d08ce5dcca",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:37:40.310Z",
+      "updated_at": "2026-05-14T13:33:15.438Z",
       "name": "Frutigen",
       "name_alt": "",
       "region": [
-        "CH-1225"
+        "CH-1226"
       ],
       "canton": "BE",
       "notes": "",
@@ -2513,11 +2513,11 @@
     "fields": {
       "uuid": "d23ee1cd-1ec3-4892-9ca8-fb800c323ca9",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:35:20.037Z",
+      "updated_at": "2026-05-14T13:33:15.433Z",
       "name": "Beatenberg",
       "name_alt": "",
       "region": [
-        "CH-1212"
+        "CH-1213"
       ],
       "canton": "BE",
       "notes": "",
@@ -2535,11 +2535,11 @@
     "fields": {
       "uuid": "2d459c55-d49a-4002-8bc5-b2a7534d85f9",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:46:29.856Z",
+      "updated_at": "2026-05-14T13:33:15.438Z",
       "name": "Grimsel",
       "name_alt": "Haslital high",
       "region": [
-        "CH-1243"
+        "CH-1247"
       ],
       "canton": "BE",
       "notes": "",
@@ -2557,11 +2557,11 @@
     "fields": {
       "uuid": "056411c3-f66e-4bc6-853d-f7d670541a56",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:47:28.428Z",
+      "updated_at": "2026-05-14T13:33:15.447Z",
       "name": "Sustenpass",
       "name_alt": "",
       "region": [
-        "CH-1243"
+        "CH-1246"
       ],
       "canton": "BE",
       "notes": "",
@@ -2579,11 +2579,11 @@
     "fields": {
       "uuid": "9e2f63b5-5f8e-4114-ac86-c1c9e643fe1b",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:44:30.428Z",
+      "updated_at": "2026-05-14T13:33:15.443Z",
       "name": "Lötschental",
       "name_alt": "",
       "region": [
-        "CH-1232"
+        "CH-4211"
       ],
       "canton": "BE/VS",
       "notes": "straddles cantons",
@@ -2601,11 +2601,11 @@
     "fields": {
       "uuid": "f6aed16f-e5f4-4a61-b7f3-9edf304399ed",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:44:22.324Z",
+      "updated_at": "2026-05-14T13:33:15.433Z",
       "name": "Blatten",
       "name_alt": "Lötschental",
       "region": [
-        "CH-1232"
+        "CH-4211"
       ],
       "canton": "VS",
       "notes": "",
@@ -2689,11 +2689,11 @@
     "fields": {
       "uuid": "223e051c-6e5f-4b7a-9859-af72b224482e",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:26:38.214Z",
+      "updated_at": "2026-05-14T13:33:15.435Z",
       "name": "Château-d'Oex",
       "name_alt": "",
       "region": [
-        "CH-1113"
+        "CH-1112"
       ],
       "canton": "VD",
       "notes": "",
@@ -2755,11 +2755,11 @@
     "fields": {
       "uuid": "2cf4001f-f631-45a2-91cf-77421537a8d3",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T16:40:21.688Z",
+      "updated_at": "2026-05-14T13:33:15.432Z",
       "name": "Aigle",
       "name_alt": "",
       "region": [
-        "CH-1111"
+        "CH-1113"
       ],
       "canton": "VD",
       "notes": "lower Chablais",
@@ -2821,11 +2821,11 @@
     "fields": {
       "uuid": "c5962835-e2aa-4258-b364-862d257eaea3",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:34:39.421Z",
+      "updated_at": "2026-05-14T13:33:15.440Z",
       "name": "Jaun",
       "name_alt": "Jaunbach",
       "region": [
-        "CH-1122"
+        "CH-1121"
       ],
       "canton": "FR",
       "notes": "",
@@ -2843,11 +2843,11 @@
     "fields": {
       "uuid": "fd30b251-fe78-4591-9645-60fbb7b71ae5",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:26:12.171Z",
+      "updated_at": "2026-05-14T13:33:15.445Z",
       "name": "Rochers-de-Naye",
       "name_alt": "Montreux area",
       "region": [
-        "CH-1112"
+        "CH-1111"
       ],
       "canton": "VD",
       "notes": "",
@@ -2865,11 +2865,11 @@
     "fields": {
       "uuid": "fe02a2d3-d79b-4098-b6ac-54646f855742",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T16:47:04.757Z",
+      "updated_at": "2026-05-14T13:33:15.433Z",
       "name": "Andermatt",
       "name_alt": "SkiArena",
       "region": [
-        "CH-2111"
+        "CH-2224"
       ],
       "canton": "UR",
       "notes": "",
@@ -2887,11 +2887,11 @@
     "fields": {
       "uuid": "2d190485-600b-4424-a1b7-68584ac82e91",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:48:40.863Z",
+      "updated_at": "2026-05-14T13:33:15.445Z",
       "name": "Realp",
       "name_alt": "Andermatt area",
       "region": [
-        "CH-2111"
+        "CH-2223"
       ],
       "canton": "UR",
       "notes": "",
@@ -2909,11 +2909,11 @@
     "fields": {
       "uuid": "34c7efd1-99cd-42ca-b40a-eea7f78f16cc",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:48:20.531Z",
+      "updated_at": "2026-05-14T13:33:15.440Z",
       "name": "Göschenen",
       "name_alt": "",
       "region": [
-        "CH-2111"
+        "CH-2223"
       ],
       "canton": "UR",
       "notes": "",
@@ -2931,11 +2931,11 @@
     "fields": {
       "uuid": "2a92771f-c4dc-4a64-8ec9-950f1afcd952",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:04:09.573Z",
+      "updated_at": "2026-05-14T13:33:15.436Z",
       "name": "Engelberg",
       "name_alt": "",
       "region": [
-        "CH-2121"
+        "CH-2122"
       ],
       "canton": "OW",
       "notes": "",
@@ -2953,11 +2953,11 @@
     "fields": {
       "uuid": "daf160e5-62ef-4298-9a33-f24121a9e3a5",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:50:11.152Z",
+      "updated_at": "2026-05-14T13:33:15.444Z",
       "name": "Melchsee-Frutt",
       "name_alt": "",
       "region": [
-        "CH-2122"
+        "CH-2123"
       ],
       "canton": "OW",
       "notes": "",
@@ -2975,11 +2975,11 @@
     "fields": {
       "uuid": "4b711fc0-2355-4d83-839d-a5164313d5c8",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:55:02.905Z",
+      "updated_at": "2026-05-14T13:33:15.436Z",
       "name": "Elm",
       "name_alt": "Glarnerland",
       "region": [
-        "CH-3111"
+        "CH-3113"
       ],
       "canton": "GL",
       "notes": "",
@@ -2997,11 +2997,11 @@
     "fields": {
       "uuid": "a5f4c802-10c3-4006-96d2-17f0fcefbe18",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-28T17:53:46.756Z",
+      "updated_at": "2026-05-14T13:33:15.434Z",
       "name": "Braunwald",
       "name_alt": "Glarnerland",
       "region": [
-        "CH-3111"
+        "CH-3112"
       ],
       "canton": "GL",
       "notes": "",
@@ -3085,11 +3085,11 @@
     "fields": {
       "uuid": "d0407dac-5400-4864-8667-36fe6ac042f6",
       "created_at": "2026-04-13T00:00:00Z",
-      "updated_at": "2026-04-30T15:26:46.690Z",
+      "updated_at": "2026-05-14T13:33:15.437Z",
       "name": "Flumserberg",
       "name_alt": "",
       "region": [
-        "CH-3222"
+        "CH-3223"
       ],
       "canton": "SG",
       "notes": "",
