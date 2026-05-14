@@ -15,37 +15,42 @@ is probably wrong — fix it rather than relaxing the rule.
 
 ```
 config/          Django project: split settings (base/development/production), urls, wsgi
-core/            Shared abstractions (BaseModel; abstract, no concrete tables)
-pipeline/        Geographic reference data — MicroRegion / MajorRegion /
-                 SubRegion / Resort, plus HTTP-layer middleware, the
-                 dev-only SLF mirror endpoint, and fixture/monitoring commands
-                 (dump_resorts_fixture, monitor_query_counts, refresh_eaws_fixtures)
+core/            Shared abstractions (BaseModel; abstract, no concrete tables),
+                 plus HTTP-layer middleware, the require_htmx decorator, and
+                 the monitor_query_counts command
+regions/         Geographic reference data — MicroRegion / MajorRegion /
+                 SubRegion / Resort, plus the fixture-maintenance commands
+                 (dump_resorts_fixture, refresh_eaws_fixtures,
+                 build_france_fixture, audit_microregion_names,
+                 audit_resort_regions)
 bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
                  PipelineRun, RegionDayRating, WeatherSnapshot, the ingestion
                  services (data_fetcher / render_model / day_rating /
-                 slf_archive / weather_fetcher / weather_display) and the six
-                 bulletin/weather management commands
+                 slf_archive / openmeteo_archive / weather_fetcher /
+                 weather_display), the dev-only SLF / Open-Meteo mirror
+                 endpoints, and the bulletin and weather management commands
 subscriptions/   Signed-token email subscription flow — Subscriber, Subscription
 public/          Public-facing bulletin site (HTMX-driven). Owns the JSON API
                  used by the map page (api.py / api_urls.py)
 tests/           Mirrors the layout of the modules under test
   factories.py   FactoryBoy factories for every model
+  fixtures/      Sample CAAML bulletin payloads consumed by pytest
 reference_data/  EAWS + MF reference geometry, the EAWS OpenAPI schema, and the CAAML schema doc
 src/             Tailwind CSS source (main.css — not served directly)
 static/          CSS/JS assets (includes compiled output.css)
 logs/            Runtime log files (gitignored except .gitkeep)
 ```
 
-The `bulletins/` ↔ `pipeline/` split is deliberate: `pipeline/` holds
-stable shared lookup data (regions, resorts) and HTTP plumbing;
-`bulletins/` holds everything that originates from the SLF API and the
-denormalisation that drives the calendar. `core/` exists so neither app
-needs to import abstract bases from the other.
+The `bulletins/` ↔ `regions/` split is deliberate: `regions/` holds
+stable shared lookup data (regions, resorts); `bulletins/` holds
+everything that originates from the SLF API and the denormalisation that
+drives the calendar. `core/` exists so neither app needs to import
+abstract bases from the other.
 
 Tests live in a **top-level** `tests/` directory, not inside each app.
 The tree under `tests/` mirrors the source tree: `bulletins/models.py`
 has tests at `tests/bulletins/test_weather_snapshot_model.py` and
-`pipeline/models.py` has tests at `tests/pipeline/models/test_models.py`.
+`regions/models.py` has tests at `tests/regions/models/test_models.py`.
 
 ---
 
@@ -121,8 +126,8 @@ Contains pure-ish functions that:
   (`*args: Any, **kwargs: Any`).
 - Use `from __future__ import annotations` in modules that reference
   forward types (see [bulletins/models.py](bulletins/models.py),
-  [pipeline/models.py](pipeline/models.py),
-  [pipeline/schema.py](pipeline/schema.py),
+  [regions/models.py](regions/models.py),
+  [bulletins/schema.py](bulletins/schema.py),
   [public/views.py](public/views.py)).
 - Use `collections.abc` for `Callable`, `Iterable`, etc. — not `typing`.
 - `mypy` runs with `strict_optional`, `warn_return_any`,
@@ -141,9 +146,8 @@ Contains pure-ish functions that:
 
 - `ruff` (`I` rule) handles import ordering (isort-compatible).
 - `combine-as-imports = true` — group `from x import (a as A, b as B)`.
-- `known-first-party` includes `pipeline` and `public`; any new
-  top-level package must be added to the isort config in
-  [pyproject.toml](pyproject.toml).
+  Ruff auto-detects first-party packages; no `known-first-party` config
+  is needed.
 
 ### 2.5 Logging
 
@@ -153,10 +157,11 @@ Contains pure-ish functions that:
   `logger.info("Pipeline run %s started", run.pk)`.
 - Use `logger.exception(...)` inside `except` blocks to capture
   tracebacks; `logger.error("...", exc_info=True)` is also acceptable.
-- The `pipeline`, `bulletins`, and `subscriptions` loggers are
+- The `core`, `regions`, `bulletins`, and `subscriptions` loggers are
   configured in [config/settings/base.py](config/settings/base.py) to
-  write to `logs/pipeline.log` with rotation, and errors additionally
-  to `logs/errors.log`. Don't reconfigure handlers inside app code.
+  write to `logs/pipeline.log` with rotation (the filename is legacy and
+  intentionally preserved), and errors additionally to `logs/errors.log`.
+  Don't reconfigure handlers inside app code.
 - `print()` is a lint error (`T2` rule). Use the logger.
 - log API responses with `logger.debug()`
 
@@ -207,13 +212,13 @@ Every concrete model must:
    on the queryset — not on the model.
 5. **Have an AdminModel** registered in the owning app's `admin.py`
    ([bulletins/admin.py](bulletins/admin.py),
-   [pipeline/admin.py](pipeline/admin.py),
+   [regions/admin.py](regions/admin.py),
    [subscriptions/admin.py](subscriptions/admin.py)) with at minimum
    `list_display`, `search_fields` where useful, and `readonly_fields`
    for timestamp columns.
 6. **Have a Factory** in [tests/factories.py](tests/factories.py).
 7. **Have test coverage** under `tests/<app>/` mirroring the source
-   path (e.g. `tests/pipeline/models/test_models.py`,
+   path (e.g. `tests/regions/models/test_models.py`,
    `tests/bulletins/test_weather_snapshot_model.py`).
 
 Keep business logic **out** of models. Put it in the owning app's
@@ -226,7 +231,7 @@ fetch, or mutate other records.
 
 - Defined inside the owning model as a nested class when the choice is
   specific to that model (e.g. `PipelineRun.Status`).
-- Defined in [pipeline/schema.py](pipeline/schema.py) when the choice
+- Defined in [bulletins/schema.py](bulletins/schema.py) when the choice
   comes from an external schema (CAAML) and is shared.
 - Each member is `NAME = "value", "Human label"`.
 
@@ -246,7 +251,7 @@ fetch, or mutate other records.
   (e.g. [public/urls.py](public/urls.py),
   [subscriptions/urls.py](subscriptions/urls.py)) and guarded with the
   `require_htmx` decorator from
-  [pipeline/decorators.py](pipeline/decorators.py).
+  [core/decorators.py](core/decorators.py).
 - Views are thin: parse query params, enforce permissions, call the ORM or
   service layer, render a template. No business logic.
 - Use `@require_GET` / `@require_POST` from
@@ -261,9 +266,8 @@ fetch, or mutate other records.
 
 - Located in each app's `services/` subdirectory (e.g.
   [bulletins/services/](bulletins/services/)). The bulletin ingestion,
-  render-model, day-rating, weather, and SLF-archive services all live
-  under `bulletins/services/`; the `pipeline/services/` slot is reserved
-  for region/resort-shaped helpers and is currently empty.
+  render-model, day-rating, weather-fetching, weather-display, and
+  SLF/Open-Meteo archive services all live under `bulletins/services/`.
 - Prefer plain functions over classes — composition over inheritance.
 - Pass collaborators as arguments rather than reaching for globals or
   building deep class hierarchies.
@@ -275,8 +279,8 @@ fetch, or mutate other records.
 ### 3.7 Management commands
 
 Every command under an app's `management/commands/` subdirectory
-(`bulletins/management/commands/`,
-`pipeline/management/commands/`) must:
+(`bulletins/management/commands/`, `regions/management/commands/`,
+`core/management/commands/`) must:
 
 - Have a module header docstring and class docstring.
 - Override `add_arguments(self, parser: ArgumentParser) -> None` with
@@ -365,7 +369,7 @@ catalogue and flag reference.
 - Decorate DB-touching classes with `@pytest.mark.django_db`.
 - Include a short method docstring describing the invariant under test.
   See
-  [tests/pipeline/models/test_models.py](tests/pipeline/models/test_models.py)
+  [tests/regions/models/test_models.py](tests/regions/models/test_models.py)
   and
   [tests/bulletins/services/test_data_fetcher.py](tests/bulletins/services/test_data_fetcher.py)
   for the reference style.
@@ -394,8 +398,9 @@ catalogue and flag reference.
 ### 5.5 Coverage
 
 - Target: **all new code has covering tests**; aim for ≥90% total
-  coverage across `pipeline/` and `public/`.
-- `pytest --cov=pipeline --cov=public` runs by default via `addopts` in
+  coverage across the project apps.
+- `pytest --cov=core --cov=bulletins --cov=regions --cov=public
+  --cov=subscriptions` runs by default via `addopts` in
   [pyproject.toml](pyproject.toml).
 - `config/`, `*/migrations/*`, and `__init__.py` are excluded from
   coverage reporting.
@@ -427,7 +432,7 @@ catalogue and flag reference.
   `debug-statements`
 - `gitleaks` for committed secrets
 - Local `djangofmt` hook via `.venv/bin/djangofmt`
-- Local `mypy` hook via `.venv/bin/mypy core/ bulletins/ pipeline/
+- Local `mypy` hook via `.venv/bin/mypy core/ bulletins/ regions/
   public/ subscriptions/ tests/ config/` (kept in sync with the
   `tox -e mypy` target)
 
@@ -447,9 +452,9 @@ sensitive code.
 | ---------------- | ---------------------------------------------------------------------------------------- |
 | `fmt`            | `ruff format --check .`                                                                  |
 | `lint`           | `ruff check .`                                                                           |
-| `mypy`           | `mypy core/ bulletins/ pipeline/ public/ subscriptions/ tests/ config/`                  |
+| `mypy`           | `mypy core/ bulletins/ regions/ public/ subscriptions/ tests/ config/`                   |
 | `django-checks`  | `manage.py check` + `makemigrations --check`                                             |
-| `test`           | `pytest --cov=core --cov=bulletins --cov=pipeline --cov=public --cov=subscriptions --cov=config tests/` |
+| `test`           | `pytest --cov=core --cov=bulletins --cov=regions --cov=public --cov=subscriptions tests/` |
 | `audit`          | `pip-audit` against the Poetry-exported requirements                                     |
 | `sast`           | `semgrep` with the Django + Python + security-audit rulesets                             |
 
@@ -485,13 +490,13 @@ Read it via `Bulletin._properties` (or the `get_danger_ratings()` /
 `get_avalanche_problems()` helpers) — do **not** access
 `raw_data["properties"]` directly from callers. See
 [bulletins/models.py](bulletins/models.py) and
-[pipeline/schema.py](pipeline/schema.py).
+[bulletins/schema.py](bulletins/schema.py).
 
 ### 7.2 Dataclass views over JSON
 
 Structured slices of `raw_data` are exposed via frozen dataclasses
 (`Elevation`, `DangerRating`, `AvalancheProblem`) defined in
-[pipeline/schema.py](pipeline/schema.py). They map CAAML's camelCase
+[bulletins/schema.py](bulletins/schema.py). They map CAAML's camelCase
 keys to snake_case attributes via `from_dict` classmethods. They are
 **read-only views** — they do not validate input, and absent fields
 become `None` or empty tuples.
