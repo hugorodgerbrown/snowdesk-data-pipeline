@@ -290,14 +290,20 @@ const clearRegionRepaint = () => {
       },
     });
 
-    // Outline — thin, darker on the selected region.
+    // Outline — base unselected ring.
     //
     // SNOW-105: round joins and caps so the ring's start/end vertex doesn't
     // expose a butt-capped seam at high zoom — the visible "missing closing
     // edge" reported on every region past city zoom was that seam, not an
     // open ring (data is closed at every layer). The third interpolation
-    // stop pins the unselected width at 0.6 px past z9 so linear
-    // extrapolation doesn't fade the line out to zero by z13.
+    // stop pins the width at 0.6 px past z9 so linear extrapolation doesn't
+    // fade the line out to zero by z13.
+    //
+    // SNOW-174: the selected-state paint has been moved to a dedicated
+    // ``regions-line-selected`` layer below. This lets us use a heavier,
+    // blurred stroke without fighting interpolation nesting constraints, and
+    // the dedicated layer stacks above this one in the layer order so it
+    // always paints on top of the base ring.
     map.addLayer({
       id: 'regions-line',
       type: 'line',
@@ -307,19 +313,38 @@ const clearRegionRepaint = () => {
         'line-cap': 'round',
       },
       paint: {
-        'line-color': [
-          'case',
-          ['boolean', ['feature-state', 'selected'], false], '#0c447c',
-          'rgba(0,0,0,0.25)',
-        ],
-        // zoom must be the input to a top-level interpolate — it cannot be
-        // nested inside case. Invert: interpolate at top level, case as stops.
+        'line-color': 'rgba(0,0,0,0.25)',
+        // Zoom-interpolated width; third stop prevents linear extrapolation
+        // from fading the line out past z9.
         'line-width': [
           'interpolate', ['linear'], ['zoom'],
-          5,  ['case', ['boolean', ['feature-state', 'selected'], false], 3, 1.2],
-          9,  ['case', ['boolean', ['feature-state', 'selected'], false], 3, 0.6],
-          22, ['case', ['boolean', ['feature-state', 'selected'], false], 3, 0.6],
+          5,  1.2,
+          9,  0.6,
+          22, 0.6,
         ],
+      },
+    });
+
+    // SNOW-174: dedicated selection-emphasis layer. A separate layer beats
+    // a case expression inside interpolate because MapLibre's style spec
+    // prohibits feature-state expressions as interpolate stop values, and
+    // a standalone layer lets us add line-blur (impossible inside a case).
+    // Added immediately after regions-line so it sits above the base ring
+    // but below the overlay tiers (sub-regions-line, major-regions-line).
+    map.addLayer({
+      id: 'regions-line-selected',
+      type: 'line',
+      source: 'regions',
+      filter: ['boolean', ['feature-state', 'selected'], false],
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': '#1a1a1a',
+        'line-width': 4,
+        // Soft halo so the outline reads against any choropleth fill colour.
+        'line-blur': 0.5,
       },
     });
 
@@ -644,6 +669,10 @@ const clearRegionRepaint = () => {
     const clearPopupDom = () => {
       if (selectedId !== null) {
         map.setFeatureState({ source: 'regions', id: selectedId }, { selected: false });
+        // SNOW-174: the filter on regions-line-selected reads feature-state;
+        // triggerRepaint ensures the dedicated selection layer redraws
+        // immediately rather than waiting for the next idle frame.
+        map.triggerRepaint();
         selectedId = null;
       }
       summarySeq++;  // invalidate any inflight fetch so it can't reopen the popup
@@ -713,11 +742,26 @@ const clearRegionRepaint = () => {
         const popup = new maplibregl.Popup({
           closeButton: true,
           closeOnClick: true,
-          anchor: 'auto',
+          // SNOW-174: use 'bottom' so the popup tip always points down to
+          // the tap point and the body floats above it. 'auto' can flip the
+          // popup to an unexpected side when near the viewport edge, and it
+          // was the root cause of the popup landing at (0, 0) under
+          // synthetic click events (the edge-flip path sets no position).
+          anchor: 'bottom',
           maxWidth: 'min(320px, calc(100vw - 32px))',
           className: 'region-popup',
         });
-        popup.setLngLat(anchor).setHTML(data.html).addTo(map);
+        // SNOW-174: set HTML before lngLat so MapLibre can compute correct
+        // DOM dimensions when _update runs. Chain order matters: setHTML →
+        // setLngLat → addTo.
+        popup.setHTML(data.html).setLngLat(anchor).addTo(map);
+        // Force immediate positioning — MapLibre's _update normally runs on
+        // the next rAF tick, but that can lag perceptibly on heavy renders.
+        // Calling it directly snaps the popup to its anchor on the same
+        // frame. _update is a private method (acknowledged trade-off); it
+        // has been stable across MapLibre v3/v4 and is the standard escape
+        // hatch for this timing issue.
+        if (typeof popup._update === 'function') popup._update();
         activePopup = popup;
         // Wire MapLibre's own close event (Esc, ×-button, canvas click)
         // back to our dismiss path so the URL hash is always cleared on
@@ -779,6 +823,9 @@ const clearRegionRepaint = () => {
       }
       selectedId = numericId;
       map.setFeatureState({ source: 'regions', id: selectedId }, { selected: true });
+      // SNOW-174: trigger an immediate repaint so the regions-line-selected
+      // filter (which reads feature-state) activates on this frame.
+      map.triggerRepaint();
 
       const props = REGION_LOOKUP[numericId];
       const ok = await loadRegionSummary(props.regionID, {
