@@ -1601,6 +1601,31 @@ def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     )
 
 
+def _build_map_url(
+    region_id: str, target_date: datetime.date, today: datetime.date
+) -> str:
+    """Return the context-aware map back-link URL for the bulletin nav bar.
+
+    Omits ``?d=`` when *target_date* is today — the map scrubber defaults to
+    today so the query string would be redundant. The URL fragment always
+    carries the region ID so the map opens the region sheet at peek (SNOW-183).
+
+    Args:
+        region_id: The canonical EAWS region identifier (e.g. ``"CH-4115"``).
+        target_date: Calendar day the bulletin page represents.
+        today: Current date; used to decide whether to include ``?d=``.
+
+    Returns:
+        A relative URL string such as ``"/map/#CH-4115"`` or
+        ``"/map/?d=2025-01-20#CH-4115"``.
+
+    """
+    base = reverse("public:map")
+    if target_date == today:
+        return f"{base}#{region_id}"
+    return f"{base}?d={target_date.isoformat()}#{region_id}"
+
+
 def _bulletin_detail_response(
     request: HttpRequest,
     region: MicroRegion,
@@ -1662,6 +1687,10 @@ def _bulletin_detail_response(
     )
 
     today = timezone.now().date()
+
+    # Build the context-aware back-link for the nav bar (SNOW-183).
+    map_url = _build_map_url(region.region_id, target_date, today)
+
     # Two canonical-URL flavours: the no-date "today" form (form 2)
     # for live / evergreen views, and the dated form (form 3) for
     # historical views. See SNOW-99.
@@ -1712,6 +1741,7 @@ def _bulletin_detail_response(
                 "weather_display": weather_display,
                 "weather_htmx_trigger": weather_display is None,
                 "canonical_url": canonical_url,
+                "map_url": map_url,
             },
             bulletin=None,
         )
@@ -1800,6 +1830,8 @@ def _bulletin_detail_response(
         "weather_htmx_trigger": weather_display is None,
         # Canonical form-3 URL — see SNOW-99.
         "canonical_url": canonical_url,
+        # Context-aware back-link for the nav bar — see SNOW-183.
+        "map_url": map_url,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 

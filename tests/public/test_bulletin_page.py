@@ -1641,3 +1641,60 @@ def test_bulletin_page_loads_htmx_from_static(client: Client) -> None:
     body = response.content.decode()
     assert "htmx.min" in body
     assert "unpkg.com" not in body
+
+
+# ---------------------------------------------------------------------------
+# SNOW-183: context-aware Map back-link in the nav bar
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestMapBackLink:
+    """The nav bar Map back-link carries date + region context (SNOW-183).
+
+    When the bulletin page represents a past date the link includes
+    ``?d=YYYY-MM-DD`` so the map scrubber boots to that day.  For today's
+    page the query string is omitted (the map defaults to today).  In both
+    cases the URL fragment ``#<region_id>`` opens the region sheet at peek.
+    """
+
+    def test_dated_bulletin_includes_date_and_fragment(
+        self, client: Client, simple_bulletin, region
+    ) -> None:
+        """A dated bulletin URL produces a map link with ``?d=`` and ``#``."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'href="/map/?d=2026-03-15#CH-4115"' in content
+
+    def test_today_bulletin_omits_date_query_string(
+        self, client: Client, region
+    ) -> None:
+        """Today's bulletin URL produces a map link with fragment only, no ``?d=``."""
+        today = date.today()
+        _make_am_bulletin(region, today)
+        # Use the region_root form (/<region_id>/) — it resolves to today without
+        # requiring a slug and never redirects for today's bulletin.
+        url = reverse("public:region_root", kwargs={"region_id": "ch-4115"})
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'href="/map/#CH-4115"' in content
+        # Confirm the date query string is absent from the nav map link.
+        # The fragment-only form is unambiguous: /map/#CH-4115 never carries ?d=.
+        assert "/map/?d=" not in content
+
+    def test_empty_state_includes_date_and_fragment(self, client: Client) -> None:
+        """The empty-state (no bulletin) page still produces a dated map link."""
+        # Use a region whose slug matches the URL component to avoid a slug-
+        # correction redirect. ``slugify("Test Region")`` → ``test-region``, so
+        # pass ``"test-region"`` as both the factory slug and the URL segment.
+        MicroRegionFactory.create(
+            region_id="CH-9999", name="Test Region", slug="test-region"
+        )
+        url = _url("ch-9999", "test-region", "2025-12-01")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'href="/map/?d=2025-12-01#CH-9999"' in content
