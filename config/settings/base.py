@@ -227,13 +227,6 @@ EUREGIO_API_BASE_URL = config(
     default="https://static.avalanche.report/bulletins",
 )
 
-# URL served by the ``euregio_mirror`` dev view (``dev/euregio-mirror/``).
-# The fetcher service uses this when ``--source local-mirror`` is passed.
-EUREGIO_API_LOCAL_MIRROR_URL = config(
-    "EUREGIO_API_LOCAL_MIRROR_URL",
-    default="http://localhost:8000/dev/euregio-mirror",
-)
-
 # On-disk archive of EUREGIO bulletins captured from the ALBINA CDN.
 # NDJSON: one unwrapped CAAML record per line; deduped by ``bulletinID``.
 EUREGIO_ARCHIVE_PATH = (

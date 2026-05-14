@@ -444,12 +444,17 @@ class TestFetchEuregioBulletinsCommand:
         _, kwargs = mock_run.call_args
         assert kwargs["base_url"] == "http://localhost:8000/dev/euregio-mirror"
 
-    @override_settings(EUREGIO_API_LOCAL_MIRROR_URL="")
+    @override_settings(EUREGIO_API_LOCAL_MIRROR_URL=None)
     @patch(PATCH_PIPELINE)
     def test_source_local_mirror_without_setting_raises(
         self, mock_run: MagicMock
     ) -> None:
-        """Empty/unset EUREGIO_API_LOCAL_MIRROR_URL → CommandError naming the setting."""
+        """None EUREGIO_API_LOCAL_MIRROR_URL → CommandError naming the setting.
+
+        Simulates the production-like environment where development.py
+        (which defines the mirror URL) is not loaded. ``--source
+        local-mirror`` must abort before invoking the pipeline.
+        """
         with pytest.raises(CommandError, match="EUREGIO_API_LOCAL_MIRROR_URL"):
             call_command(
                 "fetch_euregio_bulletins",
