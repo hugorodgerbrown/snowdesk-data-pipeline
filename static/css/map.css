@@ -517,7 +517,9 @@
 }
 
 .dark .region-popup .maplibregl-popup-content {
-    background: rgba(30, 28, 22, 0.92);
+    /* --color-glass is already overridden to the dark value inside
+     * .dark {} in src/css/main.css — no separate token needed. */
+    background: var(--color-glass, rgba(20, 22, 26, 0.78));
 }
 
 .region-popup .maplibregl-popup-close-button {

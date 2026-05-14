@@ -632,6 +632,11 @@ const clearRegionRepaint = () => {
     // and by the popup's own 'close' event (Esc, ×-button, outside-click
     // on the map). Does not push history — callers that need URL sync call
     // clearTooltip instead.
+    //
+    // IMPORTANT: null activePopup *before* calling p.remove(). MapLibre fires
+    // the popup's 'close' event synchronously inside remove(), which triggers
+    // clearTooltip() → clearPopupDom() again. Nulling first makes the guard
+    // on the second entry a no-op, so side-effects only run once.
     const clearPopupDom = () => {
       if (selectedId !== null) {
         map.setFeatureState({ source: 'regions', id: selectedId }, { selected: false });
@@ -639,8 +644,9 @@ const clearRegionRepaint = () => {
       }
       summarySeq++;  // invalidate any inflight fetch so it can't reopen the popup
       if (activePopup) {
-        activePopup.remove();
+        const p = activePopup;
         activePopup = null;
+        p.remove();
       }
     };
 
@@ -690,7 +696,13 @@ const clearRegionRepaint = () => {
         const data = await resp.json();
         if (seq !== summarySeq) return false;
         // Remove any previous popup before opening the new one.
-        if (activePopup) activePopup.remove();
+        // Null first to prevent the synchronous 'close' event on .remove()
+        // from re-entering clearPopupDom with the stale reference.
+        if (activePopup) {
+          const prev = activePopup;
+          activePopup = null;
+          prev.remove();
+        }
         const feature = FEATURE_BY_REGION_ID[regionID];
         const centre = feature ? featureCentre(feature) : null;
         if (!centre) return false;
