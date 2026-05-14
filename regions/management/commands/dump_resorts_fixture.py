@@ -93,11 +93,7 @@ class Command(BaseCommand):
                 )
             return
 
-        try:
-            _FIXTURE_PATH.write_text(new_text, encoding="utf-8")
-        except OSError as exc:
-            raise CommandError(f"Failed to write {_FIXTURE_PATH}: {exc}") from exc
-
+        _write_resorts_fixture(_FIXTURE_PATH, verbosity=verbosity)
         if verbosity >= 1:
             self.stdout.write(
                 self.style.SUCCESS(
@@ -105,6 +101,37 @@ class Command(BaseCommand):
                     "the diff and commit when satisfied."
                 )
             )
+
+
+def _write_resorts_fixture(
+    fixture_path: Path,
+    verbosity: int = 0,
+) -> None:
+    r"""Write the current Resort table to ``fixture_path`` as a Django fixture.
+
+    Serialises every Resort row (ordered by pk) with natural foreign keys so
+    the ``region`` column emits as ``["CH-4115"]`` rather than a numeric PK.
+    Non-ASCII characters are written as literal UTF-8 (not ``\uXXXX``).
+
+    This helper is extracted to module scope so that ``audit_resort_regions``
+    can call it after re-FKing bucket-(b) resorts without importing or
+    invoking the full command class.
+
+    Args:
+        fixture_path: Destination path. Written atomically (overwrite).
+        verbosity: Logging verbosity level (unused; kept for symmetry with
+            the command convention; callers may pass their own verbosity).
+
+    """
+    queryset = Resort.objects.order_by("pk").all()
+    new_text = _serialise_with_natural_keys(queryset)
+    try:
+        fixture_path.write_text(new_text, encoding="utf-8")
+    except OSError as exc:
+        raise CommandError(f"Failed to write {fixture_path}: {exc}") from exc
+    logger.info(
+        "_write_resorts_fixture: wrote %d rows to %s", queryset.count(), fixture_path
+    )
 
 
 def _serialise_with_natural_keys(queryset: Any) -> str:
