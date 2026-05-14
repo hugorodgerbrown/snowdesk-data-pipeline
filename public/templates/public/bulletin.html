@@ -69,7 +69,9 @@ reachable via the SNOW-81 deep-link in the masthead.
     {# The page nav carries the season-sheet trigger top-right (SNOW-117) when #}
     {# the bulletin has a non-empty heatmap to show; otherwise the bar is      #}
     {# wayfinding-only (back link + wordmark).                                  #}
-    {% url 'public:map' as map_url %}
+    {# map_url is built in the view (SNOW-183) with date + region fragment so  #}
+    {# the map opens with the scrubber on the right day and the region sheet   #}
+    {# at peek.                                                                 #}
     {% include "includes/nav.html" with back_url=map_url back_label="Map" season_trigger=season_calendar %}
 {% endblock %}
 
