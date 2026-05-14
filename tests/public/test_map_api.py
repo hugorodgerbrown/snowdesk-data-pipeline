@@ -355,7 +355,7 @@ def test_resorts_by_region_groups_names_alphabetically():
 
 @pytest.mark.django_db
 def test_regions_geojson_returns_feature_collection():
-    """Every Region with a non-null boundary becomes a Feature."""
+    """Every Region with a non-null boundary becomes a Feature (CH filter)."""
     boundary = {
         "type": "Polygon",
         "coordinates": [
@@ -377,15 +377,20 @@ def test_regions_geojson_returns_feature_collection():
     )
 
     client = Client()
-    response = client.get(reverse("api:regions_geojson"))
+    response = client.get(reverse("api:regions_geojson") + "?country=ch")
     assert response.status_code == 200
     data = response.json()
 
     assert data["type"] == "FeatureCollection"
-    assert len(data["features"]) == 1
-    feature = data["features"][0]
+    # Find our CH-4115 feature among any that exist.
+    by_id = {f["properties"]["id"]: f for f in data["features"]}
+    assert "CH-4115" in by_id
+    assert "CH-9999" not in by_id  # boundary=None → skipped
+    feature = by_id["CH-4115"]
     assert feature["type"] == "Feature"
-    assert feature["properties"] == {"id": "CH-4115", "name": "Valais"}
+    assert feature["properties"]["id"] == "CH-4115"
+    assert feature["properties"]["name"] == "Valais"
+    assert feature["properties"]["country"] == "CH"
     assert feature["geometry"] == boundary
 
 
@@ -398,9 +403,7 @@ def test_regions_geojson_returns_feature_collection():
 def test_major_regions_geojson_returns_feature_collection():
     """L1 majors with a non-null boundary become Features; null boundary skipped.
 
-    Note: migration 0012 pre-loads the real CH-1..CH-9 fixtures, so this
-    test works with non-CH prefixes to keep its assertions independent
-    of fixture state.
+    Uses AT prefix to avoid collisions with any pre-loaded CH-* fixture rows.
     """
     boundary = {
         "type": "Polygon",
@@ -417,19 +420,20 @@ def test_major_regions_geojson_returns_feature_collection():
     )
 
     client = Client()
-    response = client.get(reverse("api:major_regions_geojson"))
+    response = client.get(reverse("api:major_regions_geojson") + "?country=at")
     assert response.status_code == 200
     data = response.json()
     assert data["type"] == "FeatureCollection"
 
-    # Find our fixture among any pre-loaded CH-* features.
     by_prefix = {f["properties"]["prefix"]: f for f in data["features"]}
     assert "AT-1" in by_prefix
     assert "AT-2" not in by_prefix  # boundary=None → skipped
 
     feature = by_prefix["AT-1"]
     assert feature["type"] == "Feature"
-    assert feature["properties"] == {"prefix": "AT-1", "name_en": "Vorarlberg"}
+    assert feature["properties"]["prefix"] == "AT-1"
+    assert feature["properties"]["name_en"] == "Vorarlberg"
+    assert feature["properties"]["country"] == "AT"
     assert feature["geometry"] == boundary
 
 
@@ -457,7 +461,7 @@ def test_sub_regions_geojson_returns_feature_collection():
     )
 
     client = Client()
-    response = client.get(reverse("api:sub_regions_geojson"))
+    response = client.get(reverse("api:sub_regions_geojson") + "?country=at")
     assert response.status_code == 200
     data = response.json()
     assert data["type"] == "FeatureCollection"
@@ -467,10 +471,9 @@ def test_sub_regions_geojson_returns_feature_collection():
     assert "AT-12" not in by_prefix  # boundary=None → skipped
 
     feature = by_prefix["AT-11"]
-    assert feature["properties"] == {
-        "prefix": "AT-11",
-        "name_en": "Vorarlberg North",
-    }
+    assert feature["properties"]["prefix"] == "AT-11"
+    assert feature["properties"]["name_en"] == "Vorarlberg North"
+    assert feature["properties"]["country"] == "AT"
     assert feature["geometry"] == boundary
 
 
@@ -856,14 +859,21 @@ def test_endpoints_return_json_content_type():
         "api:today_summaries",
         "api:season_ratings",
         "api:resorts_by_region",
-        "api:regions_geojson",
-        "api:major_regions_geojson",
-        "api:sub_regions_geojson",
     ):
         response = client.get(reverse(name))
         assert response.status_code == 200
         assert response["Content-Type"].startswith("application/json")
-        # Body parses as JSON without raising.
+        json.loads(response.content)
+
+    # GeoJSON endpoints require ?country= param.
+    for name in (
+        "api:regions_geojson",
+        "api:major_regions_geojson",
+        "api:sub_regions_geojson",
+    ):
+        response = client.get(reverse(name) + "?country=ch")
+        assert response.status_code == 200
+        assert response["Content-Type"].startswith("application/json")
         json.loads(response.content)
 
 
@@ -874,7 +884,7 @@ def test_endpoints_return_json_content_type():
 
 @pytest.mark.django_db
 def test_regions_geojson_includes_fr_regions() -> None:
-    """French L4 micro-regions appear in /api/regions.geojson with FR-NN ids.
+    """French L4 micro-regions appear in /api/regions.geojson?country=fr.
 
     The factory's auto-derived SubRegion prefix from ``region_id[:5]`` would
     produce ``"FR-68"`` which is not a valid SubRegion prefix. We pass
@@ -897,7 +907,7 @@ def test_regions_geojson_includes_fr_regions() -> None:
     )
 
     client = Client()
-    response = client.get(reverse("api:regions_geojson"))
+    response = client.get(reverse("api:regions_geojson") + "?country=fr")
     assert response.status_code == 200
     data = response.json()
 
@@ -906,4 +916,130 @@ def test_regions_geojson_includes_fr_regions() -> None:
 
     fr_feature = next(f for f in data["features"] if f["properties"]["id"] == "FR-68")
     assert fr_feature["properties"]["name"] == "Louchonnais"
+    assert fr_feature["properties"]["country"] == "FR"
     assert fr_feature["geometry"] == boundary
+
+
+# ---------------------------------------------------------------------------
+# Country-aware GeoJSON endpoints (SNOW-172)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_regions_geojson_rejects_missing_country() -> None:
+    """Omitting ?country= returns 400."""
+    client = Client()
+    response = client.get(reverse("api:regions_geojson"))
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_country"
+
+
+@pytest.mark.django_db
+def test_regions_geojson_rejects_unknown_country() -> None:
+    """An unrecognised ?country= value returns 400."""
+    client = Client()
+    response = client.get(reverse("api:regions_geojson") + "?country=zz")
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_country"
+
+
+@pytest.mark.django_db
+def test_regions_geojson_filters_by_country() -> None:
+    """?country=ch returns only CH features; FR features are excluded."""
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+        ],
+    }
+    ch_major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+    ch_sub = SubRegionFactory.create(prefix="CH-41", major=ch_major)
+    MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=ch_sub, boundary=boundary
+    )
+
+    fr_major = MajorRegionFactory.create(prefix="FR-3", country="FR")
+    fr_sub = SubRegionFactory.create(prefix="FR-3A", major=fr_major)
+    MicroRegionFactory.create(
+        region_id="FR-68", slug="fr-68", subregion=fr_sub, boundary=boundary
+    )
+
+    client = Client()
+    ch_data = client.get(reverse("api:regions_geojson") + "?country=ch").json()
+    ch_ids = {f["properties"]["id"] for f in ch_data["features"]}
+    assert "CH-4115" in ch_ids
+    assert "FR-68" not in ch_ids
+
+    fr_data = client.get(reverse("api:regions_geojson") + "?country=fr").json()
+    fr_ids = {f["properties"]["id"] for f in fr_data["features"]}
+    assert "FR-68" in fr_ids
+    assert "CH-4115" not in fr_ids
+
+
+@pytest.mark.django_db
+def test_major_regions_geojson_rejects_unknown_country() -> None:
+    """An unrecognised ?country= value returns 400 for major regions."""
+    client = Client()
+    response = client.get(reverse("api:major_regions_geojson") + "?country=zz")
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_sub_regions_geojson_rejects_unknown_country() -> None:
+    """An unrecognised ?country= value returns 400 for sub-regions."""
+    client = Client()
+    response = client.get(reverse("api:sub_regions_geojson") + "?country=zz")
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_regions_geojson_accepts_country_case_insensitive() -> None:
+    """?country=CH and ?country=ch are treated identically."""
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+        ],
+    }
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", boundary=boundary)
+    client = Client()
+    r_lower = client.get(reverse("api:regions_geojson") + "?country=ch")
+    r_upper = client.get(reverse("api:regions_geojson") + "?country=CH")
+    assert r_lower.status_code == 200
+    assert r_upper.status_code == 200
+    assert r_lower.json() == r_upper.json()
+
+
+@pytest.mark.django_db
+def test_regions_geojson_sets_cache_control() -> None:
+    """The Cache-Control header is set on region GeoJSON responses."""
+    client = Client()
+    response = client.get(reverse("api:regions_geojson") + "?country=ch")
+    assert response.status_code == 200
+    assert "max-age=86400" in response.get("Cache-Control", "")
+
+
+@pytest.mark.django_db
+def test_regions_geojson_query_count() -> None:
+    """Regions GeoJSON for a country issues a bounded number of DB queries."""
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+        ],
+    }
+    ch_major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+    ch_sub = SubRegionFactory.create(prefix="CH-41", major=ch_major)
+    MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=ch_sub, boundary=boundary
+    )
+    MicroRegionFactory.create(
+        region_id="CH-4116", slug="ch-4116", subregion=ch_sub, boundary=boundary
+    )
+
+    client = Client()
+    with CaptureQueriesContext(connection) as ctx:
+        response = client.get(reverse("api:regions_geojson") + "?country=ch")
+    assert response.status_code == 200
+    # One SELECT with select_related joins — single query regardless of feature count.
+    assert len(ctx.captured_queries) <= 2

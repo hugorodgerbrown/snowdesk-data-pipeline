@@ -57,11 +57,22 @@ from .views import (
     _select_default_issue,
 )
 
-# ISO 3166-1 alpha-2 → English country name mapping. Extend when EAWS
-# data for non-Swiss countries lands. Used by the region tooltip breadcrumb.
+# ISO 3166-1 alpha-2 → English country name mapping. Used by the region
+# tooltip breadcrumb and the ?country= filter on the GeoJSON endpoints.
 COUNTRY_NAMES: dict[str, str] = {
     "CH": "Switzerland",
+    "FR": "France",
+    "AT": "Austria",
+    "IT": "Italy",
 }
+
+# Valid values for the mandatory ?country= query param on GeoJSON endpoints.
+# Stored as uppercase ISO-2 codes; the query param is accepted case-insensitively.
+_VALID_GEOJSON_COUNTRIES: frozenset[str] = frozenset(COUNTRY_NAMES)
+
+# Cache lifetime for static region GeoJSON — region geometry is fixture-backed
+# and essentially never changes between deploys.
+_REGION_CACHE_CONTROL = "public, max-age=86400"
 
 logger = logging.getLogger(__name__)
 
@@ -391,21 +402,37 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
 
 def regions_geojson(request: HttpRequest) -> JsonResponse:
     """
-    Return a FeatureCollection of all regions with populated boundaries.
+    Return a FeatureCollection of L4 region polygons for a single country.
 
-    Each feature has ``properties.id`` (region_id) and ``properties.name``
-    alongside the raw boundary geometry. Regions whose ``boundary`` is
-    ``None`` are skipped — there is no geometry to draw.
+    Requires a ``?country=ch|fr|at|it`` query parameter (case-insensitive).
+    Returns 400 on an unrecognised value. Each feature carries
+    ``properties.id``, ``properties.name``, and ``properties.country``.
+    Regions without a boundary are skipped.
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        A JsonResponse with a FeatureCollection payload.
+        A JsonResponse with a FeatureCollection payload, or 400 on bad input.
 
     """
+    country_param = request.GET.get("country", "").upper()
+    if country_param not in _VALID_GEOJSON_COUNTRIES:
+        return JsonResponse(
+            {"error": "invalid_country", "valid": sorted(_VALID_GEOJSON_COUNTRIES)},
+            status=400,
+        )
+
     features: list[dict[str, Any]] = []
-    for region in MicroRegion.objects.exclude(boundary__isnull=True).iterator():
+    qs = (
+        MicroRegion.objects.filter(
+            subregion__major__country=country_param,
+            boundary__isnull=False,
+        )
+        .select_related("subregion__major")
+        .iterator()
+    )
+    for region in qs:
         features.append(
             {
                 "type": "Feature",
@@ -413,35 +440,47 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": {
                     "id": region.region_id,
                     "name": region.name,
+                    "country": region.subregion.major.country,
                 },
             }
         )
-    return JsonResponse(
+    response = JsonResponse(
         {
             "type": "FeatureCollection",
             "features": features,
         }
     )
+    response["Cache-Control"] = _REGION_CACHE_CONTROL
+    return response
 
 
 def major_regions_geojson(request: HttpRequest) -> JsonResponse:
     """
-    Return a FeatureCollection of L1 EAWS major regions with boundaries.
+    Return a FeatureCollection of L1 EAWS major regions for a single country.
 
-    Each feature carries ``properties.prefix`` (e.g. ``CH-4``) and
-    ``properties.name_en`` alongside the boundary geometry computed by
-    ``refresh_eaws_fixtures`` from the union of L4 children. Entries
-    without a boundary are skipped.
+    Requires a ``?country=ch|fr|at|it`` query parameter (case-insensitive).
+    Returns 400 on an unrecognised value. Each feature carries
+    ``properties.prefix``, ``properties.name_en``, and ``properties.country``.
+    Entries without a boundary are skipped.
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        A JsonResponse with a FeatureCollection payload.
+        A JsonResponse with a FeatureCollection payload, or 400 on bad input.
 
     """
+    country_param = request.GET.get("country", "").upper()
+    if country_param not in _VALID_GEOJSON_COUNTRIES:
+        return JsonResponse(
+            {"error": "invalid_country", "valid": sorted(_VALID_GEOJSON_COUNTRIES)},
+            status=400,
+        )
+
     features: list[dict[str, Any]] = []
-    for major in MajorRegion.objects.exclude(boundary__isnull=True).iterator():
+    for major in MajorRegion.objects.filter(
+        country=country_param, boundary__isnull=False
+    ).iterator():
         features.append(
             {
                 "type": "Feature",
@@ -449,33 +488,53 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": {
                     "prefix": major.prefix,
                     "name_en": major.name_en,
+                    "country": major.country,
                 },
             }
         )
-    return JsonResponse(
+    response = JsonResponse(
         {
             "type": "FeatureCollection",
             "features": features,
         }
     )
+    response["Cache-Control"] = _REGION_CACHE_CONTROL
+    return response
 
 
 def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
     """
-    Return a FeatureCollection of L2 EAWS sub-regions with boundaries.
+    Return a FeatureCollection of L2 EAWS sub-regions for a single country.
 
-    Same shape as :func:`major_regions_geojson` — properties expose
-    ``prefix`` (e.g. ``CH-41``) and ``name_en``.
+    Requires a ``?country=ch|fr|at|it`` query parameter (case-insensitive).
+    Returns 400 on an unrecognised value. Each feature carries
+    ``properties.prefix``, ``properties.name_en``, and ``properties.country``.
+    Entries without a boundary are skipped.
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        A JsonResponse with a FeatureCollection payload.
+        A JsonResponse with a FeatureCollection payload, or 400 on bad input.
 
     """
+    country_param = request.GET.get("country", "").upper()
+    if country_param not in _VALID_GEOJSON_COUNTRIES:
+        return JsonResponse(
+            {"error": "invalid_country", "valid": sorted(_VALID_GEOJSON_COUNTRIES)},
+            status=400,
+        )
+
     features: list[dict[str, Any]] = []
-    for sub in SubRegion.objects.exclude(boundary__isnull=True).iterator():
+    qs = (
+        SubRegion.objects.filter(
+            major__country=country_param,
+            boundary__isnull=False,
+        )
+        .select_related("major")
+        .iterator()
+    )
+    for sub in qs:
         features.append(
             {
                 "type": "Feature",
@@ -483,15 +542,18 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": {
                     "prefix": sub.prefix,
                     "name_en": sub.name_en,
+                    "country": sub.major.country,
                 },
             }
         )
-    return JsonResponse(
+    response = JsonResponse(
         {
             "type": "FeatureCollection",
             "features": features,
         }
     )
+    response["Cache-Control"] = _REGION_CACHE_CONTROL
+    return response
 
 
 def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
