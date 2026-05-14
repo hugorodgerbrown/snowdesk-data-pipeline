@@ -52,6 +52,7 @@ from regions.models import (
     SubRegion,
 )
 
+from .season_calendar import build_season_grid
 from .views import (
     _PROBLEM_LABELS,
     _select_default_issue,
@@ -528,6 +529,7 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
         ),
         region_id__iexact=region_id,
     )
+    today = timezone.localdate()
     raw_date = request.GET.get("d")
     if raw_date:
         try:
@@ -535,9 +537,7 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
         except ValueError:
             return JsonResponse({"error": "bad_date"}, status=400)
     else:
-        target_date = timezone.localdate()
-
-    today = timezone.localdate()
+        target_date = today
     # Single RegionDayRating lookup for the headline-rating chip. Falls
     # back to None when the target date has no coverage — the template
     # renders the chip in its no_rating state in that case.
@@ -549,8 +549,6 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     # date via ``?d=``, point at the form-3 dated URL — the historical
     # record. Either way the link skips the 302 hop.
     bulletin_url = region.get_absolute_url(None if raw_date is None else target_date)
-
-    from .season_calendar import build_season_grid
 
     season_calendar = build_season_grid(region, today, selected_date=target_date)
 

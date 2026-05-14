@@ -20,7 +20,9 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -786,9 +788,6 @@ def test_region_summary_query_count():
         max_rating=RegionDayRating.Rating.LOW,
     )
     client = Client()
-    from django.db import connection
-    from django.test.utils import CaptureQueriesContext
-
     with CaptureQueriesContext(connection) as ctx:
         response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200

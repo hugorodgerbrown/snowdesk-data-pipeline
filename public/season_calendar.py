@@ -75,7 +75,11 @@ class SeasonCell:
     tile renders as an inert ``no_rating`` placeholder.
 
     ``is_today`` is set only when the cell date equals today. ``is_selected``
-    is always ``False`` from the builder — selected-day highlighting is applied
+    follows two paths: when ``build_season_grid`` is called with a
+    ``selected_date`` argument (the map-drawer path), the builder sets it
+    server-side for the matching cell. When the grid is rendered on the
+    bulletin-page heatmap, the builder is called without ``selected_date`` so
+    ``is_selected`` defaults to ``False`` for every cell and is then toggled
     client-side after the HTMX swap, keyed off ``data-selected-date`` on the
     grid container and ``data-date`` on each cell anchor/div.
 
