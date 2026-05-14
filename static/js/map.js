@@ -821,10 +821,11 @@ const clearRegionRepaint = () => {
     let popupHistoryOpen = false;
     let popstateInProgress = false;
 
-    // Canonical SLF region-ID shape (e.g. "CH-4115"). Anything else is
-    // rejected before it reaches any href to prevent a malformed GeoJSON
-    // payload turning into an open-redirect / javascript: URL on the client.
-    const REGION_ID_RE = /^[A-Za-z]{2}-[A-Za-z0-9]+$/;
+    // Canonical SLF region-ID shape (e.g. "CH-4115", "AT-02-14",
+    // "IT-32-BZ-15-02"). Anything else is rejected before it reaches any href
+    // to prevent a malformed GeoJSON payload turning into an open-redirect /
+    // javascript: URL on the client.
+    const REGION_ID_RE = /^[A-Za-z]{2}(-[A-Za-z0-9]+)+$/;
 
     // Compute the lng/lat bounding box of a GeoJSON Polygon or MultiPolygon.
     // MapLibre's fitBounds takes [[west, south], [east, north]].
