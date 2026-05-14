@@ -4,9 +4,9 @@ Combines three source files to produce a Django fixture with 4 L1
 ``MajorRegion``, 4 L2 ``SubRegion`` (one placeholder per L1), and 35 L4
 ``MicroRegion`` entries for Metropolitan France:
 
-    sample_data/eaws/FR_micro-regions.geojson  — EAWS L4 IDs + geometry
-    sample_data/eaws/fr_names.json             — EAWS canonical names per FR-NN
-    sample_data/liste-massifs.geojson          — MF massif → mountain grouping
+    reference_data/eaws/FR_micro-regions.geojson  — EAWS L4 IDs + geometry
+    reference_data/eaws/fr_names.json             — EAWS canonical names per FR-NN
+    reference_data/liste-massifs.geojson          — MF massif → mountain grouping
 
 The EAWS ``FR-NN`` ID and the MF integer ``code`` are 1:1
 (``int("FR-68".split("-")[1]) == 68``). EAWS is the canonical source for
@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 # Source / output paths (module-level so tests can monkeypatch them)
 # ---------------------------------------------------------------------------
 
-_BASE_DIR = Path("sample_data")
+_BASE_DIR = Path("reference_data")
 _EAWS_GEOJSON = _BASE_DIR / "eaws" / "FR_micro-regions.geojson"
 _FR_NAMES = _BASE_DIR / "eaws" / "fr_names.json"
 _MF_MASSIFS = _BASE_DIR / "liste-massifs.geojson"

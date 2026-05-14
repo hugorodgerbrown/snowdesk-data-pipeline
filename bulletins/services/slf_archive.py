@@ -1,8 +1,8 @@
 """
 bulletins/services/slf_archive.py — On-disk NDJSON archive of SLF bulletins.
 
-Reading and writing ``sample_data/slf_archive.ndjson``: a single
-NDJSON file holding every bulletin captured by ``fetch_bulletins
+Reading and writing ``bulletins/local_mirrors/slf_archive.ndjson``: a
+single NDJSON file holding every bulletin captured by ``fetch_bulletins
 --stash`` runs. One un-wrapped CAAML record per line (the shape that
 ``fetch_bulletin_page`` returns inside the API's ``bulletins[]`` list,
 **not** the GeoJSON Feature envelope built by ``upsert_bulletin``).

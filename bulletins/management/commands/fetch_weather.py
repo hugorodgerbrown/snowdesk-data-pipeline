@@ -14,15 +14,15 @@ Regions without a centre coordinate are silently skipped (counted in the banner)
 - ``live`` (default) — the real Open-Meteo forecast API.
 - ``local-mirror`` — the development-only view at
   ``/dev/openmeteo-mirror/v1/forecast`` that replays
-  ``sample_data/openmeteo_archive.ndjson``. Requires
+  ``bulletins/local_mirrors/openmeteo_archive.ndjson``. Requires
   ``settings.WEATHER_API_LOCAL_MIRROR_BASE_URL`` (only defined in
   ``development.py``); raises ``CommandError`` otherwise.
 
 ``--stash`` captures every fetched ``(region, date)`` record into
-``sample_data/openmeteo_archive.ndjson`` (deduped by ``(region_id, date)``,
-sorted by ``(region_id, date)``). Independent of ``--commit`` — combine them
-for a full-fidelity capture, or use ``--stash`` alone for a read-only archive
-refresh.
+``bulletins/local_mirrors/openmeteo_archive.ndjson`` (deduped by
+``(region_id, date)``, sorted by ``(region_id, date)``). Independent of
+``--commit`` — combine them for a full-fidelity capture, or use ``--stash``
+alone for a read-only archive refresh.
 
 Usage:
     # Read-only probe for today — no DB writes.
@@ -101,9 +101,10 @@ class Command(BaseCommand):
             help=(
                 "Where to fetch from. 'live' (default) hits the real Open-Meteo "
                 "forecast API; 'local-mirror' hits the development-only view that "
-                "replays sample_data/openmeteo_archive.ndjson. The mirror is only "
-                "available when settings.WEATHER_API_LOCAL_MIRROR_BASE_URL is "
-                "configured (development.py)."
+                "replays bulletins/local_mirrors/openmeteo_archive.ndjson. "
+                "The mirror is only available when "
+                "settings.WEATHER_API_LOCAL_MIRROR_BASE_URL is configured "
+                "(development.py)."
             ),
         )
         parser.add_argument(
@@ -111,10 +112,10 @@ class Command(BaseCommand):
             action="store_true",
             help=(
                 "Append every fetched weather record to "
-                "sample_data/openmeteo_archive.ndjson (deduped by (region_id, date), "
-                "sorted by (region_id, date)). Independent of --commit — combine them "
-                "for a full-fidelity capture, or use --stash alone for a read-only "
-                "archive refresh."
+                "bulletins/local_mirrors/openmeteo_archive.ndjson "
+                "(deduped by (region_id, date), sorted by (region_id, date)). "
+                "Independent of --commit — combine them for a full-fidelity "
+                "capture, or use --stash alone for a read-only archive refresh."
             ),
         )
 

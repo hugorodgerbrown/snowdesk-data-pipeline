@@ -87,7 +87,7 @@ CSP_REPORT_ONLY = True
 # Local SLF mirror (dev only)
 # ---------------------------------------------------------------------------
 # URL of the development-only view at ``bulletins.dev_views.slf_mirror``,
-# which replays ``sample_data/slf_archive.ndjson`` with the same
+# which replays ``bulletins/local_mirrors/slf_archive.ndjson`` with the same
 # limit/offset paging contract as the upstream SLF API. Only defined in
 # development.py so that ``fetch_bulletins --source local-mirror`` errors
 # loudly if anyone tries to run it against a production-like environment.
@@ -100,8 +100,8 @@ SLF_API_LOCAL_MIRROR_URL = config(
 # Local Open-Meteo mirror (dev only)
 # ---------------------------------------------------------------------------
 # Base URL of the development-only view at ``bulletins.dev_views.openmeteo_mirror``,
-# which replays ``sample_data/openmeteo_archive.ndjson`` in an Open-Meteo-
-# compatible response shape. Only defined in development.py so that
+# which replays ``bulletins/local_mirrors/openmeteo_archive.ndjson`` in an
+# Open-Meteo-compatible response shape. Only defined in development.py so that
 # ``fetch_weather --source local-mirror`` and ``backfill_weather --source
 # local-mirror`` error loudly if anyone tries to run them against a
 # production-like environment.

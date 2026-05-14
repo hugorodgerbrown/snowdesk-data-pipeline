@@ -390,7 +390,7 @@ class TestUpsertBulletin:
 
     def test_legacy_2023_fixture_ingests_cleanly(self):
         """The real failing 2023 payload ingests without error after the fix."""
-        fixture_path = Path("sample_data/sample_legacy_no_publication_time.json")
+        fixture_path = Path("tests/fixtures/sample_legacy_no_publication_time.json")
         # Sample fixtures are stored GeoJSON-wrapped; the SLF API delivers
         # the bare ``properties`` payload that ``upsert_bulletin`` consumes.
         raw = json.loads(fixture_path.read_text())["properties"]

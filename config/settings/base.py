@@ -7,6 +7,7 @@ environment-specific values live in development.py / production.py and are
 read from the environment via python-decouple.
 """
 
+import logging
 from datetime import date
 from pathlib import Path
 
@@ -206,7 +207,7 @@ SLF_API_BASE_URL = config(
 # --stash`` runs. NDJSON: one un-wrapped CAAML record per line, sorted
 # ascending by ``validTime.startTime``, deduped by ``bulletinID``. Both
 # the stash writer and the local mirror view read from this path.
-SLF_ARCHIVE_PATH = BASE_DIR / "sample_data" / "slf_archive.ndjson"
+SLF_ARCHIVE_PATH = BASE_DIR / "bulletins" / "local_mirrors" / "slf_archive.ndjson"
 
 # On-disk archive of every Open-Meteo weather record captured by
 # ``fetch_weather --stash`` and ``backfill_weather --stash`` runs.
@@ -214,7 +215,9 @@ SLF_ARCHIVE_PATH = BASE_DIR / "sample_data" / "slf_archive.ndjson"
 # ascending by ``(region_id, date)``, deduped by ``(region_id, date)``
 # with the later ``captured_at`` winning. Both the stash writer and the
 # local Open-Meteo mirror view read from this path.
-OPENMETEO_ARCHIVE_PATH = BASE_DIR / "sample_data" / "openmeteo_archive.ndjson"
+OPENMETEO_ARCHIVE_PATH = (
+    BASE_DIR / "bulletins" / "local_mirrors" / "openmeteo_archive.ndjson"
+)
 
 # ---------------------------------------------------------------------------
 # Observability
@@ -486,9 +489,19 @@ LOGGING = {
             "level": "DEBUG",
             "propagate": False,
         },
+        # Python `warnings.warn(...)` calls are routed here via
+        # `logging.captureWarnings(True)` below, so DeprecationWarning and
+        # friends land in errors.log alongside everything else.
+        "py.warnings": {
+            "handlers": ["console", "file_errors"],
+            "level": "WARNING",
+            "propagate": False,
+        },
     },
     "root": {
         "handlers": ["console", "file_errors"],
         "level": "WARNING",
     },
 }
+
+logging.captureWarnings(True)

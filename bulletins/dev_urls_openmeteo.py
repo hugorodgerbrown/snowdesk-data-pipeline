@@ -7,7 +7,7 @@ Mounted under ``/dev/openmeteo-mirror/`` from ``config/urls.py`` only when
 Provides ``v1/forecast`` and ``v1/archive`` routes that both map to
 ``bulletins.dev_views.openmeteo_mirror``, passing a ``kind`` kwarg to
 distinguish the two endpoint shapes. Both serve the same
-``sample_data/openmeteo_archive.ndjson`` data; the URL difference mirrors
+``bulletins/local_mirrors/openmeteo_archive.ndjson`` data; the URL difference mirrors
 the upstream Open-Meteo API's structure so the fetcher's URL construction
 (``f"{base_url}/forecast"`` / ``f"{base_url}/archive"``) resolves correctly.
 """

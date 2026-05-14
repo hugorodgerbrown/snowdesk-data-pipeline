@@ -16,7 +16,7 @@ Defaults are tuned for the unattended scheduled-run case:
   * No writes happen unless --commit is passed (read-only by default).
   * --source picks the upstream: ``live`` (default, real SLF API) or
     ``local-mirror`` (the dev-only view at ``/dev/slf-mirror/…`` that
-    replays ``sample_data/slf_archive.ndjson``). The mirror lets an
+    replays ``bulletins/local_mirrors/slf_archive.ndjson``). The mirror lets an
     empty DB be re-populated end-to-end through the production fetch
     path against deterministic input — invaluable for tests and
     reproducible local environments.
@@ -152,7 +152,7 @@ class Command(BaseCommand):
             help=(
                 "Where to fetch from. 'live' (default) hits the real SLF "
                 "CAAML API; 'local-mirror' hits the development-only view "
-                "that replays sample_data/slf_archive.ndjson. The mirror "
+                "that replays bulletins/local_mirrors/slf_archive.ndjson. The mirror "
                 "is only available when settings.SLF_API_LOCAL_MIRROR_URL "
                 "is configured (development.py)."
             ),
@@ -162,7 +162,7 @@ class Command(BaseCommand):
             action="store_true",
             help=(
                 "Append every fetched bulletin to "
-                "sample_data/slf_archive.ndjson (deduped by bulletinID, "
+                "bulletins/local_mirrors/slf_archive.ndjson (deduped by bulletinID, "
                 "sorted by validTime.startTime). Independent of --commit "
                 "— combine them for a full-fidelity capture, or use "
                 "--stash alone for a read-only archive refresh."

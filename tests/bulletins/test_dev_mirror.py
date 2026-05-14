@@ -1,7 +1,7 @@
 """
 tests/bulletins/test_dev_mirror.py — Tests for the dev-only SLF mirror view.
 
-The mirror replays ``sample_data/slf_archive.ndjson`` with the same
+The mirror replays ``bulletins/local_mirrors/slf_archive.ndjson`` with the same
 limit/offset paging contract as the upstream SLF API. These tests
 exercise it via the Django test client (DEBUG is True under
 config.settings.development, so the URL is mounted).

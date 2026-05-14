@@ -5,7 +5,7 @@ alpine avalanche-service regions and produces a Django fixture with one L1
 ``MajorRegion`` and multiple L2 ``SubRegion`` / L4 ``MicroRegion``
 entries per region file.
 
-Source files (vendored under sample_data/eaws/):
+Source files (vendored under reference_data/eaws/):
     IT-21_micro-regions.geojson.json  — Piemonte
     IT-23_micro-regions.geojson.json  — Valle d'Aosta
     IT-25_micro-regions.geojson.json  — Lombardia
@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 # Source / output paths (module-level so tests can monkeypatch them)
 # ---------------------------------------------------------------------------
 
-_EAWS_DIR = Path("sample_data") / "eaws"
+_EAWS_DIR = Path("reference_data") / "eaws"
 
 _IT_REGION_CODES = [
     "IT-21",

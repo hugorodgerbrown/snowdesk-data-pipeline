@@ -21,7 +21,7 @@ poetry run python manage.py runserver
 
 In local development, run `fetch_bulletins` against the dev mirror
 (`--source local-mirror`) so you don't hit the live SLF API. The mirror
-replays `sample_data/slf_archive.ndjson` via `/dev/slf-mirror/`. Full
+replays `bulletins/local_mirrors/slf_archive.ndjson` via `/dev/slf-mirror/`. Full
 command catalogue: [docs/management-commands.md](docs/management-commands.md).
 
 ## Data source

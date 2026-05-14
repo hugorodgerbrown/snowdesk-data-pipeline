@@ -11,7 +11,7 @@ Read-only by default. Exits non-zero when mismatches are present and
 drift-detector (e.g. on Render cron).
 
 ``--commit`` performs two writes:
-  1. Patches ``docs/eaws_regions_ch.csv`` in place — only the
+  1. Patches ``reference_data/eaws/CH_micro-regions.csv`` in place — only the
      ``region_name`` column for rows whose ``region_id`` is in the
      mismatch set.
   2. Calls ``scripts.build_regions_fixture.build_fixture(...)`` to
@@ -51,7 +51,7 @@ from regions.models import MicroRegion
 logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-_CSV_PATH = _REPO_ROOT / "docs" / "eaws_regions_ch.csv"
+_CSV_PATH = _REPO_ROOT / "reference_data" / "eaws" / "CH_micro-regions.csv"
 _FIXTURE_PATH = _REPO_ROOT / "regions" / "fixtures" / "eaws_CH.json"
 
 
@@ -61,8 +61,8 @@ class Command(BaseCommand):
     help = (
         "Compare MicroRegion.name against the most-recent RegionBulletin "
         "region_name_at_time (the SLF-authoritative name). Report mismatches. "
-        "With --commit: patch docs/eaws_regions_ch.csv and regenerate the "
-        "regions/fixtures/eaws_CH.json L4 entries. Read-only unless --commit."
+        "With --commit: patch reference_data/eaws/CH_micro-regions.csv and regenerate "
+        "the regions/fixtures/eaws_CH.json L4 entries. Read-only unless --commit."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -71,9 +71,9 @@ class Command(BaseCommand):
             "--commit",
             action="store_true",
             help=(
-                "Patch docs/eaws_regions_ch.csv and regenerate the L4 fixture. "
-                "Without this flag the command only reports mismatches and "
-                "exits non-zero when any are found."
+                "Patch reference_data/eaws/CH_micro-regions.csv and regenerate "
+                "the L4 fixture. Without this flag the command only reports "
+                "mismatches and exits non-zero when any are found."
             ),
         )
 

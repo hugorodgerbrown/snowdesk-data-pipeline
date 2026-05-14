@@ -5,7 +5,7 @@ avalanche-service states and produces a Django fixture with one L1
 ``MajorRegion`` and multiple L2 ``SubRegion`` / L4 ``MicroRegion``
 entries per state file.
 
-Source files (vendored under sample_data/eaws/):
+Source files (vendored under reference_data/eaws/):
     AT-02_micro-regions.geojson.json  — Niederösterreich / Steiermark
     AT-03_micro-regions.geojson.json  — Oberösterreich
     AT-04_micro-regions.geojson.json  — Salzburg (city region)
@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 # Source / output paths (module-level so tests can monkeypatch them)
 # ---------------------------------------------------------------------------
 
-_EAWS_DIR = Path("sample_data") / "eaws"
+_EAWS_DIR = Path("reference_data") / "eaws"
 
 _AT_STATE_CODES = ["AT-02", "AT-03", "AT-04", "AT-05", "AT-06", "AT-07", "AT-08"]
 
