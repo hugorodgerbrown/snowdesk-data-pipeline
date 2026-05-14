@@ -671,6 +671,26 @@ const clearRegionRepaint = () => {
     }
   };
 
+  // SNOW-172: Bridge for the basemapPickerInit IIFE, which lives in a separate
+  // scope and cannot reference countryState / ensureCountryLoaded directly.
+  // The picker dispatches this event; we own the state mutation here.
+  document.addEventListener('snowdesk:country-toggle', (e) => {
+    const { code, next } = e.detail;
+    countryState[code] = next;
+    try {
+      localStorage.setItem(COUNTRY_STORAGE_KEY(code), String(next));
+    } catch (_) { /* private mode */ }
+    if (map) {
+      if (next) {
+        ensureCountryLoaded(code).then(() => {
+          applyCountryFilters();
+        }).catch(() => {});
+      } else {
+        applyCountryFilters();
+      }
+    }
+  });
+
   map.on('load', async () => {
     // Fetch everything in parallel. All requests are independent —
     // geometry, bulletin summaries, resort lists, and the L1/L2 overlay
@@ -1871,23 +1891,14 @@ const clearRegionRepaint = () => {
         const next = item.getAttribute('aria-checked') !== 'true';
         item.setAttribute('aria-checked', next ? 'true' : 'false');
 
-        // SNOW-172: handle country.* toggles separately from tier toggles.
+        // SNOW-172: handle country.* toggles by delegating to the main IIFE
+        // via a CustomEvent. countryState / ensureCountryLoaded / applyCountryFilters
+        // are all scoped to the main IIFE and are not accessible here.
         if (overlayKey.startsWith('country.')) {
           const code = overlayKey.slice(8); // 'country.fr' → 'fr'
-          countryState[code] = next;
-          try {
-            localStorage.setItem(COUNTRY_STORAGE_KEY(code), String(next));
-          } catch (_) { /* private mode */ }
-          if (MAP) {
-            if (next) {
-              // Lazy-fetch if needed, then apply the updated filter.
-              ensureCountryLoaded(code).then(() => {
-                applyCountryFilters();
-              }).catch(() => {});
-            } else {
-              applyCountryFilters();
-            }
-          }
+          document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+            detail: { code, next },
+          }));
           return;
         }
 
