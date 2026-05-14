@@ -213,7 +213,7 @@ class TestMicroRegionsFixture:
         """The CH-1111 region has the correct centre coordinates."""
         call_command("loaddata", "eaws", verbosity=0)
         region = MicroRegion.objects.get(region_id="CH-1111")
-        assert region.name == "Aigle - Yvorne"
+        assert region.name == "Waadtländer Voralpen"  # updated SNOW-178
         assert region.centre is not None
         assert abs(region.centre["lon"] - 6.939685) < 1e-6
         assert abs(region.centre["lat"] - 46.470737) < 1e-6
