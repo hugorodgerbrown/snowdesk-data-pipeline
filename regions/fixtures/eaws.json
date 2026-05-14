@@ -22047,7 +22047,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1111",
-      "name": "Aigle - Yvorne",
+      "name": "Waadtländer Voralpen",
       "slug": "ch_1111",
       "subregion": [
         "CH-11"
@@ -22155,7 +22155,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1112",
-      "name": "Veveyse - Pays-d'Enhaut",
+      "name": "Pays d'Enhaut",
       "slug": "ch_1112",
       "subregion": [
         "CH-11"
@@ -22344,7 +22344,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1113",
-      "name": "Leysin - Villars - Château-d'Oex",
+      "name": "Aigle-Leysin",
       "slug": "ch_1113",
       "subregion": [
         "CH-11"
@@ -22461,7 +22461,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1114",
-      "name": "Les Ormonts - Diablerets",
+      "name": "Bex-Villars",
       "slug": "ch_1114",
       "subregion": [
         "CH-11"
@@ -22638,7 +22638,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1121",
-      "name": "Gruyère - Moléson",
+      "name": "Jaun",
       "slug": "ch_1121",
       "subregion": [
         "CH-11"
@@ -22969,7 +22969,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1122",
-      "name": "Jaun - Abländschen",
+      "name": "Gruyère",
       "slug": "ch_1122",
       "subregion": [
         "CH-11"
@@ -23242,7 +23242,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1211",
-      "name": "Thun - Interlaken",
+      "name": "westliche Berner Voralpen",
       "slug": "ch_1211",
       "subregion": [
         "CH-12"
@@ -23507,7 +23507,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1212",
-      "name": "Brienz - Brünig",
+      "name": "östliche Berner Voralpen",
       "slug": "ch_1212",
       "subregion": [
         "CH-12"
@@ -23976,7 +23976,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1221",
-      "name": "Grindelwald",
+      "name": "Niedersimmental",
       "slug": "ch_1221",
       "subregion": [
         "CH-12"
@@ -24209,7 +24209,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1222",
-      "name": "Lauterbrunnen",
+      "name": "Gstaad",
       "slug": "ch_1222",
       "subregion": [
         "CH-12"
@@ -24368,7 +24368,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1223",
-      "name": "Saanenland",
+      "name": "Wildhorn",
       "slug": "ch_1223",
       "subregion": [
         "CH-12"
@@ -24473,7 +24473,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1224",
-      "name": "Kandertal - Adelboden",
+      "name": "Lenk",
       "slug": "ch_1224",
       "subregion": [
         "CH-12"
@@ -24598,7 +24598,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1225",
-      "name": "Simmental",
+      "name": "Iffigen",
       "slug": "ch_1225",
       "subregion": [
         "CH-12"
@@ -24721,7 +24721,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1226",
-      "name": "Kander - Glacier",
+      "name": "Adelboden",
       "slug": "ch_1226",
       "subregion": [
         "CH-12"
@@ -24891,7 +24891,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1227",
-      "name": "Niesen - Frutigen",
+      "name": "Engstligen",
       "slug": "ch_1227",
       "subregion": [
         "CH-12"
@@ -24952,7 +24952,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1228",
-      "name": "Schilthorn",
+      "name": "Obersimmental",
       "slug": "ch_1228",
       "subregion": [
         "CH-12"
@@ -25089,7 +25089,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1231",
-      "name": "Grimsel - Oberhasli",
+      "name": "Kandersteg",
       "slug": "ch_1231",
       "subregion": [
         "CH-12"
@@ -25303,7 +25303,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1232",
-      "name": "Lötschental",
+      "name": "Blüemlisalp",
       "slug": "ch_1232",
       "subregion": [
         "CH-12"
@@ -25480,7 +25480,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1233",
-      "name": "Guttannen",
+      "name": "Lauterbrunnen",
       "slug": "ch_1233",
       "subregion": [
         "CH-12"
@@ -25637,7 +25637,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1234",
-      "name": "Meiringen - Hasliberg",
+      "name": "Jungfrau - Schilthorn",
       "slug": "ch_1234",
       "subregion": [
         "CH-12"
@@ -25828,7 +25828,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1241",
-      "name": "Brünig - Lungern",
+      "name": "Brienz-Interlaken",
       "slug": "ch_1241",
       "subregion": [
         "CH-12"
@@ -26011,7 +26011,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1242",
-      "name": "Innertkirchen",
+      "name": "Grindelwald",
       "slug": "ch_1242",
       "subregion": [
         "CH-12"
@@ -26127,7 +26127,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1243",
-      "name": "Susten - Gadmental",
+      "name": "Schreckhorn",
       "slug": "ch_1243",
       "subregion": [
         "CH-12"
@@ -26250,7 +26250,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1244",
-      "name": "Melchsee - Sarneraa",
+      "name": "Hasliberg - Rosenlaui",
       "slug": "ch_1244",
       "subregion": [
         "CH-12"
@@ -26370,7 +26370,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1245",
-      "name": "Göscheneralp",
+      "name": "Guttannen",
       "slug": "ch_1245",
       "subregion": [
         "CH-12"
@@ -26475,7 +26475,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1246",
-      "name": "Furka - Urseren",
+      "name": "Gadmertal",
       "slug": "ch_1246",
       "subregion": [
         "CH-12"
@@ -26661,7 +26661,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1247",
-      "name": "Ulrichen - Oberwald",
+      "name": "Grimselpass",
       "slug": "ch_1247",
       "subregion": [
         "CH-12"
@@ -26774,7 +26774,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1311",
-      "name": "Monthey - St-Maurice",
+      "name": "Vouvry",
       "slug": "ch_1311",
       "subregion": [
         "CH-13"
@@ -26919,7 +26919,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-1312",
-      "name": "Fully - Saillon",
+      "name": "Monthey-Val d'Illiez",
       "slug": "ch_1312",
       "subregion": [
         "CH-13"
@@ -27094,7 +27094,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2111",
-      "name": "Urner Hochalpen",
+      "name": "Pilatus",
       "slug": "ch_2111",
       "subregion": [
         "CH-21"
@@ -27251,7 +27251,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2112",
-      "name": "Urner Mittelland",
+      "name": "Schwarzenberg",
       "slug": "ch_2112",
       "subregion": [
         "CH-21"
@@ -27551,7 +27551,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2121",
-      "name": "Engelberg",
+      "name": "Glaubenberg",
       "slug": "ch_2121",
       "subregion": [
         "CH-21"
@@ -27733,7 +27733,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2122",
-      "name": "Melchtal - Frutt",
+      "name": "Engelberg",
       "slug": "ch_2122",
       "subregion": [
         "CH-21"
@@ -27868,7 +27868,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2123",
-      "name": "Sarneraatal",
+      "name": "Melchtal",
       "slug": "ch_2123",
       "subregion": [
         "CH-21"
@@ -28031,7 +28031,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2124",
-      "name": "Pilatus - Vierwaldstättersee",
+      "name": "Gersau",
       "slug": "ch_2124",
       "subregion": [
         "CH-21"
@@ -28181,7 +28181,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2131",
-      "name": "Rigi - Luzern",
+      "name": "Rothenthurm",
       "slug": "ch_2131",
       "subregion": [
         "CH-21"
@@ -28360,7 +28360,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2132",
-      "name": "Hochybrig - Mythen",
+      "name": "Ybrig",
       "slug": "ch_2132",
       "subregion": [
         "CH-21"
@@ -28516,7 +28516,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2133",
-      "name": "Küssnacht - Arth",
+      "name": "Stoos",
       "slug": "ch_2133",
       "subregion": [
         "CH-21"
@@ -28620,7 +28620,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2134",
-      "name": "Muotatal",
+      "name": "Bisistal",
       "slug": "ch_2134",
       "subregion": [
         "CH-21"
@@ -28769,7 +28769,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2211",
-      "name": "Ibergeregg - Ybrig",
+      "name": "Schächental",
       "slug": "ch_2211",
       "subregion": [
         "CH-22"
@@ -28925,7 +28925,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2212",
-      "name": "Stoos - Schwyz",
+      "name": "Uri Rot Stock",
       "slug": "ch_2212",
       "subregion": [
         "CH-22"
@@ -29086,7 +29086,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2221",
-      "name": "Gotthard - Urserntal",
+      "name": "Meiental",
       "slug": "ch_2221",
       "subregion": [
         "CH-22"
@@ -29249,7 +29249,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2222",
-      "name": "Oberalp",
+      "name": "Maderanertal",
       "slug": "ch_2222",
       "subregion": [
         "CH-22"
@@ -29346,7 +29346,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2223",
-      "name": "Piora - Quinto",
+      "name": "nördliches Urseren",
       "slug": "ch_2223",
       "subregion": [
         "CH-22"
@@ -29478,7 +29478,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-2224",
-      "name": "Bedretto Süd",
+      "name": "südliches Urseren",
       "slug": "ch_2224",
       "subregion": [
         "CH-22"
@@ -29613,7 +29613,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3111",
-      "name": "Sernftal - Glarnerland",
+      "name": "Glarus Nord",
       "slug": "ch_3111",
       "subregion": [
         "CH-31"
@@ -29739,7 +29739,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3112",
-      "name": "Klausenpass",
+      "name": "Glarus Süd-Grosstal",
       "slug": "ch_3112",
       "subregion": [
         "CH-31"
@@ -29910,7 +29910,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3113",
-      "name": "Walensee - Flumserberg",
+      "name": "Glarus Süd-Sernftal",
       "slug": "ch_3113",
       "subregion": [
         "CH-31"
@@ -30083,7 +30083,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3114",
-      "name": "Muotatal Ost",
+      "name": "Glarus Mitte",
       "slug": "ch_3114",
       "subregion": [
         "CH-31"
@@ -30263,7 +30263,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3211",
-      "name": "Churfirsten - Toggenburg",
+      "name": "Appenzeller Alpen",
       "slug": "ch_3211",
       "subregion": [
         "CH-32"
@@ -30445,7 +30445,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3221",
-      "name": "Glarus Nord",
+      "name": "Toggenburg",
       "slug": "ch_3221",
       "subregion": [
         "CH-32"
@@ -30724,7 +30724,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3222",
-      "name": "Flumserberg - Weisstannen",
+      "name": "Alpstein - Alvier",
       "slug": "ch_3222",
       "subregion": [
         "CH-32"
@@ -30944,7 +30944,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3223",
-      "name": "Rheintal Süd",
+      "name": "Flumserberg",
       "slug": "ch_3223",
       "subregion": [
         "CH-32"
@@ -31124,7 +31124,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3224",
-      "name": "Prättigau Nord",
+      "name": "Sarganserland",
       "slug": "ch_3224",
       "subregion": [
         "CH-32"
@@ -31267,7 +31267,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-3311",
-      "name": "Appenzell - Alpstein",
+      "name": "Liechtenstein",
       "slug": "ch_3311",
       "subregion": [
         "CH-33"
@@ -31477,7 +31477,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4111",
-      "name": "Monthey - Champéry",
+      "name": "Emosson",
       "slug": "ch_4111",
       "subregion": [
         "CH-41"
@@ -32084,7 +32084,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4114",
-      "name": "Fully - Isérables",
+      "name": "Conthey-Fully",
       "slug": "ch_4114",
       "subregion": [
         "CH-41"
@@ -32688,7 +32688,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4121",
-      "name": "Conthey - Nendaz bas",
+      "name": "Montana",
       "slug": "ch_4121",
       "subregion": [
         "CH-41"
@@ -33505,7 +33505,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4211",
-      "name": "Anniviers - Tourtemagne",
+      "name": "Leukerbad - Lötschental",
       "slug": "ch_4211",
       "subregion": [
         "CH-42"
@@ -33821,7 +33821,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4213",
-      "name": "Baltschieder - Lötschberg",
+      "name": "Konkordia Gebiet",
       "slug": "ch_4213",
       "subregion": [
         "CH-42"
@@ -35773,7 +35773,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-4243",
-      "name": "oberes Goms",
+      "name": "nördliches Obergoms",
       "slug": "ch_4243",
       "subregion": [
         "CH-42"
@@ -36798,7 +36798,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-5121",
-      "name": "Plessur",
+      "name": "Calanda",
       "slug": "ch_5121",
       "subregion": [
         "CH-51"
@@ -37310,7 +37310,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-5124",
-      "name": "Vorderrhein",
+      "name": "Flims",
       "slug": "ch_5124",
       "subregion": [
         "CH-51"
@@ -37539,7 +37539,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-5211",
-      "name": "Flims",
+      "name": "nördliches Tujetsch",
       "slug": "ch_5211",
       "subregion": [
         "CH-52"
@@ -39783,7 +39783,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-6113",
-      "name": "Blenio",
+      "name": "Bleniotal",
       "slug": "ch_6113",
       "subregion": [
         "CH-61"
@@ -40033,7 +40033,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-6114",
-      "name": "Valle Maggia nord",
+      "name": "obere Maggiatäler",
       "slug": "ch_6114",
       "subregion": [
         "CH-61"
@@ -40215,7 +40215,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-6115",
-      "name": "Verzasca",
+      "name": "untere Leventina",
       "slug": "ch_6115",
       "subregion": [
         "CH-61"
@@ -40434,7 +40434,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-6121",
-      "name": "Bosco Gurin - Valle Maggia",
+      "name": "untere Maggiatäler",
       "slug": "ch_6121",
       "subregion": [
         "CH-61"
@@ -40748,7 +40748,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-6122",
-      "name": "Bellinzonese",
+      "name": "Riviera",
       "slug": "ch_6122",
       "subregion": [
         "CH-61"
@@ -41002,7 +41002,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-6131",
-      "name": "Centovalli - Gambarogno",
+      "name": "Luganese",
       "slug": "ch_6131",
       "subregion": [
         "CH-61"
@@ -41670,7 +41670,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-6211",
-      "name": "Mesolcina",
+      "name": "alto Moesano",
       "slug": "ch_6211",
       "subregion": [
         "CH-62"
@@ -41800,7 +41800,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-6212",
-      "name": "Calanca",
+      "name": "basso Moesano",
       "slug": "ch_6212",
       "subregion": [
         "CH-62"
@@ -44449,7 +44449,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-8111",
-      "name": "Genferseegebiet",
+      "name": "Saint-Cergue",
       "slug": "ch_8111",
       "subregion": [
         "CH-81"
@@ -44585,7 +44585,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-8112",
-      "name": "Waadtländer Vorland",
+      "name": "Vallée de Joux",
       "slug": "ch_8112",
       "subregion": [
         "CH-81"
@@ -44859,7 +44859,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-8113",
-      "name": "Freiburger Voralpen",
+      "name": "Yverdon - Bevaix",
       "slug": "ch_8113",
       "subregion": [
         "CH-81"
@@ -45049,7 +45049,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-8114",
-      "name": "Berner Voralpen West",
+      "name": "Val de Travers",
       "slug": "ch_8114",
       "subregion": [
         "CH-81"
@@ -45271,7 +45271,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-8211",
-      "name": "Bernese Mittelland West",
+      "name": "Val de Ruz - Colombier",
       "slug": "ch_8211",
       "subregion": [
         "CH-82"
@@ -45447,7 +45447,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-8212",
-      "name": "Emmental",
+      "name": "Bienne - Neuchâtel",
       "slug": "ch_8212",
       "subregion": [
         "CH-82"
@@ -45577,7 +45577,7 @@
     "model": "regions.microregion",
     "fields": {
       "region_id": "CH-8213",
-      "name": "Bernese Mittelland Ost",
+      "name": "Vallon de Saint-Imier",
       "slug": "ch_8213",
       "subregion": [
         "CH-82"
