@@ -1620,9 +1620,10 @@ def _build_map_url(
         ``"/map/?d=2025-01-20#CH-4115"``.
 
     """
+    base = reverse("public:map")
     if target_date == today:
-        return f"/map/#{region_id}"
-    return f"/map/?d={target_date.isoformat()}#{region_id}"
+        return f"{base}#{region_id}"
+    return f"{base}?d={target_date.isoformat()}#{region_id}"
 
 
 def _bulletin_detail_response(
