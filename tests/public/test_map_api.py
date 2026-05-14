@@ -9,8 +9,8 @@ Covers the endpoints consumed by the /map/ page:
 * ``api:regions_geojson``       — FeatureCollection of L4 region polygons.
 * ``api:major_regions_geojson`` — FeatureCollection of L1 region polygons (SNOW-59).
 * ``api:sub_regions_geojson``   — FeatureCollection of L2 region polygons (SNOW-59).
-* ``api:region_summary``        — structural region tooltip: breadcrumb + resorts,
-                                  no bulletin data dependency (SNOW-174 pivot).
+* ``api:region_summary``        — tooltip with danger-rating chip (?d= aware),
+                                  English breadcrumb, and resort list (SNOW-174).
 """
 
 from __future__ import annotations
@@ -554,7 +554,7 @@ def test_region_summary_includes_geographic_breadcrumb():
         prefix="CH-4", country="CH", name_native="Wallis", name_en="Valais"
     )
     sub = SubRegionFactory.create(
-        prefix="CH-41", major=major, name_native="Lower Valais", name_en="Lower Valais"
+        prefix="CH-41", major=major, name_native="Bas-Valais", name_en="Lower Valais"
     )
     MicroRegionFactory.create(
         region_id="CH-4115",
@@ -566,18 +566,22 @@ def test_region_summary_includes_geographic_breadcrumb():
     response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200
     html = response.json()["html"]
-    # All breadcrumb segments present.
-    assert "CH" in html
-    assert "Wallis" in html
+    # Country name is the English form from COUNTRY_NAMES, not the ISO code.
+    assert "Switzerland" in html
+    # English names for L1 and L2.
+    assert "Valais" in html
     assert "Lower Valais" in html
     assert "Martigny" in html
+    # French/German native names must not appear — the template prefers name_en.
+    assert "Wallis" not in html
+    assert "Bas-Valais" not in html
     # Chevron separator.
     assert "›" in html
     # The breadcrumb paragraph carries all four labels; check order within it.
     breadcrumb_start = html.index("region-tooltip-breadcrumb")
     breadcrumb = html[breadcrumb_start:]
-    assert breadcrumb.index("CH") < breadcrumb.index("Wallis")
-    assert breadcrumb.index("Wallis") < breadcrumb.index("Lower Valais")
+    assert breadcrumb.index("Switzerland") < breadcrumb.index("Valais")
+    assert breadcrumb.index("Valais") < breadcrumb.index("Lower Valais")
     assert breadcrumb.index("Lower Valais") < breadcrumb.index("Martigny")
 
 
@@ -629,7 +633,7 @@ def test_region_summary_unknown_region_returns_404():
 
 @pytest.mark.django_db
 def test_region_summary_query_count():
-    """The tooltip view issues at most 2 DB queries (region join + resorts prefetch)."""
+    """The tooltip view issues at most 3 DB queries."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
         prefix="CH-41", major=major, name_native="Lower Valais"
@@ -642,8 +646,150 @@ def test_region_summary_query_count():
     with CaptureQueriesContext(connection) as ctx:
         response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200
-    # Queries: region + subregion + major join (1), resorts prefetch (1).
-    assert len(ctx.captured_queries) <= 2
+    # Queries: region + subregion + major join (1), resorts prefetch (1),
+    # RegionDayRating lookup (1).
+    assert len(ctx.captured_queries) <= 3
+
+
+@pytest.mark.django_db
+def test_region_summary_accepts_date_query_param():
+    """?d=YYYY-MM-DD is honoured and the chip reflects that day's rating."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    region = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=sub
+    )
+    target_date = dt.date(2026, 1, 15)
+    RegionDayRatingFactory.create(
+        region=region,
+        date=target_date,
+        max_rating=RegionDayRating.Rating.CONSIDERABLE,
+    )
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    html = response.json()["html"]
+    # The chip should carry the considerable rating.
+    assert 'data-level="considerable"' in html
+    # Digit inside the chip.
+    assert ">3<" in html
+
+
+@pytest.mark.django_db
+def test_region_summary_rejects_bad_date():
+    """A malformed ?d= value returns 400 with {"error": "bad_date"}."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=not-a-date"
+    )
+    assert response.status_code == 400
+    assert response.json() == {"error": "bad_date"}
+
+
+@pytest.mark.django_db
+def test_region_summary_includes_headline_rating_chip():
+    """The chip is an <a> wrapping .danger-tile[data-level] linked to the bulletin URL."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    region = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=sub
+    )
+    target_date = dt.date(2026, 1, 15)
+    RegionDayRatingFactory.create(
+        region=region,
+        date=target_date,
+        max_rating=RegionDayRating.Rating.HIGH,
+    )
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    html = response.json()["html"]
+    # The chip anchor carries the test id.
+    assert 'data-testid="region-tooltip-rating-link"' in html
+    # The chip spans carry the expected data-level.
+    assert 'data-level="high"' in html
+    # The digit for high is 4.
+    assert ">4<" in html
+    # The anchor href points at the dated bulletin URL.
+    assert "/ch-4115/" in html
+    assert "2026-01-15" in html
+
+
+@pytest.mark.django_db
+def test_region_summary_chip_falls_back_to_no_rating():
+    """A region with no RegionDayRating row renders the chip in no_rating state."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
+
+    client = Client()
+    # Use a date far in the past where no rating exists.
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2000-01-01"
+    )
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert 'data-level="no_rating"' in html
+
+
+@pytest.mark.django_db
+def test_region_summary_breadcrumb_uses_english_names():
+    """All four breadcrumb levels render in English."""
+    major = MajorRegionFactory.create(
+        prefix="CH-4", country="CH", name_native="Wallis", name_en="Valais"
+    )
+    sub = SubRegionFactory.create(
+        prefix="CH-41",
+        major=major,
+        name_native="Bas-Valais",
+        name_en="Lower Valais",
+    )
+    MicroRegionFactory.create(
+        region_id="CH-4115",
+        name="Martigny-Verbier",
+        slug="ch-4115",
+        subregion=sub,
+    )
+
+    client = Client()
+    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    assert response.status_code == 200
+    html = response.json()["html"]
+
+    # All four English labels present.
+    assert "Switzerland" in html
+    assert "Valais" in html
+    assert "Lower Valais" in html
+    assert "Martigny-Verbier" in html
+
+    # Native-language names must not appear.
+    assert "Wallis" not in html
+    assert "Bas-Valais" not in html
+
+    # Order: Switzerland › Valais › Lower Valais › Martigny-Verbier.
+    breadcrumb_start = html.index("region-tooltip-breadcrumb")
+    bc = html[breadcrumb_start:]
+    assert bc.index("Switzerland") < bc.index("Valais")
+    assert bc.index("Valais") < bc.index("Lower Valais")
+    assert bc.index("Lower Valais") < bc.index("Martigny-Verbier")
 
 
 # ---------------------------------------------------------------------------
