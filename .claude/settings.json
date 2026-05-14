@@ -25,9 +25,8 @@
     ]
   },
   "hooks": {
-    "PostToolUse": [
+    "SessionStart": [
       {
-        "matcher": "EnterWorktree",
         "hooks": [
           {
             "type": "command",
