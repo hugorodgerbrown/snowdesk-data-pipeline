@@ -45,7 +45,7 @@
                         >
                             <a
                                 href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
-                                class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}"
+                                class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
                                 data-date="{{ cell.date|date:'Y-m-d' }}"
                                 data-rating-min="{{ cell.min_rating_key }}"
                                 data-rating-max="{{ cell.max_rating_key }}"
@@ -59,7 +59,7 @@
                             data-month-parity="{{ cell.month_parity }}"
                         >
                             <div
-                                class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}"
+                                class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
                                 data-date="{{ cell.date|date:'Y-m-d' }}"
                                 data-rating-min="{{ cell.min_rating_key }}"
                                 data-rating-max="{{ cell.max_rating_key }}"

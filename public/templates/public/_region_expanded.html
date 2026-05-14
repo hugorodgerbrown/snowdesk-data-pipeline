@@ -3,50 +3,133 @@ public/templates/public/_region_expanded.html — Expanded-state body for
 the region sheet on /map/.
 
 Rendered server-side by ``public.api.region_summary`` and injected into
-the sheet's expanded container by ``static/js/map.js``. Composes the
-shared ``_rating_block.html`` partial per render-model trait so the
-map sheet and the bulletin page render hazard blocks through the same
-code path — future tweaks to the partial propagate automatically.
+the sheet's expanded container by ``static/js/map.js``.
+
+Shows structural region information: a headline-rating shortcut chip for
+the currently displayed date, a geographic breadcrumb (SNOW-174), the
+list of linked resorts, and the full season heatmap. Does not depend on
+bulletin content beyond the RegionDayRating row for the target date.
 
 Expects the following variables in scope:
-  rm            — the bulletin's render_model dict, post-enrichment
-                  (see ``public.views.enrich_render_model``).
-  bulletin_url  — pre-resolved URL for the full bulletin page.
-
-The SLF source/feedback line at the bottom is required by the SLF
-data licence — see SNOW-30. Rendered on every map-sheet expansion
-so the data credit is visible at the surface where users consume
-bulletin content.
+  region         — the MicroRegion instance, with subregion__major
+                   select_related and resorts prefetch_related.
+  bulletin_url   — pre-resolved URL for the full bulletin page.
+  day_rating     — RegionDayRating for the target date, or None.
+  season_calendar — SeasonGrid built by build_season_grid.
 {% endcomment %}
-{% load i18n snowdesk_time %}
+{% load i18n %}
 
 <div class="region-expanded">
-    {% if problem_cards %}
-        {% for card in problem_cards %}
-            {% include "public/_rating_block.html" with card=card %}
-        {% endfor %}
-    {% else %}
-        <p class="region-expanded-empty">
-            {% trans "No avalanche problems reported." %}
-        </p>
-    {% endif %}
-    <a class="sheet-cta" href="{{ bulletin_url }}">
-        {% trans "Open full bulletin →" %}
-    </a>
-    <div class="region-expanded-attribution" data-testid="expanded-slf-attribution">
-        <span>
-            {% trans "Source:" %}
-            <a href="https://www.slf.ch" target="_blank" rel="noopener">{% trans "SLF" %}</a>
-            {% if rm.metadata.publication_time %}
-                &middot; {% blocktrans with t=rm.metadata.publication_time|parse_iso|date:"j M H:i" trimmed %}Published
-                    {{ t }} UTC{% endblocktrans %}
+    {% comment %}
+    Headline-rating shortcut: a bulletin link chip for the displayed date.
+    When day_rating is None or max_rating is "no_rating" the chip renders in
+    its neutral no_rating state. For variable days (min != max), we use the
+    max rating for the chip colour (the higher level dominates visually).
+    {% endcomment %}
+    {% if day_rating and day_rating.max_rating != "no_rating" %}
+        {% with level=day_rating.max_rating %}
+            {% if level == "low" %}
+                {% with digit="1" %}
+                    <a
+                        href="{{ bulletin_url }}"
+                        class="region-expanded-rating-link"
+                        aria-label="{% trans 'Open bulletin' %}"
+                        data-testid="region-expanded-rating-link"
+                    >
+                        <span class="danger-tile" data-level="{{ level }}">{{ digit }}</span>
+                    </a>
+                {% endwith %}
+            {% elif level == "moderate" %}
+                {% with digit="2" %}
+                    <a
+                        href="{{ bulletin_url }}"
+                        class="region-expanded-rating-link"
+                        aria-label="{% trans 'Open bulletin' %}"
+                        data-testid="region-expanded-rating-link"
+                    >
+                        <span class="danger-tile" data-level="{{ level }}">{{ digit }}</span>
+                    </a>
+                {% endwith %}
+            {% elif level == "considerable" %}
+                {% with digit="3" %}
+                    <a
+                        href="{{ bulletin_url }}"
+                        class="region-expanded-rating-link"
+                        aria-label="{% trans 'Open bulletin' %}"
+                        data-testid="region-expanded-rating-link"
+                    >
+                        <span class="danger-tile" data-level="{{ level }}">{{ digit }}</span>
+                    </a>
+                {% endwith %}
+            {% elif level == "high" %}
+                {% with digit="4" %}
+                    <a
+                        href="{{ bulletin_url }}"
+                        class="region-expanded-rating-link"
+                        aria-label="{% trans 'Open bulletin' %}"
+                        data-testid="region-expanded-rating-link"
+                    >
+                        <span class="danger-tile" data-level="{{ level }}">{{ digit }}</span>
+                    </a>
+                {% endwith %}
+            {% elif level == "very_high" %}
+                {% with digit="5" %}
+                    <a
+                        href="{{ bulletin_url }}"
+                        class="region-expanded-rating-link"
+                        aria-label="{% trans 'Open bulletin' %}"
+                        data-testid="region-expanded-rating-link"
+                    >
+                        <span class="danger-tile" data-level="{{ level }}">{{ digit }}</span>
+                    </a>
+                {% endwith %}
             {% endif %}
-        </span>
+        {% endwith %}
+    {% else %}
         <a
-            href="https://pro.slf.ch/reply/public/#/"
-            target="_blank"
-            rel="noopener"
-            data-testid="slf-feedback-link"
-        >{% trans "Report observations ↗" %}</a>
+            href="{{ bulletin_url }}"
+            class="region-expanded-rating-link"
+            aria-label="{% trans 'Open bulletin' %}"
+            data-testid="region-expanded-rating-link"
+        >
+            <span class="danger-tile" data-level="no_rating">–</span>
+        </a>
+    {% endif %}
+
+    {% comment %}
+    Geographic breadcrumb: country › major region › sub-region › micro-region.
+    {% endcomment %}
+    <p class="region-expanded-breadcrumb" data-testid="region-expanded-breadcrumb">
+        {{ region.subregion.major.country }}
+        <span aria-hidden="true"> › </span>
+        {{ region.subregion.major.name_native }}
+        <span aria-hidden="true"> › </span>
+        {{ region.subregion.name_native }}
+        <span aria-hidden="true"> › </span>
+        {{ region.name }}
+    </p>
+
+    {% comment %}
+    Resort list: alphabetical, comma-separated. dictsort handles ordering
+    from the prefetch cache without an extra query.
+    {% endcomment %}
+    <div class="region-expanded-resorts" data-testid="region-expanded-resorts">
+        {% with resorts=region.resorts.all|dictsort:"name" %}
+            {% if resorts %}
+                {% for resort in resorts %}
+                    {{ resort.name }}{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            {% else %}
+                <p class="region-expanded-empty">{% trans "No resorts in this region." %}</p>
+            {% endif %}
+        {% endwith %}
     </div>
+
+    {% comment %}
+    Season heatmap — the partial expects ``season_calendar`` and ``region``
+    in scope; both are passed by region_summary.
+    {% endcomment %}
+    {% if season_calendar %}
+        {% include "public/partials/_season_calendar.html" %}
+    {% endif %}
 </div>
