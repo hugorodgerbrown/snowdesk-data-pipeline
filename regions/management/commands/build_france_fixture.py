@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import logging
 from argparse import ArgumentParser
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -274,7 +275,9 @@ def _bbox_from_geometry(geometry: dict[str, Any]) -> list[float]:
     return [min(lons), min(lats), max(lons), max(lats)]
 
 
-def _iter_coords_from_geometry(geometry: dict[str, Any]) -> Any:
+def _iter_coords_from_geometry(
+    geometry: dict[str, Any],
+) -> Iterator[tuple[float, float]]:
     """Yield every ``(lon, lat)`` pair from a GeoJSON geometry."""
     geo_type: str = geometry["type"]
     if geo_type == "Polygon":
@@ -295,7 +298,9 @@ def _centre_from_children(children: list[dict[str, Any]]) -> dict[str, float]:
     return {"lon": sum(lons) / len(lons), "lat": sum(lats) / len(lats)}
 
 
-def _iter_coords(children: list[dict[str, Any]]) -> Any:
+def _iter_coords(
+    children: list[dict[str, Any]],
+) -> Iterator[tuple[float, float]]:
     """Yield every ``(lon, lat)`` from the children's boundary geometries."""
     for child in children:
         boundary = child.get("boundary")

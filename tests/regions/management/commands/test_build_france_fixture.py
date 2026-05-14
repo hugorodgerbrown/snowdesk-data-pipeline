@@ -221,7 +221,7 @@ class TestBuildFranceFixtureCommit:
         majors = [e for e in entries if e["model"] == "regions.majorregion"]
         assert all(e["fields"]["country"] == "FR" for e in majors)
 
-    def test_commit_l4_fr68_entry_shape(
+    def test_commit_l4_fr64_entry_shape(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """L4 micro-region FR-64 has the expected region_id, name, and subregion FK."""
