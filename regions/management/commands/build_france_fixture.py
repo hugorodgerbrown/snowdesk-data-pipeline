@@ -204,6 +204,13 @@ def _build_entries(
         major_prefix, sub_prefix = _MOUNTAIN_PREFIXES[mountain]
         children = l4_by_mountain[mountain]
 
+        if not children:
+            logger.warning(
+                "build_france_fixture: no L4 children for mountain %r — skipping L1/L2",
+                mountain,
+            )
+            continue
+
         centre = _centre_from_children(children)
         bbox = _bbox_from_children(children)
         boundary = _boundary_from_children(children)
