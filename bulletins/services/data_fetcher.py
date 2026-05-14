@@ -270,20 +270,38 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
     if not created:
         RegionBulletin.objects.filter(bulletin=bulletin).delete()
 
+    linked_count = 0
+    skipped_regions: list[str] = []
     for raw_region in raw_regions:
-        region = _get_region(raw_region["regionID"])
+        region_id = raw_region["regionID"]
+        try:
+            region = _get_region(region_id)
+        except UnknownRegionError:
+            skipped_regions.append(region_id)
+            continue
         RegionBulletin.objects.create(
             bulletin=bulletin,
             region=region,
             region_name_at_time=raw_region["name"],
         )
+        linked_count += 1
+
+    if skipped_regions:
+        logger.warning(
+            "Bulletin %s: %d/%d region(s) skipped — not in fixtures: %s",
+            bulletin_id,
+            len(skipped_regions),
+            len(raw_regions),
+            ", ".join(sorted(skipped_regions)),
+        )
 
     action = "Created" if created else "Updated"
     logger.debug(
-        "%s bulletin %s (issued %s, %d regions)",
+        "%s bulletin %s (issued %s, %d/%d regions linked)",
         action,
         bulletin_id,
         defaults["issued_at"],
+        linked_count,
         len(raw_regions),
     )
 

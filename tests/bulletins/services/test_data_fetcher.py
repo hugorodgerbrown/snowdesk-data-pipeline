@@ -313,15 +313,38 @@ class TestUpsertBulletin:
         )
         assert region_ids == ["CH-4115", "CH-7111"]
 
-    def test_raises_on_unknown_region(self):
-        """upsert_bulletin raises UnknownRegionError for unseeded region_ids."""
+    def test_skips_unknown_region_with_warning(self):
+        """upsert_bulletin skips unseeded region_ids and completes successfully.
+
+        EUREGIO bulletins may reference regions not yet in the fixture set.
+        Rather than aborting the entire bulletin, upsert_bulletin logs a
+        WARNING and links only the regions it can resolve.
+        """
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin(
             regions=[{"regionID": "CH-XXXX", "name": "Nonexistent"}],
         )
-        with pytest.raises(UnknownRegionError) as exc_info:
-            upsert_bulletin(raw, run)
-        assert "CH-XXXX" in str(exc_info.value)
+        created = upsert_bulletin(raw, run)
+
+        assert created is True
+        # No RegionBulletin links for the unknown region
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert bulletin.regions.count() == 0
+
+    def test_unknown_region_warning_partially_linked(self):
+        """When a bulletin has mixed known/unknown regions, only known are linked."""
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin(
+            regions=[
+                {"regionID": "CH-4115", "name": "Piz Buin"},
+                {"regionID": "CH-XXXX", "name": "Nonexistent"},
+            ],
+        )
+        upsert_bulletin(raw, run)
+
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        linked_ids = list(bulletin.regions.values_list("region_id", flat=True))
+        assert linked_ids == ["CH-4115"]
 
     def test_stores_region_name_at_time(self):
         """RegionBulletin records store the name from the bulletin."""
