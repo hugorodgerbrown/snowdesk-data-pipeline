@@ -1450,6 +1450,26 @@ const clearRegionRepaint = () => {
       loadRegionSummary(props.regionID, dateKey);
     });
 
+    // SNOW-174: Heatmap cell clicks inside the expanded drawer update the
+    // map choropleth via the scrubber rather than navigating to the
+    // bulletin page. Delegated click on #sheet-expanded catches every
+    // .calendar-cell[data-date] click, prevents the default <a> navigation,
+    // and dispatches snowdesk:date-request so the scrubber IIFE picks it up
+    // via commitDate — which moves the thumb, repaints the choropleth, and
+    // fires snowdesk:date-changed to refresh the open sheet.
+    if (sheetExpanded) {
+      sheetExpanded.addEventListener('click', (e) => {
+        const el = e.target.closest('.calendar-cell[data-date]');
+        if (!el) return;
+        e.preventDefault();
+        const date = el.dataset.date;
+        if (!date) return;
+        document.dispatchEvent(new CustomEvent('snowdesk:date-request', {
+          detail: { date, source: 'drawer-heatmap' },
+        }));
+      });
+    }
+
     // ---- Initial-load hash → sheet (SNOW-39) ----
     //
     // If the user landed on ``/map/#CH-xxxx``, open the sheet for that
@@ -1669,6 +1689,17 @@ const clearRegionRepaint = () => {
     const d = new URL(location.href).searchParams.get('d');
     const target = d && /^\d{4}-\d{2}-\d{2}$/.test(d) && isInSeason(d) ? d : todayKey;
     commitDate(target, { silent: true });
+  });
+
+  // SNOW-174: Bridge for drawer heatmap cell clicks. The main IIFE dispatches
+  // snowdesk:date-request when the user clicks a .calendar-cell inside the
+  // expanded drawer. We route it through commitDate here so the thumb moves,
+  // the choropleth repaints, the URL updates, and snowdesk:date-changed fires
+  // to refresh the open sheet — closing the loop without duplicating any of
+  // commitDate's side effects.
+  document.addEventListener('snowdesk:date-request', (e) => {
+    const d = e.detail && e.detail.date;
+    if (d) commitDate(d);
   });
 })();
 
