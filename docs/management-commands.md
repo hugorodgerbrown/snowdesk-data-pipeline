@@ -122,7 +122,7 @@ poetry run python manage.py dump_resorts_fixture --commit  # write the fixture
 # ingest). Reports mismatches between the stored MicroRegion.name and the
 # most-recent SLF name. Regions with no bulletin coverage are skipped.
 # Exits non-zero when mismatches are present and --commit was not passed.
-# --commit patches docs/eaws_regions_ch.csv (name column only) and
+# --commit patches sample_data/eaws/CH_micro-regions.csv (name column only) and
 # regenerates regions/fixtures/eaws.json L4 entries. Then run:
 #   refresh_eaws_fixtures --commit  (re-derive L1/L2 geometry)
 #   loaddata regions/fixtures/eaws.json
