@@ -14,8 +14,8 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/major-regions.geojson``           — FeatureCollection of L1 region polygons.
 * ``/api/sub-regions.geojson``             — FeatureCollection of L2 region polygons.
 * ``/api/region/<region_id>/summary/``     — pre-rendered tooltip HTML for the
-  MapLibre Popup anchored to the region's bbox centre; shows structural region
-  info (breadcrumb, resorts) with no bulletin data dependency.
+  MapLibre Popup anchored to the region's bbox centre; shows the day's danger
+  rating chip (``?d=YYYY-MM-DD``-aware), breadcrumb, and resort list.
 * ``/api/offline-manifest/map/``           — precache manifest for the offline CTA.
 
 Flag-gated endpoints powering the in-map resort editor (SNOW-74,
@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date
 from typing import Any
 
 import waffle
@@ -55,6 +56,12 @@ from .views import (
     _PROBLEM_LABELS,
     _select_default_issue,
 )
+
+# ISO 3166-1 alpha-2 → English country name mapping. Extend when EAWS
+# data for non-Swiss countries lands. Used by the region tooltip breadcrumb.
+COUNTRY_NAMES: dict[str, str] = {
+    "CH": "Switzerland",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -297,8 +304,8 @@ def season_ratings(request: HttpRequest) -> JsonResponse:
         .order_by("date", "region__region_id")
     )
     payload: dict[str, dict[str, int]] = {}
-    for date, region_id, rating in rows:
-        payload.setdefault(date.isoformat(), {})[region_id] = _RATING_TO_INT[rating]
+    for row_date, region_id, rating in rows:
+        payload.setdefault(row_date.isoformat(), {})[region_id] = _RATING_TO_INT[rating]
     return JsonResponse(payload)
 
 
@@ -497,8 +504,14 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
 
     The single ``html`` key is a server-rendered snippet injected into a
     ``maplibregl.Popup`` anchored to the region's bbox centre on ``/map/``.
-    Content is structural region metadata only (name, geographic breadcrumb,
-    resort list) — no bulletin data, no date dependency.
+    Content includes the day's danger-rating chip, the geographic breadcrumb,
+    and the resort list.
+
+    Query parameters:
+        d (optional): ISO date string ``YYYY-MM-DD``. When supplied the chip
+            reflects that day's ``RegionDayRating`` and the bulletin URL is
+            dated. Returns 400 with ``{"error": "bad_date"}`` on a malformed
+            value. Defaults to today when absent.
 
     Returns 404 when the region_id is unknown.
 
@@ -510,17 +523,40 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
         A JsonResponse with a single ``html`` key containing the tooltip markup.
 
     """
+    raw_date = request.GET.get("d")
+    if raw_date is not None:
+        try:
+            target_date = date.fromisoformat(raw_date)
+        except ValueError:
+            return JsonResponse({"error": "bad_date"}, status=400)
+    else:
+        target_date = timezone.localdate()
+
     region = get_object_or_404(
         MicroRegion.objects.select_related("subregion__major").prefetch_related(
             "resorts"
         ),
         region_id__iexact=region_id,
     )
+
+    day_rating = RegionDayRating.objects.filter(region=region, date=target_date).first()
+
+    bulletin_url = region.get_absolute_url(None if raw_date is None else target_date)
+
+    country_name = COUNTRY_NAMES.get(
+        region.subregion.major.country, region.subregion.major.country
+    )
+
     return JsonResponse(
         {
             "html": render_to_string(
                 "public/_region_tooltip.html",
-                {"region": region},
+                {
+                    "region": region,
+                    "day_rating": day_rating,
+                    "bulletin_url": bulletin_url,
+                    "country_name": country_name,
+                },
                 request=request,
             ),
         }
