@@ -219,6 +219,32 @@ OPENMETEO_ARCHIVE_PATH = (
     BASE_DIR / "bulletins" / "local_mirrors" / "openmeteo_archive.ndjson"
 )
 
+# EUREGIO/ALBINA bulletin API. The CDN publishes per-date, per-region files
+# at ``{base}/{date}/{date}_{region}_en_CAAMLv6.json``. Each file is a JSON
+# array of bulletins (same shape the SLF list API returns).
+EUREGIO_API_BASE_URL = config(
+    "EUREGIO_API_BASE_URL",
+    default="https://static.avalanche.report/bulletins",
+)
+
+# URL served by the ``euregio_mirror`` dev view (``dev/euregio-mirror/``).
+# The fetcher service uses this when ``--source local-mirror`` is passed.
+EUREGIO_API_LOCAL_MIRROR_URL = config(
+    "EUREGIO_API_LOCAL_MIRROR_URL",
+    default="http://localhost:8000/dev/euregio-mirror",
+)
+
+# On-disk archive of EUREGIO bulletins captured from the ALBINA CDN.
+# NDJSON: one unwrapped CAAML record per line; deduped by ``bulletinID``.
+EUREGIO_ARCHIVE_PATH = (
+    BASE_DIR / "bulletins" / "local_mirrors" / "euregio_archive.ndjson"
+)
+
+# EUREGIO region identifiers covered by the fetcher. These map to the three
+# top-level ALBINA CDN paths: Tyrol (AT-07), South Tyrol (IT-32-BZ), and
+# Trentino (IT-32-TN).
+EUREGIO_REGIONS: tuple[str, ...] = ("AT-07", "IT-32-BZ", "IT-32-TN")
+
 # ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------
