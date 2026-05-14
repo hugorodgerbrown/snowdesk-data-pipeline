@@ -3,12 +3,14 @@ tests/regions/test_italy_fixture.py
 
 Smoke tests that load regions/fixtures/eaws_IT.json into the test database
 and verify the expected row counts, FK relationships, and spot-check values.
+Names are now resolved from EAWS it/en.json (no more placeholder IDs).
 """
 
 from __future__ import annotations
 
 import pytest
 from django.core.management import call_command
+from django.db.models import F
 
 from regions.models import MajorRegion, MicroRegion
 
@@ -43,12 +45,13 @@ def test_italy_fixture_region_prefixes() -> None:
 
 @pytest.mark.django_db
 def test_italy_fixture_it32bz_spot_check() -> None:
-    """IT-32-BZ-01 loads with the expected slug and its L2 is its own 1:1 parent."""
+    """IT-32-BZ-01 loads with the expected slug and canonical name."""
     call_command("loaddata", "regions/fixtures/eaws_IT.json", verbosity=0)
 
     region = MicroRegion.objects.get(region_id="IT-32-BZ-01")
     assert region.slug == "it-32-bz-01"
-    assert region.name == "IT-32-BZ-01"
+    # Name comes from EAWS it.json — no longer a placeholder ID.
+    assert region.name != "IT-32-BZ-01"
     # 1:1 synthetic L2: subregion prefix == region_id
     assert region.subregion.prefix == "IT-32-BZ-01"
     assert region.subregion.major.prefix == "IT-32-BZ"
@@ -73,3 +76,33 @@ def test_italy_fixture_fk_relationships() -> None:
         assert region.subregion is not None
         assert region.major_region is not None
         assert region.major_region.country == "IT"
+
+
+@pytest.mark.django_db
+def test_italy_fixture_canonical_l1_names() -> None:
+    """L1 MajorRegions have canonical EAWS names, not placeholder IDs.
+
+    EAWS en.json uses the Italian regional name 'Piemonte' for IT-21 in
+    both the Italian and English files — not 'Piedmont'. This is correct
+    EAWS upstream behaviour.
+    """
+    call_command("loaddata", "regions/fixtures/eaws_IT.json", verbosity=0)
+
+    it21 = MajorRegion.objects.get(prefix="IT-21")
+    assert it21.name_native == "Piemonte"
+    assert it21.name_en == "Piemonte"
+
+
+@pytest.mark.django_db
+def test_italy_fixture_no_placeholder_names() -> None:
+    """No L4 MicroRegion name should equal its region_id (no more placeholders)."""
+    call_command("loaddata", "regions/fixtures/eaws_IT.json", verbosity=0)
+
+    placeholders = MicroRegion.objects.filter(
+        subregion__major__country="IT",
+        name=F("region_id"),
+    )
+    assert placeholders.count() == 0, (
+        f"Found {placeholders.count()} placeholder names: "
+        f"{list(placeholders.values_list('region_id', flat=True)[:5])}"
+    )

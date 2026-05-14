@@ -1,11 +1,19 @@
 """
 scripts/build_regions_fixture.py — Builds the MicroRegion slice of eaws_CH.json.
 
-Reads reference_data/eaws/CH_micro-regions.csv and produces a Django fixture
-file for the
-regions.MicroRegion model. Each record omits pk and uuid (so Django assigns them)
-and sets created_at/updated_at to 2026-04-13T00:00:00Z to match the existing
+Reads reference_data/slf/CH_micro-regions.csv and produces fixture entries for
+the regions.MicroRegion model.  The script reads the existing eaws_CH.json
+fixture, retains all non-MicroRegion rows (L1 MajorRegion and L2 SubRegion,
+which are hand-maintained by refresh_eaws_fixtures), and replaces only the
+regions.microregion entries.
+
+Each MicroRegion record omits pk and uuid (so Django assigns them) and sets
+created_at/updated_at to 2026-04-13T00:00:00Z to match the existing
 resorts.json fixture pattern.
+
+L4 names are resolved via ``regions.names.lookup(..., "de")`` from the
+vendored EAWS ``reference_data/eaws/names/de.json`` (CC0), falling back to
+the CSV ``region_name`` column when EAWS has no entry for that key.
 
 Boundary polygon rings are defensively closed (first position appended as
 last if missing) so the fixture always satisfies RFC 7946 §3.1.6, even if
@@ -33,8 +41,32 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CSV_PATH = REPO_ROOT / "reference_data" / "eaws" / "CH_micro-regions.csv"
+CSV_PATH = REPO_ROOT / "reference_data" / "slf" / "CH_micro-regions.csv"
 FIXTURE_PATH = REPO_ROOT / "regions" / "fixtures" / "eaws_CH.json"
+
+# EAWS canonical German-language names for L4 regions. Loaded lazily on first use.
+_EAWS_NAMES_DE_PATH = REPO_ROOT / "reference_data" / "eaws" / "names" / "de.json"
+_eaws_names_de: dict[str, str] | None = None
+
+
+def _get_eaws_name_de(region_id: str) -> str | None:
+    """Return the EAWS canonical German name for *region_id*, or ``None`` on miss.
+
+    Loads ``reference_data/eaws/names/de.json`` on first call and caches the
+    result in ``_eaws_names_de``.
+
+    Args:
+        region_id: EAWS region identifier (e.g. ``"CH-3221"``).
+
+    Returns:
+        Human-readable German name string, or ``None`` if not found.
+
+    """
+    global _eaws_names_de  # noqa: PLW0603 — module-level cache; script context, not importable library
+    if _eaws_names_de is None:
+        _eaws_names_de = json.loads(_EAWS_NAMES_DE_PATH.read_text(encoding="utf-8"))
+    return _eaws_names_de.get(region_id)
+
 
 CREATED_AT = "2026-04-13T00:00:00Z"
 UPDATED_AT = "2026-04-13T00:00:00Z"
@@ -112,7 +144,12 @@ def _compute_neighbour_graph(
 
 def build_fixture(csv_path: Path, fixture_path: Path) -> None:
     """
-    Read the CSV and write a Django JSON fixture for regions.MicroRegion.
+    Read the CSV and write the MicroRegion slice back into eaws_CH.json.
+
+    Reads the existing ``fixture_path`` to retain any non-MicroRegion rows
+    (L1 MajorRegion and L2 SubRegion entries, which are hand-maintained by
+    ``refresh_eaws_fixtures``). Only the ``regions.microregion`` entries are
+    replaced — derived from the CSV with EAWS de.json name overrides.
 
     Args:
         csv_path: Path to the source CSV file.
@@ -153,15 +190,17 @@ def build_fixture(csv_path: Path, fixture_path: Path) -> None:
     if isolated:
         logger.warning("Regions with zero neighbours: %s", isolated)
 
-    records: list[dict[str, Any]] = []
+    microregion_records: list[dict[str, Any]] = []
     for row in rows:
         region_id = row["region_id"]
-        records.append(
+        # Prefer EAWS de.json canonical name; fall back to CSV region_name.
+        name = _get_eaws_name_de(region_id) or row["name"]
+        microregion_records.append(
             {
                 "model": "regions.microregion",
                 "fields": {
                     "region_id": region_id,
-                    "name": row["name"],
+                    "name": name,
                     "slug": row["slug"],
                     # Parent L2 sub-region natural key (region_id[:5]).
                     # The referenced SubRegion must exist in
@@ -178,12 +217,27 @@ def build_fixture(csv_path: Path, fixture_path: Path) -> None:
             }
         )
 
+    # Retain hand-maintained L1/L2 entries from the existing fixture;
+    # replace only the regions.microregion slice.
+    existing: list[dict[str, Any]] = []
+    if fixture_path.exists():
+        existing = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    non_micro_entries = [e for e in existing if e.get("model") != "regions.microregion"]
+    fixture_entries = non_micro_entries + microregion_records
+
     fixture_path.parent.mkdir(parents=True, exist_ok=True)
     with fixture_path.open("w", encoding="utf-8") as fh:
-        json.dump(records, fh, indent=2, ensure_ascii=False)
+        json.dump(fixture_entries, fh, indent=2, ensure_ascii=False)
         fh.write("\n")
 
-    logger.info("Wrote %d region records to %s", len(records), fixture_path)
+    logger.info(
+        "Wrote %d entries to %s (%d L1/L2 retained, %d microregions)",
+        len(fixture_entries),
+        fixture_path,
+        len(non_micro_entries),
+        len(microregion_records),
+    )
 
 
 # ---------------------------------------------------------------------------

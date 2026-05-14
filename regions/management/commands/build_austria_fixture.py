@@ -5,7 +5,7 @@ avalanche-service states and produces a Django fixture with one L1
 ``MajorRegion`` and multiple L2 ``SubRegion`` / L4 ``MicroRegion``
 entries per state file.
 
-Source files (vendored under reference_data/eaws/):
+Source files (vendored under reference_data/eaws/micro-regions/):
     AT-02_micro-regions.geojson.json  — Niederösterreich / Steiermark
     AT-03_micro-regions.geojson.json  — Oberösterreich
     AT-04_micro-regions.geojson.json  — Salzburg (city region)
@@ -23,7 +23,8 @@ L1 / L2 / L4 hierarchy derived from EAWS feature IDs:
         - 4-part ID (e.g. 'AT-02-06-01') → L2 = 'AT-02-06'.
         - 5-part ID (e.g. 'AT-02-03-01-01') → L2 = 'AT-02-03-01'.
     L4: one MicroRegion per feature; region_id = feature id.
-    names: name_native = name_en = feature id (placeholder; no source names).
+    names: L4 name from EAWS de.json; L1/L2 name_native from de.json,
+        name_en from en.json. Falls back to region_id if EAWS has no entry.
     neighbours: [] (not used for intent rendering).
 
 Note: some features serve as both L4 and the parent for deeper features
@@ -52,17 +53,20 @@ from typing import Any
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 
+from regions.names import lookup
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Source / output paths (module-level so tests can monkeypatch them)
 # ---------------------------------------------------------------------------
 
-_EAWS_DIR = Path("reference_data") / "eaws"
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+_EAWS_DIR = _REPO_ROOT / "reference_data" / "eaws" / "micro-regions"
 
 _AT_STATE_CODES = ["AT-02", "AT-03", "AT-04", "AT-05", "AT-06", "AT-07", "AT-08"]
 
-_AUSTRIA_FIXTURE = Path("regions/fixtures/eaws_AT.json")
+_AUSTRIA_FIXTURE = _REPO_ROOT / "regions" / "fixtures" / "eaws_AT.json"
 
 _FIXTURE_TIMESTAMP = "2026-05-14T00:00:00Z"
 
@@ -199,10 +203,11 @@ def _build_state_entries(
         region_id: str = feature["properties"]["id"]
         geometry: dict[str, Any] = feature["geometry"]
         centre = centre_from_bbox(geometry)
+        l4_name = lookup(region_id, "de") or region_id
 
         l4_field: dict[str, Any] = {
             "region_id": region_id,
-            "name": region_id,
+            "name": l4_name,
             "slug": slugify(region_id),
             "centre": centre,
             "boundary": geometry,
@@ -227,8 +232,8 @@ def _build_state_entries(
             "fields": {
                 "prefix": l2_prefix,
                 "major": [l1_code],
-                "name_native": l2_prefix,
-                "name_en": l2_prefix,
+                "name_native": lookup(l2_prefix, "de") or l2_prefix,
+                "name_en": lookup(l2_prefix, "en") or l2_prefix,
                 "centre": centre,
                 "bbox": bbox,
                 "boundary": boundary,
@@ -248,8 +253,8 @@ def _build_state_entries(
         "fields": {
             "prefix": l1_code,
             "country": "AT",
-            "name_native": l1_code,
-            "name_en": l1_code,
+            "name_native": lookup(l1_code, "de") or l1_code,
+            "name_en": lookup(l1_code, "en") or l1_code,
             "centre": l1_centre,
             "bbox": l1_bbox,
             "boundary": l1_boundary,

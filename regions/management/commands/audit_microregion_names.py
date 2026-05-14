@@ -11,7 +11,7 @@ Read-only by default. Exits non-zero when mismatches are present and
 drift-detector (e.g. on Render cron).
 
 ``--commit`` performs two writes:
-  1. Patches ``reference_data/eaws/CH_micro-regions.csv`` in place — only the
+  1. Patches ``reference_data/slf/CH_micro-regions.csv`` in place — only the
      ``region_name`` column for rows whose ``region_id`` is in the
      mismatch set.
   2. Calls ``scripts.build_regions_fixture.build_fixture(...)`` to
@@ -51,7 +51,7 @@ from regions.models import MicroRegion
 logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-_CSV_PATH = _REPO_ROOT / "reference_data" / "eaws" / "CH_micro-regions.csv"
+_CSV_PATH = _REPO_ROOT / "reference_data" / "slf" / "CH_micro-regions.csv"
 _FIXTURE_PATH = _REPO_ROOT / "regions" / "fixtures" / "eaws_CH.json"
 
 
@@ -61,7 +61,7 @@ class Command(BaseCommand):
     help = (
         "Compare MicroRegion.name against the most-recent RegionBulletin "
         "region_name_at_time (the SLF-authoritative name). Report mismatches. "
-        "With --commit: patch reference_data/eaws/CH_micro-regions.csv and regenerate "
+        "With --commit: patch reference_data/slf/CH_micro-regions.csv and regenerate "
         "the regions/fixtures/eaws_CH.json L4 entries. Read-only unless --commit."
     )
 
@@ -71,7 +71,7 @@ class Command(BaseCommand):
             "--commit",
             action="store_true",
             help=(
-                "Patch reference_data/eaws/CH_micro-regions.csv and regenerate "
+                "Patch reference_data/slf/CH_micro-regions.csv and regenerate "
                 "the L4 fixture. Without this flag the command only reports "
                 "mismatches and exits non-zero when any are found."
             ),
@@ -293,18 +293,16 @@ def _patch_csv(
 def _rebuild_fixture(csv_path: Path, fixture_path: Path) -> None:
     """Regenerate the L4 entries in eaws_CH.json from the patched CSV.
 
-    The existing fixture may also contain L1 (MajorRegion) and L2 (SubRegion)
-    entries. This helper:
-      1. Reads any existing L1/L2 entries from ``fixture_path``.
-      2. Delegates to ``scripts.build_regions_fixture.build_fixture`` to
-         regenerate the L4 (MicroRegion) entries into a temporary file.
-      3. Writes the combined L1/L2 + fresh L4 back to ``fixture_path``.
+    Delegates to ``scripts.build_regions_fixture.build_fixture``, which
+    reads the existing fixture, retains any L1/L2 entries, and replaces
+    only the ``regions.microregion`` slice.  The L1/L2 entries are thus
+    preserved for the subsequent ``refresh_eaws_fixtures --commit`` step.
 
-    This preserves the L1/L2 entries so that ``refresh_eaws_fixtures``
-    can continue to re-derive their geometry.
+    Args:
+        csv_path: Path to the (patched) source CSV file.
+        fixture_path: Path to the fixture to update in place.
+
     """
-    import json as _json
-
     try:
         from scripts.build_regions_fixture import build_fixture
     except ImportError as exc:
@@ -313,35 +311,5 @@ def _rebuild_fixture(csv_path: Path, fixture_path: Path) -> None:
             "Ensure you are running from the repo root with the dev venv."
         ) from exc
 
-    # Read existing L1/L2 entries from the current fixture (if any).
-    l1_l2_entries: list[dict] = []
-    if fixture_path.exists():
-        existing = _json.loads(fixture_path.read_text(encoding="utf-8"))
-        l1_l2_entries = [
-            e
-            for e in existing
-            if e.get("model") in ("regions.majorregion", "regions.subregion")
-        ]
-
-    # build_fixture writes L4-only records to a temporary path.
-    tmp_fixture = fixture_path.with_suffix(".tmp.json")
-    try:
-        build_fixture(csv_path, tmp_fixture)
-        l4_entries = _json.loads(tmp_fixture.read_text(encoding="utf-8"))
-    finally:
-        if tmp_fixture.exists():
-            tmp_fixture.unlink()
-
-    # Combine: L1 + L2 + L4.
-    combined = l1_l2_entries + l4_entries
-    fixture_path.write_text(
-        _json.dumps(combined, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    logger.info(
-        "_rebuild_fixture: wrote %d entries (%d L1/L2 + %d L4) to %s",
-        len(combined),
-        len(l1_l2_entries),
-        len(l4_entries),
-        fixture_path,
-    )
+    build_fixture(csv_path, fixture_path)
+    logger.info("_rebuild_fixture: regenerated %s from %s", fixture_path, csv_path)
