@@ -23,13 +23,15 @@ from tests.factories import MicroRegionFactory, RegionDayRatingFactory
 
 @pytest.mark.django_db
 def test_map_page_renders():
-    """GET /map/ returns 200 and contains the map container."""
+    """GET /map/ returns 200 and contains the map container and popup endpoint."""
     client = Client()
     response = client.get(reverse("public:map"))
     assert response.status_code == 200
     content = response.content.decode()
     assert 'id="map"' in content
-    assert 'id="sheet"' in content
+    # SNOW-174: the region popup URL template must be baked into the markup
+    # so that map.js can fetch tooltip HTML without hard-coding the path.
+    assert "data-region-summary-url" in content
 
 
 @pytest.mark.django_db

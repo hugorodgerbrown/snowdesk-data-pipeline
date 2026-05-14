@@ -224,10 +224,11 @@ class TestRegionExpandedAttribution:
         assert b"slf.ch" in response.content
 
     def test_expanded_fragment_does_not_duplicate_attribution(self, client, region):
-        """The drawer expanded fragment does NOT embed an inline SLF block."""
+        """The region tooltip HTML does NOT embed an inline SLF attribution block."""
         url = reverse("api:region_summary", kwargs={"region_id": region.region_id})
         response = client.get(url)
         assert response.status_code == 200
         payload = json.loads(response.content)
-        # The inline attribution block was removed in SNOW-174.
-        assert 'data-testid="expanded-slf-attribution"' not in payload["expanded"]
+        # SNOW-174: the tooltip returns {"html": "..."} only; attribution is
+        # covered by the global site footer, not the per-region tooltip.
+        assert 'data-testid="expanded-slf-attribution"' not in payload["html"]
