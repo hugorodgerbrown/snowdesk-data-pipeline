@@ -10,8 +10,8 @@ region's bbox centre for deep-link / resort-pin paths).
 Content:
   1. Header row — danger-tile chip (when a bulletin exists) or default
      Snowdesk icon (when no RegionDayRating row exists), and region name.
-     When a chip is shown it is linked to the day's bulletin URL (dated
-     when ?d= was supplied, evergreen otherwise).
+     The chip is presentational only; the bulletin CTA below is the
+     sole link out of the popup.
   2. Geographic breadcrumb — three levels in English:
      country › major (L1) › sub-region (L2).
      Uses ``name_en`` on MajorRegion / SubRegion, falling back to
@@ -32,12 +32,11 @@ Context variables expected:
 <div class="region-tooltip" data-region-id="{{ region.region_id }}">
     <div class="region-tooltip-header">
         {% if day_rating %}
-            <a href="{{ bulletin_url }}" class="region-tooltip-rating-link" data-testid="region-tooltip-rating-link">
-                <span
-                    class="danger-tile"
-                    data-level="{{ day_rating.max_rating }}"
-                >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
-            </a>
+            <span
+                class="danger-tile"
+                data-level="{{ day_rating.max_rating }}"
+                data-testid="region-tooltip-rating-chip"
+            >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
         {% else %}
             <img
                 src="{% static 'favicon.svg' %}"

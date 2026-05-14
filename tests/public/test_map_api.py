@@ -670,7 +670,7 @@ def test_region_summary_rejects_bad_date():
 
 @pytest.mark.django_db
 def test_region_summary_includes_headline_rating_chip():
-    """The chip is an <a> wrapping .danger-tile[data-level] linked to the bulletin URL."""
+    """The chip is a presentational .danger-tile[data-level] span — no link wrapper."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
         prefix="CH-41", major=major, name_native="Lower Valais"
@@ -691,13 +691,15 @@ def test_region_summary_includes_headline_rating_chip():
     )
     assert response.status_code == 200
     html = response.json()["html"]
-    # The chip anchor carries the test id.
-    assert 'data-testid="region-tooltip-rating-link"' in html
-    # The chip spans carry the expected data-level.
+    # The chip carries the test id.
+    assert 'data-testid="region-tooltip-rating-chip"' in html
+    # The chip carries the expected data-level.
     assert 'data-level="high"' in html
     # The digit for high is 4.
     assert ">4<" in html
-    # The anchor href points at the dated bulletin URL.
+    # The chip is not wrapped in an anchor — only the bulletin CTA below
+    # is a link (and it points at the dated bulletin URL).
+    assert 'data-testid="region-tooltip-rating-link"' not in html
     assert "/ch-4115/" in html
     assert "2026-01-15" in html
 

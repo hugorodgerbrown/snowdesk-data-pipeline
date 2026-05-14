@@ -813,12 +813,22 @@ const clearRegionRepaint = () => {
     // leaving the page) and so a deep link reopens the popup on load.
     //
     // ``popupHistoryOpen`` tracks whether our hash is currently the top
-    // history entry — drives push-vs-replace on the next open and tells
-    // ``clearTooltip`` whether to ``history.back()`` or just remove the
-    // popup directly. ``popstateInProgress`` blocks the recursive
-    // ``clearTooltip -> history.back -> popstate -> clearTooltip`` path
-    // during back-button dismissal.
+    // history entry — drives push-vs-replace on the next open.
+    //
+    // ``popupHashWasPushed`` tracks whether the current history entry is
+    // one *we* pushed via ``pushState``, as opposed to the entry the user
+    // landed on (e.g. arriving at ``/map/#CH-4115`` from the bulletin
+    // page). Only pushed entries are safe to dismiss via ``history.back()``
+    // — popping a landed-on entry navigates the user off the map and
+    // straight back to wherever they came from, which is the trap this
+    // flag guards against. When false, ``clearTooltip`` clears the hash
+    // via ``replaceState`` instead.
+    //
+    // ``popstateInProgress`` blocks the recursive ``clearTooltip ->
+    // history.back -> popstate -> clearTooltip`` path during back-button
+    // dismissal.
     let popupHistoryOpen = false;
+    let popupHashWasPushed = false;
     let popstateInProgress = false;
 
     // Canonical SLF region-ID shape (e.g. "CH-4115", "AT-02-14",
@@ -878,14 +888,30 @@ const clearRegionRepaint = () => {
       }
     };
 
-    // User-facing dismiss path. If our hash is the active history entry
-    // and we're not already inside a popstate, pop it so the URL and
-    // popup state stay in lockstep. The popstate handler calls
-    // clearPopupDom directly.
+    // User-facing dismiss path. Keep the URL hash and popup state in
+    // lockstep:
+    //
+    //   - When we pushed the current history entry, pop it via
+    //     ``history.back()``. The popstate handler then dispatches into
+    //     ``clearPopupDom`` (re-entry guarded by ``popstateInProgress``).
+    //   - When the current entry is the one the user landed on
+    //     (``/map/#CH-xxxx`` from the bulletin page, or a hash typed in
+    //     the URL bar before the listener attached), popping would
+    //     navigate them off the page. Clear the hash via
+    //     ``replaceState`` and tear the popup down directly.
     const clearTooltip = () => {
-      if (popupHistoryOpen && !popstateInProgress) {
+      if (popstateInProgress) {
+        clearPopupDom();
+        return;
+      }
+      if (popupHashWasPushed) {
         history.back();
         return;
+      }
+      if (popupHistoryOpen) {
+        const cleanUrl = location.pathname + location.search;
+        history.replaceState(null, '', cleanUrl);
+        popupHistoryOpen = false;
       }
       clearPopupDom();
     };
@@ -893,13 +919,17 @@ const clearRegionRepaint = () => {
     // Push or replace the URL hash to point at ``regionID``. First open
     // of a session pushes a single entry; subsequent region taps replace
     // it so the back stack grows by exactly one no matter how many
-    // regions the user sweeps through.
+    // regions the user sweeps through. ``popupHashWasPushed`` only
+    // flips on the pushState branch — replaceState doesn't change the
+    // pushed-ness of the underlying entry, so an initial-load hash that
+    // gets retargeted via replaceState still isn't safe to ``history.back``.
     const syncUrlForRegion = (regionID) => {
       const hash = '#' + regionID;
       const state = { popup: regionID };
       if (!popupHistoryOpen) {
         history.pushState(state, '', hash);
         popupHistoryOpen = true;
+        popupHashWasPushed = true;
       } else {
         history.replaceState(state, '', hash);
       }
@@ -952,6 +982,15 @@ const clearRegionRepaint = () => {
         const popup = new maplibregl.Popup({
           closeButton: true,
           closeOnClick: false,
+          // MapLibre defaults to focusing the popup's first focusable
+          // element on open, which on a deep-link arrival
+          // (``/map/#CH-xxxx`` from a bulletin page) yanks focus onto
+          // the bulletin CTA inside the popup and renders an obvious
+          // focus ring around it. The popup is opened in response to
+          // pointer / hash navigation, not keyboard activation, so the
+          // ring is just visual noise — the close button is still
+          // Tab-reachable for keyboard users.
+          focusAfterOpen: false,
           // SNOW-174: use 'bottom' so the popup tip always points down to
           // the tap point and the body floats above it. 'auto' can flip the
           // popup to an unexpected side when near the viewport edge, and it
@@ -1145,14 +1184,19 @@ const clearRegionRepaint = () => {
     // handler (selectFeature is called with urlMode='mark' so it just
     // records that our hash is the active entry), and ``clearTooltip``
     // takes the ``popstateInProgress`` branch so it doesn't re-pop.
-    window.addEventListener('popstate', () => {
+    window.addEventListener('popstate', (event) => {
       popstateInProgress = true;
       try {
         const numericId = featureIdFromHash();
         if (numericId !== null) {
+          // Entries we pushed via syncUrlForRegion carry { popup: regionID }
+          // in their state; the initial-load entry has null state. Use that
+          // to decide whether a later close can safely ``history.back``.
+          popupHashWasPushed = !!(event.state && event.state.popup);
           selectFeature(numericId, { toggle: false, urlMode: 'mark' });
         } else {
           popupHistoryOpen = false;
+          popupHashWasPushed = false;
           clearPopupDom();
         }
       } finally {
@@ -1169,9 +1213,14 @@ const clearRegionRepaint = () => {
       const numericId = featureIdFromHash();
       if (numericId !== null) {
         popupHistoryOpen = true;
+        // A hashchange adds a real history entry (unlike the initial-load
+        // hash, which is part of the entry the user landed on), so a
+        // subsequent close can safely pop it.
+        popupHashWasPushed = true;
         selectFeature(numericId, { toggle: false, urlMode: 'mark' });
       } else if (location.hash === '' || location.hash === '#') {
         popupHistoryOpen = false;
+        popupHashWasPushed = false;
         clearPopupDom();
       }
     });
