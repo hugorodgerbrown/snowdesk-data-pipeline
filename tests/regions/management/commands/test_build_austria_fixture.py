@@ -8,6 +8,7 @@ Covers the ``build_austria_fixture`` command:
   - L1 entries carry country='AT'.
   - L2 prefix derivation: 3-segment ID → 1:1 synthetic L2; 4-segment → grouped.
   - L4 entries are sorted by region_id.
+  - L4/L1/L2 names come from EAWS names lookup (monkeypatched in tests).
 """
 
 from __future__ import annotations
@@ -49,6 +50,32 @@ def _write_json(path: Path, data: object) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Synthetic EAWS name map used across tests
+# ---------------------------------------------------------------------------
+
+_SYNTHETIC_AT_NAMES: dict[str, dict[str, str]] = {
+    "de": {
+        "AT-07": "Tirol",
+        "AT-07-01": "Innsbruck Umgebung",
+        "AT-07-02": "Tuxer Alpen",
+        "AT-07-02-01": "Tuxer Alpen Nord",
+        "AT-07-02-02": "Tuxer Alpen Süd",
+        "AT-08": "Vorarlberg",
+        "AT-08-01": "Bregenzer Wald",
+    },
+    "en": {
+        "AT-07": "Tyrol",
+        "AT-07-01": "Innsbruck Surroundings",
+        "AT-07-02": "Tux Alps",
+        "AT-07-02-01": "Tux Alps North",
+        "AT-07-02-02": "Tux Alps South",
+        "AT-08": "Vorarlberg",
+        "AT-08-01": "Bregenzer Forest",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
 # Fixture seeding
 # ---------------------------------------------------------------------------
 
@@ -66,8 +93,8 @@ def _seed_sources(tmp_path: Path) -> tuple[Path, Path]:
     AT-08 (Vorarlberg) — one L4 feature:
         AT-08-01    → L2 = AT-08-01  (3-segment; 1:1 synthetic L2)
     """
-    eaws_dir = tmp_path / "eaws"
-    eaws_dir.mkdir()
+    eaws_dir = tmp_path / "eaws" / "micro-regions"
+    eaws_dir.mkdir(parents=True)
 
     # AT-07: three micro-regions — one 1:1 and two grouped
     _write_json(
@@ -130,12 +157,23 @@ def _patch_paths(
     eaws_dir: Path,
     fixture_path: Path,
 ) -> None:
-    """Redirect the command's module-level path constants to tmp_path copies."""
+    """Redirect the command's module-level path constants to tmp_path copies.
+
+    Also monkeypatches ``regions.names.lookup`` to return values from the
+    synthetic name map, avoiding dependency on the vendored EAWS files.
+    """
     from regions.management.commands import build_austria_fixture as mod
 
     monkeypatch.setattr(mod, "_EAWS_DIR", eaws_dir)
     monkeypatch.setattr(mod, "_AT_STATE_CODES", ["AT-07", "AT-08"])
     monkeypatch.setattr(mod, "_AUSTRIA_FIXTURE", fixture_path)
+
+    # Patch the lookup helper so tests use the synthetic name map.
+    monkeypatch.setattr(
+        mod,
+        "lookup",
+        lambda key, lang: _SYNTHETIC_AT_NAMES.get(lang, {}).get(key),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -269,10 +307,10 @@ class TestBuildAustriaFixtureCommit:
         majors = [e for e in entries if e["model"] == "regions.majorregion"]
         assert all(e["fields"]["boundary"] is not None for e in majors)
 
-    def test_commit_l4_entry_shape(
+    def test_commit_l4_name_from_lookup(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """L4 micro-region entries have region_id, name, slug, subregion, boundary."""
+        """L4 names come from the EAWS de.json lookup (monkeypatched here)."""
         eaws_dir, fixture = _seed_sources(tmp_path)
         _patch_paths(monkeypatch, eaws_dir, fixture)
 
@@ -286,10 +324,49 @@ class TestBuildAustriaFixtureCommit:
         }
 
         at07_01 = micros["AT-07-01"]
-        assert at07_01["name"] == "AT-07-01"
+        assert at07_01["name"] == "Innsbruck Umgebung"
         assert at07_01["slug"] == "at-07-01"
         assert at07_01["boundary"] is not None
         assert at07_01["centre"] is not None
+
+    def test_commit_l4_name_falls_back_to_region_id_on_miss(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When lookup returns None, the L4 name falls back to the region_id."""
+        eaws_dir, fixture = _seed_sources(tmp_path)
+        _patch_paths(monkeypatch, eaws_dir, fixture)
+        # Override lookup to always return None
+        from regions.management.commands import build_austria_fixture as mod
+
+        monkeypatch.setattr(mod, "lookup", lambda key, lang: None)
+
+        call_command("build_austria_fixture", "--commit", stdout=StringIO())
+
+        entries = json.loads(fixture.read_text(encoding="utf-8"))
+        micros = {
+            e["fields"]["region_id"]: e["fields"]
+            for e in entries
+            if e["model"] == "regions.microregion"
+        }
+        assert micros["AT-07-01"]["name"] == "AT-07-01"
+
+    def test_commit_l1_name_from_lookup(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """L1 name_native and name_en come from the EAWS de/en lookup."""
+        eaws_dir, fixture = _seed_sources(tmp_path)
+        _patch_paths(monkeypatch, eaws_dir, fixture)
+
+        call_command("build_austria_fixture", "--commit", stdout=StringIO())
+
+        entries = json.loads(fixture.read_text(encoding="utf-8"))
+        majors = {
+            e["fields"]["prefix"]: e["fields"]
+            for e in entries
+            if e["model"] == "regions.majorregion"
+        }
+        assert majors["AT-07"]["name_native"] == "Tirol"
+        assert majors["AT-07"]["name_en"] == "Tyrol"
 
     def test_commit_is_idempotent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

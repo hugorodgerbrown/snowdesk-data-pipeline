@@ -24,12 +24,21 @@ def test_france_fixture_loads() -> None:
 
 @pytest.mark.django_db
 def test_france_fixture_fr68_spot_check() -> None:
-    """FR-68 loads with the expected name from fr_names.json."""
+    """FR-68 loads with the expected name from EAWS fr.json lookup."""
     call_command("loaddata", "regions/fixtures/eaws_FR.json", verbosity=0)
 
     region = MicroRegion.objects.get(region_id="FR-68")
     assert region.name == "Louchonnais"
     assert region.slug == "fr-68"
+
+
+@pytest.mark.django_db
+def test_france_fixture_fr01_spot_check() -> None:
+    """FR-01 loads with the expected name from EAWS fr.json lookup."""
+    call_command("loaddata", "regions/fixtures/eaws_FR.json", verbosity=0)
+
+    region = MicroRegion.objects.get(region_id="FR-01")
+    assert region.name == "Chablais"
 
 
 @pytest.mark.django_db
