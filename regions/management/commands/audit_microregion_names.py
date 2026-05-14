@@ -293,14 +293,18 @@ def _patch_csv(
 def _rebuild_fixture(csv_path: Path, fixture_path: Path) -> None:
     """Regenerate the L4 entries in eaws.json from the patched CSV.
 
-    Delegates to ``scripts.build_regions_fixture.build_fixture`` — the
-    same function used by the standalone script — so the neighbour graph
-    and polygon closing logic are applied consistently.
+    The existing fixture may also contain L1 (MajorRegion) and L2 (SubRegion)
+    entries. This helper:
+      1. Reads any existing L1/L2 entries from ``fixture_path``.
+      2. Delegates to ``scripts.build_regions_fixture.build_fixture`` to
+         regenerate the L4 (MicroRegion) entries into a temporary file.
+      3. Writes the combined L1/L2 + fresh L4 back to ``fixture_path``.
 
-    Note: ``build_fixture`` writes only the MicroRegion (L4) entries.
-    L1/L2 entries are re-derived from the updated L4 by running
-    ``refresh_eaws_fixtures --commit`` afterwards.
+    This preserves the L1/L2 entries so that ``refresh_eaws_fixtures``
+    can continue to re-derive their geometry.
     """
+    import json as _json
+
     try:
         from scripts.build_regions_fixture import build_fixture
     except ImportError as exc:
@@ -309,5 +313,35 @@ def _rebuild_fixture(csv_path: Path, fixture_path: Path) -> None:
             "Ensure you are running from the repo root with the dev venv."
         ) from exc
 
-    build_fixture(csv_path, fixture_path)
-    logger.info("_rebuild_fixture: regenerated %s from %s", fixture_path, csv_path)
+    # Read existing L1/L2 entries from the current fixture (if any).
+    l1_l2_entries: list[dict] = []
+    if fixture_path.exists():
+        existing = _json.loads(fixture_path.read_text(encoding="utf-8"))
+        l1_l2_entries = [
+            e
+            for e in existing
+            if e.get("model") in ("regions.majorregion", "regions.subregion")
+        ]
+
+    # build_fixture writes L4-only records to a temporary path.
+    tmp_fixture = fixture_path.with_suffix(".tmp.json")
+    try:
+        build_fixture(csv_path, tmp_fixture)
+        l4_entries = _json.loads(tmp_fixture.read_text(encoding="utf-8"))
+    finally:
+        if tmp_fixture.exists():
+            tmp_fixture.unlink()
+
+    # Combine: L1 + L2 + L4.
+    combined = l1_l2_entries + l4_entries
+    fixture_path.write_text(
+        _json.dumps(combined, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    logger.info(
+        "_rebuild_fixture: wrote %d entries (%d L1/L2 + %d L4) to %s",
+        len(combined),
+        len(l1_l2_entries),
+        len(l4_entries),
+        fixture_path,
+    )
