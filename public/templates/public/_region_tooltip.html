@@ -16,9 +16,8 @@ Content:
      country › major (L1) › sub-region (L2).
      Uses ``name_en`` on MajorRegion / SubRegion, falling back to
      ``name_native`` for any future entry that lacks an English variant.
-  3. Date caption showing the displayed date in ``j N Y`` format.
-  4. Bulletin CTA — a button-styled link to open the bulletin for the
-     displayed date.
+  3. Bulletin CTA — a button-styled link to open the bulletin for the
+     displayed date. The date appears in the button label.
 
 Context variables expected:
   region      — MicroRegion instance, with subregion__major select_related.
@@ -45,9 +44,6 @@ Context variables expected:
         {{ region.subregion.major.name_en|default:region.subregion.major.name_native }}
         <span aria-hidden="true"> › </span>
         {{ region.subregion.name_en|default:region.subregion.name_native }}
-    </p>
-    <p class="region-tooltip-date">
-        {% blocktrans with d=target_date|date:"j N Y" trimmed %}Showing {{ d }}{% endblocktrans %}
     </p>
     <a href="{{ bulletin_url }}" class="region-tooltip-bulletin-link" data-testid="region-tooltip-bulletin-link">
         {% blocktrans with d=target_date|date:"j N Y" trimmed %}Open bulletin for {{ d }} →{% endblocktrans %}

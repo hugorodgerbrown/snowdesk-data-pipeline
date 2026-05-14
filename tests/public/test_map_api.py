@@ -817,8 +817,8 @@ def test_region_summary_level_key_falls_back_to_no_rating():
 
 
 @pytest.mark.django_db
-def test_region_summary_includes_date_caption_and_cta():
-    """Rendered HTML contains the formatted date string and the bulletin CTA."""
+def test_region_summary_cta_label_includes_date():
+    """The bulletin CTA carries the displayed date in its label."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
         prefix="CH-41", major=major, name_native="Lower Valais"
@@ -831,15 +831,16 @@ def test_region_summary_includes_date_caption_and_cta():
     )
     assert response.status_code == 200
     html = response.json()["html"]
+    # CTA link is present with the expected test id.
+    assert 'data-testid="region-tooltip-bulletin-link"' in html
+    # CTA label carries the date — single source of truth for the displayed
+    # day; no separate caption line.
+    assert "Open bulletin for" in html
     # Date formatted as "j N Y" → "15 Jan. 2026" (N = abbreviated month name).
     assert "15 Jan" in html
     assert "2026" in html
-    # CTA link is present with the expected test id.
-    assert 'data-testid="region-tooltip-bulletin-link"' in html
-    # CTA text includes the date.
-    assert "Open bulletin for" in html
-    # Date caption line.
-    assert "Showing" in html
+    # The earlier separate "Showing …" caption is gone.
+    assert "Showing" not in html
 
 
 # ---------------------------------------------------------------------------
