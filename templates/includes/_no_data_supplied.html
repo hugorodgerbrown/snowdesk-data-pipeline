@@ -1,0 +1,15 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_no_data_supplied.html — Empty-state placeholder.
+
+Used inside collapsible bulletin panels (Outlook, etc.) when the
+upstream feed supplied the field structurally but with no usable
+content. The user sees "No data supplied" rather than an empty gap
+that looks like a layout bug.
+{% endcomment %}
+<p
+    class="slf-prose text-sm leading-[1.6] text-text-3 italic"
+    data-testid="no-data-supplied"
+>
+    {% trans "No data supplied" %}
+</p>

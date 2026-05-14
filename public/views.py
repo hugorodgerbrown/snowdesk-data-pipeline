@@ -58,6 +58,7 @@ from bulletins.models import Bulletin, RegionBulletin, RegionDayRating, WeatherS
 from bulletins.schema import ValidTimePeriod
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
+    DayCharacter,
     RenderModelBuildError,
     build_render_model,
     compute_day_character,
@@ -1509,58 +1510,87 @@ def _danger_rank(level: str, sub: str) -> tuple[int, int]:
     return (band, offset)
 
 
+def _max_rating_per_period(
+    ratings: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Group ``dangerRatings`` by ``validTimePeriod``, keeping the highest-rank.
+
+    For each period, picks the rating with the highest (band, subdivision)
+    rank — so elevation-split ratings within a single period are collapsed
+    to the more dangerous of the two. Ratings with an unknown ``mainValue``
+    are skipped.
+    """
+    by_period: dict[str, dict[str, Any]] = {}
+    for r in ratings:
+        period, level, sub = _parse_danger_rating(r)
+        if level not in _DANGER_ORDER:
+            continue
+        incumbent = by_period.get(period)
+        if incumbent is None:
+            by_period[period] = r
+            continue
+        _, inc_level, inc_sub = _parse_danger_rating(incumbent)
+        if _danger_rank(level, sub) > _danger_rank(inc_level, inc_sub):
+            by_period[period] = r
+    return by_period
+
+
+def _day_window_row(rating: dict[str, Any]) -> dict[str, Any]:
+    """Build one day-window row dict from a CAAML dangerRating."""
+    period, level, sub = _parse_danger_rating(rating)
+    suffix = _SUBDIVISION_SUFFIX.get(sub, "")
+    number = _DANGER_PANEL_META[level]["number"]
+    return {
+        "type": period,
+        "level_key": level,
+        "level_css": level.replace("_", "-"),
+        "level_label": _DANGER_PANEL_META[level]["label"],
+        "level_number": f"{number}{suffix}",
+        "caption": "",
+        "pill_label": _DAY_WINDOW_PILL_LABELS.get(period, period),
+    }
+
+
 def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
     """
     Return the list[Window] consumed by the day-windows panel partial.
 
     Reads ``dangerRatings`` directly from the bulletin's CAAML properties.
-    Always emits one row for the ``all_day_*`` rating. Emits a second row for
-    the ``later_*`` rating only when its effective rank (band + subdivision
-    offset) is strictly higher than the ``all_day`` rank — a later rating that
-    is equal or lower is suppressed as it implies no improvement. Returns an
-    empty list when no ``all_day`` rating is present — the template hides
-    the panel in that case.
+
+    SLF editorial style: always one ``all_day`` rating, optionally a
+    ``later`` overlay when the day deteriorates. Emits one row for the
+    ``all_day`` rating; emits the ``later`` overlay only when its rank
+    is strictly higher than ``all_day`` — equal or lower implies no
+    change, so the overlay would be noise.
+
+    EUREGIO / ALBINA style: no ``all_day``; ratings split by
+    ``validTimePeriod`` (and often by elevation within a period). When
+    no ``all_day`` rating exists, fall back to one row per period found
+    in the source, picking the highest-rank rating across any elevation
+    bands for that period. The bulletin's problem cards below the panel
+    carry the full per-trait + elevation detail.
+
+    Returns an empty list only when ``dangerRatings`` carries no usable
+    rating at all — the template hides the panel in that case.
     """
     props = _get_properties(bulletin)
     ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
+    by_period = _max_rating_per_period(ratings)
 
-    all_day_rating: dict[str, Any] | None = None
-    later_rating: dict[str, Any] | None = None
-    for r in ratings:
-        period, level, _ = _parse_danger_rating(r)
-        if period == "all_day" and level in _DANGER_ORDER:
-            all_day_rating = r
-        elif period == "later" and level in _DANGER_ORDER:
-            later_rating = r
+    all_day_rating = by_period.get("all_day")
+    if all_day_rating is not None:
+        windows = [_day_window_row(all_day_rating)]
+        later_rating = by_period.get("later")
+        if later_rating is not None:
+            _, later_level, later_sub = _parse_danger_rating(later_rating)
+            _, ad_level, ad_sub = _parse_danger_rating(all_day_rating)
+            if _danger_rank(later_level, later_sub) > _danger_rank(ad_level, ad_sub):
+                windows.append(_day_window_row(later_rating))
+        return windows
 
-    if all_day_rating is None:
-        return []
-
-    def _row(rating: dict[str, Any], chip: str | Promise) -> dict[str, Any]:
-        _, level, sub = _parse_danger_rating(rating)
-        suffix = _SUBDIVISION_SUFFIX.get(sub, "")
-        number = _DANGER_PANEL_META[level]["number"]
-        return {
-            "type": (rating.get("validTimePeriod") or "all_day"),
-            "level_key": level,
-            "level_css": level.replace("_", "-"),
-            "level_label": _DANGER_PANEL_META[level]["label"],
-            "level_number": f"{number}{suffix}",
-            "caption": "",
-            "pill_label": chip,
-        }
-
-    windows = [_row(all_day_rating, _DAY_WINDOW_PILL_LABELS["all_day"])]
-
-    if later_rating is not None:
-        _, later_level, later_sub = _parse_danger_rating(later_rating)
-        _, all_day_level, all_day_sub = _parse_danger_rating(all_day_rating)
-        later_rank = _danger_rank(later_level, later_sub)
-        all_day_rank = _danger_rank(all_day_level, all_day_sub)
-        if later_rank > all_day_rank:
-            windows.append(_row(later_rating, _DAY_WINDOW_PILL_LABELS["later"]))
-
-    return windows
+    # EUREGIO-style fallback: one row per period, ordered earlier → later.
+    period_order = ("earlier", "later")
+    return [_day_window_row(by_period[p]) for p in period_order if p in by_period]
 
 
 def _build_canonical_url(
@@ -2605,8 +2635,9 @@ def build_problem_cards(
     Build one flat presentation card per aggregation entry, in aggregation order.
 
     Both ``raw_problems`` and ``aggregation`` are expected to be present
-    whenever the bulletin carries avalanche problems. Missing either logs
-    an ERROR and returns an empty list. Schema violations (missing category,
+    whenever the bulletin carries avalanche problems. Missing either returns
+    an empty list; callers (``_resolve_problem_cards``) fall back to the
+    render-model traits in that case. Schema violations (missing category,
     empty problemTypes, unresolved problem type) are caught and logged.
 
     Args:
@@ -2618,13 +2649,14 @@ def build_problem_cards(
 
     """
     if not raw_problems:
-        logger.error("build_problem_cards: avalancheProblems is empty or missing")
+        # Empty avalancheProblems is normal on quiet days and for any
+        # bulletin whose risk is described purely in prose. Callers fall
+        # back to the render-model traits when this returns [].
         return []
     if not aggregation:
-        logger.error(
-            "build_problem_cards: customData.CH.aggregation is missing — "
-            "cannot determine display order"
-        )
+        # EUREGIO bulletins never carry customData.CH.aggregation — that's
+        # source-specific to SLF. Callers (_resolve_problem_cards) fall back
+        # to the render-model traits in that case.
         return []
     index = {p["problemType"]: p for p in raw_problems if p.get("problemType")}
     try:
@@ -2632,6 +2664,87 @@ def build_problem_cards(
     except ValueError:
         logger.exception("build_problem_cards: unexpected aggregation schema")
         return []
+
+
+def _resolve_problem_cards(
+    raw_problems: list[dict[str, Any]],
+    aggregation: list[dict[str, Any]],
+    traits: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Resolve problem cards from either the CAAML aggregation or render model traits.
+
+    SLF bulletins carry ``customData.CH.aggregation`` so ``build_problem_cards``
+    produces a non-empty list.  EUREGIO bulletins have no aggregation; in that
+    case the enriched render-model traits are used as the card source instead.
+
+    Args:
+        raw_problems: CAAML avalancheProblems list from the bulletin properties.
+        aggregation: SLF aggregation list (may be empty for EUREGIO).
+        traits: Enriched render-model traits (used as fallback).
+
+    Returns:
+        Flat list of card dicts ready for ``_rating_block.html``.
+
+    """
+    cards = build_problem_cards(raw_problems, aggregation)
+    if not cards and traits:
+        cards = _problem_cards_from_render_model_traits(traits)
+    return cards
+
+
+def _problem_cards_from_render_model_traits(
+    traits: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Build one problem card per render-model trait.
+
+    Used as a fallback for EUREGIO bulletins which carry no
+    ``customData.CH.aggregation``, so ``build_problem_cards`` returns [].
+    The traits list comes from the **enriched** render model (already processed
+    by ``enrich_render_model``), so elevation and label fields are already in
+    the presentation-ready shape the ``_rating_block.html`` partial expects.
+
+    One card is emitted per trait using the first problem in each trait for
+    spatial data (aspects / elevation) — EUREGIO aggregation entries always
+    contain a single problem type per time-period group.
+
+    Args:
+        traits: Enriched render model traits list.
+
+    Returns:
+        Flat list of card dicts, one per trait, in trait order.
+
+    """
+    cards: list[dict[str, Any]] = []
+    for trait in traits:
+        category: str = trait.get("category") or ""
+        danger_level: int = trait.get("danger_level") or 1
+        time_period: str = trait.get("time_period") or "all_day"
+        time_period_label: str | Promise = _TIME_PERIOD_LABELS.get(time_period, "")
+        title: str = trait.get("title") or ""
+        problems: list[dict[str, Any]] = trait.get("problems") or []
+        if not problems:
+            continue
+        # Use the first problem for spatial data; label from the trait title.
+        first = problems[0]
+        cards.append(
+            {
+                "category": category,
+                "danger_level": danger_level,
+                "danger_level_key": _DANGER_ORDER[danger_level - 1].replace("_", "-"),
+                "label": title,
+                "time_period_label": time_period_label,
+                "aspects": first.get("aspects") or [],
+                "elevation": first.get("elevation"),
+                "comment_html": first.get("comment_html") or "",
+                "core_zone_text": first.get("core_zone_text") or "",
+                "hide_comment": False,
+                # v4: avalanche_type for slab/loose chip (may be None).
+                "avalanche_type": first.get("avalanche_type"),
+            }
+        )
+    return cards
 
 
 def _enrich_render_model_problem(
@@ -2829,7 +2942,6 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     raw_problems: list[dict[str, Any]] = props.get("avalancheProblems") or []
     ch_data: dict[str, Any] = (props.get("customData") or {}).get("CH") or {}
     aggregation: list[dict[str, Any]] = ch_data.get("aggregation") or []
-    problem_cards = build_problem_cards(raw_problems, aggregation)
     ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
     if not ratings:
         logger.error(
@@ -2870,6 +2982,10 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     render_model = enrich_render_model(raw_render_model)
 
     traits: list[dict[str, Any]] = render_model.get("traits") or []
+
+    # Source-aware problem cards: SLF bulletins use the CAAML aggregation;
+    # EUREGIO bulletins have no aggregation so we fall back to render-model traits.
+    problem_cards = _resolve_problem_cards(raw_problems, aggregation, traits)
 
     # Per-half danger resolution for the AM/PM split headline.  Mirrors
     # WhiteRisk's "Morning" + "As the day progresses" maps: the half's
@@ -2928,5 +3044,30 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "afternoon_subdivision": afternoon_subdivision,
         "problem_cards": problem_cards,
     }
-    panel["day_character"] = compute_day_character(raw_render_model)
+    panel["day_character"] = _resolve_day_lead(props, raw_render_model)
     return panel
+
+
+def _resolve_day_lead(
+    props: dict[str, Any], raw_render_model: dict[str, Any]
+) -> DayCharacter:
+    """
+    Return the eyebrow callout to show above the rating blocks.
+
+    SLF bulletins carry no top-of-bulletin tendency summary, so we
+    classify the day via the five-rule cascade in ``compute_day_character``
+    (Stable / Manageable / Hard-to-read / Widespread / Dangerous).
+
+    EUREGIO bulletins, by contrast, ship a short editorial lead at
+    ``properties.tendency[0].highlights`` — a forecaster-authored
+    one-liner describing how the day is expected to play out. When
+    that lead is present, use it verbatim and suppress the computed
+    label. The callout template renders the label as a bold prefix
+    when non-empty and as a single explainer paragraph when empty.
+    """
+    tendency = props.get("tendency") or []
+    if tendency:
+        highlights = (tendency[0] or {}).get("highlights") or ""
+        if highlights.strip():
+            return DayCharacter(label="", explainer=highlights)
+    return compute_day_character(raw_render_model)

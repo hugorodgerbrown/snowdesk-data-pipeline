@@ -15,7 +15,12 @@ import pytest
 from django.template import Context, Template
 from django.utils.safestring import SafeString
 
-from public.templatetags.snowdesk_html import prose_body, prose_title, snowdesk_html
+from public.templatetags.snowdesk_html import (
+    prose_body,
+    prose_title,
+    snowdesk_html,
+    tendency_has_comment,
+)
 
 # Absolute path to the test fixture used in the real-SLF test.
 _SAMPLE_PATH = (
@@ -288,3 +293,68 @@ class TestProseBody:
         """Leading whitespace and attributes on ``<h1>`` don't leave debris."""
         html = '  <h1 class="x">Snowpack</h1><p>body</p>'
         assert prose_body(html) == "<p>body</p>"
+
+
+class TestTendencyHasComment:
+    """tendency_has_comment returns True only when a tendency entry has non-empty comment."""
+
+    def test_returns_true_when_entry_has_comment(self):
+        """A single entry with a non-empty comment returns True."""
+        prose = {
+            "tendency": [
+                {"comment": "<p>Hazard increasing.</p>", "tendency_type": "increasing"}
+            ]
+        }
+        assert tendency_has_comment(prose) is True
+
+    def test_returns_false_when_all_comments_empty(self):
+        """EUREGIO entries with empty comment strings return False."""
+        prose = {
+            "tendency": [
+                {"comment": "", "tendency_type": "steady"},
+                {"comment": "", "tendency_type": "steady"},
+            ]
+        }
+        assert tendency_has_comment(prose) is False
+
+    def test_returns_false_when_all_comments_none(self):
+        """Entries with None comment values return False."""
+        prose = {
+            "tendency": [
+                {"comment": None, "tendency_type": "steady"},
+            ]
+        }
+        assert tendency_has_comment(prose) is False
+
+    def test_returns_true_when_one_of_several_has_comment(self):
+        """When multiple entries are present and one has a comment, returns True."""
+        prose = {
+            "tendency": [
+                {"comment": "", "tendency_type": "steady"},
+                {"comment": "<p>Next day outlook.</p>", "tendency_type": "decreasing"},
+            ]
+        }
+        assert tendency_has_comment(prose) is True
+
+    def test_returns_false_when_tendency_list_is_empty(self):
+        """An empty tendency list returns False."""
+        prose = {"tendency": []}
+        assert tendency_has_comment(prose) is False
+
+    def test_returns_false_when_tendency_key_missing(self):
+        """A prose dict with no tendency key returns False."""
+        prose = {"snowpack_structure": "<p>Text.</p>"}
+        assert tendency_has_comment(prose) is False
+
+    def test_returns_false_when_prose_is_none(self):
+        """``None`` input returns False."""
+        assert tendency_has_comment(None) is False
+
+    def test_returns_false_when_prose_is_not_dict(self):
+        """Non-dict input (e.g. a plain string) returns False."""
+        assert tendency_has_comment("not a dict") is False
+
+    def test_handles_none_entry_in_tendency_list(self):
+        """A None element inside the tendency list is skipped gracefully."""
+        prose = {"tendency": [None, {"comment": "<p>Text.</p>"}]}
+        assert tendency_has_comment(prose) is True
