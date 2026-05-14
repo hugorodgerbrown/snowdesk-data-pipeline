@@ -586,13 +586,32 @@ const clearRegionRepaint = () => {
   // filter at install time has its base filter preserved by composing
   // ['all', baseFilter, countryFilter]; layers with no base filter
   // receive the country filter alone.
+  //
+  // Note: 'regions-line-selected' is intentionally excluded from this list.
+  // Its filter uses a feature-state expression (['boolean',
+  // ['feature-state', 'selected'], false]) which MapLibre does not support
+  // when nested inside an ['all', ...] compound filter.  The selection ring
+  // only activates on features the user has actually clicked (which must
+  // already be visible through regions-fill), so skipping the country
+  // constraint here is safe — a user cannot click a hidden fill feature.
+  //
+  // 'match' is used instead of 'in' for the country filter because MapLibre's
+  // 'in' expression requires a literal keyword as its first argument; passing
+  // ['get', 'country'] (an expression) as the keyword causes the filter to
+  // evaluate incorrectly in MapLibre v4, hiding all features.
   const applyCountryFilters = () => {
     const enabled = COUNTRY_KEYS
       .filter(code => countryState[code])
       .map(code => code.toUpperCase());
-    const countryFilter = ['in', ['get', 'country'], ['literal', enabled]];
+    // ['match', input, [values...], true, false] evaluates to true when the
+    // feature's country property is in the enabled list, false otherwise.
+    // When no countries are enabled use an always-false expression so every
+    // layer empties cleanly rather than showing stale data.
+    const countryFilter = enabled.length > 0
+      ? ['match', ['get', 'country'], enabled, true, false]
+      : ['==', false, true];
     const layerIds = [
-      'regions-fill', 'regions-line', 'regions-line-selected', 'regions-label',
+      'regions-fill', 'regions-line', 'regions-label',
       'sub-regions-line', 'sub-regions-label',
       'major-regions-line', 'major-regions-label',
     ];
@@ -601,6 +620,12 @@ const clearRegionRepaint = () => {
       const base = BASE_LAYER_FILTERS[layerId];
       const composed = base ? ['all', base, countryFilter] : countryFilter;
       map.setFilter(layerId, composed);
+    }
+    // regions-line-selected: restore its original feature-state filter without
+    // country composition (see note above).
+    if (map.getLayer('regions-line-selected')) {
+      const base = BASE_LAYER_FILTERS['regions-line-selected'];
+      map.setFilter('regions-line-selected', base ?? ['boolean', ['feature-state', 'selected'], false]);
     }
   };
 
