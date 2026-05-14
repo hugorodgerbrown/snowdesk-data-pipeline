@@ -296,10 +296,10 @@ class MicroRegion(BaseModel):
         on_delete=models.PROTECT,
         related_name="micro_regions",
         help_text=(
-            "Parent L2 sub-region. Populated from the fixture's natural-key list. "
-            "Swiss regions follow a ``region_id[:5]`` convention; French rows "
-            "set this FK explicitly (Swiss-only convention; French rows set the "
-            "FK explicitly)."
+            "Parent L2 sub-region. Set via the fixture's natural-key list. "
+            "Swiss rows conventionally share a ``region_id[:5]`` prefix with "
+            "this sub-region; French rows set the FK explicitly — the slicing "
+            "convention is Swiss-only and not enforced."
         ),
     )
     centre = models.JSONField(
