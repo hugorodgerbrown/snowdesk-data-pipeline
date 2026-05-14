@@ -117,6 +117,31 @@ poetry run python manage.py diagnose_region_coverage --verbose-table       # add
 poetry run python manage.py dump_resorts_fixture           # preview diff only
 poetry run python manage.py dump_resorts_fixture --commit  # write the fixture
 
+# Detect stale MicroRegion names (SNOW-178). Sources the current SLF name
+# from RegionBulletin.region_name_at_time (captured at every bulletin
+# ingest). Reports mismatches between the stored MicroRegion.name and the
+# most-recent SLF name. Regions with no bulletin coverage are skipped.
+# Exits non-zero when mismatches are present and --commit was not passed.
+# --commit patches docs/eaws_regions_ch.csv (name column only) and
+# regenerates regions/fixtures/eaws.json L4 entries. Then run:
+#   refresh_eaws_fixtures --commit  (re-derive L1/L2 geometry)
+#   loaddata regions/fixtures/eaws.json
+poetry run python manage.py audit_microregion_names           # detect drift
+poetry run python manage.py audit_microregion_names --commit  # patch CSV + fixture
+
+# Detect Resort → MicroRegion FK mismatches (SNOW-178). For every geocoded
+# Resort, builds a Point(lon, lat) and tests which MicroRegion.boundary
+# polygon contains it. Three buckets:
+#   (a) FK correct — silent unless --verbosity 2
+#   (b) FK wrong, correct region found — printed as actionable mismatch
+#   (c) Point outside every polygon — warning; never auto-fixed
+# Exits non-zero when bucket-(b) is non-empty and --commit was not passed.
+# --commit re-FKs bucket-(b) resorts and calls dump_resorts_fixture's
+# writer to refresh regions/fixtures/resorts.json. Then run:
+#   loaddata regions/fixtures/resorts.json
+poetry run python manage.py audit_resort_regions           # detect FK drift
+poetry run python manage.py audit_resort_regions --commit  # fix FKs + fixture
+
 # Export a CSV of day-character labels and the inputs that feed the
 # five-rule cascade in bulletins.services.render_model.compute_day_character.
 # One row per Bulletin. Pure SELECT — defaults to stdout, --output PATH
