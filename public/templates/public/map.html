@@ -200,7 +200,7 @@
                     {# circle pins above the L4 choropleth. Off by default;  #}
                     {# state persists in localStorage under                  #}
                     {# snowdesk.map.overlay.resorts. Pin click opens the     #}
-                    {# parent region's bottom sheet.                         #}
+                    {# parent region's MapLibre Popup tooltip.               #}
                     <li role="none">
                         <button
                             type="button"
@@ -238,36 +238,6 @@
             {# no longer needed (and was the source of "stuck on stale     #}
             {# data" reports). Removed wholesale.                          #}
             <ul id="search-results" class="search-results" role="listbox" hidden></ul>
-        </div>
-        {# Bottom sheet — two snap states (peek / expanded) populated on   #}
-        {# region tap by static/js/map.js. The peek + expanded containers  #}
-        {# receive server-rendered HTML from /api/region/<id>/summary/.   #}
-        <div id="sheet" class="sheet">
-            <div id="sheet-grab" class="sheet-grab">
-                <div class="sheet-handle"></div>
-                <button id="sheet-close" class="sheet-close" aria-label='{% trans "Close" %}'>
-                    <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        aria-hidden="true"
-                    >
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                        <line x1="6" y1="18" x2="18" y2="6" />
-                    </svg>
-                </button>
-            </div>
-            {# Both partials are always present in the DOM; in peek state the #}
-            {# expanded body sits below the visible fold and bleeds in as a   #}
-            {# small tease so the user can see there's more to swipe up to.   #}
-            <div class="sheet-body-wrap">
-                <div id="sheet-peek" class="sheet-peek"></div>
-                <div id="sheet-expanded" class="sheet-expanded"></div>
-            </div>
         </div>
         {# Collapsible danger-scale legend (SNOW-38). Anchored bottom-left, #}
         {# above the season scrubber. Card is absolutely positioned        #}
