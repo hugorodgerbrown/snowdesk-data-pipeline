@@ -185,6 +185,22 @@ const clearRegionRepaint = () => {
   try { localStorage.setItem(OVERLAY_STORAGE_KEY.l4, 'true'); }
   catch (_) { /* private mode — fall through */ }
 
+  // SNOW-172: Country toggle state — which country's geometry is shown.
+  // Default: CH on, others off. Each key maps to a boolean (visible/hidden).
+  // Persisted in localStorage under snowdesk.map.overlay.country.<code>.
+  const COUNTRY_KEYS = ['ch', 'fr', 'at', 'it'];
+  const COUNTRY_STORAGE_KEY = (code) => `snowdesk.map.overlay.country.${code}`;
+  const countryState = { ch: true, fr: false, at: false, it: false };
+  for (const code of COUNTRY_KEYS) {
+    try {
+      const stored = localStorage.getItem(COUNTRY_STORAGE_KEY(code));
+      if (stored !== null) countryState[code] = stored === 'true';
+    } catch (_) { /* private mode — use defaults */ }
+  }
+  // loadedCountries tracks which countries' GeoJSON has been fetched already
+  // so we don't re-fetch on each toggle-on.
+  const loadedCountries = new Set();
+
   // SNOW-63: restore auto-zoom preference from localStorage.
   try { AUTOZOOM = localStorage.getItem('snowdesk.map.autozoom') === 'true'; }
   catch (_) { /* private mode — default off */ }
@@ -197,10 +213,15 @@ const clearRegionRepaint = () => {
       '.basemap-menu-item--overlay',
     )) {
       const key = btn.dataset.overlayKey;
-      btn.setAttribute(
-        'aria-checked',
-        overlayState[key] ? 'true' : 'false',
-      );
+      // SNOW-172: country toggle buttons use countryState, not overlayState.
+      let checked;
+      if (key && key.startsWith('country.')) {
+        const code = key.slice(8);
+        checked = countryState[code];
+      } else {
+        checked = overlayState[key];
+      }
+      btn.setAttribute('aria-checked', checked ? 'true' : 'false');
     }
   }
 
@@ -232,9 +253,9 @@ const clearRegionRepaint = () => {
     style: initialBasemapUrl,
     bounds: [[5.9, 45.8], [10.5, 47.9]],
     fitBoundsOptions: { padding: 20 },
-    minZoom: 5,
+    minZoom: 4,
     maxZoom: 12,
-    maxBounds: [[3.5, 43.5], [13.0, 49.5]],
+    maxBounds: [[-2.0, 43.0], [17.0, 50.5]],
     attributionControl: { compact: true },
   });
   // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
@@ -545,6 +566,92 @@ const clearRegionRepaint = () => {
   let subGeojsonCache = null;
   let resortsGeojsonCache = null;
 
+  // SNOW-172: Compute the MapLibre filter expression that shows only
+  // enabled countries on all region layers.
+  const applyCountryFilters = () => {
+    const enabled = COUNTRY_KEYS
+      .filter(code => countryState[code])
+      .map(code => code.toUpperCase());
+    const countryFilter = ['in', ['get', 'country'], ['literal', enabled]];
+    const layerIds = [
+      'regions-fill', 'regions-line', 'regions-line-selected', 'regions-label',
+      'sub-regions-line', 'sub-regions-label',
+      'major-regions-line', 'major-regions-label',
+    ];
+    for (const layerId of layerIds) {
+      if (map.getLayer(layerId)) {
+        map.setFilter(layerId, countryFilter);
+      }
+    }
+  };
+
+  // SNOW-172: Lazy-fetch a country's L1 + L2 + L4 GeoJSON and merge it
+  // into the existing MapLibre sources. loadedCountries prevents re-fetching.
+  const ensureCountryLoaded = async (code) => {
+    if (loadedCountries.has(code)) return;
+    const upper = code.toUpperCase();
+    try {
+      const [newRegions, newMajor, newSub] = await Promise.all([
+        REGIONS_URL ? fetch(REGIONS_URL + '?country=' + code).then(r => {
+          if (!r.ok) throw new Error('regions fetch failed');
+          return r.json();
+        }) : Promise.resolve(null),
+        MAJOR_REGIONS_URL ? fetch(MAJOR_REGIONS_URL + '?country=' + code).then(r => {
+          if (!r.ok) throw new Error('major fetch failed');
+          return r.json();
+        }).catch(() => null) : Promise.resolve(null),
+        SUB_REGIONS_URL ? fetch(SUB_REGIONS_URL + '?country=' + code).then(r => {
+          if (!r.ok) throw new Error('sub fetch failed');
+          return r.json();
+        }).catch(() => null) : Promise.resolve(null),
+      ]);
+
+      // Merge new features into the existing caches and update the sources.
+      if (newRegions && newRegions.features && geojsonCache) {
+        // Assign numeric ids to new features, continuing from the current max.
+        const startId = Object.keys(FEATURE_BY_ID).length;
+        newRegions.features.forEach((f, i) => {
+          f.id = startId + i;
+          const regionID = f.properties.id;
+          f.properties.regionID = regionID;
+          f.properties.rating = RATINGS[regionID] || 'no_rating';
+          REGION_LOOKUP[f.id] = f.properties;
+          FEATURE_BY_ID[f.id] = f;
+          FEATURE_BY_REGION_ID[regionID] = f;
+        });
+        geojsonCache = {
+          ...geojsonCache,
+          features: [...geojsonCache.features, ...newRegions.features],
+        };
+        const regionsSource = map.getSource('regions');
+        if (regionsSource) regionsSource.setData(geojsonCache);
+      }
+
+      if (newMajor && newMajor.features && majorGeojsonCache) {
+        majorGeojsonCache = {
+          ...majorGeojsonCache,
+          features: [...majorGeojsonCache.features, ...newMajor.features],
+        };
+        const majorSource = map.getSource('major-regions');
+        if (majorSource) majorSource.setData(majorGeojsonCache);
+      }
+
+      if (newSub && newSub.features && subGeojsonCache) {
+        subGeojsonCache = {
+          ...subGeojsonCache,
+          features: [...subGeojsonCache.features, ...newSub.features],
+        };
+        const subSource = map.getSource('sub-regions');
+        if (subSource) subSource.setData(subGeojsonCache);
+      }
+
+      loadedCountries.add(code);
+    } catch (err) {
+      console.warn('[map] Failed to load country', upper, err);
+      // Leave toggle visually on so the user can retry — don't reset countryState.
+    }
+  };
+
   map.on('load', async () => {
     // Fetch everything in parallel. All requests are independent —
     // geometry, bulletin summaries, resort lists, and the L1/L2 overlay
@@ -553,14 +660,14 @@ const clearRegionRepaint = () => {
     // skips that layer install.
     const [geojson, summaries, resorts, majorGeojson, subGeojson, resortsGeojson] =
       await Promise.all([
-        fetch(REGIONS_URL).then(r => r.json()),
+        fetch(REGIONS_URL + '?country=ch').then(r => r.json()),
         fetch(SUMMARIES_URL).then(r => r.json()),
         fetch(RESORTS_URL).then(r => r.json()),
         MAJOR_REGIONS_URL
-          ? fetch(MAJOR_REGIONS_URL).then(r => r.json()).catch(() => null)
+          ? fetch(MAJOR_REGIONS_URL + '?country=ch').then(r => r.json()).catch(() => null)
           : Promise.resolve(null),
         SUB_REGIONS_URL
-          ? fetch(SUB_REGIONS_URL).then(r => r.json()).catch(() => null)
+          ? fetch(SUB_REGIONS_URL + '?country=ch').then(r => r.json()).catch(() => null)
           : Promise.resolve(null),
         RESORTS_GEOJSON_URL
           ? fetch(RESORTS_GEOJSON_URL).then(r => r.json()).catch(() => null)
@@ -593,6 +700,17 @@ const clearRegionRepaint = () => {
     installRegionsLayers(geojson);
     installOverlayLayers(majorGeojson, subGeojson);
     installResortsLayer(resortsGeojson);
+
+    // SNOW-172: CH geometry is now loaded; record it and apply initial filter.
+    loadedCountries.add('ch');
+    applyCountryFilters();
+
+    // Restore any countries that were previously enabled in localStorage.
+    for (const code of COUNTRY_KEYS) {
+      if (code !== 'ch' && countryState[code]) {
+        ensureCountryLoaded(code).catch(() => {});
+      }
+    }
 
     // Interaction
     let selectedId = null;
@@ -1728,14 +1846,33 @@ const clearRegionRepaint = () => {
     item.addEventListener('click', (e) => {
       e.stopPropagation();
 
-      // SNOW-59: overlay checkbox — toggle visibility on both the line
-      // and the (zoom-banded) label layer for this tier, then persist.
-      // Doesn't close the popover (Google-Maps-style: overlays are
-      // flipped freely while picking a basemap).
+      // SNOW-59 / SNOW-172: overlay checkbox — toggle visibility or country filter.
       const overlayKey = item.dataset.overlayKey;
       if (overlayKey) {
         const next = item.getAttribute('aria-checked') !== 'true';
         item.setAttribute('aria-checked', next ? 'true' : 'false');
+
+        // SNOW-172: handle country.* toggles separately from tier toggles.
+        if (overlayKey.startsWith('country.')) {
+          const code = overlayKey.slice(8); // 'country.fr' → 'fr'
+          countryState[code] = next;
+          try {
+            localStorage.setItem(COUNTRY_STORAGE_KEY(code), String(next));
+          } catch (_) { /* private mode */ }
+          if (MAP) {
+            if (next) {
+              // Lazy-fetch if needed, then apply the updated filter.
+              ensureCountryLoaded(code).then(() => {
+                applyCountryFilters();
+              }).catch(() => {});
+            } else {
+              applyCountryFilters();
+            }
+          }
+          return;
+        }
+
+        // Tier overlay — toggle layer visibility (existing SNOW-59 logic).
         try { localStorage.setItem(OVERLAY_STORAGE_KEY[overlayKey], String(next)); }
         catch (_) { /* private mode — choice still applies for this session */ }
         if (MAP) {
