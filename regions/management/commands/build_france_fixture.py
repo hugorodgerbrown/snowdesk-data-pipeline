@@ -1,12 +1,14 @@
 """build_france_fixture — build regions/fixtures/eaws_FR.json from source data.
 
-Combines three source files to produce a Django fixture with 4 L1
+Combines two source files to produce a Django fixture with 4 L1
 ``MajorRegion``, 4 L2 ``SubRegion`` (one placeholder per L1), and 35 L4
 ``MicroRegion`` entries for Metropolitan France:
 
-    reference_data/eaws/FR_micro-regions.geojson  — EAWS L4 IDs + geometry
-    reference_data/eaws/fr_names.json             — EAWS canonical names per FR-NN
-    reference_data/liste-massifs.geojson          — MF massif → mountain grouping
+    reference_data/eaws/micro-regions/FR_micro-regions.geojson — EAWS L4 IDs + geometry
+    reference_data/meteofrance/liste-massifs.geojson — MF massif → mountain grouping
+
+L4 names are resolved via ``regions.names.lookup(..., "fr")`` from the
+vendored EAWS ``reference_data/eaws/names/fr.json`` (CC0).
 
 The EAWS ``FR-NN`` ID and the MF integer ``code`` are 1:1
 (``int("FR-68".split("-")[1]) == 68``). EAWS is the canonical source for
@@ -44,6 +46,7 @@ from typing import Any
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 
+from regions.names import lookup
 from scripts.build_regions_fixture import (
     bbox_from_children,
     boundary_from_children,
@@ -58,9 +61,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _BASE_DIR = Path("reference_data")
-_EAWS_GEOJSON = _BASE_DIR / "eaws" / "FR_micro-regions.geojson"
-_FR_NAMES = _BASE_DIR / "eaws" / "fr_names.json"
-_MF_MASSIFS = _BASE_DIR / "liste-massifs.geojson"
+_EAWS_GEOJSON = _BASE_DIR / "eaws" / "micro-regions" / "FR_micro-regions.geojson"
+_MF_MASSIFS = _BASE_DIR / "meteofrance" / "liste-massifs.geojson"
 
 _FRANCE_FIXTURE = Path("regions/fixtures/eaws_FR.json")
 
@@ -107,10 +109,9 @@ class Command(BaseCommand):
         verbosity: int = options.get("verbosity", 1)
 
         eaws_features = _load_geojson(_EAWS_GEOJSON)
-        fr_names = _load_json(_FR_NAMES)
         mf_code_to_mountain = _load_mf_mountain_map(_MF_MASSIFS)
 
-        entries = _build_entries(eaws_features, fr_names, mf_code_to_mountain)
+        entries = _build_entries(eaws_features, mf_code_to_mountain)
 
         l1_count = sum(1 for e in entries if e["model"] == "regions.majorregion")
         l2_count = sum(1 for e in entries if e["model"] == "regions.subregion")
@@ -150,11 +151,6 @@ def _load_geojson(path: Path) -> list[dict[str, Any]]:
     return data["features"]  # type: ignore[no-any-return]
 
 
-def _load_json(path: Path) -> dict[str, Any]:
-    """Load a plain JSON object from *path*."""
-    return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
-
-
 def _load_mf_mountain_map(path: Path) -> dict[int, str]:
     """Build ``{code: mountain}`` from the MF massifs GeoJSON."""
     data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
@@ -170,7 +166,6 @@ def _load_mf_mountain_map(path: Path) -> dict[int, str]:
 
 def _build_entries(
     eaws_features: list[dict[str, Any]],
-    fr_names: dict[str, str],
     mf_code_to_mountain: dict[int, str],
 ) -> list[dict[str, Any]]:
     """Build the full fixture entry list (L1 + L2 + L4)."""
@@ -182,7 +177,7 @@ def _build_entries(
         region_id: str = feature["properties"]["id"]
         code = int(region_id.split("-")[1])
         mountain = mf_code_to_mountain[code]
-        name = fr_names[region_id]
+        name = lookup(region_id, "fr") or region_id
         _, sub_prefix = _MOUNTAIN_PREFIXES[mountain]
         geometry: dict[str, Any] = feature["geometry"]
         centre = centre_from_bbox(geometry)

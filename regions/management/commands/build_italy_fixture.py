@@ -5,7 +5,7 @@ alpine avalanche-service regions and produces a Django fixture with one L1
 ``MajorRegion`` and multiple L2 ``SubRegion`` / L4 ``MicroRegion``
 entries per region file.
 
-Source files (vendored under reference_data/eaws/):
+Source files (vendored under reference_data/eaws/micro-regions/):
     IT-21_micro-regions.geojson.json  — Piemonte
     IT-23_micro-regions.geojson.json  — Valle d'Aosta
     IT-25_micro-regions.geojson.json  — Lombardia
@@ -27,7 +27,8 @@ L1 / L2 / L4 hierarchy derived from EAWS feature IDs:
         - For IT-32-BZ: 'IT-32-BZ-17' → L2 = 'IT-32-BZ-17' (1:1, direct
           child of L1). 'IT-32-BZ-15-02' → L2 = 'IT-32-BZ-15'.
     L4: one MicroRegion per feature; region_id = feature id.
-    names: name_native = name_en = feature id (placeholder; no source names).
+    names: L4 name from EAWS it.json; L1/L2 name_native from it.json,
+        name_en from en.json. Falls back to region_id if EAWS has no entry.
     neighbours: [] (not used for intent rendering).
 
 Safe-by-default: read-only unless ``--commit`` is passed. A bare
@@ -52,13 +53,15 @@ from typing import Any
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 
+from regions.names import lookup
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Source / output paths (module-level so tests can monkeypatch them)
 # ---------------------------------------------------------------------------
 
-_EAWS_DIR = Path("reference_data") / "eaws"
+_EAWS_DIR = Path("reference_data") / "eaws" / "micro-regions"
 
 _IT_REGION_CODES = [
     "IT-21",
@@ -205,10 +208,11 @@ def _build_region_entries(
         region_id: str = feature["properties"]["id"]
         geometry: dict[str, Any] = feature["geometry"]
         centre = centre_from_bbox(geometry)
+        l4_name = lookup(region_id, "it") or region_id
 
         l4_field: dict[str, Any] = {
             "region_id": region_id,
-            "name": region_id,
+            "name": l4_name,
             "slug": slugify(region_id),
             "centre": centre,
             "boundary": geometry,
@@ -233,8 +237,8 @@ def _build_region_entries(
             "fields": {
                 "prefix": l2_prefix,
                 "major": [l1_code],
-                "name_native": l2_prefix,
-                "name_en": l2_prefix,
+                "name_native": lookup(l2_prefix, "it") or l2_prefix,
+                "name_en": lookup(l2_prefix, "en") or l2_prefix,
                 "centre": centre,
                 "bbox": bbox,
                 "boundary": boundary,
@@ -254,8 +258,8 @@ def _build_region_entries(
         "fields": {
             "prefix": l1_code,
             "country": "IT",
-            "name_native": l1_code,
-            "name_en": l1_code,
+            "name_native": lookup(l1_code, "it") or l1_code,
+            "name_en": lookup(l1_code, "en") or l1_code,
             "centre": l1_centre,
             "bbox": l1_bbox,
             "boundary": l1_boundary,
