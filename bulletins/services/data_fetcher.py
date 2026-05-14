@@ -197,7 +197,7 @@ def _get_region(region_id: str) -> MicroRegion:
     except MicroRegion.DoesNotExist as exc:
         raise UnknownRegionError(
             f"Bulletin references unknown region_id={region_id!r} — "
-            "add it to regions/fixtures/eaws.json (and rerun "
+            "add it to regions/fixtures/eaws_ch.json (and rerun "
             "refresh_eaws_fixtures if the EAWS source has changed) before "
             "re-ingesting."
         ) from exc

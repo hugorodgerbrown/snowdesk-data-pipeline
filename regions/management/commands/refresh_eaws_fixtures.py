@@ -1,7 +1,7 @@
 """refresh_eaws_fixtures — derive L1/L2 geometry from L4 children.
 
 Regenerates the ``centre``, ``bbox`` and ``boundary`` fields on the
-L1/L2 EAWS entries in ``regions/fixtures/eaws.json`` from the union of
+L1/L2 EAWS entries in ``regions/fixtures/eaws_ch.json`` from the union of
 their L4 children in the same file.
 
 The L4 (``regions.microregion``) data is the authoritative geographic
@@ -22,7 +22,7 @@ lacks shapely raises a friendly RuntimeError pointing at
 This command does NOT:
   * Fetch from ``regions.avalanches.org`` — the authoritative dataset is
     already snapshotted under ``docs/`` and materialised in
-    ``regions/fixtures/eaws.json``. Refreshing the L4 snapshot is a
+    ``regions/fixtures/eaws_ch.json``. Refreshing the L4 snapshot is a
     separate, manual step handled by ``scripts/build_regions_fixture.py``.
   * Edit the L1/L2 ``name_native`` / ``name_en`` labels — those are
     hand-maintained and outside this command's remit.
@@ -52,7 +52,7 @@ from django.core.management.base import BaseCommand
 logger = logging.getLogger(__name__)
 
 _FIXTURES_DIR = Path("regions/fixtures")
-_EAWS_FIXTURE = _FIXTURES_DIR / "eaws.json"
+_EAWS_FIXTURE = _FIXTURES_DIR / "eaws_ch.json"
 
 _LABEL_MAJOR = "regions.majorregion"
 _LABEL_SUB = "regions.subregion"
@@ -63,7 +63,7 @@ class Command(BaseCommand):
     """Recompute L1/L2 centre + bbox from L4 unions. Read-only unless --commit."""
 
     help = (
-        "Recompute derived centre + bbox on the L1/L2 EAWS entries in eaws.json "
+        "Recompute derived centre + bbox on the L1/L2 EAWS entries in eaws_ch.json "
         "from the union of their L4 children. Read-only unless --commit is passed."
     )
 

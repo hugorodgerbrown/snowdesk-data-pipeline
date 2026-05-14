@@ -198,12 +198,12 @@ class TestMicroRegionsFixture:
 
     def test_fixture_loads_successfully(self) -> None:
         """The regions fixture loads 149 MicroRegion rows without errors."""
-        call_command("loaddata", "eaws", verbosity=0)
+        call_command("loaddata", "regions/fixtures/eaws_ch.json", verbosity=0)
         assert MicroRegion.objects.count() == 149
 
     def test_fixture_regions_have_centre_and_boundary(self) -> None:
         """Every region loaded from the fixture has non-null centre and boundary."""
-        call_command("loaddata", "eaws", verbosity=0)
+        call_command("loaddata", "regions/fixtures/eaws_ch.json", verbosity=0)
         without_centre = MicroRegion.objects.filter(centre__isnull=True).count()
         without_boundary = MicroRegion.objects.filter(boundary__isnull=True).count()
         assert without_centre == 0
@@ -211,7 +211,7 @@ class TestMicroRegionsFixture:
 
     def test_fixture_first_region_has_expected_data(self) -> None:
         """The CH-1111 region has the correct centre coordinates."""
-        call_command("loaddata", "eaws", verbosity=0)
+        call_command("loaddata", "regions/fixtures/eaws_ch.json", verbosity=0)
         region = MicroRegion.objects.get(region_id="CH-1111")
         assert region.name == "Waadtländer Voralpen"  # updated SNOW-178
         assert region.centre is not None
@@ -222,7 +222,7 @@ class TestMicroRegionsFixture:
 
     def test_fixture_loads_neighbour_pairs(self) -> None:
         """The fixture rehydrates MicroRegion.neighbours via natural-key M2M."""
-        call_command("loaddata", "eaws", verbosity=0)
+        call_command("loaddata", "regions/fixtures/eaws_ch.json", verbosity=0)
         # Every region should have at least one neighbour — SLF micro-regions
         # tessellate a contiguous country, so isolated nodes would indicate a
         # bug in the build script.
@@ -235,7 +235,7 @@ class TestMicroRegionsFixture:
 
     def test_fixture_neighbour_graph_is_symmetric(self) -> None:
         """For every (A, B) edge, A appears in B.neighbours and vice versa."""
-        call_command("loaddata", "eaws", verbosity=0)
+        call_command("loaddata", "regions/fixtures/eaws_ch.json", verbosity=0)
         for region in MicroRegion.objects.prefetch_related("neighbours"):
             for neighbour in region.neighbours.all():
                 back_edge = neighbour.neighbours.filter(pk=region.pk).exists()
@@ -246,7 +246,7 @@ class TestMicroRegionsFixture:
 
     def test_fixture_known_neighbour_pair(self) -> None:
         """CH-4115 (Martigny-Verbier) borders CH-4116 (Haut Val de Bagnes)."""
-        call_command("loaddata", "eaws", verbosity=0)
+        call_command("loaddata", "regions/fixtures/eaws_ch.json", verbosity=0)
         a = MicroRegion.objects.get(region_id="CH-4115")
         b = MicroRegion.objects.get(region_id="CH-4116")
         assert b in a.neighbours.all()
@@ -259,7 +259,7 @@ class TestMicroRegionsFixture:
         even though MapLibre auto-closes the fill. This assertion guards
         the CSV source from regressing to unclosed rings.
         """
-        call_command("loaddata", "eaws", verbosity=0)
+        call_command("loaddata", "regions/fixtures/eaws_ch.json", verbosity=0)
         offenders: list[str] = []
         for region in MicroRegion.objects.all():
             assert region.boundary is not None

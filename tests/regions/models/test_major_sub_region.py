@@ -132,28 +132,28 @@ class TestMicroRegionSubregionFK:
 
 @pytest.mark.django_db
 class TestEawsFixtures:
-    """Tests for the EAWS reference fixtures (consolidated eaws.json)."""
+    """Tests for the EAWS reference fixtures (consolidated eaws_ch.json)."""
 
     def test_major_fixture_loads(self) -> None:
-        """eaws.json loads cleanly and populates MajorRegion rows.
+        """eaws_ch.json loads cleanly and populates MajorRegion rows.
 
         Note: migration 0012 already loaded the EAWS fixtures during test DB
         setup, so ``loaddata`` here is a no-op idempotency check.
         """
-        call_command("loaddata", "eaws", verbosity=0)
+        call_command("loaddata", "regions/fixtures/eaws_ch.json", verbosity=0)
         assert MajorRegion.objects.count() >= 9
         assert MajorRegion.objects.filter(prefix="CH-4").exists()
 
     def test_sub_fixture_loads(self) -> None:
-        """eaws.json loads cleanly and links SubRegion rows to MajorRegion."""
-        call_command("loaddata", "eaws", verbosity=0)
+        """eaws_ch.json loads cleanly and links SubRegion rows to MajorRegion."""
+        call_command("loaddata", "regions/fixtures/eaws_ch.json", verbosity=0)
         assert SubRegion.objects.count() >= 21
         sub = SubRegion.objects.get(prefix="CH-41")
         assert sub.major.prefix == "CH-4"
 
     def test_regions_fixture_links_to_subregions(self) -> None:
-        """Loading eaws.json populates subregion FKs via natural key."""
-        call_command("loaddata", "eaws", verbosity=0)
+        """Loading eaws_ch.json populates subregion FKs via natural key."""
+        call_command("loaddata", "regions/fixtures/eaws_ch.json", verbosity=0)
         region = MicroRegion.objects.get(region_id="CH-4115")
         assert region.subregion is not None
         assert region.subregion.prefix == "CH-41"

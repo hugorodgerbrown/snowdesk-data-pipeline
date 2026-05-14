@@ -20,7 +20,7 @@ import pytest
 from django.core.management import call_command
 
 FIXTURES_DIR = Path("regions/fixtures")
-EAWS_FIXTURE = FIXTURES_DIR / "eaws.json"
+EAWS_FIXTURE = FIXTURES_DIR / "eaws_ch.json"
 
 
 class TestRefreshEawsFixtures:
@@ -203,7 +203,7 @@ class TestBoundaryFromChildren:
 
 def _seed_tmp_eaws_fixture(tmp_path: Path) -> Path:
     """Write a minimal three-section EAWS fixture under ``tmp_path``."""
-    path = tmp_path / "eaws.json"
+    path = tmp_path / "eaws_ch.json"
     entries = [
         _major_entry("CH-1", centre=None, bbox=None),
         _sub_entry("CH-11", major="CH-1", centre=None, bbox=None),

@@ -1,4 +1,4 @@
-"""build_france_fixture — build regions/fixtures/france.json from source data.
+"""build_france_fixture — build regions/fixtures/eaws_fr.json from source data.
 
 Combines three source files to produce a Django fixture with 4 L1
 ``MajorRegion``, 4 L2 ``SubRegion`` (one placeholder per L1), and 35 L4
@@ -29,7 +29,7 @@ Usage:
     # Preview only (default — no writes).
     poetry run python manage.py build_france_fixture
 
-    # Write regions/fixtures/france.json.
+    # Write regions/fixtures/eaws_fr.json.
     poetry run python manage.py build_france_fixture --commit
 """
 
@@ -56,7 +56,7 @@ _EAWS_GEOJSON = _BASE_DIR / "eaws" / "FR_micro-regions.geojson"
 _FR_NAMES = _BASE_DIR / "eaws" / "fr_names.json"
 _MF_MASSIFS = _BASE_DIR / "liste-massifs.geojson"
 
-_FRANCE_FIXTURE = Path("regions/fixtures/france.json")
+_FRANCE_FIXTURE = Path("regions/fixtures/eaws_fr.json")
 
 # ---------------------------------------------------------------------------
 # L1 mountain → (major prefix, sub prefix)
@@ -74,13 +74,13 @@ _MOUNTAIN_ORDER = ["Alpes du Nord", "Alpes du Sud", "Pyrenees", "Corse"]
 
 
 class Command(BaseCommand):
-    """Build regions/fixtures/france.json from EAWS + MF source files.
+    """Build regions/fixtures/eaws_fr.json from EAWS + MF source files.
 
     Read-only by default; pass ``--commit`` to write the fixture.
     """
 
     help = (
-        "Build regions/fixtures/france.json from EAWS micro-region geometry "
+        "Build regions/fixtures/eaws_fr.json from EAWS micro-region geometry "
         "and MeteoFrance massif groupings. Read-only unless --commit is passed."
     )
 

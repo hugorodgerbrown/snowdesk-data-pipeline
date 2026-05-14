@@ -1,7 +1,7 @@
 """
 tests/regions/test_fixture_consistency.py — SNOW-178 regression guard.
 
-Loads the committed ``regions/fixtures/eaws.json`` and
+Loads the committed ``regions/fixtures/eaws_ch.json`` and
 ``regions/fixtures/resorts.json`` fixtures and asserts that every geocoded
 resort's (longitude, latitude) point lies inside its FK MicroRegion's
 ``boundary`` polygon.
@@ -31,7 +31,7 @@ from regions.models import Resort
 def test_geocoded_resorts_inside_region_polygon() -> None:
     """Every geocoded resort's lat/lon must be inside its FK polygon.
 
-    Loads the committed eaws.json and resorts.json fixtures, then iterates
+    Loads the committed eaws_ch.json and resorts.json fixtures, then iterates
     every Resort with non-null latitude/longitude and asserts that
     shapely.geometry.Point(longitude, latitude).within(boundary_polygon)
     is True.
@@ -42,7 +42,7 @@ def test_geocoded_resorts_inside_region_polygon() -> None:
     from shapely.geometry import Point, shape
 
     # Load the committed fixtures into the test DB.
-    call_command("loaddata", "regions/fixtures/eaws.json", verbosity=0)
+    call_command("loaddata", "regions/fixtures/eaws_ch.json", verbosity=0)
     call_command("loaddata", "regions/fixtures/resorts.json", verbosity=0)
 
     geocoded = list(
