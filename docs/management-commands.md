@@ -67,6 +67,60 @@ poetry run python manage.py fetch_bulletins \
 #                            on the public, no-auth API matters more than
 #                            wall-clock speed.
 
+# Fetch EUREGIO/ALBINA bulletins (AT-07, IT-32-BZ, IT-32-TN) from the ALBINA CDN.
+# Same flag set as fetch_bulletins. Default start date: latest EUREGIO bulletin's
+# valid_from day in DB; falls back to SEASON_START_DATE when the DB is empty.
+poetry run python manage.py fetch_euregio_bulletins
+
+# Single day.
+poetry run python manage.py fetch_euregio_bulletins --date 2026-01-15 --commit
+
+# Explicit window — overrides the smart default.
+poetry run python manage.py fetch_euregio_bulletins \
+    --start-date 2025-11-01 --end-date 2026-04-30 --commit
+
+# Re-pull existing EUREGIO rows.
+poetry run python manage.py fetch_euregio_bulletins --commit --force
+
+# Bootstrap an empty local DB end-to-end against the on-disk archive.
+# Dev server must be running; settings.EUREGIO_API_LOCAL_MIRROR_URL must be configured.
+poetry run python manage.py fetch_euregio_bulletins --source local-mirror --commit
+
+# Capture fetched bulletins into bulletins/local_mirrors/euregio_archive.ndjson.
+# Use --stash alone to refresh the archive without DB writes, or combine
+# with --commit for a full-fidelity capture.
+poetry run python manage.py fetch_euregio_bulletins --stash
+poetry run python manage.py fetch_euregio_bulletins --commit --stash
+
+# Multi-season backfill — pace CDN requests.
+poetry run python manage.py fetch_euregio_bulletins \
+    --start-date 2024-11-01 --end-date 2025-04-30 \
+    --delay 0.3 --commit
+
+# Flags:
+#   --start-date YYYY-MM-DD  default: latest EUREGIO bulletin's valid_from day,
+#                            or settings.SEASON_START_DATE when the DB is empty.
+#   --end-date   YYYY-MM-DD  default: today (UTC)
+#   --date       YYYY-MM-DD  shortcut for --start-date == --end-date
+#                            (mutually exclusive with the range flags)
+#   --commit                 persist; omit for a read-only run
+#   --force                  upsert existing bulletins instead of skipping
+#   --source {live,local-mirror}
+#                            default 'live' (real ALBINA CDN). 'local-mirror'
+#                            replays bulletins/local_mirrors/euregio_archive.ndjson
+#                            via the dev-only view; errors out if the mirror URL
+#                            setting is not configured.
+#   --stash                  append fetched bulletins to the on-disk archive
+#   --delay      SECONDS     default 0. Sleep N seconds between CDN requests.
+#                            Intended for large backfills where pacing matters.
+
+# One-off archive rebuild script (not a management command):
+#   python scripts/fetch_euregio_archive.py [--start-date YYYY-MM-DD]
+#                                           [--end-date YYYY-MM-DD]
+#                                           [--regions AT-07 IT-32-BZ IT-32-TN]
+#   Overwrites bulletins/local_mirrors/euregio_archive.ndjson from the live ALBINA CDN.
+#   Incremental additions handled by: fetch_euregio_bulletins --stash
+
 # Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
 # Read-only by default — pass --commit to persist (same convention as fetch_bulletins).
 poetry run python manage.py rebuild_render_models           # read-only
