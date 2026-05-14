@@ -38,12 +38,18 @@ from __future__ import annotations
 import json
 import logging
 from argparse import ArgumentParser
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
+
+from scripts.build_regions_fixture import (
+    bbox_from_children,
+    boundary_from_children,
+    centre_from_bbox,
+    centre_from_children,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +185,7 @@ def _build_entries(
         name = fr_names[region_id]
         _, sub_prefix = _MOUNTAIN_PREFIXES[mountain]
         geometry: dict[str, Any] = feature["geometry"]
-        centre = _centre_from_bbox(geometry)
+        centre = centre_from_bbox(geometry)
         micro_fields: dict[str, Any] = {
             "region_id": region_id,
             "name": name,
@@ -212,9 +218,9 @@ def _build_entries(
             )
             continue
 
-        centre = _centre_from_children(children)
-        bbox = _bbox_from_children(children)
-        boundary = _boundary_from_children(children)
+        centre = centre_from_children(children)
+        bbox = bbox_from_children(children)
+        boundary = boundary_from_children(children)
 
         l1_entries.append(
             {
@@ -251,94 +257,6 @@ def _build_entries(
         )
 
     return l1_entries + l2_entries + l4_entries
-
-
-# ---------------------------------------------------------------------------
-# Geometry helpers (re-implemented locally — do not import from refresh_eaws_fixtures)
-# ---------------------------------------------------------------------------
-
-
-def _centre_from_bbox(geometry: dict[str, Any]) -> dict[str, float]:
-    """Return the bbox midpoint of a GeoJSON geometry as ``{lon, lat}``."""
-    bbox = _bbox_from_geometry(geometry)
-    return {
-        "lon": (bbox[0] + bbox[2]) / 2,
-        "lat": (bbox[1] + bbox[3]) / 2,
-    }
-
-
-def _bbox_from_geometry(geometry: dict[str, Any]) -> list[float]:
-    """Return ``[min_lon, min_lat, max_lon, max_lat]`` for a GeoJSON geometry."""
-    coords = list(_iter_coords_from_geometry(geometry))
-    lons = [c[0] for c in coords]
-    lats = [c[1] for c in coords]
-    return [min(lons), min(lats), max(lons), max(lats)]
-
-
-def _iter_coords_from_geometry(
-    geometry: dict[str, Any],
-) -> Iterator[tuple[float, float]]:
-    """Yield every ``(lon, lat)`` pair from a GeoJSON geometry."""
-    geo_type: str = geometry["type"]
-    if geo_type == "Polygon":
-        for ring in geometry["coordinates"]:
-            yield from ring
-    elif geo_type == "MultiPolygon":
-        for polygon in geometry["coordinates"]:
-            for ring in polygon:
-                yield from ring
-    else:
-        raise ValueError(f"Unsupported geometry type: {geo_type}")
-
-
-def _centre_from_children(children: list[dict[str, Any]]) -> dict[str, float]:
-    """Return the arithmetic mean of the children's ``centre`` values."""
-    lons = [child["centre"]["lon"] for child in children if child.get("centre")]
-    lats = [child["centre"]["lat"] for child in children if child.get("centre")]
-    return {"lon": sum(lons) / len(lons), "lat": sum(lats) / len(lats)}
-
-
-def _iter_coords(
-    children: list[dict[str, Any]],
-) -> Iterator[tuple[float, float]]:
-    """Yield every ``(lon, lat)`` from the children's boundary geometries."""
-    for child in children:
-        boundary = child.get("boundary")
-        if not boundary:
-            continue
-        yield from _iter_coords_from_geometry(boundary)
-
-
-def _bbox_from_children(children: list[dict[str, Any]]) -> list[float]:
-    """Return ``[min_lon, min_lat, max_lon, max_lat]`` over all child boundaries."""
-    coords = list(_iter_coords(children))
-    lons = [c[0] for c in coords]
-    lats = [c[1] for c in coords]
-    return [min(lons), min(lats), max(lons), max(lats)]
-
-
-def _boundary_from_children(children: list[dict[str, Any]]) -> dict[str, Any]:
-    """Merge child boundaries into a single GeoJSON Polygon/MultiPolygon.
-
-    Imports ``shapely`` lazily so the runtime never needs the package.
-    If shapely is missing, raises a ``RuntimeError`` with install instructions.
-
-    Returns a plain ``dict`` (GeoJSON shape) ready for the ``boundary`` field.
-    """
-    try:
-        from shapely.geometry import mapping, shape
-        from shapely.ops import unary_union
-    except ImportError as exc:  # pragma: no cover — dev-only dependency
-        raise RuntimeError(
-            "build_france_fixture requires the dev-only `shapely` dependency. "
-            "Install it with `poetry install --with dev`."
-        ) from exc
-
-    polys = [shape(child["boundary"]) for child in children if child.get("boundary")]
-    union = unary_union(polys)
-    # Round-trip through json to normalise shapely's tuple coordinates to lists,
-    # so the idempotence diff check compares like-for-like.
-    return json.loads(json.dumps(mapping(union)))  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------
