@@ -703,8 +703,8 @@ def test_region_summary_includes_headline_rating_chip():
 
 
 @pytest.mark.django_db
-def test_region_summary_chip_falls_back_to_no_rating():
-    """A region with no RegionDayRating row renders the chip in no_rating state."""
+def test_region_summary_no_rating_shows_fallback_icon():
+    """A region with no RegionDayRating row shows the favicon icon, not a chip."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
         prefix="CH-41", major=major, name_native="Lower Valais"
@@ -718,7 +718,11 @@ def test_region_summary_chip_falls_back_to_no_rating():
     )
     assert response.status_code == 200
     html = response.json()["html"]
-    assert 'data-level="no_rating"' in html
+    # No danger-tile chip rendered when there is no bulletin.
+    assert "danger-tile" not in html
+    assert 'data-level="no_rating"' not in html
+    # Fallback icon present instead.
+    assert "favicon.svg" in html
 
 
 @pytest.mark.django_db
@@ -821,12 +825,20 @@ def test_region_summary_level_key_falls_back_to_no_rating():
 
 @pytest.mark.django_db
 def test_region_summary_cta_label_includes_date():
-    """The bulletin CTA carries the displayed date in its label."""
+    """The bulletin CTA carries the displayed date in its label when a bulletin exists."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
         prefix="CH-41", major=major, name_native="Lower Valais"
     )
-    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
+    region = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=sub
+    )
+    target_date = dt.date(2026, 1, 15)
+    RegionDayRatingFactory.create(
+        region=region,
+        date=target_date,
+        max_rating=RegionDayRating.Rating.MODERATE,
+    )
 
     client = Client()
     response = client.get(
@@ -1076,3 +1088,119 @@ def test_regions_geojson_query_count() -> None:
     assert response.status_code == 200
     # One SELECT with select_related joins — single query regardless of feature count.
     assert len(ctx.captured_queries) <= 2
+
+
+# ---------------------------------------------------------------------------
+# region-summary — no-bulletin branch (SNOW-172)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_region_summary_no_bulletin_shows_favicon_icon():
+    """When no RegionDayRating exists, the tooltip shows the favicon icon instead of a chip."""
+    major = MajorRegionFactory.create(prefix="FR-3", country="FR", name_en="Pyrenees")
+    sub = SubRegionFactory.create(prefix="FR-3A", major=major, name_en="Pyrenees")
+    MicroRegionFactory.create(
+        region_id="FR-68",
+        name="Haute-Tarentaise",
+        slug="fr-68",
+        subregion=sub,
+    )
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["FR-68"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    html = response.json()["html"]
+    # Favicon icon is present.
+    assert "favicon.svg" in html
+    # No danger-tile chip rendered.
+    assert "danger-tile" not in html
+    assert (
+        "<span"
+        not in html.split("region-tooltip-header")[1].split("region-tooltip-name")[0]
+    )
+
+
+@pytest.mark.django_db
+def test_region_summary_no_bulletin_shows_no_bulletin_text():
+    """When no RegionDayRating exists, the tooltip shows "No bulletin available" text."""
+    major = MajorRegionFactory.create(prefix="FR-3", country="FR", name_en="Pyrenees")
+    sub = SubRegionFactory.create(prefix="FR-3A", major=major, name_en="Pyrenees")
+    MicroRegionFactory.create(
+        region_id="FR-68",
+        name="Haute-Tarentaise",
+        slug="fr-68",
+        subregion=sub,
+    )
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["FR-68"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    html = response.json()["html"]
+    # "No bulletin available" text is shown with the date.
+    assert "No bulletin available for" in html
+    assert "15 Jan" in html
+    assert "2026" in html
+    # The bulletin link is absent.
+    assert "Open bulletin for" not in html
+
+
+@pytest.mark.django_db
+def test_region_summary_no_bulletin_testid_present():
+    """The no-bulletin element carries the region-tooltip-no-bulletin test id."""
+    major = MajorRegionFactory.create(prefix="FR-3", country="FR", name_en="Pyrenees")
+    sub = SubRegionFactory.create(prefix="FR-3A", major=major, name_en="Pyrenees")
+    MicroRegionFactory.create(
+        region_id="FR-68",
+        name="Haute-Tarentaise",
+        slug="fr-68",
+        subregion=sub,
+    )
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["FR-68"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert 'data-testid="region-tooltip-no-bulletin"' in html
+    # The bulletin link test id must not be present.
+    assert 'data-testid="region-tooltip-bulletin-link"' not in html
+
+
+@pytest.mark.django_db
+def test_region_summary_with_bulletin_renders_chip_and_link():
+    """The existing bulletin path still renders the chip + CTA link (regression guard)."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    region = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=sub
+    )
+    target_date = dt.date(2026, 1, 15)
+    RegionDayRatingFactory.create(
+        region=region,
+        date=target_date,
+        max_rating=RegionDayRating.Rating.CONSIDERABLE,
+    )
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    html = response.json()["html"]
+    # Chip is present with the correct rating.
+    assert "danger-tile" in html
+    assert 'data-level="considerable"' in html
+    # Bulletin CTA link is present.
+    assert 'data-testid="region-tooltip-bulletin-link"' in html
+    assert "Open bulletin for" in html
+    # Fallback elements must not appear.
+    assert "favicon.svg" not in html
+    assert "No bulletin available" not in html

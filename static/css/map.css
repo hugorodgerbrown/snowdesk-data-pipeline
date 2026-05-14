@@ -598,6 +598,23 @@
     background: var(--color-bg-3, rgba(0, 0, 0, 0.1));
 }
 
+/* Default icon shown in place of the danger-tile when no bulletin exists. */
+.region-tooltip-icon-default {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    opacity: 0.45;
+}
+
+/* Muted label shown in place of the bulletin CTA when no bulletin exists. */
+.region-tooltip-no-bulletin {
+    margin-top: 8px;
+    padding: 6px 0;
+    font-size: 13px;
+    font-style: italic;
+    color: var(--color-text-2, #5f5e5a);
+}
+
 /* Placeholder for future editorial content — empty by default. */
 .region-tooltip-editorial {
     margin-top: 4px;
