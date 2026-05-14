@@ -1,0 +1,52 @@
+{% comment %}
+public/templates/public/_region_tooltip.html — Tooltip body for the region
+MapLibre Popup on /map/.
+
+Server-rendered by ``public.api.region_summary`` and injected into a
+``maplibregl.Popup`` via ``popup.setHTML(data.html)`` in
+``static/js/map.js``. The popup is anchored to the click point (or the
+region's bbox centre for deep-link / resort-pin paths).
+
+Content:
+  1. Header row — danger-tile chip and region name side by side.
+     The chip is a danger-tile linked to the day's bulletin URL (dated
+     when ?d= was supplied, evergreen otherwise). Falls back to the
+     no_rating state when no RegionDayRating row exists for the date.
+  2. Geographic breadcrumb — three levels in English:
+     country › major (L1) › sub-region (L2).
+     Uses ``name_en`` on MajorRegion / SubRegion, falling back to
+     ``name_native`` for any future entry that lacks an English variant.
+  3. Bulletin CTA — a button-styled link to open the bulletin for the
+     displayed date. The date appears in the button label.
+
+Context variables expected:
+  region      — MicroRegion instance, with subregion__major select_related.
+  day_rating  — RegionDayRating instance for the displayed date, or None.
+  bulletin_url — Absolute URL for the day's bulletin (dated or evergreen).
+  country_name — Human-readable country name (e.g. "Switzerland").
+  target_date  — datetime.date for the displayed day.
+{% endcomment %}
+{% load i18n snowdesk_time %}
+
+<div class="region-tooltip" data-region-id="{{ region.region_id }}">
+    <div class="region-tooltip-header">
+        <a href="{{ bulletin_url }}" class="region-tooltip-rating-link" data-testid="region-tooltip-rating-link">
+            <span
+                class="danger-tile"
+                data-level="{{ day_rating.max_rating|default:'no_rating' }}"
+            >{{ day_rating.max_rating|default:'no_rating'|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+        </a>
+        <h2 class="region-tooltip-name">{{ region.name }}</h2>
+    </div>
+    <p class="region-tooltip-breadcrumb">
+        {{ country_name }}
+        <span aria-hidden="true"> › </span>
+        {{ region.subregion.major.name_en|default:region.subregion.major.name_native }}
+        <span aria-hidden="true"> › </span>
+        {{ region.subregion.name_en|default:region.subregion.name_native }}
+    </p>
+    <a href="{{ bulletin_url }}" class="region-tooltip-bulletin-link" data-testid="region-tooltip-bulletin-link">
+        {% blocktrans with d=target_date|date:"j N Y" trimmed %}Open bulletin for {{ d }} →{% endblocktrans %}
+    </a>
+    <div class="region-tooltip-editorial" data-testid="region-tooltip-editorial"></div>
+</div>

@@ -10,7 +10,7 @@ Covers:
   - Missing-row dates render as inert ``no_rating`` cells.
   - Rows with a ``source_bulletin`` render as interactive (``has_bulletin``).
   - ``is_today`` flag set only on the today cell.
-  - ``is_selected`` always ``False`` from the builder (selection is client-side).
+  - ``is_selected`` always ``False`` from the builder (selection is client-side only).
   - Month-label boundaries align with the column where the month flips.
   - ``season_header`` returns the label dict or None.
 """

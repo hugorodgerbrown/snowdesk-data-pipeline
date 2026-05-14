@@ -3,12 +3,15 @@ tests/public/test_map_api.py — Tests for the /api/ JSON endpoints.
 
 Covers the endpoints consumed by the /map/ page:
 
-* ``api:today_summaries``     — today's danger summaries per region.
-* ``api:season_ratings``      — whole-season ``{date: {region_id: int}}``.
-* ``api:resorts_by_region``   — resort list per region.
-* ``api:regions_geojson``     — FeatureCollection of L4 region polygons.
+* ``api:today_summaries``       — today's danger summaries per region.
+* ``api:season_ratings``        — whole-season ``{date: {region_id: int}}``.
+* ``api:resorts_by_region``     — resort list per region.
+* ``api:regions_geojson``       — FeatureCollection of L4 region polygons.
 * ``api:major_regions_geojson`` — FeatureCollection of L1 region polygons (SNOW-59).
 * ``api:sub_regions_geojson``   — FeatureCollection of L2 region polygons (SNOW-59).
+* ``api:region_summary``        — tooltip with danger-rating chip (?d= aware),
+                                  English breadcrumb, date caption, and bulletin
+                                  CTA (SNOW-174). Resort list removed.
 """
 
 from __future__ import annotations
@@ -18,7 +21,9 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -518,210 +523,324 @@ def test_season_ratings_returns_expected_shape():
 
 
 # ---------------------------------------------------------------------------
-# region-summary  (SNOW-47: ?d= date query param)
+# region-summary  (SNOW-174 pivot: tooltip, no bulletin dependency)
 # ---------------------------------------------------------------------------
 
 
-def _make_bulletin_for_date(region, day: dt.date, render_model: dict):
-    """Create a bulletin valid for ``day`` in ``region``."""
-    vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
-    vt = datetime(day.year, day.month, day.day, 17, 0, tzinfo=UTC)
-    bulletin = BulletinFactory.create(
-        issued_at=vf - timedelta(minutes=30),
-        valid_from=vf,
-        valid_to=vt,
-        render_model=render_model,
-        render_model_version=render_model.get("version", 3),
+@pytest.mark.django_db
+def test_region_summary_returns_html_for_known_region():
+    """200 response with a single ``html`` key containing the region name."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
     )
-    RegionBulletinFactory.create(
-        bulletin=bulletin,
-        region=region,
-        region_name_at_time=region.name,
+    MicroRegionFactory.create(
+        region_id="CH-4115",
+        name="Martigny – Verbier",
+        slug="ch-4115",
+        subregion=sub,
     )
-    return bulletin
+    client = Client()
+    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data.keys()) == {"html", "level"}
+    assert "Martigny" in data["html"]
+
+
+@pytest.mark.django_db
+def test_region_summary_includes_geographic_breadcrumb():
+    """The tooltip HTML includes three breadcrumb labels (country › L1 › L2) in order.
+
+    The region name moved to the header row alongside the chip and is no
+    longer the trailing breadcrumb entry.
+    """
+    major = MajorRegionFactory.create(
+        prefix="CH-4", country="CH", name_native="Wallis", name_en="Valais"
+    )
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Bas-Valais", name_en="Lower Valais"
+    )
+    MicroRegionFactory.create(
+        region_id="CH-4115",
+        name="Martigny – Verbier",
+        slug="ch-4115",
+        subregion=sub,
+    )
+    client = Client()
+    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    assert response.status_code == 200
+    html = response.json()["html"]
+    # Country name is the English form from COUNTRY_NAMES, not the ISO code.
+    assert "Switzerland" in html
+    # English names for L1 and L2.
+    assert "Valais" in html
+    assert "Lower Valais" in html
+    # Region name still present in the header <h2>.
+    assert "Martigny" in html
+    # French/German native names must not appear — the template prefers name_en.
+    assert "Wallis" not in html
+    assert "Bas-Valais" not in html
+    # Chevron separator.
+    assert "›" in html
+    # The breadcrumb paragraph carries three labels; check order within it.
+    breadcrumb_start = html.index("region-tooltip-breadcrumb")
+    breadcrumb = html[breadcrumb_start:]
+    assert breadcrumb.index("Switzerland") < breadcrumb.index("Valais")
+    assert breadcrumb.index("Valais") < breadcrumb.index("Lower Valais")
+    # Region name must not be inside the breadcrumb paragraph.
+    bc_para_end = breadcrumb.index("</p>")
+    bc_para = breadcrumb[:bc_para_end]
+    assert "Martigny" not in bc_para
+
+
+@pytest.mark.django_db
+def test_region_summary_unknown_region_returns_404():
+    """An unknown region_id returns 404."""
+    client = Client()
+    response = client.get(reverse("api:region_summary", args=["CH-UNKNOWN"]))
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_region_summary_query_count():
+    """The tooltip view issues at most 2 DB queries."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
+    client = Client()
+    with CaptureQueriesContext(connection) as ctx:
+        response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    assert response.status_code == 200
+    # Queries: region + subregion + major join (1), RegionDayRating lookup (1).
+    # The resorts prefetch was dropped in SNOW-174 when the resort list was removed.
+    assert len(ctx.captured_queries) <= 2
 
 
 @pytest.mark.django_db
 def test_region_summary_accepts_date_query_param():
-    """``?d=YYYY-MM-DD`` returns the bulletin valid for that date, not today."""
-    region = MicroRegionFactory.create(
-        region_id="CH-4115", name="Martigny – Verbier", slug="ch-4115"
+    """?d=YYYY-MM-DD is honoured and the chip reflects that day's rating."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
     )
-    # Today's bulletin: HIGH. Past date's bulletin: MODERATE. The ?d=
-    # query must select the past one.
-    _make_today_bulletin(region, _render_model(rating="high"))
-    past_day = timezone.localdate() - timedelta(days=30)
-    _make_bulletin_for_date(region, past_day, _render_model(rating="moderate"))
+    region = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=sub
+    )
+    target_date = dt.date(2026, 1, 15)
+    RegionDayRatingFactory.create(
+        region=region,
+        date=target_date,
+        max_rating=RegionDayRating.Rating.CONSIDERABLE,
+    )
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=" + past_day.isoformat(),
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
     )
     assert response.status_code == 200
-    data = response.json()
-    # The peek HTML carries the rating word — "moderate" must be there
-    # (from the past-date bulletin), and "high" must NOT (from today's).
-    assert "moderate" in data["peek"].lower()
-    assert "high" not in data["peek"].lower()
+    html = response.json()["html"]
+    # The chip should carry the considerable rating.
+    assert 'data-level="considerable"' in html
+    # Digit inside the chip.
+    assert ">3<" in html
 
 
 @pytest.mark.django_db
 def test_region_summary_rejects_bad_date():
-    """An unparseable ``?d=`` returns 400 with a clear error code."""
-    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    """A malformed ?d= value returns 400 with {"error": "bad_date"}."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
+
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=not-a-date",
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=not-a-date"
     )
     assert response.status_code == 400
     assert response.json() == {"error": "bad_date"}
 
 
 @pytest.mark.django_db
-def test_region_summary_404_when_no_bulletin_for_target_date():
-    """A valid date with no bulletin coverage returns 404."""
-    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    # Bulletin only covers today; the past date has no coverage.
-    _make_today_bulletin(region, _render_model())
-    past_day = timezone.localdate() - timedelta(days=180)
+def test_region_summary_includes_headline_rating_chip():
+    """The chip is an <a> wrapping .danger-tile[data-level] linked to the bulletin URL."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    region = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=sub
+    )
+    target_date = dt.date(2026, 1, 15)
+    RegionDayRatingFactory.create(
+        region=region,
+        date=target_date,
+        max_rating=RegionDayRating.Rating.HIGH,
+    )
+
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=" + past_day.isoformat(),
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
     )
-    assert response.status_code == 404
-    assert response.json() == {"error": "no_bulletin"}
-
-
-@pytest.mark.django_db
-def test_region_summary_defaults_to_today_when_no_date_param():
-    """Without ``?d=`` the endpoint returns today's bulletin (legacy behaviour)."""
-    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    _make_today_bulletin(region, _render_model(rating="considerable"))
-    client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200
-    assert "considerable" in response.json()["peek"].lower()
+    html = response.json()["html"]
+    # The chip anchor carries the test id.
+    assert 'data-testid="region-tooltip-rating-link"' in html
+    # The chip spans carry the expected data-level.
+    assert 'data-level="high"' in html
+    # The digit for high is 4.
+    assert ">4<" in html
+    # The anchor href points at the dated bulletin URL.
+    assert "/ch-4115/" in html
+    assert "2026-01-15" in html
 
 
 @pytest.mark.django_db
-def test_region_summary_peek_includes_bulletin_deep_link():
-    """The peek HTML carries a deep-link to the full bulletin (SNOW-81).
-
-    Mirrors the map-pin link on the bulletin masthead so navigation
-    between map and bulletin is one tap in either direction.
-    """
-    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    _make_today_bulletin(region, _render_model(rating="moderate"))
-    client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
-    assert response.status_code == 200
-    peek = response.json()["peek"]
-    assert 'data-testid="region-peek-bulletin-link"' in peek
-    # SNOW-99: peek now carries the canonical form-3 URL — lowercase
-    # ``region_id`` and the *name*-derived slug — so clicking through
-    # doesn't incur an extra 302 hop. The factory creates a region
-    # named "CH-4115" (no name set), so ``name_slug`` falls back to the
-    # slugified form of the auto-stringified name.
-    expected_href = region.get_absolute_url()
-    assert f'href="{expected_href}"' in peek
-
-
-@pytest.mark.django_db
-def test_region_summary_expanded_html_includes_enriched_fields():
-    """
-    The drawer's ``expanded`` HTML must contain the same enriched fields the
-    bulletin page renders: a humanised problem-type label, the period pill
-    text, and the formatted elevation string. Regression guard for SNOW-69
-    where the drawer was passing the raw ``render_model`` straight through
-    and the partial silently skipped these rows.
-    """
-    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    rm = _render_model(
-        problem_type="wet_snow",
-        elevation={"lower": 2400, "upper": None, "treeline": False},
+def test_region_summary_chip_falls_back_to_no_rating():
+    """A region with no RegionDayRating row renders the chip in no_rating state."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
     )
-    # _render_model defaults to time_period="all_day"; flip the problem to
-    # "later" so we exercise the time_period_label path too.
-    rm["traits"][0]["problems"][0]["time_period"] = "later"
-    raw_data = {
-        "type": "Feature",
-        "geometry": None,
-        "properties": {
-            "dangerRatings": [{"mainValue": "considerable"}],
-            "avalancheProblems": [
-                {
-                    "problemType": "wet_snow",
-                    "comment": "",
-                    "aspects": ["N", "NE", "E"],
-                    "elevation": {"lowerBound": "2400"},
-                    "dangerRatingValue": "considerable",
-                    "validTimePeriod": "later",
-                }
-            ],
-            "customData": {
-                "CH": {
-                    "aggregation": [{"category": "wet", "problemTypes": ["wet_snow"]}]
-                }
-            },
-        },
-    }
-    _make_today_bulletin(region, rm, raw_data=raw_data)
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
 
     client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    # Use a date far in the past where no rating exists.
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2000-01-01"
+    )
     assert response.status_code == 200
-    expanded = response.json()["expanded"]
-
-    # Humanised problem-type label (from _PROBLEM_LABELS).
-    assert "Wet snow" in expanded
-    # ValidTimePeriod label for "later". The partial uppercases it via CSS,
-    # so the underlying string is rendered as-is.
-    assert "Later" in expanded
-    # Formatted elevation string from ElevationBounds.display.
-    assert "above 2400" in expanded
+    html = response.json()["html"]
+    assert 'data-level="no_rating"' in html
 
 
 @pytest.mark.django_db
-def test_region_summary_expanded_html_renders_aspect_elevation_row():
+def test_region_summary_breadcrumb_uses_english_names():
+    """Breadcrumb renders three levels (country › L1 › L2) in English.
+
+    The region name is no longer the trailing breadcrumb entry — it moved
+    to the inline header row alongside the chip.
     """
-    The aspect/elevation row only renders when the partial sees structured
-    data (aspects or elevation in the raw avalancheProblems) — this exercises
-    the drawer end-to-end and fails if the drawer ever drops the enrichment
-    step again.
-    """
-    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    raw_data = {
-        "type": "Feature",
-        "geometry": None,
-        "properties": {
-            "dangerRatings": [{"mainValue": "considerable"}],
-            "avalancheProblems": [
-                {
-                    "problemType": "persistent_weak_layers",
-                    "comment": "",
-                    "aspects": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
-                    "elevation": {"lowerBound": "2200"},
-                    "dangerRatingValue": "considerable",
-                    "validTimePeriod": "all_day",
-                }
-            ],
-            "customData": {
-                "CH": {
-                    "aggregation": [
-                        {"category": "dry", "problemTypes": ["persistent_weak_layers"]}
-                    ]
-                }
-            },
-        },
-    }
-    _make_today_bulletin(region, _render_model(), raw_data=raw_data)
+    major = MajorRegionFactory.create(
+        prefix="CH-4", country="CH", name_native="Wallis", name_en="Valais"
+    )
+    sub = SubRegionFactory.create(
+        prefix="CH-41",
+        major=major,
+        name_native="Bas-Valais",
+        name_en="Lower Valais",
+    )
+    MicroRegionFactory.create(
+        region_id="CH-4115",
+        name="Martigny-Verbier",
+        slug="ch-4115",
+        subregion=sub,
+    )
 
     client = Client()
     response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200
-    expanded = response.json()["expanded"]
+    html = response.json()["html"]
 
-    assert 'data-testid="aspect-elevation-row"' in expanded
+    # Three breadcrumb labels present.
+    assert "Switzerland" in html
+    assert "Valais" in html
+    assert "Lower Valais" in html
+    # Region name appears in the header row, not the breadcrumb.
+    assert "Martigny-Verbier" in html
+
+    # Native-language names must not appear.
+    assert "Wallis" not in html
+    assert "Bas-Valais" not in html
+
+    # Breadcrumb order: Switzerland › Valais › Lower Valais (no trailing region).
+    breadcrumb_start = html.index("region-tooltip-breadcrumb")
+    # The breadcrumb paragraph ends before the header div ends; extract just
+    # the breadcrumb paragraph text for ordering assertions.
+    bc = html[breadcrumb_start:]
+    assert bc.index("Switzerland") < bc.index("Valais")
+    assert bc.index("Valais") < bc.index("Lower Valais")
+    # The region name must NOT appear inside the breadcrumb paragraph.
+    # It lives in the header row (before the breadcrumb), so extract the
+    # breadcrumb up to the closing </p> and verify the region name is absent.
+    bc_para_end = bc.index("</p>")
+    bc_para = bc[:bc_para_end]
+    assert "Martigny-Verbier" not in bc_para
+
+
+@pytest.mark.django_db
+def test_region_summary_includes_level_key():
+    """JSON response carries a ``level`` key matching the day's max_rating."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    region = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=sub
+    )
+    target_date = dt.date(2026, 1, 15)
+    RegionDayRatingFactory.create(
+        region=region,
+        date=target_date,
+        max_rating=RegionDayRating.Rating.CONSIDERABLE,
+    )
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "level" in data
+    assert data["level"] == "considerable"
+
+
+@pytest.mark.django_db
+def test_region_summary_level_key_falls_back_to_no_rating():
+    """When no RegionDayRating exists, ``level`` is ``'no_rating'``."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2000-01-01"
+    )
+    assert response.status_code == 200
+    assert response.json()["level"] == "no_rating"
+
+
+@pytest.mark.django_db
+def test_region_summary_cta_label_includes_date():
+    """The bulletin CTA carries the displayed date in its label."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    html = response.json()["html"]
+    # CTA link is present with the expected test id.
+    assert 'data-testid="region-tooltip-bulletin-link"' in html
+    # CTA label carries the date — single source of truth for the displayed
+    # day; no separate caption line.
+    assert "Open bulletin for" in html
+    # Date formatted as "j N Y" → "15 Jan. 2026" (N = abbreviated month name).
+    assert "15 Jan" in html
+    assert "2026" in html
+    # The earlier separate "Showing …" caption is gone.
+    assert "Showing" not in html
 
 
 # ---------------------------------------------------------------------------

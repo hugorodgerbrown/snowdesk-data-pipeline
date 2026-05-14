@@ -9,8 +9,13 @@ Covers:
   * The global ``_site_footer.html`` partial renders on every public
     page (home, terms, bulletin, map) with the SLF licence link and a
     link to /terms.
-  * The map ``/api/region/<id>/summary/`` ``expanded`` fragment includes
-    the same inline source + feedback line.
+
+SNOW-174 note: the inline SLF source + feedback block that previously
+lived in the map drawer's expanded fragment has been removed. Attribution
+is fully covered by the global ``_site_footer.html`` which renders on
+every page (including ``/map/``). The ``TestRegionExpandedAttribution``
+class now asserts that the site footer — not the drawer fragment — is
+the single canonical SLF attribution surface.
 
 Per the SNOW-30 ticket, the *legal copy* on /terms is to be authored
 by Hugo separately — these tests assert the structural scaffold is
@@ -27,7 +32,13 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
+from tests.factories import (
+    BulletinFactory,
+    MajorRegionFactory,
+    MicroRegionFactory,
+    RegionBulletinFactory,
+    SubRegionFactory,
+)
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -74,11 +85,16 @@ def _make_today_bulletin(region) -> object:
 
 @pytest.fixture()
 def region(db):
-    """A test Region instance."""
+    """A test MicroRegion instance with full hierarchy for breadcrumb rendering."""
+    major = MajorRegionFactory.create(
+        prefix="CH-9", country="CH", name_native="Test Major"
+    )
+    sub = SubRegionFactory.create(prefix="CH-91", major=major, name_native="Test Sub")
     return MicroRegionFactory.create(
         region_id="CH-SLF1",
         name="Test Valley",
         slug="ch-slf1",
+        subregion=sub,
     )
 
 
@@ -173,31 +189,46 @@ class TestGlobalSiteFooter:
 # The bulletin page used to carry an inline SLF feedback link in its
 # SECTION 6 footer. SNOW-80 removed that footer entirely (it duplicated
 # the licence row carried by the global ``_site_footer.html``), so the
-# per-page feedback link is gone too. The ``slf-feedback-link`` testid
-# now lives only on the map's expanded sheet — covered by
-# ``TestRegionExpandedAttribution`` below.
+# per-page feedback link is gone too.
+#
+# SNOW-174: the map drawer's expanded fragment previously carried an
+# inline source + feedback block (expanded-slf-attribution). That block
+# was removed when the expanded fragment was rewritten to show structural
+# region info rather than bulletin content. Attribution is now fully
+# covered by the global site footer on ``/map/``.
 
 
 # ---------------------------------------------------------------------------
-# Map expanded fragment — inline source + feedback link
+# Map page — SLF attribution via site footer (not the drawer fragment)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestRegionExpandedAttribution:
-    """The /api/region/<id>/summary/ expanded fragment carries SLF attribution."""
+    """SLF attribution on the map page is carried by the site footer only.
 
-    def test_expanded_includes_slf_source_block(self, client, region):
-        _make_today_bulletin(region)
+    SNOW-174: the inline attribution block was removed from the drawer's
+    expanded fragment. The global ``_site_footer.html`` on ``/map/`` is the
+    single SLF attribution surface — verified by ``TestGlobalSiteFooter``
+    above.
+
+    These tests assert the map page itself has the footer (belt-and-braces)
+    and that the drawer expanded fragment no longer duplicates it.
+    """
+
+    def test_map_page_carries_slf_footer(self, client):
+        """The /map/ page carries the global SLF attribution footer."""
+        response = client.get(reverse("public:map"))
+        assert response.status_code == 200
+        assert b'data-testid="site-footer"' in response.content
+        assert b"slf.ch" in response.content
+
+    def test_expanded_fragment_does_not_duplicate_attribution(self, client, region):
+        """The region tooltip HTML does NOT embed an inline SLF attribution block."""
         url = reverse("api:region_summary", kwargs={"region_id": region.region_id})
         response = client.get(url)
         assert response.status_code == 200
         payload = json.loads(response.content)
-        assert 'data-testid="expanded-slf-attribution"' in payload["expanded"]
-
-    def test_expanded_includes_slf_feedback_link(self, client, region):
-        _make_today_bulletin(region)
-        url = reverse("api:region_summary", kwargs={"region_id": region.region_id})
-        response = client.get(url)
-        payload = json.loads(response.content)
-        assert "pro.slf.ch/reply/public" in payload["expanded"]
+        # SNOW-174: the tooltip returns {"html": "..."} only; attribution is
+        # covered by the global site footer, not the per-region tooltip.
+        assert 'data-testid="expanded-slf-attribution"' not in payload["html"]

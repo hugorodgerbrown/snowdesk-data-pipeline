@@ -20,10 +20,6 @@ module; the rendered grid is cached at the view layer in
 ``season_calendar_partial`` (keyed on ``(canonical_region_id, today_iso)``)
 and invalidated by ``apply_bulletin_day_ratings`` after ingest.
 
-``build_season_grid`` no longer accepts ``page_date`` — selected-day
-highlighting is applied client-side after the HTMX swap so the fragment
-cache is not keyed on the current page date.
-
 ``season_header`` is a cheap helper that returns ``{"season_label": "<NN/NN>"}``
 when the season has started (used by the bulletin view to decide whether
 to render the shell + trigger without building the full grid).
@@ -72,9 +68,10 @@ class SeasonCell:
     tile renders as an inert ``no_rating`` placeholder.
 
     ``is_today`` is set only when the cell date equals today. ``is_selected``
-    is always ``False`` from the builder — selected-day highlighting is applied
-    client-side after the HTMX swap, keyed off ``data-selected-date`` on the
-    grid container and ``data-date`` on each cell anchor/div.
+    is always ``False`` from the builder — highlighting of the currently
+    displayed date is applied client-side after the HTMX swap, keyed off
+    ``data-selected-date`` on the grid container and ``data-date`` on each
+    cell anchor/div.
 
     ``month_parity`` alternates 0/1 across calendar months (the first
     dated month is 0). The template paints a subtle backdrop on cells
@@ -127,9 +124,9 @@ def build_season_grid(
     """
     Build the season-long heatmap grid for ``region``.
 
-    Selected-day highlighting is applied client-side after the HTMX swap
-    (keyed off ``data-selected-date`` on the grid container), so ``page_date``
-    is no longer an input — this keeps the cache key clean.
+    All cells have ``is_selected=False`` — client-side highlighting applies
+    after the HTMX swap (keyed off ``data-selected-date`` on the grid
+    container and ``data-date`` on each cell anchor/div).
 
     Args:
         region: The region whose ratings to render.

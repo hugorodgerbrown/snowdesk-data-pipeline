@@ -3,9 +3,10 @@ tests/public/templatetags/test_snowdesk_time.py — Tests for the
 ``snowdesk_time`` template filters.
 
 Covers ``parse_iso`` (Z-suffix and explicit-offset normalisation, naive
-fallback to UTC, falsy / malformed input) and the integer→string mapping
+fallback to UTC, falsy / malformed input), the integer→string mapping
 filters ``danger_level_key`` / ``danger_level_label`` (full 1–5 range
-plus the falsy / out-of-range / non-int guards).
+plus the falsy / out-of-range / non-int guards), and the rating-key→digit
+filter ``danger_level_digit`` used by the region tooltip chip.
 
 All datetime literals carry ``tzinfo`` per the project test conventions.
 """
@@ -18,6 +19,7 @@ from typing import Any
 import pytest
 
 from public.templatetags.snowdesk_time import (
+    danger_level_digit,
     danger_level_key,
     danger_level_label,
     parse_iso,
@@ -105,6 +107,40 @@ class TestDangerLevelKey:
     def test_non_int_returns_empty(self, level: Any) -> None:
         """Non-numeric inputs hit the ``except`` clause and return ""."""
         assert danger_level_key(level) == ""
+
+
+class TestDangerLevelDigit:
+    """Tests for the ``danger_level_digit`` template filter."""
+
+    @pytest.mark.parametrize(
+        "key, expected",
+        [
+            ("low", "1"),
+            ("moderate", "2"),
+            ("considerable", "3"),
+            ("high", "4"),
+            ("very_high", "5"),
+        ],
+    )
+    def test_known_keys_return_digit(self, key: str, expected: str) -> None:
+        """Rating key strings map to their display digit."""
+        assert danger_level_digit(key) == expected
+
+    def test_none_returns_empty(self) -> None:
+        """``None`` returns the empty string."""
+        assert danger_level_digit(None) == ""
+
+    def test_no_rating_returns_empty(self) -> None:
+        """``"no_rating"`` is not in the map and returns empty."""
+        assert danger_level_digit("no_rating") == ""
+
+    def test_empty_string_returns_empty(self) -> None:
+        """Empty string returns empty."""
+        assert danger_level_digit("") == ""
+
+    def test_unknown_key_returns_empty(self) -> None:
+        """An unrecognised rating string returns empty."""
+        assert danger_level_digit("extreme") == ""
 
 
 class TestDangerLevelLabel:

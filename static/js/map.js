@@ -11,7 +11,7 @@
  *   2. Fetch regions GeoJSON, today's summaries, and resorts in parallel.
  *   3. Merge the three into per-feature rating state so the fill layer
  *      can colour each region via a MapLibre ``match`` expression.
- *   4. Wire up click + drag-sheet interactions.
+ *   4. Wire up click and region-popup interactions.
  */
 
 // Module-scope handles shared between this file's IIFEs (main init,
@@ -21,8 +21,8 @@ let MAP = null;
 const FEATURE_BY_ID = {};
 const FEATURE_BY_REGION_ID = {};
 
-// Whether a single click on a region auto-pans/zooms to fit it above the
-// sheet. Off by default; persisted in localStorage under
+// Whether a single click on a region auto-pans/zooms to fit it into view.
+// Off by default; persisted in localStorage under
 // 'snowdesk.map.autozoom'. The autozoomToggleInit IIFE at the bottom of
 // this file owns the button wiring; selectFeature reads this flag.
 let AUTOZOOM = false;
@@ -282,18 +282,28 @@ const clearRegionRepaint = () => {
           'very_high',    RATING_COLOURS.very_high,
           RATING_COLOURS.no_rating,
         ],
-        'fill-opacity': 0.55,
+        'fill-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false], 0.85,
+          0.55,
+        ],
       },
     });
 
-    // Outline — thin, darker on the selected region.
+    // Outline — base unselected ring.
     //
     // SNOW-105: round joins and caps so the ring's start/end vertex doesn't
     // expose a butt-capped seam at high zoom — the visible "missing closing
     // edge" reported on every region past city zoom was that seam, not an
     // open ring (data is closed at every layer). The third interpolation
-    // stop pins the unselected width at 0.6 px past z9 so linear
-    // extrapolation doesn't fade the line out to zero by z13.
+    // stop pins the width at 0.6 px past z9 so linear extrapolation doesn't
+    // fade the line out to zero by z13.
+    //
+    // SNOW-174: the selected-state paint has been moved to a dedicated
+    // ``regions-line-selected`` layer below. This lets us use a heavier,
+    // blurred stroke without fighting interpolation nesting constraints, and
+    // the dedicated layer stacks above this one in the layer order so it
+    // always paints on top of the base ring.
     map.addLayer({
       id: 'regions-line',
       type: 'line',
@@ -303,19 +313,38 @@ const clearRegionRepaint = () => {
         'line-cap': 'round',
       },
       paint: {
-        'line-color': [
-          'case',
-          ['boolean', ['feature-state', 'selected'], false], '#0c447c',
-          'rgba(0,0,0,0.25)',
-        ],
-        // zoom must be the input to a top-level interpolate — it cannot be
-        // nested inside case. Invert: interpolate at top level, case as stops.
+        'line-color': 'rgba(0,0,0,0.25)',
+        // Zoom-interpolated width; third stop prevents linear extrapolation
+        // from fading the line out past z9.
         'line-width': [
           'interpolate', ['linear'], ['zoom'],
-          5,  ['case', ['boolean', ['feature-state', 'selected'], false], 2, 1.2],
-          9,  ['case', ['boolean', ['feature-state', 'selected'], false], 2, 0.6],
-          22, ['case', ['boolean', ['feature-state', 'selected'], false], 2, 0.6],
+          5,  1.2,
+          9,  0.6,
+          22, 0.6,
         ],
+      },
+    });
+
+    // SNOW-174: dedicated selection-emphasis layer. A separate layer beats
+    // a case expression inside interpolate because MapLibre's style spec
+    // prohibits feature-state expressions as interpolate stop values, and
+    // a standalone layer lets us add line-blur (impossible inside a case).
+    // Added immediately after regions-line so it sits above the base ring
+    // but below the overlay tiers (sub-regions-line, major-regions-line).
+    map.addLayer({
+      id: 'regions-line-selected',
+      type: 'line',
+      source: 'regions',
+      filter: ['boolean', ['feature-state', 'selected'], false],
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': '#1a1a1a',
+        'line-width': 4,
+        // Soft halo so the outline reads against any choropleth fill colour.
+        'line-blur': 0.5,
       },
     });
 
@@ -572,201 +601,36 @@ const clearRegionRepaint = () => {
     let summarySeq = 0;
     // Most recent date the choropleth is showing — seeded from any
     // ``?d=`` on the URL, then kept in sync by every
-    // ``snowdesk:date-changed`` event (scrubber commit, timelapse frame,
-    // popstate). ``selectFeature`` reads this when opening the sheet so
-    // a tap on a region after the timelapse stops on a past frame fetches
-    // that frame's bulletin rather than today's. ``null`` means "today" —
-    // ``loadRegionSummary`` treats a missing ``dateKey`` as today.
+    // ``snowdesk:date-changed`` event (scrubber commit, timelapse frame).
+    // ``currentDisplayedDate`` is used only by the choropleth/scrubber
+    // path; the region tooltip is date-independent.
     let currentDisplayedDate = (() => {
       const d = new URL(location.href).searchParams.get('d');
       return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
     })();
 
-    const sheet = document.getElementById('sheet');
-    const sheetPeek = document.getElementById('sheet-peek');
-    const sheetExpanded = document.getElementById('sheet-expanded');
-    const legendEl = document.getElementById('map-legend');
-
-    // Apply boot-time debug state (?debug=1) to the sheet so the
-    // region-id readout in the peek partial is visible on first paint.
-    if (DEBUG) sheet.classList.add('debug');
+    // The currently-open MapLibre Popup, or null when none is open.
+    let activePopup = null;
 
     // ---- URL fragment state (SNOW-39) ----
     //
     // The currently-selected region is mirrored in ``location.hash`` as
-    // ``#CH-xxxx`` so the back button dismisses the sheet (instead of
-    // leaving the page) and so a deep link reopens the sheet on load.
+    // ``#CH-xxxx`` so the back button dismisses the popup (instead of
+    // leaving the page) and so a deep link reopens the popup on load.
     //
-    // ``sheetHistoryOpen`` tracks whether our hash is currently the top
+    // ``popupHistoryOpen`` tracks whether our hash is currently the top
     // history entry — drives push-vs-replace on the next open and tells
-    // ``clearSelection`` whether to ``history.back()`` or just dismiss
-    // the DOM directly. ``popstateInProgress`` blocks the recursive
-    // ``clearSelection -> history.back -> popstate -> clearSelection``
-    // path during back-button dismissal.
-    let sheetHistoryOpen = false;
+    // ``clearTooltip`` whether to ``history.back()`` or just remove the
+    // popup directly. ``popstateInProgress`` blocks the recursive
+    // ``clearTooltip -> history.back -> popstate -> clearTooltip`` path
+    // during back-button dismissal.
+    let popupHistoryOpen = false;
     let popstateInProgress = false;
 
-    // ---- Snap-state helpers (SNOW-43) ----
-    //
-    // The sheet has three states managed via ``data-snap`` on #sheet:
-    //   no attribute  → dismissed
-    //   "peek"        → peek partial + a small tease of the expanded body
-    //   "expanded"    → full body visible
-    //
-    // ``--sheet-expanded-height`` is read from CSS once at init and is
-    // assumed to be in ``vh`` units. ``--sheet-peek-height`` is set
-    // dynamically per region (after the peek partial is measured) so the
-    // peek snap matches the actual rendered content height plus a small
-    // tease — a slice of the first hazard block deliberately bleeds into
-    // the visible area so users see there's content to swipe up to.
-
-    const _rootStyle = getComputedStyle(document.documentElement);
-    const SHEET_EXPANDED_VH = parseFloat(
-      _rootStyle.getPropertyValue('--sheet-expanded-height'),
-    ) || 80;
-
-    // Pixels of expanded-body content allowed to show through the peek
-    // visible area — the "peek at more below" affordance. Tweakable.
-    const PEEK_TEASE_PX = 56;
-
-    const expandedHeightPx = () => SHEET_EXPANDED_VH * window.innerHeight / 100;
-
-    // Read the *current* peek visible height from CSS, in pixels. The
-    // peek-height variable is overridden inline on #sheet by setSnap
-    // once content is measured; before that it falls back to the CSS
-    // root default.
-    const peekHeightPx = () => {
-      const cs = getComputedStyle(sheet);
-      const raw = cs.getPropertyValue('--sheet-peek-height').trim();
-      if (raw.endsWith('px')) return parseFloat(raw);
-      if (raw.endsWith('vh')) return parseFloat(raw) * window.innerHeight / 100;
-      return parseFloat(raw) || expandedHeightPx() * 0.3;
-    };
-
-    // translateY pixel value for each snap state — used as the start
-    // baseline for drags and the target for release animations.
-    const snapY = (state) => {
-      if (state === 'expanded') return 0;
-      if (state === 'peek') return expandedHeightPx() - peekHeightPx();
-      return expandedHeightPx();
-    };
-
-    // Apply a snap state to the sheet: clears any inline transform so
-    // CSS takes back control, and writes the ``data-snap`` attribute
-    // that drives the CSS transform selector. When entering peek state,
-    // the peek-height custom property is updated to fit the actual
-    // rendered peek content + a tease of the expanded body so the
-    // visible cutoff lands inside real content rather than dead white.
-    const setSnap = (state) => {
-      if (state === 'peek') {
-        const peekContentH = sheetPeek.offsetHeight;
-        // sheet-body-wrap has its own padding; include it so the peek
-        // partial isn't visually flush against the cutoff line.
-        const bodyWrapPad = parseFloat(
-          getComputedStyle(bodyWrap).paddingTop,
-        ) || 0;
-        const total = bodyWrapPad + peekContentH + PEEK_TEASE_PX;
-        sheet.style.setProperty('--sheet-peek-height', `${total}px`);
-        // --sheet-offset is added on top of the CSS 108px base. Subtract
-        // the base and add a 12px gap so the legend clears the sheet top
-        // without overshooting.
-        if (legendEl) legendEl.style.setProperty('--sheet-offset', `${Math.max(0, total - 96)}px`);
-      } else if (state === 'expanded') {
-        if (legendEl) legendEl.style.setProperty('--sheet-offset', `${Math.max(0, expandedHeightPx() - 96)}px`);
-      } else {
-        if (legendEl) legendEl.style.setProperty('--sheet-offset', '0px');
-      }
-      sheet.style.transform = '';
-      sheet.dataset.snap = state;
-    };
-
-    // Canonical SLF region-ID shape (e.g. "CH-4115"). Anything else is rejected
-    // before it reaches the CTA href to prevent a malformed GeoJSON payload
-    // turning into an open-redirect / javascript: URL on the client.
+    // Canonical SLF region-ID shape (e.g. "CH-4115"). Anything else is
+    // rejected before it reaches any href to prevent a malformed GeoJSON
+    // payload turning into an open-redirect / javascript: URL on the client.
     const REGION_ID_RE = /^[A-Za-z]{2}-[A-Za-z0-9]+$/;
-
-    // Fetch + inject the server-rendered peek + expanded HTML for a region.
-    // Returns true on success, false on 404 / network error. The summarySeq
-    // guard discards stale responses if the user has tapped a different
-    // region while this fetch was in flight.
-    // ``dateKey`` (optional, ``YYYY-MM-DD``) selects the bulletin for a
-    // specific past or future date — passed through as ``?d=`` to the
-    // region-summary API and used by the season scrubber to refresh the
-    // open sheet when the displayed date changes (SNOW-47). Omit to get
-    // today's bulletin, the default.
-    const loadRegionSummary = async (regionID, dateKey) => {
-      if (!REGION_ID_RE.test(regionID)) return false;
-      let url = REGION_SUMMARY_URL_TEMPLATE.replace(
-        '__REGION__', encodeURIComponent(regionID),
-      );
-      if (dateKey) {
-        url += (url.includes('?') ? '&' : '?') + 'd=' + encodeURIComponent(dateKey);
-      }
-      const seq = ++summarySeq;
-      try {
-        const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
-        if (seq !== summarySeq) return false;  // a newer tap won the race
-        if (!resp.ok) return false;
-        const data = await resp.json();
-        if (seq !== summarySeq) return false;
-        // Server-trusted HTML: rendered by the same Django templates that
-        // render the rest of the site, with all user-supplied values escaped
-        // by Django's autoescape — safe to assign as innerHTML.
-        sheetPeek.innerHTML = data.peek || '';
-        sheetExpanded.innerHTML = data.expanded || '';
-        return true;
-      } catch (_err) {
-        return false;
-      }
-    };
-
-    // DOM-only sheet teardown. The user-facing dismiss path goes through
-    // ``clearSelection`` below, which routes via ``history.back()`` so the
-    // URL stays in sync — but the popstate handler (and any caller already
-    // running inside a popstate) needs a way to clean up the DOM without
-    // pushing more history operations, so it calls this directly.
-    const clearSheetDom = () => {
-      if (selectedId !== null) {
-        map.setFeatureState({ source: 'regions', id: selectedId }, { selected: false });
-        selectedId = null;
-      }
-      summarySeq++;  // invalidate any inflight fetch so it can't reopen the sheet
-      sheet.style.transform = '';
-      sheet.style.removeProperty('--sheet-peek-height');
-      delete sheet.dataset.snap;
-      if (legendEl) legendEl.style.setProperty('--sheet-offset', '0px');
-      sheetPeek.replaceChildren();
-      sheetExpanded.replaceChildren();
-    };
-
-    const clearSelection = () => {
-      // If our hash is the top history entry and we're not already
-      // running inside a popstate, pop it. The popstate listener will
-      // run ``clearSheetDom`` and reset ``sheetHistoryOpen``. This keeps
-      // the URL and the DOM in lockstep regardless of whether the user
-      // dismissed via close button, Esc, swipe-down, outside-tap, or the
-      // browser's own back button.
-      if (sheetHistoryOpen && !popstateInProgress) {
-        history.back();
-        return;
-      }
-      clearSheetDom();
-    };
-
-    // Push or replace the URL hash to point at ``regionID``. First open
-    // of a session pushes a single entry; subsequent region taps replace
-    // it so the back stack grows by exactly one no matter how many
-    // regions the user sweeps through.
-    const syncUrlForRegion = (regionID) => {
-      const hash = '#' + regionID;
-      const state = { sheet: regionID };
-      if (!sheetHistoryOpen) {
-        history.pushState(state, '', hash);
-        sheetHistoryOpen = true;
-      } else {
-        history.replaceState(state, '', hash);
-      }
-    };
 
     // Compute the lng/lat bounding box of a GeoJSON Polygon or MultiPolygon.
     // MapLibre's fitBounds takes [[west, south], [east, north]].
@@ -786,39 +650,176 @@ const clearRegionRepaint = () => {
       return [[w, s], [e, n]];
     };
 
-    // Pan/zoom so the region sits in the visible portion of the map.
-    // The sheet is always rendered at full ``--sheet-expanded-height``
-    // but only ``peekHeightPx`` is actually visible after a tap, so we
-    // reserve the visible portion (not the full sheet height) as bottom
-    // padding for fitBounds.
-    const panToRegionAboveSheet = (feature) => {
-      const bbox = featureBBox(feature);
-      const visible = sheet.dataset.snap === 'expanded'
-        ? expandedHeightPx()
-        : sheet.dataset.snap === 'peek'
-          ? peekHeightPx()
-          : 0;
-      map.fitBounds(bbox, {
-        padding: { top: 60, right: 40, bottom: visible + 40, left: 40 },
-        maxZoom: 10,   // don't zoom in past neighbourhood detail even for tiny regions
-        duration: 400,
-      });
+    // Return the lng/lat centre of a feature's bbox — the anchor for the
+    // MapLibre Popup so it floats over the region area.
+    const featureCentre = (feature) => {
+      const [[w, s], [e, n]] = featureBBox(feature);
+      return [(w + e) / 2, (s + n) / 2];
+    };
+
+    // DOM-only popup teardown. Called by clearTooltip (user-facing dismiss)
+    // and by the popup's own 'close' event (Esc, ×-button, outside-click
+    // on the map). Does not push history — callers that need URL sync call
+    // clearTooltip instead.
+    //
+    // IMPORTANT: null activePopup *before* calling p.remove(). MapLibre fires
+    // the popup's 'close' event synchronously inside remove(), which triggers
+    // clearTooltip() → clearPopupDom() again. Nulling first makes the guard
+    // on the second entry a no-op, so side-effects only run once.
+    const clearPopupDom = () => {
+      if (selectedId !== null) {
+        map.setFeatureState({ source: 'regions', id: selectedId }, { selected: false });
+        // SNOW-174: the filter on regions-line-selected reads feature-state;
+        // triggerRepaint ensures the dedicated selection layer redraws
+        // immediately rather than waiting for the next idle frame.
+        map.triggerRepaint();
+        selectedId = null;
+      }
+      summarySeq++;  // invalidate any inflight fetch so it can't reopen the popup
+      if (activePopup) {
+        const p = activePopup;
+        activePopup = null;
+        p.remove();
+      }
+    };
+
+    // User-facing dismiss path. If our hash is the active history entry
+    // and we're not already inside a popstate, pop it so the URL and
+    // popup state stay in lockstep. The popstate handler calls
+    // clearPopupDom directly.
+    const clearTooltip = () => {
+      if (popupHistoryOpen && !popstateInProgress) {
+        history.back();
+        return;
+      }
+      clearPopupDom();
+    };
+
+    // Push or replace the URL hash to point at ``regionID``. First open
+    // of a session pushes a single entry; subsequent region taps replace
+    // it so the back stack grows by exactly one no matter how many
+    // regions the user sweeps through.
+    const syncUrlForRegion = (regionID) => {
+      const hash = '#' + regionID;
+      const state = { popup: regionID };
+      if (!popupHistoryOpen) {
+        history.pushState(state, '', hash);
+        popupHistoryOpen = true;
+      } else {
+        history.replaceState(state, '', hash);
+      }
+    };
+
+    // Fetch the server-rendered tooltip HTML for a region, open a
+    // MapLibre Popup anchored to the click point (when supplied) or the
+    // region's bbox centre (deep-link / resort-pin path), and wire its
+    // 'close' event back to clearTooltip so Esc / × / outside-map clicks
+    // all reset the URL hash. The summarySeq guard discards stale
+    // responses when the user taps a different region mid-flight.
+    // Returns true on success, false on 404 / network error.
+    //
+    // closeOnClick: true makes MapLibre auto-dismiss the popup on any
+    // map canvas click, so region-to-region transitions don't stack
+    // and tapping empty map area auto-dismisses without a separate handler.
+    const loadRegionSummary = async (regionID, { dateKey, clickPoint } = {}) => {
+      if (!REGION_ID_RE.test(regionID)) return false;
+      let url = REGION_SUMMARY_URL_TEMPLATE.replace(
+        '__REGION__', encodeURIComponent(regionID),
+      );
+      if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
+      const seq = ++summarySeq;
+      try {
+        const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        if (seq !== summarySeq) return false;  // a newer tap won the race
+        if (!resp.ok) return false;
+        const data = await resp.json();
+        if (seq !== summarySeq) return false;
+        const feature = FEATURE_BY_REGION_ID[regionID];
+        const anchor = clickPoint || (feature ? featureCentre(feature) : null);
+        if (!anchor) return false;
+        // Server-trusted HTML: rendered by Django templates with all
+        // user-supplied values escaped by autoescape — safe for setHTML.
+        const popup = new maplibregl.Popup({
+          closeButton: true,
+          closeOnClick: true,
+          // SNOW-174: use 'bottom' so the popup tip always points down to
+          // the tap point and the body floats above it. 'auto' can flip the
+          // popup to an unexpected side when near the viewport edge, and it
+          // was the root cause of the popup landing at (0, 0) under
+          // synthetic click events (the edge-flip path sets no position).
+          anchor: 'bottom',
+          maxWidth: 'min(320px, calc(100vw - 32px))',
+          className: 'region-popup',
+        });
+        // SNOW-174: set HTML before lngLat so MapLibre can compute correct
+        // DOM dimensions when _update runs. Chain order matters: setHTML →
+        // setLngLat → addTo.
+        popup.setHTML(data.html).setLngLat(anchor).addTo(map);
+        // Force immediate positioning — MapLibre's _update normally runs on
+        // the next rAF tick, but that can lag perceptibly on heavy renders.
+        // Calling it directly snaps the popup to its anchor on the same
+        // frame. _update is a private method (acknowledged trade-off); it
+        // has been stable across MapLibre v3/v4 and is the standard escape
+        // hatch for this timing issue.
+        if (typeof popup._update === 'function') popup._update();
+        // Stamp the rating level on the popup root so map.css can drive
+        // the border colour via the EAWS token matching data-level.
+        const el = popup.getElement();
+        if (el) el.setAttribute('data-level', data.level || 'no_rating');
+        activePopup = popup;
+        // Wire MapLibre's own close event (Esc, ×-button, canvas click)
+        // back to our dismiss path so the URL hash is always cleared on
+        // close, regardless of which gesture the user used.
+        popup.on('close', clearTooltip);
+        return true;
+      } catch (_err) {
+        return false;
+      }
+    };
+
+    // Fetch fresh tooltip HTML for the currently-open popup without
+    // re-creating it — swap only the inner HTML. Used by the
+    // snowdesk:date-changed listener when the scrubber commits a new
+    // date while a popup is already open. Early-returns when no popup
+    // is open or no region is selected.
+    const refreshActivePopupForDate = async (dateKey) => {
+      if (!activePopup || selectedId === null) return;
+      const props = REGION_LOOKUP[selectedId];
+      if (!props) return;
+      const regionID = props.regionID;
+      if (!REGION_ID_RE.test(regionID)) return;
+      let url = REGION_SUMMARY_URL_TEMPLATE.replace(
+        '__REGION__', encodeURIComponent(regionID),
+      );
+      if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
+      try {
+        const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        // Guard: popup may have been closed while the fetch was in flight.
+        if (activePopup) activePopup.setHTML(data.html);
+      } catch (_err) { /* silently ignore refresh errors */ }
     };
 
     // Re-usable selection logic. Both the map click handler and the search
     // dropdown route through this so "make this region the active one" has
     // a single definition. ``toggle`` mirrors the map-click UX where a
-    // second click on the already-selected region dismisses the sheet;
+    // second click on the already-selected region dismisses the popup;
     // search callers pass ``toggle: false`` so selecting a result always
     // opens it, never toggles it off. ``urlMode`` controls how the URL
-    // hash is reconciled after the sheet opens: ``'push'`` (default,
+    // hash is reconciled after the popup opens: ``'push'`` (default,
     // user-initiated) writes the hash via push/replaceState; ``'mark'``
     // skips the write because the URL already matches (popstate,
     // hashchange, initial load) and just records that our hash is now
-    // the active history entry.
-    const selectFeature = async (numericId, { toggle = true, urlMode = 'push' } = {}) => {
+    // the active history entry. ``clickPoint`` is the lngLat of the
+    // click event, used as the popup anchor; absent for deep-link and
+    // search paths (falls back to region bbox centre).
+    const selectFeature = async (
+      numericId,
+      { toggle = true, urlMode = 'push', clickPoint } = {},
+    ) => {
       if (numericId === selectedId) {
-        if (toggle) clearSelection();
+        if (toggle) clearTooltip();
         return;
       }
       if (selectedId !== null) {
@@ -826,40 +827,50 @@ const clearRegionRepaint = () => {
       }
       selectedId = numericId;
       map.setFeatureState({ source: 'regions', id: selectedId }, { selected: true });
+      // SNOW-174: trigger an immediate repaint so the regions-line-selected
+      // filter (which reads feature-state) activates on this frame.
+      map.triggerRepaint();
 
       const props = REGION_LOOKUP[numericId];
-      const ok = await loadRegionSummary(props.regionID, currentDisplayedDate);
-      // If the user dismissed the sheet (or selected a different region)
-      // while the fetch was in flight, selectedId may no longer match.
-      // loadRegionSummary already discards stale data; here we just bail
-      // out without snapping the sheet open.
+      const ok = await loadRegionSummary(props.regionID, {
+        dateKey: currentDisplayedDate,
+        clickPoint,
+      });
+      // If the user dismissed (or selected a different region) while the
+      // fetch was in flight, selectedId may no longer match. Bail out
+      // without updating the URL.
       if (selectedId !== numericId) return;
       if (!ok) {
-        // No bulletin (404) or network failure — leave sheet closed.
-        clearSelection();
+        // 404 or network failure — clear the outline and leave popup closed.
+        clearTooltip();
         return;
       }
-      setSnap('peek');
 
       if (urlMode === 'push') {
         syncUrlForRegion(props.regionID);
       } else if (urlMode === 'mark') {
-        sheetHistoryOpen = true;
+        popupHistoryOpen = true;
       }
 
-      // One frame after setSnap so getBoundingClientRect reflects the
-      // new visible height (the CSS transform hasn't finished animating
-      // but the snap state is set, so panToRegionAboveSheet uses the
-      // correct visible-height value).
       if (AUTOZOOM) {
         const feature = FEATURE_BY_ID[numericId];
-        requestAnimationFrame(() => panToRegionAboveSheet(feature));
+        if (feature) {
+          map.fitBounds(featureBBox(feature), {
+            padding: { top: 60, right: 40, bottom: 40, left: 40 },
+            maxZoom: 10,
+            duration: 400,
+          });
+        }
       }
     };
 
     map.on('click', 'regions-fill', (e) => {
       if (!e.features.length) return;
-      selectFeature(e.features[0].id);
+      // Pass the click's lngLat so the popup opens over the tapped point,
+      // not the region bbox centre. closeOnClick: true on the Popup means
+      // MapLibre auto-dismisses any previous popup before this handler
+      // fires, so no manual swap is needed.
+      selectFeature(e.features[0].id, { clickPoint: e.lngLat });
     });
 
     // Double-click always zooms to the region regardless of AUTOZOOM setting,
@@ -868,32 +879,32 @@ const clearRegionRepaint = () => {
       e.preventDefault();
       if (!e.features.length) return;
       const feature = FEATURE_BY_ID[e.features[0].id];
-      if (feature) panToRegionAboveSheet(feature);
+      if (feature) {
+        map.fitBounds(featureBBox(feature), {
+          padding: { top: 60, right: 40, bottom: 40, left: 40 },
+          maxZoom: 10,
+          duration: 400,
+        });
+      }
     });
 
-    // Dismiss sheet on map tap outside a region
-    map.on('click', (e) => {
-      const hits = map.queryRenderedFeatures(e.point, { layers: ['regions-fill'] });
-      if (!hits.length) clearSelection();
-    });
+    // NOTE: the previous "dismiss popup on map tap outside a region" handler
+    // (map.on('click', e => ...)) is intentionally removed. closeOnClick: true
+    // on the MapLibre Popup handles both taps on empty map area and
+    // region-to-region transitions without a separate handler.
 
     map.on('mouseenter', 'regions-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'regions-fill', () => { map.getCanvas().style.cursor = ''; });
 
-    // SNOW-78: tapping a resort pin opens the bottom sheet for the
-    // resort's parent region — resorts have no own bulletin, so the
-    // closest meaningful surface is the region's full bulletin
-    // summary. ``stopPropagation`` would block the map-level click
-    // dismissal that runs against ``regions-fill``, but that handler
-    // only dismisses the sheet when no region was hit, and a pin
-    // click *is* on top of a region — so the region click fires too
-    // and the chain ends there. We do nothing extra to suppress it.
+    // SNOW-78: tapping a resort pin opens the region tooltip for the
+    // resort's parent region. Pass the pin's lngLat as clickPoint so
+    // the popup anchors over the pin rather than the region centre.
     map.on('click', 'resorts-pin', (e) => {
       if (!e.features.length) return;
       const regionID = e.features[0].properties.region_id;
       if (!regionID) return;
       const feature = FEATURE_BY_REGION_ID[regionID];
-      if (feature) selectFeature(feature.id, { toggle: false });
+      if (feature) selectFeature(feature.id, { toggle: false, clickPoint: e.lngLat });
     });
     map.on('mouseenter', 'resorts-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'resorts-pin', () => { map.getCanvas().style.cursor = ''; });
@@ -914,7 +925,7 @@ const clearRegionRepaint = () => {
 
     // popstate fires on browser back/forward. We do not push during this
     // handler (selectFeature is called with urlMode='mark' so it just
-    // records that our hash is the active entry), and ``clearSelection``
+    // records that our hash is the active entry), and ``clearTooltip``
     // takes the ``popstateInProgress`` branch so it doesn't re-pop.
     window.addEventListener('popstate', () => {
       popstateInProgress = true;
@@ -923,8 +934,8 @@ const clearRegionRepaint = () => {
         if (numericId !== null) {
           selectFeature(numericId, { toggle: false, urlMode: 'mark' });
         } else {
-          sheetHistoryOpen = false;
-          clearSheetDom();
+          popupHistoryOpen = false;
+          clearPopupDom();
         }
       } finally {
         popstateInProgress = false;
@@ -934,275 +945,25 @@ const clearRegionRepaint = () => {
     // hashchange fires when the user edits the fragment in the URL bar.
     // (popstate also fires for back/forward — both events fire for that
     // case and the second one is a harmless no-op because selectFeature
-    // returns early when numericId === selectedId, and clearSheetDom is
+    // returns early when numericId === selectedId, and clearPopupDom is
     // idempotent.)
     window.addEventListener('hashchange', () => {
       const numericId = featureIdFromHash();
       if (numericId !== null) {
-        sheetHistoryOpen = true;
+        popupHistoryOpen = true;
         selectFeature(numericId, { toggle: false, urlMode: 'mark' });
       } else if (location.hash === '' || location.hash === '#') {
-        sheetHistoryOpen = false;
-        clearSheetDom();
+        popupHistoryOpen = false;
+        clearPopupDom();
       }
-    });
-
-    // Sheet dismissal: close button, Esc key, and a drag gesture that can
-    // start anywhere on the sheet (handle OR body).
-
-    const bodyWrap = document.querySelector('.sheet-body-wrap');
-    const sheetGrab = document.getElementById('sheet-grab');
-    const closeBtn = document.getElementById('sheet-close');
-
-    closeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      clearSelection();
     });
 
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && sheet.dataset.snap) clearSelection();
       // Toggle debug mode; ignore when typing in an input/textarea.
-      // Now only gates the region-id readout in the sheet's peek partial
-      // (the timelapse button moved into the always-visible scrubber).
       if (e.key === 'd' && !e.target.matches('input, textarea')) {
         DEBUG = !DEBUG;
-        sheet.classList.toggle('debug', DEBUG);
       }
     });
-
-    // --- Drag controller (three-position snap machine, SNOW-43) ---
-    //
-    // The sheet has three resting positions: dismissed, peek, expanded.
-    // Each gesture starts from the current snap state's translateY
-    // baseline; on release we pick the nearest of the three states based
-    // on drag distance + flick velocity.
-    //
-    // Design goals:
-    //   1. Drag can begin anywhere on the sheet, including over body text.
-    //   2. Gesture is "claimed" only after enough vertical movement — small taps
-    //      on buttons/links inside the sheet never accidentally start a drag.
-    //   3. Respects inner scroll: if the body is scrolled down, downward drag
-    //      scrolls the body instead of dragging the sheet. Only when scrollTop
-    //      is 0 AND the gesture is downward do we take over.
-    //   4. Upward drags past the expanded state get rubber-band resistance.
-    //   5. Release animation is driven by JS, not CSS, so speed matches the
-    //      flick velocity — a hard flick completes fast, a gentle let-go settles
-    //      smoothly.
-    //   6. A non-claimed pointerup on the grab zone counts as a tap and
-    //      expands a peek-state sheet (does nothing when already expanded).
-
-    const GESTURE_CLAIM_PX = 6;            // pixels of vertical movement before we claim the gesture
-    const PEEK_DISMISS_VELOCITY_PX_MS = 0.6;  // downward flick from peek that always dismisses
-    const EXPAND_VELOCITY_PX_MS = 0.6;     // upward flick from peek that always expands
-    const COLLAPSE_VELOCITY_PX_MS = 0.4;   // gentle downward flick from expanded → peek
-    const RUBBER_BAND_DIVISOR = 4;         // upward drag resistance past expanded (higher = stiffer)
-    const VELOCITY_SAMPLE_WINDOW_MS = 60;  // only the last N ms of samples count for release velocity
-    const MIN_ANIM_DURATION_MS = 120;      // animation clamp — below this feels twitchy
-    const MAX_ANIM_DURATION_MS = 400;      // above this feels sluggish
-
-    let drag = null;
-    let animFrame = null;
-
-    const pointerDown = (e) => {
-      if (!sheet.dataset.snap) return;
-      // Don't start a drag on the close button — let its click handler fire.
-      if (e.target.closest('.sheet-close')) return;
-      // Don't start a drag on the CTA link — taps on it should navigate, not drag.
-      if (e.target.closest('.sheet-cta')) return;
-
-      // Cancel any in-flight release animation so the user can grab mid-animation.
-      if (animFrame !== null) {
-        cancelAnimationFrame(animFrame);
-        animFrame = null;
-        sheet.classList.remove('animating');
-      }
-
-      drag = {
-        startY: e.clientY,
-        currentY: e.clientY,
-        offset: 0,
-        baselineY: snapY(sheet.dataset.snap),
-        startSnap: sheet.dataset.snap,
-        startedInBody: bodyWrap.contains(e.target),
-        startedInGrab: sheetGrab.contains(e.target),
-        bodyScrollAtStart: bodyWrap.scrollTop,
-        samples: [{ t: performance.now(), y: e.clientY }],
-        pointerId: e.pointerId,
-        claimed: false,  // becomes true once we commit to a vertical drag
-      };
-    };
-
-    const pointerMove = (e) => {
-      if (!drag || e.pointerId !== drag.pointerId) return;
-
-      drag.currentY = e.clientY;
-      let delta = drag.currentY - drag.startY;
-
-      // Phase 1: gesture not yet claimed. Decide whether to take over.
-      if (!drag.claimed) {
-        if (Math.abs(delta) < GESTURE_CLAIM_PX) return;  // not enough movement yet
-
-        // Body-scroll deference (only relevant in the expanded state, where the
-        // body actually has scrollable content): if the gesture started inside
-        // the scrollable body AND the body was scrolled down AND the gesture is
-        // downward, let the body scroll instead of dragging the sheet.
-        if (drag.startSnap === 'expanded'
-            && drag.startedInBody
-            && drag.bodyScrollAtStart > 0
-            && delta > 0) {
-          drag = null;
-          return;
-        }
-        // Likewise, an upward gesture in a scrollable body in the expanded
-        // state means scroll content, not lift the sheet (it's already up).
-        if (drag.startSnap === 'expanded' && drag.startedInBody && delta < 0) {
-          drag = null;
-          return;
-        }
-
-        // Commit: we're dragging the sheet.
-        drag.claimed = true;
-        sheet.classList.add('dragging');
-        sheet.setPointerCapture(e.pointerId);
-      }
-
-      // Phase 2: claimed. The transform value is baseline + delta, with
-      // rubber-band resistance applied if the user is dragging *above* the
-      // expanded state (currentY < 0). The peek-state baseline is positive,
-      // so dragging upward from peek toward expanded is unrestricted — the
-      // rubber-band only kicks in past the expanded snap.
-      const intendedY = drag.baselineY + delta;
-      let renderedY = intendedY;
-      if (intendedY < 0) {
-        renderedY = intendedY / RUBBER_BAND_DIVISOR;
-      }
-      drag.offset = delta;
-      sheet.style.transform = `translateY(${renderedY}px)`;
-
-      // Velocity samples — pruned to the recent window.
-      const now = performance.now();
-      drag.samples.push({ t: now, y: e.clientY });
-      while (drag.samples.length > 1 && now - drag.samples[0].t > VELOCITY_SAMPLE_WINDOW_MS) {
-        drag.samples.shift();
-      }
-
-      // Prevent the browser from also scrolling while we drag.
-      e.preventDefault();
-    };
-
-    const pointerUp = (e) => {
-      if (!drag || e.pointerId !== drag.pointerId) return;
-
-      // Tap (not a drag) on the grab zone → expand a peek-state sheet.
-      // Tap when expanded is intentionally a no-op (see SNOW-43 plan
-      // open question; easy to flip later if it feels wrong).
-      if (!drag.claimed) {
-        const wasGrabTap = drag.startedInGrab
-          && !e.target.closest('.sheet-close');
-        const fromState = drag.startSnap;
-        drag = null;
-        if (wasGrabTap && fromState === 'peek') {
-          animateToSnap(snapY('peek'), 'expanded', 0);
-        }
-        return;
-      }
-
-      const offset = drag.offset;
-      const fromState = drag.startSnap;
-      const fromY = drag.baselineY + offset;
-
-      const first = drag.samples[0];
-      const last = drag.samples[drag.samples.length - 1];
-      const dt = last.t - first.t;
-      const velocity = dt > 0 ? (last.y - first.y) / dt : 0;  // px per ms, + = downward
-
-      if (sheet.hasPointerCapture(drag.pointerId)) {
-        sheet.releasePointerCapture(drag.pointerId);
-      }
-      sheet.classList.remove('dragging');
-      drag = null;
-
-      const peekH = peekHeightPx();
-      const expandedH = expandedHeightPx();
-
-      let target;
-      if (fromState === 'peek') {
-        if (offset > peekH * 0.5 || velocity > PEEK_DISMISS_VELOCITY_PX_MS) {
-          target = 'dismissed';
-        } else if (offset < -peekH * 0.5 || velocity < -EXPAND_VELOCITY_PX_MS) {
-          target = 'expanded';
-        } else {
-          target = 'peek';
-        }
-      } else {  // expanded
-        // Halfway between expanded and dismissed (i.e. dragged past the peek
-        // threshold) OR a hard downward flick → dismiss outright.
-        if (offset > (expandedH - peekH) + peekH * 0.5
-            || velocity > PEEK_DISMISS_VELOCITY_PX_MS) {
-          target = 'dismissed';
-        } else if (offset > peekH * 0.5 || velocity > COLLAPSE_VELOCITY_PX_MS) {
-          target = 'peek';
-        } else {
-          target = 'expanded';
-        }
-      }
-
-      animateToSnap(fromY, target, velocity);
-    };
-
-    // Animate from the current pixel transform value to the target snap
-    // state. Reuses ``animateTransform`` for the actual rAF loop; this
-    // wrapper just picks the duration and the settle callback.
-    const animateToSnap = (fromY, targetState, velocity) => {
-      const toY = snapY(targetState);
-      const distance = Math.abs(toY - fromY);
-      // If the release had momentum, use it; otherwise fall back to a median speed.
-      const effectiveVelocity = Math.max(Math.abs(velocity), 0.5);  // px/ms floor
-      const rawDuration = distance / effectiveVelocity;
-      const duration = Math.max(
-        MIN_ANIM_DURATION_MS,
-        Math.min(MAX_ANIM_DURATION_MS, rawDuration),
-      );
-
-      animateTransform(fromY, toY, duration, () => {
-        sheet.classList.remove('animating');
-        if (targetState === 'dismissed') {
-          clearSelection();
-        } else {
-          setSnap(targetState);
-        }
-      });
-    };
-
-    // Generic transform animator. Uses a cubic ease-out so motion decelerates
-    // as it approaches the target — matches iOS bottom-sheet feel.
-    const animateTransform = (fromPx, toPx, durationMs, onDone) => {
-      sheet.classList.add('animating');
-      const start = performance.now();
-      const delta = toPx - fromPx;
-
-      const step = (now) => {
-        const t = Math.min(1, (now - start) / durationMs);
-        // easeOutCubic
-        const eased = 1 - Math.pow(1 - t, 3);
-        const value = fromPx + delta * eased;
-        sheet.style.transform = `translateY(${value}px)`;
-
-        if (t < 1) {
-          animFrame = requestAnimationFrame(step);
-        } else {
-          animFrame = null;
-          onDone();
-        }
-      };
-      animFrame = requestAnimationFrame(step);
-    };
-
-    // Attach listeners to the whole sheet, not just the grab zone.
-    sheet.addEventListener('pointerdown', pointerDown);
-    sheet.addEventListener('pointermove', pointerMove);
-    sheet.addEventListener('pointerup', pointerUp);
-    sheet.addEventListener('pointercancel', pointerUp);
 
     // --- Search ---
     //
@@ -1433,30 +1194,33 @@ const clearRegionRepaint = () => {
       collapseSearch();
     });
 
-    // SNOW-47: when the season scrubber (or any other consumer) commits
-    // a new displayed date, refresh the open sheet so the user sees that
-    // date's bulletin for the currently-selected region. ``selectedId``
-    // and ``REGION_LOOKUP`` are closures over the main IIFE; the
-    // scrubber doesn't see them, so the bridge is an event.
+    // SNOW-47 / SNOW-174: keep currentDisplayedDate in sync and refresh
+    // the open popup when the scrubber commits a new date. If a popup is
+    // open, swap its HTML to reflect the new day's danger rating without
+    // closing and re-opening it.
     document.addEventListener('snowdesk:date-changed', (e) => {
-      const dateKey = e.detail && e.detail.date;
-      // Keep the module-level tracker in sync so a subsequent tap on a
-      // different region also fetches the right date — not just refreshes
-      // of an already-open sheet.
-      currentDisplayedDate = dateKey || null;
-      if (selectedId === null) return;
-      const props = REGION_LOOKUP[selectedId];
-      if (!props) return;
-      loadRegionSummary(props.regionID, dateKey);
+      currentDisplayedDate = (e.detail && e.detail.date) || null;
+      refreshActivePopupForDate(currentDisplayedDate);
     });
 
-    // ---- Initial-load hash → sheet (SNOW-39) ----
+    // SNOW-174: dismiss the popup on clicks that land outside both the
+    // popup element and the map canvas — covers header, scrubber, and
+    // page attribution which the MapLibre closeOnClick: true does not
+    // catch (closeOnClick only fires for canvas clicks).
+    document.addEventListener('pointerdown', (e) => {
+      if (!activePopup) return;
+      const popupEl = activePopup.getElement ? activePopup.getElement() : null;
+      if (popupEl && popupEl.contains(e.target)) return;
+      if (e.target.closest('.maplibregl-canvas-container')) return;
+      clearTooltip();
+    });
+
+    // ---- Initial-load hash → popup (SNOW-39) ----
     //
-    // If the user landed on ``/map/#CH-xxxx``, open the sheet for that
-    // region at peek. ``urlMode: 'mark'`` because the URL already
-    // matches — selectFeature just needs to record that our hash is the
-    // active history entry. Unknown / malformed hashes are silently
-    // ignored (sheet stays closed, no console error).
+    // If the user landed on ``/map/#CH-xxxx``, open the popup for that
+    // region. ``urlMode: 'mark'`` because the URL already matches —
+    // selectFeature just needs to record that our hash is the active
+    // history entry. Unknown / malformed hashes are silently ignored.
     const initialFeatureId = featureIdFromHash();
     if (initialFeatureId !== null) {
       selectFeature(initialFeatureId, { toggle: false, urlMode: 'mark' });
@@ -1509,16 +1273,15 @@ const clearRegionRepaint = () => {
 })();
 
 // SNOW-47: Season-scrubber wires. Drag the thumb → release commits a
-// date. The map repaints region colours for that date, the open sheet
-// (if any) refreshes via the region-summary API, and the URL gets a
-// ``?d=YYYY-MM-DD`` so the page is linkable. Loading ``/map/?d=…`` on
-// page boot drops the thumb on that date.
+// date. The map repaints region colours for that date and the URL gets
+// a ``?d=YYYY-MM-DD`` so the page is linkable. Loading ``/map/?d=…``
+// on page boot drops the thumb on that date.
 //
 // The scrubber owns no data of its own — it consumes the same
 // season-ratings payload as the timelapse via getSeasonRatings(), and
 // announces date commits via the ``snowdesk:date-changed`` CustomEvent
-// so the main IIFE (sheet) and the timelapse IIFE (stop on grab) can
-// react without seeing each other.
+// so the timelapse IIFE (stop on grab) and the date pill can react
+// without seeing each other.
 (function seasonScrubberInit() {
   const scrubber = document.getElementById('season-scrubber');
   if (!scrubber) return;
@@ -1670,6 +1433,7 @@ const clearRegionRepaint = () => {
     const target = d && /^\d{4}-\d{2}-\d{2}$/.test(d) && isInSeason(d) ? d : todayKey;
     commitDate(target, { silent: true });
   });
+
 })();
 
 // SNOW-38: Collapsible danger-scale legend. State persists in localStorage
@@ -1715,7 +1479,7 @@ const clearRegionRepaint = () => {
 // Season timelapse — the play button on the scrubber cycles through
 // every dated frame in the season at ~10 fps. Each frame repaints
 // region colours via feature-state and announces a snowdesk:date-changed
-// event so the date pill (and any open sheet) stays in sync. A second
+// event so the date pill (and any open popup) stays in sync. A second
 // click — or any user scrub — stops playback and reverts to today.
 (function timelapseInit() {
   const button = document.getElementById('scrubber-play');
