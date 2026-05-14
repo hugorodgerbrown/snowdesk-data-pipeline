@@ -1,9 +1,9 @@
 """
 bulletins/services/openmeteo_archive.py — On-disk NDJSON archive of Open-Meteo data.
 
-Reading and writing ``sample_data/openmeteo_archive.ndjson``: a single
-NDJSON file holding every weather record captured by ``fetch_weather
---stash`` or ``backfill_weather --stash`` runs.
+Reading and writing ``bulletins/local_mirrors/openmeteo_archive.ndjson``:
+a single NDJSON file holding every weather record captured by
+``fetch_weather --stash`` or ``backfill_weather --stash`` runs.
 
 One record per ``(region_id, date)`` pair per line. Record shape:
 

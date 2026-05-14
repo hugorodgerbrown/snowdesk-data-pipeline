@@ -1,7 +1,7 @@
 """
 scripts/validate_regions_csv.py — Validates the EAWS regions CSV file.
 
-Reads all rows from docs/eaws_regions_ch.csv and validates each row's
+Reads all rows from reference_data/eaws/CH_micro-regions.csv and validates each row's
 region_id format, non-empty name/slug, centre JSON structure, and
 boundary GeoJSON Polygon structure. Reports all errors and duplicate
 region_ids.
@@ -20,7 +20,12 @@ logger = logging.getLogger(__name__)
 REGION_ID_PATTERN = re.compile(r"^CH-\d{4}$")
 SLUG_PATTERN = re.compile(r"^[a-z0-9_-]+$")
 
-CSV_PATH = Path(__file__).resolve().parent.parent / "docs" / "eaws_regions_ch.csv"
+CSV_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "reference_data"
+    / "eaws"
+    / "CH_micro-regions.csv"
+)
 
 
 def _validate_lon_lat(

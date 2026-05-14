@@ -1,7 +1,8 @@
 """
 scripts/build_regions_fixture.py — Builds the MicroRegion slice of eaws.json.
 
-Reads docs/eaws_regions_ch.csv and produces a Django fixture file for the
+Reads reference_data/eaws/CH_micro-regions.csv and produces a Django fixture
+file for the
 regions.MicroRegion model. Each record omits pk and uuid (so Django assigns them)
 and sets created_at/updated_at to 2026-04-13T00:00:00Z to match the existing
 resorts.json fixture pattern.
@@ -32,7 +33,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CSV_PATH = REPO_ROOT / "docs" / "eaws_regions_ch.csv"
+CSV_PATH = REPO_ROOT / "reference_data" / "eaws" / "CH_micro-regions.csv"
 FIXTURE_PATH = REPO_ROOT / "regions" / "fixtures" / "eaws.json"
 
 CREATED_AT = "2026-04-13T00:00:00Z"

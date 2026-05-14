@@ -4,7 +4,7 @@ tests/public/templatetags/test_snowdesk_html.py — Tests for the snowdesk_html 
 Covers sanitisation behaviour (tag allowlist, attribute stripping, disallowed
 tag removal), edge cases (None/empty input), return type guarantees, and a
 template-integration smoke test.  One test case uses a real SLF prose sample
-from ``sample_data/sample_variable_day.json`` to guard against regressions
+from ``tests/fixtures/sample_variable_day.json`` to guard against regressions
 with actual field data.
 """
 
@@ -17,9 +17,9 @@ from django.utils.safestring import SafeString
 
 from public.templatetags.snowdesk_html import prose_body, prose_title, snowdesk_html
 
-# Absolute path to the sample data fixture used in the real-SLF test.
+# Absolute path to the test fixture used in the real-SLF test.
 _SAMPLE_PATH = (
-    Path(__file__).resolve().parents[3] / "sample_data" / "sample_variable_day.json"
+    Path(__file__).resolve().parents[2] / "fixtures" / "sample_variable_day.json"
 )
 
 

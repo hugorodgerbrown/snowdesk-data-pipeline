@@ -27,7 +27,7 @@ poetry run python manage.py fetch_bulletins \
 # Re-pull existing rows.
 poetry run python manage.py fetch_bulletins --commit --force
 
-# Capture every fetched bulletin into sample_data/slf_archive.ndjson
+# Capture every fetched bulletin into bulletins/local_mirrors/slf_archive.ndjson
 # (deduped by bulletinID, sorted ascending by validTime.startTime).
 # Independent of --commit: combine for full-fidelity capture, or use
 # --stash alone to refresh the archive without DB writes.
@@ -57,7 +57,7 @@ poetry run python manage.py fetch_bulletins \
 #   --force                  upsert existing bulletins instead of skipping
 #   --source {live,local-mirror}
 #                            default 'live' (real SLF API). 'local-mirror'
-#                            replays sample_data/slf_archive.ndjson via the
+#                            replays bulletins/local_mirrors/slf_archive.ndjson via the
 #                            dev-only view; errors out if the mirror URL
 #                            setting is not configured.
 #   --stash                  append fetched bulletins to the on-disk archive
@@ -122,7 +122,7 @@ poetry run python manage.py dump_resorts_fixture --commit  # write the fixture
 # ingest). Reports mismatches between the stored MicroRegion.name and the
 # most-recent SLF name. Regions with no bulletin coverage are skipped.
 # Exits non-zero when mismatches are present and --commit was not passed.
-# --commit patches docs/eaws_regions_ch.csv (name column only) and
+# --commit patches reference_data/eaws/CH_micro-regions.csv (name column only) and
 # regenerates regions/fixtures/eaws.json L4 entries. Then run:
 #   refresh_eaws_fixtures --commit  (re-derive L1/L2 geometry)
 #   loaddata regions/fixtures/eaws.json
@@ -154,9 +154,9 @@ poetry run python manage.py export_day_character_csv \
 # Flags: --output PATH, --start-date YYYY-MM-DD, --end-date YYYY-MM-DD, --lang LANG
 
 # Build (or rebuild) regions/fixtures/france.json from three source files:
-#   sample_data/eaws/FR_micro-regions.geojson  — EAWS L4 IDs + geometry
-#   sample_data/eaws/fr_names.json             — EAWS canonical names
-#   sample_data/liste-massifs.geojson          — MF mountain groupings
+#   reference_data/eaws/FR_micro-regions.geojson  — EAWS L4 IDs + geometry
+#   reference_data/eaws/fr_names.json             — EAWS canonical names
+#   reference_data/liste-massifs.geojson          — MF mountain groupings
 # Produces 4 L1 MajorRegion, 4 L2 SubRegion, 35 L4 MicroRegion entries.
 # Read-only by default — pass --commit to write the fixture.
 poetry run python manage.py build_france_fixture          # preview only
@@ -210,7 +210,7 @@ poetry run python manage.py fetch_weather --date 2026-05-01 --commit
 # settings.WEATHER_API_LOCAL_MIRROR_BASE_URL to be configured (development.py).
 poetry run python manage.py fetch_weather --source local-mirror --commit
 
-# Capture today's weather to sample_data/openmeteo_archive.ndjson (no DB write).
+# Capture today's weather to bulletins/local_mirrors/openmeteo_archive.ndjson (no DB write).
 poetry run python manage.py fetch_weather --stash
 
 # Full-fidelity: persist and stash.
@@ -221,7 +221,7 @@ poetry run python manage.py fetch_weather --commit --stash
 #   --commit             persist WeatherSnapshot rows; omit for a read-only run
 #   --source {live,local-mirror}
 #                        default 'live' (real Open-Meteo forecast API).
-#                        'local-mirror' replays sample_data/openmeteo_archive.ndjson
+#                        'local-mirror' replays bulletins/local_mirrors/openmeteo_archive.ndjson
 #                        via the dev-only view; errors out if the mirror URL
 #                        setting is not configured.
 #   --stash              append fetched weather records to the on-disk archive
@@ -263,7 +263,7 @@ poetry run python manage.py backfill_weather \
 poetry run python manage.py backfill_weather \
     --start 2026-01-01 --end 2026-01-31 --source local-mirror --commit
 
-# Capture a range to sample_data/openmeteo_archive.ndjson (no DB write).
+# Capture a range to bulletins/local_mirrors/openmeteo_archive.ndjson (no DB write).
 poetry run python manage.py backfill_weather \
     --start 2025-12-01 --end 2026-04-30 --stash
 
@@ -275,7 +275,7 @@ poetry run python manage.py backfill_weather \
 #                        (default 1.0; pass 0 to disable pacing)
 #   --source {live,local-mirror}
 #                        default 'live' (real Open-Meteo archive API).
-#                        'local-mirror' replays sample_data/openmeteo_archive.ndjson
+#                        'local-mirror' replays bulletins/local_mirrors/openmeteo_archive.ndjson
 #                        via the dev-only view; errors out if the mirror URL
 #                        setting is not configured.
 #   --stash              append fetched weather records to the on-disk archive
