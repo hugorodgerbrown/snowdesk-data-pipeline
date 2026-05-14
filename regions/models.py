@@ -90,10 +90,10 @@ class MajorRegion(BaseModel):
     """
 
     prefix = models.CharField(
-        max_length=4,
+        max_length=12,
         unique=True,
         db_index=True,
-        help_text="EAWS L1 prefix, e.g. 'CH-4'.",
+        help_text="EAWS L1 prefix, e.g. 'CH-4' or 'AT-02' or 'IT-32-BZ'.",
     )
     country = models.CharField(
         max_length=2,
@@ -177,10 +177,10 @@ class SubRegion(BaseModel):
     """
 
     prefix = models.CharField(
-        max_length=5,
+        max_length=16,
         unique=True,
         db_index=True,
-        help_text="EAWS L2 prefix, e.g. 'CH-41'.",
+        help_text="EAWS L2 prefix, e.g. 'CH-41' or 'AT-02-14' or 'IT-32-BZ-15'.",
     )
     major = models.ForeignKey(
         MajorRegion,
