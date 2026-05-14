@@ -310,6 +310,7 @@ const clearRegionRepaint = () => {
         ],
       },
     });
+    BASE_LAYER_FILTERS['regions-fill'] = map.getFilter('regions-fill') ?? null;
 
     // Outline — base unselected ring.
     //
@@ -345,6 +346,7 @@ const clearRegionRepaint = () => {
         ],
       },
     });
+    BASE_LAYER_FILTERS['regions-line'] = map.getFilter('regions-line') ?? null;
 
     // SNOW-174: dedicated selection-emphasis layer. A separate layer beats
     // a case expression inside interpolate because MapLibre's style spec
@@ -368,6 +370,7 @@ const clearRegionRepaint = () => {
         'line-blur': 0.5,
       },
     });
+    BASE_LAYER_FILTERS['regions-line-selected'] = map.getFilter('regions-line-selected') ?? null;
 
     // Labels — only from zoom 8.5 up, to avoid clutter at country view.
     map.addLayer({
@@ -387,6 +390,7 @@ const clearRegionRepaint = () => {
         'text-halo-width': 1.2,
       },
     });
+    BASE_LAYER_FILTERS['regions-label'] = map.getFilter('regions-label') ?? null;
   };
 
   // SNOW-59: install the L1 / L2 outline overlays plus their labels.
@@ -427,6 +431,7 @@ const clearRegionRepaint = () => {
           'line-opacity': 0.9,
         },
       });
+      BASE_LAYER_FILTERS['sub-regions-line'] = map.getFilter('sub-regions-line') ?? null;
       map.addLayer({
         id: 'sub-regions-label',
         type: 'symbol',
@@ -447,6 +452,7 @@ const clearRegionRepaint = () => {
           'text-halo-width': 1.4,
         },
       });
+      BASE_LAYER_FILTERS['sub-regions-label'] = map.getFilter('sub-regions-label') ?? null;
     }
     if (majorGeojson && !map.getSource('major-regions')) {
       map.addSource('major-regions', { type: 'geojson', data: majorGeojson });
@@ -466,6 +472,7 @@ const clearRegionRepaint = () => {
           'line-opacity': 0.95,
         },
       });
+      BASE_LAYER_FILTERS['major-regions-line'] = map.getFilter('major-regions-line') ?? null;
       map.addLayer({
         id: 'major-regions-label',
         type: 'symbol',
@@ -486,6 +493,7 @@ const clearRegionRepaint = () => {
           'text-halo-width': 1.6,
         },
       });
+      BASE_LAYER_FILTERS['major-regions-label'] = map.getFilter('major-regions-label') ?? null;
     }
   };
 
@@ -566,8 +574,18 @@ const clearRegionRepaint = () => {
   let subGeojsonCache = null;
   let resortsGeojsonCache = null;
 
+  // SNOW-172: Snapshot of each layer's filter expression as set during
+  // installRegionsLayers / installOverlayLayers.  applyCountryFilters
+  // wraps these with an 'all' expression so the country filter composes
+  // with — rather than overwrites — any pre-existing layer filter (e.g.
+  // the feature-state selection filter on regions-line-selected).
+  const BASE_LAYER_FILTERS = {};
+
   // SNOW-172: Compute the MapLibre filter expression that shows only
-  // enabled countries on all region layers.
+  // enabled countries on all region layers.  Any layer that was given a
+  // filter at install time has its base filter preserved by composing
+  // ['all', baseFilter, countryFilter]; layers with no base filter
+  // receive the country filter alone.
   const applyCountryFilters = () => {
     const enabled = COUNTRY_KEYS
       .filter(code => countryState[code])
@@ -579,9 +597,10 @@ const clearRegionRepaint = () => {
       'major-regions-line', 'major-regions-label',
     ];
     for (const layerId of layerIds) {
-      if (map.getLayer(layerId)) {
-        map.setFilter(layerId, countryFilter);
-      }
+      if (!map.getLayer(layerId)) continue;
+      const base = BASE_LAYER_FILTERS[layerId];
+      const composed = base ? ['all', base, countryFilter] : countryFilter;
+      map.setFilter(layerId, composed);
     }
   };
 
