@@ -4,14 +4,15 @@ bulletins/dev_views.py — Development-only mirror views for bulletin sources.
 Contains two mirrors:
 
 ``slf_mirror``
-    Replays ``sample_data/slf_archive.ndjson`` with the same
+    Replays ``bulletins/local_mirrors/slf_archive.ndjson`` with the same
     ``limit``/``offset`` paging contract as the upstream SLF CAAML API:
     reverse-chronological by ``publicationTime``, paginated by offset,
     fewer-than-``limit`` items signals the last page.
 
 ``openmeteo_mirror``
-    Replays ``sample_data/openmeteo_archive.ndjson`` in an Open-Meteo-
-    compatible response shape, resolved by latitude/longitude to a Region.
+    Replays ``bulletins/local_mirrors/openmeteo_archive.ndjson`` in an
+    Open-Meteo-compatible response shape, resolved by latitude/longitude
+    to a Region.
     Returns 404 (JSON body) if the requested region or date range is not
     fully present in the archive — fail loudly so missing fixtures surface
     in tests.
@@ -81,7 +82,7 @@ def openmeteo_mirror(
     kind: Literal["forecast", "archive"],
 ) -> JsonResponse:
     """
-    Replay sample_data/openmeteo_archive.ndjson in upstream-compatible shape.
+    Replay bulletins/local_mirrors/openmeteo_archive.ndjson in Open-Meteo shape.
 
     Accepts ``latitude``, ``longitude``, ``start_date``, and ``end_date``
     query parameters. Extra query parameters (``daily``, ``timezone``, etc.)

@@ -17,7 +17,7 @@ When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
 - ``/dev/openmeteo-mirror/`` — Open-Meteo weather mirror
   (``bulletins.dev_urls_openmeteo``, namespace ``dev_om``), so ``fetch_weather
   --source local-mirror`` and ``backfill_weather --source local-mirror`` can
-  replay ``sample_data/openmeteo_archive.ndjson``.
+  replay ``bulletins/local_mirrors/openmeteo_archive.ndjson``.
 
 The two mirrors live in separate URL modules so Django's namespace-uniqueness
 check (``urls.W005``) is satisfied. Production never imports either module.
