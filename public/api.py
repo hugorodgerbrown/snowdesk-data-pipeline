@@ -500,12 +500,13 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
 
     Response shape::
 
-        {"html": "<...>"}
+        {"html": "<...>", "level": "considerable"}
 
-    The single ``html`` key is a server-rendered snippet injected into a
+    The ``html`` key is a server-rendered snippet injected into a
     ``maplibregl.Popup`` anchored to the region's bbox centre on ``/map/``.
-    Content includes the day's danger-rating chip, the geographic breadcrumb,
-    and the resort list.
+    Content includes the day's danger-rating chip and the geographic breadcrumb.
+    The ``level`` key exposes the rating string so the JS can stamp a
+    ``data-level`` attribute on the popup container to drive the border colour.
 
     Query parameters:
         d (optional): ISO date string ``YYYY-MM-DD``. When supplied the chip
@@ -533,9 +534,7 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
         target_date = timezone.localdate()
 
     region = get_object_or_404(
-        MicroRegion.objects.select_related("subregion__major").prefetch_related(
-            "resorts"
-        ),
+        MicroRegion.objects.select_related("subregion__major"),
         region_id__iexact=region_id,
     )
 
@@ -547,6 +546,8 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
         region.subregion.major.country, region.subregion.major.country
     )
 
+    level = day_rating.max_rating if day_rating else "no_rating"
+
     return JsonResponse(
         {
             "html": render_to_string(
@@ -556,9 +557,11 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
                     "day_rating": day_rating,
                     "bulletin_url": bulletin_url,
                     "country_name": country_name,
+                    "target_date": target_date,
                 },
                 request=request,
             ),
+            "level": level,
         }
     )
 

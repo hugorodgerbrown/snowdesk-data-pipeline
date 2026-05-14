@@ -8,52 +8,49 @@ Server-rendered by ``public.api.region_summary`` and injected into a
 region's bbox centre for deep-link / resort-pin paths).
 
 Content:
-  1. Headline danger-rating chip — a danger-tile linked to the day's bulletin
-     URL (dated when ?d= was supplied, evergreen otherwise). Falls back to
-     the no_rating state when no RegionDayRating row exists for the date.
-  2. Geographic breadcrumb — four levels in English:
-     country › major (L1) › sub-region (L2) › micro-region name (L4).
+  1. Header row — danger-tile chip and region name side by side.
+     The chip is a danger-tile linked to the day's bulletin URL (dated
+     when ?d= was supplied, evergreen otherwise). Falls back to the
+     no_rating state when no RegionDayRating row exists for the date.
+  2. Geographic breadcrumb — three levels in English:
+     country › major (L1) › sub-region (L2).
      Uses ``name_en`` on MajorRegion / SubRegion, falling back to
      ``name_native`` for any future entry that lacks an English variant.
-  3. Alphabetically-sorted resort list (or a "No resorts" placeholder).
-  4. An empty editorial slot for future JS-injected content.
+  3. Date caption showing the displayed date in ``j N Y`` format.
+  4. Bulletin CTA — a button-styled link to open the bulletin for the
+     displayed date.
 
 Context variables expected:
-  region      — MicroRegion instance, with subregion__major select_related
-                and resorts prefetch_related.
+  region      — MicroRegion instance, with subregion__major select_related.
   day_rating  — RegionDayRating instance for the displayed date, or None.
   bulletin_url — Absolute URL for the day's bulletin (dated or evergreen).
   country_name — Human-readable country name (e.g. "Switzerland").
+  target_date  — datetime.date for the displayed day.
 {% endcomment %}
 {% load i18n snowdesk_time %}
 
 <div class="region-tooltip" data-region-id="{{ region.region_id }}">
-    <a href="{{ bulletin_url }}" class="region-tooltip-rating-link" data-testid="region-tooltip-rating-link">
-        <span
-            class="danger-tile"
-            data-level="{{ day_rating.max_rating|default:'no_rating' }}"
-        >{{ day_rating.max_rating|default:'no_rating'|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
-    </a>
-    <h2 class="region-tooltip-name">{{ region.name }}</h2>
+    <div class="region-tooltip-header">
+        <a href="{{ bulletin_url }}" class="region-tooltip-rating-link" data-testid="region-tooltip-rating-link">
+            <span
+                class="danger-tile"
+                data-level="{{ day_rating.max_rating|default:'no_rating' }}"
+            >{{ day_rating.max_rating|default:'no_rating'|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+        </a>
+        <h2 class="region-tooltip-name">{{ region.name }}</h2>
+    </div>
     <p class="region-tooltip-breadcrumb">
         {{ country_name }}
         <span aria-hidden="true"> › </span>
         {{ region.subregion.major.name_en|default:region.subregion.major.name_native }}
         <span aria-hidden="true"> › </span>
         {{ region.subregion.name_en|default:region.subregion.name_native }}
-        <span aria-hidden="true"> › </span>
-        {{ region.name }}
     </p>
-    {% with resorts=region.resorts.all|dictsort:"name" %}
-        {% if resorts %}
-            <ul class="region-tooltip-resorts">
-                {% for resort in resorts %}
-                    <li>{{ resort.name }}</li>
-                {% endfor %}
-            </ul>
-        {% else %}
-            <p class="region-tooltip-no-resorts">{% trans "No resorts in this region." %}</p>
-        {% endif %}
-    {% endwith %}
+    <p class="region-tooltip-date">
+        {% blocktrans with d=target_date|date:"j N Y" trimmed %}Showing {{ d }}{% endblocktrans %}
+    </p>
+    <a href="{{ bulletin_url }}" class="region-tooltip-bulletin-link" data-testid="region-tooltip-bulletin-link">
+        {% blocktrans with d=target_date|date:"j N Y" trimmed %}Open bulletin for {{ d }} →{% endblocktrans %}
+    </a>
     <div class="region-tooltip-editorial" data-testid="region-tooltip-editorial"></div>
 </div>

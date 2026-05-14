@@ -762,6 +762,10 @@ const clearRegionRepaint = () => {
         // has been stable across MapLibre v3/v4 and is the standard escape
         // hatch for this timing issue.
         if (typeof popup._update === 'function') popup._update();
+        // Stamp the rating level on the popup root so map.css can drive
+        // the border colour via the EAWS token matching data-level.
+        const el = popup.getElement();
+        if (el) el.setAttribute('data-level', data.level || 'no_rating');
         activePopup = popup;
         // Wire MapLibre's own close event (Esc, ×-button, canvas click)
         // back to our dismiss path so the URL hash is always cleared on

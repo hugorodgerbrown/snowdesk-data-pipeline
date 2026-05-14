@@ -10,7 +10,8 @@ Covers the endpoints consumed by the /map/ page:
 * ``api:major_regions_geojson`` — FeatureCollection of L1 region polygons (SNOW-59).
 * ``api:sub_regions_geojson``   — FeatureCollection of L2 region polygons (SNOW-59).
 * ``api:region_summary``        — tooltip with danger-rating chip (?d= aware),
-                                  English breadcrumb, and resort list (SNOW-174).
+                                  English breadcrumb, date caption, and bulletin
+                                  CTA (SNOW-174). Resort list removed.
 """
 
 from __future__ import annotations
@@ -543,13 +544,17 @@ def test_region_summary_returns_html_for_known_region():
     response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200
     data = response.json()
-    assert list(data.keys()) == ["html"]
+    assert set(data.keys()) == {"html", "level"}
     assert "Martigny" in data["html"]
 
 
 @pytest.mark.django_db
 def test_region_summary_includes_geographic_breadcrumb():
-    """The tooltip HTML includes all four breadcrumb labels in order."""
+    """The tooltip HTML includes three breadcrumb labels (country › L1 › L2) in order.
+
+    The region name moved to the header row alongside the chip and is no
+    longer the trailing breadcrumb entry.
+    """
     major = MajorRegionFactory.create(
         prefix="CH-4", country="CH", name_native="Wallis", name_en="Valais"
     )
@@ -571,56 +576,22 @@ def test_region_summary_includes_geographic_breadcrumb():
     # English names for L1 and L2.
     assert "Valais" in html
     assert "Lower Valais" in html
+    # Region name still present in the header <h2>.
     assert "Martigny" in html
     # French/German native names must not appear — the template prefers name_en.
     assert "Wallis" not in html
     assert "Bas-Valais" not in html
     # Chevron separator.
     assert "›" in html
-    # The breadcrumb paragraph carries all four labels; check order within it.
+    # The breadcrumb paragraph carries three labels; check order within it.
     breadcrumb_start = html.index("region-tooltip-breadcrumb")
     breadcrumb = html[breadcrumb_start:]
     assert breadcrumb.index("Switzerland") < breadcrumb.index("Valais")
     assert breadcrumb.index("Valais") < breadcrumb.index("Lower Valais")
-    assert breadcrumb.index("Lower Valais") < breadcrumb.index("Martigny")
-
-
-@pytest.mark.django_db
-def test_region_summary_lists_resorts_alphabetically():
-    """Two resorts linked to the region appear in alphabetical order."""
-    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
-    sub = SubRegionFactory.create(
-        prefix="CH-41", major=major, name_native="Lower Valais"
-    )
-    region = MicroRegionFactory.create(
-        region_id="CH-4115", slug="ch-4115", subregion=sub
-    )
-    ResortFactory.create(region=region, name="Verbier")
-    ResortFactory.create(region=region, name="La Chaux")
-
-    client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
-    assert response.status_code == 200
-    html = response.json()["html"]
-    assert "La Chaux" in html
-    assert "Verbier" in html
-    # Alphabetical order: La Chaux before Verbier.
-    assert html.index("La Chaux") < html.index("Verbier")
-
-
-@pytest.mark.django_db
-def test_region_summary_renders_no_resorts_placeholder():
-    """A region with zero linked resorts shows the empty-state placeholder."""
-    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
-    sub = SubRegionFactory.create(
-        prefix="CH-41", major=major, name_native="Lower Valais"
-    )
-    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
-    client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
-    assert response.status_code == 200
-    html = response.json()["html"]
-    assert "No resorts in this region." in html
+    # Region name must not be inside the breadcrumb paragraph.
+    bc_para_end = breadcrumb.index("</p>")
+    bc_para = breadcrumb[:bc_para_end]
+    assert "Martigny" not in bc_para
 
 
 @pytest.mark.django_db
@@ -633,22 +604,19 @@ def test_region_summary_unknown_region_returns_404():
 
 @pytest.mark.django_db
 def test_region_summary_query_count():
-    """The tooltip view issues at most 3 DB queries."""
+    """The tooltip view issues at most 2 DB queries."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
         prefix="CH-41", major=major, name_native="Lower Valais"
     )
-    region = MicroRegionFactory.create(
-        region_id="CH-4115", slug="ch-4115", subregion=sub
-    )
-    ResortFactory.create(region=region, name="Verbier")
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
     client = Client()
     with CaptureQueriesContext(connection) as ctx:
         response = client.get(reverse("api:region_summary", args=["CH-4115"]))
     assert response.status_code == 200
-    # Queries: region + subregion + major join (1), resorts prefetch (1),
-    # RegionDayRating lookup (1).
-    assert len(ctx.captured_queries) <= 3
+    # Queries: region + subregion + major join (1), RegionDayRating lookup (1).
+    # The resorts prefetch was dropped in SNOW-174 when the resort list was removed.
+    assert len(ctx.captured_queries) <= 2
 
 
 @pytest.mark.django_db
@@ -752,7 +720,11 @@ def test_region_summary_chip_falls_back_to_no_rating():
 
 @pytest.mark.django_db
 def test_region_summary_breadcrumb_uses_english_names():
-    """All four breadcrumb levels render in English."""
+    """Breadcrumb renders three levels (country › L1 › L2) in English.
+
+    The region name is no longer the trailing breadcrumb entry — it moved
+    to the inline header row alongside the chip.
+    """
     major = MajorRegionFactory.create(
         prefix="CH-4", country="CH", name_native="Wallis", name_en="Valais"
     )
@@ -774,22 +746,100 @@ def test_region_summary_breadcrumb_uses_english_names():
     assert response.status_code == 200
     html = response.json()["html"]
 
-    # All four English labels present.
+    # Three breadcrumb labels present.
     assert "Switzerland" in html
     assert "Valais" in html
     assert "Lower Valais" in html
+    # Region name appears in the header row, not the breadcrumb.
     assert "Martigny-Verbier" in html
 
     # Native-language names must not appear.
     assert "Wallis" not in html
     assert "Bas-Valais" not in html
 
-    # Order: Switzerland › Valais › Lower Valais › Martigny-Verbier.
+    # Breadcrumb order: Switzerland › Valais › Lower Valais (no trailing region).
     breadcrumb_start = html.index("region-tooltip-breadcrumb")
+    # The breadcrumb paragraph ends before the header div ends; extract just
+    # the breadcrumb paragraph text for ordering assertions.
     bc = html[breadcrumb_start:]
     assert bc.index("Switzerland") < bc.index("Valais")
     assert bc.index("Valais") < bc.index("Lower Valais")
-    assert bc.index("Lower Valais") < bc.index("Martigny-Verbier")
+    # The region name must NOT appear inside the breadcrumb paragraph.
+    # It lives in the header row (before the breadcrumb), so extract the
+    # breadcrumb up to the closing </p> and verify the region name is absent.
+    bc_para_end = bc.index("</p>")
+    bc_para = bc[:bc_para_end]
+    assert "Martigny-Verbier" not in bc_para
+
+
+@pytest.mark.django_db
+def test_region_summary_includes_level_key():
+    """JSON response carries a ``level`` key matching the day's max_rating."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    region = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=sub
+    )
+    target_date = dt.date(2026, 1, 15)
+    RegionDayRatingFactory.create(
+        region=region,
+        date=target_date,
+        max_rating=RegionDayRating.Rating.CONSIDERABLE,
+    )
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "level" in data
+    assert data["level"] == "considerable"
+
+
+@pytest.mark.django_db
+def test_region_summary_level_key_falls_back_to_no_rating():
+    """When no RegionDayRating exists, ``level`` is ``'no_rating'``."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2000-01-01"
+    )
+    assert response.status_code == 200
+    assert response.json()["level"] == "no_rating"
+
+
+@pytest.mark.django_db
+def test_region_summary_includes_date_caption_and_cta():
+    """Rendered HTML contains the formatted date string and the bulletin CTA."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    html = response.json()["html"]
+    # Date formatted as "j N Y" → "15 Jan. 2026" (N = abbreviated month name).
+    assert "15 Jan" in html
+    assert "2026" in html
+    # CTA link is present with the expected test id.
+    assert 'data-testid="region-tooltip-bulletin-link"' in html
+    # CTA text includes the date.
+    assert "Open bulletin for" in html
+    # Date caption line.
+    assert "Showing" in html
 
 
 # ---------------------------------------------------------------------------

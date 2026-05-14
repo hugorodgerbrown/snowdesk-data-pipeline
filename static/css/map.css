@@ -507,7 +507,7 @@
     background: var(--color-glass, rgba(248, 246, 240, 0.92));
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
-    border: 0.5px solid var(--color-border, rgba(0, 0, 0, 0.12));
+    border: 2px solid var(--color-border, rgba(0, 0, 0, 0.12));
     box-shadow: var(--shadow-glass, 0 4px 16px rgba(0, 0, 0, 0.12));
     color: var(--color-text-1, #1a1a1a);
     font-family: var(--sans);
@@ -515,6 +515,12 @@
      * bound — this prevents the content from touching the tip. */
     min-width: 200px;
 }
+
+.region-popup[data-level="low"]          .maplibregl-popup-content { border-color: var(--color-eaws-low); }
+.region-popup[data-level="moderate"]     .maplibregl-popup-content { border-color: var(--color-eaws-moderate); }
+.region-popup[data-level="considerable"] .maplibregl-popup-content { border-color: var(--color-eaws-considerable); }
+.region-popup[data-level="high"]         .maplibregl-popup-content { border-color: var(--color-eaws-high); }
+.region-popup[data-level="very_high"]    .maplibregl-popup-content { border-color: var(--color-eaws-very-high); }
 
 .dark .region-popup .maplibregl-popup-content {
     /* --color-glass is already overridden to the dark value inside
@@ -536,9 +542,9 @@
 }
 
 /* Region tooltip content — the server-rendered HTML injected by
- * region_summary() into popup.setHTML(). Structural region metadata
- * only: name, geographic breadcrumb, and alphabetically-sorted resort
- * list (SNOW-174). */
+ * region_summary() into popup.setHTML(). Structural region metadata:
+ * inline chip + name header row, geographic breadcrumb, date caption,
+ * and bulletin CTA (SNOW-174). */
 
 .region-tooltip {
     display: flex;
@@ -546,6 +552,13 @@
     gap: 6px;
     /* Pad right so the name doesn't run under MapLibre's close button. */
     padding-right: 24px;
+}
+
+/* Header row: danger-tile chip vertically centred against the region name. */
+.region-tooltip-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .region-tooltip-name {
@@ -564,24 +577,29 @@
     color: var(--color-text-2, #5f5e5a);
 }
 
-.region-tooltip-resorts {
+/* Muted date caption shown below the breadcrumb. */
+.region-tooltip-date {
     margin: 4px 0 0;
-    padding: 0;
-    list-style: none;
-    font-size: 12px;
-    line-height: 1.6;
-    color: var(--color-text-1, #1a1a1a);
-    /* Cap visible height so very large resort lists don't overflow the
-     * viewport; the popup content scrolls internally. */
-    max-height: 160px;
-    overflow-y: auto;
+    font-size: 11px;
+    color: var(--color-text-3, #8b8a87);
 }
 
-.region-tooltip-no-resorts {
-    margin: 4px 0 0;
-    font-size: 12px;
-    color: var(--color-text-2, #5f5e5a);
-    font-style: italic;
+/* Bulletin CTA — styled as a lightweight secondary button. */
+.region-tooltip-bulletin-link {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    color: var(--color-text-1, #1a1a1a);
+    background: var(--color-bg-2, rgba(0, 0, 0, 0.05));
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+}
+
+.region-tooltip-bulletin-link:hover {
+    background: var(--color-bg-3, rgba(0, 0, 0, 0.1));
 }
 
 /* Placeholder for future editorial content — empty by default. */
