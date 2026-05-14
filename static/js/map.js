@@ -282,7 +282,11 @@ const clearRegionRepaint = () => {
           'very_high',    RATING_COLOURS.very_high,
           RATING_COLOURS.no_rating,
         ],
-        'fill-opacity': 0.55,
+        'fill-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false], 0.85,
+          0.55,
+        ],
       },
     });
 
@@ -312,9 +316,9 @@ const clearRegionRepaint = () => {
         // nested inside case. Invert: interpolate at top level, case as stops.
         'line-width': [
           'interpolate', ['linear'], ['zoom'],
-          5,  ['case', ['boolean', ['feature-state', 'selected'], false], 2, 1.2],
-          9,  ['case', ['boolean', ['feature-state', 'selected'], false], 2, 0.6],
-          22, ['case', ['boolean', ['feature-state', 'selected'], false], 2, 0.6],
+          5,  ['case', ['boolean', ['feature-state', 'selected'], false], 3, 1.2],
+          9,  ['case', ['boolean', ['feature-state', 'selected'], false], 3, 0.6],
+          22, ['case', ['boolean', ['feature-state', 'selected'], false], 3, 0.6],
         ],
       },
     });
@@ -678,16 +682,22 @@ const clearRegionRepaint = () => {
     };
 
     // Fetch the server-rendered tooltip HTML for a region, open a
-    // MapLibre Popup anchored to the region's bbox centre, and wire
-    // its 'close' event back to clearTooltip so Esc / × / outside-map
-    // clicks all reset the URL hash. The summarySeq guard discards
-    // stale responses when the user taps a different region mid-flight.
+    // MapLibre Popup anchored to the click point (when supplied) or the
+    // region's bbox centre (deep-link / resort-pin path), and wire its
+    // 'close' event back to clearTooltip so Esc / × / outside-map clicks
+    // all reset the URL hash. The summarySeq guard discards stale
+    // responses when the user taps a different region mid-flight.
     // Returns true on success, false on 404 / network error.
-    const loadRegionSummary = async (regionID) => {
+    //
+    // closeOnClick: true makes MapLibre auto-dismiss the popup on any
+    // map canvas click, so region-to-region transitions don't stack
+    // and tapping empty map area auto-dismisses without a separate handler.
+    const loadRegionSummary = async (regionID, { dateKey, clickPoint } = {}) => {
       if (!REGION_ID_RE.test(regionID)) return false;
-      const url = REGION_SUMMARY_URL_TEMPLATE.replace(
+      let url = REGION_SUMMARY_URL_TEMPLATE.replace(
         '__REGION__', encodeURIComponent(regionID),
       );
+      if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
       const seq = ++summarySeq;
       try {
         const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
@@ -695,36 +705,52 @@ const clearRegionRepaint = () => {
         if (!resp.ok) return false;
         const data = await resp.json();
         if (seq !== summarySeq) return false;
-        // Remove any previous popup before opening the new one.
-        // Null first to prevent the synchronous 'close' event on .remove()
-        // from re-entering clearPopupDom with the stale reference.
-        if (activePopup) {
-          const prev = activePopup;
-          activePopup = null;
-          prev.remove();
-        }
         const feature = FEATURE_BY_REGION_ID[regionID];
-        const centre = feature ? featureCentre(feature) : null;
-        if (!centre) return false;
+        const anchor = clickPoint || (feature ? featureCentre(feature) : null);
+        if (!anchor) return false;
         // Server-trusted HTML: rendered by Django templates with all
         // user-supplied values escaped by autoescape — safe for setHTML.
         const popup = new maplibregl.Popup({
           closeButton: true,
-          closeOnClick: false,
+          closeOnClick: true,
           anchor: 'auto',
           maxWidth: 'min(320px, calc(100vw - 32px))',
           className: 'region-popup',
         });
-        popup.setLngLat(centre).setHTML(data.html).addTo(map);
+        popup.setLngLat(anchor).setHTML(data.html).addTo(map);
         activePopup = popup;
-        // Wire MapLibre's own close event (Esc, ×-button) back to our
-        // dismiss path so the URL hash is always cleared on close,
-        // regardless of which gesture the user used.
+        // Wire MapLibre's own close event (Esc, ×-button, canvas click)
+        // back to our dismiss path so the URL hash is always cleared on
+        // close, regardless of which gesture the user used.
         popup.on('close', clearTooltip);
         return true;
       } catch (_err) {
         return false;
       }
+    };
+
+    // Fetch fresh tooltip HTML for the currently-open popup without
+    // re-creating it — swap only the inner HTML. Used by the
+    // snowdesk:date-changed listener when the scrubber commits a new
+    // date while a popup is already open. Early-returns when no popup
+    // is open or no region is selected.
+    const refreshActivePopupForDate = async (dateKey) => {
+      if (!activePopup || selectedId === null) return;
+      const props = REGION_LOOKUP[selectedId];
+      if (!props) return;
+      const regionID = props.regionID;
+      if (!REGION_ID_RE.test(regionID)) return;
+      let url = REGION_SUMMARY_URL_TEMPLATE.replace(
+        '__REGION__', encodeURIComponent(regionID),
+      );
+      if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
+      try {
+        const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        // Guard: popup may have been closed while the fetch was in flight.
+        if (activePopup) activePopup.setHTML(data.html);
+      } catch (_err) { /* silently ignore refresh errors */ }
     };
 
     // Re-usable selection logic. Both the map click handler and the search
@@ -737,8 +763,13 @@ const clearRegionRepaint = () => {
     // user-initiated) writes the hash via push/replaceState; ``'mark'``
     // skips the write because the URL already matches (popstate,
     // hashchange, initial load) and just records that our hash is now
-    // the active history entry.
-    const selectFeature = async (numericId, { toggle = true, urlMode = 'push' } = {}) => {
+    // the active history entry. ``clickPoint`` is the lngLat of the
+    // click event, used as the popup anchor; absent for deep-link and
+    // search paths (falls back to region bbox centre).
+    const selectFeature = async (
+      numericId,
+      { toggle = true, urlMode = 'push', clickPoint } = {},
+    ) => {
       if (numericId === selectedId) {
         if (toggle) clearTooltip();
         return;
@@ -750,7 +781,10 @@ const clearRegionRepaint = () => {
       map.setFeatureState({ source: 'regions', id: selectedId }, { selected: true });
 
       const props = REGION_LOOKUP[numericId];
-      const ok = await loadRegionSummary(props.regionID);
+      const ok = await loadRegionSummary(props.regionID, {
+        dateKey: currentDisplayedDate,
+        clickPoint,
+      });
       // If the user dismissed (or selected a different region) while the
       // fetch was in flight, selectedId may no longer match. Bail out
       // without updating the URL.
@@ -781,7 +815,11 @@ const clearRegionRepaint = () => {
 
     map.on('click', 'regions-fill', (e) => {
       if (!e.features.length) return;
-      selectFeature(e.features[0].id);
+      // Pass the click's lngLat so the popup opens over the tapped point,
+      // not the region bbox centre. closeOnClick: true on the Popup means
+      // MapLibre auto-dismisses any previous popup before this handler
+      // fires, so no manual swap is needed.
+      selectFeature(e.features[0].id, { clickPoint: e.lngLat });
     });
 
     // Double-click always zooms to the region regardless of AUTOZOOM setting,
@@ -799,23 +837,23 @@ const clearRegionRepaint = () => {
       }
     });
 
-    // Dismiss popup on map tap outside a region.
-    map.on('click', (e) => {
-      const hits = map.queryRenderedFeatures(e.point, { layers: ['regions-fill'] });
-      if (!hits.length) clearTooltip();
-    });
+    // NOTE: the previous "dismiss popup on map tap outside a region" handler
+    // (map.on('click', e => ...)) is intentionally removed. closeOnClick: true
+    // on the MapLibre Popup handles both taps on empty map area and
+    // region-to-region transitions without a separate handler.
 
     map.on('mouseenter', 'regions-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'regions-fill', () => { map.getCanvas().style.cursor = ''; });
 
     // SNOW-78: tapping a resort pin opens the region tooltip for the
-    // resort's parent region.
+    // resort's parent region. Pass the pin's lngLat as clickPoint so
+    // the popup anchors over the pin rather than the region centre.
     map.on('click', 'resorts-pin', (e) => {
       if (!e.features.length) return;
       const regionID = e.features[0].properties.region_id;
       if (!regionID) return;
       const feature = FEATURE_BY_REGION_ID[regionID];
-      if (feature) selectFeature(feature.id, { toggle: false });
+      if (feature) selectFeature(feature.id, { toggle: false, clickPoint: e.lngLat });
     });
     map.on('mouseenter', 'resorts-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'resorts-pin', () => { map.getCanvas().style.cursor = ''; });
@@ -1105,12 +1143,25 @@ const clearRegionRepaint = () => {
       collapseSearch();
     });
 
-    // SNOW-47: keep currentDisplayedDate in sync so a subsequent tap on a
-    // region after the scrubber moves to a past frame is consistent with
-    // the choropleth state. The tooltip itself is date-independent, so
-    // we do not re-fetch the summary on date changes.
+    // SNOW-47 / SNOW-174: keep currentDisplayedDate in sync and refresh
+    // the open popup when the scrubber commits a new date. If a popup is
+    // open, swap its HTML to reflect the new day's danger rating without
+    // closing and re-opening it.
     document.addEventListener('snowdesk:date-changed', (e) => {
       currentDisplayedDate = (e.detail && e.detail.date) || null;
+      refreshActivePopupForDate(currentDisplayedDate);
+    });
+
+    // SNOW-174: dismiss the popup on clicks that land outside both the
+    // popup element and the map canvas — covers header, scrubber, and
+    // page attribution which the MapLibre closeOnClick: true does not
+    // catch (closeOnClick only fires for canvas clicks).
+    document.addEventListener('pointerdown', (e) => {
+      if (!activePopup) return;
+      const popupEl = activePopup.getElement ? activePopup.getElement() : null;
+      if (popupEl && popupEl.contains(e.target)) return;
+      if (e.target.closest('.maplibregl-canvas-container')) return;
+      clearTooltip();
     });
 
     // ---- Initial-load hash → popup (SNOW-39) ----
