@@ -265,12 +265,16 @@ class MicroRegionQuerySet(models.QuerySet["MicroRegion"]):
 
 class MicroRegion(BaseModel):
     """
-    An SLF avalanche warning region (e.g. "CH-4115").
+    An EAWS avalanche warning micro-region (e.g. "CH-4115" or "FR-68").
 
     Conceptually the **L4 EAWS micro-region** — the leaf of the EAWS
-    hierarchy. Its parent ``SubRegion`` is resolved by ``region_id[:5]``
-    and its grand-parent ``MajorRegion`` by ``region_id[:4]``, exposed
-    via the ``major_region`` property.
+    hierarchy. For Swiss regions, the parent ``SubRegion`` happens to share
+    the first five characters of ``region_id`` (e.g. ``"CH-41"``), and the
+    grand-parent ``MajorRegion`` the first four (e.g. ``"CH-4"``). This
+    slicing convention is **Swiss-specific and not enforced** — French rows
+    use EAWS canonical IDs such as ``"FR-68"`` which deliberately break the
+    pattern. The ``subregion`` FK is always authoritative; never navigate the
+    hierarchy by slicing ``region_id``.
 
     Treated as static, fixture-backed reference data. Unknown ``region_id``
     values encountered during bulletin ingest raise ``UnknownRegionError``
@@ -292,7 +296,10 @@ class MicroRegion(BaseModel):
         on_delete=models.PROTECT,
         related_name="micro_regions",
         help_text=(
-            "Parent L2 sub-region. Populated from ``region_id[:5]`` in the fixture."
+            "Parent L2 sub-region. Populated from the fixture's natural-key list. "
+            "Swiss regions follow a ``region_id[:5]`` convention; French rows "
+            "set this FK explicitly (Swiss-only convention; French rows set the "
+            "FK explicitly)."
         ),
     )
     centre = models.JSONField(
