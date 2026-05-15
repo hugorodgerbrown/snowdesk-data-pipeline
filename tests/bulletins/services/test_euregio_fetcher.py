@@ -23,6 +23,7 @@ import pytest
 
 from bulletins.services.euregio_fetcher import (
     _normalise_response,
+    _parse_issued_at,
     fetch_euregio_for_date,
     latest_euregio_date,
     run_euregio_pipeline,
@@ -85,6 +86,61 @@ def _mock_error(status: int = 500) -> MagicMock:
         f"HTTP {status}", response=mock
     )
     return mock
+
+
+# ---------------------------------------------------------------------------
+# _parse_issued_at
+# ---------------------------------------------------------------------------
+
+
+class TestParseIssuedAt:
+    """_parse_issued_at prefers publicationTime, falls back to validTime, then default."""
+
+    _FALLBACK = datetime(2000, 1, 1, tzinfo=UTC)
+
+    def test_uses_publication_time_when_present(self):
+        """A valid publicationTime wins over validTime.startTime."""
+        raw = {
+            "publicationTime": "2026-01-15T18:00:00Z",
+            "validTime": {"startTime": "2025-12-01T00:00:00Z"},
+        }
+        result = _parse_issued_at(raw, fallback=self._FALLBACK)
+        assert result == datetime(2026, 1, 15, 18, 0, tzinfo=UTC)
+
+    def test_falls_back_to_valid_time_when_publication_time_missing(self):
+        """A missing publicationTime falls through to validTime.startTime."""
+        raw = {"validTime": {"startTime": "2026-01-15T16:00:00Z"}}
+        result = _parse_issued_at(raw, fallback=self._FALLBACK)
+        assert result == datetime(2026, 1, 15, 16, 0, tzinfo=UTC)
+
+    def test_falls_back_to_valid_time_when_publication_time_malformed(self):
+        """A malformed publicationTime falls through to validTime.startTime."""
+        raw = {
+            "publicationTime": "not-a-date",
+            "validTime": {"startTime": "2026-01-15T16:00:00Z"},
+        }
+        result = _parse_issued_at(raw, fallback=self._FALLBACK)
+        assert result == datetime(2026, 1, 15, 16, 0, tzinfo=UTC)
+
+    def test_returns_fallback_when_both_missing(self):
+        """Both timestamps absent returns the fallback."""
+        result = _parse_issued_at({}, fallback=self._FALLBACK)
+        assert result == self._FALLBACK
+
+    def test_returns_fallback_when_both_malformed(self):
+        """Both timestamps malformed returns the fallback."""
+        raw = {
+            "publicationTime": "garbage",
+            "validTime": {"startTime": "also garbage"},
+        }
+        result = _parse_issued_at(raw, fallback=self._FALLBACK)
+        assert result == self._FALLBACK
+
+    def test_handles_missing_valid_time_dict(self):
+        """A missing validTime key is tolerated."""
+        raw = {"publicationTime": ""}
+        result = _parse_issued_at(raw, fallback=self._FALLBACK)
+        assert result == self._FALLBACK
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +335,7 @@ class TestRunEuregioPipeline:
         assert run.records_failed == 1
 
     def test_on_fetched_callback_called_for_each_bulletin(self):
-        """on_fetched is invoked once per raw bulletin, before dedup."""
+        """on_fetched is invoked once per unique bulletin."""
         raw1 = _make_raw_bulletin("id-1")
         raw2 = _make_raw_bulletin("id-2")
         collected: list[dict] = []
@@ -300,6 +356,52 @@ class TestRunEuregioPipeline:
         assert len(collected) == 2
         assert collected[0]["bulletinID"] == "id-1"
         assert collected[1]["bulletinID"] == "id-2"
+
+    def test_on_fetched_callback_dedupes_across_regions(self):
+        """A bulletin spanning multiple regions only fires on_fetched once."""
+        # Same bulletinID returned by all three region files for the same day.
+        shared = _make_raw_bulletin("shared-id")
+        collected: list[dict] = []
+
+        with patch(
+            "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
+        ) as mock_fetch:
+            mock_fetch.return_value = [shared]
+            run_euregio_pipeline(
+                date(2026, 1, 15),
+                date(2026, 1, 15),
+                regions=("AT-07", "IT-32-BZ", "IT-32-TN"),
+                dry_run=True,
+                on_fetched=collected.append,
+                triggered_by="test",
+            )
+
+        # Three regions × one bulletin each = three CDN responses, but only
+        # one unique bulletinID → callback fires once.
+        assert mock_fetch.call_count == 3
+        assert len(collected) == 1
+        assert collected[0]["bulletinID"] == "shared-id"
+
+    def test_on_fetched_callback_skips_bulletins_with_no_id(self):
+        """on_fetched is not invoked for bulletins missing bulletinID."""
+        raw = _make_raw_bulletin()
+        del raw["bulletinID"]
+        collected: list[dict] = []
+
+        with patch(
+            "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
+        ) as mock_fetch:
+            mock_fetch.return_value = [raw]
+            run_euregio_pipeline(
+                date(2026, 1, 15),
+                date(2026, 1, 15),
+                regions=("AT-07",),
+                dry_run=True,
+                on_fetched=collected.append,
+                triggered_by="test",
+            )
+
+        assert collected == []
 
     def test_multi_day_range_fetches_each_day(self):
         """A multi-day range makes one CDN request per (date, region) pair."""

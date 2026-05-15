@@ -140,23 +140,17 @@ def _parse_issued_at(raw: dict[str, Any], fallback: datetime) -> datetime:
         A UTC-aware datetime.
 
     """
-    for key in ("publicationTime",):
-        value = raw.get(key, "")
-        if value:
-            try:
-                return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(
-                    UTC
-                )
-            except ValueError:
-                pass
-    start_raw: str = (raw.get("validTime") or {}).get("startTime", "")
-    if start_raw:
+    candidates: list[str] = [
+        raw.get("publicationTime", "") or "",
+        (raw.get("validTime") or {}).get("startTime", "") or "",
+    ]
+    for value in candidates:
+        if not value:
+            continue
         try:
-            return datetime.fromisoformat(start_raw.replace("Z", "+00:00")).astimezone(
-                UTC
-            )
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
         except ValueError:
-            pass
+            continue
     return fallback
 
 
@@ -185,13 +179,11 @@ def _process_euregio_bulletin(
         range_end: Upper bound of the ingest window (UTC-aware).
         dry_run: When True, log and count without writing.
         force: When True, upsert even if the bulletin already exists.
-        on_fetched: Optional callback called for every raw bulletin, before
-            all other decisions.
+        on_fetched: Optional callback called for each unique bulletin (after
+            dedup) so consumers like ``--stash`` see one entry per
+            ``bulletinID`` even when a bulletin spans regions.
 
     """
-    if on_fetched is not None:
-        on_fetched(raw)
-
     bulletin_id: str = raw.get("bulletinID", "")
     if not bulletin_id:
         logger.warning("EUREGIO bulletin with no bulletinID — skipping")
@@ -202,6 +194,9 @@ def _process_euregio_bulletin(
     if bulletin_id in seen_ids:
         return "duplicate"
     seen_ids.add(bulletin_id)
+
+    if on_fetched is not None:
+        on_fetched(raw)
 
     issued_at = _parse_issued_at(raw, fallback=range_start)
     if not (range_start <= issued_at < range_end):
@@ -254,11 +249,11 @@ def run_euregio_pipeline(
         force: If True, upsert bulletins that already exist in the DB.
         base_url: Override the ALBINA CDN base URL. ``None`` defers to
             ``settings.EUREGIO_API_BASE_URL``.
-        on_fetched: Optional per-record callback invoked once for every raw
-            bulletin returned by the CDN, before dedup/dry-run decisions.
-            The ``--stash`` flag on the management command wires this to a
-            list collector so the on-disk archive captures everything the
-            fetcher saw.
+        on_fetched: Optional per-record callback invoked once for each
+            unique bulletin (after dedup, before date-range/dry-run
+            decisions). The ``--stash`` flag on the management command
+            wires this to a list collector so the on-disk archive captures
+            one entry per ``bulletinID`` even when a bulletin spans regions.
         delay: Seconds to sleep between successive CDN requests. ``0.0``
             (default) is a no-op; positive values pace requests to avoid
             hammering the CDN during multi-year backfills.
