@@ -298,7 +298,7 @@ class Command(BaseCommand):
         except Exception as exc:
             raise CommandError(f"{source.name} pipeline failed: {exc}") from exc
 
-        if run.status == "failed":
+        if run.status == PipelineRun.Status.FAILED:
             raise CommandError(
                 f"{source.name} pipeline run {run.pk} failed: {run.error_message}"
             )

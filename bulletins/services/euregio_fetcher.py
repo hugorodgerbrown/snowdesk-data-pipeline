@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -385,11 +386,9 @@ def write_archive(records: list[dict[str, Any]], path: Path) -> int:
 
     Reads the existing archive at ``path`` (if it exists), overlays the
     supplied records (later ``bulletinID`` wins), sorts ascending by
-    ``validTime.startTime``, and writes the result back.
-
-    Note: the write is **not** atomic (uses ``path.open("w", …)`` directly).
-    This preserves the behaviour of the original ``fetch_euregio_bulletins``
-    command. Making it atomic is a separate concern.
+    ``validTime.startTime``, and writes the result back atomically via
+    a sibling ``.tmp`` file plus ``os.replace`` so an interrupted run
+    never leaves a half-written archive in place.
 
     Args:
         records: Raw EUREGIO bulletin dicts collected during a pipeline run.
@@ -399,7 +398,6 @@ def write_archive(records: list[dict[str, Any]], path: Path) -> int:
         The total number of records in the archive after the merge.
 
     """
-    # Read existing records.
     existing: dict[str, dict[str, Any]] = {}
     if path.exists():
         with path.open(encoding="utf-8") as fh:
@@ -411,21 +409,22 @@ def write_archive(records: list[dict[str, Any]], path: Path) -> int:
                     if bid:
                         existing[bid] = record
 
-    # Overlay new records (newer wins).
     for record in records:
         bid = record.get("bulletinID", "")
         if bid:
             existing[bid] = record
 
-    # Sort by validTime.startTime ascending.
     merged = sorted(
         existing.values(),
         key=lambda r: (r.get("validTime") or {}).get("startTime", ""),
     )
 
-    with path.open("w", encoding="utf-8") as fh:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
         for record in merged:
             fh.write(json.dumps(record) + "\n")
+    os.replace(tmp, path)
 
     logger.info(
         "euregio write_archive: records_in=%d archive_total=%d path=%s",

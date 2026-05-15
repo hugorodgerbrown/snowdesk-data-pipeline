@@ -626,16 +626,21 @@ class BulletinSource:
     stash_writer: Callable[[list[dict[str, Any]], Path], int]
 
 
-def _build_sources() -> dict[str, BulletinSource]:
+def get_sources() -> dict[str, BulletinSource]:
     """
-    Build the provider registry.
+    Return the bulletin-provider registry.
 
-    Deferred to a function so the EUREGIO imports (which themselves import
-    from this module) are not executed at module load time, avoiding a
-    circular-import risk.
+    Built on each call so the EUREGIO imports (which themselves import
+    from this module) are not executed at module load time — avoiding a
+    circular import. Not cached on the module: tests patch
+    ``run_pipeline`` / ``run_euregio_pipeline`` at the module level, and
+    caching the resolved references would freeze the unpatched originals
+    inside the registry. The rebuild cost is negligible — the command
+    runs once per cron invocation.
 
     Returns:
-        A dict mapping provider name to ``BulletinSource``.
+        A dict mapping ``SOURCE_SLF`` / ``SOURCE_EUREGIO`` to their
+        ``BulletinSource`` entries.
 
     """
     from bulletins.services.euregio_fetcher import (
@@ -643,10 +648,6 @@ def _build_sources() -> dict[str, BulletinSource]:
         run_euregio_pipeline,
         write_archive as euregio_write_archive,
     )
-
-    def euregio_stash_writer(records: list[dict[str, Any]], path: Path) -> int:
-        """Write EUREGIO records to the on-disk archive; return new size."""
-        return euregio_write_archive(records, path)
 
     return {
         SOURCE_SLF: BulletinSource(
@@ -665,21 +666,6 @@ def _build_sources() -> dict[str, BulletinSource]:
             live_url_setting="EUREGIO_API_BASE_URL",
             mirror_url_setting="EUREGIO_API_LOCAL_MIRROR_URL",
             archive_path_setting="EUREGIO_ARCHIVE_PATH",
-            stash_writer=euregio_stash_writer,
+            stash_writer=euregio_write_archive,
         ),
     }
-
-
-def get_sources() -> dict[str, BulletinSource]:
-    """
-    Return the bulletin-provider registry.
-
-    The registry is built lazily on first call to avoid circular imports
-    between ``data_fetcher`` and ``euregio_fetcher``.
-
-    Returns:
-        A dict mapping ``SOURCE_SLF`` / ``SOURCE_EUREGIO`` to their
-        ``BulletinSource`` entries.
-
-    """
-    return _build_sources()
