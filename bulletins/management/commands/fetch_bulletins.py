@@ -1,54 +1,58 @@
 """
 bulletins/management/commands/fetch_bulletins.py — Management command: fetch_bulletins.
 
-Fetches SLF bulletins from the CAAML API across a date range and (optionally)
-persists them to the database. Supersedes the previous fetch_data and
-backfill_data commands.
+Unified bulletin-fetch command that consolidates the former ``fetch_bulletins``
+(SLF) and ``fetch_euregio_bulletins`` (EUREGIO) commands into a single entry
+point. Providers are selected via a required ``--source`` flag; multiple
+providers can be supplied in one invocation and are processed in the order
+given. Failures are collected and surfaced at the end so a single provider
+failure does not abort the others.
 
-Defaults are tuned for the unattended scheduled-run case:
-  * --start-date defaults to the ``valid_from`` day of the most recent
-    bulletin already in the DB — i.e. a one-day overlap so earlier-in-day
-    issues (morning updates, prior-evening re-issues) are re-fetched. The
-    duplicates are ignored downstream; it's the fetch that's being
-    optimised, not the upsert. When the database is empty this falls back
-    to settings.SEASON_START_DATE as a first-run backstop.
-  * --end-date defaults to today (UTC).
-  * No writes happen unless --commit is passed (read-only by default).
-  * --source picks the upstream: ``live`` (default, real SLF API) or
-    ``local-mirror`` (the dev-only view at ``/dev/slf-mirror/…`` that
-    replays ``bulletins/local_mirrors/slf_archive.ndjson``). The mirror lets an
-    empty DB be re-populated end-to-end through the production fetch
-    path against deterministic input — invaluable for tests and
-    reproducible local environments.
-  * --stash captures every fetched bulletin into the on-disk archive
-    (independent of --commit; both ``--commit --stash`` and bare
-    ``--stash`` are valid).
+Defaults:
+  * ``--source`` is required. Pass ``--source slf``, ``--source euregio``,
+    or both (``--source slf euregio``).
+  * ``--start-date`` defaults to the ``valid_from`` day of the most recent
+    bulletin already in the DB for each requested source — i.e. a one-day
+    overlap so earlier-in-day issues (morning updates, prior-evening
+    re-issues) are re-fetched. The duplicates are ignored downstream.
+    When the DB is empty this falls back to ``settings.SEASON_START_DATE``.
+  * End is always today (UTC). There is no ``--end-date`` flag.
+  * No writes happen unless ``--commit`` is passed (read-only by default).
+  * ``--local-mirror`` replaces the old ``--source local-mirror`` value.
+    It switches every requested source to its corresponding dev-mirror URL.
+  * ``--stash`` captures fetched bulletins into each source's on-disk archive
+    (independent of ``--commit``).
 
-Usage:
-    # Read-only walk over the whole season so far — the "what would happen?" probe.
-    python manage.py fetch_bulletins
+Usage::
 
-    # Persist a specific day (typical scheduled-run shape).
-    python manage.py fetch_bulletins --date 2026-01-15 --commit
+    # Read-only walk — the "what would happen?" probe.
+    python manage.py fetch_bulletins --source slf
 
-    # Backfill a window.
-    python manage.py fetch_bulletins \
-        --start-date 2026-01-01 --end-date 2026-01-31 --commit
+    # Persist today's SLF and EUREGIO bulletins (typical cron shape).
+    python manage.py fetch_bulletins --source slf euregio --commit
+
+    # Single-day SLF backfill.
+    python manage.py fetch_bulletins --source slf --date 2026-01-15 --commit
+
+    # Narrow to today only.
+    python manage.py fetch_bulletins --source euregio --today --commit
+
+    # Explicit window.
+    python manage.py fetch_bulletins --source slf
+        --start-date 2026-01-01 --commit
 
     # Re-pull existing rows.
-    python manage.py fetch_bulletins --commit --force
+    python manage.py fetch_bulletins --source slf euregio --commit --force
 
-    # Capture the season into the on-disk archive without DB writes.
-    python manage.py fetch_bulletins --stash
+    # Capture fetched bulletins into the on-disk archives without DB writes.
+    python manage.py fetch_bulletins --source slf euregio --stash
 
-    # Bootstrap an empty DB end-to-end against the local mirror.
-    python manage.py fetch_bulletins --source local-mirror --commit
+    # Bootstrap an empty DB against the local mirrors (dev server must be running).
+    python manage.py fetch_bulletins --source slf --local-mirror --commit
 
-    # Multi-year backfill — pace API calls to be a good citizen on the
-    # public, no-auth SLF API.
-    python manage.py fetch_bulletins \
-        --start-date 2014-11-01 --end-date 2024-04-30 \
-        --delay 5 --commit
+    # Multi-year backfill with rate limiting.
+    python manage.py fetch_bulletins --source slf
+        --start-date 2014-11-01 --delay 5 --commit
 """
 
 import argparse
@@ -61,18 +65,18 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from bulletins.models import Bulletin, PipelineRun
-from bulletins.services.data_fetcher import run_pipeline
-from bulletins.services.slf_archive import merge, read_archive, write_archive
-from bulletins.services.weather_fetcher import SOURCE_LIVE, SOURCE_LOCAL_MIRROR
+from bulletins.models import PipelineRun
+from bulletins.services.data_fetcher import (
+    SOURCE_CHOICES,
+    BulletinSource,
+    get_sources,
+)
 
 logger = logging.getLogger(__name__)
 
 _START_SOURCE_EXPLICIT = "explicit"
 _START_SOURCE_LATEST_BULLETIN = "latest_bulletin"
 _START_SOURCE_SEASON_BACKSTOP = "season_backstop"
-
-_SOURCE_CHOICES = (SOURCE_LIVE, SOURCE_LOCAL_MIRROR)
 
 
 def _non_negative_float(raw: str) -> float:
@@ -93,17 +97,33 @@ def _non_negative_float(raw: str) -> float:
 
 
 class Command(BaseCommand):
-    """Fetch SLF bulletins for a date range; read-only unless --commit."""
+    """Fetch bulletins from one or more providers; read-only unless --commit."""
 
     help = (
-        "Fetch SLF bulletins for a date range. Defaults: "
-        "--start-date=(latest bulletin's valid_from day) with "
-        "settings.SEASON_START_DATE as the empty-DB backstop, "
-        "--end-date=today. Read-only unless --commit is passed."
+        "Fetch avalanche bulletins for a date range. "
+        "--source is required; pass 'slf', 'euregio', or both. "
+        "Start defaults to the latest bulletin's valid_from day per source, "
+        "or settings.SEASON_START_DATE when the DB is empty. "
+        "End is always today (UTC). Read-only unless --commit is passed."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register command-line arguments."""
+        parser.add_argument(
+            "--source",
+            choices=SOURCE_CHOICES,
+            nargs="+",
+            action="append",
+            required=True,
+            metavar="{" + ",".join(SOURCE_CHOICES) + "}",
+            help=(
+                "Provider(s) to fetch from. Accepts one or more of: "
+                f"{', '.join(SOURCE_CHOICES)}. "
+                "Pass multiple values space-separated (``--source slf euregio``) "
+                "or repeat the flag (``--source slf --source euregio``). "
+                "Duplicates are silently deduplicated."
+            ),
+        )
         parser.add_argument(
             "--start-date",
             type=date.fromisoformat,
@@ -111,16 +131,10 @@ class Command(BaseCommand):
             metavar="YYYY-MM-DD",
             help=(
                 "First date to fetch (inclusive). Default: the valid_from "
-                "day of the newest bulletin already in the DB, or "
-                "settings.SEASON_START_DATE when the DB is empty."
+                "day of the newest bulletin already in the DB for each source, "
+                "or settings.SEASON_START_DATE when the DB is empty. "
+                "Mutually exclusive with --date and --today."
             ),
-        )
-        parser.add_argument(
-            "--end-date",
-            type=date.fromisoformat,
-            default=None,
-            metavar="YYYY-MM-DD",
-            help="Last date to fetch (inclusive). Default: today (UTC).",
         )
         parser.add_argument(
             "--date",
@@ -129,7 +143,15 @@ class Command(BaseCommand):
             metavar="YYYY-MM-DD",
             help=(
                 "Single-day shortcut — sets both start and end to this date. "
-                "Mutually exclusive with --start-date / --end-date."
+                "Mutually exclusive with --start-date and --today."
+            ),
+        )
+        parser.add_argument(
+            "--today",
+            action="store_true",
+            help=(
+                "Fetch today only (UTC). Equivalent to --date <today>. "
+                "Mutually exclusive with --start-date and --date."
             ),
         )
         parser.add_argument(
@@ -146,26 +168,23 @@ class Command(BaseCommand):
             help="Upsert existing bulletins instead of skipping them.",
         )
         parser.add_argument(
-            "--source",
-            choices=_SOURCE_CHOICES,
-            default=SOURCE_LIVE,
+            "--local-mirror",
+            action="store_true",
             help=(
-                "Where to fetch from. 'live' (default) hits the real SLF "
-                "CAAML API; 'local-mirror' hits the development-only view "
-                "that replays bulletins/local_mirrors/slf_archive.ndjson. The mirror "
-                "is only available when settings.SLF_API_LOCAL_MIRROR_URL "
-                "is configured (development.py)."
+                "Fetch from the dev-only local mirror for every requested source "
+                "instead of the live API. Each source's mirror URL must be "
+                "configured in settings (SLF_API_LOCAL_MIRROR_URL, "
+                "EUREGIO_API_LOCAL_MIRROR_URL). Only available in development."
             ),
         )
         parser.add_argument(
             "--stash",
             action="store_true",
             help=(
-                "Append every fetched bulletin to "
-                "bulletins/local_mirrors/slf_archive.ndjson (deduped by bulletinID, "
-                "sorted by validTime.startTime). Independent of --commit "
-                "— combine them for a full-fidelity capture, or use "
-                "--stash alone for a read-only archive refresh."
+                "Append every fetched bulletin to its source's on-disk archive "
+                "(deduped by bulletinID, sorted by validTime.startTime). "
+                "Independent of --commit — combine them for a full-fidelity "
+                "capture, or use --stash alone for a read-only archive refresh."
             ),
         )
         parser.add_argument(
@@ -174,32 +193,90 @@ class Command(BaseCommand):
             default=0.0,
             metavar="SECONDS",
             help=(
-                "Sleep this many seconds between successive SLF API page "
+                "Sleep this many seconds between successive API/CDN page "
                 "requests. Default 0 (no delay). Intended for multi-year "
-                "backfills where being a good citizen on the public, "
-                "no-auth API matters more than wall-clock speed."
+                "backfills where pacing matters."
             ),
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
-        start, end, start_source = self._resolve_dates(options)
+        sources_registry = get_sources()
+        requested = _resolve_sources(options)
         commit: bool = options["commit"]
         force: bool = options["force"]
         stash: bool = options["stash"]
-        source: str = options["source"]
+        local_mirror: bool = options["local_mirror"]
         delay: float = options["delay"]
-        base_url = self._resolve_source(source)
+
+        failures: list[str] = []
+
+        for source_name in requested:
+            source = sources_registry[source_name]
+            try:
+                self._run_source(
+                    source,
+                    options=options,
+                    commit=commit,
+                    force=force,
+                    stash=stash,
+                    local_mirror=local_mirror,
+                    delay=delay,
+                )
+            except CommandError as exc:
+                # Record the failure but continue with remaining sources.
+                failures.append(f"{source_name}: {exc}")
+                logger.error("fetch_bulletins source=%s failed: %s", source_name, exc)
+
+        if failures:
+            joined = "; ".join(failures)
+            raise CommandError(f"One or more sources failed — {joined}")
+
+    def _run_source(
+        self,
+        source: BulletinSource,
+        *,
+        options: dict[str, Any],
+        commit: bool,
+        force: bool,
+        stash: bool,
+        local_mirror: bool,
+        delay: float,
+    ) -> None:
+        """
+        Run the full fetch-and-persist cycle for a single provider.
+
+        Resolves the date range and base URL for this source, invokes the
+        pipeline function, flushes the stash if requested, and raises
+        ``CommandError`` if the run failed or had records_failed > 0.
+
+        Args:
+            source: The ``BulletinSource`` registry entry for this provider.
+            options: The raw ``options`` dict from ``handle()``.
+            commit: Whether to persist to the database.
+            force: Whether to upsert existing bulletins.
+            stash: Whether to flush fetched records to the on-disk archive.
+            local_mirror: Whether to use the dev-mirror URL.
+            delay: Seconds to sleep between requests.
+
+        Raises:
+            CommandError: If the pipeline raises, returns a failed status, or
+                completes with ``records_failed > 0``.
+
+        """
+        start, end, start_source = self._resolve_dates(options, source)
+        base_url = self._resolve_base_url(source, local_mirror)
         days = (end - start).days + 1
 
         self._announce(
+            source,
             start,
             end,
             days,
             commit=commit,
             force=force,
             start_source=start_source,
-            source=source,
+            local_mirror=local_mirror,
             stash=stash,
             delay=delay,
         )
@@ -208,10 +285,10 @@ class Command(BaseCommand):
         on_fetched = collected.append if stash else None
 
         try:
-            run = run_pipeline(
+            run = source.pipeline_fn(
                 start=start,
                 end=end,
-                triggered_by="fetch_bulletins command",
+                triggered_by=f"fetch_bulletins command [{source.name}]",
                 dry_run=not commit,
                 force=force,
                 base_url=base_url,
@@ -219,144 +296,181 @@ class Command(BaseCommand):
                 delay=delay,
             )
         except Exception as exc:
-            raise CommandError(f"Pipeline failed: {exc}") from exc
+            raise CommandError(f"{source.name} pipeline failed: {exc}") from exc
 
         if run.status == "failed":
-            raise CommandError(f"Pipeline run {run.pk} failed: {run.error_message}")
+            raise CommandError(
+                f"{source.name} pipeline run {run.pk} failed: {run.error_message}"
+            )
 
         if stash:
-            self._flush_stash(collected)
+            self._flush_stash(source, collected)
 
-        self._report_outcome(run, days, commit=commit)
+        self._report_outcome(source, run, days, commit=commit)
 
         if run.records_failed > 0:
             raise CommandError(
-                f"Run #{run.pk} completed with {run.records_failed} render-model "
-                f"failure(s). Bulletins were stored with version=0 error sentinels. "
+                f"{source.name} run #{run.pk} completed with "
+                f"{run.records_failed} render-model failure(s). "
+                f"Bulletins were stored with version=0 error sentinels. "
                 f"Run 'rebuild_render_models' after fixing the issue."
             )
 
-    @staticmethod
-    def _resolve_source(source: str) -> str | None:
+    def _resolve_dates(
+        self,
+        options: dict[str, Any],
+        source: BulletinSource,
+    ) -> tuple[date, date, str]:
         """
-        Map a ``--source`` choice to a base URL (or ``None`` for live).
+        Resolve the start/end date range from the command options.
 
-        Returning ``None`` for the live source lets ``run_pipeline``
-        fall back to ``settings.SLF_API_BASE_URL``, keeping the live
-        path identical to its pre-flag behaviour.
+        Validates mutual exclusion between ``--date``, ``--start-date``,
+        and ``--today``. End is always today (UTC). Start is derived from
+        ``--date`` / ``--today`` / ``--start-date`` / the source's
+        ``latest_date_fn`` / ``settings.SEASON_START_DATE`` in that order.
 
-        Raises:
-            CommandError: ``--source local-mirror`` was requested but
-                ``settings.SLF_API_LOCAL_MIRROR_URL`` is not configured
-                (i.e. running outside development.py).
-
-        """
-        if source == SOURCE_LIVE:
-            return None
-        mirror_url: str | None = getattr(settings, "SLF_API_LOCAL_MIRROR_URL", None)
-        if not mirror_url:
-            raise CommandError(
-                "--source local-mirror requires settings.SLF_API_LOCAL_MIRROR_URL "
-                "to be configured. The mirror is only available in development.py."
-            )
-        return mirror_url
-
-    def _flush_stash(self, collected: list[dict[str, Any]]) -> None:
-        """
-        Merge collected bulletins into the on-disk archive.
-
-        Reads the existing archive, overlays the freshly-collected
-        records (later wins by ``bulletinID``), sorts by
-        ``validTime.startTime``, and atomically writes the result back
-        to ``settings.SLF_ARCHIVE_PATH``.
-        """
-        path = settings.SLF_ARCHIVE_PATH
-        existing = list(read_archive(path))
-        merged = merge(existing, collected)
-        write_archive(path, merged)
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Stashed {len(collected)} fetched bulletin(s) to {path}; "
-                f"archive now contains {len(merged)} record(s)."
-            )
-        )
-        logger.info(
-            "fetch_bulletins stash flush: collected=%d archive_total=%d path=%s",
-            len(collected),
-            len(merged),
-            path,
-        )
-
-    def _resolve_dates(self, options: dict[str, Any]) -> tuple[date, date, str]:
-        """
-        Collapse the --date / --start-date / --end-date options into a range.
-
-        When ``--start-date`` is not provided (and ``--date`` is not used),
-        the start is chosen dynamically: the ``valid_from`` day of the
-        newest bulletin in the DB. An empty DB falls back to
-        ``settings.SEASON_START_DATE``.
-
-        Raises:
-            CommandError: if --date is combined with the range flags, or if
-                the resolved end precedes the resolved start.
+        Args:
+            options: The raw options dict from ``handle()``.
+            source: The provider whose ``latest_date_fn`` is used as
+                the default start fallback.
 
         Returns:
-            A tuple of ``(start, end, start_source)`` where ``start_source``
+            A ``(start, end, start_source)`` triple where ``start_source``
             is one of ``_START_SOURCE_EXPLICIT``,
             ``_START_SOURCE_LATEST_BULLETIN``, or
-            ``_START_SOURCE_SEASON_BACKSTOP`` — used by ``_announce`` to
-            explain how the default was picked.
+            ``_START_SOURCE_SEASON_BACKSTOP``.
+
+        Raises:
+            CommandError: if more than one of ``--date``, ``--start-date``,
+                and ``--today`` are supplied together.
 
         """
         single: date | None = options["date"]
         start_arg: date | None = options["start_date"]
-        end_arg: date | None = options["end_date"]
+        today_flag: bool = options["today"]
 
-        if single is not None and (start_arg is not None or end_arg is not None):
+        # Mutual exclusion check.
+        exclusive_flags = sum(
+            [
+                single is not None,
+                start_arg is not None,
+                today_flag,
+            ]
+        )
+        if exclusive_flags > 1:
             raise CommandError(
-                "--date is mutually exclusive with --start-date / --end-date."
+                "--date, --start-date, and --today are mutually exclusive."
             )
 
-        if single is not None:
-            start = end = single
-            start_source = _START_SOURCE_EXPLICIT
-        else:
-            end = end_arg or timezone.localdate()
-            if start_arg is not None:
-                start = start_arg
-                start_source = _START_SOURCE_EXPLICIT
-            else:
-                start, start_source = self._default_start_date()
+        end = timezone.localdate()
 
+        if single is not None:
+            return single, single, _START_SOURCE_EXPLICIT
+
+        if today_flag:
+            return end, end, _START_SOURCE_EXPLICIT
+
+        if start_arg is not None:
+            if end < start_arg:
+                raise CommandError(
+                    f"--start-date ({start_arg}) is after today ({end})."
+                )
+            return start_arg, end, _START_SOURCE_EXPLICIT
+
+        # Dynamic default: latest bulletin date or season backstop.
+        start, start_source = self._default_start_date(source)
         if end < start:
-            raise CommandError("--end-date must be on or after --start-date.")
+            raise CommandError(f"Resolved start ({start}) is after today ({end}).")
         return start, end, start_source
 
-    def _default_start_date(self) -> tuple[date, str]:
+    @staticmethod
+    def _default_start_date(source: BulletinSource) -> tuple[date, str]:
         """
-        Pick a default start date when ``--start-date`` is not provided.
+        Derive the default start date using the source's latest-date function.
 
-        If the DB has bulletins, returns the newest ``valid_from`` day. The
-        same-day overlap is deliberate: it re-fetches earlier-in-day issues
-        (morning updates, prior-evening re-issues) that may have been
-        reissued since the last run. Duplicates are ignored downstream — it
-        is the fetch that's being optimised, not the upsert.
-
-        If the DB is empty, returns ``settings.SEASON_START_DATE`` as a
-        first-run backstop so the full snowpack build-up is captured.
+        Args:
+            source: The provider whose ``latest_date_fn`` to call.
 
         Returns:
-            ``(start, start_source)`` where ``start_source`` explains which
-            branch produced the date.
+            ``(start_date, start_source)`` where ``start_source`` is
+            ``_START_SOURCE_LATEST_BULLETIN`` when a bulletin exists, or
+            ``_START_SOURCE_SEASON_BACKSTOP`` when the DB is empty.
 
         """
-        latest = Bulletin.objects.latest_valid_from_date()
+        latest = source.latest_date_fn()
         if latest is None:
             return settings.SEASON_START_DATE, _START_SOURCE_SEASON_BACKSTOP
         return latest, _START_SOURCE_LATEST_BULLETIN
 
+    @staticmethod
+    def _resolve_base_url(source: BulletinSource, local_mirror: bool) -> str | None:
+        """
+        Resolve the base URL to pass to the pipeline function.
+
+        Returns ``None`` for the live path so the pipeline falls back to
+        the provider's ``live_url_setting``. Returns the mirror URL when
+        ``--local-mirror`` is set, raising ``CommandError`` if the mirror
+        URL setting is missing.
+
+        Args:
+            source: The provider whose URL settings to read.
+            local_mirror: Whether the user requested the dev mirror.
+
+        Returns:
+            The mirror URL string, or ``None`` for the live path.
+
+        Raises:
+            CommandError: ``--local-mirror`` was requested but the mirror
+                URL setting is absent or falsy.
+
+        """
+        if not local_mirror:
+            return None
+        mirror_url: str | None = getattr(settings, source.mirror_url_setting, None)
+        if not mirror_url:
+            raise CommandError(
+                f"--local-mirror requires settings.{source.mirror_url_setting} "
+                f"to be configured (only available in development)."
+            )
+        return mirror_url
+
+    def _flush_stash(
+        self,
+        source: BulletinSource,
+        collected: list[dict[str, Any]],
+    ) -> None:
+        """
+        Merge collected bulletins into the source's on-disk archive.
+
+        Delegates to ``source.stash_writer`` which handles the
+        provider-specific merge and write logic.
+
+        Args:
+            source: The provider whose archive to update.
+            collected: Raw bulletin dicts collected by the ``--stash``
+                callback during the pipeline run.
+
+        """
+        path = getattr(settings, source.archive_path_setting)
+        archive_size = source.stash_writer(collected, path)
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"[{source.name}] Stashed {len(collected)} fetched bulletin(s) "
+                f"to {path}; archive now contains {archive_size} record(s)."
+            )
+        )
+        logger.info(
+            "fetch_bulletins stash flush: source=%s collected=%d "
+            "archive_total=%d path=%s",
+            source.name,
+            len(collected),
+            archive_size,
+            path,
+        )
+
     def _announce(
         self,
+        source: BulletinSource,
         start: date,
         end: date,
         days: int,
@@ -364,11 +478,26 @@ class Command(BaseCommand):
         commit: bool,
         force: bool,
         start_source: str,
-        source: str,
+        local_mirror: bool,
         stash: bool,
         delay: float,
     ) -> None:
-        """Write the start-of-run banner and matching log line."""
+        """
+        Write the start-of-run banner and matching log line for one source.
+
+        Args:
+            source: The provider being fetched.
+            start: Start date (inclusive).
+            end: End date (inclusive).
+            days: Total number of days in the range.
+            commit: Whether writes are enabled.
+            force: Whether existing bulletins will be re-fetched.
+            start_source: How the start date was determined.
+            local_mirror: Whether the dev mirror is active.
+            stash: Whether fetched bulletins will be appended to the archive.
+            delay: Seconds between requests.
+
+        """
         flags: list[str] = []
         if not commit:
             flags.append("READ-ONLY")
@@ -376,67 +505,120 @@ class Command(BaseCommand):
             flags.append("FORCE")
         if stash:
             flags.append("STASH")
-        if source != SOURCE_LIVE:
-            flags.append(f"SOURCE={source.upper()}")
+        if local_mirror:
+            flags.append("LOCAL-MIRROR")
         if delay > 0:
             flags.append(f"DELAY={delay:g}s")
         flag_label = " [" + ", ".join(flags) + "]" if flags else ""
 
-        start_label = self._start_source_label(start_source)
+        start_label = _start_source_label(start_source)
         start_suffix = f" — start {start_label}" if start_label else ""
 
         self.stdout.write(
             self.style.MIGRATE_HEADING(
-                f"Fetching bulletins from {start} to {end} "
+                f"[{source.name}] Fetching bulletins from {start} to {end} "
                 f"({days} day(s)){flag_label}{start_suffix}"
             )
         )
         logger.info(
-            "fetch_bulletins started: %s to %s, %d day(s), "
-            "commit=%s, force=%s, stash=%s, source=%s, delay=%s, start_source=%s",
+            "fetch_bulletins started: source=%s %s to %s, %d day(s), "
+            "commit=%s, force=%s, stash=%s, local_mirror=%s, delay=%s, "
+            "start_source=%s",
+            source.name,
             start,
             end,
             days,
             commit,
             force,
             stash,
-            source,
+            local_mirror,
             delay,
             start_source,
         )
 
-    @staticmethod
-    def _start_source_label(start_source: str) -> str:
-        """Render a human-readable tag for the banner."""
-        if start_source == _START_SOURCE_LATEST_BULLETIN:
-            return "from latest bulletin valid_from day"
-        if start_source == _START_SOURCE_SEASON_BACKSTOP:
-            return "from SEASON_START_DATE backstop (empty DB)"
-        return ""
+    def _report_outcome(
+        self,
+        source: BulletinSource,
+        run: PipelineRun,
+        days: int,
+        *,
+        commit: bool,
+    ) -> None:
+        """
+        Emit the post-run summary to stdout and the structured log.
 
-    def _report_outcome(self, run: PipelineRun, days: int, *, commit: bool) -> None:
-        """Emit the post-run summary to stdout and the structured log."""
+        Args:
+            source: The provider that was fetched.
+            run: The completed ``PipelineRun`` instance.
+            days: Total days in the requested range.
+            commit: Whether writes were enabled.
+
+        """
         if not commit:
             self.stdout.write(
                 self.style.SUCCESS(
-                    "Read-only run complete — no data written. "
-                    "Pass --commit to persist."
+                    f"[{source.name}] Read-only run complete — no data written. "
+                    f"Pass --commit to persist."
                 )
             )
         else:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Done. Run #{run.pk}: {run.records_created} created, "
+                    f"[{source.name}] Done. Run #{run.pk}: "
+                    f"{run.records_created} created, "
                     f"{run.records_updated} updated across {days} day(s)."
                 )
             )
 
         logger.info(
-            "fetch_bulletins finished: run=%s status=%s "
+            "fetch_bulletins finished: source=%s run=%s status=%s "
             "created=%s updated=%s failed=%s",
+            source.name,
             run.pk,
             run.status,
             run.records_created,
             run.records_updated,
             run.records_failed,
         )
+
+
+def _resolve_sources(options: dict[str, Any]) -> list[str]:
+    """
+    Flatten and deduplicate the ``--source`` list-of-lists from argparse.
+
+    ``action="append"`` with ``nargs="+"`` means ``options["source"]`` is
+    a list of lists, e.g. ``[["slf", "euregio"]]`` or
+    ``[["slf"], ["euregio"]]``. Flatten to a plain list and deduplicate
+    while preserving first-seen order.
+
+    Args:
+        options: The raw options dict from ``handle()``.
+
+    Returns:
+        An ordered, deduplicated list of provider names.
+
+    """
+    raw: list[list[str]] = options.get("source") or []
+    seen: dict[str, None] = {}
+    for group in raw:
+        for name in group:
+            seen[name] = None
+    return list(seen)
+
+
+def _start_source_label(start_source: str) -> str:
+    """
+    Render a human-readable tag for the start-of-run banner.
+
+    Args:
+        start_source: One of the ``_START_SOURCE_*`` constants.
+
+    Returns:
+        A short descriptive string, or an empty string for the explicit case.
+
+    """
+    if start_source == _START_SOURCE_LATEST_BULLETIN:
+        return "from latest bulletin valid_from day"
+    if start_source == _START_SOURCE_SEASON_BACKSTOP:
+        return "from SEASON_START_DATE backstop (empty DB)"
+    return ""

@@ -2,9 +2,15 @@
 bulletins/services/data_fetcher.py — Fetching and persisting SLF bulletins.
 
 Contains pure-ish functions that:
-  1. Fetch a page of bulletins from the SLF CAAML API (fetch_bulletin_page).
+  1. Fetch a page of bulletins from the SLF CAAML list API (fetch_bulletin_page).
   2. Persist a single bulletin into the database (upsert_bulletin).
   3. Orchestrate a full pipeline run across a date range (run_pipeline).
+
+Also defines the ``BulletinSource`` registry used by the unified
+``fetch_bulletins`` management command. The registry maps provider names
+(``"slf"``, ``"euregio"``) to their pipeline function, latest-date
+function, settings keys, and archive-writer adapter so the command can
+iterate over requested sources without owning any provider-specific logic.
 
 The SLF API returns bulletins in reverse chronological order and is
 paginated by offset/limit — it does not support filtering by date. The
@@ -20,7 +26,9 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -517,3 +525,161 @@ def run_pipeline(
         run.mark_success(counts[_OUTCOME_CREATED], counts[_OUTCOME_UPDATED])
 
     return run
+
+
+# ---------------------------------------------------------------------------
+# Source registry — used by the unified fetch_bulletins management command.
+# ---------------------------------------------------------------------------
+
+SOURCE_SLF = "slf"
+SOURCE_EUREGIO = "euregio"
+SOURCE_CHOICES = (SOURCE_SLF, SOURCE_EUREGIO)
+
+
+def latest_slf_date() -> date | None:
+    """
+    Return the most recent ``valid_from`` date of any SLF bulletin in the DB.
+
+    Used by the management command to derive the default ``--start-date``
+    (resume from where the last run left off, with a one-day same-day
+    overlap so morning updates / prior-evening re-issues are re-fetched).
+    Returns ``None`` when no bulletin has been stored yet, which causes the
+    command to fall back to ``settings.SEASON_START_DATE``.
+
+    Returns:
+        The latest ``valid_from.date()`` across all Bulletin rows, or
+        ``None`` when the table is empty.
+
+    """
+    return Bulletin.objects.latest_valid_from_date()
+
+
+def slf_stash_writer(records: list[dict[str, Any]], path: Path) -> int:
+    """
+    Merge ``records`` into the SLF on-disk archive and return the new size.
+
+    Wraps ``bulletins.services.slf_archive.{merge, read_archive, write_archive}``
+    to match the uniform ``(records, path) -> int`` stash-writer signature
+    required by ``BulletinSource``.
+
+    The merge is atomic (write to a ``.tmp`` sibling then ``os.replace``).
+
+    Args:
+        records: Raw bulletin dicts collected by the ``--stash`` callback
+            during a pipeline run.
+        path: Filesystem path to the SLF archive NDJSON file.
+
+    Returns:
+        The total number of records in the archive after the merge.
+
+    """
+    from bulletins.services.slf_archive import merge, read_archive, write_archive
+
+    existing = list(read_archive(path))
+    merged = merge(existing, records)
+    write_archive(path, merged)
+    return len(merged)
+
+
+@dataclass(frozen=True)
+class BulletinSource:
+    """
+    Registry entry describing a single bulletin provider.
+
+    Each field tells the unified ``fetch_bulletins`` command how to
+    interact with a specific provider without encoding any provider logic
+    in the command itself.
+
+    Attributes:
+        name: Short provider name used in ``--source`` choices and log
+            output (e.g. ``"slf"``, ``"euregio"``).
+        pipeline_fn: Callable with the signature
+            ``(start, end, triggered_by, dry_run, force, base_url,
+            on_fetched, delay) -> PipelineRun`` that runs the full ingest.
+        latest_date_fn: Zero-argument callable that returns the most
+            recent ``valid_from`` date stored in the DB for this provider,
+            or ``None`` when the DB is empty. Used to derive the default
+            ``--start-date``.
+        live_url_setting: Attribute name on ``django.conf.settings`` that
+            holds the provider's live API base URL (e.g.
+            ``"SLF_API_BASE_URL"``).
+        mirror_url_setting: Attribute name on ``django.conf.settings``
+            that holds the dev-mirror URL (e.g.
+            ``"SLF_API_LOCAL_MIRROR_URL"``). Expected to be absent or
+            falsy in production.
+        archive_path_setting: Attribute name on ``django.conf.settings``
+            that holds the ``Path`` to the on-disk NDJSON archive (e.g.
+            ``"SLF_ARCHIVE_PATH"``). Used when ``--stash`` is passed.
+        stash_writer: Callable with signature
+            ``(records: list[dict], path: Path) -> int`` that merges
+            ``records`` into the on-disk archive and returns the new
+            total record count.
+
+    """
+
+    name: str
+    pipeline_fn: Callable[..., PipelineRun]
+    latest_date_fn: Callable[[], date | None]
+    live_url_setting: str
+    mirror_url_setting: str
+    archive_path_setting: str
+    stash_writer: Callable[[list[dict[str, Any]], Path], int]
+
+
+def _build_sources() -> dict[str, BulletinSource]:
+    """
+    Build the provider registry.
+
+    Deferred to a function so the EUREGIO imports (which themselves import
+    from this module) are not executed at module load time, avoiding a
+    circular-import risk.
+
+    Returns:
+        A dict mapping provider name to ``BulletinSource``.
+
+    """
+    from bulletins.services.euregio_fetcher import (
+        latest_euregio_date,
+        run_euregio_pipeline,
+        write_archive as euregio_write_archive,
+    )
+
+    def euregio_stash_writer(records: list[dict[str, Any]], path: Path) -> int:
+        """Write EUREGIO records to the on-disk archive; return new size."""
+        return euregio_write_archive(records, path)
+
+    return {
+        SOURCE_SLF: BulletinSource(
+            name=SOURCE_SLF,
+            pipeline_fn=run_pipeline,
+            latest_date_fn=latest_slf_date,
+            live_url_setting="SLF_API_BASE_URL",
+            mirror_url_setting="SLF_API_LOCAL_MIRROR_URL",
+            archive_path_setting="SLF_ARCHIVE_PATH",
+            stash_writer=slf_stash_writer,
+        ),
+        SOURCE_EUREGIO: BulletinSource(
+            name=SOURCE_EUREGIO,
+            pipeline_fn=run_euregio_pipeline,
+            latest_date_fn=latest_euregio_date,
+            live_url_setting="EUREGIO_API_BASE_URL",
+            mirror_url_setting="EUREGIO_API_LOCAL_MIRROR_URL",
+            archive_path_setting="EUREGIO_ARCHIVE_PATH",
+            stash_writer=euregio_stash_writer,
+        ),
+    }
+
+
+def get_sources() -> dict[str, BulletinSource]:
+    """
+    Return the bulletin-provider registry.
+
+    The registry is built lazily on first call to avoid circular imports
+    between ``data_fetcher`` and ``euregio_fetcher``.
+
+    Returns:
+        A dict mapping ``SOURCE_SLF`` / ``SOURCE_EUREGIO`` to their
+        ``BulletinSource`` entries.
+
+    """
+    return _build_sources()
