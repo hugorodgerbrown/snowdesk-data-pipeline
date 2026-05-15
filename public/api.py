@@ -78,6 +78,14 @@ _VALID_GEOJSON_COUNTRIES: frozenset[str] = frozenset(COUNTRY_NAMES)
 # correctly and the session middleware cannot append Vary: Cookie.
 _GEOJSON_CACHE_MAX_AGE = 86400
 
+# Cache lifetime for dynamic-but-slow-moving map endpoints (today-summaries,
+# resorts-by-region, resorts.geojson). Content only changes when a pipeline
+# run lands new bulletins or an operator edits a resort; 5 minutes bounds the
+# staleness while letting browsers and edge caches absorb the bulk of repeat
+# hits. Pair the decorator with @vary_on_headers("Accept-Encoding") to stop
+# SessionMiddleware from appending Vary: Cookie and killing shared caching.
+_DYNAMIC_CACHE_MAX_AGE = 300
+
 logger = logging.getLogger(__name__)
 
 # Swiss bounding box (west, south, east, north) in decimal degrees. Used
@@ -199,6 +207,8 @@ def _summary_for_bulletin(bulletin: Bulletin, region_name: str) -> dict[str, Any
     }
 
 
+@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
 def today_summaries(request: HttpRequest) -> JsonResponse:
     """
     Return per-region danger summaries for today.
@@ -283,6 +293,8 @@ _RATING_TO_INT: dict[str, int] = {
 }
 
 
+@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
 def season_ratings(request: HttpRequest) -> JsonResponse:
     """
     Return the whole-season bundle of per-region danger ratings.
@@ -324,6 +336,8 @@ def season_ratings(request: HttpRequest) -> JsonResponse:
     return JsonResponse(payload)
 
 
+@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
 def resorts_by_region(request: HttpRequest) -> JsonResponse:
     """
     Return the ``{region_id: [resort_name, ...]}`` lookup.
@@ -358,6 +372,8 @@ def resorts_by_region(request: HttpRequest) -> JsonResponse:
     return JsonResponse(result)
 
 
+@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
 def resorts_geojson(request: HttpRequest) -> JsonResponse:
     """
     Return a FeatureCollection of all geocoded resorts.
