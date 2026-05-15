@@ -1,5 +1,5 @@
 """
-bulletins/services/render_model.py — Render model builder for SLF avalanche bulletins.
+bulletins/services/render_model.py — Render model builder for SLF and EUREGIO bulletins.
 
 Converts the raw CAAML properties dict stored in Bulletin.raw_data into a
 versioned, presentation-ready ``render_model`` dict. The render model is a
@@ -40,9 +40,25 @@ Version 3 (continued — no shape change requiring regeneration):
   - Removed ``fallback_key_message`` from the output shape. The field was
     never rendered in any template; ``properties.highlights`` has been
     absent in SLF data since 2023-12-13.
-  - Aggregation synthesis removed. ``customData.CH.aggregation`` is
-    assumed always present. Missing aggregation now logs ERROR and returns
-    empty traits instead of synthesising from problem types.
+  - Aggregation synthesis was removed. Missing aggregation logged ERROR and
+    returned empty traits instead of synthesising from problem types.
+
+Version 4 changes:
+  - Source-aware builder: ``_detect_source()`` identifies SLF vs. EUREGIO
+    bulletins and routes to source-specific helpers.
+  - Added ``source`` top-level key: ``"slf"`` or ``"euregio"``.
+  - ``_resolve_aggregations()`` synthesises aggregation from problem types
+    for EUREGIO bulletins (ALBINA/LWD customData present, no CH aggregation).
+  - Added per-problem ``avalanche_type`` field (``"slab"``, ``"loose"``,
+    or ``None``), drawn from ``customData.ALBINA.avalancheType`` for EUREGIO.
+  - Added per-problem ``extras`` field: source-specific passthrough dict.
+    SLF: ``{"subdivision": str, "core_zone_text": str|None}``.
+    EUREGIO: ``{"avalanche_type": str|None}``.
+  - Added ``prose.avalanche_activity`` dict with ``highlights`` and
+    ``comment`` string fields (empty strings for SLF; populated from
+    ``avalancheActivity`` for EUREGIO).
+  - Added top-level ``danger_patterns`` list (``[]`` for SLF;
+    ``customData.LWD_Tyrol.dangerPatterns`` for EUREGIO).
 """
 
 from __future__ import annotations
@@ -68,7 +84,7 @@ logger = logging.getLogger(__name__)
 # Version
 # ---------------------------------------------------------------------------
 
-RENDER_MODEL_VERSION: int = 3
+RENDER_MODEL_VERSION: int = 4
 
 # ---------------------------------------------------------------------------
 # Constants — EAWS problem-type enum (openapi.json lines 670–683)
@@ -246,16 +262,381 @@ def _resolve_danger(ratings: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Problem builder
+# Source detection
 # ---------------------------------------------------------------------------
 
 
-def _build_problem(problem: dict[str, Any]) -> dict[str, Any]:
+def _detect_source(properties: dict[str, Any]) -> str:
+    """
+    Detect whether a bulletin originates from SLF or EUREGIO (ALBINA).
+
+    Inspects ``customData`` keys: the presence of ``"ALBINA"`` or any
+    ``"LWD_*"`` key signals an EUREGIO bulletin. ``"CH"`` or an absent /
+    unrecognised ``customData`` falls through to the SLF default.
+
+    Args:
+        properties: The CAAML properties dict.
+
+    Returns:
+        ``"slf"`` or ``"euregio"``.
+
+    """
+    custom_data: dict[str, Any] = properties.get("customData") or {}
+    if "ALBINA" in custom_data:
+        return "euregio"
+    for key in custom_data:
+        if key.startswith("LWD_"):
+            return "euregio"
+    # CH key present → SLF; no recognised key → default to SLF.
+    return "slf"
+
+
+# ---------------------------------------------------------------------------
+# Source-specific helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_aggregations(
+    properties: dict[str, Any], source: str
+) -> list[dict[str, Any]]:
+    """
+    Resolve the aggregation list from bulletin properties.
+
+    For SLF bulletins this reads ``customData.CH.aggregation`` verbatim.
+    For EUREGIO bulletins it synthesises aggregation entries by grouping
+    ``avalancheProblems`` on ``(category, validTimePeriod)``.
+
+    The output shape is the same in both cases:
+    ``[{"category": str, "problemTypes": [str], "validTimePeriod": str|None,
+       "title": str|None}, ...]``
+
+    Args:
+        properties: The CAAML properties dict.
+        source: ``"slf"`` or ``"euregio"``.
+
+    Returns:
+        A list of aggregation entry dicts.
+
+    """
+    if source == "slf":
+        return (properties.get("customData") or {}).get("CH", {}).get(
+            "aggregation"
+        ) or []
+
+    # EUREGIO: synthesise from avalancheProblems.
+    # Group on (category, validTimePeriod). Preserve problem order.
+    problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
+    seen: dict[tuple[str, str], dict[str, Any]] = {}
+    order: list[tuple[str, str]] = []
+
+    for problem in problems:
+        pt: str = problem.get("problemType", "")
+        vtp: str = problem.get("validTimePeriod") or "all_day"
+        category: str = PROBLEM_TYPE_TO_CATEGORY.get(pt, "dry")
+        key = (category, vtp)
+        if key not in seen:
+            seen[key] = {
+                "category": category,
+                "validTimePeriod": vtp,
+                "problemTypes": [],
+                "title": None,
+            }
+            order.append(key)
+        entry = seen[key]
+        # Avoid duplicates within the same aggregation group.
+        if pt not in entry["problemTypes"]:
+            entry["problemTypes"].append(pt)
+
+    return [seen[k] for k in order]
+
+
+def _to_int_safe(val: Any) -> int | None:
+    """Convert a raw bound value to int, returning None on failure."""
+    if val is None:
+        return None
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return None
+
+
+def _highest_danger(ratings: list[dict[str, Any]]) -> str | None:
+    """Return the highest mainValue string from a list of rating dicts."""
+    best: str | None = None
+    best_idx = -1
+    for rating in ratings:
+        val = rating.get("mainValue", "")
+        if val in _DANGER_ORDER:
+            idx = _DANGER_ORDER.index(val)
+            if idx > best_idx:
+                best_idx = idx
+                best = val
+    return best
+
+
+def _elevation_matches_rating(
+    problem_lower: int | None,
+    problem_upper: int | None,
+    rating_lower: int | None,
+    rating_upper: int | None,
+) -> bool:
+    """Return True when the rating's elevation bounds match the problem's."""
+    if rating_lower is not None:
+        if problem_lower is None:
+            return False
+        if problem_lower < rating_lower:
+            return False
+    if rating_upper is not None:
+        if problem_upper is None:
+            return False
+        if problem_upper > rating_upper:
+            return False
+    return True
+
+
+def _filter_ratings_by_elevation(
+    matching: list[dict[str, Any]],
+    problem_lower: int | None,
+    problem_upper: int | None,
+) -> list[dict[str, Any]]:
+    """
+    Partition matching ratings by elevation specificity.
+
+    Returns the most specific candidates (those with elevation bounds), or
+    the fallback set (no elevation bounds) when no specific match is found.
+    """
+    specific: list[dict[str, Any]] = []
+    fallback: list[dict[str, Any]] = []
+    for rating in matching:
+        rating_elev: dict[str, Any] | None = rating.get("elevation") or None
+        rating_lower = _to_int_safe((rating_elev or {}).get("lowerBound"))
+        rating_upper = _to_int_safe((rating_elev or {}).get("upperBound"))
+        has_bound = rating_lower is not None or rating_upper is not None
+        if _elevation_matches_rating(
+            problem_lower, problem_upper, rating_lower, rating_upper
+        ):
+            if has_bound:
+                specific.append(rating)
+            else:
+                fallback.append(rating)
+    return specific if specific else fallback
+
+
+def _resolve_problem_rating(
+    problem: dict[str, Any],
+    danger_ratings: list[dict[str, Any]],
+    source: str,
+) -> str | None:
+    """
+    Resolve the danger rating value for a single avalanche problem.
+
+    For SLF bulletins the value is read directly from
+    ``problem["dangerRatingValue"]``.
+
+    For EUREGIO bulletins the danger rating is derived by matching the
+    problem's elevation and validTimePeriod against the bulletin-level
+    ``dangerRatings``.  Matching rules (in order of specificity):
+
+    1. ``validTimePeriod`` must match the problem's period (or the rating
+       must have no validTimePeriod, which is treated as ``all_day``).
+    2. Elevation: a rating with ``lowerBound`` matches a problem whose
+       ``elevation.lowerBound >= lowerBound``; a rating with ``upperBound``
+       matches when ``elevation.upperBound <= upperBound``; a rating with no
+       bounds matches any elevation.
+    3. Most specific wins (a rating with an elevation bound is preferred
+       over one with no bound).
+    4. Fallback: highest danger value among remaining matching ratings.
+
+    Args:
+        problem: A single raw CAAML avalanche problem dict.
+        danger_ratings: The bulletin-level ``dangerRatings`` list.
+        source: ``"slf"`` or ``"euregio"``.
+
+    Returns:
+        A danger level string (e.g. ``"moderate"``) or ``None`` when
+        no match can be found.
+
+    """
+    if source == "slf":
+        raw = problem.get("dangerRatingValue")
+        return raw if raw else None
+
+    # EUREGIO: match against bulletin-level danger ratings.
+    problem_vtp: str = problem.get("validTimePeriod") or "all_day"
+    problem_elevation: dict[str, Any] | None = problem.get("elevation") or None
+    problem_lower = _to_int_safe((problem_elevation or {}).get("lowerBound"))
+    problem_upper = _to_int_safe((problem_elevation or {}).get("upperBound"))
+
+    # Partition ratings by validTimePeriod match.
+    matching = [
+        r
+        for r in danger_ratings
+        if (r.get("validTimePeriod") or "all_day") == problem_vtp
+    ]
+    if not matching:
+        matching = list(danger_ratings)
+
+    # Among matching, find the most specific elevation match.
+    candidates = _filter_ratings_by_elevation(matching, problem_lower, problem_upper)
+    if not candidates:
+        candidates = matching
+
+    return _highest_danger(candidates)
+
+
+def _resolve_problem_comment(problem: dict[str, Any], source: str) -> str:
+    """
+    Resolve the display comment for a single avalanche problem.
+
+    SLF bulletins carry a per-problem ``comment`` field with HTML prose.
+    EUREGIO bulletins carry avalanche activity prose at bulletin level
+    (surfaced via ``prose.avalanche_activity``), so per-problem comments
+    are returned as empty strings.
+
+    Args:
+        problem: A single raw CAAML avalanche problem dict.
+        source: ``"slf"`` or ``"euregio"``.
+
+    Returns:
+        HTML comment string, or empty string when absent or EUREGIO.
+
+    """
+    if source == "euregio":
+        return ""
+    return problem.get("comment") or ""
+
+
+def _resolve_problem_extras(problem: dict[str, Any], source: str) -> dict[str, Any]:
+    """
+    Resolve source-specific passthrough fields for a problem card.
+
+    SLF: returns ``{"subdivision": str, "core_zone_text": str|None}`` drawn
+    from ``customData.CH``.
+
+    EUREGIO: returns ``{"avalanche_type": str|None}`` drawn from
+    ``customData.ALBINA.avalancheType``.
+
+    Args:
+        problem: A single raw CAAML avalanche problem dict.
+        source: ``"slf"`` or ``"euregio"``.
+
+    Returns:
+        Source-specific extras dict.
+
+    """
+    custom_data: dict[str, Any] = problem.get("customData") or {}
+    if source == "slf":
+        ch_data: dict[str, Any] = custom_data.get("CH", {})
+        return {
+            "subdivision": ch_data.get("subdivision", "") or "",
+            "core_zone_text": ch_data.get("coreZoneText") or None,
+        }
+    # EUREGIO
+    albina_data: dict[str, Any] = custom_data.get("ALBINA", {})
+    return {
+        "avalanche_type": albina_data.get("avalancheType") or None,
+    }
+
+
+def _resolve_problem_avalanche_type(problem: dict[str, Any], source: str) -> str | None:
+    """
+    Resolve the avalanche type (slab/loose) for a problem, if available.
+
+    Only present for EUREGIO bulletins; SLF bulletins always return ``None``.
+
+    Args:
+        problem: A single raw CAAML avalanche problem dict.
+        source: ``"slf"`` or ``"euregio"``.
+
+    Returns:
+        ``"slab"``, ``"loose"``, or ``None``.
+
+    """
+    if source != "euregio":
+        return None
+    custom_data: dict[str, Any] = problem.get("customData") or {}
+    albina_data: dict[str, Any] = custom_data.get("ALBINA", {})
+    return albina_data.get("avalancheType") or None
+
+
+def _resolve_avalanche_activity(
+    properties: dict[str, Any], source: str
+) -> dict[str, str]:
+    """
+    Resolve avalanche activity prose from bulletin properties.
+
+    SLF bulletins do not carry an ``avalancheActivity`` field at the bulletin
+    level; returns empty strings for both fields.
+
+    EUREGIO bulletins carry ``avalancheActivity.highlights`` and
+    ``avalancheActivity.comment``.
+
+    Args:
+        properties: The CAAML properties dict.
+        source: ``"slf"`` or ``"euregio"``.
+
+    Returns:
+        Dict with ``"highlights"`` and ``"comment"`` string fields.
+
+    """
+    if source == "slf":
+        return {"highlights": "", "comment": ""}
+    activity: dict[str, Any] = properties.get("avalancheActivity") or {}
+    return {
+        "highlights": activity.get("highlights") or "",
+        "comment": activity.get("comment") or "",
+    }
+
+
+def _resolve_danger_patterns(properties: dict[str, Any], source: str) -> list[str]:
+    """
+    Resolve danger patterns from bulletin custom data.
+
+    SLF bulletins do not carry danger patterns; returns an empty list.
+
+    EUREGIO bulletins may carry ``customData.LWD_Tyrol.dangerPatterns``.
+    Other ``LWD_*`` keys are searched when ``LWD_Tyrol`` is absent.
+
+    Args:
+        properties: The CAAML properties dict.
+        source: ``"slf"`` or ``"euregio"``.
+
+    Returns:
+        List of danger pattern strings, e.g. ``["DP10", "DP1"]``, or ``[]``.
+
+    """
+    if source == "slf":
+        return []
+    custom_data: dict[str, Any] = properties.get("customData") or {}
+    # Prefer LWD_Tyrol; fall back to any other LWD_* key.
+    lwd_data = custom_data.get("LWD_Tyrol") or {}
+    if not lwd_data:
+        for key, value in custom_data.items():
+            if key.startswith("LWD_") and value:
+                lwd_data = value
+                break
+    patterns = lwd_data.get("dangerPatterns") or []
+    return [str(p) for p in patterns]
+
+
+# ---------------------------------------------------------------------------
+# Problem builder (source-aware)
+# ---------------------------------------------------------------------------
+
+
+def _build_problem(
+    problem: dict[str, Any],
+    danger_ratings: list[dict[str, Any]],
+    source: str,
+) -> dict[str, Any]:
     """
     Convert a raw CAAML avalanche problem into the render model shape.
 
     Args:
         problem: A single raw avalanche problem dict from CAAML.
+        danger_ratings: Bulletin-level danger ratings (used for EUREGIO
+            to derive per-problem danger rating values).
+        source: ``"slf"`` or ``"euregio"``.
 
     Returns:
         A rendered problem dict suitable for the render model.
@@ -263,11 +644,15 @@ def _build_problem(problem: dict[str, Any]) -> dict[str, Any]:
     """
     elevation = _parse_elevation(problem.get("elevation") or None)
     aspects: list[str] = problem.get("aspects") or []
-    comment_html: str = problem.get("comment") or ""
+    comment_html: str = _resolve_problem_comment(problem, source)
     core_zone_text: str | None = (problem.get("customData") or {}).get("CH", {}).get(
         "coreZoneText"
     ) or None
-    danger_rating_value: str | None = problem.get("dangerRatingValue") or None
+    danger_rating_value: str | None = _resolve_problem_rating(
+        problem, danger_ratings, source
+    )
+    avalanche_type: str | None = _resolve_problem_avalanche_type(problem, source)
+    extras: dict[str, Any] = _resolve_problem_extras(problem, source)
 
     return {
         "problem_type": problem.get("problemType", ""),
@@ -277,6 +662,8 @@ def _build_problem(problem: dict[str, Any]) -> dict[str, Any]:
         "comment_html": comment_html,
         "core_zone_text": core_zone_text,
         "danger_rating_value": danger_rating_value,
+        "avalanche_type": avalanche_type,
+        "extras": extras,
     }
 
 
@@ -338,7 +725,8 @@ def _validate_aggregation(aggregation: list[dict[str, Any]]) -> None:
     Validate each aggregation entry's structure.
 
     Args:
-        aggregation: The ``customData.CH.aggregation`` list.
+        aggregation: The resolved aggregation list (from either the SLF
+            ``customData.CH.aggregation`` field or the synthesised EUREGIO list).
 
     Raises:
         RenderModelBuildError: On structural anomalies in any entry.
@@ -381,7 +769,7 @@ def _validate(
 
     Args:
         avalanche_problems: The ``avalancheProblems`` list from CAAML properties.
-        aggregation: The ``customData.CH.aggregation`` list.
+        aggregation: The resolved aggregation list.
 
     Raises:
         RenderModelBuildError: On any of the fail-hard conditions described
@@ -414,16 +802,21 @@ def _validate(
 def _build_trait(
     aggregation_entry: dict[str, Any],
     problems_by_type: dict[str, dict[str, Any]],
+    danger_ratings: list[dict[str, Any]],
+    source: str,
 ) -> dict[str, Any]:
     """
     Build a single trait dict from an aggregation entry and a problem lookup.
 
     Problems are iterated in the order specified by the aggregation entry's
-    ``problemTypes`` list, preserving SLF's editorial ordering.
+    ``problemTypes`` list, preserving the editorial ordering.
 
     Args:
-        aggregation_entry: A single entry from ``customData.CH.aggregation``.
+        aggregation_entry: A single aggregation entry with ``category``,
+            ``validTimePeriod``, ``problemTypes``, and optionally ``title``.
         problems_by_type: Lookup dict mapping problemType → raw problem dict.
+        danger_ratings: Bulletin-level danger ratings (passed to problem builder).
+        source: ``"slf"`` or ``"euregio"``.
 
     Returns:
         A trait dict in the render model shape.
@@ -451,12 +844,12 @@ def _build_trait(
         )
         matched_raw.append(problems_by_type[pt])
 
-    built_problems = [_build_problem(p) for p in matched_raw]
+    built_problems = [_build_problem(p, danger_ratings, source) for p in matched_raw]
 
     # Determine danger level as max across member problems.
     danger_level = 1
     for p in matched_raw:
-        drv = p.get("dangerRatingValue") or ""
+        drv = _resolve_problem_rating(p, danger_ratings, source) or ""
         if drv in _DANGER_ORDER:
             candidate = int(_DANGER_NUMBER.get(drv, "1"))
             if candidate > danger_level:
@@ -489,8 +882,100 @@ def _build_trait(
 
 
 # ---------------------------------------------------------------------------
-# Public builder — secondary helpers
+# Trait list builder (extracted to keep build_render_model complexity low)
 # ---------------------------------------------------------------------------
+
+
+def _build_euregio_traits(
+    aggregation: list[dict[str, Any]],
+    avalanche_problems: list[dict[str, Any]],
+    ratings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Build traits for EUREGIO bulletins using a per-(type, vtp) problem lookup.
+
+    The same problem type can appear in multiple validTimePeriods in EUREGIO
+    bulletins, so each aggregation entry is resolved against the subset of
+    problems that match its validTimePeriod.
+
+    Args:
+        aggregation: The synthesised EUREGIO aggregation list.
+        avalanche_problems: The raw ``avalancheProblems`` list.
+        ratings: Bulletin-level danger ratings.
+
+    Returns:
+        Flat list of trait dicts in aggregation order.
+
+    """
+    problems_by_type_vtp: dict[tuple[str, str], dict[str, Any]] = {}
+    for p in avalanche_problems:
+        pt = p.get("problemType", "")
+        pvtp = p.get("validTimePeriod") or "all_day"
+        problems_by_type_vtp[(pt, pvtp)] = p
+
+    traits: list[dict[str, Any]] = []
+    for entry in aggregation:
+        entry_vtp = entry.get("validTimePeriod") or "all_day"
+        entry_problems: dict[str, dict[str, Any]] = {}
+        for pt in entry.get("problemTypes") or []:
+            if (pt, entry_vtp) in problems_by_type_vtp:
+                entry_problems[pt] = problems_by_type_vtp[(pt, entry_vtp)]
+            else:
+                # Fallback: first occurrence of this problem type.
+                for ap in avalanche_problems:
+                    if ap.get("problemType") == pt:
+                        entry_problems[pt] = ap
+                        break
+        traits.append(_build_trait(entry, entry_problems, ratings, "euregio"))
+    return traits
+
+
+def _build_traits(
+    aggregation: list[dict[str, Any]],
+    avalanche_problems: list[dict[str, Any]],
+    ratings: list[dict[str, Any]],
+    source: str,
+    bulletin_id: str,
+) -> list[dict[str, Any]]:
+    """
+    Build the complete traits list from aggregation entries and problems.
+
+    For EUREGIO bulletins the same problem type may appear in multiple
+    validTimePeriods, so a per-(type, vtp) lookup is used to ensure each
+    aggregation group resolves to the correct problem instance.
+
+    For SLF bulletins a simpler type-keyed lookup suffices.
+
+    Args:
+        aggregation: The resolved aggregation entry list.
+        avalanche_problems: The raw ``avalancheProblems`` list.
+        ratings: Bulletin-level danger ratings.
+        source: ``"slf"`` or ``"euregio"``.
+        bulletin_id: Used in warning log messages.
+
+    Returns:
+        Flat list of trait dicts in aggregation order.
+
+    """
+    traits: list[dict[str, Any]] = []
+
+    if source == "euregio":
+        traits = _build_euregio_traits(aggregation, avalanche_problems, ratings)
+    else:
+        # SLF: problem type uniquely identifies a problem row.
+        problems_by_type: dict[str, dict[str, Any]] = {
+            p["problemType"]: p for p in avalanche_problems
+        }
+        for entry in aggregation:
+            traits.append(_build_trait(entry, problems_by_type, ratings, source))
+
+    if len(traits) > 2:
+        logger.warning(
+            "Bulletin %s produced %d traits — may have extended the editorial model",
+            bulletin_id,
+            len(traits),
+        )
+    return traits
 
 
 # ---------------------------------------------------------------------------
@@ -567,22 +1052,25 @@ def _build_metadata(properties: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _build_prose(properties: dict[str, Any]) -> dict[str, Any]:
+def _build_prose(properties: dict[str, Any], source: str = "slf") -> dict[str, Any]:
     """
     Extract prose sections from CAAML properties.
 
     Reads ``snowpackStructure.comment``, ``weatherReview.comment``,
-    ``weatherForecast.comment``, and the ``tendency`` array. Each tendency
-    entry captures ``comment``, ``tendency_type`` (from ``tendencyType``),
-    ``valid_from``, and ``valid_until`` (from the entry's ``validTime``).
+    ``weatherForecast.comment``, the ``tendency`` array, and (for EUREGIO)
+    ``avalancheActivity``. Each tendency entry captures ``comment``,
+    ``tendency_type`` (from ``tendencyType``), ``valid_from``, and
+    ``valid_until`` (from the entry's ``validTime``).
     Missing or empty tendency array → ``[]``. Missing scalar prose → ``None``.
+    ``avalanche_activity`` is always present; empty strings for SLF.
 
     Args:
         properties: The CAAML properties dict.
+        source: ``"slf"`` or ``"euregio"``.
 
     Returns:
         A prose dict with ``snowpack_structure``, ``weather_review``,
-        ``weather_forecast``, and ``tendency`` keys.
+        ``weather_forecast``, ``tendency``, and ``avalanche_activity`` keys.
 
     """
     snowpack_structure: str | None = (properties.get("snowpackStructure") or {}).get(
@@ -610,11 +1098,14 @@ def _build_prose(properties: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
+    avalanche_activity = _resolve_avalanche_activity(properties, source)
+
     return {
         "snowpack_structure": snowpack_structure,
         "weather_review": weather_review,
         "weather_forecast": weather_forecast,
         "tendency": tendency,
+        "avalanche_activity": avalanche_activity,
     }
 
 
@@ -633,6 +1124,10 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     canonical EAWS problem-type enum or structural invariants. The caller
     is responsible for catching this and storing an error sentinel.
 
+    Supports both SLF and EUREGIO (ALBINA) bulletin formats. The source
+    is detected automatically via ``_detect_source()`` and stamped in the
+    output as ``render_model["source"]``.
+
     Args:
         properties: The CAAML properties dict (the ``"properties"`` key from
             the GeoJSON Feature envelope stored in ``Bulletin.raw_data``).
@@ -647,24 +1142,25 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     """
     bulletin_id: str = properties.get("bulletinID", "<unknown>")
 
+    source = _detect_source(properties)
+
     ratings: list[dict[str, Any]] = properties.get("dangerRatings") or []
     danger = _resolve_danger(ratings)
 
     avalanche_problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
-    aggregation: list[dict[str, Any]] = (properties.get("customData") or {}).get(
-        "CH", {}
-    ).get("aggregation") or []
+    aggregation: list[dict[str, Any]] = _resolve_aggregations(properties, source)
 
-    # aggregation is expected to always be present when avalancheProblems is
-    # non-empty. Log an error and produce empty traits if missing — do not
-    # synthesise, as this indicates an upstream data gap.
-    if avalanche_problems and not aggregation:
+    # For SLF bulletins: aggregation is expected to always be present when
+    # avalancheProblems is non-empty. Log an error and produce empty traits
+    # if missing — do not synthesise, as this indicates an upstream data gap.
+    if source == "slf" and avalanche_problems and not aggregation:
         logger.error(
             "Bulletin %s has avalancheProblems but no customData.CH.aggregation; "
             "cannot build traits. Bulletin will render with no problem cards.",
             bulletin_id,
         )
         avalanche_problems = []
+        aggregation = []
 
     # Validate — raises RenderModelBuildError on failure.
     _validate(avalanche_problems, aggregation)
@@ -673,35 +1169,26 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     traits: list[dict[str, Any]] = []
 
     if aggregation:
-        # Build a type→problem lookup for O(1) access.
-        problems_by_type: dict[str, dict[str, Any]] = {
-            p["problemType"]: p for p in avalanche_problems
-        }
+        traits = _build_traits(
+            aggregation, avalanche_problems, ratings, source, bulletin_id
+        )
 
-        for entry in aggregation:
-            traits.append(_build_trait(entry, problems_by_type))
-
-        if len(traits) > 2:
-            logger.warning(
-                "Bulletin %s produced %d traits — SLF may have extended the "
-                "editorial model",
-                bulletin_id,
-                len(traits),
-            )
-
-    prose = _build_prose(properties)
+    prose = _build_prose(properties, source)
     metadata = _build_metadata(properties)
+    danger_patterns = _resolve_danger_patterns(properties, source)
 
     # Keep top-level snowpack_structure for v2 back-compat (equals prose copy).
     snowpack_structure: str | None = prose["snowpack_structure"]
 
     return {
         "version": RENDER_MODEL_VERSION,
+        "source": source,
         "danger": danger,
         "traits": traits,
         "snowpack_structure": snowpack_structure,
         "metadata": metadata,
         "prose": prose,
+        "danger_patterns": danger_patterns,
     }
 
 

@@ -331,6 +331,43 @@ reachable via the SNOW-81 deep-link in the masthead.
                     {% endif %}
 
                     {% comment %}
+                       SECTION 3b — Avalanche activity (EUREGIO only).
+                       Rendered when prose.avalanche_activity carries non-empty
+                       highlights or comment strings. Suppressed for SLF bulletins
+                       whose activity prose is empty by the source-aware builder.
+                    {% endcomment %}
+                    {% with prose=rm.prose %}
+                        {% if prose.avalanche_activity.highlights or prose.avalanche_activity.comment %}
+                            <section
+                                class="mb-4"
+                                data-testid="avalanche-activity-section"
+                            >
+                                <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3">
+                                    {% trans "Avalanche Activity" %}
+                                </h2>
+                                <div class="rounded-[12px] border border-border bg-card px-4 py-4">
+                                    {% if prose.avalanche_activity.highlights %}
+                                        <p
+                                            class="text-sm font-semibold text-text-1 mb-2"
+                                            data-testid="avalanche-activity-highlights"
+                                        >
+                                            {{ prose.avalanche_activity.highlights }}
+                                        </p>
+                                    {% endif %}
+                                    {% if prose.avalanche_activity.comment %}
+                                        <div
+                                            class="slf-prose text-sm leading-[1.6] text-text-2"
+                                            data-testid="avalanche-activity-comment"
+                                        >
+                                            {{ prose.avalanche_activity.comment|snowdesk_html }}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </section>
+                        {% endif %}
+                    {% endwith %}
+
+                    {% comment %}
                        SECTION 4 — Snowpack and weather Four prose sub-blocks
                        rendered as collapsible panels (native
                        <details>/<summary>, zero JS).  Each panel is skipped
@@ -426,6 +463,9 @@ reachable via the SNOW-81 deep-link in the masthead.
                                     {# — Outlook (tendency[]) ─────────────────── #}
                                     {# Summary uses the first tendency entry's <h1>; subsequent entries  #}
                                     {# keep their own <h1> so multi-day outlooks remain disambiguated.   #}
+                                    {# EUREGIO bulletins ship tendency entries with highlights but empty  #}
+                                    {# comment — tendency_has_comment detects this so we can show the    #}
+                                    {# "No data supplied" placeholder rather than a blank body.          #}
                                     {% if prose.tendency %}
                                         {% with first_entry=prose.tendency|first %}
                                             <details
@@ -442,17 +482,23 @@ reachable via the SNOW-81 deep-link in the masthead.
                                                     >&#x25BE;</span>
                                                 </summary>
                                                 <div class="px-4 pb-4 pt-3 border-t border-border">
-                                                    {% for entry in prose.tendency %}
-                                                        {% if entry.comment %}
-                                                            <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-3{% endif %}">
-                                                                {% if forloop.first %}
-                                                                    {{ entry.comment|prose_body|snowdesk_html }}
-                                                                {% else %}
-                                                                    {{ entry.comment|snowdesk_html }}
+                                                    {% with tendency_has_content=prose|tendency_has_comment %}
+                                                        {% if tendency_has_content %}
+                                                            {% for entry in prose.tendency %}
+                                                                {% if entry.comment %}
+                                                                    <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-3{% endif %}">
+                                                                        {% if forloop.first %}
+                                                                            {{ entry.comment|prose_body|snowdesk_html }}
+                                                                        {% else %}
+                                                                            {{ entry.comment|snowdesk_html }}
+                                                                        {% endif %}
+                                                                    </div>
                                                                 {% endif %}
-                                                            </div>
+                                                            {% endfor %}
+                                                        {% else %}
+                                                            {% include "includes/_no_data_supplied.html" %}
                                                         {% endif %}
-                                                    {% endfor %}
+                                                    {% endwith %}
                                                 </div>
                                             </details>
                                         {% endwith %}
