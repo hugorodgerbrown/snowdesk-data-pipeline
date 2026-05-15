@@ -304,7 +304,10 @@ class Command(BaseCommand):
             )
 
         if stash:
-            self._flush_stash(source, collected)
+            try:
+                self._flush_stash(source, collected)
+            except Exception as exc:
+                raise CommandError(f"{source.name} stash flush failed: {exc}") from exc
 
         self._report_outcome(source, run, days, commit=commit)
 

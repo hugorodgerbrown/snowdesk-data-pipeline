@@ -325,6 +325,39 @@ class TestFetchBulletinsSourceDispatch:
 
     @patch(PATCH_EUREGIO)
     @patch(PATCH_SLF)
+    def test_source_euregio_slf_preserves_order(
+        self, mock_slf: MagicMock, mock_euregio: MagicMock
+    ) -> None:
+        """--source euregio slf runs EUREGIO first, then SLF (AC#5 ordering)."""
+        mock_slf.return_value = _make_successful_run()
+        mock_euregio.return_value = _make_successful_run()
+
+        call_order: list[str] = []
+
+        def _record_slf(**kw: object) -> PipelineRun:
+            call_order.append("slf")
+            return _make_successful_run()
+
+        def _record_euregio(**kw: object) -> PipelineRun:
+            call_order.append("euregio")
+            return _make_successful_run()
+
+        mock_slf.side_effect = _record_slf
+        mock_euregio.side_effect = _record_euregio
+
+        call_command(
+            "fetch_bulletins",
+            "--source",
+            "euregio",
+            "slf",
+            "--date",
+            "2026-03-15",
+        )
+
+        assert call_order == ["euregio", "slf"]
+
+    @patch(PATCH_EUREGIO)
+    @patch(PATCH_SLF)
     def test_source_repeated_flag_calls_both(
         self, mock_slf: MagicMock, mock_euregio: MagicMock
     ) -> None:
@@ -690,6 +723,46 @@ class TestFetchBulletinsErrorHandling:
             )
 
         # EUREGIO ran regardless.
+        mock_euregio.assert_called_once()
+
+    @patch(PATCH_EUREGIO)
+    @patch(PATCH_SLF)
+    def test_stash_failure_is_per_source_error_other_source_still_runs(
+        self,
+        mock_slf: MagicMock,
+        mock_euregio: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Stash writer raising does not abort remaining sources (fail-at-end)."""
+        mock_slf.return_value = _make_successful_run()
+        mock_euregio.return_value = _make_successful_run()
+
+        euregio_archive = tmp_path / "euregio.ndjson"
+
+        with (
+            patch(
+                "bulletins.management.commands.fetch_bulletins.Command._flush_stash",
+                side_effect=[PermissionError("disk full"), None],
+            ),
+            override_settings(
+                SLF_ARCHIVE_PATH=tmp_path / "slf.ndjson",
+                EUREGIO_ARCHIVE_PATH=euregio_archive,
+            ),
+            pytest.raises(CommandError) as exc_info,
+        ):
+            call_command(
+                "fetch_bulletins",
+                "--source",
+                "slf",
+                "euregio",
+                "--date",
+                "2026-03-15",
+                "--stash",
+            )
+
+        # SLF stash failure is named in the final error.
+        assert "slf" in str(exc_info.value).lower()
+        # EUREGIO pipeline was still invoked despite SLF stash failure.
         mock_euregio.assert_called_once()
 
 
