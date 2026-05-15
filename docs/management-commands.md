@@ -71,9 +71,9 @@ poetry run python manage.py fetch_bulletins --source slf \
 #   --start-date YYYY-MM-DD  default: latest DB bulletin's valid_from day per
 #                            source, or settings.SEASON_START_DATE when empty.
 #                            Mutually exclusive with --date and --today.
-#   --date       YYYY-MM-DD  shortcut for --start-date == today; sets a
-#                            single-day window. Mutually exclusive with
-#                            --start-date and --today.
+#   --date       YYYY-MM-DD  shortcut for a single-day window; sets both
+#                            start and end to the given date. Mutually
+#                            exclusive with --start-date and --today.
 #   --today                  shortcut for today-only fetch. Mutually exclusive
 #                            with --start-date and --date.
 #   --commit                 persist; omit for a read-only run
