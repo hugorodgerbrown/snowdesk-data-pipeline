@@ -137,7 +137,7 @@ the full CAAML `dangerRatings` / `avalancheProblems` / prose payloads.
 
 1. A backfill via this endpoint is bounded to approximately the current
    season plus the previous two — i.e. what the existing
-   `fetch_bulletins --start-date <three-seasons-ago>` would already
+   `fetch_bulletins --source slf --start-date <three-seasons-ago>` would already
    produce on a single season-to-date run. There is no untapped depth to
    mine with the current API.
 
