@@ -1,125 +1,97 @@
 # Management commands
 
-`fetch_bulletins` is the single entry point for fetching SLF bulletins —
-it supersedes the old `fetch_data` and `backfill_data` commands and
-follows the management-command design convention in CLAUDE.md
-(read-only by default; opt in to writes with `--commit`).
+`fetch_bulletins` is the single entry point for fetching avalanche bulletins
+from all supported providers (SLF and EUREGIO/ALBINA). It supersedes the old
+`fetch_data`, `backfill_data`, and `fetch_euregio_bulletins` commands and
+follows the management-command design convention in CLAUDE.md (read-only by
+default; opt in to writes with `--commit`).
+
+`--source` is required. Pass one or more provider names; both space-separated
+(`--source slf euregio`) and repeated flags (`--source slf --source euregio`)
+are accepted. Duplicates are silently deduplicated.
+
+The cron invocation for the standard nightly run is:
+`fetch_bulletins --source slf euregio --commit`
 
 ```bash
-# Read-only walk, start date derived from DB:
+# Read-only walk, start date derived from DB for each source:
 #   - populated DB: (latest bulletin valid_from day) → today
 #                   (same-day overlap so morning-updates / prior-evening
 #                    re-issues are refetched; duplicates are ignored)
 #   - empty DB:     SEASON_START_DATE → today (first-run backstop)
 # Useful as a "what would happen?" probe before committing.
-poetry run python manage.py fetch_bulletins
+poetry run python manage.py fetch_bulletins --source slf
+poetry run python manage.py fetch_bulletins --source euregio
+poetry run python manage.py fetch_bulletins --source slf euregio
 
-# Persist the same gentle-default window.
-poetry run python manage.py fetch_bulletins --commit
+# Persist the same gentle-default window (typical cron shape).
+poetry run python manage.py fetch_bulletins --source slf euregio --commit
+
+# Today only.
+poetry run python manage.py fetch_bulletins --source slf --today --commit
+poetry run python manage.py fetch_bulletins --source euregio --today --commit
 
 # Single day (typical one-off shape).
-poetry run python manage.py fetch_bulletins --date 2024-06-15 --commit
+poetry run python manage.py fetch_bulletins --source slf --date 2024-06-15 --commit
 
-# Explicit window — overrides the smart default.
-poetry run python manage.py fetch_bulletins \
-    --start-date 2024-01-01 --end-date 2024-12-31 --commit
+# Explicit window — overrides the smart default. End is always today (UTC);
+# there is no --end-date flag.
+poetry run python manage.py fetch_bulletins --source slf --start-date 2024-01-01 --commit
 
 # Re-pull existing rows.
-poetry run python manage.py fetch_bulletins --commit --force
+poetry run python manage.py fetch_bulletins --source slf euregio --commit --force
 
-# Capture every fetched bulletin into bulletins/local_mirrors/slf_archive.ndjson
+# Capture every fetched bulletin into each source's on-disk archive
 # (deduped by bulletinID, sorted ascending by validTime.startTime).
 # Independent of --commit: combine for full-fidelity capture, or use
 # --stash alone to refresh the archive without DB writes.
-poetry run python manage.py fetch_bulletins --stash
-poetry run python manage.py fetch_bulletins --commit --stash
+poetry run python manage.py fetch_bulletins --source slf euregio --stash
+poetry run python manage.py fetch_bulletins --source slf euregio --commit --stash
 
-# Bootstrap an empty local DB end-to-end against the on-disk archive
-# instead of the live SLF API. Requires the dev server to be running
-# (the mirror view at /dev/slf-mirror/… is served by Django) and
-# settings.SLF_API_LOCAL_MIRROR_URL to be configured (development.py).
-poetry run python manage.py fetch_bulletins --source local-mirror --commit
+# Bootstrap an empty local DB against the on-disk archive instead of the
+# live API. Requires the dev server to be running and the relevant mirror
+# URL settings to be configured (development.py):
+#   SLF: settings.SLF_API_LOCAL_MIRROR_URL
+#   EUREGIO: settings.EUREGIO_API_LOCAL_MIRROR_URL
+poetry run python manage.py fetch_bulletins --source slf --local-mirror --commit
+poetry run python manage.py fetch_bulletins --source euregio --local-mirror --commit
+poetry run python manage.py fetch_bulletins --source slf euregio --local-mirror --commit
 
 # Multi-year backfill — pace API calls to be a good citizen on the
-# public, no-auth SLF API. The delay applies between page fetches,
+# public, no-auth SLF API. The delay applies between page/CDN fetches,
 # not between individual bulletins.
-poetry run python manage.py fetch_bulletins \
-    --start-date 2014-11-01 --end-date 2024-04-30 \
-    --delay 5 --commit
+poetry run python manage.py fetch_bulletins --source slf \
+    --start-date 2014-11-01 --delay 5 --commit
 
 # Flags:
-#   --start-date YYYY-MM-DD  default: latest DB bulletin's valid_from day,
-#                            or settings.SEASON_START_DATE when the DB is empty.
-#   --end-date   YYYY-MM-DD  default: today (UTC)
-#   --date       YYYY-MM-DD  shortcut for --start-date == --end-date
-#                            (mutually exclusive with the range flags)
+#   --source {slf,euregio} [...]
+#                            required. One or more providers: 'slf' (SLF CAAML
+#                            API) or 'euregio' (ALBINA CDN). Space-separated
+#                            or repeat the flag. Duplicates are deduplicated.
+#   --start-date YYYY-MM-DD  default: latest DB bulletin's valid_from day per
+#                            source, or settings.SEASON_START_DATE when empty.
+#                            Mutually exclusive with --date and --today.
+#   --date       YYYY-MM-DD  shortcut for a single-day window; sets both
+#                            start and end to the given date. Mutually
+#                            exclusive with --start-date and --today.
+#   --today                  shortcut for today-only fetch. Mutually exclusive
+#                            with --start-date and --date.
 #   --commit                 persist; omit for a read-only run
 #   --force                  upsert existing bulletins instead of skipping
-#   --source {live,local-mirror}
-#                            default 'live' (real SLF API). 'local-mirror'
-#                            replays bulletins/local_mirrors/slf_archive.ndjson via the
-#                            dev-only view; errors out if the mirror URL
-#                            setting is not configured.
-#   --stash                  append fetched bulletins to the on-disk archive
+#   --local-mirror           use the dev-only mirror URL for every requested
+#                            source. Errors out if the mirror URL setting is
+#                            not configured for that source.
+#   --stash                  append fetched bulletins to each source's archive
 #   --delay      SECONDS     default 0 (no pause). Sleep N seconds between
-#                            successive SLF API page fetches. Intended for
-#                            multi-year backfills where being a good citizen
-#                            on the public, no-auth API matters more than
-#                            wall-clock speed.
-
-# Fetch EUREGIO/ALBINA bulletins (AT-07, IT-32-BZ, IT-32-TN) from the ALBINA CDN.
-# Same flag set as fetch_bulletins. Default start date: latest EUREGIO bulletin's
-# valid_from day in DB; falls back to SEASON_START_DATE when the DB is empty.
-poetry run python manage.py fetch_euregio_bulletins
-
-# Single day.
-poetry run python manage.py fetch_euregio_bulletins --date 2026-01-15 --commit
-
-# Explicit window — overrides the smart default.
-poetry run python manage.py fetch_euregio_bulletins \
-    --start-date 2025-11-01 --end-date 2026-04-30 --commit
-
-# Re-pull existing EUREGIO rows.
-poetry run python manage.py fetch_euregio_bulletins --commit --force
-
-# Bootstrap an empty local DB end-to-end against the on-disk archive.
-# Dev server must be running; settings.EUREGIO_API_LOCAL_MIRROR_URL must be configured.
-poetry run python manage.py fetch_euregio_bulletins --source local-mirror --commit
-
-# Capture fetched bulletins into bulletins/local_mirrors/euregio_archive.ndjson.
-# Use --stash alone to refresh the archive without DB writes, or combine
-# with --commit for a full-fidelity capture.
-poetry run python manage.py fetch_euregio_bulletins --stash
-poetry run python manage.py fetch_euregio_bulletins --commit --stash
-
-# Multi-season backfill — pace CDN requests.
-poetry run python manage.py fetch_euregio_bulletins \
-    --start-date 2024-11-01 --end-date 2025-04-30 \
-    --delay 0.3 --commit
-
-# Flags:
-#   --start-date YYYY-MM-DD  default: latest EUREGIO bulletin's valid_from day,
-#                            or settings.SEASON_START_DATE when the DB is empty.
-#   --end-date   YYYY-MM-DD  default: today (UTC)
-#   --date       YYYY-MM-DD  shortcut for --start-date == --end-date
-#                            (mutually exclusive with the range flags)
-#   --commit                 persist; omit for a read-only run
-#   --force                  upsert existing bulletins instead of skipping
-#   --source {live,local-mirror}
-#                            default 'live' (real ALBINA CDN). 'local-mirror'
-#                            replays bulletins/local_mirrors/euregio_archive.ndjson
-#                            via the dev-only view; errors out if the mirror URL
-#                            setting is not configured.
-#   --stash                  append fetched bulletins to the on-disk archive
-#   --delay      SECONDS     default 0. Sleep N seconds between CDN requests.
-#                            Intended for large backfills where pacing matters.
+#                            successive API page fetches. Intended for
+#                            multi-year backfills where pacing matters.
 
 # One-off archive rebuild script (not a management command):
 #   python scripts/fetch_euregio_archive.py [--start-date YYYY-MM-DD]
 #                                           [--end-date YYYY-MM-DD]
 #                                           [--regions AT-07 IT-32-BZ IT-32-TN]
 #   Overwrites bulletins/local_mirrors/euregio_archive.ndjson from the live ALBINA CDN.
-#   Incremental additions handled by: fetch_euregio_bulletins --stash
+#   Incremental additions handled by: fetch_bulletins --source euregio --stash
 
 # Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
 # Read-only by default — pass --commit to persist (same convention as fetch_bulletins).
@@ -250,11 +222,18 @@ poetry run python manage.py loaddata regions/fixtures/eaws_IT.json
 
 `SEASON_START_DATE` is read from the environment in
 `config/settings/base.py` (default: `2025-11-01`) and is the first-run
-backstop: a bare invocation against an empty DB captures the full
-snowpack build-up. Once the DB has bulletins, `fetch_bulletins` prefers
-the gentler default of "start at the latest bulletin's `valid_from` day"
-so scheduled runs only re-walk a small same-day overlap (duplicates are
-ignored downstream — it's the fetch that's being optimised).
+backstop: when a source has no bulletins in the DB, `fetch_bulletins`
+falls back to `SEASON_START_DATE` so the full snowpack build-up is
+captured. Once the DB has bulletins for a source, `fetch_bulletins`
+prefers the gentler default of "start at the latest bulletin's
+`valid_from` day" so scheduled runs only re-walk a small same-day
+overlap (duplicates are ignored downstream — it's the fetch that's being
+optimised).
+
+**Render cron entry:** update the cron job to
+`fetch_bulletins --source slf euregio --commit` after this change lands
+(the previous entry `fetch_bulletins --commit` will error with a missing
+`--source` argument).
 
 ---
 
