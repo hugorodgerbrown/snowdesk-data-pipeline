@@ -241,8 +241,17 @@ reachable via the SNOW-81 deep-link in the masthead.
            as the season-sheet trigger (SNOW-117). No Close button —
            artefact of WR's modal-over-map architecture, removed per
            DESIGN.md confirmed subtractions.
+
+           source is passed only when the render model is a valid v4+
+           bulletin (version > 0); the error-state and empty-state paths
+           suppress it so the header carries no data-source attribute
+           and no bottom-border accent (SNOW-175).
         {% endcomment %}
-        {% include "includes/bulletin_header.html" %}
+        {% if panel and panel.render_model.version %}
+            {% include "includes/bulletin_header.html" with source=panel.render_model.source %}
+        {% else %}
+            {% include "includes/bulletin_header.html" %}
+        {% endif %}
 
         {% if not bulletin %}
             {# ── Empty state ─────────────────────────────────────────── #}

@@ -2024,7 +2024,8 @@ def fetch_weather_snippet(
 
     """
     region = get_object_or_404(
-        MicroRegion.objects.select_related("subregion"), region_id__iexact=region_id
+        MicroRegion.objects.select_related("subregion__major"),
+        region_id__iexact=region_id,
     )
     try:
         target_date = datetime.date.fromisoformat(date_str)
@@ -2063,6 +2064,19 @@ def fetch_weather_snippet(
         if region.subregion
         else ""
     )
+
+    # Derive the source key from the region's country code.  This mapping holds
+    # for all currently-ingested regions: CH → SLF, AT/IT → EUREGIO/ALBINA.
+    # If a new source country is added, extend this mapping and the SOURCES dict
+    # in public/templatetags/source_pill.py in lockstep.
+    country = region.major_region.country if region.subregion else ""
+    _country_to_source: dict[str, str] = {
+        "CH": "slf",
+        "AT": "euregio",
+        "IT": "euregio",
+    }
+    source = _country_to_source.get(country, "")
+
     return render(
         request,
         "includes/bulletin_header.html",
@@ -2073,6 +2087,7 @@ def fetch_weather_snippet(
             "subregion_name": subregion_name,
             "page_date": target_date,
             "region_id": region.region_id,
+            "source": source,
         },
     )
 
