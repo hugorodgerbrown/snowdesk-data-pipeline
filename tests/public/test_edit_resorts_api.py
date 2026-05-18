@@ -524,6 +524,132 @@ class TestPointInPolygon:
             is False
         )
 
+    def test_multipolygon_single_member_point_inside(self) -> None:
+        """A MultiPolygon with one member behaves like the equivalent Polygon."""
+        from public.api import _point_in_polygon
+
+        multi = {
+            "type": "MultiPolygon",
+            "coordinates": [
+                [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]],
+            ],
+        }
+        assert _point_in_polygon(lat=5.0, lon=5.0, polygon=multi) is True
+
+    def test_multipolygon_single_member_point_outside(self) -> None:
+        """A point outside the only member of a MultiPolygon returns False."""
+        from public.api import _point_in_polygon
+
+        multi = {
+            "type": "MultiPolygon",
+            "coordinates": [
+                [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]],
+            ],
+        }
+        assert _point_in_polygon(lat=20.0, lon=20.0, polygon=multi) is False
+
+    def test_multipolygon_point_inside_second_member(self) -> None:
+        """A point inside the second (disjoint) member of a MultiPolygon returns True."""
+        from public.api import _point_in_polygon
+
+        # Two disjoint squares: [0..10]×[0..10] and [20..30]×[20..30].
+        multi = {
+            "type": "MultiPolygon",
+            "coordinates": [
+                [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]],
+                [
+                    [
+                        [20.0, 20.0],
+                        [30.0, 20.0],
+                        [30.0, 30.0],
+                        [20.0, 30.0],
+                        [20.0, 20.0],
+                    ]
+                ],
+            ],
+        }
+        # Inside second member only.
+        assert _point_in_polygon(lat=25.0, lon=25.0, polygon=multi) is True
+
+    def test_multipolygon_point_outside_all_members(self) -> None:
+        """A point outside every member of a MultiPolygon returns False."""
+        from public.api import _point_in_polygon
+
+        multi = {
+            "type": "MultiPolygon",
+            "coordinates": [
+                [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]],
+                [
+                    [
+                        [20.0, 20.0],
+                        [30.0, 20.0],
+                        [30.0, 30.0],
+                        [20.0, 30.0],
+                        [20.0, 20.0],
+                    ]
+                ],
+            ],
+        }
+        # Between the two squares.
+        assert _point_in_polygon(lat=15.0, lon=15.0, polygon=multi) is False
+
+
+class TestBboxOfPolygon:
+    """Unit tests for ``_bbox_of_polygon`` helper."""
+
+    SQUARE: dict = {
+        "type": "Polygon",
+        "coordinates": [
+            [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+        ],
+    }
+
+    def test_polygon_returns_correct_bbox(self) -> None:
+        """Bbox of the unit square is (0, 0, 10, 10)."""
+        from public.api import _bbox_of_polygon
+
+        assert _bbox_of_polygon(self.SQUARE) == (0.0, 0.0, 10.0, 10.0)
+
+    def test_empty_polygon_returns_none(self) -> None:
+        """A Polygon with empty coordinates returns None."""
+        from public.api import _bbox_of_polygon
+
+        assert _bbox_of_polygon({"type": "Polygon", "coordinates": []}) is None
+
+    def test_multipolygon_single_member_matches_polygon(self) -> None:
+        """A MultiPolygon with one member gives the same bbox as the Polygon."""
+        from public.api import _bbox_of_polygon
+
+        multi = {
+            "type": "MultiPolygon",
+            "coordinates": [
+                [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]],
+            ],
+        }
+        assert _bbox_of_polygon(multi) == (0.0, 0.0, 10.0, 10.0)
+
+    def test_multipolygon_multiple_members_enclosing_bbox(self) -> None:
+        """Bbox of a MultiPolygon spans all member polygons."""
+        from public.api import _bbox_of_polygon
+
+        # Two disjoint squares: [0..10]×[0..10] and [20..30]×[20..30].
+        multi = {
+            "type": "MultiPolygon",
+            "coordinates": [
+                [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]],
+                [
+                    [
+                        [20.0, 20.0],
+                        [30.0, 20.0],
+                        [30.0, 30.0],
+                        [20.0, 30.0],
+                        [20.0, 20.0],
+                    ]
+                ],
+            ],
+        }
+        assert _bbox_of_polygon(multi) == (0.0, 0.0, 30.0, 30.0)
+
 
 @pytest.mark.django_db
 class TestRegionForPoint:
