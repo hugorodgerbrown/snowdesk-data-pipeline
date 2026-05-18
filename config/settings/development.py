@@ -128,8 +128,9 @@ WEATHER_API_LOCAL_MIRROR_BASE_URL = config(
 # ---------------------------------------------------------------------------
 # When set to a ``file://`` directory URI, ``fetch_bulletins --source
 # meteofrance`` reads ``massif-{NN:03d}.xml`` files from that directory
-# instead of calling the live MeteoFrance APIM. Set in .env to point at
-# ``bulletins/local_mirrors/meteofrance/``.
+# instead of calling the live MeteoFrance APIM. The value must be an
+# absolute path in the three-slash ``file:///`` form (relative paths are
+# ambiguous and silently parse with the first segment as the netloc).
 # Override via env var; default empty so production doesn't inherit a path.
 METEOFRANCE_API_LOCAL_MIRROR_URL = config(
     "METEOFRANCE_API_LOCAL_MIRROR_URL",
