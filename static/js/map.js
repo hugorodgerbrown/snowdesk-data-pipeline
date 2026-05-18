@@ -309,7 +309,11 @@ const clearRegionRepaint = () => {
         ],
         'fill-opacity': [
           'case',
-          ['boolean', ['feature-state', 'selected'], false], 0.85,
+          [
+            'any',
+            ['boolean', ['feature-state', 'selected'], false],
+            ['boolean', ['feature-state', 'previewing'], false],
+          ], 0.85,
           0.55,
         ],
       },
@@ -380,7 +384,14 @@ const clearRegionRepaint = () => {
         'line-blur': 0.5,
         // Show only selected features; opacity 0 hides unselected ones
         // without needing a filter (which cannot reference feature-state).
-        'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0],
+        'line-opacity': [
+          'case',
+          [
+            'any',
+            ['boolean', ['feature-state', 'selected'], false],
+            ['boolean', ['feature-state', 'previewing'], false],
+          ], 1, 0,
+        ],
       },
     });
     // No BASE_LAYER_FILTERS entry for regions-line-selected: it has no filter
@@ -1258,24 +1269,30 @@ const clearRegionRepaint = () => {
     // after a country lazy-loads — the CH entries are already present).
     const INDEXED_REGIONS = new Set();
 
-    // Build one search entry per region. Resort names are folded into the
-    // searchable string so a query for "Verbier" still returns the parent
-    // region row; the resort list is stored separately so renderResults can
-    // display it on the secondary line.
+    // Build one search entry per region. Resort names are folded into
+    // the searchable string so a query for "Verbier" still returns the
+    // parent region row, but they are deliberately not surfaced in the
+    // rendered row — the resort list is either empty (AT/IT/FR) or
+    // long enough that truncating it adds noise, so the secondary line
+    // shows just the parent L2 sub-region name.
     const indexRegion = (props) => {
       const regionID = props.regionID;
       if (!regionID || INDEXED_REGIONS.has(regionID)) return;
       INDEXED_REGIONS.add(regionID);
       const name = props.name || regionID;
       const resorts = RESORTS_BY_REGION[regionID] || [];
+      // subregion_name is the L2 parent's English name (e.g. "Lower
+      // Valais" for CH-4115); blank for AT/IT where the fixtures store
+      // the prefix as a placeholder, suppressed at the API boundary.
+      const subregionName = props.subregion_name || '';
       SEARCH_INDEX.push({
         primary: name,
         secondary: regionID,
-        resorts,
+        subregionName,
         regionID,
-        // Match against the region name, the EAWS ID, and every resort
-        // name attached to the region.
-        searchable: normalise([name, regionID, ...resorts].join(' ')),
+        // Match against the region name, EAWS ID, parent L2 name, and
+        // every resort name attached to the region.
+        searchable: normalise([name, regionID, subregionName, ...resorts].join(' ')),
       });
     };
 
@@ -1291,26 +1308,16 @@ const clearRegionRepaint = () => {
       }
     });
 
-    // Ranking: prefix matches on the primary label sort above substring
-    // matches; ties break alphabetically. Cap at MAX_RESULTS so the
-    // dropdown stays usable on narrow viewports.
+    // Ordering: sort by EAWS region ID so results group by country
+    // (AT-… before CH-… before FR-… before IT-…) and run in numeric
+    // order within each country. Cap at MAX_RESULTS so the dropdown
+    // stays usable on narrow viewports.
     const runSearch = (query) => {
       const q = normalise(query).trim();
       if (!q) return [];
-      const hits = [];
-      for (const item of SEARCH_INDEX) {
-        const idx = item.searchable.indexOf(q);
-        if (idx === -1) continue;
-        const primaryIdx = normalise(item.primary).indexOf(q);
-        const score = primaryIdx === 0 ? 0 : primaryIdx > 0 ? 1 : 2;
-        hits.push({ item, score, pos: idx });
-      }
-      hits.sort((a, b) =>
-        a.score - b.score ||
-        a.pos - b.pos ||
-        a.item.primary.localeCompare(b.item.primary),
-      );
-      return hits.slice(0, MAX_RESULTS).map(h => h.item);
+      const hits = SEARCH_INDEX.filter(item => item.searchable.includes(q));
+      hits.sort((a, b) => a.regionID.localeCompare(b.regionID));
+      return hits.slice(0, MAX_RESULTS);
     };
 
     const inputEl = document.getElementById('search-input');
@@ -1319,6 +1326,34 @@ const clearRegionRepaint = () => {
     const toggleEl = document.getElementById('search-toggle');
     let currentResults = [];
     let activeIdx = -1;
+    // SNOW-188: The map feature id currently highlighted as a search
+    // preview (keyboard/pointer hover over a search result). Carried via
+    // its own ``previewing`` feature-state so it stacks independently of
+    // the click-driven ``selected`` state and clears cleanly when the
+    // dropdown closes — no popup, just the highlight.
+    let previewedFeatureId = null;
+
+    const setPreview = (regionID) => {
+      const nextId = regionID ? FEATURE_BY_REGION_ID[regionID]?.id : null;
+      if (nextId === previewedFeatureId) return;
+      if (previewedFeatureId !== null) {
+        map.setFeatureState(
+          { source: 'regions', id: previewedFeatureId },
+          { previewing: false },
+        );
+      }
+      previewedFeatureId = nextId ?? null;
+      if (previewedFeatureId !== null) {
+        map.setFeatureState(
+          { source: 'regions', id: previewedFeatureId },
+          { previewing: true },
+        );
+      }
+      // regions-line-selected paints line-opacity from feature-state,
+      // which doesn't trigger an automatic redraw — match the
+      // selectFeature path and nudge MapLibre into repainting now.
+      map.triggerRepaint();
+    };
 
     // Pill expansion — the collapsed default shows only the icon toggle.
     // Tapping it switches the pill into the expanded state, which reveals
@@ -1356,6 +1391,7 @@ const clearRegionRepaint = () => {
       inputEl.setAttribute('aria-expanded', 'false');
       inputEl.removeAttribute('aria-activedescendant');
       activeIdx = -1;
+      setPreview(null);
     };
 
     const setActive = (idx) => {
@@ -1369,6 +1405,13 @@ const clearRegionRepaint = () => {
       } else {
         inputEl.removeAttribute('aria-activedescendant');
       }
+      // Mirror the active row on the map as a preview highlight — same
+      // visual as a click selection but without opening the popup.
+      // When idx === -1 (Enter not pressed yet, ArrowUp past the top),
+      // preview the first result so the highlight tracks what Enter
+      // would pick.
+      const previewItem = currentResults[idx >= 0 ? idx : 0];
+      setPreview(previewItem ? previewItem.regionID : null);
     };
 
     const renderResults = (results) => {
@@ -1395,7 +1438,10 @@ const clearRegionRepaint = () => {
         primary.textContent = r.primary;
         const secondary = document.createElement('div');
         secondary.className = 'search-result-secondary';
-        secondary.textContent = r.resorts.length ? r.resorts.join(' · ') : '';
+        // Secondary line: parent L2 sub-region name (or empty when the
+        // fixture has no descriptive L2 — AT/IT). Resorts are searched
+        // against but not rendered; see indexRegion for why.
+        secondary.textContent = r.subregionName;
         text.append(primary, secondary);
 
         const badge = document.createElement('span');
@@ -1430,6 +1476,11 @@ const clearRegionRepaint = () => {
       });
       resultsEl.hidden = false;
       inputEl.setAttribute('aria-expanded', 'true');
+      // Preview the top match before any arrow-key press so the highlight
+      // tracks what Enter would pick. setActive(-1) keeps activeIdx
+      // unanchored (so ArrowDown still lands on row 0) but routes the
+      // first result through setPreview.
+      setActive(-1);
     };
 
     const chooseResult = (item) => {

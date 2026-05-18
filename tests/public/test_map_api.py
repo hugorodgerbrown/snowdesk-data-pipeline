@@ -362,11 +362,35 @@ def test_regions_geojson_returns_feature_collection():
             [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
         ],
     }
+    ch_major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+    sub_with_name = SubRegionFactory.create(
+        prefix="CH-41",
+        major=ch_major,
+        name_native="Bas-Valais",
+        name_en="Lower Valais",
+    )
+    # AT/IT fixtures store the prefix as the placeholder name; the API
+    # blanks it out so the client doesn't render a redundant code.
+    at_major = MajorRegionFactory.create(prefix="AT-02", country="AT")
+    sub_placeholder = SubRegionFactory.create(
+        prefix="AT-02-01",
+        major=at_major,
+        name_native="AT-02-01",
+        name_en="AT-02-01",
+    )
     MicroRegionFactory.create(
         region_id="CH-4115",
         name="Valais",
         slug="ch-4115",
         boundary=boundary,
+        subregion=sub_with_name,
+    )
+    MicroRegionFactory.create(
+        region_id="AT-02-01-01",
+        name="AT-02-01-01",
+        slug="at-02-01-01",
+        boundary=boundary,
+        subregion=sub_placeholder,
     )
     # Region without boundary — should be skipped.
     MicroRegionFactory.create(
@@ -391,7 +415,13 @@ def test_regions_geojson_returns_feature_collection():
     assert feature["properties"]["id"] == "CH-4115"
     assert feature["properties"]["name"] == "Valais"
     assert feature["properties"]["country"] == "CH"
+    assert feature["properties"]["subregion_name"] == "Lower Valais"
     assert feature["geometry"] == boundary
+
+    # AT placeholder name_en (== prefix) is suppressed by the view.
+    at_response = client.get(reverse("api:regions_geojson") + "?country=at")
+    at_by_id = {f["properties"]["id"]: f for f in at_response.json()["features"]}
+    assert at_by_id["AT-02-01-01"]["properties"]["subregion_name"] == ""
 
 
 # ---------------------------------------------------------------------------
