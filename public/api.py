@@ -694,9 +694,37 @@ def _validate_swiss_coords(lat: float, lon: float) -> str | None:
     return None
 
 
+def _rings_from_geometry(
+    geometry: dict[str, Any],
+) -> list[list[list[float]]]:
+    """Return all rings from a GeoJSON Polygon or MultiPolygon geometry.
+
+    For ``Polygon`` the rings are the top-level ``coordinates`` list
+    (outer ring + any holes).  For ``MultiPolygon`` the rings are the
+    concatenation of each member polygon's ring list.
+
+    Args:
+        geometry: GeoJSON Polygon or MultiPolygon geometry dict.
+
+    Returns:
+        List of rings, each ring being a list of ``[lon, lat]`` vertices.
+
+    """
+    geo_type = geometry.get("type")
+    coordinates = geometry.get("coordinates") or []
+    if geo_type == "Polygon":
+        return list(coordinates)
+    if geo_type == "MultiPolygon":
+        rings: list[list[list[float]]] = []
+        for member in coordinates:
+            rings.extend(member)
+        return rings
+    return []
+
+
 def _point_in_polygon(lat: float, lon: float, polygon: dict[str, Any]) -> bool:
     """
-    Return True if (lat, lon) lies inside a GeoJSON Polygon geometry.
+    Return True if (lat, lon) lies inside a GeoJSON Polygon or MultiPolygon.
 
     Implements the standard ray-casting algorithm: cast a horizontal ray
     east of the point and count how many polygon edges it crosses. Odd
@@ -704,6 +732,13 @@ def _point_in_polygon(lat: float, lon: float, polygon: dict[str, Any]) -> bool:
     once correctly handles holes: a point inside the outer ring but
     inside a hole gets an even total and is reported as outside, which
     is the right answer.
+
+    For ``MultiPolygon`` the rings from all member polygons are checked
+    together. Because each member polygon is topologically independent
+    (non-overlapping outer rings), flipping parity across member-polygon
+    rings still gives the correct result: a point outside all members
+    accumulates an even count; a point inside exactly one member's outer
+    ring (and outside its holes) accumulates an odd count.
 
     Polygon coordinates are stored in GeoJSON order as ``[lon, lat]``;
     we rename to ``x, y`` here so the algorithm reads naturally. Edge
@@ -716,18 +751,17 @@ def _point_in_polygon(lat: float, lon: float, polygon: dict[str, Any]) -> bool:
     Args:
         lat: Latitude of the test point (WGS 84).
         lon: Longitude of the test point (WGS 84).
-        polygon: GeoJSON Polygon geometry as stored in
-            ``Region.boundary`` (``{"type": "Polygon", "coordinates":
-            [[[lon, lat], ...], ...]}``). Behaviour for non-Polygon
-            geometries is undefined — callers must pre-filter.
+        polygon: GeoJSON Polygon or MultiPolygon geometry as stored in
+            ``Region.boundary``.
 
     Returns:
-        True if the point lies inside the polygon.
+        True if the point lies inside the polygon (or any member of the
+        MultiPolygon).
 
     """
     x, y = lon, lat
     inside = False
-    for ring in polygon.get("coordinates", []):
+    for ring in _rings_from_geometry(polygon):
         # Iterate edges of this ring as (i-1, i) vertex pairs.
         n = len(ring)
         if n < 3:
@@ -749,31 +783,45 @@ def _point_in_polygon(lat: float, lon: float, polygon: dict[str, Any]) -> bool:
     return inside
 
 
+def _all_coords_from_geometry(
+    polygon: dict[str, Any],
+) -> list[tuple[float, float]]:
+    """Return every ``(lon, lat)`` coordinate pair across all rings of a geometry.
+
+    Flattens all rings from both ``Polygon`` and ``MultiPolygon`` inputs
+    via :func:`_rings_from_geometry` so the bbox computation has a single
+    flat list to min/max over.
+
+    Args:
+        polygon: GeoJSON Polygon or MultiPolygon geometry dict.
+
+    Returns:
+        Flat list of ``(lon, lat)`` pairs; empty when geometry has no rings.
+
+    """
+    return [(x, y) for ring in _rings_from_geometry(polygon) for x, y in ring]
+
+
 def _bbox_of_polygon(
     polygon: dict[str, Any],
 ) -> tuple[float, float, float, float] | None:
-    """Return ``(west, south, east, north)`` of a GeoJSON Polygon's outer ring.
+    """Return ``(west, south, east, north)`` of a GeoJSON Polygon or MultiPolygon.
 
-    Returns ``None`` if the polygon has no usable ring. Used by
+    For ``Polygon`` only the outer ring is used (as before). For
+    ``MultiPolygon`` all member polygons' outer rings are considered so
+    the returned bbox encloses the full extent.
+
+    Returns ``None`` if the geometry has no usable coordinates. Used by
     :func:`_region_for_point` as a cheap pre-filter so the full
     ray-cast only runs on regions whose bbox could plausibly contain
     the point.
     """
-    rings = polygon.get("coordinates") or []
-    if not rings or not rings[0]:
+    coords = _all_coords_from_geometry(polygon)
+    if not coords:
         return None
-    w = s = float("inf")
-    e = n = float("-inf")
-    for x, y in rings[0]:
-        if x < w:
-            w = x
-        if x > e:
-            e = x
-        if y < s:
-            s = y
-        if y > n:
-            n = y
-    return (w, s, e, n)
+    lons = [x for x, _ in coords]
+    lats = [y for _, y in coords]
+    return (min(lons), min(lats), max(lons), max(lats))
 
 
 def _region_for_point(lat: float, lon: float) -> MicroRegion | None:

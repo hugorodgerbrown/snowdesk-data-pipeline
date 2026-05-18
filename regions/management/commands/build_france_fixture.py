@@ -46,13 +46,13 @@ from typing import Any
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 
-from regions.names import lookup
-from scripts.build_regions_fixture import (
+from regions.fixture_utils import (
     bbox_from_children,
     boundary_from_children,
     centre_from_bbox,
     centre_from_children,
 )
+from regions.names import lookup
 
 logger = logging.getLogger(__name__)
 

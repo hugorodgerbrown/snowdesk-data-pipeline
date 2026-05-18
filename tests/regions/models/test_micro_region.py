@@ -210,15 +210,15 @@ class TestMicroRegionsFixture:
         assert without_boundary == 0
 
     def test_fixture_first_region_has_expected_data(self) -> None:
-        """The CH-1111 region has the correct centre coordinates."""
+        """The CH-1111 region has the correct name, centre, and boundary."""
         call_command("loaddata", "regions/fixtures/eaws_CH.json", verbosity=0)
         region = MicroRegion.objects.get(region_id="CH-1111")
         assert region.name == "Waadtländer Voralpen"  # updated SNOW-178
         assert region.centre is not None
-        assert abs(region.centre["lon"] - 6.939685) < 1e-6
-        assert abs(region.centre["lat"] - 46.470737) < 1e-6
+        assert abs(region.centre["lon"] - 6.9111215) < 1e-6
+        assert abs(region.centre["lat"] - 46.472766) < 1e-6
         assert region.boundary is not None
-        assert region.boundary["type"] == "Polygon"
+        assert region.boundary["type"] == "MultiPolygon"
 
     def test_fixture_loads_neighbour_pairs(self) -> None:
         """The fixture rehydrates MicroRegion.neighbours via natural-key M2M."""

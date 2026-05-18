@@ -194,7 +194,7 @@ def _build_region_entries(
         Tuple of (l1_entry, l2_entries_by_prefix, l4_entries).
 
     """
-    from scripts.build_regions_fixture import (
+    from regions.fixture_utils import (
         bbox_from_children,
         boundary_from_children,
         centre_from_bbox,

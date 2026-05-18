@@ -151,18 +151,6 @@ poetry run python manage.py diagnose_region_coverage --verbose-table       # add
 poetry run python manage.py dump_resorts_fixture           # preview diff only
 poetry run python manage.py dump_resorts_fixture --commit  # write the fixture
 
-# Detect stale MicroRegion names (SNOW-178). Sources the current SLF name
-# from RegionBulletin.region_name_at_time (captured at every bulletin
-# ingest). Reports mismatches between the stored MicroRegion.name and the
-# most-recent SLF name. Regions with no bulletin coverage are skipped.
-# Exits non-zero when mismatches are present and --commit was not passed.
-# --commit patches reference_data/slf/CH_micro-regions.csv (name column only) and
-# regenerates regions/fixtures/eaws_CH.json L4 entries. Then run:
-#   refresh_eaws_fixtures --commit  (re-derive L1/L2 geometry)
-#   loaddata regions/fixtures/eaws_CH.json
-poetry run python manage.py audit_microregion_names           # detect drift
-poetry run python manage.py audit_microregion_names --commit  # patch CSV + fixture
-
 # Detect Resort → MicroRegion FK mismatches (SNOW-178). For every geocoded
 # Resort, builds a Point(lon, lat) and tests which MicroRegion.boundary
 # polygon contains it. Three buckets:
@@ -186,6 +174,23 @@ poetry run python manage.py export_day_character_csv \
     --start-date 2026-01-01 --end-date 2026-01-31 --lang de --output dc.csv
 
 # Flags: --output PATH, --start-date YYYY-MM-DD, --end-date YYYY-MM-DD, --lang LANG
+
+# Build (or rebuild) regions/fixtures/eaws_CH.json from EAWS source files
+# (source: https://gitlab.com/eaws/eaws-regions — CC0):
+#   reference_data/eaws/micro-regions/CH_micro-regions.geojson  — EAWS L4 IDs + geometry
+#   reference_data/eaws/names/de.json                           — EAWS canonical German names
+# L1/L2 name_native/name_en are carried through from the existing fixture
+# (hand-maintained; EAWS does not publish names for CH L1/L2 prefixes).
+# Produces 9 L1 MajorRegion, 21 L2 SubRegion, 149 L4 MicroRegion entries.
+# Neighbour graph computed from GeoJSON geometry via Shapely buffer-intersects.
+# Read-only by default — pass --commit to write the fixture.
+poetry run python manage.py build_switzerland_fixture          # preview only
+poetry run python manage.py build_switzerland_fixture --commit # write fixture
+
+# Load the committed fixture into the database:
+poetry run python manage.py loaddata regions/fixtures/eaws_CH.json
+
+# Flags: --commit (write fixture; omit for a read-only summary)
 
 # Build (or rebuild) regions/fixtures/eaws_FR.json from three source files:
 #   reference_data/eaws/micro-regions/FR_micro-regions.geojson  — EAWS L4 IDs + geometry
