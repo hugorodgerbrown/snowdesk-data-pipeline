@@ -321,21 +321,38 @@
 
 .search-result-badge {
     flex: 0 0 auto;
-    font-size: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-weight: 500;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
     color: var(--muted);
     background: #ece8dc;
     padding: 2px 7px;
     border-radius: 10px;
 }
 
-/* Region badge carries slightly more weight than resort — regions are
-   the canonical map entity, resorts are labels that point at one. */
-.search-result-badge--region {
-    color: #0c447c;
-    background: #e2ebf4;
+/* Country flag inside the search result badge. Width is set per country
+   because inline SVG without explicit dimensions defaults to 300×150;
+   the square CH flag uses its 1:1 ratio and the 3:2 AT/FR/IT flags all
+   share a width. A hairline border keeps white-bordered flags legible
+   on the badge's beige background. */
+.search-result-flag {
+    flex: 0 0 auto;
+    height: 9px;
+    border: 0.5px solid rgba(0, 0, 0, 0.15);
+    border-radius: 1px;
+}
+
+.search-result-flag--ch {
+    width: 9px;
+}
+
+.search-result-flag--at,
+.search-result-flag--fr,
+.search-result-flag--it {
+    width: 13px;
 }
 
 .search-empty {

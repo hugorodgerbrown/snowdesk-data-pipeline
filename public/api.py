@@ -460,6 +460,15 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
         .iterator()
     )
     for region in qs:
+        # SNOW-188: surface the parent L2 sub-region name on each L4
+        # feature so the client search dropdown can show the broader
+        # area (e.g. "Lower Valais") alongside the resort list. AT/IT
+        # fixtures use the prefix as a placeholder name; emit blank in
+        # that case so the client can suppress a redundant code.
+        sub = region.subregion
+        subregion_name = (
+            sub.name_en if sub.name_en and sub.name_en != sub.prefix else ""
+        )
         features.append(
             {
                 "type": "Feature",
@@ -467,7 +476,8 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": {
                     "id": region.region_id,
                     "name": region.name,
-                    "country": region.subregion.major.country,
+                    "country": sub.major.country,
+                    "subregion_name": subregion_name,
                 },
             }
         )
