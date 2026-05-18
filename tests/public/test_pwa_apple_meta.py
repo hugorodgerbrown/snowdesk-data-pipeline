@@ -13,8 +13,15 @@ fields entirely; iOS still relies on the legacy ``apple-touch-icon`` +
 
 from __future__ import annotations
 
+import pytest
 from django.test import Client
 from django.urls import reverse
+
+# Every test in this module hits ``Client().get(reverse("public:home"))``,
+# which resolves database-backed context (e.g. nav, feature flags). Mark the
+# whole module so pytest-django enables DB access rather than blocking with
+# ``Database access not allowed``.
+pytestmark = pytest.mark.django_db
 
 
 def test_home_renders_apple_touch_icon_link() -> None:
