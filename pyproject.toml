@@ -28,7 +28,7 @@ django-waffle = "^5.0.0"
 webauthn = "^2.7.1"
 
 [tool.poetry.group.dev.dependencies]
-ruff = "^0.9.10"
+ruff = "^0.15.13"
 pre-commit = "^4.2.0"
 django-stubs = "^6.0.2"
 pytest = "^9.0.3"
