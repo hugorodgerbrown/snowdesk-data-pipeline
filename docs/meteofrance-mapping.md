@@ -392,8 +392,49 @@ maintain a static "delegated regions" set seeded from the catalogue.
   rate limits, auth header) is the orchestrator's concern.
 - **Region fixtures.** Loading `liste-massifs.geojson` into `MicroRegion`
   rows is SNOW-177a.
-- **Backfill.** DPBRA has no historical archive in this format; only
-  forward-going daily ingestion.
+- **Backfill.** DPBRA has no historical archive in this *XML* format;
+  the live API is forward-going only. Pre-2026 data is available as
+  PDF from MF's `donneespubliques` portal, and a community project
+  (see §10) has already scraped that archive into CSV. If/when
+  Snowdesk wants historical French danger ratings, that's the source
+  to integrate — separately ticketed.
+
+## 10. Related projects
+
+### Historical backfill — multi-coop/meteofrance_bra_hist (GitLab)
+
+[`gitlab.com/multi-coop/meteofrance_bra_hist`](https://gitlab.com/multi-coop/meteofrance_bra_hist)
+(MIT) scrapes the historical BRA PDFs MF publishes at
+`donneespubliques.meteofrance.fr` and republishes them as one CSV per
+massif at `data/<MASSIF>/hist.csv`. Coverage runs from at least
+2018-12-17 and is kept current. The CSV schema captures `risque1`,
+`risque2`, altitude split, the bulletin's free-text comment, the
+download URL of the source PDF, and weather snapshots at 00 h / 06 h /
+12 h (sky, isotherms, wind at two altitudes, rain-snow line).
+
+**Useful for:** historical backfill of French danger ratings into
+Snowdesk's `Bulletin`/`RegionDayRating` tables — saves writing a PDF
+scraper of our own. Track as a follow-up SNOW ticket once forward-going
+ingestion (SNOW-177b) is in production.
+
+**Not useful for** the remaining open items in this spec:
+
+- The project's CSV does not contain `SitAvalTyp` (SAT) codes. Their
+  ROADMAP issues #60 and #61 cover adding SAT extraction; until then
+  the SAT vocabulary completeness gap can only be closed via a
+  peak-season live-XML fetch.
+- The CSV does not preserve XML-level attributes like `@AMENDEMENT`
+  or `@ID`, so it can't answer the amendment-behaviour question
+  either.
+
+### Cross-validation during shadow-mode
+
+If the orchestrator runs DPBRA ingestion in shadow mode before
+go-live, comparing our `bulletins/services/sources/meteofrance.py`
+output against the same `(date, massif)` row in
+`meteofrance_bra_hist`'s CSV catches translation bugs the unit-test
+fixtures may miss — particularly around the elevation-split semantics
+and `evolurisque` evolution arrows. Low-cost validation; high signal.
 
 ## 9. Open items before this spec ships
 
