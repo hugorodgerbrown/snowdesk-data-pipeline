@@ -1400,7 +1400,22 @@ const clearRegionRepaint = () => {
 
         const badge = document.createElement('span');
         badge.className = 'search-result-badge';
-        badge.textContent = r.secondary;
+        // SNOW-188: Prefix the region-ID code with the country flag.
+        // Country is the ISO-3166 alpha-2 prefix of the EAWS region ID
+        // (CH-4115 → ch). Only the four countries with flag symbols in
+        // the map.html sprite render a flag; an unknown prefix falls
+        // back to the bare ID rather than a broken <use>.
+        const country = (r.regionID.split('-')[0] || '').toLowerCase();
+        if (['ch', 'at', 'fr', 'it'].includes(country)) {
+          const flag = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          flag.setAttribute('class', `search-result-flag search-result-flag--${country}`);
+          flag.setAttribute('aria-hidden', 'true');
+          const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+          use.setAttribute('href', `#flag-${country}`);
+          flag.append(use);
+          badge.append(flag);
+        }
+        badge.append(document.createTextNode(r.secondary));
 
         li.append(text, badge);
         // Use pointerdown rather than click so we act before the input's

@@ -47,6 +47,32 @@
     {# which static/js/map.js substitutes for the tapped region's region_id #}
     {# at fetch time. Keeping the URL in {% url %} preserves a single      #}
     {# source of truth for the route name.                                  #}
+    {# SNOW-188: Hidden SVG sprite for country flags shown in the search   #}
+    {# result badge. One <symbol> per EAWS country prefix; map.js builds a #}
+    {# <use> reference per row at render time. Inline (rather than a       #}
+    {# static asset) so it ships with the HTML — no extra request, and    #}
+    {# four small flags add ~0.6KB to the page.                            #}
+    <svg width="0" height="0" aria-hidden="true" style="position: absolute">
+        <symbol id="flag-ch" viewBox="0 0 32 32">
+            <rect width="32" height="32" fill="#d52b1e" />
+            <rect x="13" y="6" width="6" height="20" fill="#fff" />
+            <rect x="6" y="13" width="20" height="6" fill="#fff" />
+        </symbol>
+        <symbol id="flag-at" viewBox="0 0 9 6">
+            <rect width="9" height="6" fill="#ed2939" />
+            <rect y="2" width="9" height="2" fill="#fff" />
+        </symbol>
+        <symbol id="flag-fr" viewBox="0 0 9 6">
+            <rect width="3" height="6" fill="#002654" />
+            <rect x="3" width="3" height="6" fill="#fff" />
+            <rect x="6" width="3" height="6" fill="#ce1126" />
+        </symbol>
+        <symbol id="flag-it" viewBox="0 0 9 6">
+            <rect width="3" height="6" fill="#009246" />
+            <rect x="3" width="3" height="6" fill="#fff" />
+            <rect x="6" width="3" height="6" fill="#ce1126" />
+        </symbol>
+    </svg>
     <div
         id="map"
         data-regions-url="{% url 'api:regions_geojson' %}"
