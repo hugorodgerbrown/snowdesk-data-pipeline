@@ -681,6 +681,12 @@ const clearRegionRepaint = () => {
         };
         const regionsSource = map.getSource('regions');
         if (regionsSource) regionsSource.setData(geojsonCache);
+        // Notify the search section so it can extend the index with the
+        // newly-loaded regions (snowdesk:regions-loaded listener in the
+        // search block is idempotent via INDEXED_REGIONS).
+        document.dispatchEvent(new CustomEvent('snowdesk:regions-loaded', {
+          detail: { regionIDs: newRegions.features.map(f => f.properties.regionID) },
+        }));
       }
 
       if (newMajor && newMajor.features && majorGeojsonCache) {
@@ -1247,35 +1253,43 @@ const clearRegionRepaint = () => {
 
     const SEARCH_INDEX = [];
 
-    // One entry per region (matchable by display name or SLF region_id).
-    for (const props of Object.values(REGION_LOOKUP)) {
+    // Track which regions are already in the index so indexRegion is safe
+    // to call multiple times (e.g. from the snowdesk:regions-loaded listener
+    // after a country lazy-loads — the CH entries are already present).
+    const INDEXED_REGIONS = new Set();
+
+    // Build one search entry per region. Resort names are folded into the
+    // searchable string so a query for "Verbier" still returns the parent
+    // region row; the resort list is stored separately so renderResults can
+    // display it on the secondary line.
+    const indexRegion = (props) => {
       const regionID = props.regionID;
+      if (!regionID || INDEXED_REGIONS.has(regionID)) return;
+      INDEXED_REGIONS.add(regionID);
       const name = props.name || regionID;
+      const resorts = RESORTS_BY_REGION[regionID] || [];
       SEARCH_INDEX.push({
-        type: 'region',
         primary: name,
         secondary: regionID,
+        resorts,
         regionID,
-        searchable: normalise(`${name} ${regionID}`),
+        // Match against the region name, the EAWS ID, and every resort
+        // name attached to the region.
+        searchable: normalise([name, regionID, ...resorts].join(' ')),
       });
+    };
+
+    for (const props of Object.values(REGION_LOOKUP)) {
+      indexRegion(props);
     }
-    // One entry per resort, pointing back to its parent region. The
-    // secondary label carries the region name so users see context when
-    // several resorts share a first word.
-    for (const [regionID, resorts] of Object.entries(RESORTS_BY_REGION)) {
-      const feature = FEATURE_BY_REGION_ID[regionID];
-      if (!feature) continue;
-      const regionName = feature.properties.name || regionID;
-      for (const resort of resorts) {
-        SEARCH_INDEX.push({
-          type: 'resort',
-          primary: resort,
-          secondary: regionName,
-          regionID,
-          searchable: normalise(`${resort} ${regionName}`),
-        });
+
+    // Extend the index whenever a country's GeoJSON is lazy-loaded.
+    document.addEventListener('snowdesk:regions-loaded', (e) => {
+      for (const regionID of e.detail.regionIDs) {
+        const feature = FEATURE_BY_REGION_ID[regionID];
+        if (feature) indexRegion(feature.properties);
       }
-    }
+    });
 
     // Ranking: prefix matches on the primary label sort above substring
     // matches; ties break alphabetically. Cap at MAX_RESULTS so the
@@ -1371,10 +1385,9 @@ const clearRegionRepaint = () => {
         li.setAttribute('role', 'option');
         li.id = `search-result-${i}`;
 
-        // Text column (primary/secondary) and a type badge side by side.
-        // The badge disambiguates region hits from resort hits, which
-        // otherwise render identically when a resort shares its name
-        // with its region (e.g. "Davos" in the Davos region).
+        // Text column (primary/secondary) and a region-ID badge side by side.
+        // All rows are regions; the badge carries the EAWS region ID
+        // (e.g. CH-4115) so users can see the canonical identifier.
         const text = document.createElement('div');
         text.className = 'search-result-text';
         const primary = document.createElement('div');
@@ -1382,13 +1395,12 @@ const clearRegionRepaint = () => {
         primary.textContent = r.primary;
         const secondary = document.createElement('div');
         secondary.className = 'search-result-secondary';
-        secondary.textContent = r.secondary;
+        secondary.textContent = r.resorts.length ? r.resorts.join(' · ') : '';
         text.append(primary, secondary);
 
         const badge = document.createElement('span');
-        badge.className = `search-result-badge search-result-badge--${r.type}`;
-        // i18n: translatable — search result type badges
-        badge.textContent = r.type === 'region' ? 'Region' : 'Resort';
+        badge.className = 'search-result-badge';
+        badge.textContent = r.secondary;
 
         li.append(text, badge);
         // Use pointerdown rather than click so we act before the input's
