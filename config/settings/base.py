@@ -238,6 +238,48 @@ EUREGIO_ARCHIVE_PATH = (
 # Trentino (IT-32-TN).
 EUREGIO_REGIONS: tuple[str, ...] = ("AT-07", "IT-32-BZ", "IT-32-TN")
 
+# MeteoFrance / DPBRA bulletin API.
+# Live endpoint:
+#   GET {METEOFRANCE_API_BASE_URL}/massif/{id}/BRA
+#   apikey: {METEOFRANCE_API_KEY}
+# For local-mirror / integration testing set METEOFRANCE_API_LOCAL_MIRROR_URL
+# to a ``file://`` directory URI; the fetcher then reads
+# ``massif-{NN:03d}.xml`` files from that directory instead of calling the
+# live APIM, so no API key is required.
+METEOFRANCE_API_BASE_URL = config(
+    "METEOFRANCE_API_BASE_URL",
+    default="https://public-api.meteofrance.fr/public/DPBRA/v1",
+)
+
+METEOFRANCE_API_KEY = config("METEOFRANCE_API_KEY", default="")
+
+# When non-empty, overrides METEOFRANCE_API_BASE_URL with a file:// URI so
+# the fetcher reads from a local directory instead of calling the live API.
+# Populated in development.py and by tests; empty in production.
+METEOFRANCE_API_LOCAL_MIRROR_URL = config(
+    "METEOFRANCE_API_LOCAL_MIRROR_URL",
+    default="",
+)
+
+# On-disk archive of MeteoFrance bulletins captured by ``fetch_bulletins
+# --stash`` runs. NDJSON: one translated CAAML record per line, sorted
+# ascending by ``validTime.startTime``, deduped by ``bulletinID``.
+METEOFRANCE_ARCHIVE_PATH = (
+    BASE_DIR / "bulletins" / "local_mirrors" / "meteofrance_archive.ndjson"
+)
+
+# MeteoFrance DPBRA massif IDs covered by the fetcher.
+# Alps: 1–23. Corse: 40–41. Pyrenees: 64–70, 72–74.
+# Massif 71 (Andorre / Andorra) is delegated to the Spanish agency and raises
+# MeteoFranceDelegatedRegionError — excluded here to keep the loop clean.
+METEOFRANCE_MASSIF_IDS: tuple[int, ...] = (
+    *range(1, 24),  # Alps (1–23)
+    40,
+    41,  # Corse
+    *range(64, 71),  # Pyrenees first group (64–70)
+    *range(72, 75),  # Pyrenees second group (72–74)
+)
+
 # ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------

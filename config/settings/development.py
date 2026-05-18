@@ -122,3 +122,16 @@ WEATHER_API_LOCAL_MIRROR_BASE_URL = config(
     "WEATHER_API_LOCAL_MIRROR_BASE_URL",
     default="http://localhost:8000/dev/openmeteo-mirror/v1",
 )
+
+# ---------------------------------------------------------------------------
+# Local MeteoFrance mirror (dev only)
+# ---------------------------------------------------------------------------
+# When set to a ``file://`` directory URI, ``fetch_bulletins --source
+# meteofrance`` reads ``massif-{NN:03d}.xml`` files from that directory
+# instead of calling the live MeteoFrance APIM. Set in .env to point at
+# ``bulletins/local_mirrors/meteofrance/``.
+# Override via env var; default empty so production doesn't inherit a path.
+METEOFRANCE_API_LOCAL_MIRROR_URL = config(
+    "METEOFRANCE_API_LOCAL_MIRROR_URL",
+    default="",
+)
