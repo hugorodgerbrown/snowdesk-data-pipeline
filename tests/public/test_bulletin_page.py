@@ -19,8 +19,10 @@ from django.urls import reverse
 
 from tests.factories import (
     BulletinFactory,
+    MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
+    SubRegionFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -1707,3 +1709,207 @@ class TestMapBackLink:
         assert response.status_code == 200
         content = response.content.decode()
         assert 'href="/map/?d=2025-12-01#CH-9999"' in content
+
+
+# ---------------------------------------------------------------------------
+# Source pill — SNOW-175
+# ---------------------------------------------------------------------------
+
+_RENDER_MODEL_VERSION = 4
+
+
+def _v4_render_model(source: str) -> dict:
+    """Return a minimal v4 render model with the given source key."""
+    return {
+        "version": 4,
+        "source": source,
+        "danger": {"key": "moderate", "number": "2", "subdivision": None},
+        "danger_patterns": [],
+        "traits": [],
+        "snowpack_structure": None,
+        "metadata": {
+            "publication_time": "2026-03-15T06:00:00+00:00",
+            "valid_from": "2026-03-15T06:00:00+00:00",
+            "valid_until": "2026-03-15T15:00:00+00:00",
+            "next_update": "2026-03-15T15:00:00+00:00",
+            "unscheduled": False,
+            "lang": "en",
+        },
+        "prose": {
+            "snowpack_structure": None,
+            "weather_review": None,
+            "weather_forecast": None,
+            "tendency": [],
+            "avalanche_activity": {"highlights": "", "comment": ""},
+        },
+    }
+
+
+def _make_source_bulletin(region, source: str, day: date = date(2026, 3, 15)) -> object:
+    """Create a v4 bulletin for *region* with the given source key."""
+    vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
+    vt = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
+    bulletin = BulletinFactory.create(
+        issued_at=vf - timedelta(minutes=30),
+        valid_from=vf,
+        valid_to=vt,
+        render_model=_v4_render_model(source),
+        render_model_version=_RENDER_MODEL_VERSION,
+        raw_data={
+            "type": "Feature",
+            "geometry": None,
+            "properties": {"dangerRatings": [{"mainValue": "moderate"}]},
+        },
+    )
+    RegionBulletinFactory.create(
+        bulletin=bulletin,
+        region=region,
+        region_name_at_time=region.name,
+    )
+    return bulletin
+
+
+@pytest.mark.django_db
+class TestSourcePillBulletinPage:
+    """The source wordmark pill renders correctly on the bulletin page (SNOW-175)."""
+
+    def test_slf_bulletin_renders_pill_with_slf_wordmark(self) -> None:
+        """A CH/SLF bulletin renders the pill with wordmark ``SLF``."""
+        region = MicroRegionFactory.create(
+            region_id="CH-SRC1", name="Pill Test CH", slug="ch-src1"
+        )
+        _make_source_bulletin(region, "slf")
+        client = Client()
+        url = _url("ch-src1", "pill-test-ch", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="source-pill"' in content
+        assert ">SLF<" in content
+
+    def test_slf_bulletin_header_carries_data_source_attribute(self) -> None:
+        """A CH/SLF bulletin's header element carries ``data-source="slf"``."""
+        region = MicroRegionFactory.create(
+            region_id="CH-SRC2", name="Source Attr CH", slug="ch-src2"
+        )
+        _make_source_bulletin(region, "slf")
+        client = Client()
+        url = _url("ch-src2", "source-attr-ch", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        assert b'data-source="slf"' in response.content
+
+    def test_euregio_bulletin_renders_pill_with_albina_wordmark(self) -> None:
+        """A EUREGIO bulletin renders the pill with wordmark ``ALBINA``."""
+        major = MajorRegionFactory.create(prefix="AT-07", country="AT")
+        sub = SubRegionFactory.create(prefix="AT-071", major=major)
+        region = MicroRegionFactory.create(
+            region_id="AT-07-01",
+            name="Zugspitze",
+            slug="at-07-01",
+            subregion=sub,
+        )
+        _make_source_bulletin(region, "euregio")
+        client = Client()
+        url = _url("at-07-01", "zugspitze", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="source-pill"' in content
+        assert ">ALBINA<" in content
+
+    def test_euregio_bulletin_header_carries_data_source_attribute(self) -> None:
+        """A EUREGIO bulletin's header element carries ``data-source="euregio"``."""
+        major = MajorRegionFactory.create(prefix="AT-08", country="AT")
+        sub = SubRegionFactory.create(prefix="AT-081", major=major)
+        region = MicroRegionFactory.create(
+            region_id="AT-08-01",
+            name="Arlberg",
+            slug="at-08-01",
+            subregion=sub,
+        )
+        _make_source_bulletin(region, "euregio")
+        client = Client()
+        url = _url("at-08-01", "arlberg", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        assert b'data-source="euregio"' in response.content
+
+    def test_slf_pill_links_to_slf_ch(self) -> None:
+        """The SLF pill anchor href points to ``https://www.slf.ch``."""
+        region = MicroRegionFactory.create(
+            region_id="CH-SRC3", name="Link Test CH", slug="ch-src3"
+        )
+        _make_source_bulletin(region, "slf")
+        client = Client()
+        url = _url("ch-src3", "link-test-ch", "2026-03-15")
+        response = client.get(url)
+        assert b"https://www.slf.ch" in response.content
+
+    def test_slf_pill_opens_in_new_tab(self) -> None:
+        """The source pill has ``target="_blank"`` and ``rel="noopener"``."""
+        region = MicroRegionFactory.create(
+            region_id="CH-SRC4", name="Newtab Test", slug="ch-src4"
+        )
+        _make_source_bulletin(region, "slf")
+        client = Client()
+        url = _url("ch-src4", "newtab-test", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        # Both attrs must appear in proximity; a simple substring check is
+        # sufficient since the pill partial is the only place they co-occur.
+        assert 'target="_blank"' in content
+        assert 'rel="noopener"' in content
+
+
+@pytest.mark.django_db
+class TestSourcePillAbsentOnErrorState:
+    """The source pill and data-source attribute are absent on the error state."""
+
+    def test_error_state_has_no_source_pill(self) -> None:
+        """A version==0 bulletin renders no ``data-testid="source-pill"``."""
+        from bulletins.services.render_model import RENDER_MODEL_VERSION
+
+        region = MicroRegionFactory.create(
+            region_id="CH-ERR1", name="Error Region", slug="ch-err1"
+        )
+        day = date(2026, 3, 15)
+        vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
+        vt = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
+        bulletin = BulletinFactory.create(
+            issued_at=vf - timedelta(minutes=30),
+            valid_from=vf,
+            valid_to=vt,
+            render_model={
+                "version": 0,
+                "error": "Synthetic error",
+                "error_type": "RenderModelBuildError",
+            },
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data={"properties": {"dangerRatings": [{"mainValue": "moderate"}]}},
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin,
+            region=region,
+            region_name_at_time=region.name,
+        )
+        client = Client()
+        url = _url("ch-err1", "error-region", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="source-pill"' not in content
+        assert "data-source=" not in content
+
+    def test_empty_state_has_no_source_pill(self) -> None:
+        """The empty-state (no bulletin) page has no source pill."""
+        MicroRegionFactory.create(
+            region_id="CH-EMP1", name="Empty Region", slug="ch-emp1"
+        )
+        client = Client()
+        url = _url("ch-emp1", "empty-region", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="source-pill"' not in content
+        assert "data-source=" not in content

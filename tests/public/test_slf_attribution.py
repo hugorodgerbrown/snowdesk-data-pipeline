@@ -159,6 +159,12 @@ class TestGlobalSiteFooter:
         assert b"slf.ch" in response.content
         assert b"CC BY 4.0" in response.content
 
+    def test_home_renders_euregio_link_in_footer(self, client):
+        """The footer links to avalanche.report as the EUREGIO/ALBINA source (SNOW-175)."""
+        response = client.get(reverse("public:home"))
+        assert response.status_code == 200
+        assert b"avalanche.report" in response.content
+
     def test_terms_renders_footer(self, client):
         response = client.get(reverse("public:terms"))
         assert b'data-testid="site-footer"' in response.content

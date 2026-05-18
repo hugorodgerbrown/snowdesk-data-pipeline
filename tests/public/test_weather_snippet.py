@@ -32,8 +32,10 @@ from django.utils import timezone
 
 from tests.factories import (
     BulletinFactory,
+    MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
+    SubRegionFactory,
     WeatherSnapshotFactory,
 )
 
@@ -568,3 +570,50 @@ class TestBulletinDetailWeatherTrigger:
 
         assert response.status_code == 200
         assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# Source pill in HTMX fragment (SNOW-175)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFetchWeatherSnippetSourcePill:
+    """The fetch_weather_snippet fragment carries the correct data-source value."""
+
+    def test_ch_region_fragment_carries_slf_source(self, monkeypatch):
+        """A CH region's weather fragment includes ``data-source="slf"``."""
+        region = MicroRegionFactory.create(
+            region_id="CH-SWS1", name="Source CH", slug="ch-sws1"
+        )
+        today = timezone.localdate()
+        monkeypatch.setattr(
+            "public.views.fetch_weather_for_region",
+            lambda *args, **kwargs: (None, False),
+        )
+        client = Client()
+        url = _weather_url(region.region_id, today.isoformat())
+        response = client.post(url, HTTP_HX_REQUEST="true")
+        assert response.status_code == 200
+        assert b'data-source="slf"' in response.content
+
+    def test_at_region_fragment_carries_euregio_source(self, monkeypatch):
+        """An AT region's weather fragment includes ``data-source="euregio"``."""
+        major = MajorRegionFactory.create(prefix="AT-09", country="AT")
+        sub = SubRegionFactory.create(prefix="AT-091", major=major)
+        region = MicroRegionFactory.create(
+            region_id="AT-09-01",
+            name="Source AT",
+            slug="at-09-01",
+            subregion=sub,
+        )
+        today = timezone.localdate()
+        monkeypatch.setattr(
+            "public.views.fetch_weather_for_region",
+            lambda *args, **kwargs: (None, False),
+        )
+        client = Client()
+        url = _weather_url(region.region_id, today.isoformat())
+        response = client.post(url, HTTP_HX_REQUEST="true")
+        assert response.status_code == 200
+        assert b'data-source="euregio"' in response.content
