@@ -734,7 +734,7 @@ class TestManageViewAuthenticated:
         assert b"Open bulletin for" in response.content
 
     def test_card_shows_map_link(self):
-        """Each card contains a direct link to /map/#<canonical_region_id>."""
+        """Each card contains a direct link to /map/#<region_id> using the raw (uppercase) region_id."""
         subscriber = SubscriberFactory.create()
         region = MicroRegionFactory.create(region_id="CH-1234")
         SubscriptionFactory.create(subscriber=subscriber, region=region)
@@ -742,7 +742,7 @@ class TestManageViewAuthenticated:
         response = client.get(reverse("subscriptions:manage"))
 
         assert response.status_code == 200
-        assert b"/map/#ch-1234" in response.content
+        assert b"/map/#CH-1234" in response.content
 
     def test_card_shows_breadcrumb(self):
         """Each card renders the L1 (MajorRegion) and L2 (SubRegion) names in the breadcrumb."""
