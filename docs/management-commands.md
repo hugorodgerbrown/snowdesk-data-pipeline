@@ -1,17 +1,19 @@
 # Management commands
 
 `fetch_bulletins` is the single entry point for fetching avalanche bulletins
-from all supported providers (SLF and EUREGIO/ALBINA). It supersedes the old
-`fetch_data`, `backfill_data`, and `fetch_euregio_bulletins` commands and
-follows the management-command design convention in CLAUDE.md (read-only by
-default; opt in to writes with `--commit`).
+from all supported providers (SLF, EUREGIO/ALBINA, and MeteoFrance). It
+supersedes the old `fetch_data`, `backfill_data`, and
+`fetch_euregio_bulletins` commands and follows the management-command design
+convention in CLAUDE.md (read-only by default; opt in to writes with
+`--commit`).
 
-`--source` is required. Pass one or more provider names; both space-separated
-(`--source slf euregio`) and repeated flags (`--source slf --source euregio`)
-are accepted. Duplicates are silently deduplicated.
+`--source` is required. Pass one or more provider names (case-insensitive);
+both space-separated (`--source slf euregio`) and repeated flags
+(`--source slf --source euregio`) are accepted. Duplicates are silently
+deduplicated.
 
 The cron invocation for the standard nightly run is:
-`fetch_bulletins --source slf euregio --commit`
+`fetch_bulletins --source slf euregio meteofrance --commit`
 
 ```bash
 # Read-only walk, start date derived from DB for each source:
@@ -22,14 +24,16 @@ The cron invocation for the standard nightly run is:
 # Useful as a "what would happen?" probe before committing.
 poetry run python manage.py fetch_bulletins --source slf
 poetry run python manage.py fetch_bulletins --source euregio
-poetry run python manage.py fetch_bulletins --source slf euregio
+poetry run python manage.py fetch_bulletins --source meteofrance
+poetry run python manage.py fetch_bulletins --source slf euregio meteofrance
 
 # Persist the same gentle-default window (typical cron shape).
-poetry run python manage.py fetch_bulletins --source slf euregio --commit
+poetry run python manage.py fetch_bulletins --source slf euregio meteofrance --commit
 
 # Today only.
 poetry run python manage.py fetch_bulletins --source slf --today --commit
 poetry run python manage.py fetch_bulletins --source euregio --today --commit
+poetry run python manage.py fetch_bulletins --source meteofrance --today --commit
 
 # Single day (typical one-off shape).
 poetry run python manage.py fetch_bulletins --source slf --date 2024-06-15 --commit
@@ -39,23 +43,25 @@ poetry run python manage.py fetch_bulletins --source slf --date 2024-06-15 --com
 poetry run python manage.py fetch_bulletins --source slf --start-date 2024-01-01 --commit
 
 # Re-pull existing rows.
-poetry run python manage.py fetch_bulletins --source slf euregio --commit --force
+poetry run python manage.py fetch_bulletins --source slf euregio meteofrance --commit --force
 
 # Capture every fetched bulletin into each source's on-disk archive
 # (deduped by bulletinID, sorted ascending by validTime.startTime).
 # Independent of --commit: combine for full-fidelity capture, or use
 # --stash alone to refresh the archive without DB writes.
-poetry run python manage.py fetch_bulletins --source slf euregio --stash
-poetry run python manage.py fetch_bulletins --source slf euregio --commit --stash
+poetry run python manage.py fetch_bulletins --source slf euregio meteofrance --stash
+poetry run python manage.py fetch_bulletins --source slf euregio meteofrance --commit --stash
 
 # Bootstrap an empty local DB against the on-disk archive instead of the
-# live API. Requires the dev server to be running and the relevant mirror
-# URL settings to be configured (development.py):
-#   SLF: settings.SLF_API_LOCAL_MIRROR_URL
-#   EUREGIO: settings.EUREGIO_API_LOCAL_MIRROR_URL
+# live API. Requires the dev server to be running (SLF/EUREGIO) or a local
+# file:// mirror directory (MeteoFrance) to be configured:
+#   SLF:         settings.SLF_API_LOCAL_MIRROR_URL
+#   EUREGIO:     settings.EUREGIO_API_LOCAL_MIRROR_URL
+#   MeteoFrance: settings.METEOFRANCE_API_LOCAL_MIRROR_URL (file:// URI)
 poetry run python manage.py fetch_bulletins --source slf --local-mirror --commit
 poetry run python manage.py fetch_bulletins --source euregio --local-mirror --commit
-poetry run python manage.py fetch_bulletins --source slf euregio --local-mirror --commit
+poetry run python manage.py fetch_bulletins --source meteofrance --local-mirror --commit
+poetry run python manage.py fetch_bulletins --source slf euregio meteofrance --local-mirror --commit
 
 # Multi-year backfill — pace API calls to be a good citizen on the
 # public, no-auth SLF API. The delay applies between page/CDN fetches,
@@ -64,10 +70,12 @@ poetry run python manage.py fetch_bulletins --source slf \
     --start-date 2014-11-01 --delay 5 --commit
 
 # Flags:
-#   --source {slf,euregio} [...]
-#                            required. One or more providers: 'slf' (SLF CAAML
-#                            API) or 'euregio' (ALBINA CDN). Space-separated
-#                            or repeat the flag. Duplicates are deduplicated.
+#   --source {slf,euregio,meteofrance} [...]
+#                            required. One or more providers (case-insensitive):
+#                            'slf' (SLF CAAML API), 'euregio' (ALBINA CDN),
+#                            or 'meteofrance' (MeteoFrance DPBRA APIM).
+#                            Space-separated or repeat the flag.
+#                            Duplicates are deduplicated.
 #   --start-date YYYY-MM-DD  default: latest DB bulletin's valid_from day per
 #                            source, or settings.SEASON_START_DATE when empty.
 #                            Mutually exclusive with --date and --today.

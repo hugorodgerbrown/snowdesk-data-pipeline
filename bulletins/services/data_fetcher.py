@@ -8,9 +8,10 @@ Contains pure-ish functions that:
 
 Also defines the ``BulletinSource`` registry used by the unified
 ``fetch_bulletins`` management command. The registry maps provider names
-(``"slf"``, ``"euregio"``) to their pipeline function, latest-date
-function, settings keys, and archive-writer adapter so the command can
-iterate over requested sources without owning any provider-specific logic.
+(``"SLF"``, ``"EUREGIO"``, ``"METEOFRANCE"``) to their pipeline function,
+latest-date function, settings keys, and archive-writer adapter so the
+command can iterate over requested sources without owning any
+provider-specific logic.
 
 The SLF API returns bulletins in reverse chronological order and is
 paginated by offset/limit — it does not support filtering by date. The
@@ -531,9 +532,10 @@ def run_pipeline(
 # Source registry — used by the unified fetch_bulletins management command.
 # ---------------------------------------------------------------------------
 
-SOURCE_SLF = "slf"
-SOURCE_EUREGIO = "euregio"
-SOURCE_CHOICES = (SOURCE_SLF, SOURCE_EUREGIO)
+SOURCE_SLF = "SLF"
+SOURCE_EUREGIO = "EUREGIO"
+SOURCE_METEOFRANCE = "METEOFRANCE"
+SOURCE_CHOICES = (SOURCE_SLF, SOURCE_EUREGIO, SOURCE_METEOFRANCE)
 
 
 def latest_slf_date() -> date | None:
@@ -592,7 +594,7 @@ class BulletinSource:
 
     Attributes:
         name: Short provider name used in ``--source`` choices and log
-            output (e.g. ``"slf"``, ``"euregio"``).
+            output (e.g. ``"SLF"``, ``"EUREGIO"``, ``"METEOFRANCE"``).
         pipeline_fn: Callable with the signature
             ``(start, end, triggered_by, dry_run, force, base_url,
             on_fetched, delay) -> PipelineRun`` that runs the full ingest.
@@ -639,14 +641,19 @@ def get_sources() -> dict[str, BulletinSource]:
     runs once per cron invocation.
 
     Returns:
-        A dict mapping ``SOURCE_SLF`` / ``SOURCE_EUREGIO`` to their
-        ``BulletinSource`` entries.
+        A dict mapping ``SOURCE_SLF`` / ``SOURCE_EUREGIO`` /
+        ``SOURCE_METEOFRANCE`` to their ``BulletinSource`` entries.
 
     """
     from bulletins.services.euregio_fetcher import (
         latest_euregio_date,
         run_euregio_pipeline,
         write_archive as euregio_write_archive,
+    )
+    from bulletins.services.meteofrance_fetcher import (
+        latest_meteofrance_date,
+        meteofrance_stash_writer,
+        run_meteofrance_pipeline,
     )
 
     return {
@@ -667,5 +674,14 @@ def get_sources() -> dict[str, BulletinSource]:
             mirror_url_setting="EUREGIO_API_LOCAL_MIRROR_URL",
             archive_path_setting="EUREGIO_ARCHIVE_PATH",
             stash_writer=euregio_write_archive,
+        ),
+        SOURCE_METEOFRANCE: BulletinSource(
+            name=SOURCE_METEOFRANCE,
+            pipeline_fn=run_meteofrance_pipeline,
+            latest_date_fn=latest_meteofrance_date,
+            live_url_setting="METEOFRANCE_API_BASE_URL",
+            mirror_url_setting="METEOFRANCE_API_LOCAL_MIRROR_URL",
+            archive_path_setting="METEOFRANCE_ARCHIVE_PATH",
+            stash_writer=meteofrance_stash_writer,
         ),
     }

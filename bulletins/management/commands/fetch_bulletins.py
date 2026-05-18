@@ -8,9 +8,13 @@ providers can be supplied in one invocation and are processed in the order
 given. Failures are collected and surfaced at the end so a single provider
 failure does not abort the others.
 
+The ``--source`` flag is **case-insensitive**: ``--source slf``,
+``--source SLF``, and ``--source Slf`` are all accepted and normalised to
+the canonical upper-case provider key.
+
 Defaults:
   * ``--source`` is required. Pass ``--source slf``, ``--source euregio``,
-    or both (``--source slf euregio``).
+    ``--source meteofrance``, or any combination.
   * ``--start-date`` defaults to the ``valid_from`` day of the most recent
     bulletin already in the DB for each requested source — i.e. a one-day
     overlap so earlier-in-day issues (morning updates, prior-evening
@@ -49,6 +53,9 @@ Usage::
 
     # Bootstrap an empty DB against the local mirrors (dev server must be running).
     python manage.py fetch_bulletins --source slf --local-mirror --commit
+
+    # MeteoFrance bulletins via local mirror directory (no API key required).
+    python manage.py fetch_bulletins --source meteofrance --local-mirror
 
     # Multi-year backfill with rate limiting.
     python manage.py fetch_bulletins --source slf
@@ -101,7 +108,8 @@ class Command(BaseCommand):
 
     help = (
         "Fetch avalanche bulletins for a date range. "
-        "--source is required; pass 'slf', 'euregio', or both. "
+        "--source is required; pass 'slf', 'euregio', 'meteofrance', or "
+        "any combination (case-insensitive). "
         "Start defaults to the latest bulletin's valid_from day per source, "
         "or settings.SEASON_START_DATE when the DB is empty. "
         "End is always today (UTC). Read-only unless --commit is passed."
@@ -109,16 +117,16 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register command-line arguments."""
+        _choice_display = "/".join(c.lower() for c in SOURCE_CHOICES)
         parser.add_argument(
             "--source",
-            choices=SOURCE_CHOICES,
             nargs="+",
             action="append",
             required=True,
-            metavar="{" + ",".join(SOURCE_CHOICES) + "}",
+            metavar="{" + _choice_display + "}",
             help=(
                 "Provider(s) to fetch from. Accepts one or more of: "
-                f"{', '.join(SOURCE_CHOICES)}. "
+                f"{_choice_display} (case-insensitive). "
                 "Pass multiple values space-separated (``--source slf euregio``) "
                 "or repeat the flag (``--source slf --source euregio``). "
                 "Duplicates are silently deduplicated."
@@ -174,7 +182,8 @@ class Command(BaseCommand):
                 "Fetch from the dev-only local mirror for every requested source "
                 "instead of the live API. Each source's mirror URL must be "
                 "configured in settings (SLF_API_LOCAL_MIRROR_URL, "
-                "EUREGIO_API_LOCAL_MIRROR_URL). Only available in development."
+                "EUREGIO_API_LOCAL_MIRROR_URL, "
+                "METEOFRANCE_API_LOCAL_MIRROR_URL). Only available in development."
             ),
         )
         parser.add_argument(
@@ -587,25 +596,38 @@ class Command(BaseCommand):
 
 def _resolve_sources(options: dict[str, Any]) -> list[str]:
     """
-    Flatten and deduplicate the ``--source`` list-of-lists from argparse.
+    Flatten, normalise, validate, and deduplicate the ``--source`` list-of-lists.
 
     ``action="append"`` with ``nargs="+"`` means ``options["source"]`` is
     a list of lists, e.g. ``[["slf", "euregio"]]`` or
-    ``[["slf"], ["euregio"]]``. Flatten to a plain list and deduplicate
-    while preserving first-seen order.
+    ``[["slf"], ["euregio"]]``. Flatten to a plain list, upper-case each
+    value so the flag is case-insensitive (``--source meteofrance`` and
+    ``--source METEOFRANCE`` both work), then validate against
+    ``SOURCE_CHOICES`` and raise ``CommandError`` for unrecognised names.
+    Deduplication preserves first-seen order.
 
     Args:
         options: The raw options dict from ``handle()``.
 
     Returns:
-        An ordered, deduplicated list of provider names.
+        An ordered, deduplicated list of upper-case provider name strings.
+
+    Raises:
+        CommandError: An unrecognised provider name was supplied.
 
     """
     raw: list[list[str]] = options.get("source") or []
     seen: dict[str, None] = {}
     for group in raw:
-        for name in group:
-            seen[name] = None
+        for raw_name in group:
+            normalised = raw_name.upper()
+            if normalised not in SOURCE_CHOICES:
+                valid = ", ".join(c.lower() for c in SOURCE_CHOICES)
+                raise CommandError(
+                    f"Unknown --source value: {raw_name!r}. "
+                    f"Valid choices are: {valid} (case-insensitive)."
+                )
+            seen[normalised] = None
     return list(seen)
 
 

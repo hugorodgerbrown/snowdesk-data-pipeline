@@ -33,6 +33,7 @@ from tests.factories import BulletinFactory, PipelineRunFactory
 
 PATCH_SLF = "bulletins.services.data_fetcher.run_pipeline"
 PATCH_EUREGIO = "bulletins.services.euregio_fetcher.run_euregio_pipeline"
+PATCH_METEOFRANCE = "bulletins.services.meteofrance_fetcher.run_meteofrance_pipeline"
 # The registry is built lazily; patch the underlying functions at their
 # canonical locations so both the command and the registry pick up the mock.
 
@@ -410,7 +411,7 @@ class TestFetchBulletinsSourceDispatch:
 
         _, kwargs = mock_slf.call_args
         assert "fetch_bulletins" in kwargs["triggered_by"]
-        assert "slf" in kwargs["triggered_by"]
+        assert "SLF" in kwargs["triggered_by"]
 
     @patch(PATCH_EUREGIO)
     @patch(PATCH_SLF)
@@ -424,7 +425,67 @@ class TestFetchBulletinsSourceDispatch:
 
         _, kwargs = mock_euregio.call_args
         assert "fetch_bulletins" in kwargs["triggered_by"]
-        assert "euregio" in kwargs["triggered_by"]
+        assert "EUREGIO" in kwargs["triggered_by"]
+
+    @patch(PATCH_METEOFRANCE)
+    @patch(PATCH_EUREGIO)
+    @patch(PATCH_SLF)
+    def test_source_meteofrance_calls_only_meteofrance_pipeline(
+        self,
+        mock_slf: MagicMock,
+        mock_euregio: MagicMock,
+        mock_meteofrance: MagicMock,
+    ) -> None:
+        """--source meteofrance calls run_meteofrance_pipeline only."""
+        mock_meteofrance.return_value = _make_successful_run()
+
+        call_command(
+            "fetch_bulletins", "--source", "meteofrance", "--date", "2026-03-15"
+        )
+
+        mock_meteofrance.assert_called_once()
+        mock_slf.assert_not_called()
+        mock_euregio.assert_not_called()
+
+    @patch(PATCH_METEOFRANCE)
+    @patch(PATCH_EUREGIO)
+    @patch(PATCH_SLF)
+    def test_source_meteofrance_case_insensitive(
+        self,
+        mock_slf: MagicMock,
+        mock_euregio: MagicMock,
+        mock_meteofrance: MagicMock,
+    ) -> None:
+        """--source METEOFRANCE / MeteoFrance / meteofrance all resolve."""
+        mock_meteofrance.return_value = _make_successful_run()
+
+        for value in ("METEOFRANCE", "MeteoFrance", "meteofrance"):
+            mock_meteofrance.reset_mock()
+            call_command("fetch_bulletins", "--source", value, "--date", "2026-03-15")
+            mock_meteofrance.assert_called_once()
+
+        mock_slf.assert_not_called()
+        mock_euregio.assert_not_called()
+
+    @patch(PATCH_METEOFRANCE)
+    def test_triggered_by_includes_source_name_meteofrance(
+        self, mock_meteofrance: MagicMock
+    ) -> None:
+        """triggered_by label identifies the meteofrance provider."""
+        mock_meteofrance.return_value = _make_successful_run()
+
+        call_command(
+            "fetch_bulletins", "--source", "meteofrance", "--date", "2026-03-15"
+        )
+
+        _, kwargs = mock_meteofrance.call_args
+        assert "fetch_bulletins" in kwargs["triggered_by"]
+        assert "METEOFRANCE" in kwargs["triggered_by"]
+
+    def test_source_unknown_raises_command_error(self) -> None:
+        """An unknown --source value raises CommandError (not argparse error)."""
+        with pytest.raises(CommandError, match="Unknown --source value"):
+            call_command("fetch_bulletins", "--source", "nope", "--date", "2026-03-15")
 
 
 @pytest.mark.django_db
@@ -668,7 +729,7 @@ class TestFetchBulletinsErrorHandling:
         mock_slf.side_effect = RuntimeError("SLF network error")
         mock_euregio.return_value = _make_successful_run()
 
-        with pytest.raises(CommandError, match="slf"):
+        with pytest.raises(CommandError, match="(?i)slf"):
             call_command(
                 "fetch_bulletins",
                 "--source",
@@ -711,7 +772,7 @@ class TestFetchBulletinsErrorHandling:
         mock_slf.return_value = _make_failed_records_run(records_failed=1)
         mock_euregio.return_value = _make_successful_run()
 
-        with pytest.raises(CommandError, match="slf"):
+        with pytest.raises(CommandError, match="(?i)slf"):
             call_command(
                 "fetch_bulletins",
                 "--source",
