@@ -125,6 +125,16 @@ _DANGER_PROBLEM_TYPE_ICONS = {
     "cornices": "Icon-Avalanche-Problem-Cornices.svg",
 }
 
+# Mapping from EAWS country code to the bulletin source key consumed by the
+# source_pill template tag.  CH bulletins come from SLF; AT and IT bulletins
+# come from EUREGIO/ALBINA.  Extend in lockstep with the SOURCES dict in
+# public/templatetags/source_pill.py when a new upstream is added.
+_COUNTRY_TO_SOURCE: dict[str, str] = {
+    "CH": "slf",
+    "AT": "euregio",
+    "IT": "euregio",
+}
+
 
 def _get_properties(bulletin: Bulletin) -> dict[str, Any]:
     """
@@ -2069,13 +2079,7 @@ def fetch_weather_snippet(
     # for all currently-ingested regions: CH → SLF, AT/IT → EUREGIO/ALBINA.
     # If a new source country is added, extend this mapping and the SOURCES dict
     # in public/templatetags/source_pill.py in lockstep.
-    country = region.major_region.country if region.subregion else ""
-    _country_to_source: dict[str, str] = {
-        "CH": "slf",
-        "AT": "euregio",
-        "IT": "euregio",
-    }
-    source = _country_to_source.get(country, "")
+    source = _COUNTRY_TO_SOURCE.get(region.major_region.country, "")
 
     return render(
         request,
