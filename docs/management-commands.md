@@ -25,6 +25,23 @@ days), then the weather backstop (it iterates over the regions present
 in the DB). Schedule the weather job 15–30 minutes after bulletin
 ingestion to give the bulletin run headroom on a slow API day.
 
+### Region & resort fixtures (auto-loaded on deploy)
+
+`build.sh` and `build_headless.sh` run `loaddata` against all four
+`regions/fixtures/eaws_*.json` files and `regions/fixtures/resorts.json`
+on every deploy. The operator workflow for a fixture change is therefore:
+
+1. Edit the source data (vendored EAWS files, CSV, resort coordinates).
+2. Rebuild the on-disk fixture (`build_switzerland_fixture --commit`,
+   `build_austria_fixture --commit`, `build_italy_fixture --commit`,
+   `build_france_fixture --commit`, or `dump_resorts_fixture --commit`).
+3. Commit and push. The next deploy reloads the fixture into production.
+
+`loaddata` is idempotent (upsert by primary key, no orphan deletion),
+so re-running on every deploy is safe. Manual `loaddata` against the
+production DB is no longer required — but it remains the right call
+for a same-day hotfix, before the next deploy lands.
+
 ### One-off operational commands
 
 These are not scheduled. Reach for them after a code change or data
@@ -235,7 +252,7 @@ poetry run python manage.py export_day_character_csv \
 poetry run python manage.py build_switzerland_fixture          # preview only
 poetry run python manage.py build_switzerland_fixture --commit # write fixture
 
-# Load the committed fixture into the database:
+# Load the committed fixture into a local DB (production reloads via build.sh):
 poetry run python manage.py loaddata regions/fixtures/eaws_CH.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
@@ -249,7 +266,7 @@ poetry run python manage.py loaddata regions/fixtures/eaws_CH.json
 poetry run python manage.py build_france_fixture          # preview only
 poetry run python manage.py build_france_fixture --commit # write fixture
 
-# Load the committed fixture into the database:
+# Load the committed fixture into a local DB (production reloads via build.sh):
 poetry run python manage.py loaddata regions/fixtures/eaws_FR.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
@@ -262,7 +279,7 @@ poetry run python manage.py loaddata regions/fixtures/eaws_FR.json
 poetry run python manage.py build_austria_fixture          # preview only
 poetry run python manage.py build_austria_fixture --commit # write fixture
 
-# Load the committed fixture into the database:
+# Load the committed fixture into a local DB (production reloads via build.sh):
 poetry run python manage.py loaddata regions/fixtures/eaws_AT.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
@@ -275,7 +292,7 @@ poetry run python manage.py loaddata regions/fixtures/eaws_AT.json
 poetry run python manage.py build_italy_fixture          # preview only
 poetry run python manage.py build_italy_fixture --commit # write fixture
 
-# Load the committed fixture into the database:
+# Load the committed fixture into a local DB (production reloads via build.sh):
 poetry run python manage.py loaddata regions/fixtures/eaws_IT.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
