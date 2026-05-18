@@ -318,6 +318,7 @@ Read these when working in the relevant area:
 | Lighthouse CI (budgets, perf settings) | [`docs/lighthouse.md`](docs/lighthouse.md) |
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
 | Management command catalogue | [`docs/management-commands.md`](docs/management-commands.md) |
+| Operational requirements (scheduled jobs) | [`docs/management-commands.md#operational-requirements`](docs/management-commands.md#operational-requirements) |
 | Nav partial implementation spec | [`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) |
 | Feature flags (django-waffle) | [`docs/feature-flags.md`](docs/feature-flags.md) |
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |

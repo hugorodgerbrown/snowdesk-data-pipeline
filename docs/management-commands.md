@@ -7,6 +7,54 @@ supersedes the old `fetch_data`, `backfill_data`, and
 convention in CLAUDE.md (read-only by default; opt in to writes with
 `--commit`).
 
+## Operational requirements
+
+Two scheduled jobs keep the public site in sync with upstream data. Both
+must be configured in the Render dashboard (the pipeline has no
+in-process scheduler — if Render's cron is paused, no new data arrives).
+Both run with `--commit` so they actually persist; both exit non-zero
+on failure so a missed run is visible in Render's job history.
+
+| Job | Command | Cadence | Purpose |
+|-----|---------|---------|---------|
+| Bulletin ingestion | `poetry run python manage.py fetch_bulletins --source slf euregio meteofrance --commit` | Daily, after the providers publish their morning re-issues | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
+| Weather backstop | `poetry run python manage.py fetch_weather --commit` | Daily, after bulletin ingestion | Pre-warms `WeatherSnapshot` rows for every region. The live path is the HTMX-triggered `public:weather_snippet` view (see [`async-operations.md`](async-operations.md)); this cron is a backstop so the first page-view of the day doesn't pay the Open-Meteo round-trip. |
+
+Run order matters: bulletin ingestion first (it discovers new regions /
+days), then the weather backstop (it iterates over the regions present
+in the DB). Schedule the weather job 15–30 minutes after bulletin
+ingestion to give the bulletin run headroom on a slow API day.
+
+### One-off operational commands
+
+These are not scheduled. Reach for them after a code change or data
+incident that invalidates derived state:
+
+- `rebuild_render_models --commit` — after bumping `RENDER_MODEL_VERSION`.
+  Re-runs the render-model derivation for every stale `Bulletin`.
+- `recompute_day_ratings --commit` — after a day-rating policy change
+  (e.g. v5 headline-only switch). Re-derives every `RegionDayRating`.
+- `backfill_weather --start <YYYY-MM-DD> --end <YYYY-MM-DD> --commit` —
+  to fill a historical gap (e.g. after adding a new region, or
+  recovering from an outage longer than a day).
+- `fetch_bulletins --source <src> --start-date <YYYY-MM-DD> --commit` —
+  to backfill bulletins after a multi-day outage. Add `--delay 5` for
+  multi-year backfills to stay polite to the public APIs.
+- `audit_resort_regions --commit` — after editing resort coordinates or
+  region polygons; refixes FKs and rewrites the resort fixture.
+
+### Health checks (read-only)
+
+- `monitor_query_counts` — diff against the committed query-count baseline
+  (`perf/query_counts.txt`). Runs in CI; locally surfaces regressions
+  before a PR.
+- `diagnose_region_coverage` — partitions every fixture region into
+  A/B/C buckets (has ratings / missing rating but present in raw /
+  never seen). Run after a pipeline outage to confirm coverage has
+  recovered.
+
+
+
 `--source` is required. Pass one or more provider names (case-insensitive);
 both space-separated (`--source slf euregio`) and repeated flags
 (`--source slf --source euregio`) are accepted. Duplicates are silently
