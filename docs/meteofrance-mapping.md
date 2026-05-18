@@ -5,8 +5,15 @@
 `bulletins/services/sources/meteofrance.py::normalise()` (or the equivalent
 adapter once SNOW-177b lands).
 **Source format:** Météo-France DPBRA XML
-(`<BULLETINS_NEIGE_AVALANCHE>` root element).
+(`<BULLETINS_NEIGE_AVALANCHE>` root element with bulletin attributes on
+the root itself — there is no inner `<BULLETIN>` wrapper despite the
+plural element name).
 **Target:** the canonical bulletin shape every source adapter emits.
+**Evidence base:** 35 live bulletins covering every active French massif
+plus 1 delegated-region redirect, captured on 2026-05-18. See
+[`docs/research/meteofrance/`](research/meteofrance/) for the raw XML,
+the parsed catalogue (`massifs.json`), the SAT vocabulary survey
+(`sat_vocabulary.md`), and a field-coverage report (`field-coverage.md`).
 
 Tracks SNOW-177. See also the
 [data-pipeline-separation discussion](https://linear.app/hugorodgerbrown/issue/SNOW-177/add-meteofrance-data-for-french-alps)
@@ -115,6 +122,19 @@ regions = [CanonicalRegionRef(
 Each DPBRA document covers exactly one massif. Region resolution requires
 the `liste-massifs.geojson` lookup table to be loaded at adapter init.
 
+**Confirmed catalogue (2026-05-18 fetch):** 35 active massifs in three
+ID bands:
+
+- `1..23` — Alps (23 massifs, "Chablais" to "Mercantour")
+- `40..41` — Corse (2 massifs)
+- `64..70, 72..74` — Pyrenees (10 massifs)
+- `71` — Andorre, returns `<message>` (see §7)
+
+Full list in [`docs/research/meteofrance/massifs.json`](research/meteofrance/massifs.json).
+Longest observed `@MASSIF` value is 20 characters (`"Embrunais Parpaillon"`).
+**Resolves open item 3:** `SubRegion.prefix` can use `max_length=32` with
+generous headroom; no migration of existing column widths is needed.
+
 ### 5.3 Danger ratings
 
 DPBRA gives a single `<RISQUE>` element with two stacked bands separated
@@ -140,6 +160,12 @@ Numeric → EAWS token lookup is identical to the EAWS standard
 `LOC1`/`LOC2` (e.g. `<2200`, `>2200`) are decorative and not used —
 `@ALTITUDE` is the source of truth.
 
+**Elevation split is optional.** In the 2026-05-18 sample, 19 of 35
+bulletins (54%) carry `@ALTITUDE`/`@RISQUE2`/`@LOC2`; the remaining 16
+publish a single rating for the whole massif. The translator MUST handle
+both shapes — when `@ALTITUDE` is absent, emit a single `DangerRating`
+with no `Elevation` bound.
+
 ### 5.4 Avalanche problems
 
 DPBRA collapses problems into one `<STABILITE>` block with up to two
@@ -163,17 +189,25 @@ for slot in ("SAT1", "SAT2"):
     ))
 ```
 
-**Open:** `SAT_TO_EAWS` lookup table. Best-effort from MF's avalanche
-guide (to confirm before implementation):
+**Open:** `SAT_TO_EAWS` lookup table. The 2026-05-18 sample only contains
+codes {2, 4, 6} — see [`sat_vocabulary.md`](research/meteofrance/sat_vocabulary.md)
+for frequencies and characteristic `<TITRE>` text. **Provisional mapping
+inferred from the text** (CONFIRM against MF's 2026 avalanche guide
+before freezing):
 
-| SAT code | MF label (likely) | EAWS token |
-|---|---|---|
-| 1 | Neige fraîche | `new_snow` |
-| 2 | Neige ventée / plaques à vent | `wind_slab` |
-| 3 | Sous-couche fragile persistante | `persistent_weak_layers` |
-| 4 | Neige humide | `wet_snow` |
-| 5 | Glissement / plaques de fond | `gliding_snow` |
-| 6–9 | TBC | TBC |
+| SAT code | Observed `<TITRE>` text pattern | Provisional EAWS token | Status |
+|---|---|---|---|
+| 1 | — (not in sample) | `new_snow` | speculative |
+| 2 | "chutes de neige récente se stabilisent", "manteau hivernal en altitude" | `new_snow` | observed, text-supported |
+| 3 | — (not in sample) | `persistent_weak_layers` | speculative |
+| 4 | "RARES INSTABILITES VENTéE", "plaques à vent" | `wind_slab` | observed, text-supported |
+| 5 | — (not in sample) | `gliding_snow` | speculative |
+| 6 | "RARE COULEE HUMIDE", "DE MOINS EN MOINS DE NEIGE" | `wet_snow` | observed, text-supported |
+| 7–9 | — (not in sample) | TBC | speculative |
+
+Re-run the SAT survey against a January / February day (peak season,
+likely to surface codes 1, 3, 5 and any of 7–9 that exist) before the
+lookup is considered complete.
 
 The implementation must raise (not silently fall back) on unknown SAT
 codes — silent fallback would mask MF feed changes. Unknown codes go in
@@ -322,6 +356,27 @@ on:
 The orchestrator catches per-bulletin and increments
 `PipelineRun.records_failed`, matching the existing SLF/EUREGIO behaviour.
 
+### 7.1 Delegated-region redirect (the Andorre case)
+
+Some massif IDs return a non-bulletin payload:
+
+```xml
+<message><![CDATA[Pour connaître les conditions neige et avalanche sur
+l'Andorre, consultez le service météorologique d'Andorre :
+https://www.meteo.ad/fr/etatneige .]]></message>
+```
+
+Observed for massif `71` in the 2026-05-18 fetch. The translator MUST
+detect this at the root-element check (`root.tag != "BULLETINS_NEIGE_AVALANCHE"`)
+and raise a distinct `MeteoFranceDelegatedRegionError` so the orchestrator
+can:
+
+- skip the massif silently rather than counting it as a failure
+- record the redirect destination once per pipeline run
+
+These massifs must NOT be discovered every day; the orchestrator should
+maintain a static "delegated regions" set seeded from the catalogue.
+
 ## 8. Out of scope for this spec
 
 - **Render-model aggregation.** The "blank problem cards" issue lives in
@@ -338,12 +393,18 @@ The orchestrator catches per-bulletin and increments
 ## 9. Open items before this spec ships
 
 1. **Confirm `SAT_TO_EAWS` table** against the MF 2026 avalanche guide.
-   The table above is best-effort from one sample.
-2. **Amendment behaviour.** Fetch a known re-issued day; confirm whether
-   `@ID` increments or whether the amendment overwrites with `@ID="1"`
-   and `@AMENDEMENT="true"`. Determines whether `bulletin_id` needs the
-   `-A{n}` suffix.
-3. **Massif code scheme.** Resolve from `liste-massifs.geojson` —
-   confirms whether `SubRegion.prefix` needs a `max_length` migration.
-4. **One bulletin per day, or two?** The sample suggests one daily 16:00
-   issue. Confirm against a second day.
+   The provisional table in §5.4 covers only codes 2, 4, 6 (observed) and
+   speculates on 1, 3, 5, 7–9. Re-run the SAT survey against a Jan/Feb
+   peak-season day before freezing the lookup.
+2. **Amendment behaviour.** Still open. The 2026-05-18 sample had zero
+   `@AMENDEMENT="true"` bulletins (0/35), so it can't answer whether
+   `@ID` increments on re-issue. Fetch a known amended day (mid-winter
+   weather events typically trigger re-issues) and inspect.
+3. ~~**Massif code scheme.**~~ **Resolved.** Catalogue captured at
+   [`docs/research/meteofrance/massifs.json`](research/meteofrance/massifs.json);
+   longest name is 20 chars, so `SubRegion.prefix max_length=32` is
+   sufficient. No migration needed for existing column widths.
+4. **One bulletin per day, or two?** The 2026-05-18 sample shows one
+   `DATEBULLETIN=16:00` issue per massif, identical to the original
+   single-massif probe. Confirm against a second non-consecutive day
+   before treating it as a hard invariant.

@@ -1,0 +1,185 @@
+{
+  "massifs": [
+    {
+      "id": 1,
+      "name": "Chablais",
+      "cluster": "Alps"
+    },
+    {
+      "id": 2,
+      "name": "Aravis",
+      "cluster": "Alps"
+    },
+    {
+      "id": 3,
+      "name": "Mont-Blanc",
+      "cluster": "Alps"
+    },
+    {
+      "id": 4,
+      "name": "Bauges",
+      "cluster": "Alps"
+    },
+    {
+      "id": 5,
+      "name": "Beaufortain",
+      "cluster": "Alps"
+    },
+    {
+      "id": 6,
+      "name": "Haute-Tarentaise",
+      "cluster": "Alps"
+    },
+    {
+      "id": 7,
+      "name": "Chartreuse",
+      "cluster": "Alps"
+    },
+    {
+      "id": 8,
+      "name": "Belledonne",
+      "cluster": "Alps"
+    },
+    {
+      "id": 9,
+      "name": "Maurienne",
+      "cluster": "Alps"
+    },
+    {
+      "id": 10,
+      "name": "Vanoise",
+      "cluster": "Alps"
+    },
+    {
+      "id": 11,
+      "name": "Haute-Maurienne",
+      "cluster": "Alps"
+    },
+    {
+      "id": 12,
+      "name": "Grandes-Rousses",
+      "cluster": "Alps"
+    },
+    {
+      "id": 13,
+      "name": "Thabor",
+      "cluster": "Alps"
+    },
+    {
+      "id": 14,
+      "name": "Vercors",
+      "cluster": "Alps"
+    },
+    {
+      "id": 15,
+      "name": "Oisans",
+      "cluster": "Alps"
+    },
+    {
+      "id": 16,
+      "name": "Pelvoux",
+      "cluster": "Alps"
+    },
+    {
+      "id": 17,
+      "name": "Queyras",
+      "cluster": "Alps"
+    },
+    {
+      "id": 18,
+      "name": "Devoluy",
+      "cluster": "Alps"
+    },
+    {
+      "id": 19,
+      "name": "Champsaur",
+      "cluster": "Alps"
+    },
+    {
+      "id": 20,
+      "name": "Embrunais Parpaillon",
+      "cluster": "Alps"
+    },
+    {
+      "id": 21,
+      "name": "Ubaye",
+      "cluster": "Alps"
+    },
+    {
+      "id": 22,
+      "name": "Haut-Var Haut-Verdon",
+      "cluster": "Alps"
+    },
+    {
+      "id": 23,
+      "name": "Mercantour",
+      "cluster": "Alps"
+    },
+    {
+      "id": 40,
+      "name": "Cinto Rotondo",
+      "cluster": "Corse"
+    },
+    {
+      "id": 41,
+      "name": "Renoso Incudine",
+      "cluster": "Corse"
+    },
+    {
+      "id": 64,
+      "name": "Pays-Basque",
+      "cluster": "Pyrenees"
+    },
+    {
+      "id": 65,
+      "name": "Aspe Ossau",
+      "cluster": "Pyrenees"
+    },
+    {
+      "id": 66,
+      "name": "Haute-Bigorre",
+      "cluster": "Pyrenees"
+    },
+    {
+      "id": 67,
+      "name": "Aure Louron",
+      "cluster": "Pyrenees"
+    },
+    {
+      "id": 68,
+      "name": "Luchonnais",
+      "cluster": "Pyrenees"
+    },
+    {
+      "id": 69,
+      "name": "Couserans",
+      "cluster": "Pyrenees"
+    },
+    {
+      "id": 70,
+      "name": "Haute-Ariege",
+      "cluster": "Pyrenees"
+    },
+    {
+      "id": 72,
+      "name": "Orlu St-Barthelemy",
+      "cluster": "Pyrenees"
+    },
+    {
+      "id": 73,
+      "name": "Capcir Puymorens",
+      "cluster": "Pyrenees"
+    },
+    {
+      "id": 74,
+      "name": "Cerdagne Canigou",
+      "cluster": "Pyrenees"
+    }
+  ],
+  "redirects": [
+    {
+      "id": 71,
+      "redirect_text": "Pour connaître les conditions neige et avalanche sur l'Andorre, consultez le service météorologique d'Andorre : https://www.meteo.ad/fr/etatneige ."
+    }
+  ]
+}
