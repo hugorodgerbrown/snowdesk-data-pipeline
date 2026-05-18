@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-18 18:59+0000\n"
+"POT-Creation-Date: 2026-05-18 19:56+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1504,10 +1504,11 @@ msgid_plural "Your subscriptions"
 msgstr[0] ""
 msgstr[1] ""
 
-msgid "Remove"
+#, python-format
+msgid "View %(region)s on the map"
 msgstr ""
 
-msgid "View on map"
+msgid "Remove"
 msgstr ""
 
 msgid "You have no active subscriptions."
