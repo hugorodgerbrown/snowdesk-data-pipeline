@@ -328,7 +328,7 @@ class MicroRegion(BaseModel):
             help_text=(
                 "Geographic neighbours — other regions whose polygons share "
                 "a border with this one. Computed at fixture-build time from "
-                "the boundary geometry (see scripts/build_regions_fixture.py); "
+                "the boundary geometry (see build_switzerland_fixture); "
                 "not maintained at runtime."
             ),
         )

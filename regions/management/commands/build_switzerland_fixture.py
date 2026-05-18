@@ -24,7 +24,7 @@ time by reading ``eaws_CH.json`` before writing it.
 
 Geographic neighbours (L4 regions whose polygons share a border) are
 computed using a Shapely buffer-intersects approach — identical to the
-approach previously in ``scripts/build_regions_fixture.py``.
+approach previously used in the retired ``scripts/build_regions_fixture.py``.
 
 L1 and L2 centre / bbox / boundary are derived from their L4 children
 using the shared helpers in ``regions.fixture_utils``.

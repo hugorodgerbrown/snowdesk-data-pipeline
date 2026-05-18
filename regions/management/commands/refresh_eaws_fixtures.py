@@ -23,7 +23,7 @@ This command does NOT:
   * Fetch from ``regions.avalanches.org`` — the authoritative dataset is
     already snapshotted under ``docs/`` and materialised in
     ``regions/fixtures/eaws_CH.json``. Refreshing the L4 snapshot is a
-    separate, manual step handled by ``scripts/build_regions_fixture.py``.
+    separate, manual step handled by ``build_switzerland_fixture``.
   * Edit the L1/L2 ``name_native`` / ``name_en`` labels — those are
     hand-maintained and outside this command's remit.
 

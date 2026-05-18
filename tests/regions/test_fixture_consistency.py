@@ -7,8 +7,8 @@ resort's (longitude, latitude) point lies inside its FK MicroRegion's
 ``boundary`` polygon.
 
 This test exists to catch two classes of drift:
-  1. SLF renames a region and our CSV/fixture falls out of sync with the
-     bulletin ingest names (caught by ``audit_microregion_names``).
+  1. SLF renames a region and the EAWS GeoJSON/fixture falls out of sync with
+     the bulletin ingest names (catch with ``build_switzerland_fixture``).
   2. A Resort's region FK points to the wrong polygon (caught by
      ``audit_resort_regions``).
 
