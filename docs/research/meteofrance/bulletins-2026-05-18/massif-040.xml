@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<?xml-stylesheet type="text/xsl" href="../web/bra.xslt"?>
+<BULLETINS_NEIGE_AVALANCHE xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" TYPEBULLETIN="BRA" ID="40" MASSIF="Cinto Rotondo" DATEBULLETIN="2026-05-17T15:00:00" DATEECHEANCE="2026-05-18T18:00:00" DATEVALIDITE="2026-05-18T18:00:00" DATEDIFFUSION="2026-05-17T15:13:00" AMENDEMENT="false">
+  <DateValidite>2026-05-18T18:00:00</DateValidite>
+  <CARTOUCHERISQUE>
+    <RISQUE RISQUE1="1" EVOLURISQUE1="" LOC1="" ALTITUDE="" RISQUE2="" EVOLURISQUE2="" LOC2="" RISQUEMAXI="1" COMMENTAIRE="Indice de risque faible." RISQUEMAXIJ2="1" DATE_RISQUE_J2="2026-05-19T00:00:00"/>
+    <PENTE NE="false" E="false" SE="false" S="false" SW="false" W="false" NW="false" N="false" COMMENTAIRE=""/>
+    <ACCIDENTEL><![CDATA[Peu probables]]></ACCIDENTEL>
+    <NATUREL><![CDATA[peu probables]]></NATUREL>
+    <RESUME><![CDATA[Départs spontanés : peu probables
+Déclenchements skieurs : Peu probables]]></RESUME>
+    <RisqueJ2><![CDATA[Indice de risque faible]]></RisqueJ2>
+    <CommentaireRisqueJ2><![CDATA[Pas d'évolution notable en termes de risque. Maintien d'un risque faible sur le massif.]]></CommentaireRisqueJ2>
+    <AVIS/>
+    <VIGILANCE/>
+    <ImageRisque>montagne_risques_40.png</ImageRisque>
+    <ImagePente>rose_pentes_40.png</ImagePente>
+  </CARTOUCHERISQUE>
+  <STABILITE>
+    <SitAvalTyp SAT1="6" SAT2=""/>
+    <TITRE><![CDATA[MANTEAU NEIGEUX DUR, ENCORE ÉPAIS EN ALTITUDE.]]></TITRE>
+    <TEXTESANSTITRE><![CDATA[Le refroidissement a permis une consolidation par regel des couches de neige humide. Des croûtes épaisses se sont formées et persistent en journée. Les surfaces dures et glacées sont assez généralisées et sont parfois recouvertes de 1 à 3 cm de neige fraîche.
+Déclenchements provoqués : peu probables
+Départs spontanés : peu probables, les orages de lundi après-midi ne donnant pas assez de pluie pour déstabiliser le manteau.
+]]></TEXTESANSTITRE>
+    <TEXTE><![CDATA[MANTEAU NEIGEUX DUR, ENCORE ÉPAIS EN ALTITUDE.
+
+Le refroidissement a permis une consolidation par regel des couches de neige humide. Des croûtes épaisses se sont formées et persistent en journée. Les surfaces dures et glacées sont assez généralisées et sont parfois recouvertes de 1 à 3 cm de neige fraîche.
+Déclenchements provoqués : peu probables
+Départs spontanés : peu probables, les orages de lundi après-midi ne donnant pas assez de pluie pour déstabiliser le manteau.
+]]></TEXTE>
+  </STABILITE>
+  <QUALITE>
+    <TEXTE><![CDATA[Qualification de l'enneigement : L'enneigement est normal pour la saison. Manteau neigeux maigre en versants sud, sous forme de langues de neige et neige ancienne en Nord, très dense, de type névé, souvent de couleur ocre avec des poussières désertiques en surface. Sur la Maniccia, à 2400 m d'altitude dans le massif du Rotondo, on relève près de 1m80 de hauteur de neige totale.
+Limite d'enneigement skiable : vers 1800 m en versants Nord, plutôt 2100 m en Sud.
+État de la neige : Quelques centimètres de neige fraîche possibles au plus haut du massif,  sinon neige dense voire dure.  Les cols et crêtes se dégarnissent en neige ou sont parfois "pelés".  Après un bon regel nocturne, l'humidification reprend en journée à basse altitude avec les éclaircies matinales. Elle devrait toutefois être ralentie et limitée par l'arrivée de nuages et d'un air plus froid. ]]></TEXTE>
+  </QUALITE>
+  <ENNEIGEMENT DATE="2026-05-17T00:00:00" LimiteSud="2000" LimiteNord="1800">
+    <NIVEAU ALTI="1000" N="0" S="0"/>
+    <NIVEAU ALTI="1500" N="0" S="0"/>
+    <NIVEAU ALTI="2000" N="63" S="3"/>
+    <ImageEnneigement>montagne_enneigement_40.png</ImageEnneigement>
+  </ENNEIGEMENT>
+  <NEIGEFRAICHE ALTITUDESS="1800">
+    <NEIGE24H DATE="2026-05-13T00:00:00" SS24Min="0" SS24Max="0"/>
+    <NEIGE24H DATE="2026-05-14T00:00:00" SS24Min="1" SS24Max="3"/>
+    <NEIGE24H DATE="2026-05-15T00:00:00" SS24Min="1" SS24Max="2"/>
+    <NEIGE24H DATE="2026-05-16T00:00:00" SS24Min="1" SS24Max="4"/>
+    <NEIGE24H DATE="2026-05-17T00:00:00" SS24Min="0" SS24Max="0"/>
+    <NEIGE24H DATE="2026-05-18T00:00:00" SS24Min="0" SS24Max="0"/>
+    <ImageNeigeFraiche>graphe_neige_fraiche_40.png</ImageNeigeFraiche>
+  </NEIGEFRAICHE>
+  <METEO ALTITUDEVENT1="1500" ALTITUDEVENT2="3000">
+    <COMMENTAIRE>Orages lundi après-midi concernant principalement le massif du Rotondo.</COMMENTAIRE>
+    <ECHEANCE DATE="2026-05-18T06:00:00" FF1="10" DD1="NO" FF2="10" DD2="SE" ISO0="2800" PLUIENEIGE="-1" TEMPSSENSIBLE="6" MERNUAGES="-1"/>
+    <ECHEANCE DATE="2026-05-18T12:00:00" FF1="20" DD1="O" FF2="20" DD2="O" ISO0="2600" PLUIENEIGE="2200" TEMPSSENSIBLE="71" MERNUAGES="-1"/>
+    <ECHEANCE DATE="2026-05-18T18:00:00" FF1="30" DD1="SO" FF2="30" DD2="O" ISO0="2600" PLUIENEIGE="2100" TEMPSSENSIBLE="90" MERNUAGES="-1"/>
+    <ECHEANCE DATE="2026-05-19T00:00:00" FF1="30" DD1="SO" FF2="40" DD2="O" ISO0="2600" PLUIENEIGE="-1" TEMPSSENSIBLE="1" MERNUAGES="-1"/>
+    <ImageMeteo>apercu_meteo_40.png</ImageMeteo>
+  </METEO>
+  <BSH>
+    <METEO>
+      <ECHEANCE DATE="2026-05-11T06:00:00" FF1="50" DD1="SO" FF2="90" DD2="O" ISO0="3000" PLUIENEIGE="-1" TEMPSSENSIBLE="2"/>
+      <ECHEANCE DATE="2026-05-11T12:00:00" FF1="70" DD1="O" FF2="100" DD2="O" ISO0="2900" PLUIENEIGE="2700" TEMPSSENSIBLE="71"/>
+      <ECHEANCE DATE="2026-05-11T18:00:00" FF1="110" DD1="O" FF2="120" DD2="O" ISO0="2800" PLUIENEIGE="2600" TEMPSSENSIBLE="71"/>
+      <ECHEANCE DATE="2026-05-12T00:00:00" FF1="90" DD1="O" FF2="100" DD2="O" ISO0="2800" PLUIENEIGE="-1" TEMPSSENSIBLE="0"/>
+      <ECHEANCE DATE="2026-05-12T06:00:00" FF1="60" DD1="SO" FF2="70" DD2="O" ISO0="3200" PLUIENEIGE="-1" TEMPSSENSIBLE="3"/>
+      <ECHEANCE DATE="2026-05-12T12:00:00" FF1="85" DD1="O" FF2="100" DD2="SO" ISO0="3300" PLUIENEIGE="-1" TEMPSSENSIBLE="2"/>
+      <ECHEANCE DATE="2026-05-12T18:00:00" FF1="65" DD1="SO" FF2="80" DD2="SO" ISO0="3700" PLUIENEIGE="-1" TEMPSSENSIBLE="1"/>
+      <ECHEANCE DATE="2026-05-13T00:00:00" FF1="50" DD1="O" FF2="65" DD2="O" ISO0="3200" PLUIENEIGE="-1" TEMPSSENSIBLE="1"/>
+      <ECHEANCE DATE="2026-05-13T06:00:00" FF1="55" DD1="SO" FF2="70" DD2="SO" ISO0="3100" PLUIENEIGE="2000" TEMPSSENSIBLE="90"/>
+      <ECHEANCE DATE="2026-05-13T12:00:00" FF1="20" DD1="SO" FF2="40" DD2="NO" ISO0="2600" PLUIENEIGE="2000" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-13T18:00:00" FF1="10" DD1="SO" FF2="30" DD2="NO" ISO0="2700" PLUIENEIGE="-1" TEMPSSENSIBLE="1"/>
+      <ECHEANCE DATE="2026-05-14T00:00:00" FF1="40" DD1="O" FF2="50" DD2="NO" ISO0="2500" PLUIENEIGE="-1" TEMPSSENSIBLE="1"/>
+      <ECHEANCE DATE="2026-05-14T06:00:00" FF1="50" DD1="O" FF2="80" DD2="O" ISO0="2200" PLUIENEIGE="1900" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-14T12:00:00" FF1="70" DD1="O" FF2="85" DD2="O" ISO0="1900" PLUIENEIGE="1600" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-14T18:00:00" FF1="80" DD1="O" FF2="100" DD2="O" ISO0="2000" PLUIENEIGE="1700" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-15T00:00:00" FF1="60" DD1="SO" FF2="70" DD2="O" ISO0="2100" PLUIENEIGE="1800" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-15T06:00:00" FF1="50" DD1="SO" FF2="80" DD2="O" ISO0="2000" PLUIENEIGE="1700" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-15T12:00:00" FF1="40" DD1="S" FF2="70" DD2="O" ISO0="2100" PLUIENEIGE="1800" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-15T18:00:00" FF1="50" DD1="SO" FF2="90" DD2="SO" ISO0="2000" PLUIENEIGE="-1" TEMPSSENSIBLE="2"/>
+      <ECHEANCE DATE="2026-05-16T00:00:00" FF1="50" DD1="SO" FF2="80" DD2="O" ISO0="1700" PLUIENEIGE="1400" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-16T06:00:00" FF1="50" DD1="O" FF2="60" DD2="O" ISO0="1600" PLUIENEIGE="1300" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-16T12:00:00" FF1="30" DD1="O" FF2="70" DD2="O" ISO0="1700" PLUIENEIGE="1400" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-16T18:00:00" FF1="35" DD1="O" FF2="50" DD2="O" ISO0="1900" PLUIENEIGE="1600" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-17T00:00:00" FF1="5" DD1="O" FF2="10" DD2="N" ISO0="2300" PLUIENEIGE="-1" TEMPSSENSIBLE="0"/>
+      <ECHEANCE DATE="2026-05-17T06:00:00" FF1="5" DD1="S" FF2="5" DD2="SO" ISO0="2400" PLUIENEIGE="2000" TEMPSSENSIBLE="0"/>
+      <ECHEANCE DATE="2026-05-17T12:00:00" FF1="5" DD1="S" FF2="10" DD2="SO" ISO0="2500" PLUIENEIGE="-1" TEMPSSENSIBLE="1"/>
+      <ECHEANCE DATE="2026-05-17T18:00:00" FF1="10" DD1="SO" FF2="10" DD2="O" ISO0="2500" PLUIENEIGE="2100" TEMPSSENSIBLE="81"/>
+      <ECHEANCE DATE="2026-05-18T00:00:00" FF1="5" DD1="S" FF2="10" DD2="NO" ISO0="2700" PLUIENEIGE="-1" TEMPSSENSIBLE="0"/>
+    </METEO>
+    <ENNEIGEMENTS>
+      <ENNEIGEMENT DATE="2026-05-11T00:00:00" LimiteSud="2100" LimiteNord="1800">
+        <NIVEAU ALTI="1000" N="0" S="0"/>
+        <NIVEAU ALTI="1500" N="0" S="0"/>
+        <NIVEAU ALTI="2000" N="70" S="0"/>
+      </ENNEIGEMENT>
+      <ENNEIGEMENT DATE="2026-05-12T00:00:00" LimiteSud="2100" LimiteNord="1800">
+        <NIVEAU ALTI="1000" N="0" S="0"/>
+        <NIVEAU ALTI="1500" N="0" S="0"/>
+        <NIVEAU ALTI="2000" N="66" S="0"/>
+      </ENNEIGEMENT>
+      <ENNEIGEMENT DATE="2026-05-13T00:00:00" LimiteSud="2100" LimiteNord="1800">
+        <NIVEAU ALTI="1000" N="0" S="0"/>
+        <NIVEAU ALTI="1500" N="0" S="0"/>
+        <NIVEAU ALTI="2000" N="60" S="0"/>
+      </ENNEIGEMENT>
+      <ENNEIGEMENT DATE="2026-05-14T00:00:00" LimiteSud="2100" LimiteNord="1800">
+        <NIVEAU ALTI="1000" N="0" S="0"/>
+        <NIVEAU ALTI="1500" N="0" S="0"/>
+        <NIVEAU ALTI="2000" N="60" S="0"/>
+      </ENNEIGEMENT>
+      <ENNEIGEMENT DATE="2026-05-15T00:00:00" LimiteSud="2000" LimiteNord="1800">
+        <NIVEAU ALTI="1000" N="0" S="0"/>
+        <NIVEAU ALTI="1500" N="0" S="0"/>
+        <NIVEAU ALTI="2000" N="60" S="1"/>
+      </ENNEIGEMENT>
+      <ENNEIGEMENT DATE="2026-05-16T00:00:00" LimiteSud="2000" LimiteNord="1800">
+        <NIVEAU ALTI="1000" N="0" S="0"/>
+        <NIVEAU ALTI="1500" N="0" S="0"/>
+        <NIVEAU ALTI="2000" N="65" S="4"/>
+      </ENNEIGEMENT>
+      <ENNEIGEMENT DATE="2026-05-17T00:00:00" LimiteSud="2000" LimiteNord="1800">
+        <NIVEAU ALTI="1000" N="0" S="0"/>
+        <NIVEAU ALTI="1500" N="0" S="0"/>
+        <NIVEAU ALTI="2000" N="63" S="3"/>
+      </ENNEIGEMENT>
+    </ENNEIGEMENTS>
+    <NEIGEFRAICHE ALTITUDESS="1800">
+      <NEIGE24H DATE="2026-05-12T00:00:00" SS24Min="0" SS24Max="0"/>
+      <NEIGE24H DATE="2026-05-13T00:00:00" SS24Min="0" SS24Max="0"/>
+      <NEIGE24H DATE="2026-05-14T00:00:00" SS24Min="0" SS24Max="0"/>
+      <NEIGE24H DATE="2026-05-15T00:00:00" SS24Min="1" SS24Max="3"/>
+      <NEIGE24H DATE="2026-05-16T00:00:00" SS24Min="1" SS24Max="2"/>
+      <NEIGE24H DATE="2026-05-17T00:00:00" SS24Min="1" SS24Max="4"/>
+    </NEIGEFRAICHE>
+    <RISQUES>
+      <RISQUE DATE="2026-05-11T00:00:00" RISQUEMAXI="1"/>
+      <RISQUE DATE="2026-05-12T00:00:00" RISQUEMAXI="1"/>
+      <RISQUE DATE="2026-05-13T00:00:00" RISQUEMAXI="1"/>
+      <RISQUE DATE="2026-05-14T00:00:00" RISQUEMAXI="1"/>
+      <RISQUE DATE="2026-05-15T00:00:00" RISQUEMAXI="1"/>
+      <RISQUE DATE="2026-05-16T00:00:00" RISQUEMAXI="1"/>
+      <RISQUE DATE="2026-05-17T00:00:00" RISQUEMAXI="1"/>
+    </RISQUES>
+    <Image7derniersjours>sept_derniers_jours_40.png</Image7derniersjours>
+    <Image7derniersjours_portrait>sept_derniers_jours_portrait_40.png</Image7derniersjours_portrait>
+  </BSH>
+  <TexteMeta>
+    <Vigilance>Pour consulter la vigilance en cours, veuillez vous rendre sur le site <a href="https://vigilance.meteofrance.fr/fr">https://vigilance.meteofrance.fr/fr</a></Vigilance>
+    <EnteteGenerique/>
+    <BasDePageGenerique/>
+    <LienDocumentation>La documentation utile à la bonne lecture de ce BRA est disponible sur <a href="https://meteofrance.fr/sites/meteofrance.fr/files/files/editorial/guide-avalanche-2025-meteo-france.pdf">le guide avalanche 2025</a></LienDocumentation>
+    <Partenaires>Rédigé par Météo-France avec la contribution des observateurs du réseau nivo-météorologique. Partenariat : ANMSM (Maires de Stations de Montagne), DSF (Domaines Skiables de France), ADSP (Directeurs de Pistes et de la Sécurité des Stations de Sports d'Hiver) et autres acteurs de la montagne.</Partenaires>
+  </TexteMeta>
+</BULLETINS_NEIGE_AVALANCHE>
