@@ -1,0 +1,19 @@
+{% comment %}
+public/templates/public/_source_link.html — Inline source attribution link.
+
+Rendered by ``{% source_link source %}`` from
+``public/templatetags/source_attribution.py``.  Renders the upstream data
+provider's wordmark as a plain inline anchor used inside the bulletin
+attribution sentence (e.g. "Bulletin issued at … by SLF. Valid until …").
+
+Context:
+  wordmark  — display text, e.g. "SLF" or "ALBINA"
+  url       — upstream homepage, e.g. "https://www.slf.ch"
+{% endcomment %}
+<a
+    href="{{ url }}"
+    target="_blank"
+    rel="noopener"
+    data-testid="source-link"
+    class="font-medium text-text-2 underline underline-offset-2 hover:text-text-1"
+>{{ wordmark }}</a>

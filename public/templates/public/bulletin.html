@@ -16,7 +16,7 @@ admin shortcut) was removed in SNOW-80 — the global ``_site_footer.html``
 covers the SLF attribution requirement, and adjacent regions are now
 reachable via the SNOW-81 deep-link in the masthead.
 {% endcomment %}
-{% load i18n static snowdesk_html snowdesk_time %}
+{% load i18n static snowdesk_html snowdesk_time source_attribution %}
 
 {% block favicon %}
     {# Favicon tinted to the bulletin's highest EAWS danger level so       #}
@@ -297,6 +297,30 @@ reachable via the SNOW-81 deep-link in the masthead.
                         <div class="mb-4">
                             {% include "includes/day_character_callout.html" with day_character=panel.day_character only %}
                         </div>
+                    {% endif %}
+
+                    {% comment %}
+                       Bulletin attribution sentence (SNOW-175) — single
+                       row crediting the upstream data provider and stating
+                       the bulletin's issued / valid-until window.  Sits
+                       between the day-character callout and the day-risk-
+                       profile panel so the source is obvious before the
+                       hazard read, without competing with the danger headline.
+                       Suppressed when ``rm.metadata`` is absent (defensive —
+                       always present on a healthy v4 render model).
+                    {% endcomment %}
+                    {% if rm.metadata %}
+                        <p
+                            class="text-xs text-text-3 mb-4"
+                            data-testid="bulletin-attribution"
+                        >
+                            {% trans "Bulletin issued at" %}
+                            {{ rm.metadata.publication_time|parse_iso|date:"j M H:i" }} UTC
+                            {% trans "by" %}
+                            {% source_link rm.source %}.
+                            {% trans "Valid until" %}
+                            {{ rm.metadata.valid_until|parse_iso|date:"j M H:i" }} UTC.
+                        </p>
                     {% endif %}
 
                     {% comment %}

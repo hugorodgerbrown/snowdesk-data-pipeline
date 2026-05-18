@@ -1770,11 +1770,11 @@ def _make_source_bulletin(region, source: str, day: date = date(2026, 3, 15)) ->
 
 
 @pytest.mark.django_db
-class TestSourcePillBulletinPage:
-    """The source wordmark pill renders correctly on the bulletin page (SNOW-175)."""
+class TestBulletinAttributionRow:
+    """The bulletin attribution row renders correctly on the bulletin page (SNOW-175)."""
 
-    def test_slf_bulletin_renders_pill_with_slf_wordmark(self) -> None:
-        """A CH/SLF bulletin renders the pill with wordmark ``SLF``."""
+    def test_slf_bulletin_renders_attribution_with_slf_link(self) -> None:
+        """A CH/SLF bulletin renders the attribution sentence with an SLF link."""
         region = MicroRegionFactory.create(
             region_id="CH-SRC1", name="Pill Test CH", slug="ch-src1"
         )
@@ -1784,8 +1784,11 @@ class TestSourcePillBulletinPage:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'data-testid="source-pill"' in content
+        assert 'data-testid="bulletin-attribution"' in content
+        assert 'data-testid="source-link"' in content
         assert ">SLF<" in content
+        assert "Bulletin issued at" in content
+        assert "Valid until" in content
 
     def test_slf_bulletin_header_carries_data_source_attribute(self) -> None:
         """A CH/SLF bulletin's header element carries ``data-source="slf"``."""
@@ -1799,8 +1802,8 @@ class TestSourcePillBulletinPage:
         assert response.status_code == 200
         assert b'data-source="slf"' in response.content
 
-    def test_euregio_bulletin_renders_pill_with_albina_wordmark(self) -> None:
-        """A EUREGIO bulletin renders the pill with wordmark ``ALBINA``."""
+    def test_euregio_bulletin_renders_attribution_with_albina_link(self) -> None:
+        """A EUREGIO bulletin renders the attribution sentence with an ALBINA link."""
         major = MajorRegionFactory.create(prefix="AT-07", country="AT")
         sub = SubRegionFactory.create(prefix="AT-071", major=major)
         region = MicroRegionFactory.create(
@@ -1815,7 +1818,8 @@ class TestSourcePillBulletinPage:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'data-testid="source-pill"' in content
+        assert 'data-testid="bulletin-attribution"' in content
+        assert 'data-testid="source-link"' in content
         assert ">ALBINA<" in content
 
     def test_euregio_bulletin_header_carries_data_source_attribute(self) -> None:
@@ -1835,8 +1839,8 @@ class TestSourcePillBulletinPage:
         assert response.status_code == 200
         assert b'data-source="euregio"' in response.content
 
-    def test_slf_pill_links_to_slf_ch(self) -> None:
-        """The SLF pill anchor href points to ``https://www.slf.ch``."""
+    def test_slf_link_points_to_slf_ch(self) -> None:
+        """The SLF source link anchor href points to ``https://www.slf.ch``."""
         region = MicroRegionFactory.create(
             region_id="CH-SRC3", name="Link Test CH", slug="ch-src3"
         )
@@ -1846,8 +1850,8 @@ class TestSourcePillBulletinPage:
         response = client.get(url)
         assert b"https://www.slf.ch" in response.content
 
-    def test_slf_pill_opens_in_new_tab(self) -> None:
-        """The source pill has ``target="_blank"`` and ``rel="noopener"``."""
+    def test_source_link_opens_in_new_tab(self) -> None:
+        """The source link has ``target="_blank"`` and ``rel="noopener"``."""
         region = MicroRegionFactory.create(
             region_id="CH-SRC4", name="Newtab Test", slug="ch-src4"
         )
@@ -1856,18 +1860,16 @@ class TestSourcePillBulletinPage:
         url = _url("ch-src4", "newtab-test", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        # Both attrs must appear in proximity; a simple substring check is
-        # sufficient since the pill partial is the only place they co-occur.
         assert 'target="_blank"' in content
         assert 'rel="noopener"' in content
 
 
 @pytest.mark.django_db
-class TestSourcePillAbsentOnErrorState:
-    """The source pill and data-source attribute are absent on the error state."""
+class TestBulletinAttributionAbsentOnErrorState:
+    """The attribution row and data-source attribute are absent on the error state."""
 
-    def test_error_state_has_no_source_pill(self) -> None:
-        """A version==0 bulletin renders no ``data-testid="source-pill"``."""
+    def test_error_state_has_no_attribution_row(self) -> None:
+        """A version==0 bulletin renders no attribution row and no ``data-source``."""
         from bulletins.services.render_model import RENDER_MODEL_VERSION
 
         region = MicroRegionFactory.create(
@@ -1898,11 +1900,12 @@ class TestSourcePillAbsentOnErrorState:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'data-testid="source-pill"' not in content
+        assert 'data-testid="bulletin-attribution"' not in content
+        assert 'data-testid="source-link"' not in content
         assert "data-source=" not in content
 
-    def test_empty_state_has_no_source_pill(self) -> None:
-        """The empty-state (no bulletin) page has no source pill."""
+    def test_empty_state_has_no_attribution_row(self) -> None:
+        """The empty-state (no bulletin) page has no attribution row."""
         MicroRegionFactory.create(
             region_id="CH-EMP1", name="Empty Region", slug="ch-emp1"
         )
@@ -1911,5 +1914,6 @@ class TestSourcePillAbsentOnErrorState:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'data-testid="source-pill"' not in content
+        assert 'data-testid="bulletin-attribution"' not in content
+        assert 'data-testid="source-link"' not in content
         assert "data-source=" not in content

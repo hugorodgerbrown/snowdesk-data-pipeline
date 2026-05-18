@@ -1,4 +1,4 @@
-{% load i18n static source_pill %}
+{% load i18n static %}
 {% comment %}
 templates/includes/bulletin_header.html — unified bulletin header panel.
 
@@ -13,10 +13,12 @@ The date picker for the page lives in the page nav as the
 "🗓 SEASON" sheet trigger (SNOW-117), so this header carries no
 calendar affordance.
 
-The top-right slot in the inner flex row hosts the data-source wordmark pill
-(SNOW-175) — "SLF" for Swiss bulletins, "ALBINA" for EUREGIO bulletins.
-Rendered via ``{% source_pill source %}`` and guarded by ``{% if source %}``;
-absent on the error-state path where ``source`` is suppressed entirely.
+The ``data-source`` attribute on the ``<header>`` (SNOW-175) paints the
+source-coloured 2px bottom-border accent via CSS — SLF red for Swiss
+bulletins, ALBINA blue for EUREGIO bulletins. The inline source name +
+upstream link lives in the attribution sentence rendered between the
+day-character callout and the day-risk-profile panel in ``bulletin.html``,
+not in this header.
 
 Required context (added by ``public.views.bulletin_detail``):
   page_date            — datetime.date for the focal day.
@@ -28,11 +30,10 @@ Required context (added by ``public.views.bulletin_detail``):
                          sunrise_local, sunset_local, icon_bucket,
                          condition_label, icon_filename}``.
   source               — optional: canonical source key (``"slf"`` or
-                         ``"euregio"``). When present, paints the wordmark
-                         pill top-right and sets ``data-source`` on the
-                         ``<header>`` for the CSS bottom-border accent.
-                         Omit (or pass empty string) for the error state
-                         and any include that does not have a source.
+                         ``"euregio"``). When present, sets ``data-source``
+                         on the ``<header>`` for the CSS bottom-border
+                         accent. Omit (or pass empty string) for the error
+                         state and any include that does not have a source.
 
 When ``weather_display`` is None the panel still renders so the page chrome
 stays consistent — the hero icon is omitted, the metadata strip drops the
@@ -138,6 +139,5 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
                 {% endif %}
             </div>
         </div>
-        {% if source %}{% source_pill source %}{% endif %}
     </div>
 </header>

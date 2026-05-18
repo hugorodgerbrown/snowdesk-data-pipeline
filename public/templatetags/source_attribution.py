@@ -1,20 +1,15 @@
 """
-public/templatetags/source_pill.py — Template tag for the data-source wordmark pill.
+public/templatetags/source_attribution.py — Template tag for inline source attribution.
 
-Exposes ``{% source_pill source %}`` which renders a small inline anchor
+Exposes ``{% source_link source %}`` which renders a small inline anchor
 linking to the upstream data provider (SLF for Switzerland, EUREGIO/ALBINA
-for Austria and Italy).  The tag is designed to sit in the top-right corner
-of the bulletin header's inner flex row.
+for Austria and Italy).  Used inside the bulletin-page attribution sentence
+rendered between the day-character callout and the day-risk-profile panel.
 
 Only the two currently-ingested source keys are recognised.  An unknown or
 missing key raises ``ValueError`` — every v4 render model carries one of the
 two known keys, so an absent or unrecognised value indicates bad data and
 must surface loudly rather than silently rendering empty.
-
-The ``bulletin_header.html`` template guards the tag call with
-``{% if source %}`` so the exception path is only reached on genuine data
-bugs, not on the normal error-state / no-bulletin paths that suppress the
-source attribute entirely.
 """
 
 from django import template
@@ -22,8 +17,8 @@ from django import template
 register = template.Library()
 
 # Mapping from canonical source key to display wordmark and upstream URL.
-# Extend this dict (and update the HTMX view's country→source mapping) when
-# a new data source is added.
+# Extend this dict (and the HTMX view's country→source mapping in
+# public/views.py) when a new data source is added.
 SOURCES: dict[str, dict[str, str]] = {
     "slf": {
         "wordmark": "SLF",
@@ -36,26 +31,26 @@ SOURCES: dict[str, dict[str, str]] = {
 }
 
 
-@register.inclusion_tag("public/_source_pill.html")
-def source_pill(source: str) -> dict[str, str]:
+@register.inclusion_tag("public/_source_link.html")
+def source_link(source: str) -> dict[str, str]:
     """
-    Render the data-source wordmark pill for the bulletin header.
+    Render the data-source inline link for the bulletin attribution row.
 
     Looks up ``source`` in the ``SOURCES`` registry and returns the template
-    context dict required by ``public/_source_pill.html``.  Raises
+    context dict required by ``public/_source_link.html``.  Raises
     ``ValueError`` for any unrecognised key so data bugs surface loudly
-    rather than silently producing an empty pill.
+    rather than silently producing an empty link.
 
     Usage::
 
-        {% load source_pill %}
-        {% source_pill source %}
+        {% load source_attribution %}
+        {% source_link source %}
 
     Args:
         source: Canonical source key — ``"slf"`` or ``"euregio"``.
 
     Returns:
-        Dict with ``wordmark`` and ``url`` keys for the pill template.
+        Dict with ``wordmark`` and ``url`` keys for the link template.
 
     Raises:
         ValueError: If ``source`` is not a recognised key in ``SOURCES``.
