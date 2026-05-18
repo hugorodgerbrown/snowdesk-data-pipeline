@@ -34,9 +34,19 @@ def centre_from_children(children: list[dict[str, Any]]) -> dict[str, float]:
     Returns:
         ``{"lon": float, "lat": float}`` centroid.
 
+    Raises:
+        ValueError: When ``children`` is empty or none of the children
+            carry a ``centre`` value, which would produce a silent
+            ``ZeroDivisionError``.
+
     """
     lons = [c["centre"]["lon"] for c in children if c.get("centre")]
     lats = [c["centre"]["lat"] for c in children if c.get("centre")]
+    if not lons:
+        raise ValueError(
+            "cannot compute centre of empty children list — "
+            "no children with a 'centre' key were found"
+        )
     return {"lon": sum(lons) / len(lons), "lat": sum(lats) / len(lats)}
 
 
