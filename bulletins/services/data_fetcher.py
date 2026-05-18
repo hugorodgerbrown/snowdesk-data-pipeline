@@ -650,6 +650,11 @@ def get_sources() -> dict[str, BulletinSource]:
         run_euregio_pipeline,
         write_archive as euregio_write_archive,
     )
+    from bulletins.services.meteofrance_fetcher import (
+        latest_meteofrance_date,
+        meteofrance_stash_writer,
+        run_meteofrance_pipeline,
+    )
 
     return {
         SOURCE_SLF: BulletinSource(
@@ -669,5 +674,14 @@ def get_sources() -> dict[str, BulletinSource]:
             mirror_url_setting="EUREGIO_API_LOCAL_MIRROR_URL",
             archive_path_setting="EUREGIO_ARCHIVE_PATH",
             stash_writer=euregio_write_archive,
+        ),
+        SOURCE_METEOFRANCE: BulletinSource(
+            name=SOURCE_METEOFRANCE,
+            pipeline_fn=run_meteofrance_pipeline,
+            latest_date_fn=latest_meteofrance_date,
+            live_url_setting="METEOFRANCE_API_BASE_URL",
+            mirror_url_setting="METEOFRANCE_API_LOCAL_MIRROR_URL",
+            archive_path_setting="METEOFRANCE_ARCHIVE_PATH",
+            stash_writer=meteofrance_stash_writer,
         ),
     }
