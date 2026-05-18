@@ -1,14 +1,18 @@
-# MeteoFrance DPBRA → Canonical CAAML mapping spec
+# MeteoFrance DPBRA → CAAML JSON mapping spec
 
 **Status:** draft.
-**Scope:** authoritative field-by-field translation reference for
-`bulletins/services/sources/meteofrance.py::normalise()` (or the equivalent
-adapter once SNOW-177b lands).
+**Scope:** authoritative field-by-field translation reference for the
+MeteoFrance source adapter — a function that converts one DPBRA XML
+document into the same CAAML JSON dict shape that SLF and EUREGIO emit,
+ready to feed straight into `bulletins/services/data_fetcher.py::upsert_bulletin()`.
 **Source format:** Météo-France DPBRA XML
 (`<BULLETINS_NEIGE_AVALANCHE>` root element with bulletin attributes on
 the root itself — there is no inner `<BULLETIN>` wrapper despite the
 plural element name).
-**Target:** the canonical bulletin shape every source adapter emits.
+**Target:** CAAML v6 JSON dict, identical in shape to the SLF and EUREGIO
+payloads already stored in `Bulletin.raw_data`. Provider-specific extras
+go under `customData.MF` (mirroring `customData.CH` for SLF and
+`customData.ALBINA` for EUREGIO).
 **Evidence base:** 35 live bulletins covering every active French massif
 plus 1 delegated-region redirect, captured on 2026-05-18. See
 [`docs/research/meteofrance/`](research/meteofrance/) for the raw XML,
@@ -27,7 +31,7 @@ fetchers. MeteoFrance is the most divergent of the three.
 
 | Axis | SLF | EUREGIO (ALBINA) | MeteoFrance (DPBRA) |
 |---|---|---|---|
-| Format | CAAML v6 JSON | CAAML v6 JSON (+ provider extras) | Custom XML — not CAAML. Full translation required. |
+| Format | CAAML v6 JSON | CAAML v6 JSON (+ provider extras) | Custom XML — not CAAML. Translator emits CAAML v6 JSON to match the other providers. |
 | Discovery | Single paginated list endpoint `?limit&offset` | Per-`(date, region)` GET on CDN; 404 = "no bulletin" | One XML per massif from `public-api.meteofrance.fr/public/DPBRA/v1/…`; regions enumerated via `liste-massifs` |
 | Auth | Public, no key | Public, no key | APIM key required (`METEOFRANCE_API_KEY`) |
 | Region ID scheme | Flat `CH-XXXX` | Hierarchical `AT-07-23-02` (mixed levels in one feed) | Massif names (`@MASSIF="Chablais"`) + codes from `liste-massifs.geojson` |
@@ -48,79 +52,95 @@ fetchers. MeteoFrance is the most divergent of the three.
 
 ## 2. Translator scope
 
-One DPBRA XML document = one canonical bulletin for one massif covering
-one validity window. The translator is pure (no I/O, no DB):
+One DPBRA XML document = one CAAML JSON bulletin dict for one massif
+covering one validity window. The translator is pure (no I/O, no DB):
 
-```
-xml_bytes → CanonicalBulletin
+```python
+def to_caaml(xml_bytes: bytes) -> dict[str, Any]: ...
 ```
 
-Discovery, retry, and persistence are the orchestrator's job (see the
-adapter-layout proposal under SNOW-177).
+The returned dict has the same top-level keys as the SLF API response —
+`bulletinID`, `validTime`, `publicationTime`, `nextUpdate`, `lang`,
+`unscheduled`, `regions`, `dangerRatings`, `avalancheProblems`,
+`snowpackStructure`, `avalancheActivity`, `tendency`, `customData`.
+Feeding it into `upsert_bulletin(raw, run)` requires no other changes;
+the existing GeoJSON-envelope wrapping, region linkage, and render-model
+build all work unchanged.
+
+Discovery, retry, and persistence are the orchestrator's job — see the
+follow-up ticket for HTTP/scheduling work.
 
 ## 3. Identifier strategy
 
-DPBRA exposes no UUID. The synthesised `bulletin_id` must be deterministic
-so re-fetches are idempotent and amended bulletins overwrite cleanly.
+DPBRA exposes no UUID. The synthesised `bulletinID` is deterministic so
+re-fetches are idempotent and amended bulletins overwrite cleanly:
 
 ```
-bulletin_id = "FR-{massif_code}-{validity_date}[-A{amendment_seq}]"
+bulletinID = "FR-{NN}-{validity_date}[-A{amendment_seq}]"
 ```
 
-- `massif_code`: from `liste-massifs.geojson` lookup, e.g. `MAS-01`. Never
-  `@MASSIF` (the display name).
+- `{NN}`: the MF integer massif ID zero-padded to two digits,
+  matching the EAWS `FR-NN` region ID (1:1 mapping established by
+  SNOW-179 — see `regions/management/commands/build_france_fixture.py`).
+  Example: massif `Chablais` (`@ID="1"`) → `FR-01`.
 - `validity_date`: `@DATEVALIDITE` truncated to date in Europe/Paris.
-- `amendment_seq`: appended only when `@AMENDEMENT="true"`. Sequence
-  derived from `@ID` minus 1 (first amendment = `-A1`). **Open:** confirm
-  `@ID` increments on amendment vs stays at 1.
+- `amendment_seq`: appended only when `@AMENDEMENT="true"`. Open
+  question (item 2 in §9) — confirm whether `@ID` increments on
+  amendment so we can derive the suffix.
 
-`(source, bulletin_id)` is the persistence key. The `source="meteofrance"`
-column makes this globally unique even if MF and SLF ever collide on the
-local part.
+`bulletinID` is globally unique by construction — the `FR-` prefix
+separates MF from SLF (`CH-`) and EUREGIO (`AT-…`, `IT-…`).
 
 ## 4. Timezone handling
 
 Every `DATE*` attribute in DPBRA is naive local time in Europe/Paris. The
-translator MUST localise on the way in:
+translator MUST localise on the way in and emit ISO-8601 UTC strings
+ending in `Z` — exactly the format SLF emits, exactly what
+`_parse_dt()` in `data_fetcher.py` expects:
 
 ```python
 PARIS = ZoneInfo("Europe/Paris")
 
-def _parse(value: str) -> datetime:
-    return datetime.fromisoformat(value).replace(tzinfo=PARIS).astimezone(UTC)
+def _parse(value: str) -> str:
+    """DPBRA local-time string → CAAML JSON UTC string."""
+    dt = datetime.fromisoformat(value).replace(tzinfo=PARIS).astimezone(UTC)
+    return dt.isoformat().replace("+00:00", "Z")
 ```
 
-Canonical times are always UTC, matching SLF/EUREGIO. The original
-local-time strings are preserved verbatim under
-`provider_extras.mf.raw_local_times` for debugging.
+The original local-time strings are preserved verbatim under
+`customData.MF.rawLocalTimes` for debugging.
 
 ## 5. Field-by-field map
 
-### 5.1 Top-level
+### 5.1 Top-level CAAML JSON
 
-| Canonical field | DPBRA source | Transform |
+| CAAML key | DPBRA source | Transform |
 |---|---|---|
-| `source` | — | constant `"meteofrance"` |
-| `bulletin_id` | `@ID`, `@MASSIF`, `@DATEVALIDITE`, `@AMENDEMENT` | see §3 |
+| `bulletinID` | `@ID`, `@DATEVALIDITE`, `@AMENDEMENT` | see §3 |
 | `lang` | — | constant `"fr"` |
-| `issued_at` | `@DATEBULLETIN` | `_parse` |
-| `valid_from` | `@DATEBULLETIN` | `_parse` |
-| `valid_to` | `@DATEVALIDITE` | `_parse` |
-| `published_at` | `@DATEDIFFUSION` | `_parse` |
-| `next_update` | — | `None` (DPBRA doesn't publish a `nextUpdate`) |
-| `unscheduled` | `@AMENDEMENT` | `value == "true"` |
+| `validTime.startTime` | `@DATEBULLETIN` | `_parse` |
+| `validTime.endTime` | `@DATEVALIDITE` | `_parse` |
+| `publicationTime` | `@DATEDIFFUSION` | `_parse` |
+| `nextUpdate` | — | omit key (DPBRA publishes one daily, no `nextUpdate` semantic) |
+| `unscheduled` | `@AMENDEMENT` | `xml.attrib.get("AMENDEMENT") == "true"` |
 
 ### 5.2 Regions
 
 ```python
-regions = [CanonicalRegionRef(
-    region_id=f"FR-{massif_lookup[xml.attrib['MASSIF']]}",
-    name=xml.attrib["MASSIF"],
-)]
+massif_id = int(xml.attrib["ID"])
+caaml["regions"] = [{
+    "regionID": f"FR-{massif_id:02d}",
+    "name": xml.attrib["MASSIF"],
+}]
 ```
 
-Each DPBRA document covers exactly one massif. Region resolution requires
-the `liste-massifs.geojson` lookup table to be loaded at adapter init.
+Each DPBRA document covers exactly one massif. The `FR-NN` ↔ MF integer
+mapping is 1:1 and was established by **SNOW-179**: massif `Chablais`
+(`@ID="1"`) maps to EAWS region `FR-01`, `Mercantour` (`@ID="23"`) to
+`FR-23`, `Cinto-Rotondo` (`@ID="40"`) to `FR-40`, and so on. All 35
+active massif IDs are already present in `regions/fixtures/eaws_FR.json`
+as `MicroRegion` rows, so `upsert_bulletin`'s `_get_region` lookup will
+resolve them without further fixture work.
 
 **Confirmed catalogue (2026-05-18 fetch):** 35 active massifs in three
 ID bands:
@@ -131,46 +151,47 @@ ID bands:
 - `71` — Andorre, returns `<message>` (see §7)
 
 Full list in [`docs/research/meteofrance/massifs.json`](research/meteofrance/massifs.json).
-Longest observed `@MASSIF` value is 20 characters (`"Embrunais Parpaillon"`).
-**Resolves open item 3:** `SubRegion.prefix` can use `max_length=32` with
-generous headroom; no migration of existing column widths is needed.
 
-### 5.3 Danger ratings
+### 5.3 Danger ratings (`dangerRatings`)
 
-DPBRA gives a single `<RISQUE>` element with two stacked bands separated
-by `@ALTITUDE`. Translates to two canonical `DangerRating` entries:
+DPBRA gives a single `<RISQUE>` element with up to two stacked bands
+separated by `@ALTITUDE`. Translates to one or two CAAML `dangerRatings`
+entries:
 
 ```python
+# Two-band case (54% of the 2026-05-18 sample)
 split = int(risque.attrib["ALTITUDE"])
-DangerRating(
-    main_value=_level_from_int(risque.attrib["RISQUE1"]),    # "low" / "moderate" / ...
-    elevation=Elevation(upper_bound_m=split),
-    valid_time_period="all_day",
-)
-DangerRating(
-    main_value=_level_from_int(risque.attrib["RISQUE2"]),
-    elevation=Elevation(lower_bound_m=split),
-    valid_time_period="all_day",
-)
+caaml["dangerRatings"] = [
+    {
+        "mainValue": _LEVEL[int(risque.attrib["RISQUE1"])],   # "low" / "moderate" / …
+        "elevation": {"upperBound": str(split)},
+        "validTimePeriod": "all_day",
+    },
+    {
+        "mainValue": _LEVEL[int(risque.attrib["RISQUE2"])],
+        "elevation": {"lowerBound": str(split)},
+        "validTimePeriod": "all_day",
+    },
+]
+
+# Single-band case (46%) — no @ALTITUDE / @RISQUE2
+caaml["dangerRatings"] = [{
+    "mainValue": _LEVEL[int(risque.attrib["RISQUE1"])],
+    "validTimePeriod": "all_day",
+}]
 ```
 
-Numeric → EAWS token lookup is identical to the EAWS standard
+`_LEVEL` is the EAWS mapping shared with SLF/EUREGIO
 (1=`low`, 2=`moderate`, 3=`considerable`, 4=`high`, 5=`very_high`).
 
-`LOC1`/`LOC2` (e.g. `<2200`, `>2200`) are decorative and not used —
-`@ALTITUDE` is the source of truth.
+`LOC1`/`LOC2` (e.g. `<2200`, `>2200`) are decorative — `@ALTITUDE` is the
+source of truth.
 
-**Elevation split is optional.** In the 2026-05-18 sample, 19 of 35
-bulletins (54%) carry `@ALTITUDE`/`@RISQUE2`/`@LOC2`; the remaining 16
-publish a single rating for the whole massif. The translator MUST handle
-both shapes — when `@ALTITUDE` is absent, emit a single `DangerRating`
-with no `Elevation` bound.
-
-### 5.4 Avalanche problems
+### 5.4 Avalanche problems (`avalancheProblems`)
 
 DPBRA collapses problems into one `<STABILITE>` block with up to two
 situation-types in `<SitAvalTyp SAT1="…" SAT2="…"/>`. Each non-empty SAT
-emits one canonical `AvalancheProblem`.
+emits one CAAML `avalancheProblems` entry:
 
 ```python
 problems = []
@@ -178,16 +199,21 @@ for slot in ("SAT1", "SAT2"):
     code = sit_aval_typ.attrib.get(slot, "").strip()
     if not code:
         continue
-    problems.append(AvalancheProblem(
-        problem_type=SAT_TO_EAWS[int(code)],
-        aspects=_aspects_from_pente(pente),     # bulletin-wide rose
-        elevation=_elevation_from_prose(texte_node)
-                  or Elevation(lower_bound_m=split, upper_bound_m=None),
-        avalanche_size=None,                     # not encoded as attribute
-        snowpack_stability=None,                 # absent in DPBRA
-        valid_time_period="all_day",
-    ))
+    problem = {
+        "problemType": SAT_TO_EAWS[int(code)],
+        "aspects": _aspects_from_pente(pente),           # CAAML 8-letter compass list
+        "validTimePeriod": "all_day",
+    }
+    elev = _elevation_from_prose(texte_node)
+    if elev:
+        problem["elevation"] = elev                       # {"upperBound": "2400"} etc.
+    problems.append(problem)
+caaml["avalancheProblems"] = problems
 ```
+
+DPBRA encodes neither `avalancheSize` (only free-text "Taille 1 à 2" in
+prose) nor `snowpackStability` — both keys are omitted from the emitted
+problem dict, matching how EUREGIO handles partial data.
 
 **`SAT_TO_EAWS` lookup (verified against the MF avalanche guide 2025):**
 
@@ -208,16 +234,16 @@ wind-slab text ("plaques à vent"), `SAT1=4` carry wet-snow text ("neige
 récente peut couler ... réchauffement diurne"), and `SAT1=6` are
 late-season massifs with no dominant problem.
 
-Cross-check during SNOW-177b implementation: when ingesting a peak-season
-day for the first time, log any SAT code outside `{1..6}` to
-`provider_extras.mf.unmapped_sat` so an MF feed extension doesn't ship
-silently. EAWS publishes a 5-problem set plus `no_distinct`; the table
-above covers all six MF positions exactly.
+Cross-check during MF translator implementation: when ingesting a
+peak-season day for the first time, raise on any SAT code outside
+`{1..6}` so an MF feed extension doesn't ship silently. EAWS publishes a
+5-problem set plus `no_distinct`; the table above covers all six MF
+positions exactly.
 
-The implementation must raise (not silently fall back) on unknown SAT
-codes — silent fallback would mask MF feed changes. Unknown codes go in
-`provider_extras.mf.unmapped_sat` for the orchestrator to log and surface
-in `PipelineRun.records_failed`.
+The implementation MUST raise (not silently fall back) on unknown SAT
+codes — silent fallback would mask MF feed changes. The orchestrator
+catches and increments `PipelineRun.records_failed`, matching SLF/EUREGIO
+behaviour.
 
 ### 5.5 Aspects
 
@@ -230,14 +256,15 @@ def _aspects_from_pente(pente: Element) -> list[str]:
     return [a for a in _ASPECTS if pente.attrib.get(a) == "true"]
 ```
 
-Every problem inherits the same list — DPBRA does not distinguish per
-problem.
+The returned list goes into each problem's `aspects` key. Every problem
+inherits the same rose — DPBRA does not distinguish per problem.
 
 ### 5.6 Per-problem elevation (prose fallback)
 
 DPBRA's per-problem altitude is only in prose. A bounded-regex parser
-handles the common patterns; on miss, fall back to the bulletin-wide
-split:
+handles the common patterns and emits a CAAML `elevation` object
+(`{"upperBound": "2400"}`, `{"lowerBound": "2400"}`, or both); on miss,
+fall back to the bulletin-wide split:
 
 ```python
 _ABOVE = re.compile(r"[Aa]u-dessus de (\d{3,4})\s?m")
@@ -248,40 +275,41 @@ _BETWEEN = re.compile(r"[Ee]ntre (\d{3,4})\s?(?:et|à)\s?(\d{3,4})\s?m")
 Order: `_BETWEEN` → `_ABOVE` → `_BELOW` → bulletin-wide split. Match must
 be inside the problem's `<TEXTE>` body, not the bulletin's general prose.
 
-### 5.7 Snowpack structure
+### 5.7 Snowpack structure (`snowpackStructure`)
 
 ```python
-snowpack_structure_comment = qualite_texte.text.strip()
+caaml["snowpackStructure"] = {
+    "comment": qualite_texte.text.strip(),
+}
 ```
 
 DPBRA's `<QUALITE>/<TEXTE>` is a free-text description of snow quality
 and cover — semantically the same as CAAML's `snowpackStructure.comment`.
 
-### 5.8 Avalanche activity
+### 5.8 Avalanche activity (`avalancheActivity`)
 
-CAAML splits this into `highlights` (short) and `comment` (long). DPBRA
-gives us three useful nodes:
-
-| Canonical field | DPBRA source |
+| CAAML key | DPBRA source |
 |---|---|
-| `avalanche_activity.highlights` | `CARTOUCHERISQUE/RESUME` first line (split on `\n`) |
-| `avalanche_activity.comment` | `STABILITE/TEXTESANSTITRE` if present, else strip title from `STABILITE/TEXTE` |
-| — (dropped) | `ACCIDENTEL` and `NATUREL` are redundant with `STABILITE/TEXTE`; preserve in `provider_extras` only |
+| `avalancheActivity.highlights` | `CARTOUCHERISQUE/RESUME` first line (split on `\n`) |
+| `avalancheActivity.comment` | `STABILITE/TEXTESANSTITRE` if present, else strip the title from `STABILITE/TEXTE` |
 
-### 5.9 Tendency
+`CARTOUCHERISQUE/ACCIDENTEL` and `CARTOUCHERISQUE/NATUREL` are redundant
+with `STABILITE/TEXTE`; preserve them under `customData.MF` only (see §5.10).
 
-One canonical `Tendency` entry for J+2:
+### 5.9 Tendency (`tendency`)
+
+One CAAML `tendency` entry for J+2:
 
 ```python
-Tendency(
-    tendency_type=_evolution_from_levels(risque1_today, risque1_j2),  # "increasing" / "steady" / "decreasing"
-    highlights=cartouche.find("RisqueJ2").text.strip(),
-    comment=cartouche.find("CommentaireRisqueJ2").text.strip(),
-    valid_time=ValidTime(
-        start_time=_parse(cartouche.find("RISQUE").attrib["DATE_RISQUE_J2"]),
-        end_time=_parse(cartouche.find("RISQUE").attrib["DATE_RISQUE_J2"]) + timedelta(days=1),
-    ),
-)
+caaml["tendency"] = [{
+    "tendencyType": _evolution_from_levels(risque1_today, risque1_j2),  # "increasing" / "steady" / "decreasing"
+    "highlights": cartouche.find("RisqueJ2").text.strip(),
+    "comment": cartouche.find("CommentaireRisqueJ2").text.strip(),
+    "validTime": {
+        "startTime": _parse(date_risque_j2),
+        "endTime": _parse_plus_one_day(date_risque_j2),
+    },
+}]
 ```
 
 `_evolution_from_levels` is a 3-way comparator on the numeric danger
@@ -289,54 +317,59 @@ codes — DPBRA gives us a numeric next-day value (`RISQUEMAXIJ2`), which
 SLF/EUREGIO don't, so the tendency for MF is more deterministic than for
 the other two providers.
 
-### 5.10 `provider_extras.mf`
+### 5.10 `customData.MF`
 
-Everything DPBRA carries that CAAML can't represent. Preserved verbatim —
-the website opts in by field, the canonical layer never has to interpret
-it:
+Everything DPBRA carries that CAAML can't represent goes here, mirroring
+the `customData.CH` (SLF) and `customData.ALBINA` (EUREGIO) conventions.
+The render-model builder reads keys from this namespace when an
+MF-specific field is needed; nothing here is required for the basic
+calendar / map render:
 
 ```python
-provider_extras = {
-    "mf": {
+caaml["customData"] = {
+    "MF": {
         "bsh": _xml_to_dict(bsh),                # 7-day history block
-        "weather_forecast": [...],               # validity-window METEO echeances
-        "snow_cover": {                          # ENNEIGEMENT + NEIGEFRAICHE
+        "weatherForecast": [...],                # validity-window METEO echeances
+        "snowCover": {                           # ENNEIGEMENT + NEIGEFRAICHE
             "date": ...,
-            "snow_line_north_m": int(...LimiteNord),
-            "snow_line_south_m": int(...LimiteSud),
-            "depths_cm": [{"altitude_m": ..., "north": ..., "south": ...}, ...],
-            "fresh_24h": [{"date": ..., "min_cm": ..., "max_cm": ...}, ...],
+            "snowLineNorthM": int(...LimiteNord),
+            "snowLineSouthM": int(...LimiteSud),
+            "depthsCm": [{"altitudeM": ..., "north": ..., "south": ...}, ...],
+            "fresh24h": [{"date": ..., "minCm": ..., "maxCm": ...}, ...],
         },
-        "j2_outlook": {
-            "max_danger": int(risque.attrib["RISQUEMAXIJ2"]),
+        "j2Outlook": {
+            "maxDanger": int(risque.attrib["RISQUEMAXIJ2"]),
             "date": risque.attrib["DATE_RISQUE_J2"],
             "label": risque_j2.text,
             "comment": commentaire_risque_j2.text,
         },
         "images": {                              # PNG asset filenames MF publishes
             "danger": image_risque.text,
-            "aspect_rose": image_pente.text,
-            "snow_cover": image_enneigement.text,
-            "fresh_snow": image_neige_fraiche.text,
+            "aspectRose": image_pente.text,
+            "snowCover": image_enneigement.text,
+            "freshSnow": image_neige_fraiche.text,
             "weather": image_meteo.text,
-            "seven_day": image_seven_day.text,
+            "sevenDay": image_seven_day.text,
         },
-        "vigilance_url": "https://vigilance.meteofrance.fr/fr",
-        "mf_internal_id": int(root.attrib["ID"]),
+        "vigilanceUrl": "https://vigilance.meteofrance.fr/fr",
+        "mfInternalId": int(root.attrib["ID"]),
         "amendment": root.attrib["AMENDEMENT"] == "true",
-        "raw_local_times": {                     # for debugging the UTC conversion
-            "issued_at": root.attrib["DATEBULLETIN"],
-            "valid_to": root.attrib["DATEVALIDITE"],
-            "published_at": root.attrib["DATEDIFFUSION"],
+        "rawLocalTimes": {                       # for debugging the UTC conversion
+            "issuedAt": root.attrib["DATEBULLETIN"],
+            "validTo": root.attrib["DATEVALIDITE"],
+            "publishedAt": root.attrib["DATEDIFFUSION"],
         },
-    }
+        "redundantProse": {                      # preserved for completeness; not used by render
+            "accidentel": cartouche.find("ACCIDENTEL").text,
+            "naturel": cartouche.find("NATUREL").text,
+        },
+    },
 }
 ```
 
-Naming convention: `provider_extras.mf.*` (lowercase) so we don't
-accidentally collide with EUREGIO's `customData.ALBINA.*` if the two ever
-sit next to each other in the same canonical bulletin (they won't, but
-the namespacing is cheap).
+camelCase keys mirror the surrounding CAAML JSON convention. The `MF`
+namespace is unique (SLF uses `CH`, EUREGIO uses `ALBINA` and
+`LWD_Tyrol`) — no collision risk.
 
 ## 6. Deliberately dropped DPBRA content
 
@@ -352,11 +385,10 @@ the namespacing is cheap).
 The translator raises `MeteoFranceTranslationError` (one exception class)
 on:
 
-- Missing required attribute (`@MASSIF`, `@DATEBULLETIN`, `@DATEVALIDITE`).
-- Massif not in `liste-massifs` lookup.
+- Missing required attribute (`@ID`, `@MASSIF`, `@DATEBULLETIN`, `@DATEVALIDITE`).
+- `@ID` not in the SNOW-179 catalogue (i.e. unknown massif).
 - Danger level not in `1..5`.
-- SAT code not in `SAT_TO_EAWS` (unless caller opts to soft-fail and stash
-  in `provider_extras`).
+- SAT code not in `SAT_TO_EAWS` (the {1..6} keys defined in §5.4).
 
 The orchestrator catches per-bulletin and increments
 `PipelineRun.records_failed`, matching the existing SLF/EUREGIO behaviour.
@@ -386,12 +418,13 @@ maintain a static "delegated regions" set seeded from the catalogue.
 
 - **Render-model aggregation.** The "blank problem cards" issue lives in
   `build_render_model`, not the translator. Address separately by teaching
-  the builder to fall back to canonical `avalanche_problems` when
+  the builder to fall back to top-level `avalancheProblems` when
   `customData.CH.aggregation` is absent — fixes EUREGIO and MF in one go.
 - **Discovery / HTTP.** The DPBRA endpoint shape (single massif fetch URL,
   rate limits, auth header) is the orchestrator's concern.
-- **Region fixtures.** Loading `liste-massifs.geojson` into `MicroRegion`
-  rows is SNOW-177a.
+- **Region fixtures.** Already loaded by **SNOW-179**
+  (`regions/fixtures/eaws_FR.json` — 35 `MicroRegion` rows, EAWS `FR-NN`
+  IDs 1:1 with MF integer massif codes).
 - **Backfill.** DPBRA has no historical archive in this *XML* format;
   the live API is forward-going only. Pre-2026 data is available as
   PDF from MF's `donneespubliques` portal, and a community project
@@ -448,10 +481,12 @@ and `evolurisque` evolution arrows. Low-cost validation; high signal.
    APIM portal, or (b) catch the first amended bulletin during SNOW-177b
    shadow-mode ingestion — implementation must log `(@ID, @AMENDEMENT)`
    so we can disambiguate when it occurs.
-3. ~~**Massif code scheme.**~~ **Resolved.** Catalogue captured at
-   [`docs/research/meteofrance/massifs.json`](research/meteofrance/massifs.json);
-   longest name is 20 chars, so `SubRegion.prefix max_length=32` is
-   sufficient. No migration needed for existing column widths.
+3. ~~**Massif code scheme.**~~ **Resolved by SNOW-179.** All 35 massifs
+   are already loaded as `MicroRegion` rows in
+   `regions/fixtures/eaws_FR.json`, with `FR-NN` ↔ MF integer ID 1:1
+   (`int("FR-68".split("-")[1]) == 68`). Catalogue cross-reference at
+   [`docs/research/meteofrance/massifs.json`](research/meteofrance/massifs.json).
+   No further fixture or migration work required for ingestion.
 4. ~~**One bulletin per day, or two?**~~ **Resolved.** Guide p.9 (line
    323-324): "Des bulletins quotidiens […] rédigés vers 16 h, ce sont des
    prévisions jusqu'au lendemain soir." Strictly one issue per massif per
