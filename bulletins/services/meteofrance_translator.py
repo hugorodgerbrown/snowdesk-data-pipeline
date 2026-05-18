@@ -435,6 +435,28 @@ def _parse_danger_ratings(
     return danger_ratings, risque1, bulletin_split
 
 
+def _stabilite_texte(stabilite: ET.Element) -> str | None:
+    """
+    Extract the problem prose text from a ``<STABILITE>`` element.
+
+    Prefers ``<TEXTESANSTITRE>`` (without title) over ``<TEXTE>``.
+
+    Args:
+        stabilite: The ``<STABILITE>`` XML element.
+
+    Returns:
+        The stripped text content, or ``None`` when both elements are absent
+        or have no text.
+
+    """
+    texte_el = stabilite.find("TEXTESANSTITRE")
+    if texte_el is None:
+        texte_el = stabilite.find("TEXTE")
+    if texte_el is None or not texte_el.text:
+        return None
+    return texte_el.text.strip() or None
+
+
 def _parse_avalanche_problems(
     stabilite: ET.Element | None,
     aspects: list[str],
@@ -470,10 +492,7 @@ def _parse_avalanche_problems(
     if sit_aval is None:
         return problems
 
-    texte_el = stabilite.find("TEXTESANSTITRE") or stabilite.find("TEXTE")
-    texte_text: str | None = (
-        texte_el.text.strip() if texte_el is not None and texte_el.text else None
-    )
+    texte_text = _stabilite_texte(stabilite)
 
     for slot in ("SAT1", "SAT2"):
         code_raw = sit_aval.attrib.get(slot, "").strip()
