@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Fetch today's Meteo-France BRA (Bulletin Risque Avalanche) XML for every
+# massif ID in the probe range and save each successful response under
+# docs/research/meteofrance/bulletins-YYYY-MM-DD/.
+#
+# Usage:
+#   export MF_TOKEN='<bearer-token>'
+#   bin/fetch-mf-bulletins                  # probes IDs 1..99
+#   bin/fetch-mf-bulletins 1 30             # custom range (inclusive)
+#
+# The MF massif catalogue is sparse (not all integers in 1..99 are valid),
+# so the script treats 404 / empty bodies as "not a massif" and only saves
+# real bulletins. Rate-limited to ~2 req/sec to stay polite to the API.
+
+set -euo pipefail
+
+if [[ -z "${MF_TOKEN:-}" ]]; then
+    echo "error: MF_TOKEN env var is not set" >&2
+    echo "  export MF_TOKEN='<bearer token from Meteo-France portal>'" >&2
+    exit 2
+fi
+
+START_ID="${1:-1}"
+END_ID="${2:-99}"
+TODAY="$(date +%Y-%m-%d)"
+OUT_DIR="docs/research/meteofrance/bulletins-${TODAY}"
+LOG_FILE="${OUT_DIR}/_fetch.log"
+
+mkdir -p "$OUT_DIR"
+: > "$LOG_FILE"
+
+API_BASE="https://public-api.meteofrance.fr/public/DPBRA/v1/massif/BRA"
+
+saved=0
+empty=0
+missing=0
+errors=0
+
+log() {
+    echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG_FILE"
+}
+
+log "Fetching MF BRA bulletins for ${TODAY}, probing massif IDs ${START_ID}..${END_ID}"
+log "Output: ${OUT_DIR}"
+
+for id in $(seq "$START_ID" "$END_ID"); do
+    out_file="${OUT_DIR}/massif-$(printf '%03d' "$id").xml"
+    http_status=$(
+        curl -sS -o "$out_file" -w '%{http_code}' \
+            -H 'accept: */*' \
+            -H "Authorization: Bearer ${MF_TOKEN}" \
+            "${API_BASE}?id-massif=${id}&format=xml" \
+            || echo "000"
+    )
+
+    case "$http_status" in
+        200)
+            # MF returns 200 with an empty / non-XML body for unknown massifs.
+            if [[ ! -s "$out_file" ]] || ! grep -q '<' "$out_file" 2>/dev/null; then
+                rm -f "$out_file"
+                log "massif ${id}: 200 but empty body, skipping"
+                empty=$((empty + 1))
+            else
+                size=$(wc -c <"$out_file" | tr -d ' ')
+                log "massif ${id}: saved (${size} bytes)"
+                saved=$((saved + 1))
+            fi
+            ;;
+        404)
+            rm -f "$out_file"
+            missing=$((missing + 1))
+            ;;
+        401|403)
+            log "massif ${id}: HTTP ${http_status} — token rejected, aborting"
+            log "body: $(head -c 200 "$out_file" 2>/dev/null)"
+            rm -f "$out_file"
+            exit 1
+            ;;
+        429)
+            log "massif ${id}: HTTP 429 rate-limited, sleeping 10s and retrying once"
+            sleep 10
+            http_status=$(
+                curl -sS -o "$out_file" -w '%{http_code}' \
+                    -H 'accept: */*' \
+                    -H "Authorization: Bearer ${MF_TOKEN}" \
+                    "${API_BASE}?id-massif=${id}&format=xml" \
+                    || echo "000"
+            )
+            if [[ "$http_status" == "200" && -s "$out_file" ]]; then
+                log "massif ${id}: saved on retry"
+                saved=$((saved + 1))
+            else
+                log "massif ${id}: retry failed (HTTP ${http_status})"
+                rm -f "$out_file"
+                errors=$((errors + 1))
+            fi
+            ;;
+        *)
+            log "massif ${id}: HTTP ${http_status}"
+            rm -f "$out_file"
+            errors=$((errors + 1))
+            ;;
+    esac
+
+    sleep 0.5
+done
+
+log ""
+log "Summary: saved=${saved}  empty=${empty}  missing=${missing}  errors=${errors}"
+
+if (( saved == 0 )); then
+    echo "warning: no bulletins were saved" >&2
+    exit 1
+fi
