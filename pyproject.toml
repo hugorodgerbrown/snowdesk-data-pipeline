@@ -26,6 +26,7 @@ django-ratelimit = "^4.1.0"
 django-csp-plus = "^3.3.0"
 django-waffle = "^5.0.0"
 webauthn = "^2.7.1"
+defusedxml = "^0.7.1"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.15.13"
@@ -44,6 +45,7 @@ freezegun = "^1.5.5"
 types-bleach = "^6.3.0.20260408"
 shapely = "^2.1.2"
 semgrep = "^1.95"
+types-defusedxml = "^0.7.0.20260504"
 
 [build-system]
 requires = ["poetry-core"]

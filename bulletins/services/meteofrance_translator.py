@@ -30,10 +30,19 @@ from __future__ import annotations
 
 import logging
 import re
-import xml.etree.ElementTree as ET  # noqa: S405 — see _safe_parse comment
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
+
+from defusedxml.ElementTree import ParseError, fromstring
+
+if TYPE_CHECKING:
+    # The ``Element`` type lives in the stdlib; defusedxml.fromstring returns
+    # plain xml.etree.ElementTree.Element instances. This import is type-only —
+    # no parser code reaches xml.etree at runtime — so the
+    # ``use-defused-xml`` rule does not apply.
+    # nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
+    from xml.etree.ElementTree import Element  # noqa: S405
 
 logger = logging.getLogger(__name__)
 
@@ -113,31 +122,27 @@ class MeteoFranceDelegatedRegionError(Exception):
 # ---------------------------------------------------------------------------
 
 
-def _safe_parse(xml_bytes: bytes) -> ET.Element:
+def _safe_parse(xml_bytes: bytes) -> Element:
     """
     Parse DPBRA XML bytes and return the root element.
 
-    Note on S314 (xml.etree.ElementTree known vulnerable): DPBRA XML is
-    fetched from Météo-France's own authenticated API and from a local mirror
-    directory we control. It is not user-supplied input, so the xml.etree
-    attack surface (quadratic blowup, XXE) does not apply here. defusedxml is
-    not listed in ``pyproject.toml`` and adding it for first-party trusted
-    content would be premature. The ``S314`` rule is suppressed at the import
-    via ``# noqa: S405``; individual calls are clean.
+    Parsing goes through ``defusedxml.ElementTree.fromstring`` rather than
+    the stdlib parser to neutralise XXE / entity-bomb attack surface on
+    untrusted third-party input.
 
     Args:
         xml_bytes: Raw XML bytes from the DPBRA API or local mirror.
 
     Returns:
-        The root ``ET.Element``.
+        The root ``Element``.
 
     Raises:
         MeteoFranceTranslationError: The bytes cannot be parsed as XML.
 
     """
     try:
-        return ET.fromstring(xml_bytes)  # noqa: S314
-    except ET.ParseError as exc:
+        return fromstring(xml_bytes)
+    except ParseError as exc:
         raise MeteoFranceTranslationError(f"XML parse error: {exc}") from exc
 
 
@@ -224,7 +229,7 @@ def _parse_plus_one_day(value: str) -> str:
     return dt.isoformat().replace("+00:00", "Z")
 
 
-def _aspects_from_pente(pente: ET.Element) -> list[str]:
+def _aspects_from_pente(pente: Element) -> list[str]:
     """
     Extract the avalanche problem aspects from a ``<PENTE>`` element.
 
@@ -306,7 +311,7 @@ def _evolution_from_levels(today: int, tomorrow: int) -> str:
     return "steady"
 
 
-def _require_attrib(element: ET.Element, name: str) -> str:
+def _require_attrib(element: Element, name: str) -> str:
     """
     Return a required attribute value or raise ``MeteoFranceTranslationError``.
 
@@ -330,7 +335,7 @@ def _require_attrib(element: ET.Element, name: str) -> str:
     return value
 
 
-def _elem_text(element: ET.Element | None) -> str:
+def _elem_text(element: Element | None) -> str:
     """
     Return the stripped text content of an element, or empty string.
 
@@ -356,7 +361,7 @@ def _elem_text(element: ET.Element | None) -> str:
 
 
 def _parse_danger_ratings(
-    risque: ET.Element,
+    risque: Element,
     massif_id: int,
 ) -> tuple[list[dict[str, Any]], int, int | None]:
     """
@@ -435,7 +440,7 @@ def _parse_danger_ratings(
     return danger_ratings, risque1, bulletin_split
 
 
-def _stabilite_texte(stabilite: ET.Element) -> str | None:
+def _stabilite_texte(stabilite: Element) -> str | None:
     """
     Extract the problem prose text from a ``<STABILITE>`` element.
 
@@ -458,7 +463,7 @@ def _stabilite_texte(stabilite: ET.Element) -> str | None:
 
 
 def _parse_avalanche_problems(
-    stabilite: ET.Element | None,
+    stabilite: Element | None,
     aspects: list[str],
     bulletin_split: int | None,
     massif_id: int,
@@ -524,8 +529,8 @@ def _parse_avalanche_problems(
 
 
 def _parse_tendency(
-    risque: ET.Element,
-    cartouche: ET.Element,
+    risque: Element,
+    cartouche: Element,
     risque1: int,
     massif_id: int,
 ) -> list[dict[str, Any]]:
@@ -584,7 +589,7 @@ def _parse_tendency(
     ]
 
 
-def _parse_snowpack_structure(root: ET.Element) -> dict[str, str] | None:
+def _parse_snowpack_structure(root: Element) -> dict[str, str] | None:
     """
     Extract the snowpack-structure comment from ``<QUALITE>/<TEXTE>``.
 
@@ -605,8 +610,8 @@ def _parse_snowpack_structure(root: ET.Element) -> dict[str, str] | None:
 
 
 def _parse_avalanche_activity(
-    cartouche: ET.Element,
-    stabilite: ET.Element | None,
+    cartouche: Element,
+    stabilite: Element | None,
 ) -> dict[str, str]:
     """Build the ``avalancheActivity`` dict from CARTOUCHERISQUE and STABILITE.
 
@@ -636,7 +641,7 @@ def _parse_avalanche_activity(
     return {"highlights": highlights, "comment": activity_comment}
 
 
-def _strip_titre_from_texte(stabilite: ET.Element) -> str:
+def _strip_titre_from_texte(stabilite: Element) -> str:
     """
     Extract the body of ``<TEXTE>`` with the ``<TITRE>`` prefix removed.
 
@@ -663,7 +668,7 @@ def _strip_titre_from_texte(stabilite: ET.Element) -> str:
     return raw_text
 
 
-def _parse_header(root: ET.Element) -> tuple[int, str, str, str, str, bool, str]:
+def _parse_header(root: Element) -> tuple[int, str, str, str, str, bool, str]:
     """
     Parse and validate the root-element scalar attributes of a DPBRA document.
 
@@ -720,10 +725,10 @@ def _parse_header(root: ET.Element) -> tuple[int, str, str, str, str, bool, str]
 
 
 def _require_sub_elements(
-    root: ET.Element,
-    cartouche: ET.Element | None,
+    root: Element,
+    cartouche: Element | None,
     massif_id: int,
-) -> tuple[ET.Element, ET.Element, ET.Element, ET.Element | None]:
+) -> tuple[Element, Element, Element, Element | None]:
     """
     Validate and return the required sub-elements of a DPBRA document.
 
@@ -763,9 +768,9 @@ def _require_sub_elements(
 
 
 def _parse_custom_data_mf(
-    root: ET.Element,
-    cartouche: ET.Element,
-    risque: ET.Element,
+    root: Element,
+    cartouche: Element,
+    risque: Element,
     massif_id: int,
     is_amendment: bool,
     date_bulletin: str,
