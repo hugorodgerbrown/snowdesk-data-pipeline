@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-08 15:58+0000\n"
+"POT-Creation-Date: 2026-05-18 18:59+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,39 +17,6 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
-
-msgid "Stable day"
-msgstr ""
-
-msgid "Low danger and benign problems — manage as usual."
-msgstr ""
-
-msgid "Manageable day"
-msgstr ""
-
-msgid "Moderate to considerable danger — read the terrain carefully."
-msgstr ""
-
-msgid "Hard-to-read day"
-msgstr ""
-
-msgid "Persistent or gliding-snow problems can mask the real risk."
-msgstr ""
-
-msgid "Widespread danger"
-msgstr ""
-
-msgid "Considerable danger across many aspects, elevations, or problems."
-msgstr ""
-
-msgid "Dangerous conditions"
-msgstr ""
-
-msgid "High to very high danger — backcountry travel is not recommended."
-msgstr ""
-
-msgid "Fetch today's weather"
-msgstr ""
 
 msgid "Low (1)"
 msgstr ""
@@ -105,27 +72,51 @@ msgstr ""
 msgid "Favourable situation"
 msgstr ""
 
-msgid "No avalanche problems reported."
+msgid "Stable day"
 msgstr ""
 
-msgid "Open full bulletin →"
+msgid "Low danger and benign problems — manage as usual."
 msgstr ""
 
-msgid "Source:"
+msgid "Manageable day"
 msgstr ""
 
-msgid "SLF"
+msgid "Moderate to considerable danger — read the terrain carefully."
+msgstr ""
+
+msgid "Hard-to-read day"
+msgstr ""
+
+msgid "Persistent or gliding-snow problems can mask the real risk."
+msgstr ""
+
+msgid "Widespread danger"
+msgstr ""
+
+msgid "Considerable danger across many aspects, elevations, or problems."
+msgstr ""
+
+msgid "Dangerous conditions"
+msgstr ""
+
+msgid "High to very high danger — backcountry travel is not recommended."
+msgstr ""
+
+msgid "Fetch today's weather"
+msgstr ""
+
+msgid "Slab"
+msgstr ""
+
+msgid "Loose"
 msgstr ""
 
 #, python-format
-msgid "Published %(t)s UTC"
-msgstr ""
-
-msgid "Report observations ↗"
+msgid "Open bulletin for %(d)s →"
 msgstr ""
 
 #, python-format
-msgid "Open the %(region)s bulletin"
+msgid "No bulletin available for %(d)s"
 msgstr ""
 
 #, python-format
@@ -137,7 +128,9 @@ msgid ""
 "target=\"_blank\" rel=\"noopener\" >CC BY 4.0</a> &middot; <a "
 "class=\"underline hover:text-text-2\" href=\"%(terms_url)s\">Terms</a> "
 "&middot; <a class=\"underline hover:text-text-2\" "
-"href=\"%(colophon_url)s\">Colophon</a>"
+"href=\"%(privacy_url)s\">Privacy</a> &middot; <a class=\"underline "
+"hover:text-text-2\" href=\"%(tos_url)s\">Terms of Service</a> &middot; <a "
+"class=\"underline hover:text-text-2\" href=\"%(colophon_url)s\">Colophon</a>"
 msgstr ""
 
 msgid "An updated version is available."
@@ -178,7 +171,13 @@ msgstr ""
 msgid "Avalanche Problems"
 msgstr ""
 
+msgid "No avalanche problems reported."
+msgstr ""
+
 msgid "The snowpack is stable. Conditions are favourable."
+msgstr ""
+
+msgid "Avalanche Activity"
 msgstr ""
 
 msgid "Snowpack & Weather"
@@ -345,6 +344,429 @@ msgstr ""
 msgid "Explore the map →"
 msgstr ""
 
+msgid "How to read a bulletin"
+msgstr ""
+
+msgid ""
+"A guide to reading the SLF Swiss avalanche bulletin — danger levels, problem "
+"types, elevation and aspect, and how the day evolves."
+msgstr ""
+
+msgid "How to read the avalanche bulletin"
+msgstr ""
+
+msgid ""
+"Published daily by the WSL Institute for Snow and Avalanche Research (SLF), "
+"the bulletin covers the Swiss Alps and Jura. It is an informed forecast — "
+"not a guarantee — and cannot replace an on-site assessment. This guide "
+"follows the same structure as the bulletin page itself: Day Risk Profile, "
+"Avalanche Problems, and Snowpack &amp; Weather."
+msgstr ""
+
+msgid "The danger level"
+msgstr ""
+
+msgid "The bulletin uses the five-point European avalanche danger scale."
+msgstr ""
+
+msgid "Level 2 — moderate — as it appears on the bulletin day strip."
+msgstr ""
+
+#, python-format
+msgid ""
+"Danger increases disproportionately — the jump from level 2 to 3 is far more "
+"significant than the numbers suggest. Around 50%% of avalanche fatalities "
+"occur at level 3, 30%% at level 2."
+msgstr ""
+
+msgid "Level"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "Characteristics"
+msgstr ""
+
+msgid "Low"
+msgstr ""
+
+msgid ""
+"Generally favourable. Avalanches only in isolated cases on extremely steep "
+"slopes."
+msgstr ""
+
+msgid "Moderate"
+msgstr ""
+
+msgid ""
+"Mostly favourable. Avalanches possible on steep slopes with the indicated "
+"aspects and elevation."
+msgstr ""
+
+msgid "Considerable"
+msgstr ""
+
+msgid ""
+"Critical. Avalanches can be easily triggered on steep slopes; natural "
+"avalanches and remote triggering possible."
+msgstr ""
+
+msgid "High"
+msgstr ""
+
+msgid ""
+"Very critical. Natural avalanches likely; easily triggered on many steep "
+"slopes."
+msgstr ""
+
+msgid "Very high"
+msgstr ""
+
+msgid "Extraordinary. Numerous very large natural avalanches expected."
+msgstr ""
+
+#, python-format
+msgid ""
+"In Swiss bulletin data covering October 2025 to May 2026, the distribution "
+"across 2,159 bulletins was: low 20%%, moderate 54%%, considerable 35%%, high "
+"5%%, very high &lt;1%%. (Some bulletins carry two danger levels for "
+"different times of day; these percentages reflect the all-day rating.)"
+msgstr ""
+
+msgid "Subdivisions (–, =, +)"
+msgstr ""
+
+msgid ""
+"At level 2 and above with dry-snow danger, the SLF subdivides each level "
+"into three positions: – (minus) towards the bottom, = (neutral) in the "
+"middle, and + (plus) towards the top."
+msgstr ""
+
+msgid ""
+"3– — considerable danger towards the lower end of the level, sitting just "
+"above the level 2/3 boundary."
+msgstr ""
+
+msgid ""
+"This reflects the fact that avalanche danger is a continuous spectrum, not a "
+"step function. A rating of 3– sits just above the level 2/3 boundary; 3+ is "
+"just below level 4."
+msgstr ""
+
+msgid "Subdivision only applies to dry-snow danger. It is never assigned to:"
+msgstr ""
+
+msgid ""
+"Level 1 (low) — confirmed across all 2,159 bulletins in the dataset; not a "
+"single low rating carries a subdivision"
+msgstr ""
+
+msgid ""
+"Wet-snow hazards — wet snow and gliding snow are not assessed with "
+"subdivisions"
+msgstr ""
+
+msgid ""
+"The afternoon period — the later danger rating is always wet, so subdivision "
+"never appears there"
+msgstr ""
+
+msgid "A missing subdivision means \"not applicable\", not \"neutral\"."
+msgstr ""
+
+msgid "How the day evolves"
+msgstr ""
+
+#, python-format
+msgid ""
+"Most bulletins describe a single, stable hazard picture for the whole day. "
+"In about 8%% of cases, a second danger level applies in the afternoon — "
+"always wet snow or gliding snow, emerging as temperatures rise."
+msgstr ""
+
+msgid ""
+"Considerable– all morning; moderate wet-snow risk developing later in the "
+"afternoon."
+msgstr ""
+
+msgid ""
+"All bulletins where the afternoon differs from the morning involve wet snow "
+"or gliding snow. Dry hazards never appear as a later-in-the-day entry — dry "
+"snowpack problems are weather-independent within a single day, while wet "
+"hazards are driven by daytime heating."
+msgstr ""
+
+msgid "Pattern"
+msgstr ""
+
+msgid "Frequency"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Dry only, all day"
+msgstr ""
+
+msgid "A single dry hazard with no wet component."
+msgstr ""
+
+msgid "Dry and wet simultaneously"
+msgstr ""
+
+msgid ""
+"Both dry (above an elevation) and wet (below it) are active all day — often "
+"after rain at lower elevations with new snow higher up."
+msgstr ""
+
+msgid "Dry all day, wet emerging later"
+msgstr ""
+
+msgid ""
+"Morning is dominated by dry hazard; afternoon brings wet snow as "
+"temperatures rise."
+msgstr ""
+
+msgid "Wet only, all day"
+msgstr ""
+
+msgid "No dry hazard — typically low-elevation regions or late spring."
+msgstr ""
+
+msgid ""
+"When the afternoon brings a higher danger level than the morning, timing is "
+"critical: aim to complete exposed terrain before the snow softens. On east-"
+"facing slopes this may mean before midday; on west-facing slopes it may be "
+"mid-afternoon. The bulletin cannot pin down the exact transition time — it "
+"depends on aspect, elevation, and conditions on the day."
+msgstr ""
+
+msgid ""
+"The bulletin assesses dry and wet avalanche hazards separately. These are "
+"fundamentally different in cause, location, and behaviour."
+msgstr ""
+
+msgid "Dry avalanches"
+msgstr ""
+
+msgid ""
+"Caused by structural weaknesses in the snowpack — new snow loading, wind-"
+"deposited slabs, or persistent buried weak layers. Dry hazard is always "
+"present throughout the day and always applies above a minimum elevation."
+msgstr ""
+
+msgid ""
+"New snow at moderate danger — widespread across all aspects above 1600m."
+msgstr ""
+
+msgid ""
+"Persistent weak layers at considerable danger — shaded aspects above 2600m. "
+"This hazard can remain active for weeks and avalanche-prone terrain is hard "
+"to identify by eye."
+msgstr ""
+
+msgid "Problem type"
+msgstr ""
+
+msgid ""
+"Recent snowfall loading the existing snowpack. Typically widespread across "
+"all aspects."
+msgstr ""
+
+msgid ""
+"Wind-deposited snow on leeward slopes, gullies, and bowls. Localised but "
+"often hard to spot when buried."
+msgstr ""
+
+msgid ""
+"Buried weak layers — faceted crystals, depth hoar, surface hoar — that can "
+"remain reactive for weeks. Dangerous because avalanche-prone locations are "
+"barely recognisable even to trained eyes. The dominant winter hazard."
+msgstr ""
+
+msgid ""
+"No clear dry hazard pattern. Not equivalent to no danger — any avalanche "
+"type remains possible. Typically used at level 1."
+msgstr ""
+
+msgid "Wet avalanches"
+msgstr ""
+
+msgid ""
+"Caused by liquid water weakening the snowpack, from melt or rain. The only "
+"hazard type that is time-dependent — it can emerge or intensify as the day "
+"warms."
+msgstr ""
+
+msgid ""
+"Wet snow at moderate danger — E to W facing slopes below 2200m, emerging in "
+"the afternoon as solar heating progresses."
+msgstr ""
+
+msgid ""
+"Gliding snow at moderate danger — south-facing slopes below 1800m, active "
+"all day. Release timing is unpredictable; glide cracks are a warning sign "
+"but not a reliable predictor."
+msgstr ""
+
+msgid ""
+"Snowpack weakened by melt or rain. Mainly natural avalanches. Solar "
+"radiation and aspect determine which slopes are affected first. Timing is "
+"critical — east-facing slopes warm earlier than west-facing ones."
+msgstr ""
+
+msgid ""
+"The entire snowpack slides on a smooth substrate (grass, rock). Almost "
+"exclusively natural; human triggering is virtually impossible. Glide cracks "
+"are a warning sign but release timing is unpredictable. Can occur at any "
+"time of day, including overnight."
+msgstr ""
+
+msgid "Elevation and aspect"
+msgstr ""
+
+msgid ""
+"Dry hazards apply above an elevation threshold; wet hazards apply below one "
+"— the same boundary approached from opposite sides."
+msgstr ""
+
+msgid ""
+"Wind slab: hazard above 2400m — dry problems always use a lower elevation "
+"bound."
+msgstr ""
+
+msgid ""
+"Wet snow: hazard below 2200m — wet problems always use an upper elevation "
+"bound, marking the freeze-thaw or rain/snow line."
+msgstr ""
+
+msgid "Elevation"
+msgstr ""
+
+msgid ""
+"boundaries are approximate — conditions change gradually, not sharply. A "
+"±200 m margin is reasonable. A slope near the boundary may sit in a "
+"transition area where either the more or less favourable situation applies."
+msgstr ""
+
+msgid "Aspects"
+msgstr ""
+
+msgid ""
+"are compass directions of affected slopes. The convention is: a north-facing "
+"slope falls to the north — you stand at the top, facing north, and the slope "
+"drops away below you. North-facing slopes receive no direct solar radiation "
+"in mid-winter; south-facing slopes receive regular sunshine year-round."
+msgstr ""
+
+msgid ""
+"When the bulletin cites specific aspects and an elevation, the stated danger "
+"level applies to slopes satisfying both criteria. A common rule of thumb for "
+"slopes outside the stated zone: assume one danger level lower. This is a "
+"guideline, not a guarantee."
+msgstr ""
+
+msgid ""
+"When no aspects or elevation are given for a wet hazard, the danger is "
+"region-wide and not spatially constrained."
+msgstr ""
+
+msgid "Multiple problem types"
+msgstr ""
+
+msgid ""
+"A single problem card can cite two problem types when both contribute to the "
+"danger in the same area, at the same elevation, on the same aspects."
+msgstr ""
+
+msgid ""
+"Wind slab and persistent weak layers sharing the same terrain — two labels, "
+"one danger zone."
+msgstr ""
+
+msgid ""
+"They are two labels for one danger zone, not two independent hazards with "
+"different locations. When two problem types are grouped together, they "
+"always share identical spatial constraints and description text."
+msgstr ""
+
+#, python-format
+msgid ""
+"Multiple problem types within one card occur in around 47%% of bulletins. "
+"The most common pairing is wind slab and persistent weak layers."
+msgstr ""
+
+msgid "Snowpack &amp; Weather"
+msgstr ""
+
+msgid ""
+"Each bulletin includes four prose sections, updated once daily in the "
+"evening. They expand on demand on the bulletin page."
+msgstr ""
+
+msgid "Snowpack"
+msgstr ""
+
+msgid ""
+"Describes the layering and stability of the snowpack across the region. "
+"Explains why the danger is as it is. Mentions observed avalanche activity. "
+"Most directly useful for planning."
+msgstr ""
+
+msgid "Weather review"
+msgstr ""
+
+msgid ""
+"Summarises what actually happened in the preceding period. Provides context "
+"for why the snowpack is in its current state."
+msgstr ""
+
+msgid "Weather forecast"
+msgstr ""
+
+msgid ""
+"Covers the next 24 hours: fresh snow amounts, temperature, wind. The danger "
+"assessment is built on this forecast; if actual weather deviates, the danger "
+"may differ."
+msgstr ""
+
+msgid "Outlook"
+msgstr ""
+
+msgid ""
+"Indicative assessment for the two days after the bulletin's validity period. "
+"Less detailed but useful for multi-day planning."
+msgstr ""
+
+msgid "Limitations"
+msgstr ""
+
+msgid ""
+"The bulletin is a regional forecast. It cannot assess individual slopes — it "
+"can only indicate which types of terrain (aspect, elevation, steepness) "
+"carry the indicated danger. Local conditions always require on-site "
+"assessment."
+msgstr ""
+
+msgid ""
+"Boundaries between regions, elevation bands, and aspects are gradual, not "
+"sharp. A slope near the boundary of the stated zone may sit in a transition "
+"area where either the more or less favourable situation applies."
+msgstr ""
+
+msgid ""
+"The bulletin applies exclusively to unsecured terrain away from prepared "
+"pistes and marked ski runs."
+msgstr ""
+
+msgid ""
+"Data findings in this document are derived from analysis of 2,159 Swiss "
+"avalanche bulletins (October 2025 – May 2026) from the SLF CAAML API. "
+"Definitions and qualitative descriptions are drawn from the SLF Avalanche "
+"Bulletin Interpretation Guide, Edition November 2025."
+msgstr ""
+
 msgid "Snowdesk — Avalanche map"
 msgstr ""
 
@@ -353,7 +775,7 @@ msgid ""
 "danger rating, headline problem, and nearby resorts."
 msgstr ""
 
-msgid "Find a region or resort"
+msgid "Find a region"
 msgstr ""
 
 msgid "Choose basemap"
@@ -380,13 +802,25 @@ msgstr ""
 msgid "Resorts"
 msgstr ""
 
+msgid "Countries"
+msgstr ""
+
+msgid "Switzerland"
+msgstr ""
+
+msgid "France"
+msgstr ""
+
+msgid "Austria"
+msgstr ""
+
+msgid "Italy"
+msgstr ""
+
 msgid "Options"
 msgstr ""
 
 msgid "Auto-zoom"
-msgstr ""
-
-msgid "Close"
 msgstr ""
 
 msgid "Avalanche danger legend"
@@ -448,6 +882,211 @@ msgstr ""
 msgid "Loading…"
 msgstr ""
 
+msgid "Privacy Policy"
+msgstr ""
+
+msgid ""
+"How Snowdesk collects, uses, and protects your personal data. UK GDPR "
+"privacy policy."
+msgstr ""
+
+msgid ""
+"Snowdesk &middot; snowdesk.info &middot; Effective 1 November 2026 &middot; "
+"Version 1.0"
+msgstr ""
+
+msgid "The short version:"
+msgstr ""
+
+msgid ""
+"We collect your email address only if you choose to subscribe to bulletin "
+"notifications. We don't sell your data. We don't track you across the web. "
+"We don't use advertising or analytics cookies."
+msgstr ""
+
+msgid "1. Who we are"
+msgstr ""
+
+msgid ""
+"Snowdesk is operated by Henri Tamboral, an individual based in London, UK. "
+"Snowdesk is a free service that displays Swiss avalanche bulletins published "
+"by the WSL Institute for Snow and Avalanche Research (SLF). There are no "
+"employees; all operations are carried out by the sole operator."
+msgstr ""
+
+msgid ""
+"Questions about this policy? Email: <a class=\"underline\" "
+"href=\"mailto:privacy@snowdesk.info\">privacy@snowdesk.info</a>"
+msgstr ""
+
+msgid "2. What data we collect"
+msgstr ""
+
+msgid "2a. Subscriptions"
+msgstr ""
+
+msgid ""
+"If you subscribe to bulletin email notifications, we collect your email "
+"address. That is the only personal data we ever ask for. We collect it only "
+"when you actively sign up — we never collect it passively."
+msgstr ""
+
+msgid "2b. Location"
+msgstr ""
+
+msgid ""
+"The interactive map can use your browser's optional geolocation to centre "
+"the map on your current position. This happens entirely in your browser — "
+"your location is never transmitted to or stored by Snowdesk."
+msgstr ""
+
+msgid "2c. Session data"
+msgstr ""
+
+msgid ""
+"We use a session cookie that is strictly necessary for the site to function. "
+"It contains no personal information and expires when you close your browser. "
+"No consent is required for this cookie under UK PECR."
+msgstr ""
+
+msgid "2d. Server logs"
+msgstr ""
+
+msgid ""
+"Our server automatically records standard technical information when you "
+"visit: your IP address, the page you requested, and the time of the request. "
+"We use this only to keep the service running and to investigate errors. Logs "
+"are retained for 14 days and then deleted."
+msgstr ""
+
+msgid "3. Why we use your data"
+msgstr ""
+
+msgid "We process your data under the following legal bases (UK GDPR):"
+msgstr ""
+
+msgid ""
+"<strong>Email address</strong> — consent. You gave it to us voluntarily when "
+"you subscribed, and you can withdraw it at any time by unsubscribing."
+msgstr ""
+
+msgid ""
+"<strong>Session data and server logs</strong> — legitimate interest. We need "
+"these to keep the service secure and operational."
+msgstr ""
+
+msgid "4. How long we keep your data"
+msgstr ""
+
+msgid ""
+"<strong>Email address</strong> — kept for as long as your subscription is "
+"active. Deleted within 30 days of unsubscribing or on request."
+msgstr ""
+
+msgid "<strong>Location</strong> — never stored."
+msgstr ""
+
+msgid "<strong>Server logs</strong> — 14 days."
+msgstr ""
+
+msgid "5. Who we share your data with"
+msgstr ""
+
+msgid "We do not sell, rent, or trade your personal data with anyone."
+msgstr ""
+
+msgid "We use a small number of trusted service providers to operate Snowdesk:"
+msgstr ""
+
+msgid ""
+"<strong>Render</strong> (render.com) — hosts the Snowdesk servers. Your IP "
+"address and request data pass through their infrastructure."
+msgstr ""
+
+msgid ""
+"<strong>Resend</strong> (resend.com) — sends your bulletin notification "
+"emails. They receive your email address for this purpose only."
+msgstr ""
+
+msgid ""
+"<strong>Open-Meteo</strong> (open-meteo.com) — provides weather data "
+"displayed on bulletin pages. No personal data is shared with them."
+msgstr ""
+
+msgid ""
+"<strong>SLF / WSL</strong> — provides the avalanche bulletin data. No "
+"personal data is shared with them."
+msgstr ""
+
+msgid ""
+"All providers are contractually required to handle your data in compliance "
+"with UK GDPR. We do not use any advertising networks or analytics platforms."
+msgstr ""
+
+msgid "6. Your rights"
+msgstr ""
+
+msgid "Under UK GDPR, you have the right to:"
+msgstr ""
+
+msgid "Access the personal data we hold about you"
+msgstr ""
+
+msgid "Correct inaccurate data"
+msgstr ""
+
+msgid "Request deletion of your data (&ldquo;right to be forgotten&rdquo;)"
+msgstr ""
+
+msgid "Object to processing"
+msgstr ""
+
+msgid "Withdraw consent at any time"
+msgstr ""
+
+msgid ""
+"To exercise any of these rights, email <a class=\"underline\" "
+"href=\"mailto:privacy@snowdesk.info\">privacy@snowdesk.info</a>. We will "
+"respond within 30 days."
+msgstr ""
+
+msgid ""
+"You also have the right to lodge a complaint with the UK Information "
+"Commissioner's Office (ICO) at <a class=\"underline\" href=\"https://"
+"ico.org.uk\" target=\"_blank\" rel=\"noopener\">ico.org.uk</a>."
+msgstr ""
+
+msgid "7. Children"
+msgstr ""
+
+msgid ""
+"Snowdesk is a publicly accessible information service. We do not knowingly "
+"collect personal data from children under 13. If you believe a child under "
+"13 has subscribed, please contact us at <a class=\"underline\" "
+"href=\"mailto:privacy@snowdesk.info\">privacy@snowdesk.info</a> and we will "
+"delete the data without delay."
+msgstr ""
+
+msgid "8. Cookies"
+msgstr ""
+
+msgid ""
+"Snowdesk uses one strictly necessary session cookie. It is set automatically "
+"when you visit the site, contains no personal information, and expires when "
+"you close your browser. Because it is strictly necessary, no consent banner "
+"is required under UK PECR. We do not use tracking, analytics, or advertising "
+"cookies of any kind."
+msgstr ""
+
+msgid "9. Changes to this policy"
+msgstr ""
+
+msgid ""
+"If we make material changes to this policy, we will update the effective "
+"date at the top and notify subscribers by email. Continued use of Snowdesk "
+"after changes constitutes acceptance."
+msgstr ""
+
 msgid "Terms"
 msgstr ""
 
@@ -473,13 +1112,35 @@ msgstr ""
 msgid "Snowdesk is not a substitute for the official bulletin"
 msgstr ""
 
-msgid "[Awaiting legal copy — to be authored by Hugo.]"
+msgid ""
+"Snowdesk renders avalanche bulletins published by SLF. It is an information "
+"service only — it does not replace the official SLF bulletin, professional "
+"avalanche training, or your own assessment of conditions in the field. "
+"Always verify current conditions directly with SLF before venturing into "
+"avalanche terrain."
 msgstr ""
 
 msgid "Always consult SLF and make your own on-site assessment"
 msgstr ""
 
+msgid ""
+"Avalanche conditions change rapidly and vary with aspect, elevation, and "
+"recent weather. No digital service can capture every local hazard. Before "
+"entering avalanche terrain, check the official SLF bulletin at <a "
+"class=\"underline\" href=\"https://www.avalanches.org\" target=\"_blank\" "
+"rel=\"noopener\" >avalanches.org</a>, seek current local knowledge, and make "
+"your own on-site assessment. Your safety is your responsibility."
+msgstr ""
+
 msgid "Limitation of liability"
+msgstr ""
+
+msgid ""
+"To the maximum extent permitted by law, Snowdesk and its operator shall not "
+"be liable for any loss, injury, or damage arising from your use of, or "
+"reliance on, information displayed on this site. Snowdesk is provided \"as "
+"is\", without warranties of any kind, including accuracy, timeliness, or "
+"completeness."
 msgstr ""
 
 msgid "SLF's own no-liability clause"
@@ -488,8 +1149,192 @@ msgstr ""
 msgid ""
 "Per the SLF <a class=\"underline\" href=\"https://www.slf.ch/en/services-and-"
 "products/slf-data-service/\" target=\"_blank\" rel=\"noopener\" >data-"
-"service terms of use</a>, SLF accepts no liability for the delivery of "
-"bulletin data. [Detailed wording to be authored by Hugo.]"
+"service terms of use</a>, SLF makes bulletin data available for information "
+"purposes only and accepts no liability for the delivery of that data or for "
+"decisions made on the basis of it."
+msgstr ""
+
+msgid "Terms of Service"
+msgstr ""
+
+msgid ""
+"Snowdesk Terms of Service — what the service is, how to use it safely, and "
+"the legal terms that apply."
+msgstr ""
+
+msgid "Plain English first:"
+msgstr ""
+
+msgid ""
+"Snowdesk is a free avalanche information service. It does not replace the "
+"official SLF bulletin, professional avalanche training, or your own "
+"judgement in the mountains. Your safety is your responsibility."
+msgstr ""
+
+msgid "1. About Snowdesk"
+msgstr ""
+
+msgid ""
+"Snowdesk is operated by Henri Tamboral (\"I\", \"me\", \"my\"), an "
+"individual based in London, UK. Snowdesk displays Swiss avalanche bulletins "
+"published by the WSL Institute for Snow and Avalanche Research (SLF) and "
+"provides optional email notifications for subscribed regions. There are no "
+"employees; the service is run entirely by the sole operator."
+msgstr ""
+
+msgid "2. Acceptance of terms"
+msgstr ""
+
+msgid ""
+"By accessing Snowdesk at snowdesk.info, you agree to these Terms of Service. "
+"If you do not agree, please do not use the service."
+msgstr ""
+
+msgid "3. The service"
+msgstr ""
+
+msgid "Snowdesk provides:"
+msgstr ""
+
+msgid "A viewer for Swiss avalanche bulletins published by SLF"
+msgstr ""
+
+msgid "An interactive map showing current avalanche danger ratings by region"
+msgstr ""
+
+msgid ""
+"Optional email notifications when new bulletins are published for subscribed "
+"regions"
+msgstr ""
+
+msgid ""
+"Snowdesk is provided free of charge. I reserve the right to change, suspend, "
+"or discontinue any part of the service at any time without notice."
+msgstr ""
+
+msgid "4. Safety — please read this"
+msgstr ""
+
+msgid ""
+"Avalanche bulletins are a forecast tool, not a guarantee of safe conditions. "
+"Snowdesk is an information service only — it does not replace the official "
+"SLF bulletin, professional avalanche training, or your own assessment of "
+"conditions in the field."
+msgstr ""
+
+msgid ""
+"Avalanche conditions change rapidly and vary with aspect, elevation, and "
+"recent weather. No digital service can capture every local hazard."
+msgstr ""
+
+msgid "Before entering avalanche terrain, you should:"
+msgstr ""
+
+msgid ""
+"Check the official SLF bulletin at <a class=\"underline\" href=\"https://"
+"www.avalanches.org\" target=\"_blank\" rel=\"noopener\" >avalanches.org</a>"
+msgstr ""
+
+msgid "Seek current local knowledge from guides, hut keepers, or ski patrol"
+msgstr ""
+
+msgid "Make your own on-site assessment of conditions"
+msgstr ""
+
+msgid "Your safety in the mountains is your own responsibility."
+msgstr ""
+
+msgid "5. Intellectual property"
+msgstr ""
+
+msgid ""
+"Snowdesk's original content — including the interface, design, and copy — is "
+"owned by Henri Tamboral. You may view it for personal, non-commercial use. "
+"You may not reproduce, redistribute, or republish it without permission."
+msgstr ""
+
+msgid ""
+"The avalanche bulletin data displayed on Snowdesk is published by the <a "
+"class=\"underline\" href=\"https://www.slf.ch\" target=\"_blank\" "
+"rel=\"noopener\" >WSL Institute for Snow and Avalanche Research SLF</a> and "
+"licensed under <a class=\"underline\" href=\"https://creativecommons.org/"
+"licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\" >CC BY 4.0</a>. That "
+"data remains SLF's intellectual property."
+msgstr ""
+
+msgid "6. Email subscriptions"
+msgstr ""
+
+msgid ""
+"You can subscribe to receive email notifications when new avalanche "
+"bulletins are published for one or more Swiss regions. To subscribe, you "
+"provide your email address. By subscribing you agree to receive those "
+"notifications."
+msgstr ""
+
+msgid ""
+"You can unsubscribe at any time by clicking the unsubscribe link in any "
+"email we send you. We will not send you anything other than bulletin "
+"notifications and essential service messages."
+msgstr ""
+
+msgid "7. Acceptable use"
+msgstr ""
+
+msgid "You agree not to:"
+msgstr ""
+
+msgid ""
+"Scrape or republish SLF bulletin data commercially without SLF's permission "
+"(the data is licensed under CC BY 4.0 and remains SLF's property)"
+msgstr ""
+
+msgid "Attempt to gain unauthorised access to Snowdesk's systems or data"
+msgstr ""
+
+msgid "Use the service in any way that violates applicable law"
+msgstr ""
+
+msgid "8. Limitation of liability"
+msgstr ""
+
+msgid ""
+"To the maximum extent permitted by law, Snowdesk and its operator shall not "
+"be liable for any direct, indirect, incidental, or consequential loss "
+"arising from your use of — or inability to use — this service. This "
+"includes, without limitation, any decisions made on the basis of avalanche "
+"information displayed on Snowdesk."
+msgstr ""
+
+msgid ""
+"Snowdesk is provided \"as is\" without warranties of any kind, including "
+"accuracy, timeliness, or fitness for a particular purpose."
+msgstr ""
+
+msgid "9. Governing law"
+msgstr ""
+
+msgid ""
+"These terms are governed by the laws of England and Wales. Any disputes "
+"shall be subject to the exclusive jurisdiction of the courts of England and "
+"Wales."
+msgstr ""
+
+msgid "10. Changes to these terms"
+msgstr ""
+
+msgid ""
+"We may update these terms from time to time. We will update the effective "
+"date at the top. Continued use of Snowdesk after changes constitutes "
+"acceptance of the revised terms."
+msgstr ""
+
+msgid "11. Contact"
+msgstr ""
+
+msgid ""
+"Questions about these terms? Email: <a class=\"underline\" "
+"href=\"mailto:privacy@snowdesk.info\">privacy@snowdesk.info</a>"
 msgstr ""
 
 msgid "Elevation: above lower bound"
@@ -499,18 +1344,6 @@ msgid "Elevation: below upper bound"
 msgstr ""
 
 msgid "Elevation: between bounds"
-msgstr ""
-
-msgid "Low"
-msgstr ""
-
-msgid "Moderate"
-msgstr ""
-
-msgid "Considerable"
-msgstr ""
-
-msgid "High"
 msgstr ""
 
 msgid "Very High"
@@ -546,9 +1379,6 @@ msgstr ""
 msgid "Very critical off-piste conditions"
 msgstr ""
 
-msgid "Very high"
-msgstr ""
-
 msgid "Do not enter avalanche terrain"
 msgstr ""
 
@@ -556,9 +1386,6 @@ msgid "No rating available"
 msgstr ""
 
 msgid "No distinct problem"
-msgstr ""
-
-msgid "Dry avalanches"
 msgstr ""
 
 msgid "Wet-snow avalanches"
@@ -680,10 +1507,39 @@ msgstr[1] ""
 msgid "Remove"
 msgstr ""
 
+msgid "View on map"
+msgstr ""
+
 msgid "You have no active subscriptions."
 msgstr ""
 
 msgid "Choose more regions on the map →"
+msgstr ""
+
+msgid "Passkeys"
+msgstr ""
+
+msgid "Sign in faster with a passkey"
+msgstr ""
+
+msgid ""
+"Save a passkey for this device and you won't need a magic link next time."
+msgstr ""
+
+msgid "Save a passkey for this device"
+msgstr ""
+
+#, python-format
+msgid "Last used %(date)s"
+msgstr ""
+
+msgid "Never used"
+msgstr ""
+
+msgid "Remove this passkey?"
+msgstr ""
+
+msgid "Add a passkey for this device"
 msgstr ""
 
 msgid "Unsubscribe from all alerts and delete your account?"
@@ -692,14 +1548,7 @@ msgstr ""
 msgid "Unsubscribe from all alerts"
 msgstr ""
 
-msgid ""
-"Enter your email address and we'll send you a link to manage your regions."
-msgstr ""
-
-msgid "Email address"
-msgstr ""
-
-msgid "Send account link"
+msgid "Passkey registration failed. Please try again."
 msgstr ""
 
 msgid "Subscriptions saved — Snowdesk"
@@ -766,6 +1615,35 @@ msgstr ""
 msgid "You're already subscribed to <strong>%(region)s</strong>"
 msgstr ""
 
+msgid "Sign in — Snowdesk"
+msgstr ""
+
+msgid "Sign in to manage your Snowdesk avalanche bulletin subscriptions."
+msgstr ""
+
+msgid "Sign in"
+msgstr ""
+
+msgid "Enter your email address and we'll send you a sign-in link."
+msgstr ""
+
+msgid "Email address"
+msgstr ""
+
+msgid "Send sign-in link"
+msgstr ""
+
+msgid "Sign in with a passkey"
+msgstr ""
+
+msgid ""
+"The passkey you used could not be found on Snowdesk. Please try a different "
+"passkey or use the sign-in link."
+msgstr ""
+
+msgid "Sign-in failed. Please try again or use the sign-in link."
+msgstr ""
+
 msgid "Unsubscribe — Snowdesk"
 msgstr ""
 
@@ -798,6 +1676,9 @@ msgstr ""
 msgid "You will no longer receive avalanche bulletin alerts for that region."
 msgstr ""
 
+msgid "No data supplied"
+msgstr ""
+
 msgid "Sunrise"
 msgstr ""
 
@@ -817,7 +1698,16 @@ msgstr ""
 msgid "Season"
 msgstr ""
 
-msgid "Admin"
+msgid "Account menu"
+msgstr ""
+
+msgid "Manage alerts"
+msgstr ""
+
+msgid "Sign out"
+msgstr ""
+
+msgid "Admin menu"
 msgstr ""
 
 msgid "Component library"

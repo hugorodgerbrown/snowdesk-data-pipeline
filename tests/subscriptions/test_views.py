@@ -716,6 +716,65 @@ class TestManageViewAuthenticated:
         assert b"map" in response.content.lower()
         assert b"/map/" in response.content
 
+    def test_card_shows_bulletin_link(self):
+        """Each card links to the region's evergreen bulletin URL with today's date label."""
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = _make_session_client(subscriber)
+
+        with freeze_time("2026-05-18"):
+            response = client.get(reverse("subscriptions:manage"))
+
+        assert response.status_code == 200
+        bulletin_url = region.get_absolute_url().encode()
+        assert bulletin_url in response.content
+        # Date formatted as j N Y (day month year, no leading zero)
+        assert b"18 May 2026" in response.content
+        assert b"Open bulletin for" in response.content
+
+    def test_card_shows_map_link(self):
+        """Each card contains a direct link to /map/#<canonical_region_id>."""
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create(region_id="CH-1234")
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("subscriptions:manage"))
+
+        assert response.status_code == 200
+        assert b"/map/#ch-1234" in response.content
+
+    def test_card_shows_breadcrumb(self):
+        """Each card renders the L1 (MajorRegion) and L2 (SubRegion) names in the breadcrumb."""
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("subscriptions:manage"))
+
+        assert response.status_code == 200
+        # SubFactory chain: MicroRegion → SubRegion → MajorRegion
+        subregion_name = region.subregion.name_en or region.subregion.name_native
+        major_name = (
+            region.subregion.major.name_en or region.subregion.major.name_native
+        )
+        assert subregion_name.encode() in response.content
+        assert major_name.encode() in response.content
+
+    def test_card_shows_country_flag_and_region_id(self):
+        """Each card renders a flag <use> reference and the case-preserved region_id."""
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("subscriptions:manage"))
+
+        assert response.status_code == 200
+        # Flag sprite use reference for CH
+        assert b'href="#flag-ch"' in response.content
+        # Case-preserved region_id appears in the badge
+        assert b"CH-4115" in response.content
+
 
 # ---------------------------------------------------------------------------
 # remove_region
