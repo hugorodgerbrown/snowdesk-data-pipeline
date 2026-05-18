@@ -410,7 +410,7 @@ class TestFetchBulletinsSourceDispatch:
 
         _, kwargs = mock_slf.call_args
         assert "fetch_bulletins" in kwargs["triggered_by"]
-        assert "slf" in kwargs["triggered_by"]
+        assert "SLF" in kwargs["triggered_by"]
 
     @patch(PATCH_EUREGIO)
     @patch(PATCH_SLF)
@@ -424,7 +424,7 @@ class TestFetchBulletinsSourceDispatch:
 
         _, kwargs = mock_euregio.call_args
         assert "fetch_bulletins" in kwargs["triggered_by"]
-        assert "euregio" in kwargs["triggered_by"]
+        assert "EUREGIO" in kwargs["triggered_by"]
 
 
 @pytest.mark.django_db
@@ -668,7 +668,7 @@ class TestFetchBulletinsErrorHandling:
         mock_slf.side_effect = RuntimeError("SLF network error")
         mock_euregio.return_value = _make_successful_run()
 
-        with pytest.raises(CommandError, match="slf"):
+        with pytest.raises(CommandError, match="(?i)slf"):
             call_command(
                 "fetch_bulletins",
                 "--source",
@@ -711,7 +711,7 @@ class TestFetchBulletinsErrorHandling:
         mock_slf.return_value = _make_failed_records_run(records_failed=1)
         mock_euregio.return_value = _make_successful_run()
 
-        with pytest.raises(CommandError, match="slf"):
+        with pytest.raises(CommandError, match="(?i)slf"):
             call_command(
                 "fetch_bulletins",
                 "--source",
