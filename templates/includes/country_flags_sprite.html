@@ -1,0 +1,32 @@
+{% comment %}
+templates/includes/country_flags_sprite.html — Hidden SVG sprite for country flags.
+
+One <symbol> per EAWS country prefix (CH / AT / FR / IT). Consumers reference
+symbols via <use href="#flag-ch"> etc. Inline rather than a static asset so
+it ships with the HTML — no extra request, and four small flags add ~0.6KB.
+
+First extracted from public/templates/public/map.html (SNOW-188) into a
+shared include so the subscription manage page can reuse the same symbols
+without duplicating the SVG block (SNOW-162).
+{% endcomment %}
+<svg width="0" height="0" aria-hidden="true" style="position: absolute">
+    <symbol id="flag-ch" viewBox="0 0 32 32">
+        <rect width="32" height="32" fill="#d52b1e" />
+        <rect x="13" y="6" width="6" height="20" fill="#fff" />
+        <rect x="6" y="13" width="20" height="6" fill="#fff" />
+    </symbol>
+    <symbol id="flag-at" viewBox="0 0 9 6">
+        <rect width="9" height="6" fill="#ed2939" />
+        <rect y="2" width="9" height="2" fill="#fff" />
+    </symbol>
+    <symbol id="flag-fr" viewBox="0 0 9 6">
+        <rect width="3" height="6" fill="#002654" />
+        <rect x="3" width="3" height="6" fill="#fff" />
+        <rect x="6" width="3" height="6" fill="#ce1126" />
+    </symbol>
+    <symbol id="flag-it" viewBox="0 0 9 6">
+        <rect width="3" height="6" fill="#009246" />
+        <rect x="3" width="3" height="6" fill="#fff" />
+        <rect x="6" width="3" height="6" fill="#ce1126" />
+    </symbol>
+</svg>

@@ -329,6 +329,12 @@ def manage_view(request: HttpRequest) -> HttpResponse:
     GET: render the subscriptions dashboard (one card per subscribed
     region, with resort list and per-region remove button).
 
+    Context keys:
+        subscriber       — authenticated Subscriber instance.
+        subscriptions    — queryset of Subscription rows for the subscriber.
+        just_confirmed   — True when arriving via the confirmation link.
+        today            — today's date (datetime.date) for the bulletin link label.
+
     Args:
         request: Incoming HTTP request.
 
@@ -345,7 +351,7 @@ def manage_view(request: HttpRequest) -> HttpResponse:
 
     subscriptions = (
         Subscription.objects.filter(subscriber=subscriber)
-        .select_related("region")
+        .select_related("region", "region__subregion__major")
         .prefetch_related("region__resorts")
         .order_by("region__name")
     )
@@ -357,6 +363,7 @@ def manage_view(request: HttpRequest) -> HttpResponse:
             "subscriber": subscriber,
             "subscriptions": subscriptions,
             "just_confirmed": just_confirmed,
+            "today": timezone.now().date(),
         },
     )
 
