@@ -755,7 +755,9 @@ class TestManageViewAuthenticated:
         assert response.status_code == 200
         # SubFactory chain: MicroRegion → SubRegion → MajorRegion
         subregion_name = region.subregion.name_en or region.subregion.name_native
-        major_name = region.subregion.major.name_en or region.subregion.major.name_native
+        major_name = (
+            region.subregion.major.name_en or region.subregion.major.name_native
+        )
         assert subregion_name.encode() in response.content
         assert major_name.encode() in response.content
 
