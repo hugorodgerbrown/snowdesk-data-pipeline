@@ -37,7 +37,7 @@ fetchers. MeteoFrance is the most divergent of the three.
 | Languages | en/de/fr/it | en/de/it | fr only |
 | Aspects | Per-problem 8-point compass | Per-problem 8-point compass | Bulletin-wide rose (`PENTE/@NE`, `@E`…) — not per-problem |
 | Elevation banding | Per-problem `lowerBound`/`upperBound` | Same | Bulletin-wide split altitude (`RISQUE/@ALTITUDE`); per-problem only in prose |
-| Problem vocabulary | EAWS 5-token | EAWS 5-token (+ `customData.ALBINA.avalancheType`) | MF's own 1–9 `SitAvalTyp` codes — needs lookup |
+| Problem vocabulary | EAWS 5-token | EAWS 5-token (+ `customData.ALBINA.avalancheType`) | MF's own 1–6 `SitAvalTyp` codes (5 problems + `no_distinct`) — lookup verified, see §5.4 |
 | `avalancheSize` | Numeric attribute | Numeric attribute | Free-text prose only ("Taille 1 à 2") |
 | Snowpack-stability codes | Per problem | Per problem | Absent |
 | Tendency / outlook | Tendency block | Tendency block + `customData.ALBINA` extras | `RisqueJ2` numeric + prose + dated J+2 |
@@ -189,25 +189,30 @@ for slot in ("SAT1", "SAT2"):
     ))
 ```
 
-**Open:** `SAT_TO_EAWS` lookup table. The 2026-05-18 sample only contains
-codes {2, 4, 6} — see [`sat_vocabulary.md`](research/meteofrance/sat_vocabulary.md)
-for frequencies and characteristic `<TITRE>` text. **Provisional mapping
-inferred from the text** (CONFIRM against MF's 2026 avalanche guide
-before freezing):
+**`SAT_TO_EAWS` lookup (verified against the MF avalanche guide 2025):**
 
-| SAT code | Observed `<TITRE>` text pattern | Provisional EAWS token | Status |
-|---|---|---|---|
-| 1 | — (not in sample) | `new_snow` | speculative |
-| 2 | "chutes de neige récente se stabilisent", "manteau hivernal en altitude" | `new_snow` | observed, text-supported |
-| 3 | — (not in sample) | `persistent_weak_layers` | speculative |
-| 4 | "RARES INSTABILITES VENTéE", "plaques à vent" | `wind_slab` | observed, text-supported |
-| 5 | — (not in sample) | `gliding_snow` | speculative |
-| 6 | "RARE COULEE HUMIDE", "DE MOINS EN MOINS DE NEIGE" | `wet_snow` | observed, text-supported |
-| 7–9 | — (not in sample) | TBC | speculative |
+| SAT code | MF label | EAWS token |
+|---|---|---|
+| 1 | Neige fraîche | `new_snow` |
+| 2 | Neige ventée | `wind_slab` |
+| 3 | Couche fragile persistante | `persistent_weak_layers` |
+| 4 | Neige humide | `wet_snow` |
+| 5 | Avalanches de fond | `gliding_snow` |
+| 6 | Aucune situation avalancheuse typique prédominante | `no_distinct_avalanche_problem` |
 
-Re-run the SAT survey against a January / February day (peak season,
-likely to surface codes 1, 3, 5 and any of 7–9 that exist) before the
-lookup is considered complete.
+Source: `guide-avalanche-2025-meteo-france.pdf` p.13 — the section
+"Situations avalancheuses typiques" lists the six categories in this
+order. The numeric code is the 1-based position in the list. Empirically
+confirmed against the 2026-05-18 sample: bulletins with `SAT1=2` carry
+wind-slab text ("plaques à vent"), `SAT1=4` carry wet-snow text ("neige
+récente peut couler ... réchauffement diurne"), and `SAT1=6` are
+late-season massifs with no dominant problem.
+
+Cross-check during SNOW-177b implementation: when ingesting a peak-season
+day for the first time, log any SAT code outside `{1..6}` to
+`provider_extras.mf.unmapped_sat` so an MF feed extension doesn't ship
+silently. EAWS publishes a 5-problem set plus `no_distinct`; the table
+above covers all six MF positions exactly.
 
 The implementation must raise (not silently fall back) on unknown SAT
 codes — silent fallback would mask MF feed changes. Unknown codes go in
@@ -392,19 +397,22 @@ maintain a static "delegated regions" set seeded from the catalogue.
 
 ## 9. Open items before this spec ships
 
-1. **Confirm `SAT_TO_EAWS` table** against the MF 2026 avalanche guide.
-   The provisional table in §5.4 covers only codes 2, 4, 6 (observed) and
-   speculates on 1, 3, 5, 7–9. Re-run the SAT survey against a Jan/Feb
-   peak-season day before freezing the lookup.
+1. ~~**Confirm `SAT_TO_EAWS` table.**~~ **Resolved.** The lookup in §5.4
+   is verified against `guide-avalanche-2025-meteo-france.pdf` p.13.
+   Empirically aligned with the 2026-05-18 sample for codes {2, 4, 6}.
 2. **Amendment behaviour.** Still open. The 2026-05-18 sample had zero
-   `@AMENDEMENT="true"` bulletins (0/35), so it can't answer whether
-   `@ID` increments on re-issue. Fetch a known amended day (mid-winter
-   weather events typically trigger re-issues) and inspect.
+   `@AMENDEMENT="true"` bulletins (0/35), and the avalanche guide doesn't
+   document the attribute (it's part of the API contract, not the reader
+   guide). Two paths: (a) request MF's DPBRA schema documentation via the
+   APIM portal, or (b) catch the first amended bulletin during SNOW-177b
+   shadow-mode ingestion — implementation must log `(@ID, @AMENDEMENT)`
+   so we can disambiguate when it occurs.
 3. ~~**Massif code scheme.**~~ **Resolved.** Catalogue captured at
    [`docs/research/meteofrance/massifs.json`](research/meteofrance/massifs.json);
    longest name is 20 chars, so `SubRegion.prefix max_length=32` is
    sufficient. No migration needed for existing column widths.
-4. **One bulletin per day, or two?** The 2026-05-18 sample shows one
-   `DATEBULLETIN=16:00` issue per massif, identical to the original
-   single-massif probe. Confirm against a second non-consecutive day
-   before treating it as a hard invariant.
+4. ~~**One bulletin per day, or two?**~~ **Resolved.** Guide p.9 (line
+   323-324): "Des bulletins quotidiens […] rédigés vers 16 h, ce sont des
+   prévisions jusqu'au lendemain soir." Strictly one issue per massif per
+   day, 16:00 Europe/Paris. The "twice daily at 6h and 16h" on p.15 refers
+   to the *vigilance* map (separate product), not the BRA.
