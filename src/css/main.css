@@ -235,6 +235,14 @@
   --color-weather-thunder-night:       #101220;
   --color-weather-fallback:            #3a3733;   /* no-snapshot neutral (theme-invariant) */
 
+  /* Data-source accent colours (SNOW-175)
+     Brand-derived starting values, tuned against the weather-bucket
+     backgrounds to ensure the 2px bottom border reads clearly on every
+     combination.  SLF red and ALBINA blue are intentionally kept close
+     to their canonical brand colours — desaturate if contrast is poor. */
+  --color-source-slf:     #e30613;   /* SLF brand red                        */
+  --color-source-euregio: #005ea8;   /* ALBINA / EUREGIO brand blue          */
+
   /* Border radius */
   --radius-card:   16px;   /* outer card shell                    */
   --radius-tag:    8px;    /* problem tag, inner chips             */
@@ -438,6 +446,18 @@
 .bulletin-header[data-weather-bucket="snow"][data-time-of-day="night"]          { background: var(--color-weather-snow-night); }
 .bulletin-header[data-weather-bucket="thunder"][data-time-of-day="day"]         { background: var(--color-weather-thunder-day); }
 .bulletin-header[data-weather-bucket="thunder"][data-time-of-day="night"]       { background: var(--color-weather-thunder-night); }
+
+/* —— Data-source bottom-border accent (SNOW-175) ————
+   A 2px bottom border signals which upstream the bulletin originates from.
+   Applied only when ``data-source`` is present on the header element; the
+   error-state path suppresses the attribute entirely so no border paints.
+
+   Usage in template (see includes/bulletin_header.html):
+     <header class="bulletin-header" data-source="slf">…</header>
+   ————————————————————————————————————————— */
+
+.bulletin-header[data-source="slf"]     { border-bottom: 2px solid var(--color-source-slf); }
+.bulletin-header[data-source="euregio"] { border-bottom: 2px solid var(--color-source-euregio); }
 
 
 /* —— EAWS per-problem danger left-border ————

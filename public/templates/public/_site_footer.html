@@ -1,8 +1,9 @@
 {% comment %}
 public/templates/public/_site_footer.html — Global site footer.
 
-Renders SLF data-licence attribution on every page that extends
-public/base.html (per the SLF CC BY 4.0 obligation tracked in SNOW-30).
+Renders data-licence attribution for both upstream sources on every page
+that extends public/base.html (per the SLF CC BY 4.0 obligation tracked in
+SNOW-30 and the EUREGIO/ALBINA acknowledgement added in SNOW-175).
 Pages that already carry a richer per-page footer (e.g. bulletin.html)
 still render this small line below — the rich page footer is content
 context, this is the site licence line.
@@ -22,9 +23,15 @@ Visual weight should not compete with page content.
         {% url 'public:terms_of_service' as tos_url %}
         {% blocktrans trimmed %}
             Avalanche data:
-            <a class="underline hover:text-text-2" href="https://www.slf.ch" target="_blank" rel="noopener"
-            >WSL Institute for Snow and Avalanche Research SLF</a>
-            &middot; Licensed under
+            <a class="underline hover:text-text-2" href="https://www.slf.ch" target="_blank" rel="noopener">SLF</a>
+            (Switzerland) and
+            <a
+                class="underline hover:text-text-2"
+                href="https://avalanche.report"
+                target="_blank"
+                rel="noopener"
+            >EUREGIO / ALBINA</a>
+            (Austria, Italy) &middot; Licensed under
             <a
                 class="underline hover:text-text-2"
                 href="https://creativecommons.org/licenses/by/4.0/"
