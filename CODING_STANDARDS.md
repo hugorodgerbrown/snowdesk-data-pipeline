@@ -21,7 +21,7 @@ core/            Shared abstractions (BaseModel; abstract, no concrete tables),
 regions/         Geographic reference data — MicroRegion / MajorRegion /
                  SubRegion / Resort, plus the fixture-maintenance commands
                  (dump_resorts_fixture, refresh_eaws_fixtures,
-                 build_france_fixture, audit_microregion_names,
+                 build_france_fixture, build_switzerland_fixture,
                  audit_resort_regions)
 bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
                  PipelineRun, RegionDayRating, WeatherSnapshot, the ingestion
