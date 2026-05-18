@@ -1,0 +1,18 @@
+{% comment %}
+public/templates/public/_source_pill.html — Source wordmark pill.
+
+Rendered by ``{% source_pill source %}`` from ``public/templatetags/source_pill.py``.
+Displays the upstream data provider's wordmark as a small linked badge,
+pinned to the top-right of the bulletin header flex row via ``ml-auto self-start``.
+
+Context:
+  wordmark  — display text, e.g. "SLF" or "ALBINA"
+  url       — upstream homepage, e.g. "https://www.slf.ch"
+{% endcomment %}
+<a
+    href="{{ url }}"
+    target="_blank"
+    rel="noopener"
+    data-testid="source-pill"
+    class="ml-auto self-start inline-flex items-center px-2 py-1 rounded-pill bg-white/15 hover:bg-white/25 text-xs font-mono uppercase tracking-widest text-white no-underline"
+>{{ wordmark }}</a>
