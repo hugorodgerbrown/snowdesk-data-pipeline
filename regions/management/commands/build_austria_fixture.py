@@ -258,6 +258,7 @@ def _build_state_entries(
             "centre": l1_centre,
             "bbox": l1_bbox,
             "boundary": l1_boundary,
+            "display_on_map": True,
             "created_at": _FIXTURE_TIMESTAMP,
             "updated_at": _FIXTURE_TIMESTAMP,
         },

@@ -436,6 +436,20 @@ class TestBuildSwitzerlandFixtureCommit:
         assert all(e["fields"]["boundary"] is not None for e in majors)
         assert all(e["fields"]["boundary"] != {} for e in majors)
 
+    def test_commit_l1_has_display_on_map(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """L1 entries emit display_on_map=True so future regens stay consistent with FR."""
+        eaws, fixture = _seed_sources(tmp_path)
+        _patch_paths(monkeypatch, eaws, fixture)
+
+        call_command("build_switzerland_fixture", "--commit", stdout=StringIO())
+
+        entries = json.loads(fixture.read_text(encoding="utf-8"))
+        majors = [e for e in entries if e["model"] == "regions.majorregion"]
+        assert majors, "expected at least one L1 entry in the regenerated fixture"
+        assert all(e["fields"]["display_on_map"] is True for e in majors)
+
     def test_commit_l4_subregion_fk_matches_l2_prefix(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
