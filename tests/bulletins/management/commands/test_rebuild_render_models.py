@@ -42,6 +42,7 @@ def _make_bulletin(
                 "bulletinID": bulletin_id or "test",
                 "dangerRatings": [{"mainValue": "low"}],
                 "avalancheProblems": [],
+                "customData": {"CH": {}},
             },
         },
     }

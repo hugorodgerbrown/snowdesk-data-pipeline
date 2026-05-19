@@ -69,6 +69,7 @@ def _make_raw_bulletin(
         ],
         "dangerRatings": [],
         "avalancheProblems": [],
+        "customData": {"CH": {}},
     }
     base.update(overrides)
     return base
