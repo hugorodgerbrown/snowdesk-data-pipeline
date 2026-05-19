@@ -312,6 +312,7 @@ def _build_entries(
                     "centre": centre,
                     "bbox": bbox,
                     "boundary": boundary,
+                    "display_on_map": True,
                     "created_at": _FIXTURE_TIMESTAMP,
                     "updated_at": _FIXTURE_TIMESTAMP,
                 },
