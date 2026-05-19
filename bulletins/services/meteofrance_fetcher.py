@@ -180,8 +180,9 @@ def run_meteofrance_pipeline(
         dry_run: If ``True``, fetch and translate but do not write to the DB.
         force: If ``True``, upsert bulletins that already exist in the DB.
         base_url: Override for the API base URL. ``None`` defers to
-            ``settings.METEOFRANCE_API_BASE_URL`` (or
-            ``settings.METEOFRANCE_API_LOCAL_MIRROR_URL`` when non-empty).
+            ``settings.METEOFRANCE_API_BASE_URL``. The mirror setting is
+            only used when ``fetch_bulletins --local-mirror`` forwards it
+            explicitly; it is never picked up by default.
         on_fetched: Optional per-bulletin callback invoked for each
             successfully translated dict, before dry-run / upsert decisions.
             The ``--stash`` flag wires this to a list collector.
@@ -267,8 +268,11 @@ def _resolve_base_url(base_url: str | None) -> str:
     """
     Resolve the effective API base URL for this pipeline run.
 
-    Priority: explicit ``base_url`` parameter → local mirror setting → live
-    setting.
+    An explicit ``base_url`` wins (used by ``fetch_bulletins --local-mirror``
+    to forward ``settings.METEOFRANCE_API_LOCAL_MIRROR_URL``); otherwise the
+    live ``settings.METEOFRANCE_API_BASE_URL`` is used. The mirror setting
+    is *never* picked up implicitly — matching the SLF and EUREGIO fetchers
+    so a stale ``.env`` value cannot silently redirect a live run.
 
     Args:
         base_url: Explicit override from the caller, or ``None``.
@@ -279,10 +283,6 @@ def _resolve_base_url(base_url: str | None) -> str:
     """
     if base_url is not None:
         return base_url
-
-    local_mirror: str = getattr(settings, "METEOFRANCE_API_LOCAL_MIRROR_URL", "") or ""
-    if local_mirror:
-        return local_mirror
 
     return str(getattr(settings, "METEOFRANCE_API_BASE_URL", ""))
 
