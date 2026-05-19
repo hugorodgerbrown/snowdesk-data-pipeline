@@ -48,6 +48,7 @@ from public._component_fixtures import (
     STATUS_PAGE_VARIANTS,
     SUBSCRIBE_FORM_VARIANTS,
     SUBSCRIBE_OUTCOMES_VARIANTS,
+    TOAST_VARIANTS,
     WEATHER_HEADER_VARIANTS,
 )
 
@@ -644,6 +645,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_callout.html",
         variants=CALLOUT_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="toast",
+        label="Toast",
+        description=(
+            "Fixed-position notification toast — bottom-centred pill backed by "
+            "the --color-status-* palette. Used for the service-worker update "
+            "banner (info kind with Reload CTA) and HTMX error banners (error "
+            "kind, no CTA). Single-slot; ARIA live region keyed off kind."
+        ),
+        kind="components",
+        partial="includes/_toast.html",
+        variants=TOAST_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
