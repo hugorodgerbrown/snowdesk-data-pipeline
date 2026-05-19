@@ -28,6 +28,7 @@ Provider-specific DPBRA content that has no CAAML equivalent is stored under
 
 from __future__ import annotations
 
+import html
 import logging
 import re
 from datetime import UTC, date, datetime, timedelta
@@ -356,6 +357,122 @@ def _elem_text(element: Element | None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Comment HTML formatter
+# ---------------------------------------------------------------------------
+
+# Matches a heading line: up to 50 non-colon chars, optional whitespace, colon,
+# optional whitespace, and the rest of the line as the inline body.
+_HEADING_RE = re.compile(r"^([^:]{1,50}?)\s*:\s*(.*)$")
+
+# Matches a bullet line prefixed with "* " or "- ".
+_BULLET_RE = re.compile(r"^[*\-] (.*)$")
+
+
+def _split_heading_line(line: str) -> tuple[str, str] | None:
+    """
+    Match a heading line against the ``Label : body`` pattern.
+
+    Args:
+        line: A single line of text (no leading/trailing whitespace).
+
+    Returns:
+        ``(heading, inline_body)`` when matched; ``None`` otherwise.
+
+    """
+    m = _HEADING_RE.match(line)
+    if m is None:
+        return None
+    return m.group(1).strip(), m.group(2).strip()
+
+
+def _format_body_lines(lines: list[str]) -> str:
+    """
+    Convert a list of body lines into HTML paragraphs and bullet lists.
+
+    Contiguous bullet lines (``* …`` or ``- …``) are wrapped in one
+    ``<ul><li>…</li></ul>`` element. Non-bullet, non-empty lines each
+    become a separate ``<p>…</p>``. All text is HTML-escaped.
+
+    Args:
+        lines: Body lines with no leading/trailing whitespace per line.
+
+    Returns:
+        An HTML fragment (may be empty when all lines are blank).
+
+    """
+    parts: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not line:
+            i += 1
+            continue
+        m = _BULLET_RE.match(line)
+        if m:
+            items: list[str] = []
+            while i < len(lines):
+                bm = _BULLET_RE.match(lines[i])
+                if bm:
+                    items.append(f"<li>{html.escape(bm.group(1))}</li>")
+                    i += 1
+                elif not lines[i]:
+                    i += 1
+                    break
+                else:
+                    break
+            parts.append("<ul>" + "".join(items) + "</ul>")
+        else:
+            parts.append(f"<p>{html.escape(line)}</p>")
+            i += 1
+    return "".join(parts)
+
+
+def _format_comment_as_html(text: str) -> str:
+    """
+    Convert Météo-France plain-text prose to structural HTML.
+
+    Splits on blank lines into blocks. Each block's first line is tested
+    as a ``Label : body`` heading (pre-colon portion ≤ 50 chars); if
+    matched the label becomes an ``<h2>`` and the remainder is the body.
+    Body lines starting with ``* `` or ``- `` become ``<ul><li>`` items;
+    all other non-empty lines become ``<p>`` elements. All text content
+    is HTML-escaped.
+
+    Args:
+        text: Raw plain-text prose from a DPBRA element.
+
+    Returns:
+        An HTML string, or ``""`` for empty/whitespace-only input.
+
+    """
+    stripped = text.strip()
+    if not stripped:
+        return ""
+
+    blocks = re.split(r"\n\s*\n+", stripped)
+    parts: list[str] = []
+
+    for block in blocks:
+        lines = [ln.rstrip() for ln in block.splitlines()]
+        if not lines:
+            continue
+
+        first = lines[0]
+        heading_match = _split_heading_line(first)
+
+        if heading_match is not None:
+            heading_text, inline_body = heading_match
+            parts.append(f"<h2>{html.escape(heading_text)}</h2>")
+            body_lines = ([inline_body] if inline_body else []) + lines[1:]
+        else:
+            body_lines = lines
+
+        parts.append(_format_body_lines(body_lines))
+
+    return "".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # Sub-translators (called from parse_dpbra_xml to reduce complexity)
 # ---------------------------------------------------------------------------
 
@@ -580,7 +697,7 @@ def _parse_tendency(
         {
             "tendencyType": _evolution_from_levels(risque1, risque_maxi_j2),
             "highlights": _elem_text(risque_j2_el),
-            "comment": _elem_text(commentaire_j2_el),
+            "comment": _format_comment_as_html(_elem_text(commentaire_j2_el)),
             "validTime": {
                 "startTime": j2_valid_from,
                 "endTime": j2_valid_to,
@@ -606,7 +723,7 @@ def _parse_snowpack_structure(root: Element) -> dict[str, str] | None:
     qualite_texte = qualite.find("TEXTE")
     if qualite_texte is None or not qualite_texte.text:
         return None
-    return {"comment": qualite_texte.text.strip()}
+    return {"comment": _format_comment_as_html(qualite_texte.text)}
 
 
 def _parse_avalanche_activity(
@@ -638,7 +755,10 @@ def _parse_avalanche_activity(
         else:
             activity_comment = _strip_titre_from_texte(stabilite)
 
-    return {"highlights": highlights, "comment": activity_comment}
+    return {
+        "highlights": highlights,
+        "comment": _format_comment_as_html(activity_comment),
+    }
 
 
 def _strip_titre_from_texte(stabilite: Element) -> str:
