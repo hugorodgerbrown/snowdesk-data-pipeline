@@ -9,8 +9,9 @@
   Optional context:
     body       — Main paragraph text; rendered with |safe so call sites may
                  pass trusted server-rendered inline markup (e.g. a monospace
-                 span wrapping a bulletin ID). Never pass user-supplied content
-                 through this parameter.
+                 span wrapping a bulletin ID). Never pass user-supplied or
+                 external-API-derived content directly through this parameter
+                 — pre-escape via {% blocktrans %} or escape filter first.
     code_block — Diagnostic string rendered in a monospace ring box.
                  Intended for staff-only error payloads.
     cta_label  — Label for an optional call-to-action link (paired with cta_href).

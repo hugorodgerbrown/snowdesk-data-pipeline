@@ -86,7 +86,7 @@
  * dynamic class interpolation (bg-status-{{ kind }}) which Tailwind's
  * static scanner cannot detect.  An @source inline() directive lists every
  * combination explicitly so the compiler never tree-shakes them. */
-@source inline("{bg}-status-{warning,error,success,info}-bg {text,ring}-status-{warning,error,success,info}-text");
+@source inline("bg-status-{warning,error,success,info}-bg {text,ring}-status-{warning,error,success,info}-text");
 
 /* ———————————————————————————————————————————
    1. DESIGN TOKENS
