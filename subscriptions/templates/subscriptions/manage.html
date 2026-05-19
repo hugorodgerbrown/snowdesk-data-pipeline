@@ -13,7 +13,7 @@ regions on the map" link routes to /map/. A passkeys section lists
 registered platform passkeys with delete buttons. A destructive
 "Unsubscribe from all alerts" button hard-deletes the subscriber.
 {% endcomment %}
-{% load i18n static %}
+{% load i18n static components %}
 
 {% block title %}{% trans "Manage subscriptions — Snowdesk" %}{% endblock %}
 
@@ -55,14 +55,14 @@ registered platform passkeys with delete buttons. A destructive
 
                 {# Optional one-time welcome banner when arriving via confirmation link #}
                 {% if just_confirmed %}
-                    <div class="mb-6 bg-card rounded-card border border-text-3/10 px-5 py-4 shadow-sm">
-                        <p class="text-sm text-text-1 font-medium">
-                            {% trans "Your subscription is confirmed." %}
-                        </p>
-                        <p class="text-sm text-text-2 mt-0.5">
-                            {% trans "You'll receive alerts for the regions below." %}
-                        </p>
-                    </div>
+                    {% card padding="px-5 py-4" extra="mb-6" %}
+                    <p class="text-sm text-text-1 font-medium">
+                        {% trans "Your subscription is confirmed." %}
+                    </p>
+                    <p class="text-sm text-text-2 mt-0.5">
+                        {% trans "You'll receive alerts for the regions below." %}
+                    </p>
+                    {% endcard %}
                 {% endif %}
 
                 {# Page heading — singular/plural based on subscription count #}
@@ -77,85 +77,85 @@ registered platform passkeys with delete buttons. A destructive
                 {# One card per subscribed region #}
                 {% for subscription in subscriptions %}
                     {% with country=subscription.region.region_id|slice:":2"|lower %}
-                        <div class="subscription-card bg-card rounded-card border border-text-3/10 shadow-sm p-6 mb-4">
-                            <div class="flex items-start justify-between gap-4">
-                                <div class="min-w-0 flex-1">
-                                    {# Header row: flag-badge (links to map) inline with region name #}
-                                    <div class="flex items-center gap-2 flex-wrap">
-                                        {# Flag-badge anchor — opens the map drawer for this region #}
-                                        <a
-                                            href="{% url 'public:map' %}#{{ subscription.region.region_id }}"
-                                            class="inline-flex items-center gap-1 font-mono text-xs text-text-3 border border-text-3/30 rounded-pill px-1.5 py-0.5 shrink-0 hover:text-text-1 hover:border-text-2 transition-colors"
-                                            aria-label="{% blocktrans with region=subscription.region.name %}View {{ region }} on the map{% endblocktrans %}"
-                                        >
-                                            {% if country == "ch" or country == "at" or country == "fr" or country == "it" %}
-                                                <svg width="12" height="9" aria-hidden="true">
-                                                    <use href="#flag-{{ country }}" />
-                                                </svg>
-                                            {% endif %}
-                                            {{ subscription.region.region_id }}
-                                        </a>
-                                        <h2 class="text-lg font-semibold text-text-1 leading-snug">
-                                            {{ subscription.region.name }}
-                                        </h2>
-                                    </div>
-                                    {# Breadcrumb: country › L1 (MajorRegion) › L2 (SubRegion) #}
-                                    <p class="text-xs text-text-3 mt-1">
-                                        {% if country == "ch" %}
-                                            {% trans "Switzerland" %}
-                                        {% elif country == "at" %}
-                                            {% trans "Austria" %}
-                                        {% elif country == "fr" %}
-                                            {% trans "France" %}
-                                        {% elif country == "it" %}
-                                            {% trans "Italy" %}
-                                        {% else %}
-                                            {{ country }}
+                        {% card padding="p-6" extra="subscription-card mb-4" %}
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="min-w-0 flex-1">
+                                {# Header row: flag-badge (links to map) inline with region name #}
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    {# Flag-badge anchor — opens the map drawer for this region #}
+                                    <a
+                                        href="{% url 'public:map' %}#{{ subscription.region.region_id }}"
+                                        class="inline-flex items-center gap-1 font-mono text-xs text-text-3 border border-text-3/30 rounded-pill px-1.5 py-0.5 shrink-0 hover:text-text-1 hover:border-text-2 transition-colors"
+                                        aria-label="{% blocktrans with region=subscription.region.name %}View {{ region }} on the map{% endblocktrans %}"
+                                    >
+                                        {% if country == "ch" or country == "at" or country == "fr" or country == "it" %}
+                                            <svg width="12" height="9" aria-hidden="true">
+                                                <use href="#flag-{{ country }}" />
+                                            </svg>
                                         {% endif %}
-                                        <span aria-hidden="true"> › </span>
-                                        {{ subscription.region.subregion.major.name_en|default:subscription.region.subregion.major.name_native }}
-                                        <span aria-hidden="true"> › </span>
-                                        {{ subscription.region.subregion.name_en|default:subscription.region.subregion.name_native }}
-                                    </p>
+                                        {{ subscription.region.region_id }}
+                                    </a>
+                                    <h2 class="text-lg font-semibold text-text-1 leading-snug">
+                                        {{ subscription.region.name }}
+                                    </h2>
                                 </div>
-                                <button
-                                    hx-post="{% url 'subscriptions:remove_region' region_id=subscription.region.region_id %}"
-                                    hx-target="closest .subscription-card"
-                                    hx-swap="outerHTML"
-                                    class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
-                                >
-                                    {% trans "Remove" %}
-                                </button>
+                                {# Breadcrumb: country › L1 (MajorRegion) › L2 (SubRegion) #}
+                                <p class="text-xs text-text-3 mt-1">
+                                    {% if country == "ch" %}
+                                        {% trans "Switzerland" %}
+                                    {% elif country == "at" %}
+                                        {% trans "Austria" %}
+                                    {% elif country == "fr" %}
+                                        {% trans "France" %}
+                                    {% elif country == "it" %}
+                                        {% trans "Italy" %}
+                                    {% else %}
+                                        {{ country }}
+                                    {% endif %}
+                                    <span aria-hidden="true"> › </span>
+                                    {{ subscription.region.subregion.major.name_en|default:subscription.region.subregion.major.name_native }}
+                                    <span aria-hidden="true"> › </span>
+                                    {{ subscription.region.subregion.name_en|default:subscription.region.subregion.name_native }}
+                                </p>
                             </div>
-
-                            {# Resort list — omit entirely when empty #}
-                            {% with resorts=subscription.region.resorts.all %}
-                                {% if resorts %}
-                                    <p class="mt-3 text-sm text-text-2 leading-relaxed">
-                                        {% for resort in resorts %}{{ resort.name }}{% if not forloop.last %},
-                                            {% endif %}{% endfor %}
-                                    </p>
-                                {% endif %}
-                            {% endwith %}
-
-                            {# Bottom link: bulletin for today (map link is the header flag-badge) #}
-                            <div class="mt-4">
-                                <a
-                                    href="{{ subscription.region.get_absolute_url }}"
-                                    class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
-                                >
-                                    {% blocktrans with d=today|date:"j N Y" trimmed %}Open bulletin for {{ d }}
-                                        →{% endblocktrans %}
-                                </a>
-                            </div>
+                            <button
+                                hx-post="{% url 'subscriptions:remove_region' region_id=subscription.region.region_id %}"
+                                hx-target="closest .subscription-card"
+                                hx-swap="outerHTML"
+                                class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                            >
+                                {% trans "Remove" %}
+                            </button>
                         </div>
+
+                        {# Resort list — omit entirely when empty #}
+                        {% with resorts=subscription.region.resorts.all %}
+                            {% if resorts %}
+                                <p class="mt-3 text-sm text-text-2 leading-relaxed">
+                                    {% for resort in resorts %}{{ resort.name }}{% if not forloop.last %},
+                                        {% endif %}{% endfor %}
+                                </p>
+                            {% endif %}
+                        {% endwith %}
+
+                        {# Bottom link: bulletin for today (map link is the header flag-badge) #}
+                        <div class="mt-4">
+                            <a
+                                href="{{ subscription.region.get_absolute_url }}"
+                                class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+                            >
+                                {% blocktrans with d=today|date:"j N Y" trimmed %}Open bulletin for {{ d }}
+                                    →{% endblocktrans %}
+                            </a>
+                        </div>
+                        {% endcard %}
                     {% endwith %}
                 {% empty %}
-                    <div class="bg-card rounded-card border border-text-3/10 shadow-sm px-6 py-8 text-center mb-4">
-                        <p class="text-sm text-text-2">
-                            {% trans "You have no active subscriptions." %}
-                        </p>
-                    </div>
+                    {% card padding="px-6 py-8" center=True extra="mb-4" %}
+                    <p class="text-sm text-text-2">
+                        {% trans "You have no active subscriptions." %}
+                    </p>
+                    {% endcard %}
                 {% endfor %}
 
                 {# Map CTA — choose more regions #}
@@ -183,64 +183,53 @@ registered platform passkeys with delete buttons. A destructive
                     {% with passkeys=subscriber.passkeys.all %}
                         {% if just_confirmed and not passkeys %}
                             {# Prominent first-time registration prompt #}
-                            <div
-                                id="passkey-prompt"
-                                class="bg-card rounded-card border border-text-3/10 shadow-sm px-5 py-4 mb-4"
-                            >
+                            {% card padding="px-5 py-4" extra="mb-4" %}
+                            <div id="passkey-prompt">
                                 <p class="text-sm text-text-1 font-medium mb-1">
                                     {% trans "Sign in faster with a passkey" %}
                                 </p>
                                 <p class="text-sm text-text-2 mb-3 leading-relaxed">
                                     {% trans "Save a passkey for this device and you won't need a magic link next time." %}
                                 </p>
-                                <button
-                                    id="btn-register-passkey"
-                                    type="button"
-                                    class="text-sm bg-text-1 text-card px-4 py-2 rounded-tag font-medium hover:opacity-90 transition-opacity"
-                                >
-                                    {% trans "Save a passkey for this device" %}
-                                </button>
+                                {% trans "Save a passkey for this device" as label %}
+                                {% include "includes/_button.html" with label=label variant="primary" size="compact" button_type="button" button_id="btn-register-passkey" %}
                             </div>
+                            {% endcard %}
                         {% endif %}
 
                         {# Existing passkey cards #}
                         {% for passkey in passkeys %}
-                            <div class="passkey-card bg-card rounded-card border border-text-3/10 shadow-sm p-4 mb-3 flex items-center justify-between gap-4">
-                                <div class="min-w-0">
-                                    <p class="text-sm font-medium text-text-1 truncate">
-                                        {{ passkey.display_name }}
-                                    </p>
-                                    <p class="text-xs text-text-3 mt-0.5">
-                                        {% if passkey.last_used_at %}
-                                            {% blocktrans with date=passkey.last_used_at|date:"j N Y" trimmed %}
-                                                Last used {{ date }}
-                                            {% endblocktrans %}
-                                        {% else %}
-                                            {% trans "Never used" %}
-                                        {% endif %}
-                                    </p>
-                                </div>
-                                <button
-                                    hx-post="{% url 'subscriptions:passkey_delete' passkey_uuid=passkey.uuid %}"
-                                    hx-target="closest .passkey-card"
-                                    hx-swap="outerHTML"
-                                    hx-confirm='{% trans "Remove this passkey?" %}'
-                                    class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
-                                >
-                                    {% trans "Remove" %}
-                                </button>
+                            {% card padding="p-4" extra="passkey-card mb-3 flex items-center justify-between gap-4" %}
+                            <div class="min-w-0">
+                                <p class="text-sm font-medium text-text-1 truncate">
+                                    {{ passkey.display_name }}
+                                </p>
+                                <p class="text-xs text-text-3 mt-0.5">
+                                    {% if passkey.last_used_at %}
+                                        {% blocktrans with date=passkey.last_used_at|date:"j N Y" trimmed %}
+                                            Last used {{ date }}
+                                        {% endblocktrans %}
+                                    {% else %}
+                                        {% trans "Never used" %}
+                                    {% endif %}
+                                </p>
                             </div>
+                            <button
+                                hx-post="{% url 'subscriptions:passkey_delete' passkey_uuid=passkey.uuid %}"
+                                hx-target="closest .passkey-card"
+                                hx-swap="outerHTML"
+                                hx-confirm='{% trans "Remove this passkey?" %}'
+                                class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                            >
+                                {% trans "Remove" %}
+                            </button>
+                            {% endcard %}
                         {% endfor %}
 
                         {# "Add a passkey" button — always shown when we have one or more #}
                         {% if passkeys or not just_confirmed %}
-                            <button
-                                id="btn-register-passkey"
-                                type="button"
-                                class="text-sm text-text-2 border border-text-3/30 rounded-tag px-4 py-2 hover:text-text-1 hover:border-text-2 transition-colors"
-                            >
-                                {% trans "Add a passkey for this device" %}
-                            </button>
+                            {% trans "Add a passkey for this device" as label %}
+                            {% include "includes/_button.html" with label=label variant="ghost" size="compact" button_type="button" button_id="btn-register-passkey" %}
                         {% endif %}
                     {% endwith %}
 

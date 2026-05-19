@@ -9,7 +9,7 @@ explicit "Sign in with a passkey" button when WebAuthn is available.
 This page replaces the unauthenticated path of /subscribe/manage/ so that
 the manage page can be authenticated-only.
 {% endcomment %}
-{% load i18n static %}
+{% load i18n static components %}
 
 {% block title %}{% trans "Sign in — Snowdesk" %}{% endblock %}
 
@@ -22,60 +22,48 @@ the manage page can be authenticated-only.
 {% block content %}
     <div class="px-4 py-10">
         <div class="max-w-[640px] mx-auto">
-            <div class="bg-card rounded-card p-8 shadow-sm border border-text-3/10">
-                <h1 class="text-2xl font-semibold text-text-1 mb-2">
-                    {% trans "Sign in" %}
-                </h1>
-                <p class="text-text-2 text-sm mb-6 leading-relaxed">
-                    {% trans "Enter your email address and we'll send you a sign-in link." %}
-                </p>
-
-                <form method="post" novalidate>
-                    {% csrf_token %}
-                    <div class="mb-4">
-                        <label
-                            for="{{ form.email.id_for_label }}"
-                            class="block text-sm font-medium text-text-1 mb-1.5"
-                        >
-                            {% trans "Email address" %}
-                        </label>
-                        {{ form.email }}
-                        {% if form.email.errors %}
-                            <ul class="mt-1.5 space-y-0.5">
-                                {% for error in form.email.errors %}
-                                    <li class="text-xs text-form-error">{{ error }}</li>
-                                {% endfor %}
-                            </ul>
-                        {% endif %}
-                    </div>
-
-                    <button
-                        type="submit"
-                        class="w-full bg-text-1 text-card px-5 py-2.5 rounded-tag text-sm font-medium hover:opacity-90 transition-opacity"
+            {% card padding="p-8" %}
+            <h1 class="text-2xl font-semibold text-text-1 mb-2">
+                {% trans "Sign in" %}
+            </h1>
+            <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                {% trans "Enter your email address and we'll send you a sign-in link." %}
+            </p>
+            <form method="post" novalidate>
+                {% csrf_token %}
+                <div class="mb-4">
+                    <label
+                        for="{{ form.email.id_for_label }}"
+                        class="block text-sm font-medium text-text-1 mb-1.5"
                     >
-                        {% trans "Send sign-in link" %}
-                    </button>
-                </form>
-
-                <div
-                    id="passkey-signin-wrap"
-                    class="hidden mt-4 pt-4 border-t border-text-3/10"
-                >
-                    <button
-                        id="btn-passkey-signin"
-                        type="button"
-                        class="w-full text-sm text-text-2 border border-text-3/30 rounded-tag px-5 py-2.5 hover:text-text-1 hover:border-text-2 transition-colors"
-                    >
-                        {% trans "Sign in with a passkey" %}
-                    </button>
-                    <p
-                        id="passkey-auth-feedback"
-                        role="alert"
-                        class="hidden mt-3 text-xs text-form-error"
-                    >
-                    </p>
+                        {% trans "Email address" %}
+                    </label>
+                    {{ form.email }}
+                    {% if form.email.errors %}
+                        <ul class="mt-1.5 space-y-0.5">
+                            {% for error in form.email.errors %}
+                                <li class="text-xs text-form-error">{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
                 </div>
+                {% trans "Send sign-in link" as label %}
+                {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
+            </form>
+            <div
+                id="passkey-signin-wrap"
+                class="hidden mt-4 pt-4 border-t border-text-3/10"
+            >
+                {% trans "Sign in with a passkey" as label %}
+                {% include "includes/_button.html" with label=label variant="ghost" full_width=True button_type="button" button_id="btn-passkey-signin" %}
+                <p
+                    id="passkey-auth-feedback"
+                    role="alert"
+                    class="hidden mt-3 text-xs text-form-error"
+                >
+                </p>
             </div>
+            {% endcard %}
         </div>
     </div>
 

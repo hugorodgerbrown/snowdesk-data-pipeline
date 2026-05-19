@@ -5,7 +5,7 @@ public/templates/public/home.html — Marketing landing page.
 Placeholder page describing what SnowDesk is and how it works.
 This will be replaced with a full marketing site before launch.
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {% block title %}
     {% trans "Snowdesk — Avalanche bulletins for backcountry skiers" %}
@@ -43,18 +43,12 @@ This will be replaced with a full marketing site before launch.
                 </p>
             </div>
             <div class="mt-8 flex flex-wrap justify-center gap-3">
-                <a
-                    href="{% url 'public:examples_random' %}"
-                    class="inline-block bg-text-1 text-card px-5 py-2.5 rounded-tag text-sm font-medium hover:opacity-90 transition-opacity"
-                >
-                    {% trans "View a sample bulletin →" %}
-                </a>
-                <a
-                    href="{% url 'public:map' %}"
-                    class="inline-block bg-card text-text-1 border border-text-1 px-5 py-2.5 rounded-tag text-sm font-medium hover:opacity-90 transition-opacity"
-                >
-                    {% trans "Explore the map →" %}
-                </a>
+                {% url 'public:examples_random' as examples_url %}
+                {% trans "View a sample bulletin →" as label %}
+                {% include "includes/_button.html" with label=label href=examples_url variant="primary" %}
+                {% url 'public:map' as map_url %}
+                {% trans "Explore the map →" as label %}
+                {% include "includes/_button.html" with label=label href=map_url variant="secondary" %}
             </div>
         </div>
     </div>
