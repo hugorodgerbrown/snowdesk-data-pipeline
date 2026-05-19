@@ -31,6 +31,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from public._component_fixtures import (
+    BUTTON_VARIANTS,
+    CARD_VARIANTS,
     DAY_CHARACTER_VARIANTS,
     DAY_WINDOWS_VARIANTS,
     NAV_VARIANTS,
@@ -39,6 +41,7 @@ from public._component_fixtures import (
     REGION_TOOLTIP_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SITE_FOOTER_VARIANTS,
+    STATUS_PAGE_VARIANTS,
     SUBSCRIBE_FORM_VARIANTS,
     SUBSCRIBE_OUTCOMES_VARIANTS,
     WEATHER_HEADER_VARIANTS,
@@ -652,6 +655,44 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_season_calendar_demo.html",
         variants=SEASON_CALENDAR_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="button",
+        label="Button",
+        description=(
+            "Primary, secondary and ghost button variants across standard and "
+            "compact sizes. Renders either an ``<a>`` or a ``<button>`` depending "
+            "on whether ``href`` is supplied."
+        ),
+        kind="components",
+        partial="includes/_button.html",
+        variants=BUTTON_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="card",
+        label="Card",
+        description=(
+            "Surface card chrome — ``bg-card rounded-card border shadow-sm`` — "
+            "across every padding variant used in the codebase."
+        ),
+        kind="components",
+        partial="includes/_card.html",
+        variants=CARD_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="status-page",
+        label="Status page",
+        description=(
+            "Centred status-page shell — flex full-viewport wrapper → max-w-md "
+            "column → p-8 centred card — used by all five confirmation / error "
+            "pages in the subscriptions flow."
+        ),
+        kind="components",
+        partial="public/partials/_status_page_demo.html",
+        variants=STATUS_PAGE_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

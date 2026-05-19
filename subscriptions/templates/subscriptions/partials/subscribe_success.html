@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n components %}
 {% comment %}
 subscriptions/templates/subscriptions/partials/subscribe_success.html
 HTMX response fragment shown after a successful subscribe POST.
@@ -7,9 +7,9 @@ IMPORTANT: This template must be rendered with an empty context so the
 output is byte-identical across all three subscribe branches (new,
 pending, active). Do NOT add context variables here.
 {% endcomment %}
-<div class="bg-card rounded-card border border-text-3/10 shadow-sm p-6">
-    <h2 class="text-base font-semibold text-text-1 mb-1">{% trans "Check your inbox" %}</h2>
-    <p class="text-sm text-text-2 leading-relaxed">
-        {% trans "We've sent you a link to access your account. It expires in 24 hours." %}
-    </p>
-</div>
+{% card padding="p-6" %}
+<h2 class="text-base font-semibold text-text-1 mb-1">{% trans "Check your inbox" %}</h2>
+<p class="text-sm text-text-2 leading-relaxed">
+    {% trans "We've sent you a link to access your account. It expires in 24 hours." %}
+</p>
+{% endcard %}
