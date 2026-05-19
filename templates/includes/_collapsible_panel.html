@@ -1,0 +1,46 @@
+{% comment %}
+templates/includes/_collapsible_panel.html — Reusable collapsible panel chrome.
+
+Renders a ``<details class="snowdesk-panel …">`` wrapper with a summary row
+(title + chevron) and the outer body wrapper.  Used by the four Snowpack &
+Weather panels on the bulletin page (Snowpack structure, Weather review,
+Weather forecast, Outlook/tendency).
+
+Parameters (passed via ``{% include … with … %}``):
+  title        (string)  — Panel heading rendered in the ``<summary>``.
+  data_testid  (string)  — Value for the ``data-testid`` attribute on
+                           the ``<details>`` element.
+  body_html    (safe)    — Pre-rendered safe HTML string.  The partial
+                           wraps it in the canonical ``slf-prose`` div.
+                           Ignored when ``body_template`` is provided.
+  body_template (string) — Optional Django template path.  When present,
+                           the partial ``{% include %}``s it inside the
+                           body wrapper instead of outputting ``body_html``.
+                           Context inheritance carries ``prose`` and all
+                           other parent-context variables into the
+                           sub-template automatically.
+  is_open      (bool)    — When truthy, renders the ``open`` attribute on
+                           ``<details>`` so the panel starts expanded.
+                           Used by the component library to demonstrate
+                           the opened visual state; real bulletin panels
+                           omit this parameter (default closed).
+{% endcomment %}
+<details
+    class="snowdesk-panel bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0"
+    data-testid="{{ data_testid }}"
+    {% if is_open %}
+        open
+    {% endif %}
+>
+    <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
+        <span class="text-[13px] font-semibold text-text-1">{{ title }}</span>
+        <span class="snowdesk-panel-chevron text-text-3 text-sm" aria-hidden="true">&#x25BE;</span>
+    </summary>
+    <div class="px-4 pb-4 pt-3 border-t border-border">
+        {% if body_template %}
+            {% include body_template %}
+        {% else %}
+            <div class="slf-prose text-sm leading-[1.6] text-text-2">{{ body_html }}</div>
+        {% endif %}
+    </div>
+</details>

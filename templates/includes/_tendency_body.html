@@ -1,0 +1,35 @@
+{% load snowdesk_html %}
+{% comment %}
+templates/includes/_tendency_body.html — Multi-entry tendency body partial.
+
+Renders the body content of the Outlook/tendency panel.  Reads ``prose``
+from the inherited template context (provided by bulletin.html via the
+enclosing ``{% with %}`` block).
+
+EUREGIO/ALBINA bulletins ship a ``tendency`` list whose entries have
+``highlights`` text but an empty ``comment``.  The ``tendency_has_comment``
+filter detects this case and falls back to the "No data supplied" placeholder
+rather than rendering a blank body.
+
+For multi-day outlooks the first entry's ``<h1>`` is stripped by
+``prose_body`` (the title is already shown in the panel ``<summary>``);
+subsequent entries keep their leading ``<h1>`` so each day's heading
+remains visible and disambiguated.
+{% endcomment %}
+{% with tendency_has_content=prose|tendency_has_comment %}
+    {% if tendency_has_content %}
+        {% for entry in prose.tendency %}
+            {% if entry.comment %}
+                <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-3{% endif %}">
+                    {% if forloop.first %}
+                        {{ entry.comment|prose_body|snowdesk_html }}
+                    {% else %}
+                        {{ entry.comment|snowdesk_html }}
+                    {% endif %}
+                </div>
+            {% endif %}
+        {% endfor %}
+    {% else %}
+        {% include "includes/_no_data_supplied.html" %}
+    {% endif %}
+{% endwith %}
