@@ -17,6 +17,7 @@ import surface.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 from types import SimpleNamespace
 from typing import Any
@@ -28,6 +29,34 @@ from bulletins.services.weather_display import (
     WEATHER_ICON_BUCKETS,
     WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,  # used inside synthetic_weather_display
 )
+
+# String constants for elevation bound type — mirror ``public.views`` so the
+# template filter (``elevation_icon``) sees the same strings without coupling
+# this fixture module to the large ``views`` module.
+_ELEVATION_LOWER = "LOWER"
+_ELEVATION_UPPER = "UPPER"
+
+
+@dataclasses.dataclass(frozen=True)
+class _ElevationBounds:
+    """Minimal elevation bounds stub for component-library fixtures.
+
+    Mirrors the public-side :class:`~public.views.ElevationBounds` just
+    enough to satisfy the ``_rating_block.html`` template and the
+    ``elevation_icon`` filter — without importing from the large
+    ``public.views`` module.
+
+    Boolean-truthy when ``display`` is non-empty, matching the behaviour
+    of the production dataclass.
+    """
+
+    lower: str
+    upper: str
+    display: str
+    bound_type: str
+
+    def __bool__(self) -> bool:  # noqa: D105
+        return bool(self.display)
 
 
 def synthetic_weather_display(code: int, time_of_day: str) -> dict[str, Any]:
@@ -608,5 +637,415 @@ DAY_CHARACTER_VARIANTS: tuple[dict[str, Any], ...] = (
                 "explainer": "Danger is present across the whole forecast area.",
             }
         },
+    },
+)
+
+
+# ── Nav (SNOW-201) ──────────────────────────────────────────────────────────
+# Covers the four meaningful states of the persistent top bar:
+# bare logo, back-link variant, season-trigger variant, and authed subscriber.
+# ``request.user`` and ``nav_subscriptions`` are overridden via SimpleNamespace
+# so the partial's auth-area branches can be exercised without touching the
+# context processor.
+
+_NAV_REGION = SimpleNamespace(region_id="CH-VS-3431", name="Bex-Villars")
+
+NAV_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Bare — logo only, unauthenticated",
+        "context": {
+            "request": SimpleNamespace(
+                user=SimpleNamespace(
+                    is_authenticated=False,
+                    is_staff=False,
+                    email="",
+                ),
+                csp_nonce="",
+            ),
+            "nav_subscriptions": [],
+        },
+    },
+    {
+        "caption": "With back link",
+        "context": {
+            "back_url": "/regions/CH-VS-3431/",
+            "back_label": "Back to bulletin",
+            "request": SimpleNamespace(
+                user=SimpleNamespace(
+                    is_authenticated=False,
+                    is_staff=False,
+                    email="",
+                ),
+                csp_nonce="",
+            ),
+            "nav_subscriptions": [],
+        },
+    },
+    {
+        "caption": "With season trigger",
+        "context": {
+            "season_trigger": SimpleNamespace(season_label="25/26"),
+            "request": SimpleNamespace(
+                user=SimpleNamespace(
+                    is_authenticated=False,
+                    is_staff=False,
+                    email="",
+                ),
+                csp_nonce="",
+            ),
+            "nav_subscriptions": [],
+        },
+    },
+    {
+        "caption": "Authenticated subscriber",
+        "context": {
+            "request": SimpleNamespace(
+                user=SimpleNamespace(
+                    is_authenticated=True,
+                    is_staff=False,
+                    email="alice@example.com",
+                ),
+                csp_nonce="",
+            ),
+            "nav_subscriptions": [
+                SimpleNamespace(region=_NAV_REGION),
+            ],
+        },
+    },
+)
+
+
+# ── Site footer (SNOW-201) ──────────────────────────────────────────────────
+# The footer reverses URLs internally and reads no context variables, so a
+# single empty-context variant covers all states.
+
+SITE_FOOTER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default",
+        "context": {},
+    },
+)
+
+
+# ── Rating block (SNOW-201) ─────────────────────────────────────────────────
+# Seven cards: one per EAWS problem type at a representative danger level,
+# plus a prose-only card exercising the no-core-zone branch.
+# Shapes match the dict produced by ``build_problem_cards`` / the render
+# model traits — keys consumed by ``_rating_block.html``.
+
+
+def _make_rating_card(
+    category: str,
+    danger_level: int,
+    danger_level_key: str,
+    problem_type: str,
+    time_period: str,
+    aspects: list[str],
+    elevation: _ElevationBounds,
+    label: str,
+    time_period_label: str,
+    core_zone_text: str,
+    comment_html: str = "",
+    avalanche_type: str | None = None,
+) -> dict[str, Any]:
+    """Build one rating-block card dict in the shape ``_rating_block.html`` expects."""
+    return {
+        "category": category,
+        "danger_level": danger_level,
+        "danger_level_key": danger_level_key,
+        "problem_type": problem_type,
+        "time_period": time_period,
+        "aspects": aspects,
+        "elevation": elevation,
+        "comment_html": comment_html,
+        "label": label,
+        "time_period_label": time_period_label,
+        "hide_comment": False,
+        "core_zone_text": core_zone_text,
+        "avalanche_type": avalanche_type,
+    }
+
+
+RATING_BLOCK_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "New snow · moderate",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="new_snow",
+                time_period="all_day",
+                aspects=["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+                elevation=_ElevationBounds(
+                    lower="1600",
+                    upper="",
+                    display="above 1600m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="New snow",
+                time_period_label="",
+                core_zone_text="All aspects, above 1600m",
+            ),
+        },
+    },
+    {
+        "caption": "Wind slab · considerable",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=3,
+                danger_level_key="considerable",
+                problem_type="wind_slab",
+                time_period="all_day",
+                aspects=["N", "NE", "NW"],
+                elevation=_ElevationBounds(
+                    lower="2400",
+                    upper="",
+                    display="above 2400m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Wind slab",
+                time_period_label="",
+                core_zone_text="N to NW aspects, above 2400m",
+            ),
+        },
+    },
+    {
+        "caption": "Persistent weak layers · considerable",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=3,
+                danger_level_key="considerable",
+                problem_type="persistent_weak_layers",
+                time_period="all_day",
+                aspects=["N", "NE", "NW", "E"],
+                elevation=_ElevationBounds(
+                    lower="2600",
+                    upper="",
+                    display="above 2600m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Persistent weak layers",
+                time_period_label="",
+                core_zone_text="N to E aspects, above 2600m",
+            ),
+        },
+    },
+    {
+        "caption": "Cornices · moderate",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="cornices",
+                time_period="all_day",
+                aspects=["N", "NE", "E", "NW"],
+                elevation=_ElevationBounds(
+                    lower="2200",
+                    upper="",
+                    display="above 2200m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Cornices",
+                time_period_label="",
+                core_zone_text="N to E and NW aspects, above 2200m",
+            ),
+        },
+    },
+    {
+        "caption": "Wet snow · moderate · later",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wet_snow",
+                time_period="later",
+                aspects=["E", "SE", "S", "SW", "W"],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="2200",
+                    display="below 2200m",
+                    bound_type=_ELEVATION_UPPER,
+                ),
+                label="Wet snow",
+                time_period_label="Later",
+                core_zone_text="E to W aspects, below 2200m",
+            ),
+        },
+    },
+    {
+        "caption": "Gliding snow · moderate",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="gliding_snow",
+                time_period="all_day",
+                aspects=["S", "SE", "SW"],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="1800",
+                    display="below 1800m",
+                    bound_type=_ELEVATION_UPPER,
+                ),
+                label="Gliding snow",
+                time_period_label="",
+                core_zone_text="S-facing aspects, below 1800m",
+            ),
+        },
+    },
+    {
+        "caption": "Prose only — no structured terrain",
+        "solo": True,
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="new_snow",
+                time_period="all_day",
+                aspects=[],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="",
+                    display="",
+                    bound_type="",
+                ),
+                label="New snow",
+                time_period_label="",
+                core_zone_text="",
+                comment_html=(
+                    "<p>Fresh snowfall overnight — additional loading on "
+                    "an already weak snowpack. Exercise caution at all "
+                    "elevations.</p>"
+                ),
+            ),
+        },
+    },
+)
+
+
+# ── Region tooltip (SNOW-201) ───────────────────────────────────────────────
+# Three variants covering the two rating states (rating chip present vs absent)
+# and a band of danger levels.  Fixtures use SimpleNamespace so no DB access
+# is needed at library load time.
+
+_TOOLTIP_REGION = SimpleNamespace(
+    region_id="CH-VS-3431",
+    name="Bex–Villars",
+    subregion=SimpleNamespace(
+        major=SimpleNamespace(name_en="Valais", name_native="Valais"),
+        name_en="Lower Valais",
+        name_native="Bas-Valais",
+    ),
+)
+_TOOLTIP_DATE = datetime.date(2026, 2, 14)
+
+REGION_TOOLTIP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Considerable · no subdivision",
+        "context": {
+            "region": _TOOLTIP_REGION,
+            "day_rating": SimpleNamespace(max_rating=3, max_subdivision=None),
+            "bulletin_url": "/CH-VS-3431/",
+            "country_name": "Switzerland",
+            "target_date": _TOOLTIP_DATE,
+        },
+    },
+    {
+        "caption": "High · upper subdivision",
+        "context": {
+            "region": _TOOLTIP_REGION,
+            "day_rating": SimpleNamespace(max_rating=4, max_subdivision="upper"),
+            "bulletin_url": "/CH-VS-3431/",
+            "country_name": "Switzerland",
+            "target_date": _TOOLTIP_DATE,
+        },
+    },
+    {
+        "caption": "No bulletin",
+        "context": {
+            "region": _TOOLTIP_REGION,
+            "day_rating": None,
+            "bulletin_url": "",
+            "country_name": "Switzerland",
+            "target_date": _TOOLTIP_DATE,
+        },
+    },
+)
+
+
+# ── Subscribe form (SNOW-201) ───────────────────────────────────────────────
+# Two variants: the clean empty form, and the form re-displayed with a
+# validation error on the email field.
+
+SUBSCRIBE_FORM_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default — empty form",
+        "context": {
+            "region_id": "CH-VS-3431",
+        },
+    },
+    {
+        "caption": "With validation error",
+        "context": {
+            "region_id": "CH-VS-3431",
+            "form": SimpleNamespace(
+                email=SimpleNamespace(
+                    errors=["Enter a valid email address."],
+                )
+            ),
+        },
+    },
+)
+
+
+# ── Subscribe outcomes (SNOW-201) ───────────────────────────────────────────
+# Five distinct outcome templates, each rendered as a separate variant under
+# one sidebar entry.  The ``"partial"`` key in each variant overrides the
+# category's default ``partial`` field via the widened ``include_variant``
+# tag (Option A from the plan).
+
+SUBSCRIBE_OUTCOMES_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Success — check inbox (generic)",
+        "partial": "subscriptions/partials/subscribe_success.html",
+        "context": {},
+    },
+    {
+        "caption": "Success — access link sent",
+        "partial": "subscriptions/partials/subscribe_success_access.html",
+        "context": {},
+    },
+    {
+        "caption": "Success — region added",
+        "partial": "subscriptions/partials/subscribe_success_added.html",
+        "context": {"region_name": "Bex–Villars"},
+    },
+    {
+        "caption": "Success — already subscribed",
+        "partial": "subscriptions/partials/subscribe_success_already.html",
+        "context": {"region_name": "Bex–Villars"},
+    },
+    {
+        "caption": "Error — region not found",
+        "partial": "subscriptions/partials/subscribe_error.html",
+        "context": {},
+    },
+)
+
+
+# ── No-data-supplied (SNOW-201) ─────────────────────────────────────────────
+# Single variant; the partial carries no context variables.
+
+NO_DATA_SUPPLIED_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default",
+        "context": {},
     },
 )
