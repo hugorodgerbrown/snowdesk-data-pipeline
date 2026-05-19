@@ -55,6 +55,32 @@ You are a senior Django code reviewer specialising in security, performance, and
 - [ ] No business logic in templates
 - [ ] Tailwind classes only — no inline styles unless unavoidable (and commented if so)
 
+### Design system
+
+The design-system rules are documented in `CLAUDE.md` and mechanically
+enforced by `bin/ds-lint` (`tox -e ds-lint`). The linter catches the
+obvious mechanical violations; your job is to catch the semantic ones it
+can't see — duplication of an existing partial under a different name,
+new tokens that should have reused existing ones, escape-hatch comments
+with thin or hand-wavy reasons.
+
+- [ ] `tox -e ds-lint` exits 0 on the branch (run it as part of the review;
+      don't trust that CI ran it)
+- [ ] Any new visual surface either reuses an existing partial from the
+      `/_components/` library OR extracts a new partial *and registers it*
+      in `public/design_tokens.py` with variant fixtures. Inline duplication
+      of an existing shape under a different file/class is a blocker.
+- [ ] New CSS tokens land in `src/css/main.css` `@theme` AND in the
+      `FoundationCategory` registry — `public/checks.py`' sync check
+      should pass cleanly. Drift between the two is a blocker.
+- [ ] Any `{# ds-lint-allow: <reason> #}` introduced in the diff carries
+      a *specific* reason a reviewer can judge cold — "constraint X means
+      a token can't express this", not "needed here" or "intentional".
+      Vague reasons are a blocker.
+- [ ] No new file-level `PATH_ALLOWLIST` entries in `bin/ds-lint` without
+      an explicit justification in the PR body. File-level suppression is
+      a last resort, not a quick fix.
+
 ### Lighthouse (accessibility / SEO / performance / best-practices)
 
 Run `npm run lh` before concluding the review — it's the same command
