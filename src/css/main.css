@@ -81,6 +81,13 @@
 
 @import "tailwindcss";
 
+/* Force the status-palette utilities into the bundle.
+ * bg-status-* / text-status-* / ring-status-* are used in _callout.html via
+ * dynamic class interpolation (bg-status-{{ kind }}) which Tailwind's
+ * static scanner cannot detect.  An @source inline() directive lists every
+ * combination explicitly so the compiler never tree-shakes them. */
+@source inline("{bg}-status-{warning,error,success,info}-bg {text,ring}-status-{warning,error,success,info}-text");
+
 /* ———————————————————————————————————————————
    1. DESIGN TOKENS
    ——————————————————————————————————————————— */
@@ -120,14 +127,6 @@
   --color-status-success-text:#065f46;   /* emerald-800 */
   --color-status-info-bg:     #dbeafe;   /* blue-100  */
   --color-status-info-text:   #1e40af;   /* blue-800  */
-
-  /* Warning callout (render-model error banners) */
-  --color-callout-warning-bg:         #fffbeb;   /* amber-50  */
-  --color-callout-warning-border:     #fbbf24;   /* amber-400 */
-  --color-callout-warning-heading:    #78350f;   /* amber-900 */
-  --color-callout-warning-text:       #92400e;   /* amber-800 */
-  --color-callout-warning-code-bg:    #fef3c7;   /* amber-100 */
-  --color-callout-warning-link-hover: #b45309;   /* amber-700 */
 
   /* Info callout (day-character banner) */
   --color-callout-info-bg:      #ffffff;               /* card white                    */
@@ -284,14 +283,6 @@
   --color-status-success-text:#6ee7b7;
   --color-status-info-bg:     #1e2a4a;
   --color-status-info-text:   #93c5fd;
-
-  /* Warning callout */
-  --color-callout-warning-bg:         #2a2010;
-  --color-callout-warning-border:     #b8860b;
-  --color-callout-warning-heading:    #fcd34d;
-  --color-callout-warning-text:       #fbbf24;
-  --color-callout-warning-code-bg:    #332a14;
-  --color-callout-warning-link-hover: #fde68a;
 
   /* Info callout */
   --color-callout-info-bg:      #2a2825;                /* same as dark --color-card         */
