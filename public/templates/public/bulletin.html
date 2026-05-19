@@ -252,7 +252,7 @@ reachable via the SNOW-81 deep-link in the masthead.
         {% else %}
             {# ── Error state (version == 0) ──────────────────────────────── #}
             {% if panel.render_model.version == 0 %}
-                <div class="rounded-[8px] border-l-4 border-callout-warning-border bg-callout-warning-bg px-3.5 py-3 text-sm mb-4">
+                <div class="rounded-tag border-l-4 border-callout-warning-border bg-callout-warning-bg px-3.5 py-3 text-sm mb-4">
                     <p class="font-semibold text-callout-warning-heading mb-1">
                         {% trans "We couldn't process this bulletin." %}
                     </p>
@@ -316,7 +316,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                         {% trans "Avalanche Problems" %}
                     </h2>
                     {% if not panel.problem_cards %}
-                        <div class="rounded-[12px] border border-border bg-card px-4 py-5 text-center mb-4">
+                        <div class="rounded-card border border-border bg-card px-4 py-5 text-center mb-4">
                             <p class="text-sm font-medium text-text-1 mb-0.5">
                                 {% trans "No avalanche problems reported." %}
                             </p>
@@ -345,7 +345,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                                 <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3">
                                     {% trans "Avalanche Activity" %}
                                 </h2>
-                                <div class="rounded-[12px] border border-border bg-card px-4 py-4">
+                                <div class="rounded-card border border-border bg-card px-4 py-4">
                                     {% if prose.avalanche_activity.highlights %}
                                         <p
                                             class="text-sm font-semibold text-text-1 mb-2"
@@ -394,7 +394,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                                     {# title when the prose has no leading <h1>.                         #}
                                     {% if prose.snowpack_structure %}
                                         <details
-                                            class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                            class="snowdesk-panel bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0"
                                             data-testid="snowpack-panel"
                                         >
                                             <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
@@ -417,7 +417,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                                     {# — Weather review ──────────────────────── #}
                                     {% if prose.weather_review %}
                                         <details
-                                            class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                            class="snowdesk-panel bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0"
                                             data-testid="weather-review-panel"
                                         >
                                             <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
@@ -440,7 +440,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                                     {# — Weather forecast ────────────────────── #}
                                     {% if prose.weather_forecast %}
                                         <details
-                                            class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                            class="snowdesk-panel bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0"
                                             data-testid="weather-forecast-panel"
                                         >
                                             <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
@@ -469,7 +469,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                                     {% if prose.tendency %}
                                         {% with first_entry=prose.tendency|first %}
                                             <details
-                                                class="snowdesk-panel bg-card border border-border rounded-[12px] overflow-hidden mb-2 last:mb-0"
+                                                class="snowdesk-panel bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0"
                                                 data-testid="tendency-panel"
                                             >
                                                 <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">

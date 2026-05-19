@@ -24,7 +24,7 @@ class SubscribeForm(forms.Form):
             attrs={
                 "placeholder": "your@email.com",
                 "class": (
-                    "w-full px-4 py-2.5 rounded-[8px] border border-text-3/30 "
+                    "w-full px-4 py-2.5 rounded-tag border border-text-3/30 "
                     "bg-card text-text-1 placeholder:text-text-3 "
                     "focus:outline-none focus:ring-2 focus:ring-text-1/30"
                 ),
@@ -52,7 +52,7 @@ class EmailForm(forms.Form):
             attrs={
                 "placeholder": "your@email.com",
                 "class": (
-                    "w-full px-4 py-2.5 rounded-[8px] border border-text-3/30 "
+                    "w-full px-4 py-2.5 rounded-tag border border-text-3/30 "
                     "bg-card text-text-1 placeholder:text-text-3 "
                     "focus:outline-none focus:ring-2 focus:ring-text-1/30"
                 ),
