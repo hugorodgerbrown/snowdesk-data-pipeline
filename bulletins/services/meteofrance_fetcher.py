@@ -453,9 +453,11 @@ def latest_meteofrance_date() -> date | None:
     """
     Return the most recent ``valid_from`` date of any MeteoFrance bulletin in the DB.
 
-    Filters on bulletins whose ``bulletin_id`` starts with ``"FR-"`` to
-    identify MeteoFrance bulletins — consistent with the approach used in
-    ``latest_euregio_date()`` which filters on render_model source.
+    Filters on ``render_model.source == Bulletin.Source.MF`` — mirrors the
+    approach used in ``latest_euregio_date()``. Bulletins with a failed
+    render-model build (version 0 error sentinel) carry no ``source`` key
+    and are naturally excluded, which is the desired behaviour for
+    resume-from-last-success.
 
     Used by the management command to derive the default ``--start-date``
     (resume from where the last run left off). Returns ``None`` when no
@@ -467,7 +469,7 @@ def latest_meteofrance_date() -> date | None:
 
     """
     result = (
-        Bulletin.objects.filter(bulletin_id__startswith="FR-")
+        Bulletin.objects.filter(render_model__source=Bulletin.Source.MF)
         .order_by("-valid_from")
         .values_list("valid_from", flat=True)
         .first()

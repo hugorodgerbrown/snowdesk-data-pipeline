@@ -1536,35 +1536,35 @@ class TestDetectSource:
     """Tests for _detect_source helper."""
 
     def test_slf_via_ch_custom_data(self) -> None:
-        """Properties with customData.CH → 'slf'."""
+        """Properties with customData.CH → Bulletin.Source.SLF."""
         props: dict[str, Any] = {
             "customData": {"CH": {"aggregation": []}},
         }
-        assert _detect_source(props) == "slf"
+        assert _detect_source(props) == Bulletin.Source.SLF
 
     def test_euregio_via_albina_custom_data(self) -> None:
-        """Properties with customData.ALBINA → 'euregio'."""
+        """Properties with customData.ALBINA → Bulletin.Source.EUREGIO."""
         props: dict[str, Any] = {
             "customData": {"ALBINA": {"mainDate": "2026-05-03"}},
         }
-        assert _detect_source(props) == "euregio"
+        assert _detect_source(props) == Bulletin.Source.EUREGIO
 
     def test_euregio_via_lwd_key(self) -> None:
-        """Properties with customData.LWD_Tyrol → 'euregio'."""
+        """Properties with customData.LWD_Tyrol → Bulletin.Source.EUREGIO."""
         props: dict[str, Any] = {
             "customData": {"LWD_Tyrol": {"dangerPatterns": ["DP10"]}},
         }
-        assert _detect_source(props) == "euregio"
+        assert _detect_source(props) == Bulletin.Source.EUREGIO
 
     def test_euregio_via_combined_custom_data(self) -> None:
-        """Properties with both ALBINA and LWD_Tyrol → 'euregio'."""
+        """Properties with both ALBINA and LWD_Tyrol → Bulletin.Source.EUREGIO."""
         props: dict[str, Any] = {
             "customData": {
                 "ALBINA": {"mainDate": "2026-05-03"},
                 "LWD_Tyrol": {"dangerPatterns": ["DP10"]},
             },
         }
-        assert _detect_source(props) == "euregio"
+        assert _detect_source(props) == Bulletin.Source.EUREGIO
 
     def test_meteofrance_via_mf_custom_data(self) -> None:
         """Properties with customData.MF → Bulletin.Source.MF."""
