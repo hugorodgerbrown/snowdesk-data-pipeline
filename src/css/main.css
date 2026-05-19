@@ -346,47 +346,6 @@
 .danger-band[data-level="very_high"]    { border-top: 4px solid var(--color-eaws-very-high); }
 
 
-/* —— Weather header (SNOW-98) —————————————————
-   Bulletin-page graphic header whose background
-   shifts with the WeatherSnapshot bucket and the
-   sunrise/sunset time-of-day computed at view time.
-
-   The block is a placeholder visual until the
-   final design lands. Height and margin are kept
-   here (rather than as Tailwind utilities in the
-   template) so the design hand-off can update the
-   look in one place without touching every page
-   that includes the partial.
-
-   Usage in template (see includes/bulletin_weather_header.html):
-     <div class="weather-header"
-          data-weather-bucket="clear"
-          data-time-of-day="day"></div>
-   ————————————————————————————————————————— */
-
-.weather-header {
-  height: 96px;
-  margin: 0 0 1rem;   /* full-bleed inside the page's px-4 container */
-  border-radius: var(--radius-card);
-  background: var(--color-card-subtle);   /* fallback if no bucket matches */
-}
-
-.weather-header[data-weather-bucket="clear"][data-time-of-day="day"]           { background: var(--color-weather-clear-day); }
-.weather-header[data-weather-bucket="clear"][data-time-of-day="night"]         { background: var(--color-weather-clear-night); }
-.weather-header[data-weather-bucket="partly_cloudy"][data-time-of-day="day"]   { background: var(--color-weather-partly-cloudy-day); }
-.weather-header[data-weather-bucket="partly_cloudy"][data-time-of-day="night"] { background: var(--color-weather-partly-cloudy-night); }
-.weather-header[data-weather-bucket="cloudy"][data-time-of-day="day"]          { background: var(--color-weather-cloudy-day); }
-.weather-header[data-weather-bucket="cloudy"][data-time-of-day="night"]        { background: var(--color-weather-cloudy-night); }
-.weather-header[data-weather-bucket="fog"][data-time-of-day="day"]             { background: var(--color-weather-fog-day); }
-.weather-header[data-weather-bucket="fog"][data-time-of-day="night"]           { background: var(--color-weather-fog-night); }
-.weather-header[data-weather-bucket="rain"][data-time-of-day="day"]            { background: var(--color-weather-rain-day); }
-.weather-header[data-weather-bucket="rain"][data-time-of-day="night"]          { background: var(--color-weather-rain-night); }
-.weather-header[data-weather-bucket="snow"][data-time-of-day="day"]            { background: var(--color-weather-snow-day); }
-.weather-header[data-weather-bucket="snow"][data-time-of-day="night"]          { background: var(--color-weather-snow-night); }
-.weather-header[data-weather-bucket="thunder"][data-time-of-day="day"]         { background: var(--color-weather-thunder-day); }
-.weather-header[data-weather-bucket="thunder"][data-time-of-day="night"]       { background: var(--color-weather-thunder-night); }
-
-
 /* —— Bulletin header panel ——————————————————
    Unified panel carrying region/sub-region, date,
    and weather. Bucket-coloured background preserves
@@ -420,27 +379,6 @@
 .bulletin-header[data-weather-bucket="snow"][data-time-of-day="night"]          { background: var(--color-weather-snow-night); }
 .bulletin-header[data-weather-bucket="thunder"][data-time-of-day="day"]         { background: var(--color-weather-thunder-day); }
 .bulletin-header[data-weather-bucket="thunder"][data-time-of-day="night"]       { background: var(--color-weather-thunder-night); }
-
-
-/* —— EAWS per-problem danger left-border ————
-   A 3px left border on individual avalanche problem
-   blocks indicating that problem's own danger rating.
-   Mirrors the danger-band data-level pattern so the
-   same EAWS token colours are reused consistently.
-   A missing / unknown danger_rating_value produces no
-   coloured border (falls back to border-border neutral).
-
-   Usage in template:
-     <div class="problem-level" data-level="considerable">
-   ————————————————————————————————————————— */
-
-.problem-level { border-left: 3px solid var(--color-border); }
-
-.problem-level[data-level="low"]          { border-left-color: var(--color-eaws-low); }
-.problem-level[data-level="moderate"]     { border-left-color: var(--color-eaws-moderate); }
-.problem-level[data-level="considerable"] { border-left-color: var(--color-eaws-considerable); }
-.problem-level[data-level="high"]         { border-left-color: var(--color-eaws-high); }
-.problem-level[data-level="very_high"]    { border-left-color: var(--color-eaws-very-high); }
 
 
 /* —— EAWS danger-level compact tile —————————
@@ -479,20 +417,6 @@
 .danger-tile[data-level="considerable"] { background: var(--color-eaws-considerable); color: var(--color-eaws-considerable-fg); }
 .danger-tile[data-level="high"]         { background: var(--color-eaws-high);         color: var(--color-eaws-high-fg); }
 .danger-tile[data-level="very_high"]    { background: var(--color-eaws-very-high);    color: var(--color-eaws-very-high-fg); }
-
-/* Coloured dot shown beside the "Avalanche Problems" heading — one per
- * problem card, coloured by EAWS danger level, no number inside. */
-.problem-roundel {
-  display: inline-block;
-  width: 0.75rem;
-  height: 0.75rem;
-  border-radius: 9999px;
-}
-.problem-roundel[data-level="low"]          { background-color: var(--color-eaws-low); }
-.problem-roundel[data-level="moderate"]     { background-color: var(--color-eaws-moderate); }
-.problem-roundel[data-level="considerable"] { background-color: var(--color-eaws-considerable); }
-.problem-roundel[data-level="high"]         { background-color: var(--color-eaws-high); }
-.problem-roundel[data-level="very-high"]    { background-color: var(--color-eaws-very-high); }
 
 /* Small inline variant of .danger-tile for use in running text —
  * e.g. the region-peek subtitle prefixes each trait title with a
