@@ -608,6 +608,92 @@ STATUS_PAGE_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Collapsible panel (SNOW-203) ------------------------------------------------
+# Three variants exercising the _collapsible_panel.html partial:
+#   1. Closed · single body — the default (closed) state with body_html.
+#   2. Open · single body — same shape with is_open=True so the body
+#      styling and slf-prose layout are visible without interaction.
+#   3. Open · multi-entry tendency — body_template delegates to
+#      _tendency_body.html; a synthetic ``prose`` dict with a two-entry
+#      tendency list exercises the multi-day iteration path.
+#
+# The tendency_has_comment filter reads prose as a dict with a "tendency"
+# key; each entry is a dict with a "comment" key.  The filter returns True
+# when any entry has a non-empty comment, so both entries carry comment text.
+
+
+def _build_collapsible_panel_variants() -> tuple[dict[str, Any], ...]:
+    """Build the collapsible-panel variant matrix.
+
+    Returns three variants: closed simple body, open simple body, and
+    an open multi-entry tendency body rendered via ``_tendency_body.html``.
+    """
+    from django.utils.safestring import mark_safe
+
+    simple_body = mark_safe(  # noqa: S308 — static fixture HTML, not user input
+        "<p>Fresh snowfall overnight has loaded leeward slopes significantly. "
+        "Weak layers from the cold spell earlier in the week remain buried "
+        "beneath the new snow and are sensitive to additional loading.</p>"
+    )
+
+    tendency_prose = {
+        "tendency": [
+            {
+                "comment": (
+                    "<h1>Outlook for Friday</h1>"
+                    "<p>Hazard will increase through the day as temperatures "
+                    "rise above the freezing level. Wet-snow avalanches are "
+                    "likely on solar aspects above 1800 m.</p>"
+                )
+            },
+            {
+                "comment": (
+                    "<h1>Outlook for Saturday</h1>"
+                    "<p>Conditions improve with a return to colder, clearer "
+                    "weather. Danger will consolidate at Moderate (2) across "
+                    "all elevations.</p>"
+                )
+            },
+        ]
+    }
+
+    return (
+        {
+            "caption": "Closed · single body",
+            "context": {
+                "title": "Snowpack structure",
+                "data_testid": "snowpack-panel",
+                "body_html": simple_body,
+                "is_open": False,
+            },
+        },
+        {
+            "caption": "Open · single body",
+            "context": {
+                "title": "Snowpack structure",
+                "data_testid": "snowpack-panel",
+                "body_html": simple_body,
+                "is_open": True,
+            },
+        },
+        {
+            "caption": "Open · multi-entry tendency",
+            "context": {
+                "title": "Outlook for Friday",
+                "data_testid": "tendency-panel",
+                "body_template": "includes/_tendency_body.html",
+                "is_open": True,
+                "prose": tendency_prose,
+            },
+        },
+    )
+
+
+COLLAPSIBLE_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_collapsible_panel_variants()
+)
+
+
 DAY_CHARACTER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Hard-to-read day",
