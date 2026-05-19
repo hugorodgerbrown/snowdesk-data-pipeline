@@ -18,9 +18,7 @@ Context:
     {% regroup category.tokens by group as groups %}
     {% for grouping in groups %}
         <section class="space-y-3">
-            <p class="text-xs font-mono uppercase tracking-widest text-text-3">
-                {{ grouping.grouper }}
-            </p>
+            {% include "includes/_eyebrow.html" with text=grouping.grouper tag="p" %}
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                 {% for token in grouping.list %}
                     <figure class="space-y-2">
