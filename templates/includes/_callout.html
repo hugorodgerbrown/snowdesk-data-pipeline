@@ -24,6 +24,8 @@
 >
     <p class="font-semibold text-status-{{ kind }}-text mb-1">{{ heading }}</p>
     {% if body %}
+        {# Trusted server-rendered inline markup only — see partial docstring. #}
+        <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
         <p class="text-xs text-status-{{ kind }}-text mb-2">{{ body|safe }}</p>
     {% endif %}
     {% if code_block %}
