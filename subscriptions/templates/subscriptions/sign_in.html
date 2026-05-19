@@ -22,51 +22,48 @@ the manage page can be authenticated-only.
 {% block content %}
     <div class="px-4 py-10">
         <div class="max-w-[640px] mx-auto">
-            <div class="bg-card rounded-card p-8 shadow-sm border border-text-3/10">
-                <h1 class="text-2xl font-semibold text-text-1 mb-2">
-                    {% trans "Sign in" %}
-                </h1>
-                <p class="text-text-2 text-sm mb-6 leading-relaxed">
-                    {% trans "Enter your email address and we'll send you a sign-in link." %}
-                </p>
-
-                <form method="post" novalidate>
-                    {% csrf_token %}
-                    <div class="mb-4">
-                        <label
-                            for="{{ form.email.id_for_label }}"
-                            class="block text-sm font-medium text-text-1 mb-1.5"
-                        >
-                            {% trans "Email address" %}
-                        </label>
-                        {{ form.email }}
-                        {% if form.email.errors %}
-                            <ul class="mt-1.5 space-y-0.5">
-                                {% for error in form.email.errors %}
-                                    <li class="text-xs text-form-error">{{ error }}</li>
-                                {% endfor %}
-                            </ul>
-                        {% endif %}
-                    </div>
-
-                    {% trans "Send sign-in link" as label %}
-                    {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
-                </form>
-
-                <div
-                    id="passkey-signin-wrap"
-                    class="hidden mt-4 pt-4 border-t border-text-3/10"
-                >
-                    {% trans "Sign in with a passkey" as label %}
-                    {% include "includes/_button.html" with label=label variant="ghost" full_width=True extra_attrs='id="btn-passkey-signin" type="button"' %}
-                    <p
-                        id="passkey-auth-feedback"
-                        role="alert"
-                        class="hidden mt-3 text-xs text-form-error"
+            {% card padding="p-8" %}
+            <h1 class="text-2xl font-semibold text-text-1 mb-2">
+                {% trans "Sign in" %}
+            </h1>
+            <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                {% trans "Enter your email address and we'll send you a sign-in link." %}
+            </p>
+            <form method="post" novalidate>
+                {% csrf_token %}
+                <div class="mb-4">
+                    <label
+                        for="{{ form.email.id_for_label }}"
+                        class="block text-sm font-medium text-text-1 mb-1.5"
                     >
-                    </p>
+                        {% trans "Email address" %}
+                    </label>
+                    {{ form.email }}
+                    {% if form.email.errors %}
+                        <ul class="mt-1.5 space-y-0.5">
+                            {% for error in form.email.errors %}
+                                <li class="text-xs text-form-error">{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
                 </div>
+                {% trans "Send sign-in link" as label %}
+                {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
+            </form>
+            <div
+                id="passkey-signin-wrap"
+                class="hidden mt-4 pt-4 border-t border-text-3/10"
+            >
+                {% trans "Sign in with a passkey" as label %}
+                {% include "includes/_button.html" with label=label variant="ghost" full_width=True extra_attrs='id="btn-passkey-signin" type="button"' %}
+                <p
+                    id="passkey-auth-feedback"
+                    role="alert"
+                    class="hidden mt-3 text-xs text-form-error"
+                >
+                </p>
             </div>
+            {% endcard %}
         </div>
     </div>
 
