@@ -339,3 +339,25 @@ class TestBuildFranceFixtureCommit:
             if e["model"] == "regions.microregion"
         ]
         assert micro_ids == sorted(micro_ids)
+
+    def test_commit_display_on_map_suppression(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """FR-3 (Pyrenees) is suppressed; FR-1 (Alpes du Nord) is visible.
+
+        FR-4 (Corse) is not present in the synthetic data, so only the two
+        seeded mountains are asserted here.
+        """
+        eaws, mf, fixture = _seed_sources(tmp_path)
+        _patch_paths(monkeypatch, eaws, mf, fixture)
+
+        call_command("build_france_fixture", "--commit", stdout=StringIO())
+
+        entries = json.loads(fixture.read_text(encoding="utf-8"))
+        by_prefix = {
+            e["fields"]["prefix"]: e["fields"]
+            for e in entries
+            if e["model"] == "regions.majorregion"
+        }
+        assert by_prefix["FR-1"]["display_on_map"] is True
+        assert by_prefix["FR-3"]["display_on_map"] is False
