@@ -296,12 +296,8 @@ reachable via the SNOW-81 deep-link in the masthead.
                        later) summarising the day's hazard windows. The
                        rating blocks below carry the full per-trait detail.
                     {% endcomment %}
-                    <h2
-                        class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3"
-                        data-testid="day-risk-profile-heading"
-                    >
-                        {% trans "Day Risk Profile" %}
-                    </h2>
+                    {% translate "Day Risk Profile" as day_risk_label %}
+                    {% include "includes/_eyebrow.html" with text=day_risk_label data_testid="day-risk-profile-heading" class_extra="mb-3" %}
                     {% include "includes/day_windows.html" %}
 
                     {% comment %}
@@ -309,12 +305,8 @@ reachable via the SNOW-81 deep-link in the masthead.
                        One block per trait.  The partial handles coloured header,
                        aspect/elevation row, and problem rows.
                     {% endcomment %}
-                    <h2
-                        class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3"
-                        data-testid="avalanche-problems-heading"
-                    >
-                        {% trans "Avalanche Problems" %}
-                    </h2>
+                    {% translate "Avalanche Problems" as avalanche_problems_label %}
+                    {% include "includes/_eyebrow.html" with text=avalanche_problems_label data_testid="avalanche-problems-heading" class_extra="mb-3" %}
                     {% if not panel.problem_cards %}
                         <div class="rounded-card border border-border bg-card px-4 py-5 text-center mb-4">
                             <p class="text-sm font-medium text-text-1 mb-0.5">
@@ -342,9 +334,8 @@ reachable via the SNOW-81 deep-link in the masthead.
                                 class="mb-4"
                                 data-testid="avalanche-activity-section"
                             >
-                                <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-3">
-                                    {% trans "Avalanche Activity" %}
-                                </h2>
+                                {% translate "Avalanche Activity" as avalanche_activity_label %}
+                                {% include "includes/_eyebrow.html" with text=avalanche_activity_label class_extra="mb-3" %}
                                 <div class="rounded-card border border-border bg-card px-4 py-4">
                                     {% if prose.avalanche_activity.highlights %}
                                         <p
@@ -381,9 +372,8 @@ reachable via the SNOW-81 deep-link in the masthead.
                             {% if prose.snowpack_structure or prose.weather_review or prose.weather_forecast or prose.tendency %}
                                 <section class="mb-4" data-testid="snowpack-weather-section">
                                     <div class="flex items-baseline justify-between mb-3">
-                                        <h2 class="text-xs font-mono uppercase tracking-widest text-text-3">
-                                            {% trans "Snowpack & Weather" %}
-                                        </h2>
+                                        {% translate "Snowpack & Weather" as snowpack_weather_label %}
+                                        {% include "includes/_eyebrow.html" with text=snowpack_weather_label %}
                                     </div>
 
                                     {# — Snowpack / Weather / Outlook panels ─── #}
@@ -439,9 +429,8 @@ reachable via the SNOW-81 deep-link in the masthead.
                                 data-testid="metadata-strip"
                             >
                                 <div>
-                                    <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
-                                        {% trans "Issued" %}
-                                    </p>
+                                    {% translate "Issued" as issued_label %}
+                                    {% include "includes/_meta_cell.html" with text=issued_label %}
                                     <p class="text-text-2">
                                         {% if meta.publication_time %}
                                             {{ meta.publication_time|parse_iso|date:"j M H:i" }}
@@ -452,9 +441,8 @@ reachable via the SNOW-81 deep-link in the masthead.
                                     </p>
                                 </div>
                                 <div>
-                                    <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
-                                        {% trans "Valid until" %}
-                                    </p>
+                                    {% translate "Valid until" as valid_until_label %}
+                                    {% include "includes/_meta_cell.html" with text=valid_until_label %}
                                     <p class="text-text-2">
                                         {% if meta.valid_until %}
                                             {{ meta.valid_until|parse_iso|date:"j M H:i" }} UTC
@@ -464,9 +452,8 @@ reachable via the SNOW-81 deep-link in the masthead.
                                     </p>
                                 </div>
                                 <div data-testid="next-update-cell">
-                                    <p class="font-mono uppercase tracking-wider text-[9px] mb-0.5">
-                                        {% trans "Next update" %}
-                                    </p>
+                                    {% translate "Next update" as next_update_label %}
+                                    {% include "includes/_meta_cell.html" with text=next_update_label %}
                                     <p class="text-text-2">
                                         {% if meta.next_update %}
                                             {{ meta.next_update|parse_iso|date:"j M H:i" }} UTC
