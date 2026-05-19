@@ -16,8 +16,11 @@ for partials, test client for full-page templates.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from django.contrib.auth.models import AnonymousUser
+from django.middleware.csrf import get_token
 from django.template.loader import render_to_string
 from django.test import Client, RequestFactory
 
@@ -350,6 +353,32 @@ class TestStatusPageChildren:
         assert "You've been unsubscribed" in html
         assert "Back to Snowdesk" in html
         assert "inline-block" in html
+
+    def test_unsubscribe_confirmation_form(self) -> None:
+        """unsubscribe.html renders the confirmation form with CSRF token and cancel link."""
+        rf = RequestFactory()
+        request = rf.get("/")
+        request.user = AnonymousUser()
+        # Seed a CSRF token on the request so {% csrf_token %} emits the hidden field.
+        get_token(request)
+
+        region = SimpleNamespace(region_id="CH-SZ", name="Schwyz")
+        html = render_to_string(
+            "subscriptions/unsubscribe.html",
+            {"region": region, "email": "test@example.com"},
+            request=request,
+        )
+        # Form is preserved.
+        assert '<form method="post"' in html
+        # CSRF hidden field is present.
+        assert "csrfmiddlewaretoken" in html
+        # Full-width primary button rendered by _button.html.
+        assert "bg-text-1" in html
+        assert "text-card" in html
+        assert "w-full" in html
+        # Cancel link has the expected classes and points home.
+        assert "text-xs text-text-3" in html
+        assert 'href="/"' in html
 
     def test_all_status_pages_share_chrome(self, anon_request) -> None:
         """All four status pages share the same flex + card wrapper classes."""
