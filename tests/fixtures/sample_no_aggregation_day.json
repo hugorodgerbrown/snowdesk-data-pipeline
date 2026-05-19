@@ -29,6 +29,9 @@
     "publicationTime": "2026-03-01T15:00:00Z",
     "snowpackStructure": {
       "comment": "<p>Fresh snow has accumulated on wind-exposed ridges.</p>"
+    },
+    "customData": {
+      "CH": {}
     }
   }
 }

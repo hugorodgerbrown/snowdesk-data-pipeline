@@ -370,7 +370,7 @@ def latest_euregio_date() -> date | None:
 
     """
     result = (
-        Bulletin.objects.filter(render_model__source="euregio")
+        Bulletin.objects.filter(render_model__source=Bulletin.Source.EUREGIO)
         .order_by("-valid_from")
         .values_list("valid_from", flat=True)
         .first()

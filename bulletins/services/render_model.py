@@ -1,5 +1,5 @@
 """
-bulletins/services/render_model.py — Render model builder for SLF and EUREGIO bulletins.
+bulletins/services/render_model.py — Render model builder (SLF, EUREGIO, MeteoFrance).
 
 Converts the raw CAAML properties dict stored in Bulletin.raw_data into a
 versioned, presentation-ready ``render_model`` dict. The render model is a
@@ -45,19 +45,26 @@ Version 3 (continued — no shape change requiring regeneration):
 
 Version 4 changes:
   - Source-aware builder: ``_detect_source()`` identifies SLF vs. EUREGIO
-    bulletins and routes to source-specific helpers.
-  - Added ``source`` top-level key: ``"slf"`` or ``"euregio"``.
+    bulletins and routes to source-specific helpers. Now also supports
+    MeteoFrance (``"meteofrance"`` / ``Bulletin.Source.MF``). Raises
+    ``RenderModelBuildError`` on unrecognised ``customData`` keys — the
+    previous silent SLF fallback is removed so that unknown sources surface
+    immediately rather than being silently misfiled.
+  - Added ``source`` top-level key: ``"slf"``, ``"euregio"``, or
+    ``"meteofrance"``.
   - ``_resolve_aggregations()`` synthesises aggregation from problem types
-    for EUREGIO bulletins (ALBINA/LWD customData present, no CH aggregation).
+    for EUREGIO and MeteoFrance bulletins (no CH aggregation in either).
   - Added per-problem ``avalanche_type`` field (``"slab"``, ``"loose"``,
     or ``None``), drawn from ``customData.ALBINA.avalancheType`` for EUREGIO.
+    Always ``None`` for SLF and MeteoFrance.
   - Added per-problem ``extras`` field: source-specific passthrough dict.
     SLF: ``{"subdivision": str, "core_zone_text": str|None}``.
     EUREGIO: ``{"avalanche_type": str|None}``.
+    MeteoFrance: ``{}``.
   - Added ``prose.avalanche_activity`` dict with ``highlights`` and
     ``comment`` string fields (empty strings for SLF; populated from
-    ``avalancheActivity`` for EUREGIO).
-  - Added top-level ``danger_patterns`` list (``[]`` for SLF;
+    ``avalancheActivity`` for EUREGIO and MeteoFrance).
+  - Added top-level ``danger_patterns`` list (``[]`` for SLF and MeteoFrance;
     ``customData.LWD_Tyrol.dangerPatterns`` for EUREGIO).
 """
 
@@ -69,6 +76,8 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from django.utils.translation import gettext_lazy as _
+
+from bulletins.models import Bulletin
 
 if TYPE_CHECKING:
     # ``django_stubs_ext`` ships only with the typing toolchain; importing
@@ -266,29 +275,46 @@ def _resolve_danger(ratings: list[dict[str, Any]]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _detect_source(properties: dict[str, Any]) -> str:
+def _detect_source(properties: dict[str, Any]) -> Bulletin.Source:
     """
-    Detect whether a bulletin originates from SLF or EUREGIO (ALBINA).
+    Detect whether a bulletin originates from SLF, EUREGIO (ALBINA), or MeteoFrance.
 
-    Inspects ``customData`` keys: the presence of ``"ALBINA"`` or any
-    ``"LWD_*"`` key signals an EUREGIO bulletin. ``"CH"`` or an absent /
-    unrecognised ``customData`` falls through to the SLF default.
+    Inspects ``customData`` keys:
+    - ``"ALBINA"`` or any ``"LWD_*"`` key → EUREGIO.
+    - ``"MF"`` → MeteoFrance.
+    - ``"CH"`` → SLF.
+
+    Raises ``RenderModelBuildError`` when the ``customData`` keys do not match
+    any known source. The previous silent SLF fallback is removed: unknown
+    sources must surface immediately so they can be handled, not silently
+    misfiled as SLF bulletins.
 
     Args:
         properties: The CAAML properties dict.
 
     Returns:
-        ``"slf"`` or ``"euregio"``.
+        A ``Bulletin.Source`` member.
+
+    Raises:
+        RenderModelBuildError: When no known source marker is found in
+            ``customData``.
 
     """
     custom_data: dict[str, Any] = properties.get("customData") or {}
     if "ALBINA" in custom_data:
-        return "euregio"
+        return Bulletin.Source.EUREGIO
     for key in custom_data:
         if key.startswith("LWD_"):
-            return "euregio"
-    # CH key present → SLF; no recognised key → default to SLF.
-    return "slf"
+            return Bulletin.Source.EUREGIO
+    if "MF" in custom_data:
+        return Bulletin.Source.MF
+    if "CH" in custom_data:
+        return Bulletin.Source.SLF
+    keys = sorted(custom_data.keys())
+    raise RenderModelBuildError(
+        f"Cannot determine bulletin source: no recognised customData marker found. "
+        f"Present keys: {keys!r}. Expected one of: 'ALBINA', 'LWD_*', 'MF', 'CH'."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -297,33 +323,33 @@ def _detect_source(properties: dict[str, Any]) -> str:
 
 
 def _resolve_aggregations(
-    properties: dict[str, Any], source: str
+    properties: dict[str, Any], source: Bulletin.Source
 ) -> list[dict[str, Any]]:
     """
     Resolve the aggregation list from bulletin properties.
 
     For SLF bulletins this reads ``customData.CH.aggregation`` verbatim.
-    For EUREGIO bulletins it synthesises aggregation entries by grouping
-    ``avalancheProblems`` on ``(category, validTimePeriod)``.
+    For EUREGIO and MeteoFrance bulletins it synthesises aggregation entries
+    by grouping ``avalancheProblems`` on ``(category, validTimePeriod)``.
 
-    The output shape is the same in both cases:
+    The output shape is the same in all cases:
     ``[{"category": str, "problemTypes": [str], "validTimePeriod": str|None,
        "title": str|None}, ...]``
 
     Args:
         properties: The CAAML properties dict.
-        source: ``"slf"`` or ``"euregio"``.
+        source: A ``Bulletin.Source`` member.
 
     Returns:
         A list of aggregation entry dicts.
 
     """
-    if source == "slf":
+    if source == Bulletin.Source.SLF:
         return (properties.get("customData") or {}).get("CH", {}).get(
             "aggregation"
         ) or []
 
-    # EUREGIO: synthesise from avalancheProblems.
+    # EUREGIO and MeteoFrance: synthesise from avalancheProblems.
     # Group on (category, validTimePeriod). Preserve problem order.
     problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
     seen: dict[tuple[str, str], dict[str, Any]] = {}
@@ -425,7 +451,7 @@ def _filter_ratings_by_elevation(
 def _resolve_problem_rating(
     problem: dict[str, Any],
     danger_ratings: list[dict[str, Any]],
-    source: str,
+    source: Bulletin.Source,
 ) -> str | None:
     """
     Resolve the danger rating value for a single avalanche problem.
@@ -433,9 +459,10 @@ def _resolve_problem_rating(
     For SLF bulletins the value is read directly from
     ``problem["dangerRatingValue"]``.
 
-    For EUREGIO bulletins the danger rating is derived by matching the
-    problem's elevation and validTimePeriod against the bulletin-level
-    ``dangerRatings``.  Matching rules (in order of specificity):
+    For EUREGIO and MeteoFrance bulletins the danger rating is derived by
+    matching the problem's elevation and validTimePeriod against the
+    bulletin-level ``dangerRatings``.  Matching rules (in order of
+    specificity):
 
     1. ``validTimePeriod`` must match the problem's period (or the rating
        must have no validTimePeriod, which is treated as ``all_day``).
@@ -450,18 +477,18 @@ def _resolve_problem_rating(
     Args:
         problem: A single raw CAAML avalanche problem dict.
         danger_ratings: The bulletin-level ``dangerRatings`` list.
-        source: ``"slf"`` or ``"euregio"``.
+        source: A ``Bulletin.Source`` member.
 
     Returns:
         A danger level string (e.g. ``"moderate"``) or ``None`` when
         no match can be found.
 
     """
-    if source == "slf":
+    if source == Bulletin.Source.SLF:
         raw = problem.get("dangerRatingValue")
         return raw if raw else None
 
-    # EUREGIO: match against bulletin-level danger ratings.
+    # EUREGIO and MeteoFrance: match against bulletin-level danger ratings.
     problem_vtp: str = problem.get("validTimePeriod") or "all_day"
     problem_elevation: dict[str, Any] | None = problem.get("elevation") or None
     problem_lower = _to_int_safe((problem_elevation or {}).get("lowerBound"))
@@ -484,29 +511,31 @@ def _resolve_problem_rating(
     return _highest_danger(candidates)
 
 
-def _resolve_problem_comment(problem: dict[str, Any], source: str) -> str:
+def _resolve_problem_comment(problem: dict[str, Any], source: Bulletin.Source) -> str:
     """
     Resolve the display comment for a single avalanche problem.
 
     SLF bulletins carry a per-problem ``comment`` field with HTML prose.
-    EUREGIO bulletins carry avalanche activity prose at bulletin level
-    (surfaced via ``prose.avalanche_activity``), so per-problem comments
-    are returned as empty strings.
+    EUREGIO and MeteoFrance bulletins carry avalanche activity prose at
+    bulletin level (surfaced via ``prose.avalanche_activity``), so
+    per-problem comments are returned as empty strings.
 
     Args:
         problem: A single raw CAAML avalanche problem dict.
-        source: ``"slf"`` or ``"euregio"``.
+        source: A ``Bulletin.Source`` member.
 
     Returns:
-        HTML comment string, or empty string when absent or EUREGIO.
+        HTML comment string, or empty string when absent, EUREGIO, or MF.
 
     """
-    if source == "euregio":
-        return ""
-    return problem.get("comment") or ""
+    if source == Bulletin.Source.SLF:
+        return problem.get("comment") or ""
+    return ""
 
 
-def _resolve_problem_extras(problem: dict[str, Any], source: str) -> dict[str, Any]:
+def _resolve_problem_extras(
+    problem: dict[str, Any], source: Bulletin.Source
+) -> dict[str, Any]:
     """
     Resolve source-specific passthrough fields for a problem card.
 
@@ -516,43 +545,50 @@ def _resolve_problem_extras(problem: dict[str, Any], source: str) -> dict[str, A
     EUREGIO: returns ``{"avalanche_type": str|None}`` drawn from
     ``customData.ALBINA.avalancheType``.
 
+    MeteoFrance: returns ``{}`` (no source-specific problem-level extras).
+
     Args:
         problem: A single raw CAAML avalanche problem dict.
-        source: ``"slf"`` or ``"euregio"``.
+        source: A ``Bulletin.Source`` member.
 
     Returns:
         Source-specific extras dict.
 
     """
     custom_data: dict[str, Any] = problem.get("customData") or {}
-    if source == "slf":
+    if source == Bulletin.Source.SLF:
         ch_data: dict[str, Any] = custom_data.get("CH", {})
         return {
             "subdivision": ch_data.get("subdivision", "") or "",
             "core_zone_text": ch_data.get("coreZoneText") or None,
         }
-    # EUREGIO
-    albina_data: dict[str, Any] = custom_data.get("ALBINA", {})
-    return {
-        "avalanche_type": albina_data.get("avalancheType") or None,
-    }
+    if source == Bulletin.Source.EUREGIO:
+        albina_data: dict[str, Any] = custom_data.get("ALBINA", {})
+        return {
+            "avalanche_type": albina_data.get("avalancheType") or None,
+        }
+    # MeteoFrance: no problem-level source-specific extras.
+    return {}
 
 
-def _resolve_problem_avalanche_type(problem: dict[str, Any], source: str) -> str | None:
+def _resolve_problem_avalanche_type(
+    problem: dict[str, Any], source: Bulletin.Source
+) -> str | None:
     """
     Resolve the avalanche type (slab/loose) for a problem, if available.
 
-    Only present for EUREGIO bulletins; SLF bulletins always return ``None``.
+    Only present for EUREGIO bulletins; SLF and MeteoFrance bulletins
+    always return ``None``.
 
     Args:
         problem: A single raw CAAML avalanche problem dict.
-        source: ``"slf"`` or ``"euregio"``.
+        source: A ``Bulletin.Source`` member.
 
     Returns:
         ``"slab"``, ``"loose"``, or ``None``.
 
     """
-    if source != "euregio":
+    if source != Bulletin.Source.EUREGIO:
         return None
     custom_data: dict[str, Any] = problem.get("customData") or {}
     albina_data: dict[str, Any] = custom_data.get("ALBINA", {})
@@ -560,7 +596,7 @@ def _resolve_problem_avalanche_type(problem: dict[str, Any], source: str) -> str
 
 
 def _resolve_avalanche_activity(
-    properties: dict[str, Any], source: str
+    properties: dict[str, Any], source: Bulletin.Source
 ) -> dict[str, str]:
     """
     Resolve avalanche activity prose from bulletin properties.
@@ -568,18 +604,18 @@ def _resolve_avalanche_activity(
     SLF bulletins do not carry an ``avalancheActivity`` field at the bulletin
     level; returns empty strings for both fields.
 
-    EUREGIO bulletins carry ``avalancheActivity.highlights`` and
-    ``avalancheActivity.comment``.
+    EUREGIO and MeteoFrance bulletins carry ``avalancheActivity.highlights``
+    and ``avalancheActivity.comment``.
 
     Args:
         properties: The CAAML properties dict.
-        source: ``"slf"`` or ``"euregio"``.
+        source: A ``Bulletin.Source`` member.
 
     Returns:
         Dict with ``"highlights"`` and ``"comment"`` string fields.
 
     """
-    if source == "slf":
+    if source == Bulletin.Source.SLF:
         return {"highlights": "", "comment": ""}
     activity: dict[str, Any] = properties.get("avalancheActivity") or {}
     return {
@@ -588,24 +624,27 @@ def _resolve_avalanche_activity(
     }
 
 
-def _resolve_danger_patterns(properties: dict[str, Any], source: str) -> list[str]:
+def _resolve_danger_patterns(
+    properties: dict[str, Any], source: Bulletin.Source
+) -> list[str]:
     """
     Resolve danger patterns from bulletin custom data.
 
-    SLF bulletins do not carry danger patterns; returns an empty list.
+    SLF and MeteoFrance bulletins do not carry danger patterns; returns an
+    empty list.
 
     EUREGIO bulletins may carry ``customData.LWD_Tyrol.dangerPatterns``.
     Other ``LWD_*`` keys are searched when ``LWD_Tyrol`` is absent.
 
     Args:
         properties: The CAAML properties dict.
-        source: ``"slf"`` or ``"euregio"``.
+        source: A ``Bulletin.Source`` member.
 
     Returns:
         List of danger pattern strings, e.g. ``["DP10", "DP1"]``, or ``[]``.
 
     """
-    if source == "slf":
+    if source in {Bulletin.Source.SLF, Bulletin.Source.MF}:
         return []
     custom_data: dict[str, Any] = properties.get("customData") or {}
     # Prefer LWD_Tyrol; fall back to any other LWD_* key.
@@ -627,7 +666,7 @@ def _resolve_danger_patterns(properties: dict[str, Any], source: str) -> list[st
 def _build_problem(
     problem: dict[str, Any],
     danger_ratings: list[dict[str, Any]],
-    source: str,
+    source: Bulletin.Source,
 ) -> dict[str, Any]:
     """
     Convert a raw CAAML avalanche problem into the render model shape.
@@ -635,8 +674,8 @@ def _build_problem(
     Args:
         problem: A single raw avalanche problem dict from CAAML.
         danger_ratings: Bulletin-level danger ratings (used for EUREGIO
-            to derive per-problem danger rating values).
-        source: ``"slf"`` or ``"euregio"``.
+            and MeteoFrance to derive per-problem danger rating values).
+        source: A ``Bulletin.Source`` member.
 
     Returns:
         A rendered problem dict suitable for the render model.
@@ -803,7 +842,7 @@ def _build_trait(
     aggregation_entry: dict[str, Any],
     problems_by_type: dict[str, dict[str, Any]],
     danger_ratings: list[dict[str, Any]],
-    source: str,
+    source: Bulletin.Source,
 ) -> dict[str, Any]:
     """
     Build a single trait dict from an aggregation entry and a problem lookup.
@@ -816,7 +855,7 @@ def _build_trait(
             ``validTimePeriod``, ``problemTypes``, and optionally ``title``.
         problems_by_type: Lookup dict mapping problemType → raw problem dict.
         danger_ratings: Bulletin-level danger ratings (passed to problem builder).
-        source: ``"slf"`` or ``"euregio"``.
+        source: A ``Bulletin.Source`` member.
 
     Returns:
         A trait dict in the render model shape.
@@ -886,22 +925,24 @@ def _build_trait(
 # ---------------------------------------------------------------------------
 
 
-def _build_euregio_traits(
+def _build_synthesised_traits(
     aggregation: list[dict[str, Any]],
     avalanche_problems: list[dict[str, Any]],
     ratings: list[dict[str, Any]],
+    source: Bulletin.Source,
 ) -> list[dict[str, Any]]:
     """
-    Build traits for EUREGIO bulletins using a per-(type, vtp) problem lookup.
+    Build traits for EUREGIO and MeteoFrance bulletins using a per-(type, vtp) lookup.
 
-    The same problem type can appear in multiple validTimePeriods in EUREGIO
-    bulletins, so each aggregation entry is resolved against the subset of
-    problems that match its validTimePeriod.
+    The same problem type can appear in multiple validTimePeriods in both
+    EUREGIO and MeteoFrance bulletins, so each aggregation entry is resolved
+    against the subset of problems that match its validTimePeriod.
 
     Args:
-        aggregation: The synthesised EUREGIO aggregation list.
+        aggregation: The synthesised aggregation list.
         avalanche_problems: The raw ``avalancheProblems`` list.
         ratings: Bulletin-level danger ratings.
+        source: Either ``Bulletin.Source.EUREGIO`` or ``Bulletin.Source.MF``.
 
     Returns:
         Flat list of trait dicts in aggregation order.
@@ -926,7 +967,7 @@ def _build_euregio_traits(
                     if ap.get("problemType") == pt:
                         entry_problems[pt] = ap
                         break
-        traits.append(_build_trait(entry, entry_problems, ratings, "euregio"))
+        traits.append(_build_trait(entry, entry_problems, ratings, source))
     return traits
 
 
@@ -934,15 +975,15 @@ def _build_traits(
     aggregation: list[dict[str, Any]],
     avalanche_problems: list[dict[str, Any]],
     ratings: list[dict[str, Any]],
-    source: str,
+    source: Bulletin.Source,
     bulletin_id: str,
 ) -> list[dict[str, Any]]:
     """
     Build the complete traits list from aggregation entries and problems.
 
-    For EUREGIO bulletins the same problem type may appear in multiple
-    validTimePeriods, so a per-(type, vtp) lookup is used to ensure each
-    aggregation group resolves to the correct problem instance.
+    For EUREGIO and MeteoFrance bulletins the same problem type may appear
+    in multiple validTimePeriods, so a per-(type, vtp) lookup is used to
+    ensure each aggregation group resolves to the correct problem instance.
 
     For SLF bulletins a simpler type-keyed lookup suffices.
 
@@ -950,7 +991,7 @@ def _build_traits(
         aggregation: The resolved aggregation entry list.
         avalanche_problems: The raw ``avalancheProblems`` list.
         ratings: Bulletin-level danger ratings.
-        source: ``"slf"`` or ``"euregio"``.
+        source: A ``Bulletin.Source`` member.
         bulletin_id: Used in warning log messages.
 
     Returns:
@@ -959,8 +1000,10 @@ def _build_traits(
     """
     traits: list[dict[str, Any]] = []
 
-    if source == "euregio":
-        traits = _build_euregio_traits(aggregation, avalanche_problems, ratings)
+    if source in {Bulletin.Source.EUREGIO, Bulletin.Source.MF}:
+        traits = _build_synthesised_traits(
+            aggregation, avalanche_problems, ratings, source
+        )
     else:
         # SLF: problem type uniquely identifies a problem row.
         problems_by_type: dict[str, dict[str, Any]] = {
@@ -1052,7 +1095,9 @@ def _build_metadata(properties: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _build_prose(properties: dict[str, Any], source: str = "slf") -> dict[str, Any]:
+def _build_prose(
+    properties: dict[str, Any], source: Bulletin.Source = Bulletin.Source.SLF
+) -> dict[str, Any]:
     """
     Extract prose sections from CAAML properties.
 
@@ -1066,7 +1111,7 @@ def _build_prose(properties: dict[str, Any], source: str = "slf") -> dict[str, A
 
     Args:
         properties: The CAAML properties dict.
-        source: ``"slf"`` or ``"euregio"``.
+        source: A ``Bulletin.Source`` member.
 
     Returns:
         A prose dict with ``snowpack_structure``, ``weather_review``,
@@ -1118,15 +1163,16 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     """
     Build a versioned render model dict from raw CAAML bulletin properties.
 
-    This is a pure function: no Django imports, no I/O, no side effects.
+    This is a pure function: no I/O, no side effects.
 
     Raises ``RenderModelBuildError`` when the data shape violates the
-    canonical EAWS problem-type enum or structural invariants. The caller
-    is responsible for catching this and storing an error sentinel.
+    canonical EAWS problem-type enum, structural invariants, or when the
+    bulletin source cannot be identified from ``customData`` keys. The
+    caller is responsible for catching this and storing an error sentinel.
 
-    Supports both SLF and EUREGIO (ALBINA) bulletin formats. The source
-    is detected automatically via ``_detect_source()`` and stamped in the
-    output as ``render_model["source"]``.
+    Supports SLF, EUREGIO (ALBINA), and MeteoFrance (MF) bulletin formats.
+    The source is detected automatically via ``_detect_source()`` and
+    stamped in the output as ``render_model["source"]``.
 
     Args:
         properties: The CAAML properties dict (the ``"properties"`` key from
@@ -1137,7 +1183,8 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
 
     Raises:
         RenderModelBuildError: When the bulletin data cannot be cleanly
-            mapped to the render model shape.
+            mapped to the render model shape, or when the source cannot be
+            determined from ``customData``.
 
     """
     bulletin_id: str = properties.get("bulletinID", "<unknown>")
@@ -1153,7 +1200,7 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     # For SLF bulletins: aggregation is expected to always be present when
     # avalancheProblems is non-empty. Log an error and produce empty traits
     # if missing — do not synthesise, as this indicates an upstream data gap.
-    if source == "slf" and avalanche_problems and not aggregation:
+    if source == Bulletin.Source.SLF and avalanche_problems and not aggregation:
         logger.error(
             "Bulletin %s has avalancheProblems but no customData.CH.aggregation; "
             "cannot build traits. Bulletin will render with no problem cards.",
