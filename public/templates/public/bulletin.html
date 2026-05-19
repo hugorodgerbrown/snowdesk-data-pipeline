@@ -252,29 +252,20 @@ reachable via the SNOW-81 deep-link in the masthead.
         {% else %}
             {# ── Error state (version == 0) ──────────────────────────────── #}
             {% if panel.render_model.version == 0 %}
-                <div class="rounded-tag border-l-4 border-callout-warning-border bg-callout-warning-bg px-3.5 py-3 text-sm mb-4">
-                    <p class="font-semibold text-callout-warning-heading mb-1">
-                        {% trans "We couldn't process this bulletin." %}
-                    </p>
+                {% with heading=_("We couldn't process this bulletin.") %}
                     {% if user.is_staff %}
-                        <p class="text-xs text-callout-warning-text mb-2">
-                            Bulletin ID: <span class="font-mono">{{ panel.bulletin.bulletin_id }}</span>
-                        </p>
-                        <p class="font-mono text-[11px] break-all text-callout-warning-heading bg-callout-warning-code-bg rounded px-2 py-1.5 mb-2">
-                            {{ panel.render_model.error }}
-                        </p>
-                        <a
-                            class="inline-block text-xs font-medium text-callout-warning-heading underline underline-offset-2 hover:text-callout-warning-link-hover"
-                            href="/admin/bulletins/bulletin/{{ panel.bulletin.pk }}/change/"
-                        >
-                            {% trans "Inspect in admin →" %}
-                        </a>
+                        {% blocktrans with bulletin_id=panel.bulletin.bulletin_id asvar staff_body %}Bulletin ID: <span
+                                class="font-mono"
+                            >{{ bulletin_id }}</span>{% endblocktrans %}
+                        {% with pk_str=panel.bulletin.pk|stringformat:"d" %}
+                            {% with admin_href="/admin/bulletins/bulletin/"|add:pk_str|add:"/change/" %}
+                                {% include "includes/_callout.html" with kind="warning" heading=heading body=staff_body code_block=panel.render_model.error cta_label=_("Inspect in admin →") cta_href=admin_href only %}
+                            {% endwith %}
+                        {% endwith %}
                     {% else %}
-                        <p class="text-xs text-callout-warning-text">
-                            {% trans "We are sorry for the inconvenience. Please try again later or check back for an updated bulletin." %}
-                        </p>
+                        {% include "includes/_callout.html" with kind="warning" heading=heading body=_("We are sorry for the inconvenience. Please try again later or check back for an updated bulletin.") only %}
                     {% endif %}
-                </div>
+                {% endwith %}
             {% else %}
                 {% with rm=panel.render_model %}
                     {% comment %}
