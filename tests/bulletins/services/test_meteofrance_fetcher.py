@@ -26,9 +26,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from django.test import override_settings
 
 from bulletins.services.meteofrance_fetcher import (
     _read_local_mirror,
+    _resolve_base_url,
     fetch_meteofrance_bulletin,
     latest_meteofrance_date,
     meteofrance_stash_writer,
@@ -161,6 +163,36 @@ class TestReadLocalMirror:
             (Path(tmp) / "massif-005.xml").write_bytes(b"<padded/>")
             result = _read_local_mirror(5, f"file://{tmp}")
             assert result == b"<padded/>"
+
+
+# ---------------------------------------------------------------------------
+# _resolve_base_url — live by default, mirror only when explicit
+# ---------------------------------------------------------------------------
+
+
+class TestResolveBaseUrl:
+    """_resolve_base_url never picks up the mirror setting implicitly."""
+
+    @override_settings(
+        METEOFRANCE_API_BASE_URL="https://api.example.com",
+        METEOFRANCE_API_LOCAL_MIRROR_URL="file:///should/not/be/used",
+    )
+    def test_uses_live_when_base_url_none_even_if_mirror_set(self) -> None:
+        """A stale mirror setting must not redirect a default (live) run."""
+        assert _resolve_base_url(None) == "https://api.example.com"
+
+    @override_settings(
+        METEOFRANCE_API_BASE_URL="https://api.example.com",
+        METEOFRANCE_API_LOCAL_MIRROR_URL="",
+    )
+    def test_uses_live_when_mirror_empty(self) -> None:
+        """With no mirror configured, the live setting is used."""
+        assert _resolve_base_url(None) == "https://api.example.com"
+
+    @override_settings(METEOFRANCE_API_BASE_URL="https://api.example.com")
+    def test_explicit_base_url_wins(self) -> None:
+        """An explicit base_url argument always wins."""
+        assert _resolve_base_url("file:///explicit/mirror") == "file:///explicit/mirror"
 
 
 # ---------------------------------------------------------------------------
