@@ -255,11 +255,12 @@ const clearRegionRepaint = () => {
     fitBoundsOptions: { padding: 20 },
     minZoom: 4,
     maxZoom: 12,
-    // South bound 41.0: French alpine regions reach to ~41.7°N; giving a
-    // 1° visual buffer below the southernmost feature keeps the map from
-    // clipping at the edge.  Italian regions (min ~44.1°N) and CH are
-    // comfortably within this bound.
-    maxBounds: [[-2.0, 41.0], [17.0, 50.5]],
+    // (Bounds taken from console.log when ?debug=true)
+    // West / south / north match the original Western-European frame
+    // (Atlantic buffer / French Alps min lat / Stuttgart-ish top). East
+    // extended from 17° to 23° to cover the full Austrian / Slovenian /
+    // northern-Balkan arc visible in the avalanche-region polygons.
+    maxBounds: [[0.9482, 41.9952], [19.6674, 49.9983]],
     attributionControl: { compact: true },
   });
   // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
@@ -267,9 +268,19 @@ const clearRegionRepaint = () => {
   MAP = map;
 
   // SNOW-68: log zoom level on each zoom gesture when debug mode is active.
-  map.on('zoomend', () => {
-    if (DEBUG) console.log('[map] zoom:', map.getZoom().toFixed(2));
-  });
+  // Also logs visible bounds on every move (zoom or pan) so the current
+  // viewport can be lifted straight into a `maxBounds` config.
+  const logViewport = (label) => {
+    if (!DEBUG) return;
+    const b = map.getBounds();
+    const fmt = (n) => n.toFixed(4);
+    console.log(
+      `[map] ${label} zoom:`, map.getZoom().toFixed(2),
+      'bounds:', `[[${fmt(b.getWest())}, ${fmt(b.getSouth())}], [${fmt(b.getEast())}, ${fmt(b.getNorth())}]]`,
+    );
+  };
+  map.on('zoomend', () => logViewport('zoomend'));
+  map.on('moveend', () => logViewport('moveend'));
 
   // In-memory lookup from numeric feature id -> region properties.
   // Numeric because setFeatureState requires a numeric (or numeric-coerceable) id.
