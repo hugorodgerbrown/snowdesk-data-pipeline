@@ -717,6 +717,62 @@ META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+CALLOUT_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Warning",
+        "context": {
+            "kind": "warning",
+            "heading": "We couldn't process this bulletin.",
+            "body": (
+                "We are sorry for the inconvenience. Please try again later"
+                " or check back for an updated bulletin."
+            ),
+        },
+    },
+    {
+        "caption": "Error",
+        "context": {
+            "kind": "error",
+            "heading": "Something went wrong.",
+            "body": "An unexpected error occurred. Please try again.",
+        },
+    },
+    {
+        "caption": "Success",
+        "context": {
+            "kind": "success",
+            "heading": "Bulletin processed successfully.",
+            "body": "The bulletin has been ingested and is ready to view.",
+        },
+    },
+    {
+        "caption": "Info",
+        "context": {
+            "kind": "info",
+            "heading": "Bulletin updated.",
+            "body": "A revised bulletin has been issued for this region.",
+        },
+    },
+    {
+        "caption": "Warning with diagnostic",
+        "context": {
+            "kind": "warning",
+            "heading": "We couldn't process this bulletin.",
+            "body": (
+                'Bulletin ID: <span class="font-mono">'
+                "CH-1234.2026-02-14T00:00:00+00:00</span>"
+            ),
+            "code_block": (
+                "RenderModelBuildError: missing required field"
+                " 'dangerRatings' at path $.properties"
+            ),
+            "cta_label": "Inspect in admin →",
+            "cta_href": "/admin/bulletins/bulletin/42/change/",
+        },
+    },
+)
+
+
 DAY_CHARACTER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Hard-to-read day",

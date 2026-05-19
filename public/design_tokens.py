@@ -32,6 +32,7 @@ from typing import Any
 
 from public._component_fixtures import (
     BUTTON_VARIANTS,
+    CALLOUT_VARIANTS,
     CARD_VARIANTS,
     COLLAPSIBLE_PANEL_VARIANTS,
     DAY_CHARACTER_VARIANTS,
@@ -630,6 +631,19 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/day_windows.html",
         variants=DAY_WINDOWS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="callout",
+        label="Callout",
+        description=(
+            "Inline status callout — four semantic kinds (warning, error, success, "
+            "info) backed by the --color-status-* palette, with optional body, "
+            "monospace diagnostic block, and call-to-action link."
+        ),
+        kind="components",
+        partial="includes/_callout.html",
+        variants=CALLOUT_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

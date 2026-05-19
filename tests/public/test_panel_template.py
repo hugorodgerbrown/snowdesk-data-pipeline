@@ -130,6 +130,12 @@ class TestErrorStateCard:
         assert response.status_code == 200
         content = response.content.decode()
 
+        # The error band is rendered by includes/_callout.html with kind="warning".
+        # Pin both attributes so a future rename of the partial or its testid
+        # surfaces here rather than as a silent visual regression.
+        assert 'data-testid="callout"' in content
+        assert 'data-kind="warning"' in content
+
         # Admin link to the specific bulletin change page.
         expected_admin = f"/admin/bulletins/bulletin/{bulletin.pk}/change/"
         assert expected_admin in content
