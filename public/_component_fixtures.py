@@ -458,6 +458,15 @@ BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        "caption": "Secondary · compact",
+        "context": {
+            "label": "Explore the map",
+            "href": "#",
+            "variant": "secondary",
+            "size": "compact",
+        },
+    },
+    {
         "caption": "Ghost · standard",
         "context": {
             "label": "Sign in with a passkey",
