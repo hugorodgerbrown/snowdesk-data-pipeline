@@ -55,7 +55,7 @@ the manage page can be authenticated-only.
                 class="hidden mt-4 pt-4 border-t border-text-3/10"
             >
                 {% trans "Sign in with a passkey" as label %}
-                {% include "includes/_button.html" with label=label variant="ghost" full_width=True extra_attrs='id="btn-passkey-signin" type="button"' %}
+                {% include "includes/_button.html" with label=label variant="ghost" full_width=True button_type="button" button_id="btn-passkey-signin" %}
                 <p
                     id="passkey-auth-feedback"
                     role="alert"

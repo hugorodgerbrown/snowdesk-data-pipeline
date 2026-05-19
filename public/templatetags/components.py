@@ -22,8 +22,7 @@ from __future__ import annotations
 
 from django import template
 from django.template import Context, Library, Node, TemplateSyntaxError
-from django.utils.html import conditional_escape
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 
 register: Library = template.Library()
 
@@ -229,13 +228,10 @@ class CardNode(Node):
 
         css_classes = _card_chrome_classes(str(padding), bool(center), str(extra))
         inner = self.nodelist.render(context)
-        # nosemgrep: python.django.security.audit.avoid-mark-safe.avoid-mark-safe
-        # noqa: S308 — css_classes is constructed entirely from internal string
-        # literals and template-context values that are themselves plain strings;
-        # no user-supplied content ever reaches this path.
-        return mark_safe(  # noqa: S308
-            f'<div class="{conditional_escape(css_classes)}">{inner}</div>'
-        )
+        # ``inner`` is a ``SafeString`` returned by ``NodeList.render()``;
+        # ``format_html`` passes safe strings through without re-escaping while
+        # still escaping ``css_classes`` defensively.
+        return format_html('<div class="{}">{}</div>', css_classes, inner)
 
 
 @register.tag("card")

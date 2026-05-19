@@ -192,7 +192,7 @@ registered platform passkeys with delete buttons. A destructive
                                     {% trans "Save a passkey for this device and you won't need a magic link next time." %}
                                 </p>
                                 {% trans "Save a passkey for this device" as label %}
-                                {% include "includes/_button.html" with label=label variant="primary" size="compact" extra_attrs='id="btn-register-passkey" type="button"' %}
+                                {% include "includes/_button.html" with label=label variant="primary" size="compact" button_type="button" button_id="btn-register-passkey" %}
                             </div>
                             {% endcard %}
                         {% endif %}
@@ -229,7 +229,7 @@ registered platform passkeys with delete buttons. A destructive
                         {# "Add a passkey" button — always shown when we have one or more #}
                         {% if passkeys or not just_confirmed %}
                             {% trans "Add a passkey for this device" as label %}
-                            {% include "includes/_button.html" with label=label variant="ghost" size="compact" extra_attrs='id="btn-register-passkey" type="button"' %}
+                            {% include "includes/_button.html" with label=label variant="ghost" size="compact" button_type="button" button_id="btn-register-passkey" %}
                         {% endif %}
                     {% endwith %}
 

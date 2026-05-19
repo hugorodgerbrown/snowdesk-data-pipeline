@@ -3,7 +3,7 @@ tests/public/test_components_partials.py — Tests for the new component partial
 
 Covers:
   _button.html     — all three variants × both sizes, full_width, is_anchor,
-                     extra_classes, extra_attrs, button_type default.
+                     extra_classes, button_id, button_type default.
   _card.html       — chrome classes present, padding forwarded, center flag,
                      extra classes, inner content preserved.
   _status_page.html — rendered via real child templates (manage_sent,
@@ -204,14 +204,15 @@ class TestButtonPartial:
         )
         assert "whitespace-nowrap" in html
 
-    def test_extra_attrs_rendered(self) -> None:
-        """extra_attrs string is injected verbatim into the element."""
+    def test_button_id_rendered(self) -> None:
+        """button_id is rendered as an auto-escaped ``id`` attribute."""
         html = render_to_string(
             "includes/_button.html",
             {
                 "label": "Passkey",
                 "variant": "ghost",
-                "extra_attrs": 'id="btn-passkey" type="button"',
+                "button_type": "button",
+                "button_id": "btn-passkey",
             },
         )
         assert 'id="btn-passkey"' in html
