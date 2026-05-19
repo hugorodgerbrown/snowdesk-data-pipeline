@@ -5,7 +5,7 @@ subscriptions/templates/subscriptions/unsubscribe_done.html — Unsubscribe comp
 Shown after a successful unsubscribe POST, or when the subscriber was
 already deleted (idempotent re-submit).
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {% block title %}{% trans "Unsubscribed — Snowdesk" %}{% endblock %}
 
@@ -19,12 +19,9 @@ already deleted (idempotent re-submit).
                 <p class="text-text-2 text-sm leading-relaxed mb-6">
                     {% trans "You will no longer receive avalanche bulletin alerts for that region." %}
                 </p>
-                <a
-                    href="{% url 'public:home' %}"
-                    class="inline-block bg-text-1 text-card px-5 py-2.5 rounded-tag text-sm font-medium hover:opacity-90 transition-opacity"
-                >
-                    {% trans "Back to Snowdesk" %}
-                </a>
+                {% url 'public:home' as home_url %}
+                {% trans "Back to Snowdesk" as label %}
+                {% include "includes/_button.html" with label=label href=home_url variant="primary" %}
             </div>
         </div>
     </div>

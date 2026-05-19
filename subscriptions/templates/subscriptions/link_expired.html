@@ -6,7 +6,7 @@ Shown when the token in an account-access or unsubscribe URL is missing,
 malformed, or has expired. Offers a link to the manage page so the
 visitor can request a fresh access link.
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {% block title %}{% trans "Link expired — Snowdesk" %}{% endblock %}
 
@@ -20,12 +20,9 @@ visitor can request a fresh access link.
                 <p class="text-text-2 text-sm leading-relaxed mb-6">
                     {% trans "Account links are only valid for 24 hours. This one has expired or is invalid." %}
                 </p>
-                <a
-                    href="{% url 'subscriptions:manage' %}"
-                    class="inline-block bg-text-1 text-card px-5 py-2.5 rounded-tag text-sm font-medium hover:opacity-90 transition-opacity"
-                >
-                    {% trans "Request a new link" %}
-                </a>
+                {% url 'subscriptions:manage' as manage_url %}
+                {% trans "Request a new link" as label %}
+                {% include "includes/_button.html" with label=label href=manage_url variant="primary" %}
             </div>
         </div>
     </div>

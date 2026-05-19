@@ -13,7 +13,7 @@ regions on the map" link routes to /map/. A passkeys section lists
 registered platform passkeys with delete buttons. A destructive
 "Unsubscribe from all alerts" button hard-deletes the subscriber.
 {% endcomment %}
-{% load i18n static %}
+{% load i18n static components %}
 
 {% block title %}{% trans "Manage subscriptions — Snowdesk" %}{% endblock %}
 
@@ -193,13 +193,8 @@ registered platform passkeys with delete buttons. A destructive
                                 <p class="text-sm text-text-2 mb-3 leading-relaxed">
                                     {% trans "Save a passkey for this device and you won't need a magic link next time." %}
                                 </p>
-                                <button
-                                    id="btn-register-passkey"
-                                    type="button"
-                                    class="text-sm bg-text-1 text-card px-4 py-2 rounded-tag font-medium hover:opacity-90 transition-opacity"
-                                >
-                                    {% trans "Save a passkey for this device" %}
-                                </button>
+                                {% trans "Save a passkey for this device" as label %}
+                                {% include "includes/_button.html" with label=label variant="primary" size="compact" extra_attrs='id="btn-register-passkey" type="button"' %}
                             </div>
                         {% endif %}
 
@@ -234,13 +229,8 @@ registered platform passkeys with delete buttons. A destructive
 
                         {# "Add a passkey" button — always shown when we have one or more #}
                         {% if passkeys or not just_confirmed %}
-                            <button
-                                id="btn-register-passkey"
-                                type="button"
-                                class="text-sm text-text-2 border border-text-3/30 rounded-tag px-4 py-2 hover:text-text-1 hover:border-text-2 transition-colors"
-                            >
-                                {% trans "Add a passkey for this device" %}
-                            </button>
+                            {% trans "Add a passkey for this device" as label %}
+                            {% include "includes/_button.html" with label=label variant="ghost" size="compact" extra_attrs='id="btn-register-passkey" type="button"' %}
                         {% endif %}
                     {% endwith %}
 

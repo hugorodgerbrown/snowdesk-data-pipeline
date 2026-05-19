@@ -4,7 +4,7 @@ subscriptions/templates/subscriptions/manage_saved.html — Region save confirma
 
 Shown after an authenticated manage POST successfully updates regions.
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {% block title %}{% trans "Subscriptions saved — Snowdesk" %}{% endblock %}
 
@@ -18,12 +18,9 @@ Shown after an authenticated manage POST successfully updates regions.
                 <p class="text-text-2 text-sm leading-relaxed mb-6">
                     {% trans "Your bulletin subscriptions have been updated." %}
                 </p>
-                <a
-                    href="{% url 'public:home' %}"
-                    class="inline-block bg-text-1 text-card px-5 py-2.5 rounded-tag text-sm font-medium hover:opacity-90 transition-opacity"
-                >
-                    {% trans "Back to Snowdesk" %}
-                </a>
+                {% url 'public:home' as home_url %}
+                {% trans "Back to Snowdesk" as label %}
+                {% include "includes/_button.html" with label=label href=home_url variant="primary" %}
             </div>
         </div>
     </div>

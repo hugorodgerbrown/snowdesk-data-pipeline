@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n components %}
 {% comment %}
 subscriptions/templates/subscriptions/partials/subscribe_form.html
 Inline subscribe CTA embedded on bulletin pages.
@@ -31,12 +31,8 @@ The outer div carries the hx-target id so the success fragment can replace it.
                     required
                     class="flex-1 px-3 py-2 rounded-tag border border-text-3/30 bg-card text-text-1 placeholder:text-text-3 text-sm focus:outline-none focus:ring-2 focus:ring-text-1/30"
                 >
-                <button
-                    type="submit"
-                    class="px-4 py-2 bg-text-1 text-card text-sm font-medium rounded-tag hover:opacity-90 transition-opacity whitespace-nowrap"
-                >
-                    {% trans "Subscribe" %}
-                </button>
+                {% trans "Subscribe" as label %}
+                {% include "includes/_button.html" with label=label variant="primary" size="compact" extra_classes="whitespace-nowrap" %}
             </div>
             <span
                 id="subscribe-indicator-{{ region_id }}"
