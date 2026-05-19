@@ -33,7 +33,14 @@ from typing import Any
 from public._component_fixtures import (
     DAY_CHARACTER_VARIANTS,
     DAY_WINDOWS_VARIANTS,
+    NAV_VARIANTS,
+    NO_DATA_SUPPLIED_VARIANTS,
+    RATING_BLOCK_VARIANTS,
+    REGION_TOOLTIP_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
+    SITE_FOOTER_VARIANTS,
+    SUBSCRIBE_FORM_VARIANTS,
+    SUBSCRIBE_OUTCOMES_VARIANTS,
     WEATHER_HEADER_VARIANTS,
 )
 
@@ -645,6 +652,101 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_season_calendar_demo.html",
         variants=SEASON_CALENDAR_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="nav",
+        label="Nav",
+        description=(
+            "Persistent top navigation bar — wordmark, optional back-chevron link, "
+            "optional season-trigger button, and a right-side auth/admin area. "
+            "Variants cover the bare logo-only state, back link, season trigger, "
+            "and an authenticated subscriber with a subscribed region."
+        ),
+        kind="components",
+        partial="includes/nav.html",
+        variants=NAV_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="site-footer",
+        label="Site footer",
+        description=(
+            "Global site footer — SLF data-licence attribution line with links "
+            "to Terms, Privacy, Terms of Service, and Colophon. "
+            "Reverses URLs internally; no context variables required."
+        ),
+        kind="components",
+        partial="public/_site_footer.html",
+        variants=SITE_FOOTER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="rating-block",
+        label="Rating block",
+        description=(
+            "Problem card for the bulletin page — danger-band header, aspect/elevation "
+            "row, and prose comment. Seven variants cover every EAWS problem type at a "
+            "representative danger level: new snow, wind slab, persistent weak layers, "
+            "cornices (dry), wet snow, gliding snow (wet), and a prose-only card with "
+            "no structured terrain."
+        ),
+        kind="components",
+        partial="public/_rating_block.html",
+        variants=RATING_BLOCK_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="region-tooltip",
+        label="Region tooltip",
+        description=(
+            "MapLibre popup body for a micro-region — danger-tile chip, region name, "
+            "geographic breadcrumb, and bulletin CTA. Three variants: considerable "
+            "rating, high with upper-band subdivision, and no-bulletin fallback."
+        ),
+        kind="components",
+        partial="public/_region_tooltip.html",
+        variants=REGION_TOOLTIP_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="subscribe-form",
+        label="Subscribe form",
+        description=(
+            "Inline subscription CTA embedded on bulletin pages — email input and "
+            "subscribe button. Two variants: clean empty form and form re-displayed "
+            "with a validation error on the email field."
+        ),
+        kind="components",
+        partial="subscriptions/partials/subscribe_form.html",
+        variants=SUBSCRIBE_FORM_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="subscribe-outcomes",
+        label="Subscribe outcomes",
+        description=(
+            "HTMX response fragments returned after a subscribe POST. Five outcome "
+            "templates: generic check-inbox, account-access link sent, region added, "
+            "already subscribed, and error. Each variant overrides the template path "
+            "via the ``include_variant`` partial-key mechanism."
+        ),
+        kind="components",
+        partial="subscriptions/partials/subscribe_success.html",
+        variants=SUBSCRIBE_OUTCOMES_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="no-data-supplied",
+        label="No data supplied",
+        description=(
+            "Empty-state placeholder used inside collapsible bulletin panels "
+            "(Outlook, etc.) when the upstream feed supplied the field structurally "
+            "but with no usable content. Single variant; no context variables required."
+        ),
+        kind="components",
+        partial="includes/_no_data_supplied.html",
+        variants=NO_DATA_SUPPLIED_VARIANTS,
         panel_layout="stack",
     ),
 )

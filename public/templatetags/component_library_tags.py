@@ -7,7 +7,10 @@ its panels under ``public/templates/_components/``. Exposes:
 * ``include_variant`` — render an arbitrary partial against a
   ``variant.context`` dict so each ``kind="components"`` entry can source
   its render content from the registry without the dispatch template
-  hard-coding per-component context keys.
+  hard-coding per-component context keys.  Supports a per-variant
+  ``"partial"`` key that overrides the category's default template path —
+  used by the ``subscribe-outcomes`` entry to display five different
+  outcome templates under one sidebar entry.
 * ``contains_slug`` — filter used by the sidebar to decide which
   ``<details>`` group is open on first paint (the one that owns the
   active category).
@@ -36,6 +39,12 @@ def include_variant(
     the variant's per-render context on top, and renders the partial via
     the same template engine ``{% include %}`` would use.
 
+    If ``variant`` carries a ``"partial"`` key, that path overrides the
+    ``partial`` argument supplied by the category registry.  This lets a
+    single category entry (e.g. ``subscribe-outcomes``) render a
+    *different* template for each variant without splitting into multiple
+    sidebar entries.
+
     The return value is a ``SafeString`` because ``Template.render`` has
     already routed the output through the autoescaping engine — no
     ``mark_safe`` on user-supplied content is involved (the variant data
@@ -44,14 +53,18 @@ def include_variant(
     Args:
         context: The parent ``RenderContext``, supplied by ``takes_context``.
         partial: Django template path (e.g. ``"includes/bulletin_header.html"``).
+            Used as the default; overridden by ``variant["partial"]`` when present.
         variant: Dict with at least a ``"context"`` key mapping to the dict
-            of keys the partial expects.
+            of keys the partial expects.  May also carry a ``"partial"`` key
+            to override the template path for this variant only.
 
     Returns:
         The rendered partial as a string (already template-escaped).
 
     """
-    rendered_template = get_template(partial)
+    # Allow per-variant partial override (used by subscribe-outcomes).
+    effective_partial = variant.get("partial", partial)
+    rendered_template = get_template(effective_partial)
     # Django's ``Context.flatten()`` is typed as
     # ``dict[int | str | Node, ...]`` because Context can technically be
     # keyed by anything; in practice every key is a string. Coerce to
