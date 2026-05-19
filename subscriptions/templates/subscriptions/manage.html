@@ -261,7 +261,6 @@ registered platform passkeys with delete buttons. A destructive
                     if (banner) {
                         document.body.addEventListener("htmx:responseError", function () {
                             banner.classList.remove("hidden");
-                            banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
                         });
                         document.body.addEventListener("htmx:sendError", function () {
                             banner.classList.remove("hidden");
