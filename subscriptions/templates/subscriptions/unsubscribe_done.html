@@ -1,4 +1,4 @@
-{% extends "public/base.html" %}
+{% extends "includes/_status_page.html" %}
 {% comment %}
 subscriptions/templates/subscriptions/unsubscribe_done.html — Unsubscribe complete.
 
@@ -7,22 +7,20 @@ already deleted (idempotent re-submit).
 {% endcomment %}
 {% load i18n components %}
 
-{% block title %}{% trans "Unsubscribed — Snowdesk" %}{% endblock %}
+{% block status_title %}{% trans "Unsubscribed — Snowdesk" %}{% endblock %}
 
-{% block meta_description %}{% trans "You have been successfully unsubscribed from Snowdesk avalanche bulletin alerts." %}{% endblock %}
+{% block status_meta %}{% trans "You have been successfully unsubscribed from Snowdesk avalanche bulletin alerts." %}{% endblock %}
 
-{% block content %}
-    <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">
-        <div class="w-full max-w-md">
-            <div class="bg-card rounded-card p-8 shadow-sm border border-text-3/10 text-center">
-                <h1 class="text-2xl font-semibold text-text-1 mb-3">{% trans "You've been unsubscribed" %}</h1>
-                <p class="text-text-2 text-sm leading-relaxed mb-6">
-                    {% trans "You will no longer receive avalanche bulletin alerts for that region." %}
-                </p>
-                {% url 'public:home' as home_url %}
-                {% trans "Back to Snowdesk" as label %}
-                {% include "includes/_button.html" with label=label href=home_url variant="primary" %}
-            </div>
-        </div>
+{% block status_heading %}{% trans "You've been unsubscribed" %}{% endblock %}
+
+{% block status_body %}
+    {% trans "You will no longer receive avalanche bulletin alerts for that region." %}
+{% endblock %}
+
+{% block status_cta %}
+    <div class="mt-6">
+        {% url 'public:home' as home_url %}
+        {% trans "Back to Snowdesk" as label %}
+        {% include "includes/_button.html" with label=label href=home_url variant="primary" %}
     </div>
 {% endblock %}

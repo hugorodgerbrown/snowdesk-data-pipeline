@@ -1,4 +1,4 @@
-{% extends "public/base.html" %}
+{% extends "includes/_status_page.html" %}
 {% comment %}
 subscriptions/templates/subscriptions/unsubscribe.html — Unsubscribe confirmation.
 
@@ -7,38 +7,34 @@ POST: the view performs the deletion; this template is only for GET.
 {% endcomment %}
 {% load i18n components %}
 
-{% block title %}{% trans "Unsubscribe — Snowdesk" %}{% endblock %}
+{% block status_title %}{% trans "Unsubscribe — Snowdesk" %}{% endblock %}
 
-{% block meta_description %}{% trans "Confirm your unsubscribe request to stop receiving avalanche bulletin alerts for this region." %}{% endblock %}
+{% block status_meta %}{% trans "Confirm your unsubscribe request to stop receiving avalanche bulletin alerts for this region." %}{% endblock %}
 
-{% block content %}
-    <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">
-        <div class="w-full max-w-md">
-            <div class="bg-card rounded-card p-8 shadow-sm border border-text-3/10 text-center">
-                <h1 class="text-2xl font-semibold text-text-1 mb-3">{% trans "Unsubscribe" %}</h1>
-                <p class="text-text-2 text-sm leading-relaxed mb-2">
-                    {% blocktrans with email=email|force_escape trimmed %}
-                        You are about to unsubscribe <strong>{{ email }}</strong> from:
-                    {% endblocktrans %}
-                </p>
-                <p class="text-text-1 font-medium mb-6">
-                    <span class="font-mono text-xs text-text-3">{{ region.region_id }}</span>
-                    {{ region.name }}
-                </p>
-                <form method="post" novalidate>
-                    {% csrf_token %}
-                    <div class="mt-6">
-                        {% trans "Yes, unsubscribe me" as label %}
-                        {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
-                    </div>
-                </form>
-                <p class="mt-4">
-                    <a
-                        href="{% url 'public:home' %}"
-                        class="text-xs text-text-3 hover:text-text-2"
-                    >{% trans "Cancel" %}</a>
-                </p>
-            </div>
+{% block status_heading %}{% trans "Unsubscribe" %}{% endblock %}
+
+{% block status_body %}
+    {% blocktrans with email=email|force_escape trimmed %}
+        You are about to unsubscribe <strong>{{ email }}</strong> from:
+    {% endblocktrans %}
+{% endblock %}
+
+{% block status_cta %}
+    <p class="text-text-1 font-medium mt-2">
+        <span class="font-mono text-xs text-text-3">{{ region.region_id }}</span>
+        {{ region.name }}
+    </p>
+    <form method="post" novalidate>
+        {% csrf_token %}
+        <div class="mt-6">
+            {% trans "Yes, unsubscribe me" as label %}
+            {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
         </div>
-    </div>
+    </form>
+    <p class="mt-4">
+        <a
+            href="{% url 'public:home' %}"
+            class="text-xs text-text-3 hover:text-text-2"
+        >{% trans "Cancel" %}</a>
+    </p>
 {% endblock %}
