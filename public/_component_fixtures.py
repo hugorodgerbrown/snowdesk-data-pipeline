@@ -717,6 +717,59 @@ META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+TOAST_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Error (HTMX banner shape) — no CTA, not dismissible",
+        "context": {
+            "kind": "error",
+            "body": "Something went wrong.",
+            "dismissible": False,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Info (SW-update shape) — CTA + dismiss",
+        "context": {
+            "kind": "info",
+            "body": "An updated version is available.",
+            "cta_label": "Reload",
+            "cta_href": "#",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Warning with CTA",
+        "context": {
+            "kind": "warning",
+            "body": "Your session is about to expire.",
+            "cta_label": "Extend",
+            "cta_href": "#",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Success — dismissible only",
+        "context": {
+            "kind": "success",
+            "body": "Subscription saved.",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Info — non-dismissible",
+        "context": {
+            "kind": "info",
+            "body": "Read-only mode is active.",
+            "dismissible": False,
+            "static": True,
+        },
+    },
+)
+
+
 CALLOUT_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Warning",

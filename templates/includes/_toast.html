@@ -1,0 +1,68 @@
+{% load i18n %}
+{% comment %}
+  Fixed-position notification toast partial.
+
+  Required context:
+    kind  — "info" | "success" | "warning" | "error"
+    body  — Body text (single line). Rendered via {{ }}, auto-escaped.
+
+  Optional context:
+    id          — DOM id on the outer element. Required when JS toggles
+                  visibility (SW banner, HTMX error banner).
+    cta_label   — Label for inline CTA button (paired with cta_href).
+    cta_href    — Sentinel value (e.g. "#") gating CTA emission. Not used
+                  for navigation — the rendered button carries
+                  data-action="reload" so JS can wire its own handler.
+    dismissible — Bool; default True. When true emits a "×" button with
+                  data-action="dismiss".
+    static      — Bool; default False. When True the toast renders inline
+                  (no ``hidden``, no positioning utilities; uses
+                  ``inline-flex``). Used only by the component library so
+                  variants don't pile up at the viewport bottom.
+
+  ARIA:
+    kind in ("error", "warning") → role="alert" aria-live="assertive"
+    otherwise                    → role="status" aria-live="polite"
+
+  Display notes:
+    ``flex`` is NOT baked into the base class. ``sw_register.js`` toggles
+    ``hidden``/``flex`` on reveal (see static/js/sw_register.js lines
+    46–67), and the HTMX error JS only removes ``hidden``. Adding ``flex``
+    here would break both patterns.
+{% endcomment %}
+<div
+    {% if id %}
+        id="{{ id }}"
+    {% endif %}
+    {% if kind == "error" or kind == "warning" %}
+        role="alert"
+        aria-live="assertive"
+    {% else %}
+        role="status"
+        aria-live="polite"
+    {% endif %}
+    data-testid="toast"
+    data-kind="{{ kind }}"
+    class="{% if static %}inline-flex{% else %}hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50{% endif %} items-center gap-3 max-w-md rounded-full bg-status-{{ kind }}-bg text-status-{{ kind }}-text px-4 py-2 text-sm shadow-lg"
+>
+    <span>{{ body }}</span>
+    {% if cta_label and cta_href %}
+        <button
+            type="button"
+            data-action="reload"
+            class="rounded-full bg-status-{{ kind }}-text text-status-{{ kind }}-bg px-3 py-1 text-xs font-medium hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-{{ kind }}-text"
+        >
+            {{ cta_label }}
+        </button>
+    {% endif %}
+    {% if dismissible|default_if_none:True %}
+        <button
+            type="button"
+            data-action="dismiss"
+            aria-label="{% trans 'Dismiss' %}"
+            class="text-status-{{ kind }}-text opacity-70 hover:opacity-100 px-1 leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-{{ kind }}-text rounded"
+        >
+            ×
+        </button>
+    {% endif %}
+</div>
