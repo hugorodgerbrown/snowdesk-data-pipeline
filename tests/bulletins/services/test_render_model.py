@@ -25,6 +25,7 @@ from typing import Any
 import pytest
 
 from bulletins.models import Bulletin
+from bulletins.services.meteofrance_translator import parse_dpbra_xml
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -45,6 +46,16 @@ from bulletins.services.render_model import (
 
 # Path to test fixtures directory.
 _FIXTURE_DIR = Path(__file__).parents[2] / "fixtures"
+
+# Path to the captured MeteoFrance XML files used in end-to-end tests.
+# parents[3] = project root (thirsty-ride-57ad2f worktree or main repo).
+_MF_BULLETIN_DIR = (
+    Path(__file__).parents[3]
+    / "docs"
+    / "research"
+    / "meteofrance"
+    / "bulletins-2026-05-18"
+)
 
 
 def _load_sample(filename: str) -> dict[str, Any]:
@@ -1690,6 +1701,58 @@ class TestResolveAggregations:
         result = _resolve_aggregations(props, Bulletin.Source.EUREGIO)
         assert result == []
 
+    def test_mf_single_dry_problem(self) -> None:
+        """MF with one dry problem synthesises one dry aggregation entry (shared path)."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wind_slab",
+                    "validTimePeriod": "all_day",
+                    "aspects": ["N"],
+                }
+            ]
+        }
+        result = _resolve_aggregations(props, Bulletin.Source.MF)
+        assert len(result) == 1
+        assert result[0]["category"] == "dry"
+        assert result[0]["problemTypes"] == ["wind_slab"]
+
+    def test_mf_single_wet_problem(self) -> None:
+        """MF with one wet problem synthesises one wet aggregation entry."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wet_snow",
+                    "validTimePeriod": "all_day",
+                    "aspects": ["S"],
+                }
+            ]
+        }
+        result = _resolve_aggregations(props, Bulletin.Source.MF)
+        assert len(result) == 1
+        assert result[0]["category"] == "wet"
+
+    def test_mf_dry_and_wet_problems(self) -> None:
+        """MF dry + wet problems produce two separate aggregation entries."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wet_snow",
+                    "validTimePeriod": "all_day",
+                    "aspects": ["S"],
+                },
+                {
+                    "problemType": "wind_slab",
+                    "validTimePeriod": "all_day",
+                    "aspects": ["N"],
+                },
+            ]
+        }
+        result = _resolve_aggregations(props, Bulletin.Source.MF)
+        assert len(result) == 2
+        categories = {e["category"] for e in result}
+        assert categories == {"dry", "wet"}
+
 
 # ---------------------------------------------------------------------------
 # Version 4 — _resolve_problem_rating (EUREGIO branch)
@@ -2026,3 +2089,143 @@ class TestV4SLFRegressionNewEmptySlots:
         assert rm["source"] == "slf"
         assert rm["danger_patterns"] == []
         assert rm["prose"]["avalanche_activity"] == {"highlights": "", "comment": ""}
+
+
+# ---------------------------------------------------------------------------
+# Version 4 — MeteoFrance resolver unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestResolveProblemMeteoFrance:
+    """Targeted unit tests for resolver helpers on the MeteoFrance branch."""
+
+    def test_mf_problem_rating_derived_from_danger_ratings(self) -> None:
+        """MF rating is derived by elevation match, not dangerRatingValue."""
+        problem: dict[str, Any] = {
+            "problemType": "wet_snow",
+            "validTimePeriod": "all_day",
+            "elevation": {"lowerBound": "2400"},
+        }
+        ratings = [
+            {
+                "mainValue": "low",
+                "elevation": {"upperBound": "2400"},
+                "validTimePeriod": "all_day",
+            },
+            {
+                "mainValue": "moderate",
+                "elevation": {"lowerBound": "2400"},
+                "validTimePeriod": "all_day",
+            },
+        ]
+        result = _resolve_problem_rating(problem, ratings, Bulletin.Source.MF)
+        assert result == "moderate"
+
+    def test_mf_problem_comment_is_empty(self) -> None:
+        """MF per-problem comment is always empty (activity lives at bulletin level)."""
+        from bulletins.services.render_model import _resolve_problem_comment
+
+        problem: dict[str, Any] = {"comment": "Some prose."}
+        result = _resolve_problem_comment(problem, Bulletin.Source.MF)
+        assert result == ""
+
+    def test_mf_problem_extras_is_empty_dict(self) -> None:
+        """MF extras dict is empty — no source-specific problem-level fields."""
+        problem: dict[str, Any] = {}
+        extras = _resolve_problem_extras(problem, Bulletin.Source.MF)
+        assert extras == {}
+
+    def test_mf_problem_avalanche_type_is_none(self) -> None:
+        """MF avalanche_type is always None (no ALBINA customData)."""
+        from bulletins.services.render_model import _resolve_problem_avalanche_type
+
+        problem: dict[str, Any] = {}
+        result = _resolve_problem_avalanche_type(problem, Bulletin.Source.MF)
+        assert result is None
+
+    def test_mf_avalanche_activity_populated(self) -> None:
+        """MF avalanche activity is read from properties.avalancheActivity."""
+        props: dict[str, Any] = {
+            "avalancheActivity": {
+                "highlights": "Wet slides possible.",
+                "comment": "Caution near steep terrain.",
+            }
+        }
+        result = _resolve_avalanche_activity(props, Bulletin.Source.MF)
+        assert result["highlights"] == "Wet slides possible."
+        assert result["comment"] == "Caution near steep terrain."
+
+    def test_mf_avalanche_activity_missing_returns_empty_strings(self) -> None:
+        """MF avalanche activity with no field returns empty strings."""
+        props: dict[str, Any] = {}
+        result = _resolve_avalanche_activity(props, Bulletin.Source.MF)
+        assert result == {"highlights": "", "comment": ""}
+
+    def test_mf_danger_patterns_is_empty(self) -> None:
+        """MF danger_patterns is always an empty list."""
+        props: dict[str, Any] = {"customData": {"MF": {"someField": "value"}}}
+        result = _resolve_danger_patterns(props, Bulletin.Source.MF)
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Version 4 — MeteoFrance end-to-end test
+# ---------------------------------------------------------------------------
+
+
+def _load_mf_bulletin(filename: str) -> dict[str, Any]:
+    """Load a MF XML file and parse it with parse_dpbra_xml."""
+    path = _MF_BULLETIN_DIR / filename
+    xml_bytes = path.read_bytes()
+    return parse_dpbra_xml(xml_bytes)
+
+
+class TestBuildRenderModelMeteoFranceEndToEnd:
+    """End-to-end tests using a captured MeteoFrance BRA XML bulletin."""
+
+    def test_source_is_meteofrance(self) -> None:
+        """MF bulletin produces source='meteofrance'."""
+        props = _load_mf_bulletin("massif-001.xml")
+        rm = build_render_model(props)
+        assert rm["source"] == "meteofrance"
+
+    def test_has_populated_traits(self) -> None:
+        """MF bulletin with avalancheProblems produces non-empty traits."""
+        props = _load_mf_bulletin("massif-001.xml")
+        rm = build_render_model(props)
+        assert len(rm["traits"]) > 0
+
+    def test_danger_patterns_is_empty(self) -> None:
+        """MF bulletin always has empty danger_patterns."""
+        props = _load_mf_bulletin("massif-001.xml")
+        rm = build_render_model(props)
+        assert rm["danger_patterns"] == []
+
+    def test_avalanche_activity_is_populated(self) -> None:
+        """MF bulletin prose has non-empty avalanche_activity."""
+        props = _load_mf_bulletin("massif-001.xml")
+        rm = build_render_model(props)
+        activity = rm["prose"]["avalanche_activity"]
+        assert activity["highlights"] != "" or activity["comment"] != ""
+
+    def test_version_is_current(self) -> None:
+        """MF bulletin render model has the current RENDER_MODEL_VERSION."""
+        props = _load_mf_bulletin("massif-001.xml")
+        rm = build_render_model(props)
+        assert rm["version"] == RENDER_MODEL_VERSION
+
+    def test_problem_extras_is_empty_dict(self) -> None:
+        """MF problems carry an empty extras dict."""
+        props = _load_mf_bulletin("massif-001.xml")
+        rm = build_render_model(props)
+        for trait in rm["traits"]:
+            for problem in trait["problems"]:
+                assert problem["extras"] == {}
+
+    def test_problem_avalanche_type_is_none(self) -> None:
+        """MF problems always have avalanche_type=None."""
+        props = _load_mf_bulletin("massif-001.xml")
+        rm = build_render_model(props)
+        for trait in rm["traits"]:
+            for problem in trait["problems"]:
+                assert problem["avalanche_type"] is None
