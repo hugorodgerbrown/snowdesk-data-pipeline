@@ -427,6 +427,149 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
 SEASON_CALENDAR_VARIANTS: tuple[dict[str, Any], ...] = _build_season_calendar_variants()
 
 
+# Button variants (SNOW-200) ------------------------------------------------
+# Covers all three visual variants × both sizes, plus a full-width example.
+
+BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Primary · standard",
+        "context": {
+            "label": "View a sample bulletin →",
+            "href": "#",
+            "variant": "primary",
+            "size": "standard",
+        },
+    },
+    {
+        "caption": "Primary · compact",
+        "context": {
+            "label": "Subscribe",
+            "variant": "primary",
+            "size": "compact",
+        },
+    },
+    {
+        "caption": "Secondary · standard",
+        "context": {
+            "label": "Explore the map →",
+            "href": "#",
+            "variant": "secondary",
+            "size": "standard",
+        },
+    },
+    {
+        "caption": "Ghost · standard",
+        "context": {
+            "label": "Sign in with a passkey",
+            "variant": "ghost",
+            "size": "standard",
+        },
+    },
+    {
+        "caption": "Ghost · compact",
+        "context": {
+            "label": "Add a passkey for this device",
+            "variant": "ghost",
+            "size": "compact",
+        },
+    },
+    {
+        "caption": "Primary · full width",
+        "context": {
+            "label": "Yes, unsubscribe me",
+            "variant": "primary",
+            "size": "standard",
+            "full_width": True,
+        },
+    },
+)
+
+
+# Card variants (SNOW-200) ---------------------------------------------------
+# One per real-world padding value used across the codebase.
+
+CARD_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "p-4 — compact passkey card",
+        "context": {
+            "title": "My MacBook Pro",
+            "body": "Last used 14 January 2026",
+            "padding": "p-4",
+        },
+    },
+    {
+        "caption": "px-5 py-4 — info banner / welcome card",
+        "context": {
+            "title": "Your subscription is confirmed.",
+            "body": "You'll receive alerts for the regions below.",
+            "padding": "px-5 py-4",
+        },
+    },
+    {
+        "caption": "p-6 — subscribe CTA card (default)",
+        "context": {
+            "title": "Get avalanche alerts",
+            "body": (
+                "Enter your email to receive daily bulletin updates for this region."
+            ),
+            "padding": "p-6",
+        },
+    },
+    {
+        "caption": "px-6 py-8 — empty-state card",
+        "context": {
+            "title": "You have no active subscriptions.",
+            "body": "",
+            "padding": "px-6 py-8",
+            "center": True,
+        },
+    },
+    {
+        "caption": "p-8 — status page card (centred)",
+        "context": {
+            "title": "Check your inbox",
+            "body": (
+                "We've sent you a link to manage your subscriptions."
+                " It expires in 24 hours."
+            ),
+            "padding": "p-8",
+            "center": True,
+        },
+    },
+)
+
+
+# Status page variants (SNOW-200) -------------------------------------------
+# Rendered via the _status_page_demo.html wrapper template.
+
+STATUS_PAGE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "With CTA — link expired",
+        "context": {
+            "heading": "This link has expired",
+            "body": (
+                "Account links are only valid for 24 hours."
+                " This one has expired or is invalid."
+            ),
+            "cta_label": "Request a new link",
+            "cta_href": "#",
+        },
+    },
+    {
+        "caption": "Without CTA — check inbox",
+        "context": {
+            "heading": "Check your inbox",
+            "body": (
+                "If that address is registered, we've sent you a link to manage"
+                " your subscriptions. It expires in 24 hours."
+            ),
+            "cta_label": None,
+            "cta_href": None,
+        },
+    },
+)
+
+
 DAY_CHARACTER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Hard-to-read day",

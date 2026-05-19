@@ -1,0 +1,34 @@
+{% extends "includes/_status_page.html" %}
+{% load i18n %}
+{% comment %}
+public/templates/public/partials/_status_page_demo.html
+
+Component-library–only wrapper around _status_page.html.  Renders a single
+status-page variant by forwarding context keys supplied by STATUS_PAGE_VARIANTS
+fixtures in public/_component_fixtures.py.
+
+Extends:  templates/includes/_status_page.html
+Used by:  /_components/status-page/ panel
+
+Context (from STATUS_PAGE_VARIANTS fixtures):
+    heading   : str        — h1 text.
+    body      : str        — body paragraph.
+    cta_label : str | None — button label; when falsy, no CTA is shown.
+    cta_href  : str | None — button href; when falsy, no CTA is shown.
+{% endcomment %}
+
+{% block status_title %}Status page demo — Snowdesk{% endblock %}
+
+{% block status_heading %}{{ heading }}{% endblock %}
+
+{% block status_body %}{{ body }}{% endblock %}
+
+{% block status_cta %}
+    {% if cta_label and cta_href %}
+        {% load components %}
+        <div class="mt-6">
+            {% trans cta_label as translated_label %}
+            {% include "includes/_button.html" with label=translated_label href=cta_href variant="primary" %}
+        </div>
+    {% endif %}
+{% endblock %}
