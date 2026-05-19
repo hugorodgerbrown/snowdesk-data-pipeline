@@ -88,13 +88,39 @@ Follow the conventions in `CLAUDE.md`: render-model shape, management-command
 design, i18n rules, test structure, etc. The scoping comment's touch list
 and tests section are your guide.
 
+**Before committing any template change, walk this checklist:**
+
+- Does an existing partial in `templates/includes/`, `public/templates/`, or
+  `subscriptions/templates/.../partials/` already render this shape? If yes,
+  use it — don't write a fresh copy.
+- Is the same shape currently inlined in another template that I'm about
+  to inline again? If yes, extract a new partial and register it in
+  `public/design_tokens.py` (with a fixture in `public/_component_fixtures.py`)
+  rather than producing the second inline copy.
+- Are all colours expressed via design tokens (`bg-card`, `text-text-1`,
+  `border-border`, `bg-status-*`, etc.) rather than raw Tailwind palette
+  utilities (`bg-slate-200`, `text-red-600`, etc.)?
+- Are all radii expressed via named tokens (`rounded-card`, `rounded-tag`,
+  `rounded-pill`, `rounded-sm`) rather than bracket literals (`rounded-[12px]`)?
+- Do any new hex colours, raw palettes, or radius literals carry a
+  `{# ds-lint-allow: <specific reason> #}` comment that a reviewer can
+  judge cold? Vague reasons ("intentional", "needed here") don't pass
+  review.
+
+`bin/ds-lint` mechanically enforces the above on every PR via `tox -e ds-lint`;
+catching violations before the commit is faster than fixing them at review time.
+
 ### 6. Run the test suite
 
-- `poetry run tox` — must pass cleanly before opening the PR.
+- `poetry run tox` — must pass cleanly before opening the PR. `ds-lint` is in
+  the default envlist; visual changes that bypass the design system fail here.
 - `npm run lh` — for any change touching a public page.
 
 Fix every failure before opening the PR. Don't paper over flaky tests;
-if a test is genuinely flaky, surface it and stop.
+if a test is genuinely flaky, surface it and stop. For `ds-lint` failures,
+fix the violation (extract a partial, switch to a token, or add an explicit
+`ds-lint-allow` comment with a specific reason) — don't add the file to
+`PATH_ALLOWLIST` as a shortcut.
 
 ### 7. Push the branch and open the PR
 

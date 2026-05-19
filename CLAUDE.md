@@ -177,6 +177,45 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 - Use `hx-target`, `hx-swap="innerHTML"`, and `hx-indicator` for all dynamic
   requests.
 
+## Design system
+
+The canonical reference is the staff-only **component library at `/_components/`**
+(source: [`public/design_tokens.py`](public/design_tokens.py), variant fixtures in
+[`public/_component_fixtures.py`](public/_component_fixtures.py)). It renders every
+design token in both light and dark themes plus a growing set of component partials.
+Read it before adding any new visual surface.
+
+**Rules for any change that adds or touches templates:**
+
+1. **Reuse first, extract second, inline never.** If the surface already has a
+   partial (`_card`, `_button`, `_status_page`, `_collapsible_panel`, `_eyebrow`,
+   etc.), use it. If the same shape already exists inline in another template,
+   extract a new partial *with a registry entry* — don't add a third copy.
+2. **Use the design tokens, not raw Tailwind palette utilities.**
+   - Colours: `bg-card`, `text-text-1/2/3`, `border-border`, `bg-status-*`, etc.
+     — **never** `bg-slate-200`, `text-red-600`, etc.
+   - Radius: `rounded-card`, `rounded-tag`, `rounded-pill`, `rounded-sm` —
+     **never** `rounded-[12px]` and friends.
+   - Primary CTAs use `templates/includes/_button.html`, not inline class strings.
+3. **Hex colours belong in `src/css/main.css` `@theme`**, surfaced via Tailwind
+   token utilities. The only legitimate template-side hex values are SVG
+   `fill`/`stroke` attributes and the PWA `<meta name="theme-color">` tag (which
+   can't resolve CSS variables); annotate those with the escape-hatch comment
+   below.
+
+**Enforcement:** `bin/ds-lint` runs as `tox -e ds-lint` and blocks every PR that
+introduces a violation of the above. Per-line escape hatch:
+
+```html
+{# ds-lint-allow: <reason — required, audit-visible> #}
+<element class="rounded-[16px]">…</element>
+```
+
+Reasons are audit-visible via `bin/ds-lint --show-allows`. Use the escape hatch
+only when the design token genuinely can't express the constraint — and write
+the reason as if a reviewer who didn't see the original conversation has to
+judge it cold.
+
 ## Code style
 
 - `ruff` for linting and formatting (includes import sorting).
@@ -202,6 +241,7 @@ poetry run tox -e mypy
 poetry run tox -e django-checks
 poetry run tox -e fmt             # ruff format --check
 poetry run tox -e lint            # ruff check
+poetry run tox -e ds-lint         # design-system template linter (see "Design system" above)
 poetry run tox -e audit           # pip-audit on the locked dependency set
 poetry run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
 poetry run tox --recreate         # rebuild envs from scratch after a deps change

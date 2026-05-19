@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+# bin/ds-lint — Design-system linter for Snowdesk templates.
+#
+# Scans every .html template under the configured template roots for
+# patterns that bypass the design tokens registered in public/design_tokens.py
+# (radius literals, raw Tailwind palette utilities, inline primary-button
+# class-strings that should use a `_button` partial, etc).
+#
+# Per-line escape hatch: a `{# ds-lint-allow: <reason> #}` template comment
+# immediately preceding a violating line suppresses that line's violations.
+# The reason is mandatory (any non-whitespace text) and is reported alongside
+# allowed lines so the suppression is visible.
+#
+# Exit code: 0 = clean; 1 = one or more unsuppressed violations.
+#
+# Usage:
+#   bin/ds-lint                  # scan all template roots
+#   bin/ds-lint path/to/file.html ...  # scan specific files
+#   bin/ds-lint --show-allows    # also list suppressed matches (audit aid)
+"""Design-system linter — see module docstring for full behaviour."""
+
+# ruff: noqa: T201
+# CLI script — print() is the intended output channel.
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Roots scanned by default. Each must be a directory containing *.html
+# templates that are rendered into the public site or staff-only pages.
+# Email templates are deliberately excluded — they have their own constraints
+# (inline styles, no CSS variables) and the DS tokens don't apply.
+TEMPLATE_ROOTS: tuple[Path, ...] = (
+    REPO_ROOT / "templates",
+    REPO_ROOT / "public" / "templates",
+    REPO_ROOT / "subscriptions" / "templates",
+    REPO_ROOT / "bulletins" / "templates",
+)
+
+# Path-glob allowlist — files whose violations are tolerated globally.
+# Used for templates that genuinely sit outside the design system (admin
+# overrides, email layouts). Prefer the per-line `ds-lint-allow` comment
+# over adding entries here; file-level suppression is a last resort.
+PATH_ALLOWLIST: tuple[str, ...] = (
+    "bulletins/templates/admin/*",
+    "subscriptions/templates/subscriptions/emails/*",
+    # Country-flag colours are mandated by each country's flag spec; they
+    # are not stylistic choices and cannot be tokenized.
+    "templates/includes/country_flags_sprite.html",
+)
+
+ALLOW_COMMENT_RE = re.compile(r"\{#\s*ds-lint-allow:\s*(?P<reason>[^\n#]+?)\s*#\}")
+
+
+@dataclass(frozen=True)
+class Rule:
+    """One regex-based design-system rule.
+
+    Attributes:
+        slug: Short identifier shown in violation output.
+        pattern: Compiled regex; any match anywhere on a line is a violation.
+        message: Human-readable explanation of why the pattern is forbidden
+            and what to use instead.
+
+    """
+
+    slug: str
+    pattern: re.Pattern[str]
+    message: str
+
+
+RULES: tuple[Rule, ...] = (
+    Rule(
+        slug="radius-literal",
+        pattern=re.compile(r"rounded-\[\d+(?:\.\d+)?px\]"),
+        message=(
+            "Hard-coded radius literal — use the named tokens "
+            "`rounded-card`, `rounded-tag`, `rounded-pill`, or `rounded-sm`."
+        ),
+    ),
+    Rule(
+        slug="raw-palette",
+        pattern=re.compile(
+            # Match any Tailwind palette utility (bg-/text-/border-/ring-/from-/
+            # to-/via-) using a numbered colour stop from the default palette.
+            # The token system replaces these with semantic names
+            # (`bg-card`, `text-text-1`, `border-border`, etc).
+            r"\b(?:bg|text|border|ring|from|to|via|fill|stroke|outline|"
+            r"divide|placeholder|caret|decoration|accent|shadow)-"
+            r"(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|"
+            r"lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|"
+            r"fuchsia|pink|rose)-\d{2,3}\b"
+        ),
+        message=(
+            "Raw Tailwind palette utility — use design-token utilities "
+            "(`bg-card`, `text-text-1/2/3`, `border-border`, "
+            "`bg-status-*` etc) so the site stays themeable."
+        ),
+    ),
+    Rule(
+        slug="inline-primary-button",
+        pattern=re.compile(
+            r"bg-text-1\s+text-card[^\"']*hover:opacity-90[^\"']*transition-opacity"
+        ),
+        message=(
+            "Inline primary-button class-string — reuse the "
+            "`templates/includes/_button.html` partial (SNOW-200). "
+            "Inline repetition of the canonical CTA shape produces drift."
+        ),
+    ),
+    Rule(
+        slug="hex-colour",
+        pattern=re.compile(r"#[0-9a-fA-F]{3,8}\b(?![0-9a-fA-F])"),
+        message=(
+            "Literal hex colour in a template — colours belong in "
+            "`src/css/main.css` `@theme` and are surfaced via Tailwind "
+            "token utilities. SVG `fill`/`stroke` attributes are the only "
+            "legitimate exception — annotate with `ds-lint-allow`."
+        ),
+    ),
+)
+
+
+@dataclass
+class Violation:
+    """One rule-match in a template file.
+
+    `allowed_reason` is set when the line is suppressed by a preceding
+    `ds-lint-allow` comment.
+    """
+
+    path: Path
+    line_no: int
+    line_text: str
+    rule: Rule
+    allowed_reason: str | None
+
+
+def _repo_relative(path: Path) -> Path:
+    """Return `path` relative to `REPO_ROOT`, or the absolute path if outside.
+
+    The linter is normally invoked with paths inside the repo, but the CLI
+    accepts arbitrary paths so a misuse or an ad-hoc `/tmp/...` invocation
+    shouldn't crash the formatter.
+    """
+    try:
+        return path.relative_to(REPO_ROOT)
+    except ValueError:
+        return path
+
+
+def _path_is_allowed(path: Path) -> bool:
+    """Return True if `path` matches any glob in `PATH_ALLOWLIST`.
+
+    Globs are evaluated against the repo-relative POSIX form of the path
+    so they're portable across macOS/Linux and stable in CI output. Paths
+    outside the repo are never allowlisted (the linter would not normally
+    be pointed at them).
+    """
+    rel_path = _repo_relative(path)
+    if rel_path == path:
+        return False
+    rel = rel_path.as_posix()
+    return any(Path(rel).match(glob) for glob in PATH_ALLOWLIST)
+
+
+def _scan_file(path: Path) -> list[Violation]:
+    """Return every rule-match in `path`, including suppressed ones.
+
+    The caller decides whether to display or skip suppressed matches.
+    A line is suppressed iff the preceding non-blank line carries a
+    `ds-lint-allow:` comment; the reason is captured for reporting.
+    """
+    violations: list[Violation] = []
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    # Pre-compute which lines carry a pending allow-comment that suppresses
+    # the *next* non-blank line. Walking once keeps the lookup O(1) per line.
+    suppression_for_line: dict[int, str] = {}
+    pending_reason: str | None = None
+    for idx, raw_line in enumerate(lines, start=1):
+        stripped = raw_line.strip()
+        match = ALLOW_COMMENT_RE.search(raw_line)
+        if match:
+            pending_reason = match.group("reason").strip()
+            continue
+        if not stripped:
+            # Blank line — keep the pending reason alive across it so allow
+            # comments separated by blank lines still bind to the next code.
+            continue
+        if pending_reason is not None:
+            suppression_for_line[idx] = pending_reason
+            pending_reason = None
+
+    for idx, raw_line in enumerate(lines, start=1):
+        for rule in RULES:
+            if rule.pattern.search(raw_line):
+                violations.append(
+                    Violation(
+                        path=path,
+                        line_no=idx,
+                        line_text=raw_line.rstrip(),
+                        rule=rule,
+                        allowed_reason=suppression_for_line.get(idx),
+                    )
+                )
+    return violations
+
+
+def _collect_files(args_paths: list[str]) -> list[Path]:
+    """Resolve CLI args to the concrete list of template files to scan.
+
+    When `args_paths` is empty, walk every root in `TEMPLATE_ROOTS`. When
+    individual paths are passed, scan only those (file or directory).
+    Skips files in `PATH_ALLOWLIST` so the suppression is honoured even
+    when the file is named explicitly.
+    """
+    paths: list[Path] = []
+    if args_paths:
+        for raw in args_paths:
+            p = Path(raw).resolve()
+            if p.is_dir():
+                paths.extend(sorted(p.rglob("*.html")))
+            elif p.suffix == ".html" and p.exists():
+                paths.append(p)
+    else:
+        for root in TEMPLATE_ROOTS:
+            if root.exists():
+                paths.extend(sorted(root.rglob("*.html")))
+    return [p for p in paths if not _path_is_allowed(p)]
+
+
+def _format_violation(v: Violation) -> str:
+    """Format one violation as a clickable terminal line.
+
+    The leading `path:line` form is identical to the convention ruff,
+    mypy, and pytest use so editors and CI annotators surface it as a
+    jumpable location.
+    """
+    rel = _repo_relative(v.path)
+    tag = f"[{v.rule.slug}]"
+    snippet = v.line_text.strip()
+    if len(snippet) > 100:
+        snippet = snippet[:97] + "..."
+    return f"{rel}:{v.line_no}: {tag} {snippet}\n    → {v.rule.message}"
+
+
+def main() -> int:
+    """CLI entry point — see module docstring for behaviour and exit codes."""
+    parser = argparse.ArgumentParser(
+        description="Snowdesk design-system template linter (spike).",
+    )
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        help="Optional files/dirs to scan. Defaults to every template root.",
+    )
+    parser.add_argument(
+        "--show-allows",
+        action="store_true",
+        help="Also list suppressed matches (audit aid; non-fatal).",
+    )
+    args = parser.parse_args()
+
+    files = _collect_files(args.paths)
+    all_violations: list[Violation] = []
+    for path in files:
+        all_violations.extend(_scan_file(path))
+
+    unsuppressed = [v for v in all_violations if v.allowed_reason is None]
+    suppressed = [v for v in all_violations if v.allowed_reason is not None]
+
+    if unsuppressed:
+        print(f"Found {len(unsuppressed)} design-system violation(s):\n")
+        for v in unsuppressed:
+            print(_format_violation(v))
+            print()
+
+    if args.show_allows and suppressed:
+        print(f"\nSuppressed by ds-lint-allow ({len(suppressed)} line(s)):")
+        for v in suppressed:
+            rel = _repo_relative(v.path)
+            print(f"  {rel}:{v.line_no} [{v.rule.slug}] — {v.allowed_reason}")
+
+    print(
+        f"\nScanned {len(files)} template(s) | "
+        f"{len(unsuppressed)} violation(s) | "
+        f"{len(suppressed)} suppressed"
+    )
+    return 1 if unsuppressed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
