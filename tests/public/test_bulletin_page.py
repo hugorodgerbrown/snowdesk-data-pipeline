@@ -166,7 +166,10 @@ def _raw_data_with_ratings(ratings: list[dict]) -> dict:
     return {
         "type": "Feature",
         "geometry": None,
-        "properties": {"dangerRatings": ratings},
+        "properties": {
+            "dangerRatings": ratings,
+            "customData": {"CH": {}},
+        },
     }
 
 

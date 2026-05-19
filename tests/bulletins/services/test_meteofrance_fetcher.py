@@ -377,7 +377,7 @@ class TestRunMeteofrance:
 
 @pytest.mark.django_db
 class TestLatestMeteofrancoDate:
-    """latest_meteofrance_date returns None or the most recent FR- bulletin date."""
+    """latest_meteofrance_date returns None or the most recent MF bulletin date."""
 
     def test_returns_none_when_no_bulletins(self) -> None:
         """Empty DB returns None."""
@@ -385,7 +385,7 @@ class TestLatestMeteofrancoDate:
         assert result is None
 
     def test_returns_latest_date_when_bulletins_exist(self) -> None:
-        """Returns the valid_from date of the most recent FR- bulletin."""
+        """Returns the valid_from date of the most recent MeteoFrance bulletin."""
         MicroRegionFactory.create(region_id="FR-01", name="Chablais")
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "massif-001.xml").write_bytes(_sample("massif-001.xml"))
@@ -404,8 +404,8 @@ class TestLatestMeteofrancoDate:
         # = 2026-05-17T14:00:00Z, so .date() == 2026-05-17
         assert result == date(2026, 5, 17)
 
-    def test_ignores_non_fr_bulletins(self) -> None:
-        """Non-FR- bulletin IDs (e.g. SLF) are not counted."""
+    def test_ignores_non_meteofrance_bulletins(self) -> None:
+        """Bulletins whose render_model.source != "meteofrance" are not counted."""
         from bulletins.models import Bulletin, PipelineRun
 
         run = PipelineRun.objects.create(triggered_by="test")
