@@ -22,7 +22,7 @@ the manage page can be authenticated-only.
 {% block content %}
     <div class="px-4 py-10">
         <div class="max-w-[640px] mx-auto">
-            <div class="bg-card rounded-[12px] p-8 shadow-sm border border-text-3/10">
+            <div class="bg-card rounded-card p-8 shadow-sm border border-text-3/10">
                 <h1 class="text-2xl font-semibold text-text-1 mb-2">
                     {% trans "Sign in" %}
                 </h1>
@@ -51,7 +51,7 @@ the manage page can be authenticated-only.
 
                     <button
                         type="submit"
-                        class="w-full bg-text-1 text-card px-5 py-2.5 rounded-[8px] text-sm font-medium hover:opacity-90 transition-opacity"
+                        class="w-full bg-text-1 text-card px-5 py-2.5 rounded-tag text-sm font-medium hover:opacity-90 transition-opacity"
                     >
                         {% trans "Send sign-in link" %}
                     </button>
@@ -64,7 +64,7 @@ the manage page can be authenticated-only.
                     <button
                         id="btn-passkey-signin"
                         type="button"
-                        class="w-full text-sm text-text-2 border border-text-3/30 rounded-[8px] px-5 py-2.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                        class="w-full text-sm text-text-2 border border-text-3/30 rounded-tag px-5 py-2.5 hover:text-text-1 hover:border-text-2 transition-colors"
                     >
                         {% trans "Sign in with a passkey" %}
                     </button>
