@@ -1,0 +1,19 @@
+{% load components %}
+{% comment %}
+templates/includes/_card.html — Card showcase partial for the component library.
+
+Used exclusively by the ``/_components/card/`` panel so each padding and
+alignment variant is visible in the design system.  Not used at call sites —
+the ``{% card %}`` block tag handles production use.
+
+Context (supplied via CARD_VARIANTS fixtures in public/_component_fixtures.py):
+    title   : str  — heading text shown inside the card.
+    body    : str  — body text shown inside the card.
+    padding : str  — Tailwind padding utility (e.g. ``"p-6"``).
+    center  : bool — when True, centres text (default False).
+    extra   : str  — extra Tailwind utilities (default ``""``).
+{% endcomment %}
+{% card padding=padding center=center extra=extra %}
+<h3 class="text-base font-semibold text-text-1 mb-1">{{ title }}</h3>
+<p class="text-sm text-text-2 leading-relaxed">{{ body }}</p>
+{% endcard %}

@@ -1,0 +1,39 @@
+{% load components %}
+{% comment %}
+templates/includes/_button.html — Reusable button partial.
+
+Renders either an ``<a>`` anchor or a ``<button>`` element depending on
+whether ``href`` is supplied.
+
+Context:
+    label       : str  — visible button text (required).
+    href        : str  — if supplied, renders an ``<a>``; otherwise a ``<button>``.
+    button_type : str  — ``type`` attribute for ``<button>`` (default ``"submit"``).
+    variant     : str  — ``"primary"`` (default), ``"secondary"``, or ``"ghost"``.
+    size        : str  — ``"standard"`` (default, px-5 py-2.5) or
+                         ``"compact"`` (px-4 py-2).
+    full_width  : bool — when truthy, adds ``w-full`` (default False).
+    extra_attrs : str  — raw attribute string injected verbatim (e.g. HTMX
+                         attrs like ``hx-post="…" hx-target="…"``). Must be
+                         pre-escaped by the caller; use only for trusted,
+                         developer-authored attribute strings.
+{% endcomment %}
+{% if href %}
+    <a
+        href="{{ href }}"
+        class="{% button_classes variant=variant size=size full_width=full_width is_anchor=True %}"
+        {% if extra_attrs %}
+            {{ extra_attrs|safe }}
+        {% endif %}
+    >{{ label }}</a>
+{% else %}
+    <button
+        type='{{ button_type|default:"submit" }}'
+        class="{% button_classes variant=variant size=size full_width=full_width %}"
+        {% if extra_attrs %}
+            {{ extra_attrs|safe }}
+        {% endif %}
+    >
+        {{ label }}
+    </button>
+{% endif %}

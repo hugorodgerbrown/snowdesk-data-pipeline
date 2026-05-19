@@ -1,0 +1,47 @@
+{% extends "public/base.html" %}
+{% load components i18n %}
+{% comment %}
+templates/includes/_status_page.html — Centred status-page parent template.
+
+Provides the full-page chrome shared by every status/confirmation page:
+``flex min-h-[80vh] items-center justify-center`` outer wrapper → constrained
+``max-w-md`` inner column → centred card with ``p-8``.  Child templates
+override the exposed blocks to supply their content.
+
+Extends:    public/base.html
+Extended by: subscriptions/templates/subscriptions/
+                manage_sent.html, manage_saved.html,
+                link_expired.html, unsubscribe.html, unsubscribe_done.html
+
+Blocks exposed to child templates:
+    status_title   : inner content for ``{% block title %}``.  The base
+                     template wraps this in the full ``<title>`` tag.
+    status_meta    : inner content for ``{% block meta_description %}``.
+    status_heading : ``<h1>`` text inside the card (required).
+    status_body    : body paragraph(s) inside the card (required).
+    status_cta     : optional call-to-action slot below the body.  Wrapped
+                     with ``mt-6`` top margin when content is present.
+                     Callers that include a ``<form>`` should wrap it in
+                     a ``<div class="mt-6">`` themselves rather than relying
+                     on the block wrapper, so spacing remains correct when
+                     the block contains non-CTA markup (e.g. a cancel link).
+{% endcomment %}
+
+{% block title %}{% block status_title %}{% endblock %}{% endblock %}
+{% block meta_description %}{% block status_meta %}{% endblock %}{% endblock %}
+
+{% block content %}
+    <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">
+        <div class="w-full max-w-md">
+            {% card padding="p-8" center=True %}
+            <h1 class="text-2xl font-semibold text-text-1 mb-3">
+                {% block status_heading %}{% endblock %}
+            </h1>
+            <p class="text-text-2 text-sm leading-relaxed">
+                {% block status_body %}{% endblock %}
+            </p>
+            {% block status_cta %}{% endblock %}
+            {% endcard %}
+        </div>
+    </div>
+{% endblock %}
