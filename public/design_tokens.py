@@ -33,6 +33,7 @@ from typing import Any
 from public._component_fixtures import (
     BUTTON_VARIANTS,
     CARD_VARIANTS,
+    COLLAPSIBLE_PANEL_VARIANTS,
     DAY_CHARACTER_VARIANTS,
     DAY_WINDOWS_VARIANTS,
     NAV_VARIANTS,
@@ -788,6 +789,19 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_no_data_supplied.html",
         variants=NO_DATA_SUPPLIED_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="collapsible-panel",
+        label="Collapsible panel",
+        description=(
+            "Expandable ``<details>`` panel used for the four Snowpack & Weather "
+            "sections on the bulletin page. Three variants: closed simple body, "
+            "open simple body, and open multi-entry tendency body."
+        ),
+        kind="components",
+        partial="includes/_collapsible_panel.html",
+        variants=COLLAPSIBLE_PANEL_VARIANTS,
         panel_layout="stack",
     ),
 )
