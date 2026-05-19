@@ -362,7 +362,7 @@ def _elem_text(element: Element | None) -> str:
 
 # Matches a heading line: up to 50 non-colon chars, optional whitespace, colon,
 # optional whitespace, and the rest of the line as the inline body.
-_HEADING_RE = re.compile(r"^([^:]{1,50}?)\s*:\s*(.*)$", re.DOTALL)
+_HEADING_RE = re.compile(r"^([^:]{1,50}?)\s*:\s*(.*)$")
 
 # Matches a bullet line prefixed with "* " or "- ".
 _BULLET_RE = re.compile(r"^[*\-] (.*)$")
@@ -723,7 +723,7 @@ def _parse_snowpack_structure(root: Element) -> dict[str, str] | None:
     qualite_texte = qualite.find("TEXTE")
     if qualite_texte is None or not qualite_texte.text:
         return None
-    return {"comment": _format_comment_as_html(qualite_texte.text.strip())}
+    return {"comment": _format_comment_as_html(qualite_texte.text)}
 
 
 def _parse_avalanche_activity(
