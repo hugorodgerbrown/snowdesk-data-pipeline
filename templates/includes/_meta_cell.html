@@ -1,0 +1,16 @@
+{% comment %}
+  Meta-cell label primitive.
+  Renders just the small uppercase label paragraph; the caller owns the
+  wrapping <div> and the value <p>.
+  Context:
+    text        — label copy (required).
+    data_testid — optional data-testid attribute value (on the <p>).
+{% endcomment %}
+<p
+    class="font-mono uppercase tracking-wider text-[9px] mb-0.5"
+    {% if data_testid %}
+        data-testid="{{ data_testid }}"
+    {% endif %}
+>
+    {{ text }}
+</p>

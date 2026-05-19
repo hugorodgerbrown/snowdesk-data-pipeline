@@ -36,6 +36,8 @@ from public._component_fixtures import (
     COLLAPSIBLE_PANEL_VARIANTS,
     DAY_CHARACTER_VARIANTS,
     DAY_WINDOWS_VARIANTS,
+    EYEBROW_VARIANTS,
+    META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
     RATING_BLOCK_VARIANTS,
@@ -802,6 +804,33 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_collapsible_panel.html",
         variants=COLLAPSIBLE_PANEL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="eyebrow",
+        label="Eyebrow",
+        description=(
+            "Small uppercase eyebrow heading used above bulletin sections, "
+            "guide sections, and component-library panels. Accepts an "
+            "element tag override so the partial fits both h2/h3 headings "
+            "and standalone <p> labels."
+        ),
+        kind="components",
+        partial="includes/_eyebrow.html",
+        variants=EYEBROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="meta-cell",
+        label="Meta cell label",
+        description=(
+            "Tiny uppercase label paragraph used as the top line of each "
+            "metadata-strip cell on the bulletin page. Label-only emit — "
+            "the caller owns the wrapping <div> and the value paragraph."
+        ),
+        kind="components",
+        partial="includes/_meta_cell.html",
+        variants=META_CELL_VARIANTS,
         panel_layout="stack",
     ),
 )
