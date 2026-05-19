@@ -59,6 +59,7 @@ class MajorRegionFactory(factory.django.DjangoModelFactory[MajorRegion]):
     country = "CH"
     name_native = factory.LazyAttribute(lambda obj: f"Major {obj.prefix}")
     name_en = factory.LazyAttribute(lambda obj: f"Major {obj.prefix}")
+    display_on_map = True
 
 
 class SubRegionFactory(factory.django.DjangoModelFactory[SubRegion]):

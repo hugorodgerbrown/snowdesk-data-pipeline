@@ -965,6 +965,144 @@ def test_regions_geojson_includes_fr_regions() -> None:
 
 
 # ---------------------------------------------------------------------------
+# display_on_map filtering (SNOW-196)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_regions_geojson_excludes_hidden_major_regions() -> None:
+    """L4 micro-regions under a hidden major region are excluded from the L4 endpoint.
+
+    A MajorRegion with display_on_map=False must not appear in
+    /api/regions.geojson even when its child MicroRegion has a non-null boundary.
+    A visible MajorRegion (display_on_map=True) with the same country must
+    still be included.
+    """
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[0.5, 42.8], [0.7, 42.8], [0.7, 43.0], [0.5, 43.0], [0.5, 42.8]]
+        ],
+    }
+
+    # Hidden major region (simulates FR-3 Pyrenees).
+    hidden_major = MajorRegionFactory.create(
+        prefix="FR-3", country="FR", name_en="Pyrenees", display_on_map=False
+    )
+    hidden_sub = SubRegionFactory.create(
+        prefix="FR-3A", major=hidden_major, name_en="Pyrenees"
+    )
+    MicroRegionFactory.create(
+        region_id="FR-68",
+        name="Louchonnais",
+        slug="fr-68",
+        subregion=hidden_sub,
+        boundary=boundary,
+    )
+
+    # Visible major region (simulates FR-1 Alpes du Nord).
+    visible_major = MajorRegionFactory.create(
+        prefix="FR-1", country="FR", name_en="Alpes du Nord", display_on_map=True
+    )
+    visible_sub = SubRegionFactory.create(
+        prefix="FR-1A", major=visible_major, name_en="Alpes du Nord"
+    )
+    MicroRegionFactory.create(
+        region_id="FR-01",
+        name="Chartreuse",
+        slug="fr-01",
+        subregion=visible_sub,
+        boundary=boundary,
+    )
+
+    client = Client()
+    response = client.get(reverse("api:regions_geojson") + "?country=fr")
+    assert response.status_code == 200
+    data = response.json()
+
+    ids = {f["properties"]["id"] for f in data["features"]}
+    assert "FR-01" in ids, "Visible micro-region must be included"
+    assert "FR-68" not in ids, "Micro-region under hidden major must be excluded"
+
+
+@pytest.mark.django_db
+def test_major_regions_geojson_excludes_hidden_major_regions() -> None:
+    """A MajorRegion with display_on_map=False is excluded from the L1 endpoint.
+
+    display_on_map=True with a boundary must be included; display_on_map=False
+    must not appear even when boundary is set.
+    """
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[0.5, 42.8], [0.7, 42.8], [0.7, 43.0], [0.5, 43.0], [0.5, 42.8]]
+        ],
+    }
+
+    MajorRegionFactory.create(
+        prefix="FR-3",
+        country="FR",
+        name_en="Pyrenees",
+        boundary=boundary,
+        display_on_map=False,
+    )
+    MajorRegionFactory.create(
+        prefix="FR-1",
+        country="FR",
+        name_en="Alpes du Nord",
+        boundary=boundary,
+        display_on_map=True,
+    )
+
+    client = Client()
+    response = client.get(reverse("api:major_regions_geojson") + "?country=fr")
+    assert response.status_code == 200
+    data = response.json()
+
+    by_prefix = {f["properties"]["prefix"]: f for f in data["features"]}
+    assert "FR-1" in by_prefix, "Visible major region must be included"
+    assert "FR-3" not in by_prefix, "Hidden major region must be excluded"
+
+
+@pytest.mark.django_db
+def test_sub_regions_geojson_excludes_hidden_major_regions() -> None:
+    """A SubRegion whose parent MajorRegion has display_on_map=False is excluded.
+
+    The L2 endpoint filters via major__display_on_map=True, so sub-regions
+    under a hidden major must not appear even with a non-null boundary.
+    """
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[0.5, 42.8], [0.7, 42.8], [0.7, 43.0], [0.5, 43.0], [0.5, 42.8]]
+        ],
+    }
+
+    hidden_major = MajorRegionFactory.create(
+        prefix="FR-3", country="FR", name_en="Pyrenees", display_on_map=False
+    )
+    SubRegionFactory.create(
+        prefix="FR-3A", major=hidden_major, name_en="Pyrenees", boundary=boundary
+    )
+
+    visible_major = MajorRegionFactory.create(
+        prefix="FR-1", country="FR", name_en="Alpes du Nord", display_on_map=True
+    )
+    SubRegionFactory.create(
+        prefix="FR-1A", major=visible_major, name_en="Alpes du Nord", boundary=boundary
+    )
+
+    client = Client()
+    response = client.get(reverse("api:sub_regions_geojson") + "?country=fr")
+    assert response.status_code == 200
+    data = response.json()
+
+    by_prefix = {f["properties"]["prefix"]: f for f in data["features"]}
+    assert "FR-1A" in by_prefix, "Sub-region under visible major must be included"
+    assert "FR-3A" not in by_prefix, "Sub-region under hidden major must be excluded"
+
+
+# ---------------------------------------------------------------------------
 # Country-aware GeoJSON endpoints (SNOW-172)
 # ---------------------------------------------------------------------------
 

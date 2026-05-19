@@ -23,8 +23,15 @@ logger = logging.getLogger(__name__)
 class MajorRegionAdmin(admin.ModelAdmin):
     """Admin view for MajorRegion (L1)."""
 
-    list_display = ["prefix", "name_native", "name_en", "country", "updated_at"]
-    list_filter = ["country"]
+    list_display = [
+        "prefix",
+        "name_native",
+        "name_en",
+        "country",
+        "display_on_map",
+        "updated_at",
+    ]
+    list_filter = ["country", "display_on_map"]
     search_fields = ["prefix", "name_native", "name_en"]
     ordering = ["prefix"]
     readonly_fields = [

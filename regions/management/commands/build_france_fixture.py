@@ -228,6 +228,7 @@ def _build_entries(
                     "centre": centre,
                     "bbox": bbox,
                     "boundary": boundary,
+                    "display_on_map": major_prefix not in {"FR-3", "FR-4"},
                     "created_at": "2026-01-01T00:00:00Z",
                     "updated_at": "2026-01-01T00:00:00Z",
                 },

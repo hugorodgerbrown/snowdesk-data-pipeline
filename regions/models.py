@@ -136,6 +136,14 @@ class MajorRegion(BaseModel):
             "Computed by refresh_eaws_fixtures from the union of L4 children."
         ),
     )
+    display_on_map = models.BooleanField(
+        default=True,
+        help_text=(
+            "Whether this major region appears on the public map. "
+            "Set to False to hide it from the L1/L2/L4 GeoJSON endpoints "
+            "while keeping bulletin pages accessible at their canonical URLs."
+        ),
+    )
 
     objects = MajorRegionQuerySet.as_manager()
 
