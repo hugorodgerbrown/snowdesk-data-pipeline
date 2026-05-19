@@ -39,19 +39,7 @@ registered platform passkeys with delete buttons. A destructive
                     so users see feedback when a Remove/Delete POST fails
                     (e.g. CSRF rejection, rate limit, network).
                 {% endcomment %}
-                <div
-                    id="htmx-error-banner"
-                    role="alert"
-                    aria-live="polite"
-                    class="hidden mb-6 bg-card rounded-card border border-form-error/40 px-5 py-4 shadow-sm"
-                >
-                    <p class="text-sm text-text-1 font-medium">
-                        {% trans "Something went wrong." %}
-                    </p>
-                    <p class="text-sm text-text-2 mt-0.5">
-                        {% trans "Please reload the page and try again." %}
-                    </p>
-                </div>
+                {% include "includes/_toast.html" with id="htmx-error-banner" kind="error" body=_("Something went wrong.") dismissible=False %}
 
                 {# Optional one-time welcome banner when arriving via confirmation link #}
                 {% if just_confirmed %}
