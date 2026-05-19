@@ -211,17 +211,6 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         ),
     ),
     FoundationCategory(
-        slug="accent",
-        label="Accent",
-        description="Primary action colour and focus ring.",
-        kind="swatches",
-        tokens=(
-            Token("--color-accent", "Accent", "#2563eb", "#3b82f6"),
-            Token("--color-accent-hover", "Accent hover", "#1d4ed8", "#60a5fa"),
-            Token("--color-accent-text", "Accent text", "#ffffff", "#ffffff"),
-        ),
-    ),
-    FoundationCategory(
         slug="status",
         label="Status",
         description="Flash messages and status badges.",
