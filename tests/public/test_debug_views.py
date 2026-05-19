@@ -367,12 +367,13 @@ class TestRatingBlockPanel:
         # The danger-band carries a data-level attribute — confirm the template
         # rendered at least one card header.
         assert 'data-testid="rating-block"' in body
-        # Confirm the aspect-elevation row appeared for the structured cards.
-        assert 'data-testid="aspect-elevation-row"' in body
-        # The prose-only card should NOT emit an aspect-elevation row (the
-        # fixture has empty aspects and empty elevation).
-        # We can't assert its absence globally — other cards do have it.
-        # Instead, verify the problem_type set is exactly the seven we declared.
+        # Exactly 6 of the 7 variants render the aspect-elevation row — the
+        # prose-only card (empty aspects + empty elevation) must omit it.
+        # The panel renders each variant twice (light + dark themes), so the
+        # expected count is 6 structured cards × 2 theme passes = 12.
+        assert body.count('data-testid="aspect-elevation-row"') == 12  # noqa: PLR2004
+        # Verify the problem_type set is exactly the six we declared (the
+        # prose-only card re-uses new_snow, so the set collapses to 6).
         assert expected_problem_types == {
             "new_snow",
             "wind_slab",
@@ -380,7 +381,7 @@ class TestRatingBlockPanel:
             "cornices",
             "wet_snow",
             "gliding_snow",
-        } | {"new_snow"}  # prose-only card re-uses new_snow; the set collapses to 6
+        }
 
 
 @pytest.mark.django_db
@@ -478,3 +479,30 @@ class TestIncludeVariantPartialOverride:
         body = response.content.decode()
         # The error template's heading only appears if the override worked.
         assert "Something went wrong" in body
+
+    def test_csrf_token_present_in_subscribe_form_partial(
+        self, htmx_staff_client: Client
+    ) -> None:
+        """``include_variant`` renders a ``RequestContext`` so ``{% csrf_token %}`` works.
+
+        Before the fix, ``include_variant`` called ``Template.render(dict)``,
+        which builds a plain ``Context``.  ``{% csrf_token %}`` inside the
+        subscribe-form partial silently renders to an empty string in that case.
+        This test asserts the token input is present in the rendered output,
+        proving a ``RequestContext`` (with its CSRF middleware processor) was used.
+        """
+        import warnings
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            response = htmx_staff_client.get(_panel_url("subscribe-form"))
+
+        assert response.status_code == 200
+        body = response.content.decode()
+        # The CSRF hidden input must be present.
+        assert 'name="csrfmiddlewaretoken"' in body
+        # No UserWarning about a missing CSRF value must have been emitted.
+        csrf_warnings = [w for w in caught if "csrf_token" in str(w.message).lower()]
+        assert csrf_warnings == [], (
+            f"Unexpected CSRF warning(s): {[str(w.message) for w in csrf_warnings]}"
+        )

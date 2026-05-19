@@ -50,6 +50,13 @@ def include_variant(
     ``mark_safe`` on user-supplied content is involved (the variant data
     is hand-curated in ``public/_component_fixtures.py``).
 
+    When a request is available on the parent context (the normal case for
+    Django views), the partial is rendered via the backend ``Template.render``
+    API with the request passed explicitly.  The backend builds a
+    ``RequestContext`` internally, so CSRF tokens and other request-aware
+    processors work correctly inside the partial.  When no request is
+    available the dict-only path is used as a fallback.
+
     Args:
         context: The parent ``RenderContext``, supplied by ``takes_context``.
         partial: Django template path (e.g. ``"includes/bulletin_header.html"``).
@@ -71,7 +78,15 @@ def include_variant(
     # ``dict[str, Any]`` so the ``Template.render`` signature is happy.
     flat_context: dict[str, Any] = {str(k): v for k, v in context.flatten().items()}
     flat_context.update(variant.get("context", {}))
-    return rendered_template.render(flat_context)
+    # ``get_template`` returns a backend-level ``Template`` whose ``.render``
+    # accepts ``(context: dict, request: HttpRequest | None)``.  Passing the
+    # request causes the backend to build a ``RequestContext`` internally, so
+    # CSRF and other request-aware context processors work inside the partial.
+    # ``RequestContext`` stores the request as an attribute (.request), not as
+    # a dict key accessible via ``context.get()`` — use ``getattr`` to extract
+    # it safely.
+    request = getattr(context, "request", None)
+    return rendered_template.render(flat_context, request)
 
 
 @register.filter
