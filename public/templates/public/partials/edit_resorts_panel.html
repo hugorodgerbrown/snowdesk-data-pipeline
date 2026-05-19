@@ -17,22 +17,22 @@
 {% endcomment %}
 <aside
     id="edit-resorts-panel"
-    class="fixed right-0 top-0 z-30 flex h-full w-[360px] flex-col bg-white shadow-2xl"
+    class="fixed right-0 top-0 z-30 flex h-full w-[360px] flex-col bg-card shadow-glass border-l border-border"
     aria-label='{% trans "Edit resorts panel" %}'
     data-queue-url="{{ edit_queue_url }}"
     data-save-url-template="{{ edit_save_url_template }}"
     data-resorts-geojson-url="{{ edit_resorts_geojson_url }}"
 >
     {% csrf_token %}
-    <header class="border-b border-slate-200 px-4 py-3">
+    <header class="border-b border-border px-4 py-3">
         <div class="flex items-baseline justify-between">
-            <h2 class="text-lg font-semibold text-slate-900">{% trans "Edit resort coordinates" %}</h2>
+            <h2 class="text-lg font-semibold text-text-1">{% trans "Edit resort coordinates" %}</h2>
             <span
                 id="edit-resorts-remaining"
-                class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900"
+                class="rounded-full bg-status-warning-bg px-2 py-0.5 text-xs font-medium text-status-warning-text"
             >—</span>
         </div>
-        <p class="mt-1 text-xs text-slate-500">
+        <p class="mt-1 text-xs text-text-3">
             {% blocktrans trimmed %}
                 Pick a resort, click the map to drop a pin (or paste lat/lon), then Save. Run
                 <code>manage.py dump_resorts_fixture --commit</code> to persist to git.
@@ -40,38 +40,38 @@
         </p>
     </header>
 
-    <div class="border-b border-slate-200 px-4 py-2">
+    <div class="border-b border-border px-4 py-2">
         <input
             id="edit-resorts-search"
             type="search"
-            class="w-full rounded border border-slate-300 px-2 py-1 text-sm focus:border-sky-500 focus:outline-none"
+            class="w-full rounded border border-border px-2 py-1 text-sm focus:border-text-2 focus:outline-none"
             placeholder='{% trans "Filter resorts…" %}'
             autocomplete="off"
             spellcheck="false"
         >
-        <label class="mt-2 flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+        <label class="mt-2 flex cursor-pointer items-center gap-2 text-xs text-text-2">
             <input
                 id="edit-resorts-hide-set"
                 type="checkbox"
-                class="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                class="h-3.5 w-3.5 rounded border-border text-text-1 focus:ring-text-2"
             >
             <span>{% trans "Hide already-set resorts" %}</span>
         </label>
     </div>
 
-    <div class="border-b border-slate-200 px-4 py-3">
-        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+    <div class="border-b border-border px-4 py-3">
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-text-3">
             {% trans "Current target" %}
         </h3>
-        <div id="edit-resorts-target" class="text-sm text-slate-900">
-            <p class="italic text-slate-400">{% trans "No resort selected." %}</p>
+        <div id="edit-resorts-target" class="text-sm text-text-1">
+            <p class="italic text-text-3">{% trans "No resort selected." %}</p>
         </div>
         <div class="mt-2 flex items-center gap-2">
-            <label for="edit-resorts-paste" class="shrink-0 text-xs text-slate-500">{% trans "Paste:" %}</label>
+            <label for="edit-resorts-paste" class="shrink-0 text-xs text-text-3">{% trans "Paste:" %}</label>
             <input
                 id="edit-resorts-paste"
                 type="text"
-                class="w-full rounded border border-slate-300 px-2 py-1 font-mono text-xs focus:border-sky-500 focus:outline-none"
+                class="w-full rounded border border-border px-2 py-1 font-mono text-xs focus:border-text-2 focus:outline-none"
                 placeholder="46.431918, 6.978587"
                 spellcheck="false"
                 autocomplete="off"
@@ -81,7 +81,7 @@
             <button
                 type="button"
                 id="edit-resorts-save"
-                class="flex-1 rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                class="flex-1 rounded bg-text-1 px-3 py-1.5 text-sm font-medium text-card hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled
             >
                 {% trans "Save" %}
@@ -89,7 +89,7 @@
             <button
                 type="button"
                 id="edit-resorts-cancel"
-                class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                class="rounded border border-border px-3 py-1.5 text-sm text-text-2 hover:bg-card-subtle disabled:cursor-not-allowed disabled:opacity-50"
                 disabled
             >
                 {% trans "Cancel" %}
@@ -97,18 +97,18 @@
         </div>
         <p
             id="edit-resorts-error"
-            class="mt-2 hidden text-xs text-red-600"
+            class="mt-2 hidden text-xs text-form-error"
             role="alert"
         >
         </p>
     </div>
 
     <div class="flex-1 overflow-y-auto px-4 py-3">
-        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-text-3">
             {% trans "Resorts" %}
         </h3>
         <ul id="edit-resorts-queue" class="space-y-1 text-sm">
-            <li class="italic text-slate-400">{% trans "Loading…" %}</li>
+            <li class="italic text-text-3">{% trans "Loading…" %}</li>
         </ul>
     </div>
 </aside>
