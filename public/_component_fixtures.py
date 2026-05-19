@@ -694,6 +694,29 @@ COLLAPSIBLE_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+EYEBROW_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Bulletin section heading", "context": {"text": "Day Risk Profile"}},
+    {"caption": "Bulletin section heading", "context": {"text": "Avalanche Problems"}},
+    {"caption": "Bulletin section heading", "context": {"text": "Snowpack & Weather"}},
+    {
+        "caption": "Library foundation label",
+        "context": {"text": "foundation", "tag": "p"},
+    },
+    {"caption": "Light theme heading", "context": {"text": "Light", "tag": "h3"}},
+    {"caption": "Dark theme heading", "context": {"text": "Dark", "tag": "h3"}},
+    {
+        "caption": "Staff design-system eyebrow",
+        "context": {"text": "staff · design system", "tag": "p", "class_extra": "mb-1"},
+    },
+)
+
+META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Issued", "context": {"text": "Issued"}},
+    {"caption": "Valid until", "context": {"text": "Valid until"}},
+    {"caption": "Next update", "context": {"text": "Next update"}},
+)
+
+
 DAY_CHARACTER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Hard-to-read day",
