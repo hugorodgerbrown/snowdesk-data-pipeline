@@ -386,78 +386,25 @@ reachable via the SNOW-81 deep-link in the masthead.
                                         </h2>
                                     </div>
 
-                                    {# — Snowpack ─────────────────────────────── #}
-                                    {# Each panel's summary lifts the leading <h1> out of the SLF prose   #}
-                                    {# (e.g. "Weather review for Thursday") so the user sees the real    #}
-                                    {# bulletin date/scope, not a generic static label.  The body strips #}
-                                    {# that h1 to avoid a duplicated heading, and falls back to a static #}
-                                    {# title when the prose has no leading <h1>.                         #}
+                                    {# — Snowpack / Weather / Outlook panels ─── #}
+                                    {# Each panel's summary lifts the leading <h1> out of the SLF prose  #}
+                                    {# so the user sees the real bulletin date/scope rather than a static #}
+                                    {# label.  The body strips that h1 to avoid a duplicated heading.     #}
+                                    {# All four panels are rendered via _collapsible_panel.html; the      #}
+                                    {# tendency panel delegates its multi-entry body to                   #}
+                                    {# _tendency_body.html via the body_template parameter.               #}
                                     {% if prose.snowpack_structure %}
-                                        <details
-                                            class="snowdesk-panel bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0"
-                                            data-testid="snowpack-panel"
-                                        >
-                                            <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
-                                                <span class="text-[13px] font-semibold text-text-1">
-                                                    {{ prose.snowpack_structure|prose_title:"Snowpack" }}
-                                                </span>
-                                                <span
-                                                    class="snowdesk-panel-chevron text-text-3 text-sm"
-                                                    aria-hidden="true"
-                                                >&#x25BE;</span>
-                                            </summary>
-                                            <div class="px-4 pb-4 pt-3 border-t border-border">
-                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
-                                                    {{ prose.snowpack_structure|prose_body|snowdesk_html }}
-                                                </div>
-                                            </div>
-                                        </details>
+                                        {% include "includes/_collapsible_panel.html" with title=prose.snowpack_structure|prose_title:"Snowpack" data_testid="snowpack-panel" body_html=prose.snowpack_structure|prose_body|snowdesk_html %}
                                     {% endif %}
 
                                     {# — Weather review ──────────────────────── #}
                                     {% if prose.weather_review %}
-                                        <details
-                                            class="snowdesk-panel bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0"
-                                            data-testid="weather-review-panel"
-                                        >
-                                            <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
-                                                <span class="text-[13px] font-semibold text-text-1">
-                                                    {{ prose.weather_review|prose_title:"Weather review" }}
-                                                </span>
-                                                <span
-                                                    class="snowdesk-panel-chevron text-text-3 text-sm"
-                                                    aria-hidden="true"
-                                                >&#x25BE;</span>
-                                            </summary>
-                                            <div class="px-4 pb-4 pt-3 border-t border-border">
-                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
-                                                    {{ prose.weather_review|prose_body|snowdesk_html }}
-                                                </div>
-                                            </div>
-                                        </details>
+                                        {% include "includes/_collapsible_panel.html" with title=prose.weather_review|prose_title:"Weather review" data_testid="weather-review-panel" body_html=prose.weather_review|prose_body|snowdesk_html %}
                                     {% endif %}
 
                                     {# — Weather forecast ────────────────────── #}
                                     {% if prose.weather_forecast %}
-                                        <details
-                                            class="snowdesk-panel bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0"
-                                            data-testid="weather-forecast-panel"
-                                        >
-                                            <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
-                                                <span class="text-[13px] font-semibold text-text-1">
-                                                    {{ prose.weather_forecast|prose_title:"Weather forecast" }}
-                                                </span>
-                                                <span
-                                                    class="snowdesk-panel-chevron text-text-3 text-sm"
-                                                    aria-hidden="true"
-                                                >&#x25BE;</span>
-                                            </summary>
-                                            <div class="px-4 pb-4 pt-3 border-t border-border">
-                                                <div class="slf-prose text-sm leading-[1.6] text-text-2">
-                                                    {{ prose.weather_forecast|prose_body|snowdesk_html }}
-                                                </div>
-                                            </div>
-                                        </details>
+                                        {% include "includes/_collapsible_panel.html" with title=prose.weather_forecast|prose_title:"Weather forecast" data_testid="weather-forecast-panel" body_html=prose.weather_forecast|prose_body|snowdesk_html %}
                                     {% endif %}
 
                                     {# — Outlook (tendency[]) ─────────────────── #}
@@ -468,39 +415,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                                     {# "No data supplied" placeholder rather than a blank body.          #}
                                     {% if prose.tendency %}
                                         {% with first_entry=prose.tendency|first %}
-                                            <details
-                                                class="snowdesk-panel bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0"
-                                                data-testid="tendency-panel"
-                                            >
-                                                <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
-                                                    <span class="text-[13px] font-semibold text-text-1">
-                                                        {{ first_entry.comment|prose_title:"Outlook" }}
-                                                    </span>
-                                                    <span
-                                                        class="snowdesk-panel-chevron text-text-3 text-sm"
-                                                        aria-hidden="true"
-                                                    >&#x25BE;</span>
-                                                </summary>
-                                                <div class="px-4 pb-4 pt-3 border-t border-border">
-                                                    {% with tendency_has_content=prose|tendency_has_comment %}
-                                                        {% if tendency_has_content %}
-                                                            {% for entry in prose.tendency %}
-                                                                {% if entry.comment %}
-                                                                    <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-3{% endif %}">
-                                                                        {% if forloop.first %}
-                                                                            {{ entry.comment|prose_body|snowdesk_html }}
-                                                                        {% else %}
-                                                                            {{ entry.comment|snowdesk_html }}
-                                                                        {% endif %}
-                                                                    </div>
-                                                                {% endif %}
-                                                            {% endfor %}
-                                                        {% else %}
-                                                            {% include "includes/_no_data_supplied.html" %}
-                                                        {% endif %}
-                                                    {% endwith %}
-                                                </div>
-                                            </details>
+                                            {% include "includes/_collapsible_panel.html" with title=first_entry.comment|prose_title:"Outlook" data_testid="tendency-panel" body_template="includes/_tendency_body.html" %}
                                         {% endwith %}
                                     {% endif %}
                                 </section>
