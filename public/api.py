@@ -454,6 +454,7 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
     qs = (
         MicroRegion.objects.filter(
             subregion__major__country=country_param,
+            subregion__major__display_on_map=True,
             boundary__isnull=False,
         )
         .select_related("subregion__major")
@@ -520,7 +521,7 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
 
     features: list[dict[str, Any]] = []
     for major in MajorRegion.objects.filter(
-        country=country_param, boundary__isnull=False
+        country=country_param, boundary__isnull=False, display_on_map=True
     ).iterator():
         features.append(
             {
@@ -574,6 +575,7 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
     qs = (
         SubRegion.objects.filter(
             major__country=country_param,
+            major__display_on_map=True,
             boundary__isnull=False,
         )
         .select_related("major")
