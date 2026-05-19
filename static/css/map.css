@@ -122,8 +122,8 @@
 }
 
 .basemap-menu-item[aria-checked="true"]::before {
-    background: var(--color-accent, #0c447c);
-    border-color: var(--color-accent, #0c447c);
+    background: var(--color-text-1);
+    border-color: var(--color-text-1);
     box-shadow: inset 0 0 0 2.5px var(--color-card);
 }
 
@@ -132,7 +132,7 @@
 }
 
 .basemap-menu-item:focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-text-1);
     outline-offset: 2px;
 }
 
@@ -161,8 +161,8 @@
 }
 
 .basemap-menu-item--overlay[aria-checked="true"]::before {
-    background: var(--color-accent, #0c447c);
-    border-color: var(--color-accent, #0c447c);
+    background: var(--color-text-1);
+    border-color: var(--color-text-1);
     box-shadow: inset 0 0 0 2px var(--color-card);
 }
 
@@ -212,7 +212,7 @@
 }
 
 .map-utility-button:focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-text-1);
     outline-offset: 2px;
     border-radius: 999px;
 }

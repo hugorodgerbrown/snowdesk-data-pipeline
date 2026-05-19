@@ -111,11 +111,6 @@
   --color-admin-nav:        #0f172a;   /* top nav bar (slate-900)             */
   --color-admin-nav-text:   #ffffff;   /* nav bar text                        */
 
-  /* Interactive accent (buttons, focus rings, indicators) */
-  --color-accent:           #2563eb;   /* primary action / focus ring (blue-600)  */
-  --color-accent-hover:     #1d4ed8;   /* button hover (blue-700)                 */
-  --color-accent-text:      #ffffff;   /* text on accent backgrounds               */
-
   /* Status feedback (flash messages, status badges) */
   --color-status-error-bg:    #fee2e2;   /* red-100   */
   --color-status-error-text:  #991b1b;   /* red-800   */
@@ -279,11 +274,6 @@
   --color-admin-bg:         #1c1b19;
   --color-admin-nav:        #141312;
   --color-admin-nav-text:   #edece8;
-
-  /* Interactive accent */
-  --color-accent:           #3b82f6;
-  --color-accent-hover:     #60a5fa;
-  --color-accent-text:      #ffffff;
 
   /* Status feedback — deeper backgrounds, lighter text */
   --color-status-error-bg:    #451a1a;
