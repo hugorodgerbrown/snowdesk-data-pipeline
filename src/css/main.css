@@ -236,8 +236,9 @@
   --color-weather-fallback:            #3a3733;   /* no-snapshot neutral (theme-invariant) */
 
   /* Border radius */
-  --radius-card:   16px;   /* outer card shell                    */
+  --radius-card:   12px;   /* outer card shell                    */
   --radius-tag:    8px;    /* problem tag, inner chips             */
+  --radius-sm:     6px;    /* small tag badge, callout icon        */
   --radius-pill:   4px;    /* timing badge, period pill            */
 
   /* Grid breakpoints */

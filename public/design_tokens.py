@@ -311,8 +311,9 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         description="Corner-radius scale for cards, tags and pills.",
         kind="radius",
         tokens=(
-            Token("--radius-card", "Card", "16px", None),
+            Token("--radius-card", "Card", "12px", None),
             Token("--radius-tag", "Tag", "8px", None),
+            Token("--radius-sm", "Small", "6px", None),
             Token("--radius-pill", "Pill", "4px", None),
         ),
     ),
