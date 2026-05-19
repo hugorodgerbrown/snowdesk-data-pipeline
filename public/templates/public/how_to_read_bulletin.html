@@ -40,9 +40,8 @@ Each sub-section follows the pattern:
         {# DAY RISK PROFILE                                                    #}
         {# ================================================================== #}
         <section class="mb-10 text-sm leading-relaxed text-text-2" data-testid="guide-day-risk-profile">
-            <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-6">
-                {% trans "Day Risk Profile" %}
-            </h2>
+            {% translate "Day Risk Profile" as day_risk_label %}
+            {% include "includes/_eyebrow.html" with text=day_risk_label class_extra="mb-6" %}
 
             {# -- The danger level ------------------------------------------ #}
             <div class="mb-8" data-testid="guide-danger-level">
@@ -253,9 +252,8 @@ Each sub-section follows the pattern:
             class="mb-10 text-sm leading-relaxed text-text-2 border-t border-border pt-8"
             data-testid="guide-avalanche-problems"
         >
-            <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-6">
-                {% trans "Avalanche Problems" %}
-            </h2>
+            {% translate "Avalanche Problems" as avalanche_problems_label %}
+            {% include "includes/_eyebrow.html" with text=avalanche_problems_label class_extra="mb-6" %}
             <p class="mb-6">
                 {% trans "The bulletin assesses dry and wet avalanche hazards separately. These are fundamentally different in cause, location, and behaviour." %}
             </p>
@@ -477,9 +475,8 @@ Each sub-section follows the pattern:
             class="mb-10 text-sm leading-relaxed text-text-2 border-t border-border pt-8"
             data-testid="guide-snowpack-weather"
         >
-            <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-6">
-                {% trans "Snowpack &amp; Weather" %}
-            </h2>
+            {% translate "Snowpack &amp; Weather" as snowpack_weather_label %}
+            {% include "includes/_eyebrow.html" with text=snowpack_weather_label class_extra="mb-6" %}
             <p class="mb-4">
                 {% trans "Each bulletin includes four prose sections, updated once daily in the evening. They expand on demand on the bulletin page." %}
             </p>
@@ -518,9 +515,8 @@ Each sub-section follows the pattern:
             class="mb-8 text-sm leading-relaxed text-text-2 border-t border-border pt-8"
             data-testid="guide-limitations"
         >
-            <h2 class="text-xs font-mono uppercase tracking-widest text-text-3 mb-6">
-                {% trans "Limitations" %}
-            </h2>
+            {% translate "Limitations" as limitations_label %}
+            {% include "includes/_eyebrow.html" with text=limitations_label class_extra="mb-6" %}
             <p class="mb-3">
                 {% blocktrans trimmed %}
                     The bulletin is a regional forecast. It cannot assess individual slopes — it can only indicate which
