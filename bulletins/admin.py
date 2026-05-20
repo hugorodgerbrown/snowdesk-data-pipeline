@@ -18,9 +18,11 @@ changelist page.
 import json
 import logging
 from datetime import date
+from typing import cast
 
 import bleach
 from django.contrib import admin, messages
+from django.db.models import Count, QuerySet
 from django.http import HttpRequest, HttpResponseRedirect
 from django.urls import URLPattern, path, reverse
 from django.utils import timezone
@@ -669,10 +671,15 @@ class BulletinShareAdmin(admin.ModelAdmin):
     ordering = ["-created_at"]
     inlines = [BulletinShareClickInline]
 
-    @admin.display(description="Clicks")
+    def get_queryset(self, request: HttpRequest) -> QuerySet[BulletinShare]:
+        """Annotate with click count to avoid one query per row on the changelist."""
+        qs: QuerySet[BulletinShare] = super().get_queryset(request)
+        return qs.annotate(_click_count=Count("clicks"))
+
+    @admin.display(description="Clicks", ordering="_click_count")
     def click_count(self, obj: BulletinShare) -> int:
-        """Return the number of clicks on this share link."""
-        return obj.clicks.count()
+        """Return the pre-annotated click count for this share link."""
+        return cast(int, getattr(obj, "_click_count", 0))
 
 
 # ---------------------------------------------------------------------------
