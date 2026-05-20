@@ -296,7 +296,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
         response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
     else:
         try:
-            subscriber = Subscriber.objects.get(email__iexact=email)
+            subscriber = Subscriber.objects.get(email=email.lower())
         except Subscriber.DoesNotExist:
             logger.warning("account_view: valid token for unknown email %s", email)
             response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
@@ -572,7 +572,7 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
 
     # POST — execute unsubscribe.
     try:
-        subscriber = Subscriber.objects.get(email=email)
+        subscriber = Subscriber.objects.get(email=email.lower())
     except Subscriber.DoesNotExist:
         # Already unsubscribed (perhaps from a different link) — idempotent.
         logger.info(

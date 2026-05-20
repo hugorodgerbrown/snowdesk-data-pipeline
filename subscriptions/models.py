@@ -46,8 +46,8 @@ class SubscriberQuerySet(models.QuerySet["Subscriber"]):
         return self.filter(status=Subscriber.Status.ACTIVE)
 
     def by_email(self, email: str) -> SubscriberQuerySet:
-        """Return subscribers matching the given email (case-insensitive)."""
-        return self.filter(email__iexact=email)
+        """Return subscribers matching the given email (normalised to lowercase)."""
+        return self.filter(email=email.lower())
 
 
 class SubscriberManager(BaseUserManager.from_queryset(SubscriberQuerySet)):  # type: ignore[misc]
