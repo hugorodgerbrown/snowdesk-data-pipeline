@@ -307,7 +307,7 @@ def run_euregio_pipeline(
                         current, region, base_url=base_url
                     )
                 except requests.HTTPError as exc:
-                    logger.warning(
+                    logger.exception(
                         "HTTP error fetching %s / %s: %s — skipping slot",
                         current.isoformat(),
                         region,

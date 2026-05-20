@@ -353,11 +353,10 @@ def fetch_all_regions(
                 else:
                     counts["updated"] += 1
         except Exception:  # noqa: BLE001 — broad catch intentional: per-region failure must not abort the batch
-            logger.warning(
+            logger.exception(
                 "Failed to fetch weather for region=%s date=%s",
                 region.region_id,
                 target_date,
-                exc_info=True,
             )
             counts["failed"] += 1
 
@@ -571,12 +570,11 @@ def backfill_all_regions(
                         counts["updated"] += 1
 
         except Exception:  # noqa: BLE001 — broad catch intentional: per-region failure must not abort the batch
-            logger.warning(
+            logger.exception(
                 "Failed to backfill weather for region=%s start=%s end=%s",
                 region.region_id,
                 start_date,
                 end_date,
-                exc_info=True,
             )
             counts["failed"] += 1
 
@@ -638,11 +636,10 @@ def fetch_weather_async(region: MicroRegion, target_date: date) -> None:
             else:
                 fetch_weather_for_region(region, target_date, commit=True)
         except Exception:  # noqa: BLE001 — broad catch intentional: async failure must not surface to caller
-            logger.warning(
+            logger.exception(
                 "fetch_weather_async failed: region=%s date=%s",
                 region.region_id,
                 target_date,
-                exc_info=True,
             )
         finally:
             # Each background thread opens its own DB connection lazily;

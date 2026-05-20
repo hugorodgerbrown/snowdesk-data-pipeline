@@ -160,7 +160,7 @@ def verify_and_save_registration(
             expected_origin=_origin(),
         )
     except Exception as exc:
-        logger.warning("Passkey registration verification failed: %s", exc)
+        logger.exception("Passkey registration verification failed: %s", exc)
         raise PasskeyError("Registration verification failed.") from exc
     finally:
         # Always clear the challenge — prevent replay regardless of outcome.
@@ -293,7 +293,7 @@ def verify_authentication_response(
             credential_current_sign_count=passkey.sign_count,
         )
     except Exception as exc:
-        logger.warning(
+        logger.exception(
             "Passkey authentication verification failed for credential %s: %s",
             raw_id,
             exc,

@@ -402,7 +402,9 @@ def _process_page(
                 force=force,
             )
         except KeyError:
-            logger.error("Error parsing bulletin data:\n%s", json.dumps(raw, indent=4))
+            logger.exception(
+                "Error parsing bulletin data:\n%s", json.dumps(raw, indent=4)
+            )
             raise
         if outcome == _OUTCOME_OUT_OF_RANGE:
             return True

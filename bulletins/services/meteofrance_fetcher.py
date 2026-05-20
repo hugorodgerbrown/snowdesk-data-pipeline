@@ -361,7 +361,7 @@ def _fetch_xml(
     try:
         xml_bytes = fetch_meteofrance_bulletin(massif_id, base_url, api_key)
     except (requests.HTTPError, RuntimeError) as exc:
-        logger.error("Error fetching MeteoFrance massif %d: %s", massif_id, exc)
+        logger.exception("Error fetching MeteoFrance massif %d: %s", massif_id, exc)
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
         return "failed"
@@ -396,7 +396,9 @@ def _translate_xml(
         logger.info("MeteoFrance massif %d is delegated — skipping: %s", massif_id, exc)
         return "delegated"
     except MeteoFranceTranslationError as exc:
-        logger.error("Translation error for MeteoFrance massif %d: %s", massif_id, exc)
+        logger.exception(
+            "Translation error for MeteoFrance massif %d: %s", massif_id, exc
+        )
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
         return "failed"
@@ -424,7 +426,7 @@ def _persist_bulletin(
     try:
         created = upsert_bulletin(raw, run)
     except UnknownRegionError as exc:
-        logger.error(
+        logger.exception(
             "Unknown region for MeteoFrance massif %d bulletin %s: %s",
             massif_id,
             bulletin_id,

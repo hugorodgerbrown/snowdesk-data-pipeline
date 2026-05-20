@@ -198,7 +198,7 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
     try:
         region = MicroRegion.objects.get(region_id=region_id)
     except MicroRegion.DoesNotExist:
-        logger.warning(
+        logger.exception(
             "subscribe_partial: region_id %s not found in DB",
             region_id,
         )
@@ -298,7 +298,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
         try:
             subscriber = Subscriber.objects.get(email__iexact=email)
         except Subscriber.DoesNotExist:
-            logger.warning("account_view: valid token for unknown email %s", email)
+            logger.exception("account_view: valid token for unknown email %s", email)
             response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
         else:
             if subscriber.status == Subscriber.Status.PENDING:

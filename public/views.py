@@ -2051,11 +2051,10 @@ def fetch_weather_snippet(
             if snapshot is not None:
                 weather_display = build_weather_display(snapshot, timezone.now())
         except Exception:
-            logger.warning(
+            logger.exception(
                 "weather_snippet fetch failed: region=%s date=%s",
                 region_id,
                 target_date,
-                exc_info=True,
             )
 
     subregion_name = (
@@ -2901,11 +2900,10 @@ def _get_render_model(
     try:
         return build_render_model(props)
     except RenderModelBuildError as exc:
-        logger.error(
+        logger.exception(
             "Bulletin %s render model rebuild failed during view render: %s",
             bulletin.bulletin_id,
             exc,
-            exc_info=True,
         )
         # Return error sentinel for this render only — do NOT write to DB.
         return {
