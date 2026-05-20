@@ -13,10 +13,12 @@ Covers:
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
 from regions.models import MicroRegion
 from tests.factories import (
@@ -24,6 +26,13 @@ from tests.factories import (
     MicroRegionFactory,
     RegionBulletinFactory,
 )
+
+_ZURICH_TZ = ZoneInfo("Europe/Zurich")
+
+
+def _zurich_today() -> date:
+    """Return the current local date in Europe/Zurich, matching production sitemaps.py."""
+    return timezone.localdate(timezone=_ZURICH_TZ)
 
 
 def _make_bulletin_for_region(region: MicroRegion, day: date) -> None:
@@ -71,7 +80,7 @@ class TestSitemapContents:
         region = MicroRegionFactory.create(
             region_id="CH-4115", name="Valais", slug="ch-4115"
         )
-        today = date.today()
+        today = _zurich_today()
         _make_bulletin_for_region(region, today)
 
         url = reverse("sitemap")
@@ -84,7 +93,7 @@ class TestSitemapContents:
         region = MicroRegionFactory.create(
             region_id="CH-4200", name="Graubunden", slug="ch-4200"
         )
-        yesterday = date.today() - timedelta(days=1)
+        yesterday = _zurich_today() - timedelta(days=1)
         _make_bulletin_for_region(region, yesterday)
 
         url = reverse("sitemap")
@@ -113,7 +122,7 @@ class TestSitemapContents:
         region_it = MicroRegionFactory.create(
             region_id="IT-1111", name="Italian Region", slug="it-1111"
         )
-        today = date.today()
+        today = _zurich_today()
         for region in (region_ch, region_at, region_it):
             _make_bulletin_for_region(region, today)
 
@@ -132,7 +141,7 @@ class TestSitemapContents:
         region_yesterday = MicroRegionFactory.create(
             region_id="CH-3333", name="Yesterday Region", slug="ch-3333"
         )
-        today = date.today()
+        today = _zurich_today()
         yesterday = today - timedelta(days=1)
         _make_bulletin_for_region(region_today, today)
         _make_bulletin_for_region(region_yesterday, yesterday)
