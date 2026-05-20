@@ -47,9 +47,8 @@ In routine mode:
 
 - **No human is watching.** Cross-checking git log against Linear
   matters more, not less — there is no second pair of eyes.
-- **Log the drafted body** to
-  `~/.claude/logs/project-update/<project-slug>-<isodate>.md` before
-  posting, so failed runs are auditable.
+- **No writing to local files.** Routines have no persistent disk so
+  do not attempt to write e.g. drafts locally.
 - **Exit non-zero on any Linear API error** so the scheduled-task
   runtime surfaces the failure.
 - **Never share secrets.** The body is posted to Linear; do not include
@@ -144,9 +143,8 @@ active, write it into the plan file and call `ExitPlanMode`. Otherwise
 show it inline and ask for explicit approval before moving on. **Do not
 post unapproved.**
 
-**Routine mode: skip this step.** Write the drafted body to
-`~/.claude/logs/project-update/<project-slug>-<isodate>.md` (create the
-directory if missing), then continue to Step 7.
+**Routine mode: skip this step.** Ignore the draft completely, do not attempt
+to write the body as Routines run in an ephemeral environment.
 
 ## Step 7 — Post
 
