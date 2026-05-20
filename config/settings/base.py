@@ -114,6 +114,8 @@ TEMPLATES = [
                 "django.template.context_processors.i18n",
                 # Injects nav_subscriptions for the subscriber avatar dropdown.
                 "subscriptions.context_processors.nav_subscriptions",
+                # Exposes SITE_BASE_URL for absolute-URL construction in OG tags.
+                "public.context_processors.site_base_url",
             ],
         },
     },
