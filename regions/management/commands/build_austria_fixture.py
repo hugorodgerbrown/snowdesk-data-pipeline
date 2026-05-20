@@ -53,6 +53,7 @@ from typing import Any
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 
+from regions.fixture_utils import build_entries_from_eaws_dir
 from regions.names import lookup
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,10 @@ class Command(BaseCommand):
 def _build_entries(eaws_dir: Path, state_codes: list[str]) -> list[dict[str, Any]]:
     """Build the full fixture entry list (L1 + L2 + L4) for all AT state files.
 
+    Delegates to the shared ``build_entries_from_eaws_dir`` helper in
+    ``regions.fixture_utils``, supplying ``_build_state_entries`` as the
+    per-code builder and ``"build_austria_fixture"`` as the log label.
+
     Args:
         eaws_dir: Directory containing the vendored EAWS source GeoJSON files.
         state_codes: List of EAWS state codes to process (e.g. ['AT-02', …]).
@@ -145,29 +150,12 @@ def _build_entries(eaws_dir: Path, state_codes: list[str]) -> list[dict[str, Any
         Ordered list of Django fixture entry dicts (L1s first, then L2s, then L4s).
 
     """
-    l1_entries: list[dict[str, Any]] = []
-    l2_entries: list[dict[str, Any]] = []
-    l4_entries: list[dict[str, Any]] = []
-
-    for code in state_codes:
-        source_file = eaws_dir / f"{code}_micro-regions.geojson.json"
-        if not source_file.exists():
-            logger.warning(
-                "build_austria_fixture: missing source file %s — skipping", source_file
-            )
-            continue
-
-        data: dict[str, Any] = json.loads(source_file.read_text(encoding="utf-8"))
-        features: list[dict[str, Any]] = data["features"]
-
-        l1, l2s, l4s = _build_state_entries(code, features)
-        l1_entries.append(l1)
-        l2_entries.extend(l2s.values())
-        l4_entries.extend(l4s)
-
-    l4_entries.sort(key=lambda e: e["fields"]["region_id"])
-
-    return l1_entries + l2_entries + l4_entries
+    return build_entries_from_eaws_dir(
+        eaws_dir,
+        state_codes,
+        _build_state_entries,
+        "build_austria_fixture",
+    )
 
 
 def _build_state_entries(
