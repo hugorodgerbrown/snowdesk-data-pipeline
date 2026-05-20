@@ -1843,9 +1843,10 @@ def _bulletin_detail_response(
     season_calendar = season_header(today)
 
     # Derive the source label and URL for the metadata strip Source cell
-    # (SNOW-211). Falls back to ("", "") for unknown or absent source values so
-    # the template renders an em-dash without crashing.
-    source_key = (selected.render_model or {}).get("source", "")
+    # (SNOW-211). Read from the panel's render model — not selected.render_model
+    # — so v3 bulletins benefit from _build_panel_context's on-the-fly rebuild
+    # to v4 (which is the version that introduced the ``source`` key).
+    source_key = (panel.get("render_model") or {}).get("source", "")
     bulletin_source_label, bulletin_source_url = BULLETIN_SOURCE_LINKS.get(
         source_key, ("", "")
     )
