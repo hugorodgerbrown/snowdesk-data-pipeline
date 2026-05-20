@@ -34,7 +34,7 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 
 from bulletins.models import Bulletin, RegionDayRating
 from bulletins.services.day_rating import _target_day
@@ -59,6 +59,7 @@ class Command(BaseCommand):
             "--date",
             metavar="YYYY-MM-DD",
             dest="target_date",
+            type=dt.date.fromisoformat,
             help=(
                 "Restrict the analysis to bulletins targeting a single "
                 "calendar day. Without this flag the whole bulletin "
@@ -74,9 +75,8 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the diagnostic and print the partition."""
-        date_arg: str | None = options["target_date"]
+        target_date: dt.date | None = options["target_date"]
         verbose_table: bool = options["verbose_table"]
-        target_date = self._parse_date(date_arg) if date_arg else None
 
         all_regions = self._all_regions()
         rated_ids = self._rated_region_ids(target_date)
@@ -125,16 +125,6 @@ class Command(BaseCommand):
             len(bucket_b),
             len(bucket_c),
         )
-
-    @staticmethod
-    def _parse_date(value: str) -> dt.date:
-        """Parse a YYYY-MM-DD string or raise ``CommandError``."""
-        try:
-            return dt.date.fromisoformat(value)
-        except ValueError as exc:
-            raise CommandError(
-                f"Invalid --date value {value!r}; expected YYYY-MM-DD."
-            ) from exc
 
     @staticmethod
     def _all_regions() -> set[str]:

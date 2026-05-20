@@ -30,7 +30,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 
 from bulletins.models import Bulletin
 from bulletins.services.render_model import (
@@ -86,12 +86,14 @@ class Command(BaseCommand):
             "--start-date",
             metavar="YYYY-MM-DD",
             dest="start_date",
+            type=dt.date.fromisoformat,
             help="Filter to bulletins with valid_from on or after this date.",
         )
         parser.add_argument(
             "--end-date",
             metavar="YYYY-MM-DD",
             dest="end_date",
+            type=dt.date.fromisoformat,
             help="Filter to bulletins with valid_from on or before this date.",
         )
         parser.add_argument(
@@ -105,8 +107,8 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Build the queryset, write the CSV, exit non-zero on any row failure."""
-        start_date = self._parse_date(options.get("start_date"), "--start-date")
-        end_date = self._parse_date(options.get("end_date"), "--end-date")
+        start_date: dt.date | None = options.get("start_date")
+        end_date: dt.date | None = options.get("end_date")
         lang: str | None = options.get("lang")
         output_path: str | None = options.get("output")
 
@@ -189,18 +191,6 @@ class Command(BaseCommand):
                     )
                 )
         return rows_written, failures
-
-    @staticmethod
-    def _parse_date(value: str | None, flag: str) -> dt.date | None:
-        """Parse a YYYY-MM-DD string or raise ``CommandError``."""
-        if value is None:
-            return None
-        try:
-            return dt.date.fromisoformat(value)
-        except ValueError as exc:
-            raise CommandError(
-                f"Invalid {flag} value {value!r}; expected YYYY-MM-DD."
-            ) from exc
 
 
 def _row_for_bulletin(bulletin: Bulletin) -> list[Any]:

@@ -63,11 +63,13 @@ class Command(BaseCommand):
         parser.add_argument(
             "--start-date",
             metavar="YYYY-MM-DD",
+            type=date.fromisoformat,
             help="Only recompute pairs on or after this date (inclusive).",
         )
         parser.add_argument(
             "--end-date",
             metavar="YYYY-MM-DD",
+            type=date.fromisoformat,
             help="Only recompute pairs on or before this date (inclusive).",
         )
 
@@ -144,10 +146,8 @@ class Command(BaseCommand):
         commit: bool = options["commit"]
         verbosity: int = options.get("verbosity", 1)
 
-        start_date_str: str | None = options["start_date"]
-        end_date_str: str | None = options["end_date"]
-        start_date = date.fromisoformat(start_date_str) if start_date_str else None
-        end_date = date.fromisoformat(end_date_str) if end_date_str else None
+        start_date: date | None = options["start_date"]
+        end_date: date | None = options["end_date"]
 
         self.stdout.write(
             self.style.MIGRATE_HEADING(
