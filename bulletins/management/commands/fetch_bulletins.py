@@ -235,7 +235,9 @@ class Command(BaseCommand):
             except CommandError as exc:
                 # Record the failure but continue with remaining sources.
                 failures.append(f"{source_name}: {exc}")
-                logger.error("fetch_bulletins source=%s failed: %s", source_name, exc)
+                logger.exception(
+                    "fetch_bulletins source=%s failed: %s", source_name, exc
+                )
 
         if failures:
             joined = "; ".join(failures)

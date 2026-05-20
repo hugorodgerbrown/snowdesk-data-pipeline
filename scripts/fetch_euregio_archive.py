@@ -98,7 +98,7 @@ def _fetch_day_region(
     try:
         response = session.get(url, timeout=REQUEST_TIMEOUT)
     except requests.RequestException as exc:
-        logger.warning("Request failed for %s %s: %s", date_str, region, exc)
+        logger.exception("Request failed for %s %s: %s", date_str, region, exc)
         return []
     if response.status_code == 404:
         return []
@@ -110,7 +110,7 @@ def _fetch_day_region(
     try:
         data: Any = response.json()
     except ValueError as exc:
-        logger.warning("Invalid JSON for %s %s: %s", date_str, region, exc)
+        logger.exception("Invalid JSON for %s %s: %s", date_str, region, exc)
         return []
     if isinstance(data, dict) and "bulletins" in data:
         bulletins = data["bulletins"]

@@ -686,7 +686,7 @@ def _parse_tendency(
         j2_valid_from = _parse_local_to_utc(date_risque_j2_raw)
         j2_valid_to = _parse_plus_one_day(date_risque_j2_raw)
     except MeteoFranceTranslationError:
-        logger.warning(
+        logger.exception(
             "Could not parse DATE_RISQUE_J2=%r for massif %d — omitting tendency.",
             date_risque_j2_raw,
             massif_id,

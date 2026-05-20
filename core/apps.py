@@ -51,7 +51,7 @@ class BootstrapTolerantCSPTrackerConfig(CSPTrackerConfig):
         try:
             super().reset()
         except DatabaseError as exc:
-            logger.warning(
+            logger.exception(
                 "Skipping CSP cache reset on startup — cache backend errored "
                 "(likely the django_cache table doesn't exist yet on a fresh "
                 "deploy). The createcachetable migration will create it; "

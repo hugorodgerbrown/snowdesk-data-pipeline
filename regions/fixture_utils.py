@@ -9,6 +9,8 @@ All functions operate on GeoJSON geometry dicts and on lists of field-dicts
 (the ``fields`` portion of a Django fixture entry).
 
 Functions:
+    build_entries_from_eaws_dir — shared entry-list builder for multi-file
+        EAWS fixtures (Austria, Italy).
     centre_from_children — arithmetic mean of child centre points.
     bbox_from_children   — bounding box over all child boundaries.
     boundary_from_children — Shapely-derived union of child polygons.
@@ -20,9 +22,65 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def build_entries_from_eaws_dir(
+    eaws_dir: Path,
+    region_codes: list[str],
+    build_code_entries: Callable[
+        [str, list[dict[str, Any]]],
+        tuple[dict[str, Any], dict[str, dict[str, Any]], list[dict[str, Any]]],
+    ],
+    command_name: str,
+) -> list[dict[str, Any]]:
+    """Build the full fixture entry list (L1 + L2 + L4) from a directory of EAWS files.
+
+    Shared implementation for ``build_austria_fixture`` and
+    ``build_italy_fixture``, which both iterate a set of region-code GeoJSON
+    files and delegate per-code entry construction to a caller-supplied
+    function.
+
+    Args:
+        eaws_dir: Directory containing the vendored EAWS source GeoJSON files.
+        region_codes: List of EAWS region codes to process (e.g. ``['AT-02', …]``).
+        build_code_entries: Callable that accepts ``(region_code, features)``
+            and returns ``(l1_entry, l2_entries_by_prefix, l4_entries)``.
+        command_name: Name used in warning log messages when a source file is
+            missing (e.g. ``"build_austria_fixture"``).
+
+    Returns:
+        Ordered list of Django fixture entry dicts (L1s first, then L2s, then
+        L4s, with L4s sorted by ``region_id``).
+
+    """
+    l1_entries: list[dict[str, Any]] = []
+    l2_entries: list[dict[str, Any]] = []
+    l4_entries: list[dict[str, Any]] = []
+
+    for code in region_codes:
+        source_file = eaws_dir / f"{code}_micro-regions.geojson.json"
+        if not source_file.exists():
+            logger.warning(
+                "%s: missing source file %s — skipping", command_name, source_file
+            )
+            continue
+
+        data: dict[str, Any] = json.loads(source_file.read_text(encoding="utf-8"))
+        features: list[dict[str, Any]] = data["features"]
+
+        l1, l2s, l4s = build_code_entries(code, features)
+        l1_entries.append(l1)
+        l2_entries.extend(l2s.values())
+        l4_entries.extend(l4s)
+
+    l4_entries.sort(key=lambda e: e["fields"]["region_id"])
+
+    return l1_entries + l2_entries + l4_entries
 
 
 def centre_from_children(children: list[dict[str, Any]]) -> dict[str, float]:

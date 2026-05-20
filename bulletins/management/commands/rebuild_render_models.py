@@ -144,11 +144,10 @@ class Command(BaseCommand):
             new_version = RENDER_MODEL_VERSION
             success = True
         except RenderModelBuildError as exc:
-            logger.error(
+            logger.exception(
                 "Failed to build render model for bulletin %s: %s",
                 bulletin.bulletin_id,
                 exc,
-                exc_info=True,
             )
             new_render_model = {
                 "version": 0,

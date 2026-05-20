@@ -102,7 +102,7 @@ class Command(BaseCommand):
                 try:
                     region_cache[region_id] = MicroRegion.objects.get(pk=region_id)
                 except MicroRegion.DoesNotExist:
-                    logger.error(
+                    logger.exception(
                         "Region pk=%s not found — skipping pair(s) for this region",
                         region_id,
                     )

@@ -387,11 +387,10 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> None:
         try:
             cache.delete(cache_key)
         except Exception:
-            logger.warning(
+            logger.exception(
                 "Failed to invalidate season_calendar cache key for region=%s;"
                 " ingest continues.",
                 region.canonical_region_id,
-                exc_info=True,
             )
 
     logger.debug(
