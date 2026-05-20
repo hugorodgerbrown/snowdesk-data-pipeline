@@ -47,7 +47,7 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
     data-testid="bulletin-header"
 >
     {# Dark overlay normalises text contrast across all bucket × time-of-day combinations. #}
-    <div class="absolute inset-0 bg-black/35" aria-hidden="true"></div>
+    <div class="absolute inset-0 bg-black/50" aria-hidden="true"></div>
 
     {# Right padding lives on subregion + H1 only — preserved from the variant     #}
     {# that previously hosted an absolutely-positioned calendar trigger so the     #}
@@ -71,7 +71,7 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
         <div class="flex-1 min-w-0 text-white">
             {% if subregion_name %}
                 <p
-                    class="text-xs font-mono uppercase tracking-widest text-white/80 leading-snug"
+                    class="text-xs font-mono uppercase tracking-widest text-white leading-snug"
                     data-testid="bulletin-header-subregion"
                 >
                     {{ subregion_name }}
@@ -84,7 +84,7 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
                 {{ region_name }}
             </h1>
             <div
-                class="text-xs text-white/85 mt-2 flex flex-wrap items-center gap-x-1 gap-y-1"
+                class="text-xs text-white mt-2 flex flex-wrap items-center gap-x-1 gap-y-1"
                 data-testid="bulletin-header-meta"
             >
                 <span>{{ page_date|date:"D j M" }}</span>

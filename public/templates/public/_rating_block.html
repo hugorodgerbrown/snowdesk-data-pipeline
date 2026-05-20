@@ -49,7 +49,7 @@ Renders:
                 {% else %}
                     {% trans "Loose" as avalanche_chip_text %}
                 {% endif %}
-                {% include "includes/_chip.html" with text=avalanche_chip_text tint="subtle" data_testid="avalanche-type-chip" %}
+                {% include "includes/_chip.html" with text=avalanche_chip_text data_testid="avalanche-type-chip" %}
             {% endif %}
             {% if card.time_period_label %}
                 {% include "includes/_chip.html" with text=card.time_period_label %}

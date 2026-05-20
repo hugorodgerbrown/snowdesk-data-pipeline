@@ -21,7 +21,7 @@ Required context:
                     <div class="dw-level">{{ w.level_label }}</div>
                     {% if w.caption %}<div class="dw-caption">{{ w.caption }}</div>{% endif %}
                 </div>
-                <span class="dw-pill" data-testid="day-window-pill">{{ w.pill_label }}</span>
+                {% include "includes/_chip.html" with text=w.pill_label data_testid="day-window-pill" %}
             </div>
         {% endfor %}
     </section>
