@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import hashlib
 import json
 import logging
 import random
@@ -42,7 +43,14 @@ from django.contrib.staticfiles import finders
 from django.core.cache import cache
 from django.core.cache.utils import make_template_fragment_key
 from django.db.models import Max, Prefetch
-from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBadRequest
+from django.http import (
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    HttpResponseBadRequest,
+    HttpResponseGone,
+    HttpResponseRedirect,
+)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -54,8 +62,16 @@ from django.utils.translation import gettext as _gettext, gettext_lazy as _
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition, require_POST
 
-from bulletins.models import Bulletin, RegionBulletin, RegionDayRating, WeatherSnapshot
+from bulletins.models import (
+    Bulletin,
+    BulletinShare,
+    BulletinShareClick,
+    RegionBulletin,
+    RegionDayRating,
+    WeatherSnapshot,
+)
 from bulletins.schema import ValidTimePeriod
+from bulletins.services.geoip import country_code_for
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     DayCharacter,
@@ -2002,6 +2018,78 @@ def _bulletin_detail_render(
         requested_issue_id=requested_issue_id,
         canonical_is_today=date_str is None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Share redirect (SNOW-217)
+# ---------------------------------------------------------------------------
+
+
+def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
+    """Follow a share link: log the click and 302 to the canonical bulletin URL.
+
+    Looks up the ``BulletinShare`` by token (404 if missing). Extracts
+    client metadata from the request — IP from ``REMOTE_ADDR`` falling
+    back to the first ``X-Forwarded-For`` element (Render reverse-proxy),
+    user-agent, session key, Referer, Sec-Purpose, and GeoIP country code.
+    Writes a ``BulletinShareClick`` row with all metadata.
+
+    Then:
+    * If ``share.bulletin`` is None (the linked bulletin was deleted):
+      returns 410 Gone with a brief HTML body and ``Cache-Control: no-store``.
+    * Otherwise: 302 to the canonical bulletin URL with ``Cache-Control: no-store``.
+
+    No 301 anywhere — 301s are aggressively cached and would defeat click
+    tracking on re-visits.
+
+    Args:
+        request: The incoming HTTP request (GET).
+        token: URL-safe token from the short URL.
+
+    Returns:
+        An HttpResponse — 302, 404, or 410 as described above.
+
+    """
+    share = get_object_or_404(BulletinShare, token=token)
+
+    # Extract client metadata.
+    ip = request.META.get("REMOTE_ADDR", "")
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded_for:
+        # Take the leftmost (client) entry from the forwarded-for chain.
+        ip = forwarded_for.split(",")[0].strip()
+
+    ua = request.META.get("HTTP_USER_AGENT", "")
+    session_id = request.session.session_key or ""
+    referer = request.headers.get("Referer", "")
+    sec_purpose = request.headers.get("Sec-Purpose", "")
+    country_code = country_code_for(ip)
+    visitor_hash = hashlib.sha256(f"{ip}|{ua}".encode()).hexdigest()[:16]
+
+    BulletinShareClick.objects.create(
+        share=share,
+        ip_address=ip or None,
+        user_agent=ua,
+        session_id=session_id,
+        referer=referer,
+        sec_purpose=sec_purpose,
+        country_code=country_code,
+        visitor_hash=visitor_hash,
+    )
+
+    if share.bulletin is None:
+        gone = HttpResponseGone(
+            "<html><body><h1>410 Gone</h1>"
+            "<p>This share link is no longer available.</p></body></html>",
+            content_type="text/html",
+        )
+        gone["Cache-Control"] = "no-store"
+        return gone
+
+    redirect_url = _build_canonical_url(request, share.region, share.target_date)
+    redir = HttpResponseRedirect(redirect_url)
+    redir["Cache-Control"] = "no-store"
+    return redir
 
 
 # ---------------------------------------------------------------------------
