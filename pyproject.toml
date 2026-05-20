@@ -74,15 +74,6 @@ ignore_missing_imports = true
 module = ["*.migrations.*", "*.settings.*"]
 ignore_errors = true
 
-# Tests follow pytest conventions: test methods return None and don't
-# need explicit annotations. Keep type checking enabled (so real type
-# errors still surface), but allow untyped defs so idiomatic pytest
-# functions don't each need a trailing `-> None`.
-[[tool.mypy.overrides]]
-module = ["tests.*"]
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-
 [tool.django-stubs]
 django_settings_module = "config.settings.development"
 
