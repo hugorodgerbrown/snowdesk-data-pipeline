@@ -1,9 +1,11 @@
 """
 tests/regions/test_fixture_utils.py — Unit tests for regions/fixture_utils.py.
 
-Covers the geometry helper functions shared across the fixture-build
-commands (build_switzerland_fixture, build_france_fixture, etc.):
+Covers the helper functions shared across the fixture-build commands
+(build_switzerland_fixture, build_france_fixture, build_austria_fixture,
+build_italy_fixture):
 
+* build_entries_from_eaws_dir
 * bbox_from_children
 * centre_from_children
 * boundary_from_children
@@ -13,9 +15,137 @@ commands (build_switzerland_fixture, build_france_fixture, etc.):
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
+
+# ---------------------------------------------------------------------------
+# build_entries_from_eaws_dir
+# ---------------------------------------------------------------------------
+
+
+def _write_eaws_file(
+    directory: Path, code: str, features: list[dict[str, Any]]
+) -> None:
+    """Write a minimal EAWS-style GeoJSON file for ``code`` into ``directory``."""
+    payload = {"type": "FeatureCollection", "features": features}
+    (directory / f"{code}_micro-regions.geojson.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+
+
+class TestBuildEntriesFromEawsDir:
+    """Tests for build_entries_from_eaws_dir."""
+
+    def test_assembles_l1_l2_l4_in_order_with_l4_sorted(self, tmp_path: Path) -> None:
+        """Output is L1 entries, then L2 entries, then L4 entries sorted by region_id."""
+        from regions.fixture_utils import build_entries_from_eaws_dir
+
+        _write_eaws_file(tmp_path, "AT-02", [{"id": "AT-02-01"}])
+
+        def build_code_entries(
+            code: str,
+            features: list[dict[str, Any]],
+        ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], list[dict[str, Any]]]:
+            l1 = {"model": "regions.majorregion", "fields": {"prefix": code}}
+            l2s = {
+                f"{code}-01": {
+                    "model": "regions.subregion",
+                    "fields": {"prefix": f"{code}-01"},
+                }
+            }
+            l4s = [
+                {
+                    "model": "regions.microregion",
+                    "fields": {"region_id": f"{code}-01-B"},
+                },
+                {
+                    "model": "regions.microregion",
+                    "fields": {"region_id": f"{code}-01-A"},
+                },
+            ]
+            return l1, l2s, l4s
+
+        entries = build_entries_from_eaws_dir(
+            tmp_path, ["AT-02"], build_code_entries, "test_command"
+        )
+
+        assert [e["model"] for e in entries] == [
+            "regions.majorregion",
+            "regions.subregion",
+            "regions.microregion",
+            "regions.microregion",
+        ]
+        # L4 entries are sorted by region_id ascending.
+        assert entries[2]["fields"]["region_id"] == "AT-02-01-A"
+        assert entries[3]["fields"]["region_id"] == "AT-02-01-B"
+
+    def test_missing_source_file_is_skipped_with_warning(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A code with no matching file logs a warning and is skipped, not raised."""
+        from regions import fixture_utils
+        from regions.fixture_utils import build_entries_from_eaws_dir
+
+        _write_eaws_file(tmp_path, "AT-02", [])
+
+        warnings: list[tuple[str, tuple[Any, ...]]] = []
+        monkeypatch.setattr(
+            fixture_utils.logger,
+            "warning",
+            lambda msg, *args: warnings.append((msg, args)),
+        )
+
+        def build_code_entries(
+            code: str,
+            features: list[dict[str, Any]],
+        ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], list[dict[str, Any]]]:
+            return (
+                {"model": "regions.majorregion", "fields": {"prefix": code}},
+                {},
+                [],
+            )
+
+        entries = build_entries_from_eaws_dir(
+            tmp_path,
+            ["AT-02", "AT-99"],
+            build_code_entries,
+            "build_austria_fixture",
+        )
+
+        # Only the present code produced an entry — the missing one was skipped.
+        assert len(entries) == 1
+        assert entries[0]["fields"]["prefix"] == "AT-02"
+        # The command_name parameter and missing code appear in the warning args.
+        assert len(warnings) == 1
+        _, args = warnings[0]
+        assert "build_austria_fixture" in args
+        assert any("AT-99" in str(a) for a in args)
+
+    def test_empty_region_codes_returns_empty_list(self, tmp_path: Path) -> None:
+        """No region codes means no entries — and no callable invocations."""
+        from regions.fixture_utils import build_entries_from_eaws_dir
+
+        invocations: list[str] = []
+
+        def build_code_entries(
+            code: str,
+            features: list[dict[str, Any]],
+        ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], list[dict[str, Any]]]:
+            invocations.append(code)
+            return ({}, {}, [])
+
+        entries = build_entries_from_eaws_dir(
+            tmp_path, [], build_code_entries, "test_command"
+        )
+
+        assert entries == []
+        assert invocations == []
+
 
 # ---------------------------------------------------------------------------
 # _iter_coords_from_geometry
