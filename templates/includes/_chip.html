@@ -1,22 +1,19 @@
 {% comment %}
 templates/includes/_chip.html — Mono uppercase pill chip primitive.
 
-Used inside the rating-block danger-band header for category /
-avalanche-type / time-period labels.  The two tint weights both sit on
-top of saturated EAWS colour backgrounds — the black overlay reads as a
-slightly darker patch regardless of which EAWS level the header carries.
+Single source of truth for the small uppercase pills carrying
+short metadata labels (avalanche-problem category, avalanche-type,
+time-period, day-window pill, etc.). Opaque ``bg-tag`` background
+with ``text-text-3`` copy so it reads cleanly on neutral cards and
+on saturated EAWS danger-band colours alike.
 
 Context:
   text        — chip copy (required).
-  tint        — "strong" (default, 0.12 black overlay) or "subtle"
-                (0.08 black overlay) for chips that should recede.
   data_testid — optional data-testid attribute value.
 {% endcomment %}
 <span
-    class="font-mono text-chip tracking-[0.08em] uppercase {% if tint == 'subtle' %}bg-black/[0.08]{% else %}bg-black/[0.12]{% endif %} px-1.5 py-0.5 rounded shrink-0"
+    class="font-mono text-chip tracking-[0.08em] uppercase bg-tag text-text-3 border border-border px-2.5 py-[5px] rounded-pill shrink-0"
     {% if data_testid %}
         data-testid="{{ data_testid }}"
     {% endif %}
->
-    {{ text }}
-</span>
+>{{ text }}</span>

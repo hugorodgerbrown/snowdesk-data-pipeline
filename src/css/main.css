@@ -149,10 +149,6 @@
   /* Form validation */
   --color-form-error:     #ef4444;   /* inline error text (red-500)         */
 
-  /* Chip / pill overlays */
-  --color-chip:           rgba(0, 0, 0, 0.06);   /* period pill, time badge   */
-  --color-chip-strong:    rgba(0, 0, 0, 0.08);   /* category badge            */
-
   /* Misc interactive */
   --color-card-hover:     #eeeae2;   /* subtle card footer hover            */
   --color-ring-selected:  #3b82f6;   /* calendar selected-date ring (blue-500) */
@@ -306,10 +302,6 @@
 
   /* Form validation */
   --color-form-error:     #f87171;
-
-  /* Chip / pill overlays — inverted for dark surfaces */
-  --color-chip:           rgba(255, 255, 255, 0.07);
-  --color-chip-strong:    rgba(255, 255, 255, 0.10);
 
   /* Misc interactive */
   --color-card-hover:     #353330;
@@ -751,19 +743,6 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   margin-top: 2px;
   text-wrap: pretty;
 }
-
-.dw-pill {
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-text-3);
-  background: var(--color-tag);
-  padding: 2px 6px;
-  border-radius: var(--radius-pill);
-}
-
 
 /* —— HTMX indicator —————————————————————————
    Any element with class="htmx-indicator" is hidden by default and
