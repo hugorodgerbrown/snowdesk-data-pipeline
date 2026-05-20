@@ -20,7 +20,7 @@ default; ``--commit`` is the only way to write the fixture file.
 Implementation strategy:
   - Open a ``transaction.atomic`` block and write all bulletin/rating/weather
     rows into the live DB.
-  - Serialize everything via Django's serializer framework in FK-safe order.
+  - Serialise everything via Django's serialiser framework in FK-safe order.
   - Write the fixture file to ``bulletins/fixtures/test_data.json``.
   - Forcibly roll back the transaction so the live DB is untouched.
   - In dry-run mode (no ``--commit``) only print the counts, never write.
@@ -28,9 +28,11 @@ Implementation strategy:
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import uuid
+import zoneinfo
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -78,8 +80,8 @@ _CYCLING_DANGER = [
 ]
 
 # ---------------------------------------------------------------------------
-# CAAML raw_data template  (extracted from bulletins/fixtures/bulletins.json
-# and adapted to be fully parameterised)
+# CAAML raw_data template  (templated from a known-valid CAAML payload shape;
+# all fields are fully parameterised)
 # ---------------------------------------------------------------------------
 
 
@@ -308,8 +310,6 @@ def _make_weather_snapshot_params(
         which is resolved later from ``region_id``).
 
     """
-    import zoneinfo
-
     zurich = zoneinfo.ZoneInfo("Europe/Zurich")
     sunrise = datetime(
         target_date.year, target_date.month, target_date.day, 6, 30, tzinfo=zurich
@@ -318,7 +318,6 @@ def _make_weather_snapshot_params(
         target_date.year, target_date.month, target_date.day, 18, 30, tzinfo=zurich
     )
     return {
-        "region_id_str": region_id,
         "valid_for_date": target_date,
         "weather_code": 1,
         "sunrise": sunrise,
@@ -331,11 +330,15 @@ def _make_weather_snapshot_params(
 # Serialisation order
 # ---------------------------------------------------------------------------
 
+# FK-safe order for the final fixture.  Region and resort rows come verbatim
+# from the existing eaws_CH / resorts fixtures (not serialised here — they are
+# prepended from those fixture files at write time).  This list is kept as a
+# reader aid so the full dependency chain is visible in one place.
 _SERIALISE_MODELS: list[str] = [
     "regions.majorregion",
     "regions.subregion",
     "regions.microregion",
-    "regions.microregionneighbour",
+    # regions.microregionneighbour is omitted — this command never populates it.
     "regions.resort",
     "bulletins.bulletin",
     "bulletins.regionbulletin",
@@ -368,7 +371,7 @@ class Command(BaseCommand):
         "Read-only by default; pass --commit to write the file."
     )
 
-    def add_arguments(self, parser: Any) -> None:
+    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         """Register command-line arguments."""
         parser.add_argument(
             "--commit",

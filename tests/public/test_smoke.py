@@ -1,5 +1,5 @@
 """
-tests/public/test_smoke.py — Smoke test: loaddata test_data + canonical URL.
+tests/public/test_smoke.py — Smoke test: loaddata test_data + canonical URLs.
 
 Verifies the contract-level guarantee that a single ``loaddata test_data``
 invocation brings a freshly migrated DB to a fully navigable state.
@@ -7,7 +7,8 @@ invocation brings a freshly migrated DB to a fully navigable state.
 The test loads the checked-in ``bulletins/fixtures/test_data.json`` fixture
 (which bundles region, resort, bulletin, day-rating, and weather-snapshot data)
 and asserts that the canonical preview URL for CH-4222/zermatt/2026-04-08/
-returns HTTP 200.
+returns HTTP 200, and that ``/examples/random/`` also returns HTTP 200
+(picking a random bulletin from the loaded data).
 
 This test is deliberately slow (it loads 1 155 records) and is the only test
 in the suite that exercises ``loaddata test_data``.  All other tests use
@@ -60,4 +61,22 @@ def test_loaddata_and_ch4115_april_url_returns_200() -> None:
     assert response.status_code == 200, (
         f"Expected 200 from /ch-4115/martigny-verbier/2026-04-02/ but got "
         f"{response.status_code}"
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_loaddata_and_examples_random_returns_200() -> None:
+    """
+    loaddata test_data + GET /examples/random/ → HTTP 200.
+
+    Verifies that the random-example view picks a bulletin from the loaded
+    fixture data and renders it inline, confirming the fixture provides
+    enough data for this evergreen URL to work without additional setup.
+    """
+    call_command("loaddata", "test_data", verbosity=0)
+
+    client = Client()
+    response = client.get("/examples/random/")
+    assert response.status_code == 200, (
+        f"Expected 200 from /examples/random/ but got {response.status_code}"
     )
