@@ -316,7 +316,7 @@ class TestExportDayCharacterCsv:
         """A non-ISO ``--start-date`` value raises ``CommandError``."""
         from django.core.management.base import CommandError
 
-        with pytest.raises(CommandError, match="Invalid --start-date"):
+        with pytest.raises(CommandError, match="argument --start-date"):
             call_command(
                 "export_day_character_csv",
                 "--start-date",

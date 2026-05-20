@@ -186,7 +186,7 @@ class TestDateFlag:
             valid_from=datetime(2026, 3, 15, 8, 0, tzinfo=UTC),
         )
 
-        call_command("diagnose_region_coverage", target_date="2026-03-15", verbosity=0)
+        call_command("diagnose_region_coverage", "--date", "2026-03-15", verbosity=0)
 
         out = capsys.readouterr().out
         # CH-D002 was published for 2026-03-15 and has no rating row → bucket B.
@@ -210,7 +210,7 @@ class TestDateFlag:
             valid_from=datetime(2026, 3, 14, 17, 0, tzinfo=UTC),
         )
 
-        call_command("diagnose_region_coverage", target_date="2026-03-15", verbosity=0)
+        call_command("diagnose_region_coverage", "--date", "2026-03-15", verbosity=0)
 
         out = capsys.readouterr().out
         # The evening bulletin's regions should count for 2026-03-15.
@@ -219,9 +219,9 @@ class TestDateFlag:
 
     def test_invalid_date_raises_command_error(self) -> None:
         """A malformed --date value raises CommandError."""
-        with pytest.raises(CommandError, match="Invalid --date"):
+        with pytest.raises(CommandError, match="argument --date"):
             call_command(
-                "diagnose_region_coverage", target_date="not-a-date", verbosity=0
+                "diagnose_region_coverage", "--date", "not-a-date", verbosity=0
             )
 
 
