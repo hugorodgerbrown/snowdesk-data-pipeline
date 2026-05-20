@@ -5,6 +5,6 @@
 home 1
 map 2
 api_today_summaries 1
-api_resorts_by_region 2
+api_resorts_by_region 1
 api_regions_geojson 1
-bulletin_historic 11
+bulletin_historic 2
