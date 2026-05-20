@@ -456,8 +456,10 @@ class Command(BaseCommand):
         bulletin_records = json.loads(fixture_json)
         all_records: list[Any] = region_data + resort_data + bulletin_records
 
+        # Minified output — the fixture is generated, not hand-edited, and
+        # shaving whitespace cuts the file from ~5 MB to ~1.5 MB.
         output_path.write_text(
-            json.dumps(all_records, indent=2, ensure_ascii=False) + "\n",
+            json.dumps(all_records, separators=(",", ":"), ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
         self.stdout.write(
@@ -530,10 +532,11 @@ class Command(BaseCommand):
             + list(RegionDayRating.objects.filter(pk__in=new_rdr_pks))
             + list(WeatherSnapshot.objects.filter(pk__in=new_ws_pks))
         )
+        # Intermediate JSON is re-parsed and re-emitted by the caller, so the
+        # indent here is wasted work — emit compactly.
         fixture_json = serializers.serialize(
             "json",
             objects_to_serialise,
-            indent=2,
             use_natural_foreign_keys=True,
             use_natural_primary_keys=False,
         )
