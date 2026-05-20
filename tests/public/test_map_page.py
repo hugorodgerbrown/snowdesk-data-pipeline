@@ -22,7 +22,7 @@ from tests.factories import MicroRegionFactory, RegionDayRatingFactory
 
 
 @pytest.mark.django_db
-def test_map_page_renders():
+def test_map_page_renders() -> None:
     """GET /map/ returns 200 and contains the map container and popup endpoint."""
     client = Client()
     response = client.get(reverse("public:map"))
@@ -35,7 +35,7 @@ def test_map_page_renders():
 
 
 @pytest.mark.django_db
-def test_map_page_injects_api_urls():
+def test_map_page_injects_api_urls() -> None:
     """
     The four API URLs resolve via ``{% url %}`` and are exposed to JS
     through data-* attributes on the #map element. SNOW-78 added the
@@ -51,7 +51,7 @@ def test_map_page_injects_api_urls():
 
 
 @pytest.mark.django_db
-def test_map_page_renders_resorts_overlay_toggle():
+def test_map_page_renders_resorts_overlay_toggle() -> None:
     """
     SNOW-78: a Resorts checkbox sits in the basemap-picker overlays
     section so the user can toggle the geocoded-resort pin layer on/off.
@@ -71,7 +71,7 @@ def test_map_page_renders_resorts_overlay_toggle():
 
 
 @pytest.mark.django_db
-def test_map_page_renders_resorts_legend_entry():
+def test_map_page_renders_resorts_legend_entry() -> None:
     """SNOW-78: the danger-scale legend includes a Resorts entry."""
     client = Client()
     response = client.get(reverse("public:map"))
@@ -81,7 +81,7 @@ def test_map_page_renders_resorts_legend_entry():
 
 
 @pytest.mark.django_db
-def test_map_page_loads_assets():
+def test_map_page_loads_assets() -> None:
     """The page references the MapLibre library, the map CSS, and map JS."""
     client = Client()
     response = client.get(reverse("public:map"))
@@ -93,7 +93,7 @@ def test_map_page_loads_assets():
 
 @pytest.mark.django_db
 @override_settings(BASEMAP="swisstopo_winter")
-def test_map_page_injects_default_basemap_key():
+def test_map_page_injects_default_basemap_key() -> None:
     """
     SNOW-58: ``settings.BASEMAP`` is rendered onto the #map element as
     ``data-default-basemap-key`` so the JS can fall back to the
@@ -107,7 +107,7 @@ def test_map_page_injects_default_basemap_key():
 
 
 @pytest.mark.django_db
-def test_map_page_renders_basemap_picker():
+def test_map_page_renders_basemap_picker() -> None:
     """
     SNOW-58: the picker renders one ``menuitemradio`` button per entry
     in the ``basemaps`` context, each carrying ``data-basemap-key`` and
@@ -126,7 +126,7 @@ def test_map_page_renders_basemap_picker():
 
 
 @pytest.mark.django_db
-def test_map_view_passes_basemap_catalogue():
+def test_map_view_passes_basemap_catalogue() -> None:
     """
     The view exposes ``basemaps`` and ``default_basemap_key`` in template
     context so the template can render the picker without re-deriving
@@ -144,7 +144,7 @@ def test_map_view_passes_basemap_catalogue():
 
 
 @pytest.mark.django_db
-def test_map_page_accepts_date_query_param():
+def test_map_page_accepts_date_query_param() -> None:
     """
     SNOW-47: ``/map/?d=YYYY-MM-DD`` still 200s. The selected date is
     consumed entirely by JS (which reads ``location.search`` after the
@@ -163,7 +163,7 @@ def test_map_page_accepts_date_query_param():
 
 
 @pytest.mark.django_db
-def test_map_page_renders_unified_time_controls():
+def test_map_page_renders_unified_time_controls() -> None:
     """
     The play button (#scrubber-play) and the always-visible date pill
     (#map-date-pill) must be rendered server-side so the JS only has to
@@ -178,7 +178,7 @@ def test_map_page_renders_unified_time_controls():
 
 
 @pytest.mark.django_db
-def test_map_page_renders_timelapse_speed_button():
+def test_map_page_renders_timelapse_speed_button() -> None:
     """
     The timelapse speed cycler renders alongside the play button with the
     1× default. The JS rehydrates ``data-speed`` and the visible label
@@ -194,7 +194,7 @@ def test_map_page_renders_timelapse_speed_button():
 
 
 @pytest.mark.django_db
-def test_map_page_no_offline_toggle_or_precache_url():
+def test_map_page_no_offline_toggle_or_precache_url() -> None:
     """SNOW-79: the SNOW-9 "Save offline" button and its data-attribute are gone.
 
     The PWA shell SW now caches assets at runtime via stale-while-
@@ -213,7 +213,7 @@ def test_map_page_no_offline_toggle_or_precache_url():
 
 
 @pytest.mark.django_db
-def test_map_page_inherits_pwa_manifest_link():
+def test_map_page_inherits_pwa_manifest_link() -> None:
     """SNOW-79: every public page (incl. /map/) links the manifest from base.html."""
     client = Client()
     response = client.get(reverse("public:map"))

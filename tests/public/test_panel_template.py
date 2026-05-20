@@ -10,11 +10,15 @@ tests against ``_enrich_render_model_problem``.
 """
 
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pytest
 from django.test import Client
 from django.urls import reverse
 
+from bulletins.models import Bulletin
+from regions.models import MicroRegion
+from subscriptions.models import Subscriber
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -23,7 +27,7 @@ from tests.factories import (
 )
 
 
-def _make_am_bulletin(region, day, **kwargs):
+def _make_am_bulletin(region: MicroRegion, day: date, **kwargs: Any) -> Bulletin:
     """Create a morning bulletin valid from 06:00 to 15:00 on *day*."""
     vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
     vt = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
@@ -42,7 +46,7 @@ def _make_am_bulletin(region, day, **kwargs):
 
 
 @pytest.fixture()
-def region():
+def region() -> MicroRegion:
     """Return a test Region."""
     return MicroRegionFactory.create(
         region_id="CH-7777", name="Test Valley", slug="ch-7777"
@@ -50,19 +54,19 @@ def region():
 
 
 @pytest.fixture()
-def staff_user(db):
+def staff_user(db: Any) -> Subscriber:
     """Return a staff Subscriber."""
     return UserFactory.create()
 
 
 @pytest.fixture()
-def anon_client():
+def anon_client() -> Client:
     """Return an unauthenticated test client."""
     return Client()
 
 
 @pytest.fixture()
-def staff_client(staff_user):
+def staff_client(staff_user: Subscriber) -> Client:
     """Return a test client logged in as the staff user."""
     c = Client()
     c.force_login(staff_user)
@@ -96,7 +100,7 @@ def _bulletin_url(
 class TestErrorStateCard:
     """Tests for the version==0 error card in the bulletin panel template."""
 
-    def _make_error_bulletin(self, region, day: date):
+    def _make_error_bulletin(self, region: MicroRegion, day: date) -> Bulletin:
         """Create a bulletin whose render_model carries a stored error.
 
         render_model_version is set to match RENDER_MODEL_VERSION (2) so the
@@ -121,7 +125,9 @@ class TestErrorStateCard:
             },
         )
 
-    def test_staff_sees_error_text_and_admin_link(self, staff_client: Client, region):
+    def test_staff_sees_error_text_and_admin_link(
+        self, staff_client: Client, region: MicroRegion
+    ) -> None:
         """Staff users see the raw error string and an admin change link."""
         day = date(2026, 5, 1)
         bulletin = self._make_error_bulletin(region, day)
@@ -143,7 +149,9 @@ class TestErrorStateCard:
         # Raw error text visible.
         assert "Synthetic test error" in content
 
-    def test_anon_does_not_see_error_text(self, anon_client: Client, region):
+    def test_anon_does_not_see_error_text(
+        self, anon_client: Client, region: MicroRegion
+    ) -> None:
         """Non-staff users see a generic message, not the raw error."""
         day = date(2026, 5, 2)
         self._make_error_bulletin(region, day)
@@ -158,7 +166,9 @@ class TestErrorStateCard:
         # Generic message must appear.
         assert "We are sorry for the inconvenience" in content
 
-    def test_anon_does_not_see_admin_link(self, anon_client: Client, region):
+    def test_anon_does_not_see_admin_link(
+        self, anon_client: Client, region: MicroRegion
+    ) -> None:
         """The error-card 'Inspect in admin' link is absent for non-staff visitors.
 
         The bulletin footer also renders an 'Open in admin' shortcut
@@ -193,7 +203,9 @@ class TestProblemCardRendering:
     since the card header is plain text.
     """
 
-    def test_problem_label_rendered_in_card_header(self, anon_client: Client, region):
+    def test_problem_label_rendered_in_card_header(
+        self, anon_client: Client, region: MicroRegion
+    ) -> None:
         """Problem type label ('Wind slab') appears in the card header area."""
         from bulletins.services.render_model import RENDER_MODEL_VERSION
 
@@ -239,7 +251,9 @@ class TestProblemCardRendering:
         assert 'data-testid="rating-block"' in content
         assert "Wind slab" in content
 
-    def test_two_problems_produce_two_blocks(self, anon_client: Client, region):
+    def test_two_problems_produce_two_blocks(
+        self, anon_client: Client, region: MicroRegion
+    ) -> None:
         """A bulletin with dry + wet problems produces two separate rating blocks."""
         from bulletins.services.render_model import RENDER_MODEL_VERSION
 
@@ -302,7 +316,7 @@ class TestProblemCardRendering:
 class TestEnrichRenderModelProblemDangerLevelCss:
     """Unit tests for the danger_level_css field added by _enrich_render_model_problem."""
 
-    def _enrich(self, danger_rating_value):
+    def _enrich(self, danger_rating_value: Any) -> dict[str, Any]:
         """
         Call _enrich_render_model_problem with a minimal problem dict.
 
@@ -321,18 +335,18 @@ class TestEnrichRenderModelProblemDangerLevelCss:
         }
         return _enrich_render_model_problem(rm_problem, {}, [rm_problem], 0)
 
-    def test_known_level_is_passed_through(self):
+    def test_known_level_is_passed_through(self) -> None:
         """A recognised danger_rating_value is returned as danger_level_css."""
         for level in ("low", "moderate", "considerable", "high", "very_high"):
             result = self._enrich(level)
             assert result["danger_level_css"] == level, f"expected {level!r}"
 
-    def test_none_produces_empty_string(self):
+    def test_none_produces_empty_string(self) -> None:
         """danger_rating_value=None produces an empty danger_level_css."""
         result = self._enrich(None)
         assert result["danger_level_css"] == ""
 
-    def test_unknown_value_produces_empty_string(self):
+    def test_unknown_value_produces_empty_string(self) -> None:
         """An unrecognised danger_rating_value falls back to empty string."""
         result = self._enrich("extreme")
         assert result["danger_level_css"] == ""

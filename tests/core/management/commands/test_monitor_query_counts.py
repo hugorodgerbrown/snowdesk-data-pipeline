@@ -40,7 +40,9 @@ def monitored_urls() -> Iterator[list[tuple[str, str]]]:
 
 
 @pytest.mark.django_db
-def test_commit_writes_baseline(baseline_path: Path, monitored_urls) -> None:
+def test_commit_writes_baseline(
+    baseline_path: Path, monitored_urls: list[tuple[str, str]]
+) -> None:
     """--commit writes one 'name count' line per monitored URL."""
     assert not baseline_path.exists()
     out = StringIO()
@@ -60,7 +62,7 @@ def test_commit_writes_baseline(baseline_path: Path, monitored_urls) -> None:
 
 @pytest.mark.django_db
 def test_read_only_passes_when_baseline_matches(
-    baseline_path: Path, monitored_urls
+    baseline_path: Path, monitored_urls: list[tuple[str, str]]
 ) -> None:
     """A read-only run against a matching baseline exits cleanly."""
     # Seed the baseline by running with --commit first.
@@ -72,7 +74,9 @@ def test_read_only_passes_when_baseline_matches(
 
 
 @pytest.mark.django_db
-def test_read_only_fails_on_mismatch(baseline_path: Path, monitored_urls) -> None:
+def test_read_only_fails_on_mismatch(
+    baseline_path: Path, monitored_urls: list[tuple[str, str]]
+) -> None:
     """Baseline with deliberately wrong numbers triggers CommandError."""
     baseline_path.write_text("home 999\nmap 999\n")
     with pytest.raises(CommandError, match="differ from the baseline"):
@@ -80,7 +84,9 @@ def test_read_only_fails_on_mismatch(baseline_path: Path, monitored_urls) -> Non
 
 
 @pytest.mark.django_db
-def test_read_only_fails_without_baseline(baseline_path: Path, monitored_urls) -> None:
+def test_read_only_fails_without_baseline(
+    baseline_path: Path, monitored_urls: list[tuple[str, str]]
+) -> None:
     """Missing baseline + no --commit is a hard failure."""
     assert not baseline_path.exists()
     with pytest.raises(CommandError, match="No baseline"):
@@ -88,7 +94,9 @@ def test_read_only_fails_without_baseline(baseline_path: Path, monitored_urls) -
 
 
 @pytest.mark.django_db
-def test_malformed_baseline_raises(baseline_path: Path, monitored_urls) -> None:
+def test_malformed_baseline_raises(
+    baseline_path: Path, monitored_urls: list[tuple[str, str]]
+) -> None:
     """A non-comment line without a count raises a clear CommandError."""
     baseline_path.write_text("home\n")
     with pytest.raises(CommandError, match="Malformed"):

@@ -83,17 +83,17 @@ def _make_raw_bulletin(
 class TestNormaliseResponse:
     """Tests for _normalise_response."""
 
-    def test_flat_list(self):
+    def test_flat_list(self) -> None:
         """A flat list of bulletin dicts is returned as-is."""
         bulletins = [{"bulletinID": "a"}, {"bulletinID": "b"}]
         assert _normalise_response(bulletins) == bulletins
 
-    def test_single_collection_object(self):
+    def test_single_collection_object(self) -> None:
         """A dict with a 'bulletins' key unwraps to the inner list."""
         data = {"bulletins": [{"bulletinID": "a"}]}
         assert _normalise_response(data) == [{"bulletinID": "a"}]
 
-    def test_list_of_collection_objects(self):
+    def test_list_of_collection_objects(self) -> None:
         """A list of collection objects is flattened."""
         data = [
             {"bulletins": [{"bulletinID": "a"}]},
@@ -103,19 +103,19 @@ class TestNormaliseResponse:
         assert len(result) == 3
         assert [b["bulletinID"] for b in result] == ["a", "b", "c"]
 
-    def test_empty_list(self):
+    def test_empty_list(self) -> None:
         """An empty list returns an empty list."""
         assert _normalise_response([]) == []
 
-    def test_empty_dict(self):
+    def test_empty_dict(self) -> None:
         """A dict without 'bulletins' returns an empty list."""
         assert _normalise_response({}) == []
 
-    def test_none_returns_empty(self):
+    def test_none_returns_empty(self) -> None:
         """None returns an empty list."""
         assert _normalise_response(None) == []
 
-    def test_string_returns_empty(self):
+    def test_string_returns_empty(self) -> None:
         """An unexpected string returns an empty list."""
         assert _normalise_response("unexpected") == []
 
@@ -128,24 +128,24 @@ class TestNormaliseResponse:
 class TestParseDt:
     """Tests for _parse_dt."""
 
-    def test_utc_timestamp(self):
+    def test_utc_timestamp(self) -> None:
         """Parses a Z-suffixed ISO-8601 string to a UTC-aware datetime."""
         result = _parse_dt("2025-03-15T08:00:00Z")
         assert result == datetime(2025, 3, 15, 8, 0, 0, tzinfo=UTC)
 
-    def test_offset_timestamp_is_converted_to_utc(self):
+    def test_offset_timestamp_is_converted_to_utc(self) -> None:
         """An ISO-8601 string with a +01:00 offset is converted to UTC."""
         result = _parse_dt("2025-03-15T09:00:00+01:00")
         assert result == datetime(2025, 3, 15, 8, 0, 0, tzinfo=UTC)
         assert result.tzinfo is UTC
 
-    def test_negative_offset_timestamp_is_converted_to_utc(self):
+    def test_negative_offset_timestamp_is_converted_to_utc(self) -> None:
         """An ISO-8601 string with a -05:00 offset is converted to UTC."""
         result = _parse_dt("2025-03-15T03:00:00-05:00")
         assert result == datetime(2025, 3, 15, 8, 0, 0, tzinfo=UTC)
         assert result.tzinfo is UTC
 
-    def test_naive_timestamp_is_assumed_utc(self):
+    def test_naive_timestamp_is_assumed_utc(self) -> None:
         """A naive ISO-8601 string is assumed to be UTC."""
         result = _parse_dt("2025-03-15T08:00:00")
         assert result == datetime(2025, 3, 15, 8, 0, 0, tzinfo=UTC)
@@ -160,7 +160,7 @@ class TestParseDt:
 class TestResolveIssuedAt:
     """Tests for _resolve_issued_at."""
 
-    def test_uses_publication_time_when_present(self):
+    def test_uses_publication_time_when_present(self) -> None:
         """Modern bulletins return ``publicationTime`` parsed to UTC."""
         raw = {
             "publicationTime": "2025-03-15T08:00:00Z",
@@ -171,7 +171,7 @@ class TestResolveIssuedAt:
         }
         assert _resolve_issued_at(raw) == datetime(2025, 3, 15, 8, 0, 0, tzinfo=UTC)
 
-    def test_falls_back_to_valid_time_start_when_missing(self):
+    def test_falls_back_to_valid_time_start_when_missing(self) -> None:
         """Pre-2024 bulletins lack publicationTime; fall back to validTime.startTime."""
         raw = {
             "validTime": {
@@ -181,7 +181,7 @@ class TestResolveIssuedAt:
         }
         assert _resolve_issued_at(raw) == datetime(2023, 12, 13, 16, 0, 0, tzinfo=UTC)
 
-    def test_falls_back_when_publication_time_is_empty_string(self):
+    def test_falls_back_when_publication_time_is_empty_string(self) -> None:
         """An empty publicationTime string is treated the same as missing."""
         raw = {
             "publicationTime": "",
@@ -202,19 +202,19 @@ class TestResolveIssuedAt:
 class TestGetRegion:
     """Tests for _get_region (fixture-backed lookup)."""
 
-    def test_returns_seeded_region(self):
+    def test_returns_seeded_region(self) -> None:
         """Returns the Region when it exists."""
         seeded = MicroRegionFactory.create(region_id="CH-4115", name="Martigny-Verbier")
         found = _get_region("CH-4115")
         assert found.pk == seeded.pk
 
-    def test_raises_unknown_region_error(self):
+    def test_raises_unknown_region_error(self) -> None:
         """Unseeded region_id raises UnknownRegionError."""
         with pytest.raises(UnknownRegionError) as exc_info:
             _get_region("CH-9999")
         assert "CH-9999" in str(exc_info.value)
 
-    def test_unknown_region_error_chains_does_not_exist(self):
+    def test_unknown_region_error_chains_does_not_exist(self) -> None:
         """The underlying Region.DoesNotExist is chained as __cause__."""
         try:
             _get_region("CH-0000")
@@ -223,7 +223,7 @@ class TestGetRegion:
         else:
             pytest.fail("UnknownRegionError was not raised")
 
-    def test_is_read_only(self):
+    def test_is_read_only(self) -> None:
         """_get_region does not create any Region rows."""
         assert MicroRegion.objects.count() == 0
         with pytest.raises(UnknownRegionError):
@@ -254,7 +254,7 @@ class TestUpsertBulletin:
 
     pytestmark = pytest.mark.usefixtures("_seed_test_regions")
 
-    def test_creates_bulletin(self):
+    def test_creates_bulletin(self) -> None:
         """Creates a new Bulletin and returns True."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -269,7 +269,7 @@ class TestUpsertBulletin:
         assert bulletin.unscheduled is False
         assert bulletin.pipeline_run == run
 
-    def test_render_model_is_populated(self):
+    def test_render_model_is_populated(self) -> None:
         """upsert_bulletin populates render_model and render_model_version."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -280,7 +280,7 @@ class TestUpsertBulletin:
         assert bulletin.render_model_version == RENDER_MODEL_VERSION
         assert "version" in bulletin.render_model
 
-    def test_render_model_version_set(self):
+    def test_render_model_version_set(self) -> None:
         """render_model_version equals RENDER_MODEL_VERSION after upsert."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -289,7 +289,7 @@ class TestUpsertBulletin:
         bulletin = Bulletin.objects.get(bulletin_id="test-001")
         assert bulletin.render_model_version == RENDER_MODEL_VERSION
 
-    def test_wraps_raw_data_in_geojson_feature(self):
+    def test_wraps_raw_data_in_geojson_feature(self) -> None:
         """Raw data is wrapped in a GeoJSON Feature envelope."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -300,7 +300,7 @@ class TestUpsertBulletin:
         assert bulletin.raw_data["geometry"] is None
         assert bulletin.raw_data["properties"]["bulletinID"] == "test-001"
 
-    def test_creates_region_links(self):
+    def test_creates_region_links(self) -> None:
         """Creates RegionBulletin rows for each seeded region covered."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -314,7 +314,7 @@ class TestUpsertBulletin:
         )
         assert region_ids == ["CH-4115", "CH-7111"]
 
-    def test_skips_unknown_region_with_warning(self):
+    def test_skips_unknown_region_with_warning(self) -> None:
         """upsert_bulletin skips unseeded region_ids and completes successfully.
 
         EUREGIO bulletins may reference regions not yet in the fixture set.
@@ -332,7 +332,7 @@ class TestUpsertBulletin:
         bulletin = Bulletin.objects.get(bulletin_id="test-001")
         assert bulletin.regions.count() == 0
 
-    def test_unknown_region_warning_partially_linked(self):
+    def test_unknown_region_warning_partially_linked(self) -> None:
         """When a bulletin has mixed known/unknown regions, only known are linked."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin(
@@ -347,7 +347,7 @@ class TestUpsertBulletin:
         linked_ids = list(bulletin.regions.values_list("region_id", flat=True))
         assert linked_ids == ["CH-4115"]
 
-    def test_stores_region_name_at_time(self):
+    def test_stores_region_name_at_time(self) -> None:
         """RegionBulletin records store the name from the bulletin."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -356,7 +356,7 @@ class TestUpsertBulletin:
         link = RegionBulletin.objects.get(region__region_id="CH-4115")
         assert link.region_name_at_time == "Piz Buin"
 
-    def test_update_existing_bulletin(self):
+    def test_update_existing_bulletin(self) -> None:
         """Updating an existing bulletin returns False and refreshes data."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -373,7 +373,7 @@ class TestUpsertBulletin:
         bulletin = Bulletin.objects.get(bulletin_id="test-001")
         assert bulletin.issued_at == datetime(2025, 3, 15, 12, 0, 0, tzinfo=UTC)
 
-    def test_update_replaces_region_links(self):
+    def test_update_replaces_region_links(self) -> None:
         """Updating a bulletin clears and re-creates region links."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -387,9 +387,11 @@ class TestUpsertBulletin:
         upsert_bulletin(raw_updated, run)
 
         assert RegionBulletin.objects.count() == 1
-        assert RegionBulletin.objects.first().region.region_id == "CH-9999"
+        rb = RegionBulletin.objects.first()
+        assert rb is not None
+        assert rb.region.region_id == "CH-9999"
 
-    def test_handles_missing_next_update(self):
+    def test_handles_missing_next_update(self) -> None:
         """Bulletin without nextUpdate stores None."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -399,7 +401,7 @@ class TestUpsertBulletin:
         bulletin = Bulletin.objects.get(bulletin_id="test-001")
         assert bulletin.next_update is None
 
-    def test_handles_missing_publication_time(self):
+    def test_handles_missing_publication_time(self) -> None:
         """Pre-2024 bulletins without publicationTime fall back to validTime.startTime."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -412,7 +414,7 @@ class TestUpsertBulletin:
         assert bulletin.issued_at == datetime(2025, 3, 15, 17, 0, 0, tzinfo=UTC)
         assert bulletin.render_model_version == RENDER_MODEL_VERSION
 
-    def test_legacy_2023_fixture_ingests_cleanly(self):
+    def test_legacy_2023_fixture_ingests_cleanly(self) -> None:
         """The real failing 2023 payload ingests without error after the fix."""
         fixture_path = Path("tests/fixtures/sample_legacy_no_publication_time.json")
         # Sample fixtures are stored GeoJSON-wrapped; the SLF API delivers
@@ -442,7 +444,7 @@ class TestUpsertBulletin:
         # All 25 regions should be linked.
         assert bulletin.regions.count() == 25
 
-    def test_handles_empty_regions(self):
+    def test_handles_empty_regions(self) -> None:
         """Bulletin with no regions creates no RegionBulletin rows."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin(regions=[])
@@ -450,7 +452,7 @@ class TestUpsertBulletin:
 
         assert RegionBulletin.objects.count() == 0
 
-    def test_render_model_fallback_on_build_error(self):
+    def test_render_model_fallback_on_build_error(self) -> None:
         """When build_render_model raises RenderModelBuildError, stores error sentinel."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -467,7 +469,7 @@ class TestUpsertBulletin:
         assert bulletin.render_model["error"] == "boom"
         assert bulletin.render_model["error_type"] == "RenderModelBuildError"
 
-    def test_render_model_error_increments_records_failed(self):
+    def test_render_model_error_increments_records_failed(self) -> None:
         """RenderModelBuildError increments run.records_failed."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -481,7 +483,7 @@ class TestUpsertBulletin:
         run.refresh_from_db()
         assert run.records_failed == 1
 
-    def test_non_render_model_exception_propagates(self):
+    def test_non_render_model_exception_propagates(self) -> None:
         """Exceptions that are not RenderModelBuildError propagate uncaught."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
@@ -493,7 +495,7 @@ class TestUpsertBulletin:
             with pytest.raises(ValueError, match="unexpected error"):
                 upsert_bulletin(raw, run)
 
-    def test_upsert_bulletin_creates_day_rating_rows(self):
+    def test_upsert_bulletin_creates_day_rating_rows(self) -> None:
         """upsert_bulletin creates RegionDayRating rows for each covered region."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin(
@@ -523,7 +525,7 @@ class TestFetchBulletinPage:
     """Tests for fetch_bulletin_page."""
 
     @patch("bulletins.services.data_fetcher.requests.get")
-    def test_returns_normalised_bulletins(self, mock_get: MagicMock):
+    def test_returns_normalised_bulletins(self, mock_get: MagicMock) -> None:
         """Fetches a page from the API and normalises the response."""
         mock_response = MagicMock()
         mock_response.json.return_value = [_make_raw_bulletin()]
@@ -541,7 +543,7 @@ class TestFetchBulletinPage:
         )
 
     @patch("bulletins.services.data_fetcher.requests.get")
-    def test_raises_on_http_error(self, mock_get: MagicMock):
+    def test_raises_on_http_error(self, mock_get: MagicMock) -> None:
         """Raises HTTPError when the API returns a non-2xx status."""
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = requests.HTTPError("500")
@@ -551,7 +553,7 @@ class TestFetchBulletinPage:
             fetch_bulletin_page("en", 50, 0)
 
     @patch("bulletins.services.data_fetcher.requests.get")
-    def test_passes_lang_in_url(self, mock_get: MagicMock):
+    def test_passes_lang_in_url(self, mock_get: MagicMock) -> None:
         """The language code is included in the URL path."""
         mock_response = MagicMock()
         mock_response.json.return_value = []
@@ -564,7 +566,7 @@ class TestFetchBulletinPage:
         assert "/de/json" in url
 
     @patch("bulletins.services.data_fetcher.requests.get")
-    def test_base_url_override_replaces_default(self, mock_get: MagicMock):
+    def test_base_url_override_replaces_default(self, mock_get: MagicMock) -> None:
         """``base_url=`` swaps out the API base for that single call."""
         mock_response = MagicMock()
         mock_response.json.return_value = []
@@ -587,7 +589,7 @@ class TestFetchBulletinPage:
         SLF_API_BASE_URL="https://override.example/api/bulletin-list/caaml"
     )
     @patch("bulletins.services.data_fetcher.requests.get")
-    def test_default_base_url_falls_back_to_settings(self, mock_get: MagicMock):
+    def test_default_base_url_falls_back_to_settings(self, mock_get: MagicMock) -> None:
         """Without ``base_url=``, the call reads ``settings.SLF_API_BASE_URL``."""
         mock_response = MagicMock()
         mock_response.json.return_value = []
@@ -612,7 +614,7 @@ class TestRunPipeline:
     pytestmark = pytest.mark.usefixtures("_seed_test_regions")
 
     @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
-    def test_creates_bulletins_in_date_range(self, mock_fetch: MagicMock):
+    def test_creates_bulletins_in_date_range(self, mock_fetch: MagicMock) -> None:
         """Bulletins within the date range are stored."""
         mock_fetch.return_value = [
             _make_raw_bulletin("b1", "2025-03-15T08:00:00Z"),
@@ -630,7 +632,7 @@ class TestRunPipeline:
         assert Bulletin.objects.count() == 2
 
     @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
-    def test_skips_bulletins_newer_than_end_date(self, mock_fetch: MagicMock):
+    def test_skips_bulletins_newer_than_end_date(self, mock_fetch: MagicMock) -> None:
         """Bulletins newer than the end date are skipped."""
         mock_fetch.return_value = [
             _make_raw_bulletin("future", "2025-04-01T08:00:00Z"),
@@ -648,7 +650,7 @@ class TestRunPipeline:
         assert not Bulletin.objects.filter(bulletin_id="future").exists()
 
     @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
-    def test_stops_at_start_date_boundary(self, mock_fetch: MagicMock):
+    def test_stops_at_start_date_boundary(self, mock_fetch: MagicMock) -> None:
         """Pagination stops when a bulletin older than start date is hit."""
         mock_fetch.return_value = [
             _make_raw_bulletin("in-range", "2025-03-15T08:00:00Z"),
@@ -665,7 +667,7 @@ class TestRunPipeline:
         assert not Bulletin.objects.filter(bulletin_id="too-old").exists()
 
     @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
-    def test_dry_run_does_not_write(self, mock_fetch: MagicMock):
+    def test_dry_run_does_not_write(self, mock_fetch: MagicMock) -> None:
         """Dry run fetches data but does not persist bulletins."""
         mock_fetch.return_value = [
             _make_raw_bulletin("b1", "2025-03-15T08:00:00Z"),
@@ -683,7 +685,7 @@ class TestRunPipeline:
         assert Bulletin.objects.count() == 0
 
     @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
-    def test_skips_existing_without_force(self, mock_fetch: MagicMock):
+    def test_skips_existing_without_force(self, mock_fetch: MagicMock) -> None:
         """Without --force, existing bulletins are skipped."""
         # Pre-create the bulletin
         pre_run = PipelineRunFactory.create()
@@ -707,7 +709,7 @@ class TestRunPipeline:
         assert run.records_updated == 0
 
     @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
-    def test_updates_existing_with_force(self, mock_fetch: MagicMock):
+    def test_updates_existing_with_force(self, mock_fetch: MagicMock) -> None:
         """With --force, existing bulletins are upserted."""
         pre_run = PipelineRunFactory.create()
         upsert_bulletin(
@@ -730,7 +732,7 @@ class TestRunPipeline:
         assert Bulletin.objects.count() == 1
 
     @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
-    def test_marks_run_failed_on_exception(self, mock_fetch: MagicMock):
+    def test_marks_run_failed_on_exception(self, mock_fetch: MagicMock) -> None:
         """Run is marked FAILED if fetch raises an exception."""
         mock_fetch.side_effect = requests.ConnectionError("timeout")
 
@@ -745,7 +747,7 @@ class TestRunPipeline:
 
     @patch("bulletins.services.data_fetcher.PAGE_SIZE", 1)
     @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
-    def test_paginates_until_empty_page(self, mock_fetch: MagicMock):
+    def test_paginates_until_empty_page(self, mock_fetch: MagicMock) -> None:
         """Pages until the API returns an empty list."""
         # With PAGE_SIZE=1, a page with 1 result does NOT trigger the
         # "fewer than requested" early exit, so a second fetch occurs.
@@ -765,7 +767,7 @@ class TestRunPipeline:
         assert mock_fetch.call_count == 2
 
     @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
-    def test_run_records_triggered_by(self, mock_fetch: MagicMock):
+    def test_run_records_triggered_by(self, mock_fetch: MagicMock) -> None:
         """The triggered_by label is stored on the PipelineRun."""
         mock_fetch.return_value = []
 
@@ -778,7 +780,7 @@ class TestRunPipeline:
         assert run.triggered_by == "fetch_bulletins command"
 
     @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
-    def test_base_url_threads_through_to_fetch(self, mock_fetch: MagicMock):
+    def test_base_url_threads_through_to_fetch(self, mock_fetch: MagicMock) -> None:
         """``base_url=`` is forwarded verbatim to ``fetch_bulletin_page``."""
         mock_fetch.return_value = []
 
@@ -794,7 +796,7 @@ class TestRunPipeline:
         )
 
     @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
-    def test_on_fetched_called_for_every_record(self, mock_fetch: MagicMock):
+    def test_on_fetched_called_for_every_record(self, mock_fetch: MagicMock) -> None:
         """``on_fetched`` fires once per raw record in the page."""
         mock_fetch.return_value = [
             _make_raw_bulletin("a", "2025-03-15T08:00:00Z"),

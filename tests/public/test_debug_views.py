@@ -22,16 +22,19 @@ entry inside the library.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from django.contrib.staticfiles.finders import find as find_static
 from django.test import Client
 from django.urls import reverse
 
-from public.design_tokens import LIBRARY_GROUPS, IconToken
+from public.design_tokens import LIBRARY_GROUPS, FoundationCategory, IconToken
+from subscriptions.models import Subscriber
 from tests.factories import SubscriberFactory, UserFactory
 
 
-def _all_categories():
+def _all_categories() -> list[FoundationCategory]:
     """Flatten every category across all library groups."""
     return [c for group in LIBRARY_GROUPS for c in group.categories]
 
@@ -42,19 +45,19 @@ def _all_slugs() -> list[str]:
 
 
 @pytest.fixture()
-def staff_user(db):
+def staff_user(db: Any) -> Subscriber:
     """Return a staff Subscriber."""
     return UserFactory.create()
 
 
 @pytest.fixture()
-def regular_user(db):
+def regular_user(db: Any) -> Subscriber:
     """Return a non-staff Subscriber."""
     return SubscriberFactory.create()
 
 
 @pytest.fixture()
-def staff_client(staff_user) -> Client:
+def staff_client(staff_user: Subscriber) -> Client:
     """Return a logged-in staff client."""
     c = Client()
     c.force_login(staff_user)
@@ -62,7 +65,7 @@ def staff_client(staff_user) -> Client:
 
 
 @pytest.fixture()
-def htmx_staff_client(staff_user) -> Client:
+def htmx_staff_client(staff_user: Subscriber) -> Client:
     """Return a logged-in staff client whose requests carry the HX-Request header."""
     c = Client()
     c.force_login(staff_user)
@@ -90,7 +93,9 @@ class TestComponentLibraryIndex:
         assert response.status_code == 302
         assert "/admin/login/" in response["Location"]
 
-    def test_non_staff_user_redirected_to_admin_login(self, regular_user) -> None:
+    def test_non_staff_user_redirected_to_admin_login(
+        self, regular_user: Subscriber
+    ) -> None:
         """A logged-in non-staff user is also bounced to admin login."""
         client = Client()
         client.force_login(regular_user)

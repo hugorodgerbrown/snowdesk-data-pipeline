@@ -27,7 +27,8 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
-from bulletins.models import RegionDayRating
+from bulletins.models import Bulletin, RegionDayRating
+from regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MajorRegionFactory,
@@ -111,7 +112,9 @@ def _render_model(
     }
 
 
-def _make_today_bulletin(region, render_model: dict, raw_data: dict | None = None):
+def _make_today_bulletin(
+    region: MicroRegion, render_model: dict, raw_data: dict | None = None
+) -> Bulletin:
     """Create a bulletin valid today in ``region`` with the given render_model."""
     vf, vt = _today_window()
     extra = {"raw_data": raw_data} if raw_data is not None else {}
@@ -137,7 +140,7 @@ def _make_today_bulletin(region, render_model: dict, raw_data: dict | None = Non
 
 
 @pytest.mark.django_db
-def test_today_summaries_empty_when_no_bulletins():
+def test_today_summaries_empty_when_no_bulletins() -> None:
     """No bulletins → empty dict."""
     client = Client()
     response = client.get(reverse("api:today_summaries"))
@@ -146,7 +149,7 @@ def test_today_summaries_empty_when_no_bulletins():
 
 
 @pytest.mark.django_db
-def test_today_summaries_returns_expected_shape():
+def test_today_summaries_returns_expected_shape() -> None:
     """A single bulletin today produces a correctly-shaped summary."""
     region = MicroRegionFactory.create(
         region_id="CH-4115", name="Martigny – Verbier", slug="ch-4115"
@@ -172,7 +175,7 @@ def test_today_summaries_returns_expected_shape():
 
 
 @pytest.mark.django_db
-def test_today_summaries_skips_regions_without_bulletins():
+def test_today_summaries_skips_regions_without_bulletins() -> None:
     """Regions whose only bulletin lies outside today's window are omitted."""
     included_region = MicroRegionFactory.create(
         region_id="CH-4115", name="Martigny", slug="ch-4115"
@@ -205,7 +208,7 @@ def test_today_summaries_skips_regions_without_bulletins():
 
 
 @pytest.mark.django_db
-def test_today_summaries_elevation_below():
+def test_today_summaries_elevation_below() -> None:
     """An upper-bound-only elevation renders as ``below N m``."""
     region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     rm = _render_model(
@@ -219,7 +222,7 @@ def test_today_summaries_elevation_below():
 
 
 @pytest.mark.django_db
-def test_today_summaries_partial_aspects():
+def test_today_summaries_partial_aspects() -> None:
     """A subset of aspects renders as a comma-joined list."""
     region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     rm = _render_model(aspects=["N", "NE", "E", "NW"])
@@ -231,7 +234,7 @@ def test_today_summaries_partial_aspects():
 
 
 @pytest.mark.django_db
-def test_today_summaries_prefers_morning_update_over_previous_evening():
+def test_today_summaries_prefers_morning_update_over_previous_evening() -> None:
     """
     When a region has two issues covering today — a previous-day evening
     bulletin (valid from 17:00 yesterday) and a same-day morning update
@@ -289,7 +292,7 @@ def test_today_summaries_prefers_morning_update_over_previous_evening():
 
 
 @pytest.mark.django_db
-def test_today_summaries_handles_error_sentinel_render_model():
+def test_today_summaries_handles_error_sentinel_render_model() -> None:
     """
     A bulletin stored with the validation-failure sentinel
     (``{"version": 0, "error": ...}``) must not 500 the endpoint — the
@@ -325,7 +328,7 @@ def test_today_summaries_handles_error_sentinel_render_model():
 
 
 @pytest.mark.django_db
-def test_resorts_by_region_empty_when_no_resorts():
+def test_resorts_by_region_empty_when_no_resorts() -> None:
     """No Resort rows → empty dict."""
     client = Client()
     response = client.get(reverse("api:resorts_by_region"))
@@ -334,7 +337,7 @@ def test_resorts_by_region_empty_when_no_resorts():
 
 
 @pytest.mark.django_db
-def test_resorts_by_region_groups_names_alphabetically():
+def test_resorts_by_region_groups_names_alphabetically() -> None:
     """Resorts are grouped by region_id and returned in alphabetical order."""
     region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     ResortFactory.create(region=region, name="Verbier")
@@ -354,7 +357,7 @@ def test_resorts_by_region_groups_names_alphabetically():
 
 
 @pytest.mark.django_db
-def test_regions_geojson_returns_feature_collection():
+def test_regions_geojson_returns_feature_collection() -> None:
     """Every Region with a non-null boundary becomes a Feature (CH filter)."""
     boundary = {
         "type": "Polygon",
@@ -430,7 +433,7 @@ def test_regions_geojson_returns_feature_collection():
 
 
 @pytest.mark.django_db
-def test_major_regions_geojson_returns_feature_collection():
+def test_major_regions_geojson_returns_feature_collection() -> None:
     """L1 majors with a non-null boundary become Features; null boundary skipped.
 
     Uses AT prefix to avoid collisions with any pre-loaded CH-* fixture rows.
@@ -468,7 +471,7 @@ def test_major_regions_geojson_returns_feature_collection():
 
 
 @pytest.mark.django_db
-def test_sub_regions_geojson_returns_feature_collection():
+def test_sub_regions_geojson_returns_feature_collection() -> None:
     """L2 subs with a non-null boundary become Features; null boundary skipped."""
     major = MajorRegionFactory.create(prefix="AT-1", country="AT", name_en="Vorarlberg")
     boundary = {
@@ -513,7 +516,7 @@ def test_sub_regions_geojson_returns_feature_collection():
 
 
 @pytest.mark.django_db
-def test_season_ratings_empty_when_no_day_ratings():
+def test_season_ratings_empty_when_no_day_ratings() -> None:
     """No RegionDayRating rows → empty dict."""
     client = Client()
     response = client.get(reverse("api:season_ratings"))
@@ -522,7 +525,7 @@ def test_season_ratings_empty_when_no_day_ratings():
 
 
 @pytest.mark.django_db
-def test_season_ratings_returns_expected_shape():
+def test_season_ratings_returns_expected_shape() -> None:
     """Top-level keys are ISO dates; inner dicts map region_id → rating int."""
     region_a = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
     region_b = MicroRegionFactory.create(region_id="CH-4116", slug="ch-4116")
@@ -561,7 +564,7 @@ def test_season_ratings_returns_expected_shape():
 
 
 @pytest.mark.django_db
-def test_region_summary_returns_html_for_known_region():
+def test_region_summary_returns_html_for_known_region() -> None:
     """200 response with a single ``html`` key containing the region name."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -582,7 +585,7 @@ def test_region_summary_returns_html_for_known_region():
 
 
 @pytest.mark.django_db
-def test_region_summary_includes_geographic_breadcrumb():
+def test_region_summary_includes_geographic_breadcrumb() -> None:
     """The tooltip HTML includes three breadcrumb labels (country › L1 › L2) in order.
 
     The region name moved to the header row alongside the chip and is no
@@ -628,7 +631,7 @@ def test_region_summary_includes_geographic_breadcrumb():
 
 
 @pytest.mark.django_db
-def test_region_summary_unknown_region_returns_404():
+def test_region_summary_unknown_region_returns_404() -> None:
     """An unknown region_id returns 404."""
     client = Client()
     response = client.get(reverse("api:region_summary", args=["CH-UNKNOWN"]))
@@ -636,7 +639,7 @@ def test_region_summary_unknown_region_returns_404():
 
 
 @pytest.mark.django_db
-def test_region_summary_query_count():
+def test_region_summary_query_count() -> None:
     """The tooltip view issues at most 2 DB queries."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -653,7 +656,7 @@ def test_region_summary_query_count():
 
 
 @pytest.mark.django_db
-def test_region_summary_accepts_date_query_param():
+def test_region_summary_accepts_date_query_param() -> None:
     """?d=YYYY-MM-DD is honoured and the chip reflects that day's rating."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -682,7 +685,7 @@ def test_region_summary_accepts_date_query_param():
 
 
 @pytest.mark.django_db
-def test_region_summary_rejects_bad_date():
+def test_region_summary_rejects_bad_date() -> None:
     """A malformed ?d= value returns 400 with {"error": "bad_date"}."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -699,7 +702,7 @@ def test_region_summary_rejects_bad_date():
 
 
 @pytest.mark.django_db
-def test_region_summary_includes_headline_rating_chip():
+def test_region_summary_includes_headline_rating_chip() -> None:
     """The chip is a presentational .danger-tile[data-level] span — no link wrapper."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -735,7 +738,7 @@ def test_region_summary_includes_headline_rating_chip():
 
 
 @pytest.mark.django_db
-def test_region_summary_no_rating_shows_fallback_icon():
+def test_region_summary_no_rating_shows_fallback_icon() -> None:
     """A region with no RegionDayRating row shows the favicon icon, not a chip."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -758,7 +761,7 @@ def test_region_summary_no_rating_shows_fallback_icon():
 
 
 @pytest.mark.django_db
-def test_region_summary_breadcrumb_uses_english_names():
+def test_region_summary_breadcrumb_uses_english_names() -> None:
     """Breadcrumb renders three levels (country › L1 › L2) in English.
 
     The region name is no longer the trailing breadcrumb entry — it moved
@@ -812,7 +815,7 @@ def test_region_summary_breadcrumb_uses_english_names():
 
 
 @pytest.mark.django_db
-def test_region_summary_includes_level_key():
+def test_region_summary_includes_level_key() -> None:
     """JSON response carries a ``level`` key matching the day's max_rating."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -839,7 +842,7 @@ def test_region_summary_includes_level_key():
 
 
 @pytest.mark.django_db
-def test_region_summary_level_key_falls_back_to_no_rating():
+def test_region_summary_level_key_falls_back_to_no_rating() -> None:
     """When no RegionDayRating exists, ``level`` is ``'no_rating'``."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -856,7 +859,7 @@ def test_region_summary_level_key_falls_back_to_no_rating():
 
 
 @pytest.mark.django_db
-def test_region_summary_cta_label_includes_date():
+def test_region_summary_cta_label_includes_date() -> None:
     """The bulletin CTA carries the displayed date in its label when a bulletin exists."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
@@ -896,7 +899,7 @@ def test_region_summary_cta_label_includes_date():
 
 
 @pytest.mark.django_db
-def test_endpoints_return_json_content_type():
+def test_endpoints_return_json_content_type() -> None:
     """All map-page endpoints advertise application/json."""
     client = Client()
     for name in (
@@ -1266,7 +1269,7 @@ def test_regions_geojson_query_count() -> None:
 
 
 @pytest.mark.django_db
-def test_region_summary_no_bulletin_shows_favicon_icon():
+def test_region_summary_no_bulletin_shows_favicon_icon() -> None:
     """When no RegionDayRating exists, the tooltip shows the favicon icon instead of a chip."""
     major = MajorRegionFactory.create(prefix="FR-3", country="FR", name_en="Pyrenees")
     sub = SubRegionFactory.create(prefix="FR-3A", major=major, name_en="Pyrenees")
@@ -1294,7 +1297,7 @@ def test_region_summary_no_bulletin_shows_favicon_icon():
 
 
 @pytest.mark.django_db
-def test_region_summary_no_bulletin_shows_no_bulletin_text():
+def test_region_summary_no_bulletin_shows_no_bulletin_text() -> None:
     """When no RegionDayRating exists, the tooltip shows "No bulletin available" text."""
     major = MajorRegionFactory.create(prefix="FR-3", country="FR", name_en="Pyrenees")
     sub = SubRegionFactory.create(prefix="FR-3A", major=major, name_en="Pyrenees")
@@ -1320,7 +1323,7 @@ def test_region_summary_no_bulletin_shows_no_bulletin_text():
 
 
 @pytest.mark.django_db
-def test_region_summary_no_bulletin_testid_present():
+def test_region_summary_no_bulletin_testid_present() -> None:
     """The no-bulletin element carries the region-tooltip-no-bulletin test id."""
     major = MajorRegionFactory.create(prefix="FR-3", country="FR", name_en="Pyrenees")
     sub = SubRegionFactory.create(prefix="FR-3A", major=major, name_en="Pyrenees")
@@ -1343,7 +1346,7 @@ def test_region_summary_no_bulletin_testid_present():
 
 
 @pytest.mark.django_db
-def test_region_summary_with_bulletin_renders_chip_and_link():
+def test_region_summary_with_bulletin_renders_chip_and_link() -> None:
     """The existing bulletin path still renders the chip + CTA link (regression guard)."""
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(

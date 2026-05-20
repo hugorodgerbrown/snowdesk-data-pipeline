@@ -31,22 +31,23 @@ from ``bulletins.services.weather_fetcher`` and are unaffected by the
 from __future__ import annotations
 
 import pytest
+from pytest_django.fixtures import SettingsWrapper
 
 
 @pytest.fixture(autouse=True)
-def _force_sync_email(settings) -> None:
+def _force_sync_email(settings: SettingsWrapper) -> None:
     """Force synchronous email dispatch in tests by default."""
     settings.SUBSCRIPTIONS_EMAIL_ASYNC = False
 
 
 @pytest.fixture(autouse=True)
-def _force_sync_weather_fetch(settings) -> None:
+def _force_sync_weather_fetch(settings: SettingsWrapper) -> None:
     """Force synchronous weather fetch in tests by default (SNOW-164)."""
     settings.WEATHER_FETCH_ASYNC = False
 
 
 @pytest.fixture(autouse=True)
-def _disable_inline_weather_warmup(monkeypatch) -> None:
+def _disable_inline_weather_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
     """No-op ``public.views.fetch_weather_async`` for every test by default.
 
     Stops the implicit past-date warmup scheduled by ``bulletin_detail``

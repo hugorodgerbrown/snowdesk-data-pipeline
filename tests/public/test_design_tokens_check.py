@@ -81,7 +81,7 @@ def _patched_categories(*tokens: Token) -> tuple[FoundationCategory, ...]:
 
 
 def test_check_passes_when_registry_matches_css(
-    fake_css_dir: Path, monkeypatch
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Happy path: identical values → no errors."""
     _write_css(fake_css_dir, "--color-x: #fff;", "--color-x: #000;")
@@ -103,7 +103,9 @@ def test_check_passes_when_registry_matches_css(
     assert errors == []
 
 
-def test_check_flags_missing_token_in_theme(fake_css_dir: Path, monkeypatch) -> None:
+def test_check_flags_missing_token_in_theme(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Token in registry but missing from @theme → E002."""
     _write_css(fake_css_dir, "--other: 1;", "")
     monkeypatch.setattr(
@@ -117,7 +119,9 @@ def test_check_flags_missing_token_in_theme(fake_css_dir: Path, monkeypatch) -> 
     assert errors[0].id == "public.design_tokens.E002"
 
 
-def test_check_flags_light_value_drift(fake_css_dir: Path, monkeypatch) -> None:
+def test_check_flags_light_value_drift(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Token light value differs → E003."""
     _write_css(fake_css_dir, "--color-x: #fff;", "")
     monkeypatch.setattr(
@@ -131,7 +135,9 @@ def test_check_flags_light_value_drift(fake_css_dir: Path, monkeypatch) -> None:
     assert errors[0].id == "public.design_tokens.E003"
 
 
-def test_check_flags_unexpected_dark_override(fake_css_dir: Path, monkeypatch) -> None:
+def test_check_flags_unexpected_dark_override(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Token marked theme-invariant but appears in .dark {} → E004."""
     _write_css(fake_css_dir, "--color-x: #fff;", "--color-x: #000;")
     monkeypatch.setattr(
@@ -145,7 +151,9 @@ def test_check_flags_unexpected_dark_override(fake_css_dir: Path, monkeypatch) -
     assert errors[0].id == "public.design_tokens.E004"
 
 
-def test_check_flags_missing_dark_override(fake_css_dir: Path, monkeypatch) -> None:
+def test_check_flags_missing_dark_override(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Token has dark value in registry but no .dark {} entry → E005."""
     _write_css(fake_css_dir, "--color-x: #fff;", "")
     monkeypatch.setattr(
@@ -159,7 +167,9 @@ def test_check_flags_missing_dark_override(fake_css_dir: Path, monkeypatch) -> N
     assert errors[0].id == "public.design_tokens.E005"
 
 
-def test_check_flags_dark_value_drift(fake_css_dir: Path, monkeypatch) -> None:
+def test_check_flags_dark_value_drift(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Token dark value differs → E006."""
     _write_css(fake_css_dir, "--color-x: #fff;", "--color-x: #111;")
     monkeypatch.setattr(
@@ -173,7 +183,9 @@ def test_check_flags_dark_value_drift(fake_css_dir: Path, monkeypatch) -> None:
     assert errors[0].id == "public.design_tokens.E006"
 
 
-def test_check_flags_missing_css_file(tmp_path: Path, monkeypatch) -> None:
+def test_check_flags_missing_css_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Missing src/css/main.css → E001 with a helpful path."""
     monkeypatch.setattr("public.design_tokens.FOUNDATION_CATEGORIES", (), raising=False)
     with override_settings(BASE_DIR=str(tmp_path)):
@@ -182,7 +194,9 @@ def test_check_flags_missing_css_file(tmp_path: Path, monkeypatch) -> None:
     assert errors[0].id == "public.design_tokens.E001"
 
 
-def test_check_skips_icon_tokens(fake_css_dir: Path, monkeypatch) -> None:
+def test_check_skips_icon_tokens(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """IconToken entries are static assets, not CSS — the check ignores them.
 
     A category mixing Token and IconToken should validate the Token side
@@ -207,7 +221,9 @@ def test_check_skips_icon_tokens(fake_css_dir: Path, monkeypatch) -> None:
     assert errors == []
 
 
-def test_check_normalises_whitespace_in_values(fake_css_dir: Path, monkeypatch) -> None:
+def test_check_normalises_whitespace_in_values(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Cosmetic whitespace differences don't trigger drift errors."""
     _write_css(
         fake_css_dir,

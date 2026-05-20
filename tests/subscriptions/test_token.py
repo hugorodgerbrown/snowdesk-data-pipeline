@@ -30,18 +30,18 @@ from subscriptions.services.token import (
 class TestGenerateToken:
     """Tests for generate_token."""
 
-    def test_returns_non_empty_string(self):
+    def test_returns_non_empty_string(self) -> None:
         token = generate_token("alice@example.com", salt=SALT_ACCOUNT_ACCESS)
         assert isinstance(token, str)
         assert len(token) > 0
 
-    def test_no_forward_slash_in_token(self):
+    def test_no_forward_slash_in_token(self) -> None:
         """Tokens must be safe as URL path segments — no '/' characters."""
         for salt in (SALT_ACCOUNT_ACCESS, SALT_UNSUBSCRIBE):
             token = generate_token("alice@example.com", salt=salt)
             assert "/" not in token, f"Token for salt={salt!r} contains '/': {token!r}"
 
-    def test_different_salts_produce_different_tokens(self):
+    def test_different_salts_produce_different_tokens(self) -> None:
         token_a = generate_token("alice@example.com", salt=SALT_ACCOUNT_ACCESS)
         token_b = generate_token("alice@example.com", salt=SALT_UNSUBSCRIBE)
         assert token_a != token_b
@@ -50,25 +50,25 @@ class TestGenerateToken:
 class TestVerifyToken:
     """Tests for verify_token."""
 
-    def test_round_trip_account_access(self):
+    def test_round_trip_account_access(self) -> None:
         token = generate_token("alice@example.com", salt=SALT_ACCOUNT_ACCESS)
         result = verify_token(
             token, salt=SALT_ACCOUNT_ACCESS, max_age=settings.ACCOUNT_TOKEN_MAX_AGE
         )
         assert result == "alice@example.com"
 
-    def test_round_trip_unsubscribe(self):
+    def test_round_trip_unsubscribe(self) -> None:
         token = generate_token("alice@example.com", salt=SALT_UNSUBSCRIBE)
         result = verify_token(token, salt=SALT_UNSUBSCRIBE, max_age=None)
         assert result == "alice@example.com"
 
-    def test_cross_salt_replay_account_to_unsubscribe_fails(self):
+    def test_cross_salt_replay_account_to_unsubscribe_fails(self) -> None:
         """A token signed with SALT_ACCOUNT_ACCESS cannot be verified as SALT_UNSUBSCRIBE."""
         token = generate_token("alice@example.com", salt=SALT_ACCOUNT_ACCESS)
         result = verify_token(token, salt=SALT_UNSUBSCRIBE, max_age=None)
         assert result is None
 
-    def test_cross_salt_replay_unsubscribe_to_account_fails(self):
+    def test_cross_salt_replay_unsubscribe_to_account_fails(self) -> None:
         """A token signed with SALT_UNSUBSCRIBE cannot be verified as SALT_ACCOUNT_ACCESS."""
         token = generate_token("alice@example.com", salt=SALT_UNSUBSCRIBE)
         result = verify_token(
@@ -76,7 +76,7 @@ class TestVerifyToken:
         )
         assert result is None
 
-    def test_expired_account_access_token_returns_none(self):
+    def test_expired_account_access_token_returns_none(self) -> None:
         with freeze_time("2026-01-01T12:00:00Z"):
             token = generate_token("alice@example.com", salt=SALT_ACCOUNT_ACCESS)
         future = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC) + timedelta(
@@ -88,7 +88,7 @@ class TestVerifyToken:
             )
         assert result is None
 
-    def test_unsubscribe_token_does_not_expire(self):
+    def test_unsubscribe_token_does_not_expire(self) -> None:
         """Unsubscribe tokens have no expiry — max_age=None."""
         with freeze_time("2020-01-01T00:00:00Z"):
             token = generate_token("alice@example.com", salt=SALT_UNSUBSCRIBE)
@@ -97,7 +97,7 @@ class TestVerifyToken:
             result = verify_token(token, salt=SALT_UNSUBSCRIBE, max_age=None)
         assert result == "alice@example.com"
 
-    def test_tampered_token_returns_none(self):
+    def test_tampered_token_returns_none(self) -> None:
         token = generate_token("alice@example.com", salt=SALT_ACCOUNT_ACCESS)
         tampered = token[:-4] + "ZZZZ"
         result = verify_token(
@@ -105,7 +105,7 @@ class TestVerifyToken:
         )
         assert result is None
 
-    def test_garbage_string_returns_none(self):
+    def test_garbage_string_returns_none(self) -> None:
         result = verify_token(
             "not-a-token",
             salt=SALT_ACCOUNT_ACCESS,
@@ -113,7 +113,7 @@ class TestVerifyToken:
         )
         assert result is None
 
-    def test_empty_string_returns_none(self):
+    def test_empty_string_returns_none(self) -> None:
         result = verify_token(
             "", salt=SALT_ACCOUNT_ACCESS, max_age=settings.ACCOUNT_TOKEN_MAX_AGE
         )
@@ -123,40 +123,40 @@ class TestVerifyToken:
 class TestUnsubscribeConvenienceWrappers:
     """Tests for generate_unsubscribe_token / verify_unsubscribe_token."""
 
-    def test_round_trip(self):
+    def test_round_trip(self) -> None:
         token = generate_unsubscribe_token("alice@example.com", "CH-4115")
         result = verify_unsubscribe_token(token)
         assert result == ("alice@example.com", "CH-4115")
 
-    def test_no_forward_slash(self):
+    def test_no_forward_slash(self) -> None:
         token = generate_unsubscribe_token("alice@example.com", "CH-4115")
         assert "/" not in token
 
-    def test_tampered_unsubscribe_token_returns_none(self):
+    def test_tampered_unsubscribe_token_returns_none(self) -> None:
         token = generate_unsubscribe_token("alice@example.com", "CH-4115")
         tampered = token[:-4] + "ZZZZ"
         result = verify_unsubscribe_token(tampered)
         assert result is None
 
-    def test_garbage_token_returns_none(self):
+    def test_garbage_token_returns_none(self) -> None:
         result = verify_unsubscribe_token("garbage")
         assert result is None
 
-    def test_region_id_with_dash_handled_correctly(self):
+    def test_region_id_with_dash_handled_correctly(self) -> None:
         """Region IDs contain '-' but not '|' so splitting is unambiguous."""
         token = generate_unsubscribe_token("user@example.com", "CH-4115-SUB")
         result = verify_unsubscribe_token(token)
         assert result == ("user@example.com", "CH-4115-SUB")
 
-    def test_generate_raises_on_separator_in_email(self):
+    def test_generate_raises_on_separator_in_email(self) -> None:
         with pytest.raises(ValueError, match="must not contain"):
             generate_unsubscribe_token("bad|email@example.com", "CH-4115")
 
-    def test_generate_raises_on_separator_in_region_id(self):
+    def test_generate_raises_on_separator_in_region_id(self) -> None:
         with pytest.raises(ValueError, match="must not contain"):
             generate_unsubscribe_token("alice@example.com", "CH|4115")
 
-    def test_does_not_expire(self):
+    def test_does_not_expire(self) -> None:
         with freeze_time("2020-01-01T00:00:00Z"):
             token = generate_unsubscribe_token("alice@example.com", "CH-4115")
         with freeze_time("2025-06-01T00:00:00Z"):

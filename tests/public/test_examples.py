@@ -13,6 +13,7 @@ never the ``/examples/...`` URL itself.
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import UTC, datetime
 
 import pytest
@@ -20,6 +21,8 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
+from bulletins.models import Bulletin
+from regions.models import MicroRegion
 from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 
@@ -29,7 +32,7 @@ def _wrap(properties: dict) -> dict:
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
+def _clear_cache() -> Generator[None, None, None]:
     """Clear the cache before and after each test."""
     cache.clear()
     yield
@@ -37,12 +40,14 @@ def _clear_cache():
 
 
 @pytest.fixture()
-def region():
+def region() -> MicroRegion:
     """Return a Region with a human-readable name."""
     return MicroRegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
-def _make_bulletin_with_region(region, danger_level: str, issued_at: datetime):
+def _make_bulletin_with_region(
+    region: MicroRegion, danger_level: str, issued_at: datetime
+) -> Bulletin:
     """Create a bulletin with a specific danger level linked to a region."""
     bulletin = BulletinFactory.create(
         raw_data=_wrap(
@@ -79,7 +84,7 @@ class TestDeprecatedRandomRedirect:
 class TestExamplesRandom:
     """Tests for the ``/examples/random/`` view."""
 
-    def test_renders_bulletin_inline(self, client: Client, region) -> None:
+    def test_renders_bulletin_inline(self, client: Client, region: MicroRegion) -> None:
         """With bulletins available, renders the bulletin page at the same URL."""
         _make_bulletin_with_region(
             region, "moderate", datetime(2025, 3, 15, 8, 0, tzinfo=UTC)
@@ -96,7 +101,9 @@ class TestExamplesRandom:
         assert response.status_code == 302
         assert response["Location"] == "/"
 
-    def test_canonical_url_points_at_today_form2(self, client: Client, region) -> None:
+    def test_canonical_url_points_at_today_form2(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """``/examples/random/`` is evergreen ⇒ canonical = no-date form 2."""
         _make_bulletin_with_region(
             region, "moderate", datetime(2025, 3, 15, 8, 0, tzinfo=UTC)
@@ -128,7 +135,7 @@ class TestExamplesCategory:
         ],
     )
     def test_renders_inline_for_each_danger_level(
-        self, client: Client, region, slug: str, caaml_key: str
+        self, client: Client, region: MicroRegion, slug: str, caaml_key: str
     ) -> None:
         """Each valid danger level slug renders the matching bulletin inline."""
         _make_bulletin_with_region(
@@ -150,7 +157,9 @@ class TestExamplesCategory:
         response = client.get(url)
         assert response.status_code == 404
 
-    def test_no_matching_bulletins_returns_404(self, client: Client, region) -> None:
+    def test_no_matching_bulletins_returns_404(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Returns 404 when no bulletins match the requested danger level."""
         _make_bulletin_with_region(
             region, "low", datetime(2025, 3, 15, 8, 0, tzinfo=UTC)
@@ -160,7 +169,7 @@ class TestExamplesCategory:
         assert response.status_code == 404
 
     def test_canonical_url_points_at_real_bulletin(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """The canonical URL points at the form-3 URL of the matched bulletin."""
         _make_bulletin_with_region(
@@ -179,7 +188,9 @@ class TestExamplesCategory:
         assert "/ch-4115/valais/2025-03-15/" in canonical
         assert "/examples/" not in canonical
 
-    def test_pinned_bulletin_actually_renders(self, client: Client, region) -> None:
+    def test_pinned_bulletin_actually_renders(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """The matched bulletin is pinned via ``requested_issue_id``."""
         # Two bulletins on the same date with different danger levels.
         # ``examples_category`` should pick the one matching the URL slug

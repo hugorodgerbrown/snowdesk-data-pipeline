@@ -20,6 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 from django.contrib.auth.models import AnonymousUser
+from django.http import HttpRequest
 from django.middleware.csrf import get_token
 from django.template.loader import render_to_string
 from django.test import Client, RequestFactory
@@ -41,7 +42,7 @@ def rf() -> RequestFactory:
 
 
 @pytest.fixture()
-def anon_request(rf: RequestFactory):
+def anon_request(rf: RequestFactory) -> HttpRequest:
     """Return a GET request with an anonymous user attached."""
     request = rf.get("/")
     request.user = AnonymousUser()
@@ -328,7 +329,7 @@ class TestStatusPageChildren:
         # No CTA block rendered
         assert "inline-block" not in html
 
-    def test_manage_saved_has_cta_button(self, anon_request) -> None:
+    def test_manage_saved_has_cta_button(self, anon_request: HttpRequest) -> None:
         """manage_saved.html renders the 'Back to Snowdesk' primary anchor."""
         html = render_to_string(
             "subscriptions/manage_saved.html", {}, request=anon_request
@@ -337,7 +338,7 @@ class TestStatusPageChildren:
         assert "Back to Snowdesk" in html
         assert "inline-block" in html  # anchor button
 
-    def test_link_expired_has_cta_button(self, anon_request) -> None:
+    def test_link_expired_has_cta_button(self, anon_request: HttpRequest) -> None:
         """link_expired.html renders the 'Request a new link' primary anchor."""
         html = render_to_string(
             "subscriptions/link_expired.html", {}, request=anon_request
@@ -346,7 +347,7 @@ class TestStatusPageChildren:
         assert "Request a new link" in html
         assert "inline-block" in html
 
-    def test_unsubscribe_done_has_cta_button(self, anon_request) -> None:
+    def test_unsubscribe_done_has_cta_button(self, anon_request: HttpRequest) -> None:
         """unsubscribe_done.html renders the 'Back to Snowdesk' anchor."""
         html = render_to_string(
             "subscriptions/unsubscribe_done.html", {}, request=anon_request
@@ -381,7 +382,7 @@ class TestStatusPageChildren:
         assert "text-xs text-text-3" in html
         assert 'href="/"' in html
 
-    def test_all_status_pages_share_chrome(self, anon_request) -> None:
+    def test_all_status_pages_share_chrome(self, anon_request: HttpRequest) -> None:
         """All four status pages share the same flex + card wrapper classes."""
         templates = [
             "subscriptions/manage_sent.html",

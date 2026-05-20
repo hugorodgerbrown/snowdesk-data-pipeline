@@ -20,7 +20,9 @@ Test matrix:
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 import requests
@@ -30,6 +32,8 @@ from django.test import Client, RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
+from bulletins.models import Bulletin
+from regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -58,7 +62,7 @@ def _weather_url(region_id: str, date_str: str) -> str:
 class TestFetchWeatherSnippetGuards:
     """Tests for request-guard behaviour (non-HTMX, wrong method, bad inputs)."""
 
-    def test_non_htmx_post_returns_400(self):
+    def test_non_htmx_post_returns_400(self) -> None:
         """Plain POST without HX-Request header is rejected with 400."""
         client = Client()
         region = MicroRegionFactory.create()
@@ -66,7 +70,7 @@ class TestFetchWeatherSnippetGuards:
         response = client.post(url)
         assert response.status_code == 400
 
-    def test_htmx_get_returns_405(self):
+    def test_htmx_get_returns_405(self) -> None:
         """HTMX GET is rejected with 405 (require_POST)."""
         client = Client()
         region = MicroRegionFactory.create()
@@ -74,14 +78,14 @@ class TestFetchWeatherSnippetGuards:
         response = client.get(url, HTTP_HX_REQUEST="true")
         assert response.status_code == 405
 
-    def test_unknown_region_returns_404(self):
+    def test_unknown_region_returns_404(self) -> None:
         """Unknown region_id returns 404."""
         client = Client()
         url = _weather_url("CH-NOTEXIST", "2026-01-15")
         response = client.post(url, HTTP_HX_REQUEST="true")
         assert response.status_code == 404
 
-    def test_malformed_date_returns_400(self):
+    def test_malformed_date_returns_400(self) -> None:
         """Non-ISO date string returns 400."""
         client = Client()
         region = MicroRegionFactory.create()
@@ -99,7 +103,9 @@ class TestFetchWeatherSnippetGuards:
 class TestFetchWeatherSnippetForecastPath:
     """Forecast path: target_date == today, uses fetch_weather_for_region."""
 
-    def test_forecast_path_returns_populated_header(self, monkeypatch):
+    def test_forecast_path_returns_populated_header(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Forecast path returns the weather header with icon and condition label."""
         region = MicroRegionFactory.create()
         today = timezone.localdate()
@@ -133,7 +139,9 @@ class TestFetchWeatherSnippetForecastPath:
         # No HTMX retry trigger on a successful response.
         assert "hx-post" not in content
 
-    def test_forecast_path_no_htmx_trigger_on_response(self, monkeypatch):
+    def test_forecast_path_no_htmx_trigger_on_response(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """weather_htmx_trigger is always False in the snippet response."""
         region = MicroRegionFactory.create()
         today = timezone.localdate()
@@ -161,7 +169,9 @@ class TestFetchWeatherSnippetForecastPath:
 class TestFetchWeatherSnippetArchivePath:
     """Archive path: target_date < today, uses fetch_archive_for_region."""
 
-    def test_archive_path_returns_populated_header(self, monkeypatch):
+    def test_archive_path_returns_populated_header(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Archive path returns the weather header with icon and condition label."""
         region = MicroRegionFactory.create()
         past_date = timezone.localdate().replace(year=2026, month=1, day=10)
@@ -197,7 +207,9 @@ class TestFetchWeatherSnippetArchivePath:
         # No retry trigger.
         assert "hx-post" not in content
 
-    def test_archive_path_empty_results_returns_fallback(self, monkeypatch):
+    def test_archive_path_empty_results_returns_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Empty archive result returns the no-weather fallback fragment."""
         region = MicroRegionFactory.create()
         past_date = timezone.localdate().replace(year=2026, month=1, day=10)
@@ -226,7 +238,9 @@ class TestFetchWeatherSnippetArchivePath:
 class TestFetchWeatherSnippetExistingSnapshot:
     """DB-first guard: if a snapshot already exists the API must not be called."""
 
-    def test_existing_snapshot_skips_forecast_fetch(self, monkeypatch):
+    def test_existing_snapshot_skips_forecast_fetch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When a snapshot exists for (region, today) the forecast API is not called."""
         region = MicroRegionFactory.create()
         today = timezone.localdate()
@@ -238,7 +252,7 @@ class TestFetchWeatherSnippetExistingSnapshot:
             sunset=datetime(today.year, today.month, today.day, 20, 0, tzinfo=UTC),
         )
 
-        def _must_not_be_called(*args, **kwargs):
+        def _must_not_be_called(*args: Any, **kwargs: Any) -> None:
             raise AssertionError("API must not be called")
 
         monkeypatch.setattr(
@@ -255,7 +269,9 @@ class TestFetchWeatherSnippetExistingSnapshot:
         assert 'data-testid="bulletin-header-hero-icon"' in content
         assert 'data-weather-bucket="none"' not in content
 
-    def test_existing_snapshot_skips_archive_fetch(self, monkeypatch):
+    def test_existing_snapshot_skips_archive_fetch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When a snapshot exists for (region, past_date) the archive API is not called."""
         region = MicroRegionFactory.create()
         past_date = timezone.localdate().replace(year=2026, month=1, day=10)
@@ -271,7 +287,7 @@ class TestFetchWeatherSnippetExistingSnapshot:
             ),
         )
 
-        def _must_not_be_called(*args, **kwargs):
+        def _must_not_be_called(*args: Any, **kwargs: Any) -> None:
             raise AssertionError("API must not be called")
 
         monkeypatch.setattr(
@@ -298,7 +314,9 @@ class TestFetchWeatherSnippetExistingSnapshot:
 class TestFetchWeatherSnippetFailure:
     """Fetch failure: fetcher raises an exception; view returns safe fallback."""
 
-    def test_fetch_exception_returns_200_fallback(self, monkeypatch):
+    def test_fetch_exception_returns_200_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Fetcher raising HTTPError returns 200 with no-weather fallback."""
         region = MicroRegionFactory.create()
         today = timezone.localdate()
@@ -320,7 +338,9 @@ class TestFetchWeatherSnippetFailure:
         # No HTMX retry trigger — must not loop.
         assert "hx-post" not in content
 
-    def test_archive_fetch_exception_returns_200_fallback(self, monkeypatch):
+    def test_archive_fetch_exception_returns_200_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Archive fetcher raising an exception returns 200 with no-weather fallback."""
         region = MicroRegionFactory.create()
         past_date = timezone.localdate().replace(year=2026, month=1, day=10)
@@ -351,7 +371,9 @@ class TestFetchWeatherSnippetFailure:
 class TestFetchWeatherSnippetCsrf:
     """CSRF enforcement: the endpoint must reject requests missing a valid token."""
 
-    def test_post_without_csrf_token_returns_403(self, monkeypatch):
+    def test_post_without_csrf_token_returns_403(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """POST without X-CSRFToken header is rejected with 403 when CSRF checks are enforced."""
         region = MicroRegionFactory.create()
         today = timezone.localdate()
@@ -367,7 +389,9 @@ class TestFetchWeatherSnippetCsrf:
 
         assert response.status_code == 403
 
-    def test_post_with_valid_csrf_token_returns_200(self, monkeypatch):
+    def test_post_with_valid_csrf_token_returns_200(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """POST with a valid X-CSRFToken header returns 200 when CSRF checks are enforced."""
         region = MicroRegionFactory.create()
         today = timezone.localdate()
@@ -408,13 +432,13 @@ class TestBulletinDetailWeatherTrigger:
     """Integration: bulletin page includes hx-post trigger when no WeatherSnapshot."""
 
     @pytest.fixture(autouse=True)
-    def _clear_cache(self):
+    def _clear_cache(self) -> Generator[None, None, None]:
         """Clear the cache before and after each test."""
         cache.clear()
         yield
         cache.clear()
 
-    def _make_today_bulletin_for_region(self, region):
+    def _make_today_bulletin_for_region(self, region: MicroRegion) -> Bulletin:
         """Create a bulletin valid today for ``region`` (happy-path render)."""
         today = timezone.localdate()
         vf = datetime(today.year, today.month, today.day, 6, 0, tzinfo=UTC)
@@ -429,7 +453,7 @@ class TestBulletinDetailWeatherTrigger:
         )
         return bulletin
 
-    def _bulletin_url(self, region, target_date):
+    def _bulletin_url(self, region: MicroRegion, target_date: Any) -> str:
         """Build the canonical bulletin URL for ``(region, target_date)``."""
         return reverse(
             "public:bulletin_date",
@@ -440,7 +464,7 @@ class TestBulletinDetailWeatherTrigger:
             },
         )
 
-    def test_bulletin_detail_includes_hx_post_when_no_snapshot(self):
+    def test_bulletin_detail_includes_hx_post_when_no_snapshot(self) -> None:
         """When bulletin_detail renders with no WeatherSnapshot, hx-post is in the HTML."""
         region = MicroRegionFactory.create(
             region_id="CH-4115", name="Valais", slug="ch-4115"
@@ -461,7 +485,7 @@ class TestBulletinDetailWeatherTrigger:
         )
         assert expected_snippet_url in content
 
-    def test_no_snapshot_response_is_uncacheable(self):
+    def test_no_snapshot_response_is_uncacheable(self) -> None:
         """The no-snapshot response must not be browser-cacheable.
 
         SNOW-161 follow-up: when the page bakes in the HTMX trigger, the
@@ -487,7 +511,7 @@ class TestBulletinDetailWeatherTrigger:
         assert "no-cache" in cache_control
         assert "must-revalidate" in cache_control
 
-    def test_snapshot_present_response_is_cacheable(self):
+    def test_snapshot_present_response_is_cacheable(self) -> None:
         """When weather_display is populated, the existing Cache-Control strategy is preserved."""
         region = MicroRegionFactory.create(
             region_id="CH-4119", name="Uri", slug="ch-4119"
@@ -512,11 +536,13 @@ class TestBulletinDetailWeatherTrigger:
         assert "max-age=" in cache_control
         assert "no-store" not in cache_control
 
-    def test_past_date_no_snapshot_schedules_async_fetch(self, monkeypatch):
+    def test_past_date_no_snapshot_schedules_async_fetch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Visiting a past-date URL with no snapshot calls fetch_weather_async."""
         calls: list[tuple] = []
 
-        def _spy(region, target_date):
+        def _spy(region: MicroRegion, target_date: Any) -> None:
             calls.append((region.region_id, target_date))
 
         monkeypatch.setattr("public.views.fetch_weather_async", _spy)
@@ -549,7 +575,9 @@ class TestBulletinDetailWeatherTrigger:
         assert response.status_code == 200
         assert calls == [("CH-9001", past)]
 
-    def test_today_no_snapshot_does_not_schedule_async_fetch(self, monkeypatch):
+    def test_today_no_snapshot_does_not_schedule_async_fetch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Today's page keeps the HTMX path; the async warmup only covers past dates."""
         calls: list = []
         monkeypatch.setattr(

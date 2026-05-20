@@ -127,7 +127,7 @@ class TestAdminXssEscape:
 
         return BulletinAdmin(BulletinModel, site)
 
-    def _bulletin(self, raw_properties: dict):
+    def _bulletin(self, raw_properties: dict) -> Bulletin:
         """Create a Bulletin with the given raw_data properties payload."""
         from tests.factories import BulletinFactory
 

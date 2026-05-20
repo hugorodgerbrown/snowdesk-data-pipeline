@@ -22,16 +22,16 @@ from tests.factories import (
 class TestAaguidLookup:
     """Tests for subscriptions.aaguids.lookup."""
 
-    def test_returns_name_for_known_aaguid(self):
+    def test_returns_name_for_known_aaguid(self) -> None:
         assert (
             aaguid_lookup(uuid.UUID("bada5566-a7aa-401f-bd96-45619a55120d"))
             == "1Password"
         )
 
-    def test_returns_none_for_unknown_aaguid(self):
+    def test_returns_none_for_unknown_aaguid(self) -> None:
         assert aaguid_lookup(uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")) is None
 
-    def test_returns_none_for_null_aaguid(self):
+    def test_returns_none_for_null_aaguid(self) -> None:
         assert aaguid_lookup(None) is None
 
 
@@ -39,49 +39,49 @@ class TestAaguidLookup:
 class TestSubscriberModel:
     """Tests for the Subscriber model."""
 
-    def test_str_returns_email(self):
+    def test_str_returns_email(self) -> None:
         sub = SubscriberFactory.create(email="alice@example.com")
         assert str(sub) == "alice@example.com"
 
-    def test_to_string_returns_email(self):
+    def test_to_string_returns_email(self) -> None:
         sub = SubscriberFactory.create(email="bob@example.com")
         assert sub.to_string() == "bob@example.com"
 
-    def test_default_status_is_pending_on_fresh_create(self):
+    def test_default_status_is_pending_on_fresh_create(self) -> None:
         sub = Subscriber.objects.create(email="fresh@example.com")
         assert sub.status == Subscriber.Status.PENDING
 
-    def test_factory_default_status_is_active(self):
+    def test_factory_default_status_is_active(self) -> None:
         sub = SubscriberFactory.create()
         assert sub.status == Subscriber.Status.ACTIVE
 
-    def test_confirmed_at_nullable(self):
+    def test_confirmed_at_nullable(self) -> None:
         sub = SubscriberFactory.create()
         sub.confirmed_at = None
         sub.save(update_fields=["confirmed_at"])
         sub.refresh_from_db()
         assert sub.confirmed_at is None
 
-    def test_email_is_unique(self):
+    def test_email_is_unique(self) -> None:
         from django.db import IntegrityError
 
         SubscriberFactory.create(email="unique@example.com")
         with pytest.raises(IntegrityError):
             SubscriberFactory.create(email="unique@example.com")
 
-    def test_has_uuid(self):
+    def test_has_uuid(self) -> None:
         sub = SubscriberFactory.create()
         assert sub.uuid is not None
 
-    def test_has_created_at(self):
+    def test_has_created_at(self) -> None:
         sub = SubscriberFactory.create()
         assert sub.created_at is not None
 
-    def test_status_choices(self):
+    def test_status_choices(self) -> None:
         assert Subscriber.Status.PENDING == "pending"
         assert Subscriber.Status.ACTIVE == "active"
 
-    def test_pending_status_persists(self):
+    def test_pending_status_persists(self) -> None:
         sub = SubscriberFactory.create(status=Subscriber.Status.PENDING)
         sub.refresh_from_db()
         assert sub.status == Subscriber.Status.PENDING
@@ -91,25 +91,25 @@ class TestSubscriberModel:
 class TestSubscriberQuerySet:
     """Tests for SubscriberQuerySet custom methods."""
 
-    def test_active_returns_only_active(self):
+    def test_active_returns_only_active(self) -> None:
         active = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
         SubscriberFactory.create(status=Subscriber.Status.PENDING)
         result = Subscriber.objects.active()
         assert active in result
         assert result.count() == 1
 
-    def test_active_excludes_pending(self):
+    def test_active_excludes_pending(self) -> None:
         SubscriberFactory.create(status=Subscriber.Status.PENDING)
         result = Subscriber.objects.active()
         assert result.count() == 0
 
-    def test_by_email_case_insensitive(self):
+    def test_by_email_case_insensitive(self) -> None:
         sub = SubscriberFactory.create(email="Test@Example.COM")
         result = Subscriber.objects.by_email("test@example.com")
         assert sub in result
         assert result.count() == 1
 
-    def test_by_email_no_match(self):
+    def test_by_email_no_match(self) -> None:
         result = Subscriber.objects.by_email("nobody@example.com")
         assert result.count() == 0
 
@@ -118,16 +118,16 @@ class TestSubscriberQuerySet:
 class TestSubscriptionModel:
     """Tests for the Subscription model."""
 
-    def test_str_returns_email_arrow_region(self):
+    def test_str_returns_email_arrow_region(self) -> None:
         sub = SubscriptionFactory.create()
         expected = f"{sub.subscriber.email} \u2192 {sub.region.region_id}"
         assert str(sub) == expected
 
-    def test_to_string_matches_str(self):
+    def test_to_string_matches_str(self) -> None:
         sub = SubscriptionFactory.create()
         assert sub.to_string() == str(sub)
 
-    def test_unique_together_constraint(self):
+    def test_unique_together_constraint(self) -> None:
         from django.db import IntegrityError
 
         subscriber = SubscriberFactory.create()
@@ -136,7 +136,7 @@ class TestSubscriptionModel:
         with pytest.raises(IntegrityError):
             SubscriptionFactory.create(subscriber=subscriber, region=region)
 
-    def test_has_uuid(self):
+    def test_has_uuid(self) -> None:
         sub = SubscriptionFactory.create()
         assert sub.uuid is not None
 
@@ -145,7 +145,7 @@ class TestSubscriptionModel:
 class TestSubscriptionQuerySet:
     """Tests for SubscriptionQuerySet custom methods."""
 
-    def test_for_subscriber_filters_correctly(self):
+    def test_for_subscriber_filters_correctly(self) -> None:
         subscriber = SubscriberFactory.create()
         other = SubscriberFactory.create()
         mine = SubscriptionFactory.create(subscriber=subscriber)
@@ -153,7 +153,7 @@ class TestSubscriptionQuerySet:
         result = Subscription.objects.for_subscriber(subscriber)
         assert list(result) == [mine]
 
-    def test_active_excludes_pending_subscribers(self):
+    def test_active_excludes_pending_subscribers(self) -> None:
         active_sub = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
         pending_sub = SubscriberFactory.create(status=Subscriber.Status.PENDING)
         active_sn = SubscriptionFactory.create(subscriber=active_sub)
@@ -162,7 +162,7 @@ class TestSubscriptionQuerySet:
         assert active_sn in result
         assert result.count() == 1
 
-    def test_active_returns_empty_when_all_pending(self):
+    def test_active_returns_empty_when_all_pending(self) -> None:
         pending_sub = SubscriberFactory.create(status=Subscriber.Status.PENDING)
         SubscriptionFactory.create(subscriber=pending_sub)
         result = Subscription.objects.active()
@@ -178,53 +178,53 @@ class TestSubscriptionQuerySet:
 class TestPasskeyCredentialModel:
     """Tests for the PasskeyCredential model."""
 
-    def test_str_returns_email_and_name(self):
+    def test_str_returns_email_and_name(self) -> None:
         passkey = PasskeyCredentialFactory.create(name="My passkey")
         assert "My passkey" in str(passkey)
         assert passkey.subscriber.email in str(passkey)
 
-    def test_to_string_matches_str(self):
+    def test_to_string_matches_str(self) -> None:
         passkey = PasskeyCredentialFactory.create()
         assert passkey.to_string() == str(passkey)
 
-    def test_has_uuid(self):
+    def test_has_uuid(self) -> None:
         passkey = PasskeyCredentialFactory.create()
         assert passkey.uuid is not None
 
-    def test_has_created_at(self):
+    def test_has_created_at(self) -> None:
         passkey = PasskeyCredentialFactory.create()
         assert passkey.created_at is not None
 
-    def test_credential_id_is_unique(self):
+    def test_credential_id_is_unique(self) -> None:
         from django.db import IntegrityError
 
         PasskeyCredentialFactory.create(credential_id="unique-cred")
         with pytest.raises(IntegrityError):
             PasskeyCredentialFactory.create(credential_id="unique-cred")
 
-    def test_cascade_deletes_with_subscriber(self):
+    def test_cascade_deletes_with_subscriber(self) -> None:
         passkey = PasskeyCredentialFactory.create()
         pk = passkey.pk
         passkey.subscriber.delete()
         assert not PasskeyCredential.objects.filter(pk=pk).exists()
 
-    def test_default_sign_count_is_zero(self):
+    def test_default_sign_count_is_zero(self) -> None:
         passkey = PasskeyCredentialFactory.create(sign_count=0)
         assert passkey.sign_count == 0
 
-    def test_backed_up_default_false(self):
+    def test_backed_up_default_false(self) -> None:
         passkey = PasskeyCredentialFactory.create()
         assert passkey.backed_up is False
 
-    def test_last_used_at_nullable(self):
+    def test_last_used_at_nullable(self) -> None:
         passkey = PasskeyCredentialFactory.create(last_used_at=None)
         assert passkey.last_used_at is None
 
-    def test_aaguid_nullable(self):
+    def test_aaguid_nullable(self) -> None:
         passkey = PasskeyCredentialFactory.create(aaguid=None)
         assert passkey.aaguid is None
 
-    def test_display_name_uses_aaguid_lookup_when_known(self):
+    def test_display_name_uses_aaguid_lookup_when_known(self) -> None:
         _1password_aaguid = uuid.UUID("bada5566-a7aa-401f-bd96-45619a55120d")
         passkey = PasskeyCredentialFactory.create(
             aaguid=_1password_aaguid,
@@ -232,7 +232,7 @@ class TestPasskeyCredentialModel:
         )
         assert passkey.display_name.startswith("1Password — ")
 
-    def test_display_name_falls_back_to_stored_name_for_unknown_aaguid(self):
+    def test_display_name_falls_back_to_stored_name_for_unknown_aaguid(self) -> None:
         unknown_aaguid = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
         passkey = PasskeyCredentialFactory.create(
             aaguid=unknown_aaguid,
@@ -240,7 +240,7 @@ class TestPasskeyCredentialModel:
         )
         assert passkey.display_name == "Device passkey — 1 Jan 2025"
 
-    def test_display_name_falls_back_to_stored_name_when_aaguid_is_none(self):
+    def test_display_name_falls_back_to_stored_name_when_aaguid_is_none(self) -> None:
         passkey = PasskeyCredentialFactory.create(
             aaguid=None,
             name="Synced passkey — 1 Jan 2025",
@@ -252,7 +252,7 @@ class TestPasskeyCredentialModel:
 class TestPasskeyCredentialQuerySet:
     """Tests for PasskeyCredentialQuerySet custom methods."""
 
-    def test_for_subscriber_returns_correct_passkeys(self):
+    def test_for_subscriber_returns_correct_passkeys(self) -> None:
         sub_a = SubscriberFactory.create()
         sub_b = SubscriberFactory.create()
         pk_a = PasskeyCredentialFactory.create(subscriber=sub_a)
@@ -260,12 +260,12 @@ class TestPasskeyCredentialQuerySet:
         result = PasskeyCredential.objects.for_subscriber(sub_a)
         assert list(result) == [pk_a]
 
-    def test_by_credential_id_finds_exact_match(self):
+    def test_by_credential_id_finds_exact_match(self) -> None:
         passkey = PasskeyCredentialFactory.create(credential_id="exact-cred-id")
         result = PasskeyCredential.objects.by_credential_id("exact-cred-id")
         assert passkey in result
 
-    def test_by_credential_id_returns_empty_for_unknown(self):
+    def test_by_credential_id_returns_empty_for_unknown(self) -> None:
         result = PasskeyCredential.objects.by_credential_id("does-not-exist")
         assert result.count() == 0
 
@@ -274,11 +274,11 @@ class TestPasskeyCredentialQuerySet:
 class TestSubscriberHasPasskeys:
     """Tests for Subscriber.has_passkeys()."""
 
-    def test_returns_false_when_no_passkeys(self):
+    def test_returns_false_when_no_passkeys(self) -> None:
         sub = SubscriberFactory.create()
         assert sub.has_passkeys() is False
 
-    def test_returns_true_when_passkey_exists(self):
+    def test_returns_true_when_passkey_exists(self) -> None:
         sub = SubscriberFactory.create()
         PasskeyCredentialFactory.create(subscriber=sub)
         assert sub.has_passkeys() is True

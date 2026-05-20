@@ -16,6 +16,7 @@ Verifies that:
   ``<link rel="canonical">``.
 """
 
+from collections.abc import Generator
 from datetime import UTC, datetime
 
 import pytest
@@ -24,11 +25,12 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+from regions.models import MicroRegion
 from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
+def _clear_cache() -> Generator[None, None, None]:
     """Clear the cache before and after each test."""
     cache.clear()
     yield
@@ -36,13 +38,13 @@ def _clear_cache():
 
 
 @pytest.fixture()
-def region():
+def region() -> MicroRegion:
     """Return a Region with a human-readable name."""
     return MicroRegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
 @pytest.fixture()
-def region_with_bulletin(region):
+def region_with_bulletin(region: MicroRegion) -> MicroRegion:
     """Return a Region that has at least one linked bulletin."""
     bulletin = BulletinFactory.create(
         issued_at=datetime(2025, 3, 15, 8, 0, tzinfo=UTC),
@@ -60,7 +62,7 @@ class TestForm1Render:
     """Form 1 (``/<region_id>/``) renders today's bulletin in place."""
 
     def test_form1_renders_today_inline(
-        self, client: Client, region_with_bulletin: None
+        self, client: Client, region_with_bulletin: MicroRegion
     ) -> None:
         """A GET to /<region_id>/ renders today's bulletin (200, no 302)."""
         url = reverse("public:region_root", kwargs={"region_id": "CH-4115"})
@@ -69,7 +71,7 @@ class TestForm1Render:
         assert response.status_code == 200
 
     def test_form1_canonical_link_points_at_today_form2(
-        self, client: Client, region_with_bulletin: None
+        self, client: Client, region_with_bulletin: MicroRegion
     ) -> None:
         """The rendered page advertises the no-date form-2 ("today") URL.
 
@@ -87,7 +89,7 @@ class TestForm1Render:
         assert b'<link rel="canonical"' in response.content
 
     def test_form1_case_insensitive_region_id(
-        self, client: Client, region_with_bulletin: None
+        self, client: Client, region_with_bulletin: MicroRegion
     ) -> None:
         """Both ``CH-4115`` and ``ch-4115`` resolve to the same region."""
         response = client.get("/ch-4115/")
@@ -101,7 +103,7 @@ class TestForm1Render:
         assert response.status_code == 404
 
     def test_form1_query_string_honored(
-        self, client: Client, region_with_bulletin: None
+        self, client: Client, region_with_bulletin: MicroRegion
     ) -> None:
         """``?issue=`` on form 1 is read by the renderer (not redirected)."""
         # No matching bulletin issue → renderer falls back to the default,
@@ -115,7 +117,7 @@ class TestForm2Render:
     """Form 2 (``/<region_id>/<slug>/``) renders today's bulletin in place."""
 
     def test_form2_renders_today_inline(
-        self, client: Client, region_with_bulletin: None
+        self, client: Client, region_with_bulletin: MicroRegion
     ) -> None:
         """A GET to /<region_id>/<slug>/ renders today's bulletin (200)."""
         url = reverse(
@@ -126,7 +128,7 @@ class TestForm2Render:
         assert response.status_code == 200
 
     def test_form2_with_arbitrary_slug_still_renders(
-        self, client: Client, region_with_bulletin: None
+        self, client: Client, region_with_bulletin: MicroRegion
     ) -> None:
         """Form 2 ignores the slug for lookup; renders in place even if wrong."""
         # No-date URLs render in place even when components are non-canonical.
@@ -151,7 +153,7 @@ class TestForm3CanonicalRedirect:
     """Form 3 with a non-canonical region_id or slug 302s to canonical."""
 
     def test_uppercase_region_id_redirects_to_lowercase(
-        self, client: Client, region_with_bulletin: None
+        self, client: Client, region_with_bulletin: MicroRegion
     ) -> None:
         """``/CH-4115/valais/<date>/`` 302s to ``/ch-4115/valais/<date>/``."""
         url = reverse(
@@ -167,7 +169,7 @@ class TestForm3CanonicalRedirect:
         assert response["Location"] == "/ch-4115/valais/2025-03-15/"
 
     def test_stale_underscore_slug_redirects_to_name_slug(
-        self, client: Client, region_with_bulletin: None
+        self, client: Client, region_with_bulletin: MicroRegion
     ) -> None:
         """``/ch-4115/ch_4115/<date>/`` 302s to the name-derived slug."""
         # Mirrors the bug the user reported on production data: the
@@ -178,7 +180,7 @@ class TestForm3CanonicalRedirect:
         assert response["Location"] == "/ch-4115/valais/2025-03-15/"
 
     def test_non_canonical_redirect_preserves_query_string(
-        self, client: Client, region_with_bulletin: None
+        self, client: Client, region_with_bulletin: MicroRegion
     ) -> None:
         """A non-canonical form-3 redirect carries any inbound ``?issue=``."""
         response = client.get("/CH-4115/valais/2025-03-15/?issue=abc-123")
@@ -186,7 +188,7 @@ class TestForm3CanonicalRedirect:
         assert response["Location"] == ("/ch-4115/valais/2025-03-15/?issue=abc-123")
 
     def test_canonical_form3_url_renders_directly(
-        self, client: Client, region_with_bulletin: None
+        self, client: Client, region_with_bulletin: MicroRegion
     ) -> None:
         """When the inbound URL is already canonical, render with 200."""
         response = client.get("/ch-4115/valais/2025-03-15/")
@@ -198,7 +200,7 @@ class TestCanonicalRenderWarmsCache:
     """Visiting the canonical form-3 URL should warm the name-slug cache."""
 
     def test_form3_warms_cache(
-        self, client: Client, region_with_bulletin: None
+        self, client: Client, region_with_bulletin: MicroRegion
     ) -> None:
         """Visiting the canonical URL populates the name-slug cache."""
         cache_key = "public:zone_name:ch-4115"

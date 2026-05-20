@@ -18,9 +18,11 @@ Covers:
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pytest_django.fixtures import SettingsWrapper
 
 from subscriptions.models import PasskeyCredential
 from subscriptions.services.passkey import (
@@ -66,11 +68,11 @@ def _mock_verified_authentication(
     return m
 
 
-def _session_with_challenge(challenge_value: str) -> dict:
+def _session_with_challenge(challenge_value: str) -> Any:  # mock-typing-impractical
     """Return a plain dict acting as a minimal Django session."""
 
     class _FakeSession(dict):
-        def pop(self, key, default=None):
+        def pop(self, key: Any, default: Any = None) -> Any:
             return super().pop(key, default)
 
     s = _FakeSession()
@@ -78,11 +80,13 @@ def _session_with_challenge(challenge_value: str) -> dict:
     return s
 
 
-def _session_with_auth_challenge(challenge_value: str) -> dict:
+def _session_with_auth_challenge(
+    challenge_value: str,
+) -> Any:  # mock-typing-impractical
     """Return a plain dict acting as a minimal Django session with auth challenge."""
 
     class _FakeSession(dict):
-        def pop(self, key, default=None):
+        def pop(self, key: Any, default: Any = None) -> Any:
             return super().pop(key, default)
 
     s = _FakeSession()
@@ -99,44 +103,44 @@ def _session_with_auth_challenge(challenge_value: str) -> dict:
 class TestGenerateRegistrationOptions:
     """Tests for generate_registration_options."""
 
-    def test_returns_dict_with_rp_and_challenge(self):
+    def test_returns_dict_with_rp_and_challenge(self) -> None:
         subscriber = SubscriberFactory.create()
-        session: dict = {}
+        session: Any = {}
         result = generate_registration_options(subscriber, session)
         assert isinstance(result, dict)
         assert "rp" in result
         assert "challenge" in result
 
-    def test_stores_challenge_in_session(self):
+    def test_stores_challenge_in_session(self) -> None:
         subscriber = SubscriberFactory.create()
-        session: dict = {}
+        session: Any = {}
         generate_registration_options(subscriber, session)
         assert "webauthn_reg_challenge" in session
 
-    def test_rp_id_matches_settings(self, settings):
+    def test_rp_id_matches_settings(self, settings: SettingsWrapper) -> None:
         settings.WEBAUTHN_RP_ID = "test.example.com"
         subscriber = SubscriberFactory.create()
-        session: dict = {}
+        session: Any = {}
         result = generate_registration_options(subscriber, session)
         assert result["rp"]["id"] == "test.example.com"
 
-    def test_user_name_is_subscriber_email(self):
+    def test_user_name_is_subscriber_email(self) -> None:
         subscriber = SubscriberFactory.create(email="alice@example.com")
-        session: dict = {}
+        session: Any = {}
         result = generate_registration_options(subscriber, session)
         assert result["user"]["name"] == "alice@example.com"
 
-    def test_excludes_existing_credentials(self):
+    def test_excludes_existing_credentials(self) -> None:
         subscriber = SubscriberFactory.create()
         PasskeyCredentialFactory.create(subscriber=subscriber, credential_id="dGVzdA")
-        session: dict = {}
+        session: Any = {}
         result = generate_registration_options(subscriber, session)
         exclude_ids = [c["id"] for c in result.get("excludeCredentials", [])]
         assert "dGVzdA" in exclude_ids
 
-    def test_no_exclude_when_no_passkeys(self):
+    def test_no_exclude_when_no_passkeys(self) -> None:
         subscriber = SubscriberFactory.create()
-        session: dict = {}
+        session: Any = {}
         result = generate_registration_options(subscriber, session)
         assert result.get("excludeCredentials", []) == []
 
@@ -150,7 +154,7 @@ class TestGenerateRegistrationOptions:
 class TestVerifyAndSaveRegistration:
     """Tests for verify_and_save_registration."""
 
-    def test_happy_path_creates_passkey(self):
+    def test_happy_path_creates_passkey(self) -> None:
         subscriber = SubscriberFactory.create()
         mock_result = _mock_verified_registration()
         session = _session_with_challenge("dGVzdGNoYWxsZW5nZQ")
@@ -162,7 +166,7 @@ class TestVerifyAndSaveRegistration:
         assert passkey.subscriber == subscriber
         assert PasskeyCredential.objects.filter(subscriber=subscriber).count() == 1
 
-    def test_happy_path_clears_challenge(self):
+    def test_happy_path_clears_challenge(self) -> None:
         subscriber = SubscriberFactory.create()
         mock_result = _mock_verified_registration()
         session = _session_with_challenge("dGVzdGNoYWxsZW5nZQ")
@@ -173,13 +177,13 @@ class TestVerifyAndSaveRegistration:
             verify_and_save_registration("{}", session, subscriber)
         assert "webauthn_reg_challenge" not in session
 
-    def test_missing_challenge_raises(self):
+    def test_missing_challenge_raises(self) -> None:
         subscriber = SubscriberFactory.create()
-        session: dict = {}
+        session: Any = {}
         with pytest.raises(PasskeyError, match="challenge missing"):
             verify_and_save_registration("{}", session, subscriber)
 
-    def test_library_error_raises_passkey_error(self):
+    def test_library_error_raises_passkey_error(self) -> None:
         subscriber = SubscriberFactory.create()
         session = _session_with_challenge("dGVzdA")
         with patch(
@@ -189,7 +193,7 @@ class TestVerifyAndSaveRegistration:
             with pytest.raises(PasskeyError):
                 verify_and_save_registration("{}", session, subscriber)
 
-    def test_library_error_clears_challenge(self):
+    def test_library_error_clears_challenge(self) -> None:
         subscriber = SubscriberFactory.create()
         session = _session_with_challenge("dGVzdA")
         with patch(
@@ -202,7 +206,7 @@ class TestVerifyAndSaveRegistration:
                 pass
         assert "webauthn_reg_challenge" not in session
 
-    def test_duplicate_credential_raises(self):
+    def test_duplicate_credential_raises(self) -> None:
         subscriber = SubscriberFactory.create()
         from webauthn.helpers import bytes_to_base64url
 
@@ -218,7 +222,7 @@ class TestVerifyAndSaveRegistration:
             with pytest.raises(PasskeyError, match="already registered"):
                 verify_and_save_registration("{}", session, subscriber)
 
-    def test_aaguid_all_zeros_stored_as_none(self):
+    def test_aaguid_all_zeros_stored_as_none(self) -> None:
         subscriber = SubscriberFactory.create()
         mock_result = _mock_verified_registration(
             aaguid="00000000-0000-0000-0000-000000000000"
@@ -231,7 +235,7 @@ class TestVerifyAndSaveRegistration:
             passkey = verify_and_save_registration("{}", session, subscriber)
         assert passkey.aaguid is None
 
-    def test_real_aaguid_stored(self):
+    def test_real_aaguid_stored(self) -> None:
         subscriber = SubscriberFactory.create()
         real_aaguid = "adce0002-35bc-c60a-648b-0b25f1f05503"
         mock_result = _mock_verified_registration(aaguid=real_aaguid)
@@ -255,33 +259,33 @@ class TestVerifyAndSaveRegistration:
 class TestGenerateAuthenticationOptions:
     """Tests for generate_authentication_options."""
 
-    def test_returns_dict_with_challenge(self):
-        session: dict = {}
+    def test_returns_dict_with_challenge(self) -> None:
+        session: Any = {}
         result = generate_authentication_options(session)
         assert isinstance(result, dict)
         assert "challenge" in result
 
-    def test_stores_challenge_in_session(self):
-        session: dict = {}
+    def test_stores_challenge_in_session(self) -> None:
+        session: Any = {}
         generate_authentication_options(session)
         assert "webauthn_auth_challenge" in session
 
-    def test_no_subscriber_gives_empty_allow_credentials(self):
-        session: dict = {}
+    def test_no_subscriber_gives_empty_allow_credentials(self) -> None:
+        session: Any = {}
         result = generate_authentication_options(session)
         assert result.get("allowCredentials", []) == []
 
-    def test_subscriber_with_passkeys_fills_allow_credentials(self):
+    def test_subscriber_with_passkeys_fills_allow_credentials(self) -> None:
         subscriber = SubscriberFactory.create()
         PasskeyCredentialFactory.create(subscriber=subscriber, credential_id="dGVzdA")
-        session: dict = {}
+        session: Any = {}
         result = generate_authentication_options(session, subscriber=subscriber)
         ids = [c["id"] for c in result.get("allowCredentials", [])]
         assert "dGVzdA" in ids
 
-    def test_subscriber_without_passkeys_gives_empty_allow(self):
+    def test_subscriber_without_passkeys_gives_empty_allow(self) -> None:
         subscriber = SubscriberFactory.create()
-        session: dict = {}
+        session: Any = {}
         result = generate_authentication_options(session, subscriber=subscriber)
         assert result.get("allowCredentials", []) == []
 
@@ -295,7 +299,7 @@ class TestGenerateAuthenticationOptions:
 class TestVerifyAuthenticationResponse:
     """Tests for verify_authentication_response."""
 
-    def test_happy_path_returns_subscriber(self):
+    def test_happy_path_returns_subscriber(self) -> None:
         subscriber = SubscriberFactory.create()
         PasskeyCredentialFactory.create(subscriber=subscriber, credential_id="dGVzdA")
         credential_json = json.dumps({"id": "dGVzdA"})
@@ -308,7 +312,7 @@ class TestVerifyAuthenticationResponse:
             result = verify_authentication_response(credential_json, session)
         assert result == subscriber
 
-    def test_happy_path_updates_sign_count(self):
+    def test_happy_path_updates_sign_count(self) -> None:
         subscriber = SubscriberFactory.create()
         passkey = PasskeyCredentialFactory.create(
             subscriber=subscriber, credential_id="dGVzdA", sign_count=0
@@ -324,7 +328,7 @@ class TestVerifyAuthenticationResponse:
         passkey.refresh_from_db()
         assert passkey.sign_count == 5
 
-    def test_happy_path_sets_last_used_at(self):
+    def test_happy_path_sets_last_used_at(self) -> None:
         subscriber = SubscriberFactory.create()
         passkey = PasskeyCredentialFactory.create(
             subscriber=subscriber, credential_id="dGVzdA"
@@ -340,7 +344,7 @@ class TestVerifyAuthenticationResponse:
         passkey.refresh_from_db()
         assert passkey.last_used_at is not None
 
-    def test_happy_path_clears_challenge(self):
+    def test_happy_path_clears_challenge(self) -> None:
         subscriber = SubscriberFactory.create()
         PasskeyCredentialFactory.create(subscriber=subscriber, credential_id="dGVzdA")
         credential_json = json.dumps({"id": "dGVzdA"})
@@ -353,20 +357,20 @@ class TestVerifyAuthenticationResponse:
             verify_authentication_response(credential_json, session)
         assert "webauthn_auth_challenge" not in session
 
-    def test_missing_challenge_raises(self):
+    def test_missing_challenge_raises(self) -> None:
         credential_json = json.dumps({"id": "dGVzdA"})
-        session: dict = {}
+        session: Any = {}
         with pytest.raises(PasskeyError, match="challenge missing"):
             verify_authentication_response(credential_json, session)
 
-    def test_unknown_credential_raises_specific_error(self):
+    def test_unknown_credential_raises_specific_error(self) -> None:
         credential_json = json.dumps({"id": "unknown-id"})
         session = _session_with_auth_challenge("dGVzdA")
         with pytest.raises(PasskeyUnknownCredentialError) as exc_info:
             verify_authentication_response(credential_json, session)
         assert exc_info.value.credential_id == "unknown-id"
 
-    def test_library_error_raises_passkey_error(self):
+    def test_library_error_raises_passkey_error(self) -> None:
         subscriber = SubscriberFactory.create()
         PasskeyCredentialFactory.create(subscriber=subscriber, credential_id="dGVzdA")
         credential_json = json.dumps({"id": "dGVzdA"})
@@ -378,7 +382,7 @@ class TestVerifyAuthenticationResponse:
             with pytest.raises(PasskeyError):
                 verify_authentication_response(credential_json, session)
 
-    def test_library_error_clears_challenge(self):
+    def test_library_error_clears_challenge(self) -> None:
         subscriber = SubscriberFactory.create()
         PasskeyCredentialFactory.create(subscriber=subscriber, credential_id="dGVzdA")
         credential_json = json.dumps({"id": "dGVzdA"})

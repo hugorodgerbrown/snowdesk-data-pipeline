@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime
 import re
 from datetime import UTC
+from typing import Any
 
 import pytest
 from django.core.cache import cache
@@ -51,7 +52,7 @@ def _url(region_id: str) -> str:
 class TestSeasonPartialGuards:
     """Tests for request-guard behaviour."""
 
-    def test_non_htmx_get_returns_400(self):
+    def test_non_htmx_get_returns_400(self) -> None:
         """Plain GET without HX-Request header is rejected with 400."""
         client = Client()
         region = MicroRegionFactory.create()
@@ -59,7 +60,7 @@ class TestSeasonPartialGuards:
         response = client.get(url)
         assert response.status_code == 400
 
-    def test_unknown_region_returns_404(self):
+    def test_unknown_region_returns_404(self) -> None:
         """Unknown region_id returns 404."""
         client = Client()
         url = _url("CH-NOTEXIST")
@@ -77,7 +78,7 @@ class TestSeasonPartialContent:
     """Tests for the content of the season_calendar_partial response."""
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_returns_grid_with_season_calendar_testid(self, client: Client):
+    def test_returns_grid_with_season_calendar_testid(self, client: Client) -> None:
         """HTMX GET returns a fragment with data-testid="season-calendar"."""
         region = MicroRegionFactory.create()
         response = client.get(_url(region.region_id), HTTP_HX_REQUEST="true")
@@ -85,7 +86,7 @@ class TestSeasonPartialContent:
         assert b'data-testid="season-calendar"' in response.content
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_returns_today_cell_with_today_modifier(self, client: Client):
+    def test_returns_today_cell_with_today_modifier(self, client: Client) -> None:
         """The cell for today carries the calendar-cell-today CSS modifier."""
         region = MicroRegionFactory.create()
         response = client.get(_url(region.region_id), HTTP_HX_REQUEST="true")
@@ -93,7 +94,7 @@ class TestSeasonPartialContent:
         assert b"calendar-cell-today" in response.content
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_every_cell_carries_data_date_attribute(self, client: Client):
+    def test_every_cell_carries_data_date_attribute(self, client: Client) -> None:
         """Every rendered cell anchor/div carries a data-date="YYYY-MM-DD" attribute."""
         region = MicroRegionFactory.create()
         response = client.get(_url(region.region_id), HTTP_HX_REQUEST="true")
@@ -109,7 +110,7 @@ class TestSeasonPartialContent:
             datetime.date.fromisoformat(date_str)
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_calendar_cell_selected_absent(self, client: Client):
+    def test_calendar_cell_selected_absent(self, client: Client) -> None:
         """calendar-cell-selected is never in the partial — selection is client-side."""
         region = MicroRegionFactory.create()
         response = client.get(_url(region.region_id), HTTP_HX_REQUEST="true")
@@ -117,7 +118,9 @@ class TestSeasonPartialContent:
         assert b"calendar-cell-selected" not in response.content
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_region_with_rated_days_renders_interactive_cells(self, client: Client):
+    def test_region_with_rated_days_renders_interactive_cells(
+        self, client: Client
+    ) -> None:
         """Days with a RegionDayRating + source_bulletin render as <a> links."""
         region = MicroRegionFactory.create()
         today = timezone.localdate()
@@ -159,8 +162,8 @@ class TestSeasonPartialCache:
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_second_request_issues_zero_db_queries(
-        self, client: Client, django_assert_num_queries
-    ):
+        self, client: Client, django_assert_num_queries: Any
+    ) -> None:
         """Second HTMX GET for the same (region, today) hits zero RegionDayRating queries.
 
         The view checks the template fragment cache directly before calling
@@ -181,7 +184,7 @@ class TestSeasonPartialCache:
         assert response1.content == response2.content
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_apply_bulletin_day_ratings_invalidates_cache(self, client: Client):
+    def test_apply_bulletin_day_ratings_invalidates_cache(self, client: Client) -> None:
         """After priming the cache, apply_bulletin_day_ratings deletes the key."""
         region = MicroRegionFactory.create()
         today = timezone.localdate()

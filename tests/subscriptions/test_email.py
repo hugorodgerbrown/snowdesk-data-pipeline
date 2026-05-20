@@ -12,11 +12,14 @@ Covers:
 
 import threading
 import time
+from typing import cast
 
 import pytest
 from django.conf import settings
 from django.core import mail
+from django.core.mail import EmailMultiAlternatives
 from django.test import RequestFactory, override_settings
+from pytest_django.fixtures import SettingsWrapper
 
 from subscriptions.services.email import (
     _dispatch_async,
@@ -29,7 +32,7 @@ from tests.factories import MicroRegionFactory
 
 
 @pytest.fixture
-def rf():
+def rf() -> RequestFactory:
     """Return a Django RequestFactory."""
     return RequestFactory()
 
@@ -38,36 +41,37 @@ class TestSendAccountAccessEmail:
     """Tests for send_account_access_email."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings):
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
         """Switch to the locmem backend so outbox works."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
-    def test_sends_one_email(self):
+    def test_sends_one_email(self) -> None:
         send_account_access_email("alice@example.com")
         assert len(mail.outbox) == 1
 
-    def test_recipient_is_correct(self):
+    def test_recipient_is_correct(self) -> None:
         send_account_access_email("alice@example.com")
         assert mail.outbox[0].to == ["alice@example.com"]
 
-    def test_from_email_uses_setting(self):
+    def test_from_email_uses_setting(self) -> None:
         send_account_access_email("alice@example.com")
         assert mail.outbox[0].from_email == settings.DEFAULT_FROM_EMAIL
 
-    def test_subject_contains_snowdesk(self):
+    def test_subject_contains_snowdesk(self) -> None:
         send_account_access_email("alice@example.com")
         assert "Snowdesk" in mail.outbox[0].subject
 
-    def test_body_contains_account_path(self):
+    def test_body_contains_account_path(self) -> None:
         send_account_access_email("alice@example.com")
         assert "/subscribe/account/" in mail.outbox[0].body
 
-    def test_html_body_contains_account_path(self):
+    def test_html_body_contains_account_path(self) -> None:
         send_account_access_email("alice@example.com")
-        html, _ = mail.outbox[0].alternatives[0]
+        html_body, _ = cast(EmailMultiAlternatives, mail.outbox[0]).alternatives[0]
+        html = str(html_body)
         assert "/subscribe/account/" in html
 
-    def test_token_in_url_is_valid(self):
+    def test_token_in_url_is_valid(self) -> None:
         """The token embedded in the URL should verify back to the email."""
         send_account_access_email("alice@example.com")
         body = mail.outbox[0].body
@@ -82,34 +86,35 @@ class TestSendAccountAccessEmail:
         )
         assert result == "alice@example.com"
 
-    def test_uses_site_base_url_from_settings(self):
+    def test_uses_site_base_url_from_settings(self) -> None:
         send_account_access_email("alice@example.com")
         body = mail.outbox[0].body
         assert settings.SITE_BASE_URL in body
 
-    def test_uses_request_origin_when_provided(self, rf):
+    def test_uses_request_origin_when_provided(self, rf: RequestFactory) -> None:
         request = rf.get("/")
         send_account_access_email("alice@example.com", request=request)
         body = mail.outbox[0].body
         assert "/subscribe/account/" in body
 
-    def test_html_alternative_present(self):
+    def test_html_alternative_present(self) -> None:
         send_account_access_email("alice@example.com")
-        assert len(mail.outbox[0].alternatives) == 1
-        _, mimetype = mail.outbox[0].alternatives[0]
+        assert len(cast(EmailMultiAlternatives, mail.outbox[0]).alternatives) == 1
+        _, mimetype = cast(EmailMultiAlternatives, mail.outbox[0]).alternatives[0]
         assert mimetype == "text/html"
 
-    def test_text_body_includes_slf_attribution(self):
+    def test_text_body_includes_slf_attribution(self) -> None:
         """SLF licence credit appears in the plain-text body (SNOW-30)."""
         send_account_access_email("alice@example.com")
         body = mail.outbox[0].body
         assert "WSL Institute for Snow and Avalanche Research SLF" in body
         assert "CC BY 4.0" in body
 
-    def test_html_body_includes_slf_attribution(self):
+    def test_html_body_includes_slf_attribution(self) -> None:
         """SLF licence credit appears in the HTML alternative (SNOW-30)."""
         send_account_access_email("alice@example.com")
-        html, _ = mail.outbox[0].alternatives[0]
+        html_body, _ = cast(EmailMultiAlternatives, mail.outbox[0]).alternatives[0]
+        html = str(html_body)
         assert "WSL Institute for Snow and Avalanche Research SLF" in html
         assert "https://www.slf.ch" in html
         assert "CC BY 4.0" in html
@@ -120,62 +125,63 @@ class TestSendSubscriptionConfirmationEmail:
     """Tests for send_subscription_confirmation_email."""
 
     @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings):
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
         """Switch to the locmem backend so outbox is available."""
         settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
-    def test_sends_one_email(self):
+    def test_sends_one_email(self) -> None:
         """Exactly one email is dispatched."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert len(mail.outbox) == 1
 
-    def test_recipient_is_correct(self):
+    def test_recipient_is_correct(self) -> None:
         """Email is addressed to the supplied recipient."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert mail.outbox[0].to == ["alice@example.com"]
 
-    def test_subject_contains_region_name(self):
+    def test_subject_contains_region_name(self) -> None:
         """Subject line includes the region name."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert "Engelberg Region" in mail.outbox[0].subject
 
-    def test_subject_contains_snowdesk(self):
+    def test_subject_contains_snowdesk(self) -> None:
         """Subject line includes the 'Snowdesk' brand name."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert "Snowdesk" in mail.outbox[0].subject
 
-    def test_body_contains_region_name(self):
+    def test_body_contains_region_name(self) -> None:
         """Plain-text body includes the region name."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert "Engelberg Region" in mail.outbox[0].body
 
-    def test_body_contains_account_path(self):
+    def test_body_contains_account_path(self) -> None:
         """Plain-text body contains the account-access URL path."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
         assert "/subscribe/account/" in mail.outbox[0].body
 
-    def test_html_alternative_present(self):
+    def test_html_alternative_present(self) -> None:
         """Email includes an HTML alternative."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
-        assert len(mail.outbox[0].alternatives) == 1
-        _, mimetype = mail.outbox[0].alternatives[0]
+        assert len(cast(EmailMultiAlternatives, mail.outbox[0]).alternatives) == 1
+        _, mimetype = cast(EmailMultiAlternatives, mail.outbox[0]).alternatives[0]
         assert mimetype == "text/html"
 
-    def test_html_body_contains_region_name(self):
+    def test_html_body_contains_region_name(self) -> None:
         """HTML body includes the region name."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
-        html, _ = mail.outbox[0].alternatives[0]
+        html_body, _ = cast(EmailMultiAlternatives, mail.outbox[0]).alternatives[0]
+        html = str(html_body)
         assert "Engelberg Region" in html
 
-    def test_token_in_url_uses_account_access_salt(self):
+    def test_token_in_url_uses_account_access_salt(self) -> None:
         """The token embedded in the body URL verifies with SALT_ACCOUNT_ACCESS."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
@@ -189,7 +195,7 @@ class TestSendSubscriptionConfirmationEmail:
         )
         assert result == "alice@example.com"
 
-    def test_uses_request_origin_when_provided(self):
+    def test_uses_request_origin_when_provided(self) -> None:
         """When a request is supplied, the URL reflects its origin."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         rf = RequestFactory()
@@ -199,7 +205,7 @@ class TestSendSubscriptionConfirmationEmail:
         )
         assert "/subscribe/account/" in mail.outbox[0].body
 
-    def test_text_body_includes_slf_attribution(self):
+    def test_text_body_includes_slf_attribution(self) -> None:
         """SLF licence credit appears in the plain-text body (SNOW-30)."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
@@ -207,11 +213,12 @@ class TestSendSubscriptionConfirmationEmail:
         assert "WSL Institute for Snow and Avalanche Research SLF" in body
         assert "CC BY 4.0" in body
 
-    def test_html_body_includes_slf_attribution(self):
+    def test_html_body_includes_slf_attribution(self) -> None:
         """SLF licence credit appears in the HTML alternative (SNOW-30)."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
-        html, _ = mail.outbox[0].alternatives[0]
+        html_body, _ = cast(EmailMultiAlternatives, mail.outbox[0]).alternatives[0]
+        html = str(html_body)
         assert "WSL Institute for Snow and Avalanche Research SLF" in html
         assert "https://www.slf.ch" in html
         assert "CC BY 4.0" in html
@@ -221,12 +228,12 @@ class TestSendSubscriptionConfirmationEmail:
 class TestSimulateAccountAccessWork:
     """The manage-POST unknown-email timing equaliser."""
 
-    def test_sends_no_email(self):
+    def test_sends_no_email(self) -> None:
         """simulate_account_access_work must not populate mail.outbox."""
         simulate_account_access_work("ghost@example.com")
         assert len(mail.outbox) == 0
 
-    def test_executes_without_error(self):
+    def test_executes_without_error(self) -> None:
         """Should run token-gen + template-render cleanly for any string email."""
         simulate_account_access_work("anyone@example.com")
 
@@ -235,7 +242,7 @@ class TestDispatchAsync:
     """SNOW-26: _dispatch_async sync gate, async return, and exception logging."""
 
     @override_settings(SUBSCRIPTIONS_EMAIL_ASYNC=True)
-    def test_returns_before_callable_finishes(self):
+    def test_returns_before_callable_finishes(self) -> None:
         """With async on, the dispatcher must return before the callable runs."""
         done = threading.Event()
 
@@ -250,14 +257,14 @@ class TestDispatchAsync:
         assert done.wait(timeout=2.0), "Background callable never completed"
 
     @override_settings(SUBSCRIPTIONS_EMAIL_ASYNC=False)
-    def test_runs_synchronously_when_disabled(self):
+    def test_runs_synchronously_when_disabled(self) -> None:
         """With async off, the callable runs inline before _dispatch_async returns."""
         called: list[int] = []
         _dispatch_async(lambda: called.append(1))
         assert called == [1]
 
     @override_settings(SUBSCRIPTIONS_EMAIL_ASYNC=True)
-    def test_exception_in_thread_is_logged_not_raised(self):
+    def test_exception_in_thread_is_logged_not_raised(self) -> None:
         """Exceptions inside the daemon thread are caught and logged."""
         import logging
 
