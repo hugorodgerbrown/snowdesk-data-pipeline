@@ -633,6 +633,45 @@ class TestMetadataStrip:
         # "15:00" appears in the valid-until and next-update fields
         assert "15:00" in content
 
+    def test_source_cell_renders_link_for_known_source(self, client: Client, region):
+        """When render_model.source is a known value, source-cell shows a link."""
+        day = date(2026, 3, 15)
+        # _render_model_with_traits already defaults source to "slf".
+        rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+
+        assert 'data-testid="source-cell"' in content
+        assert 'href="https://www.slf.ch"' in content
+        assert ">SLF<" in content
+
+    def test_source_cell_renders_em_dash_for_missing_source(
+        self, client: Client, region
+    ):
+        """When render_model has no source key, source-cell shows an em-dash."""
+        day = date(2026, 3, 15)
+        rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
+        # Remove the source key to simulate a bulletin without a known source.
+        rm.pop("source", None)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+
+        assert 'data-testid="source-cell"' in content
+        # Extract only the source cell fragment to avoid false positives from
+        # the SLF attribution link in the global site footer.
+        source_cell_start = content.find('data-testid="source-cell"')
+        # The next sibling div starts just after the closing tag of the source cell.
+        source_cell_end = content.find("</div>", source_cell_start) + len("</div>")
+        source_cell_html = content[source_cell_start:source_cell_end]
+        assert "—" in source_cell_html or "&mdash;" in source_cell_html
+        assert "<a" not in source_cell_html
+
 
 # ---------------------------------------------------------------------------
 # Test: bulletin page no longer renders a per-page footer (SNOW-80)
