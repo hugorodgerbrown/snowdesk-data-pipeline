@@ -182,6 +182,21 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         ),
     ),
     FoundationCategory(
+        slug="type-scale",
+        label="Type scale",
+        description=(
+            "Labels, chip captions and the prose body line-height. Plugs the "
+            "gaps in the Tailwind default ramp that previously appeared as "
+            "``text-[9px]`` / ``text-[9.5px]`` / ``leading-[1.6]`` arbitraries."
+        ),
+        kind="typescale",
+        tokens=(
+            Token("--text-meta", "Meta label", "9px", None),
+            Token("--text-chip", "Chip caption", "9.5px", None),
+            Token("--leading-prose", "Prose body leading", "1.6", None),
+        ),
+    ),
+    FoundationCategory(
         slug="surfaces",
         label="Surfaces",
         description="Page background and card surface fills.",

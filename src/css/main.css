@@ -98,6 +98,14 @@
   --font-sans:  'DM Sans',  system-ui, sans-serif;
   --font-mono:  'DM Mono',  ui-monospace, monospace;
 
+  /* Type scale — labels, chips and prose body.
+     Heading / base / sm / xs all stay on Tailwind's default ramp.
+     These three plug the gaps that previously appeared as
+     text-[9px] / text-[9.5px] / leading-[1.6] arbitraries. */
+  --text-meta:     9px;     /* meta-cell uppercase mono label          */
+  --text-chip:     9.5px;   /* aspect / elevation / hazard chip caption */
+  --leading-prose: 1.6;     /* slf-prose body line-height               */
+
   /* Surface colours */
   --color-bg:           #f2f0ec;   /* warm off-white page background      */
   --color-card:         #ffffff;   /* card surface                        */
