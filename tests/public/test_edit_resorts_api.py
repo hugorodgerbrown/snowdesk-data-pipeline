@@ -20,6 +20,7 @@ default test client is anonymous).
 from __future__ import annotations
 
 import json
+from typing import Any, Generator
 
 import pytest
 from django.test import Client, override_settings
@@ -80,7 +81,7 @@ class TestEditResortsQueue:
     """Tests for ``GET /api/edit/resorts/queue/`` (flag-gated)."""
 
     @pytest.fixture(autouse=True)
-    def _enable_edit_map_flag(self):
+    def _enable_edit_map_flag(self) -> Generator[None, None, None]:
         """Force ``edit_map=on`` for every test in this class.
 
         Per-class ``@override_flag`` decoration would need a
@@ -223,7 +224,9 @@ class TestEditResortsQueueFlagGate:
 # ---------------------------------------------------------------------------
 
 
-def _post_coords(client: Client, resort_id: int, **body: object):
+def _post_coords(
+    client: Client, resort_id: int, **body: Any
+) -> Any:  # mock-typing-impractical
     """Helper — POST JSON to the save endpoint."""
     return client.post(
         reverse("api:edit_resort_save_coords", args=[resort_id]),
@@ -237,7 +240,7 @@ class TestEditResortSaveCoords:
     """Tests for ``POST /api/edit/resorts/<id>/coords/`` (flag-gated)."""
 
     @pytest.fixture(autouse=True)
-    def _enable_edit_map_flag(self):
+    def _enable_edit_map_flag(self) -> Generator[None, None, None]:
         """Force ``edit_map=on`` for every test in this class.
 
         See :class:`TestEditResortsQueue` for why we use a fixture

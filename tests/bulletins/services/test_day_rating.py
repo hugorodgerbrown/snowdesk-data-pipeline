@@ -34,7 +34,7 @@ from unittest.mock import patch
 
 import pytest
 
-from bulletins.models import RegionDayRating
+from bulletins.models import Bulletin, RegionDayRating
 from bulletins.services.day_rating import (
     DAY_RATING_VERSION,
     _resolve_min_max_keys,
@@ -43,6 +43,7 @@ from bulletins.services.day_rating import (
     recompute_region_day,
 )
 from bulletins.services.render_model import RENDER_MODEL_VERSION
+from regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -56,14 +57,14 @@ from tests.factories import (
 
 
 def _make_bulletin_for_region(
-    region,
+    region: MicroRegion,
     valid_from: datetime.datetime,
     valid_to: datetime.datetime,
     traits: list | None = None,
     headline_key: str = "low",
     headline_subdivision: str | None = None,
     render_model_version: int | None = None,
-):
+) -> Bulletin:
     """
     Create a Bulletin linked to a region with explicit traits and headline danger.
 

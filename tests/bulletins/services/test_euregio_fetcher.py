@@ -98,7 +98,7 @@ class TestParseIssuedAt:
 
     _FALLBACK = datetime(2000, 1, 1, tzinfo=UTC)
 
-    def test_uses_publication_time_when_present(self):
+    def test_uses_publication_time_when_present(self) -> None:
         """A valid publicationTime wins over validTime.startTime."""
         raw = {
             "publicationTime": "2026-01-15T18:00:00Z",
@@ -107,13 +107,13 @@ class TestParseIssuedAt:
         result = _parse_issued_at(raw, fallback=self._FALLBACK)
         assert result == datetime(2026, 1, 15, 18, 0, tzinfo=UTC)
 
-    def test_falls_back_to_valid_time_when_publication_time_missing(self):
+    def test_falls_back_to_valid_time_when_publication_time_missing(self) -> None:
         """A missing publicationTime falls through to validTime.startTime."""
         raw = {"validTime": {"startTime": "2026-01-15T16:00:00Z"}}
         result = _parse_issued_at(raw, fallback=self._FALLBACK)
         assert result == datetime(2026, 1, 15, 16, 0, tzinfo=UTC)
 
-    def test_falls_back_to_valid_time_when_publication_time_malformed(self):
+    def test_falls_back_to_valid_time_when_publication_time_malformed(self) -> None:
         """A malformed publicationTime falls through to validTime.startTime."""
         raw = {
             "publicationTime": "not-a-date",
@@ -122,12 +122,12 @@ class TestParseIssuedAt:
         result = _parse_issued_at(raw, fallback=self._FALLBACK)
         assert result == datetime(2026, 1, 15, 16, 0, tzinfo=UTC)
 
-    def test_returns_fallback_when_both_missing(self):
+    def test_returns_fallback_when_both_missing(self) -> None:
         """Both timestamps absent returns the fallback."""
         result = _parse_issued_at({}, fallback=self._FALLBACK)
         assert result == self._FALLBACK
 
-    def test_returns_fallback_when_both_malformed(self):
+    def test_returns_fallback_when_both_malformed(self) -> None:
         """Both timestamps malformed returns the fallback."""
         raw = {
             "publicationTime": "garbage",
@@ -136,7 +136,7 @@ class TestParseIssuedAt:
         result = _parse_issued_at(raw, fallback=self._FALLBACK)
         assert result == self._FALLBACK
 
-    def test_handles_missing_valid_time_dict(self):
+    def test_handles_missing_valid_time_dict(self) -> None:
         """A missing validTime key is tolerated."""
         raw = {"publicationTime": ""}
         result = _parse_issued_at(raw, fallback=self._FALLBACK)
@@ -151,24 +151,24 @@ class TestParseIssuedAt:
 class TestNormaliseResponse:
     """_normalise_response handles all CDN body shapes."""
 
-    def test_list_returned_as_is(self):
+    def test_list_returned_as_is(self) -> None:
         """A top-level list is returned unchanged."""
         data = [{"bulletinID": "x"}, {"bulletinID": "y"}]
         assert _normalise_response(data, "2026-01-01", "AT-07") == data
 
-    def test_envelope_dict_unwrapped(self):
+    def test_envelope_dict_unwrapped(self) -> None:
         """A dict with 'bulletins' key returns the inner list."""
         inner = [{"bulletinID": "x"}]
         data = {"bulletins": inner}
         assert _normalise_response(data, "2026-01-01", "AT-07") == inner
 
-    def test_unexpected_shape_returns_empty(self):
+    def test_unexpected_shape_returns_empty(self) -> None:
         """An unrecognised shape logs a warning and returns []."""
         data = {"other": "stuff"}
         result = _normalise_response(data, "2026-01-01", "AT-07")
         assert result == []
 
-    def test_plain_string_returns_empty(self):
+    def test_plain_string_returns_empty(self) -> None:
         """A string response body returns []."""
         result = _normalise_response("not json", "2026-01-01", "AT-07")
         assert result == []
@@ -183,7 +183,7 @@ class TestFetchEuregioForDate:
     """fetch_euregio_for_date constructs the correct URL and handles responses."""
 
     @patch("bulletins.services.euregio_fetcher.requests.get")
-    def test_url_construction(self, mock_get):
+    def test_url_construction(self, mock_get: MagicMock) -> None:
         """URL uses {base}/{date}/{date}_{region}_en_CAAMLv6.json shape."""
         mock_get.return_value = _mock_ok([])
         fetch_euregio_for_date(date(2026, 1, 15), "AT-07", base_url="https://cdn")
@@ -191,7 +191,7 @@ class TestFetchEuregioForDate:
         mock_get.assert_called_once_with(expected_url, timeout=30)
 
     @patch("bulletins.services.euregio_fetcher.requests.get")
-    def test_returns_bulletins_on_200(self, mock_get):
+    def test_returns_bulletins_on_200(self, mock_get: MagicMock) -> None:
         """A 200 response returns the list of bulletin dicts."""
         bulletins = [_make_raw_bulletin()]
         mock_get.return_value = _mock_ok(bulletins)
@@ -201,7 +201,7 @@ class TestFetchEuregioForDate:
         assert result == bulletins
 
     @patch("bulletins.services.euregio_fetcher.requests.get")
-    def test_returns_empty_on_404(self, mock_get):
+    def test_returns_empty_on_404(self, mock_get: MagicMock) -> None:
         """A 404 response returns [] (off-season gap, not an error)."""
         mock_get.return_value = _mock_404()
         result = fetch_euregio_for_date(
@@ -210,7 +210,7 @@ class TestFetchEuregioForDate:
         assert result == []
 
     @patch("bulletins.services.euregio_fetcher.requests.get")
-    def test_raises_on_non_404_error(self, mock_get):
+    def test_raises_on_non_404_error(self, mock_get: MagicMock) -> None:
         """A 500 response raises requests.HTTPError."""
         import requests
 
@@ -219,7 +219,7 @@ class TestFetchEuregioForDate:
             fetch_euregio_for_date(date(2026, 1, 15), "AT-07", base_url="https://cdn")
 
     @patch("bulletins.services.euregio_fetcher.requests.get")
-    def test_uses_settings_base_url_when_none(self, mock_get):
+    def test_uses_settings_base_url_when_none(self, mock_get: MagicMock) -> None:
         """When base_url is None, falls back to settings.EUREGIO_API_BASE_URL."""
         mock_get.return_value = _mock_ok([])
         with patch("bulletins.services.euregio_fetcher.settings") as mock_settings:
@@ -229,7 +229,7 @@ class TestFetchEuregioForDate:
         assert call_url.startswith("https://settings-cdn/")
 
     @patch("bulletins.services.euregio_fetcher.requests.get")
-    def test_unwraps_envelope_response(self, mock_get):
+    def test_unwraps_envelope_response(self, mock_get: MagicMock) -> None:
         """A {"bulletins": [...]} envelope is unwrapped."""
         bulletins = [_make_raw_bulletin()]
         mock_get.return_value = MagicMock(
@@ -252,7 +252,7 @@ class TestFetchEuregioForDate:
 class TestRunEuregioPipeline:
     """run_euregio_pipeline: dedup, date filter, dry-run, force, error handling."""
 
-    def test_creates_bulletin_for_known_region(self):
+    def test_creates_bulletin_for_known_region(self) -> None:
         """A bulletin whose region is seeded gets stored and run returns SUCCESS."""
         MicroRegionFactory.create(region_id="AT-07-01", name="Allgäu Alps East")
         raw = _make_raw_bulletin()
@@ -273,7 +273,7 @@ class TestRunEuregioPipeline:
         assert Bulletin.objects.filter(bulletin_id="euregio-001").exists()
         assert run.records_created == 1
 
-    def test_deduplication_by_bulletin_id(self):
+    def test_deduplication_by_bulletin_id(self) -> None:
         """The same bulletinID appearing in two region files is stored only once."""
         MicroRegionFactory.create(region_id="AT-07-01", name="Allgäu Alps East")
         raw = _make_raw_bulletin()
@@ -295,7 +295,7 @@ class TestRunEuregioPipeline:
         assert Bulletin.objects.count() == 1
         assert run.records_created == 1
 
-    def test_dry_run_does_not_write(self):
+    def test_dry_run_does_not_write(self) -> None:
         """dry_run=True fetches but does not persist any bulletins."""
         MicroRegionFactory.create(region_id="AT-07-01", name="Allgäu Alps East")
         raw = _make_raw_bulletin()
@@ -316,7 +316,7 @@ class TestRunEuregioPipeline:
 
         assert Bulletin.objects.count() == 0
 
-    def test_http_error_slot_skip_increments_records_failed(self):
+    def test_http_error_slot_skip_increments_records_failed(self) -> None:
         """An HTTP error for a (date, region) pair increments records_failed."""
         import requests
 
@@ -334,7 +334,7 @@ class TestRunEuregioPipeline:
 
         assert run.records_failed == 1
 
-    def test_on_fetched_callback_called_for_each_bulletin(self):
+    def test_on_fetched_callback_called_for_each_bulletin(self) -> None:
         """on_fetched is invoked once per unique bulletin."""
         raw1 = _make_raw_bulletin("id-1")
         raw2 = _make_raw_bulletin("id-2")
@@ -357,7 +357,7 @@ class TestRunEuregioPipeline:
         assert collected[0]["bulletinID"] == "id-1"
         assert collected[1]["bulletinID"] == "id-2"
 
-    def test_on_fetched_callback_dedupes_across_regions(self):
+    def test_on_fetched_callback_dedupes_across_regions(self) -> None:
         """A bulletin spanning multiple regions only fires on_fetched once."""
         # Same bulletinID returned by all three region files for the same day.
         shared = _make_raw_bulletin("shared-id")
@@ -382,7 +382,7 @@ class TestRunEuregioPipeline:
         assert len(collected) == 1
         assert collected[0]["bulletinID"] == "shared-id"
 
-    def test_on_fetched_callback_skips_bulletins_with_no_id(self):
+    def test_on_fetched_callback_skips_bulletins_with_no_id(self) -> None:
         """on_fetched is not invoked for bulletins missing bulletinID."""
         raw = _make_raw_bulletin()
         del raw["bulletinID"]
@@ -403,7 +403,7 @@ class TestRunEuregioPipeline:
 
         assert collected == []
 
-    def test_multi_day_range_fetches_each_day(self):
+    def test_multi_day_range_fetches_each_day(self) -> None:
         """A multi-day range makes one CDN request per (date, region) pair."""
         with patch(
             "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
@@ -420,7 +420,7 @@ class TestRunEuregioPipeline:
         # 3 dates × 1 region = 3 calls
         assert mock_fetch.call_count == 3
 
-    def test_bulletin_outside_date_range_not_stored(self):
+    def test_bulletin_outside_date_range_not_stored(self) -> None:
         """A bulletin published outside the requested range is skipped."""
         MicroRegionFactory.create(region_id="AT-07-01", name="Allgäu Alps East")
         # Publication time is 2026-01-10; we request 2026-01-15.
@@ -451,11 +451,11 @@ class TestRunEuregioPipeline:
 class TestLatestEuregioDate:
     """latest_euregio_date returns the most recent EUREGIO valid_from date."""
 
-    def test_returns_none_when_no_euregio_bulletins(self):
+    def test_returns_none_when_no_euregio_bulletins(self) -> None:
         """Returns None when the DB has no EUREGIO bulletins."""
         assert latest_euregio_date() is None
 
-    def test_returns_latest_valid_from(self):
+    def test_returns_latest_valid_from(self) -> None:
         """Returns the date of the most recent EUREGIO bulletin's valid_from."""
         from tests.factories import BulletinFactory
 
@@ -474,7 +474,7 @@ class TestLatestEuregioDate:
         result = latest_euregio_date()
         assert result == date(2026, 1, 15)
 
-    def test_ignores_slf_bulletins(self):
+    def test_ignores_slf_bulletins(self) -> None:
         """Bulletins with source='slf' are not considered."""
         from tests.factories import BulletinFactory
 

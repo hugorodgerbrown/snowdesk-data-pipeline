@@ -3,20 +3,20 @@
 from core.models import BaseModel
 
 
-def test_base_model_is_abstract():
+def test_base_model_is_abstract() -> None:
     assert BaseModel._meta.abstract is True
 
 
-def test_base_model_has_expected_fields():
+def test_base_model_has_expected_fields() -> None:
     field_names = {f.name for f in BaseModel._meta.get_fields()}
     assert {"id", "uuid", "created_at", "updated_at"}.issubset(field_names)
 
 
-def test_base_model_default_ordering():
+def test_base_model_default_ordering() -> None:
     assert BaseModel._meta.ordering == ["-created_at"]
 
 
-def test_subscriber_is_abstract_base_user():
+def test_subscriber_is_abstract_base_user() -> None:
     """Subscriber extends AbstractBaseUser (not BaseModel) as the custom user model."""
     from django.contrib.auth.models import AbstractBaseUser
 
@@ -25,7 +25,7 @@ def test_subscriber_is_abstract_base_user():
     assert issubclass(Subscriber, AbstractBaseUser)
 
 
-def test_pipeline_models_inherit_base_model():
+def test_pipeline_models_inherit_base_model() -> None:
     from bulletins.models import Bulletin, PipelineRun
     from regions.models import MicroRegion
 

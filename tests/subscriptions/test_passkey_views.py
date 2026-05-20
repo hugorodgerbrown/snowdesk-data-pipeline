@@ -15,13 +15,14 @@ Covers:
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 from django.test import Client
 from django.urls import reverse
 
-from subscriptions.models import PasskeyCredential
+from subscriptions.models import PasskeyCredential, Subscriber
 from subscriptions.services.passkey import PasskeyError, PasskeyUnknownCredentialError
 from tests.factories import PasskeyCredentialFactory, SubscriberFactory
 
@@ -29,13 +30,13 @@ from tests.factories import PasskeyCredentialFactory, SubscriberFactory
 # Helpers
 # ---------------------------------------------------------------------------
 
-_HTMX_HEADERS = {"HTTP_HX_REQUEST": "true"}
+_HTMX_HEADERS: dict[str, Any] = {"HTTP_HX_REQUEST": "true"}
 
 
 _TOKEN_BACKEND = "subscriptions.backends.TokenBackend"
 
 
-def _make_session_client(subscriber) -> Client:
+def _make_session_client(subscriber: Subscriber) -> Client:
     """Return a test Client logged in as subscriber via Django auth."""
     client = Client()
     client.force_login(subscriber, backend=_TOKEN_BACKEND)
@@ -65,24 +66,24 @@ def _set_reg_challenge(client: Client, value: str) -> None:
 class TestPasskeyAuthRequest:
     """Tests for the passkey_auth_request view."""
 
-    def test_get_returns_200_json(self):
+    def test_get_returns_200_json(self) -> None:
         client = Client()
         resp = client.get(reverse("subscriptions:passkey_auth_request"))
         assert resp.status_code == 200
         assert resp["Content-Type"] == "application/json"
 
-    def test_response_contains_challenge(self):
+    def test_response_contains_challenge(self) -> None:
         client = Client()
         resp = client.get(reverse("subscriptions:passkey_auth_request"))
         data = json.loads(resp.content)
         assert "challenge" in data
 
-    def test_stores_challenge_in_session(self):
+    def test_stores_challenge_in_session(self) -> None:
         client = Client()
         client.get(reverse("subscriptions:passkey_auth_request"))
         assert "webauthn_auth_challenge" in client.session
 
-    def test_post_not_allowed(self):
+    def test_post_not_allowed(self) -> None:
         client = Client()
         resp = client.post(reverse("subscriptions:passkey_auth_request"))
         assert resp.status_code == 405
@@ -97,7 +98,7 @@ class TestPasskeyAuthRequest:
 class TestPasskeyAuthResponse:
     """Tests for the passkey_auth_response view."""
 
-    def test_success_sets_session_and_returns_ok(self):
+    def test_success_sets_session_and_returns_ok(self) -> None:
         subscriber = SubscriberFactory.create()
         client = Client()
         _set_auth_challenge(client, "dGVzdA")
@@ -117,7 +118,7 @@ class TestPasskeyAuthResponse:
         assert data["ok"] is True
         assert client.session.get("_auth_user_id") == str(subscriber.pk)
 
-    def test_unknown_credential_returns_404(self):
+    def test_unknown_credential_returns_404(self) -> None:
         client = Client()
         _set_auth_challenge(client, "dGVzdA")
 
@@ -136,7 +137,7 @@ class TestPasskeyAuthResponse:
         assert data["error"] == "unknown_credential"
         assert data["credentialId"] == "bad-cred-id"
 
-    def test_verification_failure_returns_400(self):
+    def test_verification_failure_returns_400(self) -> None:
         client = Client()
         _set_auth_challenge(client, "dGVzdA")
 
@@ -152,7 +153,7 @@ class TestPasskeyAuthResponse:
 
         assert resp.status_code == 400
 
-    def test_empty_body_returns_400(self):
+    def test_empty_body_returns_400(self) -> None:
         client = Client()
         resp = client.post(
             reverse("subscriptions:passkey_auth_response"),
@@ -161,7 +162,7 @@ class TestPasskeyAuthResponse:
         )
         assert resp.status_code == 400
 
-    def test_malformed_json_returns_400(self):
+    def test_malformed_json_returns_400(self) -> None:
         client = Client()
         resp = client.post(
             reverse("subscriptions:passkey_auth_response"),
@@ -170,7 +171,7 @@ class TestPasskeyAuthResponse:
         )
         assert resp.status_code == 400
 
-    def test_get_not_allowed(self):
+    def test_get_not_allowed(self) -> None:
         client = Client()
         resp = client.get(reverse("subscriptions:passkey_auth_response"))
         assert resp.status_code == 405
@@ -185,26 +186,26 @@ class TestPasskeyAuthResponse:
 class TestPasskeyRegisterRequest:
     """Tests for the passkey_register_request view."""
 
-    def test_authenticated_returns_200_json(self):
+    def test_authenticated_returns_200_json(self) -> None:
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         resp = client.get(reverse("subscriptions:passkey_register_request"))
         assert resp.status_code == 200
         assert resp["Content-Type"] == "application/json"
 
-    def test_authenticated_response_contains_challenge(self):
+    def test_authenticated_response_contains_challenge(self) -> None:
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         resp = client.get(reverse("subscriptions:passkey_register_request"))
         data = json.loads(resp.content)
         assert "challenge" in data
 
-    def test_unauthenticated_returns_403(self):
+    def test_unauthenticated_returns_403(self) -> None:
         client = Client()
         resp = client.get(reverse("subscriptions:passkey_register_request"))
         assert resp.status_code == 403
 
-    def test_post_not_allowed(self):
+    def test_post_not_allowed(self) -> None:
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         resp = client.post(reverse("subscriptions:passkey_register_request"))
@@ -220,7 +221,7 @@ class TestPasskeyRegisterRequest:
 class TestPasskeyRegisterResponse:
     """Tests for the passkey_register_response view."""
 
-    def test_success_returns_200_with_passkey_data(self):
+    def test_success_returns_200_with_passkey_data(self) -> None:
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         _set_reg_challenge(client, "dGVzdA")
@@ -242,7 +243,7 @@ class TestPasskeyRegisterResponse:
         assert "passkey" in data
         assert data["passkey"]["uuid"] == str(passkey.uuid)
 
-    def test_unauthenticated_returns_403(self):
+    def test_unauthenticated_returns_403(self) -> None:
         client = Client()
         resp = client.post(
             reverse("subscriptions:passkey_register_response"),
@@ -251,7 +252,7 @@ class TestPasskeyRegisterResponse:
         )
         assert resp.status_code == 403
 
-    def test_verification_failure_returns_400(self):
+    def test_verification_failure_returns_400(self) -> None:
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         _set_reg_challenge(client, "dGVzdA")
@@ -268,7 +269,7 @@ class TestPasskeyRegisterResponse:
 
         assert resp.status_code == 400
 
-    def test_empty_body_returns_400(self):
+    def test_empty_body_returns_400(self) -> None:
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         resp = client.post(
@@ -278,7 +279,7 @@ class TestPasskeyRegisterResponse:
         )
         assert resp.status_code == 400
 
-    def test_get_not_allowed(self):
+    def test_get_not_allowed(self) -> None:
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         resp = client.get(reverse("subscriptions:passkey_register_response"))
@@ -294,7 +295,7 @@ class TestPasskeyRegisterResponse:
 class TestPasskeyDelete:
     """Tests for the passkey_delete HTMX view."""
 
-    def test_success_returns_200(self):
+    def test_success_returns_200(self) -> None:
         subscriber = SubscriberFactory.create()
         passkey = PasskeyCredentialFactory.create(subscriber=subscriber)
         client = _make_session_client(subscriber)
@@ -307,7 +308,7 @@ class TestPasskeyDelete:
         )
         assert resp.status_code == 200
 
-    def test_success_deletes_passkey(self):
+    def test_success_deletes_passkey(self) -> None:
         subscriber = SubscriberFactory.create()
         passkey = PasskeyCredentialFactory.create(subscriber=subscriber)
         client = _make_session_client(subscriber)
@@ -320,7 +321,7 @@ class TestPasskeyDelete:
         )
         assert not PasskeyCredential.objects.filter(uuid=passkey.uuid).exists()
 
-    def test_no_session_returns_403(self):
+    def test_no_session_returns_403(self) -> None:
         subscriber = SubscriberFactory.create()
         passkey = PasskeyCredentialFactory.create(subscriber=subscriber)
         client = Client()
@@ -333,7 +334,7 @@ class TestPasskeyDelete:
         )
         assert resp.status_code == 403
 
-    def test_non_htmx_returns_400(self):
+    def test_non_htmx_returns_400(self) -> None:
         subscriber = SubscriberFactory.create()
         passkey = PasskeyCredentialFactory.create(subscriber=subscriber)
         client = _make_session_client(subscriber)
@@ -345,7 +346,7 @@ class TestPasskeyDelete:
         )
         assert resp.status_code == 400
 
-    def test_other_subscribers_passkey_returns_404(self):
+    def test_other_subscribers_passkey_returns_404(self) -> None:
         subscriber_a = SubscriberFactory.create()
         subscriber_b = SubscriberFactory.create()
         passkey = PasskeyCredentialFactory.create(subscriber=subscriber_b)
@@ -359,7 +360,7 @@ class TestPasskeyDelete:
         )
         assert resp.status_code == 404
 
-    def test_unknown_uuid_returns_404(self):
+    def test_unknown_uuid_returns_404(self) -> None:
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         import uuid
@@ -373,7 +374,7 @@ class TestPasskeyDelete:
         )
         assert resp.status_code == 404
 
-    def test_get_not_allowed(self):
+    def test_get_not_allowed(self) -> None:
         subscriber = SubscriberFactory.create()
         passkey = PasskeyCredentialFactory.create(subscriber=subscriber)
         client = _make_session_client(subscriber)

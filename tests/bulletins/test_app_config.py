@@ -5,7 +5,7 @@ from django.apps import apps
 from bulletins.apps import BulletinsConfig
 
 
-def test_bulletins_app_is_registered():
+def test_bulletins_app_is_registered() -> None:
     config = apps.get_app_config("bulletins")
     assert isinstance(config, BulletinsConfig)
     assert config.name == "bulletins"
@@ -13,7 +13,7 @@ def test_bulletins_app_is_registered():
     assert config.default_auto_field == "django.db.models.BigAutoField"
 
 
-def test_bulletins_app_owns_the_expected_models():
+def test_bulletins_app_owns_the_expected_models() -> None:
     """SNOW-92 moved Bulletin / RegionBulletin / PipelineRun / RegionDayRating here.
 
     SNOW-97 adds WeatherSnapshot.

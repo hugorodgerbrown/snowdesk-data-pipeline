@@ -20,7 +20,7 @@ from bulletins.schema import (
 class TestDangerRatingValue:
     """Tests for the DangerRatingValue TextChoices enum."""
 
-    def test_contains_all_seven_eaws_values(self):
+    def test_contains_all_seven_eaws_values(self) -> None:
         """The enum exposes all seven values defined by the CAAML schema."""
         assert set(DangerRatingValue.values) == {
             "low",
@@ -32,7 +32,7 @@ class TestDangerRatingValue:
             "no_rating",
         }
 
-    def test_label_includes_numeric_level(self):
+    def test_label_includes_numeric_level(self) -> None:
         """Numeric levels are surfaced in the human-readable labels."""
         assert "1" in DangerRatingValue.LOW.label
         assert "5" in DangerRatingValue.VERY_HIGH.label
@@ -41,7 +41,7 @@ class TestDangerRatingValue:
 class TestValidTimePeriod:
     """Tests for the ValidTimePeriod TextChoices enum."""
 
-    def test_contains_three_values(self):
+    def test_contains_three_values(self) -> None:
         """The enum exposes the three time-of-day qualifiers."""
         assert set(ValidTimePeriod.values) == {"all_day", "earlier", "later"}
 
@@ -49,7 +49,7 @@ class TestValidTimePeriod:
 class TestAvalancheProblemType:
     """Tests for the AvalancheProblemType TextChoices enum."""
 
-    def test_contains_all_eight_problem_types(self):
+    def test_contains_all_eight_problem_types(self) -> None:
         """The enum exposes all eight EAWS problem types."""
         assert set(AvalancheProblemType.values) == {
             "new_snow",
@@ -71,31 +71,32 @@ class TestAvalancheProblemType:
 class TestElevation:
     """Tests for the Elevation dataclass."""
 
-    def test_from_dict_returns_none_for_empty(self):
+    def test_from_dict_returns_none_for_empty(self) -> None:
         """An empty or missing dict yields None."""
         assert Elevation.from_dict(None) is None
         assert Elevation.from_dict({}) is None
 
-    def test_from_dict_lower_bound_only(self):
+    def test_from_dict_lower_bound_only(self) -> None:
         """A dict with only lowerBound populates lower_bound."""
         elevation = Elevation.from_dict({"lowerBound": "1800"})
         assert elevation == Elevation(lower_bound="1800", upper_bound=None)
 
-    def test_from_dict_upper_bound_only(self):
+    def test_from_dict_upper_bound_only(self) -> None:
         """A dict with only upperBound populates upper_bound."""
         elevation = Elevation.from_dict({"upperBound": "2400"})
         assert elevation == Elevation(lower_bound=None, upper_bound="2400")
 
-    def test_from_dict_band(self):
+    def test_from_dict_band(self) -> None:
         """A dict with both bounds defines an elevation band."""
         elevation = Elevation.from_dict(
             {"lowerBound": "1800", "upperBound": "2400"},
         )
         assert elevation == Elevation(lower_bound="1800", upper_bound="2400")
 
-    def test_treeline_is_preserved(self):
+    def test_treeline_is_preserved(self) -> None:
         """The literal 'treeline' value is preserved as a string."""
         elevation = Elevation.from_dict({"lowerBound": "treeline"})
+        assert elevation is not None
         assert elevation.lower_bound == "treeline"
 
 
@@ -107,7 +108,7 @@ class TestElevation:
 class TestDangerRating:
     """Tests for the DangerRating dataclass."""
 
-    def test_from_dict_minimal(self):
+    def test_from_dict_minimal(self) -> None:
         """Only mainValue is required; other fields default appropriately."""
         rating = DangerRating.from_dict({"mainValue": "low"})
         assert rating.main_value == "low"
@@ -115,7 +116,7 @@ class TestDangerRating:
         assert rating.elevation is None
         assert rating.aspects == ()
 
-    def test_from_dict_with_all_fields(self):
+    def test_from_dict_with_all_fields(self) -> None:
         """All optional fields are mapped from camelCase to snake_case."""
         rating = DangerRating.from_dict(
             {
@@ -130,7 +131,7 @@ class TestDangerRating:
         assert rating.elevation == Elevation(lower_bound="2000")
         assert rating.aspects == ("N", "NE")
 
-    def test_aspects_are_immutable_tuple(self):
+    def test_aspects_are_immutable_tuple(self) -> None:
         """aspects is stored as a tuple so the dataclass remains hashable."""
         rating = DangerRating.from_dict(
             {"mainValue": "low", "aspects": ["N", "S"]},
@@ -146,7 +147,7 @@ class TestDangerRating:
 class TestAvalancheProblem:
     """Tests for the AvalancheProblem dataclass."""
 
-    def test_from_dict_minimal(self):
+    def test_from_dict_minimal(self) -> None:
         """Only problemType is required."""
         problem = AvalancheProblem.from_dict({"problemType": "wet_snow"})
         assert problem.problem_type == "wet_snow"
@@ -159,7 +160,7 @@ class TestAvalancheProblem:
         assert problem.snowpack_stability is None
         assert problem.frequency is None
 
-    def test_from_dict_with_all_fields(self):
+    def test_from_dict_with_all_fields(self) -> None:
         """All optional fields are mapped from camelCase to snake_case."""
         problem = AvalancheProblem.from_dict(
             {

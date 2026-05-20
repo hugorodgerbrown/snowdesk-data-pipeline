@@ -20,6 +20,7 @@ from datetime import UTC
 
 import pytest
 
+from bulletins.models import WeatherSnapshot
 from bulletins.services.weather_display import (
     DEFAULT_BUCKET,
     DEFAULT_ICON_BUCKET,
@@ -140,7 +141,7 @@ class TestIsDay:
     """Tests for the is_day boundary semantics."""
 
     @pytest.fixture()
-    def snapshot(self):
+    def snapshot(self) -> WeatherSnapshot:
         """A snapshot with sunrise 06:00 UTC, sunset 20:00 UTC on 2026-05-01."""
         return WeatherSnapshotFactory.create(
             valid_for_date=datetime.date(2026, 5, 1),
@@ -148,35 +149,37 @@ class TestIsDay:
             sunset=datetime.datetime(2026, 5, 1, 20, 0, tzinfo=UTC),
         )
 
-    def test_just_before_sunrise_is_night(self, snapshot) -> None:
+    def test_just_before_sunrise_is_night(self, snapshot: WeatherSnapshot) -> None:
         """One second before sunrise still resolves as night."""
         moment = datetime.datetime(2026, 5, 1, 5, 59, 59, tzinfo=UTC)
         assert is_day(snapshot, moment) is False
 
-    def test_exactly_sunrise_is_day(self, snapshot) -> None:
+    def test_exactly_sunrise_is_day(self, snapshot: WeatherSnapshot) -> None:
         """Sunrise is inclusive — that instant is the first day moment."""
         assert is_day(snapshot, snapshot.sunrise) is True
 
-    def test_mid_day_is_day(self, snapshot) -> None:
+    def test_mid_day_is_day(self, snapshot: WeatherSnapshot) -> None:
         """A noon-ish reference falls comfortably inside the day window."""
         moment = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
         assert is_day(snapshot, moment) is True
 
-    def test_just_before_sunset_is_day(self, snapshot) -> None:
+    def test_just_before_sunset_is_day(self, snapshot: WeatherSnapshot) -> None:
         """One second before sunset still resolves as day."""
         moment = datetime.datetime(2026, 5, 1, 19, 59, 59, tzinfo=UTC)
         assert is_day(snapshot, moment) is True
 
-    def test_exactly_sunset_is_night(self, snapshot) -> None:
+    def test_exactly_sunset_is_night(self, snapshot: WeatherSnapshot) -> None:
         """Sunset is exclusive — that instant is the first night moment."""
         assert is_day(snapshot, snapshot.sunset) is False
 
-    def test_after_sunset_is_night(self, snapshot) -> None:
+    def test_after_sunset_is_night(self, snapshot: WeatherSnapshot) -> None:
         """A reference after sunset is night."""
         moment = datetime.datetime(2026, 5, 1, 22, 0, tzinfo=UTC)
         assert is_day(snapshot, moment) is False
 
-    def test_now_on_later_date_with_daytime_clock_is_day(self, snapshot) -> None:
+    def test_now_on_later_date_with_daytime_clock_is_day(
+        self, snapshot: WeatherSnapshot
+    ) -> None:
         """A wall-clock 'now' weeks later still resolves as day at noon.
 
         This is the user-facing scenario: when the viewer browses a
@@ -187,7 +190,9 @@ class TestIsDay:
         moment = datetime.datetime(2026, 6, 15, 11, 9, tzinfo=UTC)
         assert is_day(snapshot, moment) is True
 
-    def test_now_on_later_date_with_evening_clock_is_night(self, snapshot) -> None:
+    def test_now_on_later_date_with_evening_clock_is_night(
+        self, snapshot: WeatherSnapshot
+    ) -> None:
         """A wall-clock 'now' in the evening resolves to night on any date."""
         moment = datetime.datetime(2026, 6, 15, 23, 9, tzinfo=UTC)
         assert is_day(snapshot, moment) is False

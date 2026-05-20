@@ -28,7 +28,7 @@ class TestHazardIconFilter:
     )
     def test_known_types_return_svg_path(
         self, problem_type: str, expected_fragment: str
-    ):
+    ) -> None:
         """Each known problem type maps to an SVG path containing its name."""
         result = hazard_icon(problem_type)
 
@@ -36,15 +36,15 @@ class TestHazardIconFilter:
         assert result.endswith(".svg")
         assert expected_fragment in result
 
-    def test_unknown_type_returns_empty(self):
+    def test_unknown_type_returns_empty(self) -> None:
         """An unrecognised problem type returns an empty string."""
         assert hazard_icon("unknown_problem") == ""
 
-    def test_empty_string_returns_empty(self):
+    def test_empty_string_returns_empty(self) -> None:
         """An empty string returns an empty string."""
         assert hazard_icon("") == ""
 
-    def test_filter_works_in_template(self):
+    def test_filter_works_in_template(self) -> None:
         """The filter can be used inside a Django template."""
         template = Template("{% load hazard_icons %}{{ problem_type|hazard_icon }}")
         context = Context({"problem_type": "wind_slab"})

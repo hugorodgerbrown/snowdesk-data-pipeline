@@ -22,17 +22,17 @@ def _wrap(properties: dict[str, Any]) -> dict[str, Any]:
 class TestBulletinRegionCount:
     """Tests for Bulletin.region_count()."""
 
-    def test_returns_zero_when_raw_data_empty(self):
+    def test_returns_zero_when_raw_data_empty(self) -> None:
         """An empty raw_data dict yields zero regions."""
         bulletin = BulletinFactory.create(raw_data={})
         assert bulletin.region_count() == 0
 
-    def test_returns_zero_when_no_regions(self):
+    def test_returns_zero_when_no_regions(self) -> None:
         """Properties without a regions key yield zero regions."""
         bulletin = BulletinFactory.create(raw_data=_wrap({}))
         assert bulletin.region_count() == 0
 
-    def test_counts_regions(self):
+    def test_counts_regions(self) -> None:
         """Returns the length of the regions list."""
         bulletin = BulletinFactory.create(
             raw_data=_wrap(
@@ -52,12 +52,12 @@ class TestBulletinRegionCount:
 class TestBulletinGetDangerRatings:
     """Tests for Bulletin.get_danger_ratings()."""
 
-    def test_empty_when_field_missing(self):
+    def test_empty_when_field_missing(self) -> None:
         """Returns an empty list when dangerRatings is absent."""
         bulletin = BulletinFactory.create(raw_data=_wrap({}))
         assert bulletin.get_danger_ratings() == []
 
-    def test_returns_dataclass_instances(self):
+    def test_returns_dataclass_instances(self) -> None:
         """Each entry is converted into a DangerRating dataclass."""
         bulletin = BulletinFactory.create(
             raw_data=_wrap(
@@ -95,12 +95,12 @@ class TestBulletinGetDangerRatings:
 class TestBulletinGetAvalancheProblems:
     """Tests for Bulletin.get_avalanche_problems()."""
 
-    def test_empty_when_field_missing(self):
+    def test_empty_when_field_missing(self) -> None:
         """Returns an empty list when avalancheProblems is absent."""
         bulletin = BulletinFactory.create(raw_data=_wrap({}))
         assert bulletin.get_avalanche_problems() == []
 
-    def test_returns_dataclass_instances(self):
+    def test_returns_dataclass_instances(self) -> None:
         """Each entry is converted into an AvalancheProblem dataclass."""
         bulletin = BulletinFactory.create(
             raw_data=_wrap(
@@ -145,7 +145,7 @@ class TestBulletinGetAvalancheProblems:
 class TestBulletinHighestDangerRating:
     """Tests for the existing highest_danger_rating() helper after refactor."""
 
-    def test_returns_main_values_in_order(self):
+    def test_returns_main_values_in_order(self) -> None:
         """Returns the mainValue strings via the dataclass helper."""
         bulletin = BulletinFactory.create(
             raw_data=_wrap(
@@ -159,7 +159,7 @@ class TestBulletinHighestDangerRating:
         )
         assert bulletin.highest_danger_rating() == ["low", "considerable"]
 
-    def test_empty_when_no_ratings(self):
+    def test_empty_when_no_ratings(self) -> None:
         """Returns an empty list when no ratings are present."""
         bulletin = BulletinFactory.create(raw_data=_wrap({}))
         assert bulletin.highest_danger_rating() == []

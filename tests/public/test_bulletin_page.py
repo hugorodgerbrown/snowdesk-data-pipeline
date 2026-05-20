@@ -11,12 +11,16 @@ factories) to stay consistent with the existing test suite.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 from django.test import Client
 from django.urls import reverse
+from pytest_django.fixtures import SettingsWrapper
 
+from bulletins.models import Bulletin
+from regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -28,7 +32,7 @@ from tests.factories import (
 # ---------------------------------------------------------------------------
 
 
-def _make_am_bulletin(region, day, **kwargs):
+def _make_am_bulletin(region: MicroRegion, day: date, **kwargs: Any) -> Bulletin:
     """Create a morning bulletin valid from 06:00 to 15:00 on *day*."""
     vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
     vt = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
@@ -258,13 +262,13 @@ def _raw_data_with_aggregation(
 
 
 @pytest.fixture()
-def region():
+def region() -> MicroRegion:
     """Return a test Region."""
     return MicroRegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
 @pytest.fixture()
-def simple_bulletin(region):
+def simple_bulletin(region: MicroRegion) -> Bulletin:
     """A bulletin with one dry problem (simple day)."""
     day = date(2026, 3, 15)
     rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
@@ -275,7 +279,7 @@ def simple_bulletin(region):
 
 
 @pytest.fixture()
-def variable_bulletin(region):
+def variable_bulletin(region: MicroRegion) -> Bulletin:
     """A bulletin with two traits (variable day — dry morning, wet afternoon).
 
     raw_data carries matching dangerRatings so _build_day_windows() renders
@@ -343,7 +347,9 @@ def _url(region_id: str, slug: str, date_str: str) -> str:
 class TestTemplateName:
     """bulletin_detail always renders public/bulletin.html."""
 
-    def test_renders_bulletin_html(self, client: Client, simple_bulletin, region):
+    def test_renders_bulletin_html(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """The view renders public/bulletin.html."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -360,14 +366,18 @@ class TestTemplateName:
 class TestRatingBlockCount:
     """Number of rendered rating blocks equals number of traits."""
 
-    def test_one_trait_one_block(self, client: Client, simple_bulletin, region):
+    def test_one_trait_one_block(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """One trait produces exactly one rating block."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         assert content.count('data-testid="rating-block"') == 1
 
-    def test_two_traits_two_blocks(self, client: Client, variable_bulletin, region):
+    def test_two_traits_two_blocks(
+        self, client: Client, variable_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """Two traits produce exactly two rating blocks."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -385,8 +395,8 @@ class TestAspectElevationRow:
     """Aspect/elevation row is present when the first problem has aspects or elevation."""
 
     def test_row_present_when_problem_has_aspects_and_elevation(
-        self, client: Client, simple_bulletin, region
-    ):
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """Rating block has aspect/elevation row when the first problem has geographic data."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -394,8 +404,8 @@ class TestAspectElevationRow:
         assert 'data-testid="aspect-elevation-row"' in content
 
     def test_row_absent_when_problem_has_no_aspects_or_elevation(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """No aspect/elevation row when the first problem has neither aspects nor elevation."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems([_raw_problem_no_geo(problem_type="wet_snow")])
@@ -407,8 +417,8 @@ class TestAspectElevationRow:
         assert 'data-testid="aspect-elevation-row"' not in content
 
     def test_row_absent_when_aspects_empty_but_elevation_present(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Elevation alone is enough to show the row; empty aspects list is ignored."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems(
@@ -431,7 +441,9 @@ class TestAspectElevationRow:
 class TestProseFull:
     """Problem prose comment appears verbatim and in full in the output."""
 
-    def test_full_prose_comment_rendered(self, client: Client, region):
+    def test_full_prose_comment_rendered(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """The full text of a problem's comment appears verbatim in the response."""
         day = date(2026, 3, 15)
         full_prose = (
@@ -464,7 +476,9 @@ class TestProseFull:
 class TestSnowpackWeatherSection:
     """Sub-blocks are skipped entirely when their source is None/empty."""
 
-    def test_weather_review_skipped_when_none(self, client: Client, region):
+    def test_weather_review_skipped_when_none(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """No 'Weather review' heading when prose.weather_review is None."""
         day = date(2026, 3, 15)
         prose: dict = {
@@ -484,7 +498,9 @@ class TestSnowpackWeatherSection:
         content = response.content.decode()
         assert 'data-testid="weather-review-heading"' not in content
 
-    def test_weather_review_rendered_when_present(self, client: Client, region):
+    def test_weather_review_rendered_when_present(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """prose.weather_review content appears in the Snowpack & Weather section."""
         day = date(2026, 3, 15)
         prose: dict = {
@@ -505,7 +521,9 @@ class TestSnowpackWeatherSection:
         assert 'data-testid="snowpack-weather-section"' in content
         assert "Cold and clear overnight" in content
 
-    def test_snowpack_section_absent_when_all_prose_empty(self, client: Client, region):
+    def test_snowpack_section_absent_when_all_prose_empty(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Entire snowpack/weather section absent when all prose fields are None."""
         day = date(2026, 3, 15)
         prose: dict = {
@@ -525,7 +543,9 @@ class TestSnowpackWeatherSection:
         content = response.content.decode()
         assert 'data-testid="snowpack-weather-section"' not in content
 
-    def test_weather_forecast_rendered_when_present(self, client: Client, region):
+    def test_weather_forecast_rendered_when_present(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """prose.weather_forecast content appears in the Snowpack & Weather section."""
         day = date(2026, 3, 15)
         prose: dict = {
@@ -546,7 +566,9 @@ class TestSnowpackWeatherSection:
         assert 'data-testid="snowpack-weather-section"' in content
         assert "Warm and sunny tomorrow" in content
 
-    def test_outlook_rendered_from_tendency(self, client: Client, region):
+    def test_outlook_rendered_from_tendency(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Tendency comments render inside the Snowpack & Weather section."""
         day = date(2026, 3, 15)
         prose: dict = {
@@ -584,7 +606,9 @@ class TestSnowpackWeatherSection:
 class TestMetadataStrip:
     """Metadata strip renders em-dash for None timestamp fields."""
 
-    def test_none_next_update_renders_em_dash(self, client: Client, region):
+    def test_none_next_update_renders_em_dash(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """When metadata.next_update is None, the next-update cell shows —."""
         day = date(2026, 3, 15)
         metadata = {
@@ -607,7 +631,7 @@ class TestMetadataStrip:
         # Em-dash character should appear in the next-update cell
         assert "—" in content or "&mdash;" in content
 
-    def test_valid_timestamps_render(self, client: Client, region):
+    def test_valid_timestamps_render(self, client: Client, region: MicroRegion) -> None:
         """Valid ISO timestamps in metadata are rendered as formatted dates."""
         day = date(2026, 3, 15)
         metadata = {
@@ -633,7 +657,9 @@ class TestMetadataStrip:
         # "15:00" appears in the valid-until and next-update fields
         assert "15:00" in content
 
-    def test_source_cell_renders_link_for_known_source(self, client: Client, region):
+    def test_source_cell_renders_link_for_known_source(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """When render_model.source is a known value, source-cell shows a link."""
         day = date(2026, 3, 15)
         # _render_model_with_traits already defaults source to "slf".
@@ -649,8 +675,8 @@ class TestMetadataStrip:
         assert ">SLF<" in content
 
     def test_source_cell_renders_em_dash_for_missing_source(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """When render_model has no source key, source-cell shows an em-dash."""
         day = date(2026, 3, 15)
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
@@ -696,7 +722,9 @@ class TestNoBulletinPageFooter:
     section 6 footer was removed.
     """
 
-    def test_no_page_footer_landmark(self, client: Client, simple_bulletin, region):
+    def test_no_page_footer_landmark(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """The page-local footer landmark is gone."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -705,8 +733,8 @@ class TestNoBulletinPageFooter:
         assert 'data-testid="focal-region"' not in content
 
     def test_sibling_regions_not_rendered_anywhere_on_page(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """A sibling region's name does not appear in the rendered HTML.
 
         On a multi-region bulletin, the focal region's bulletin page
@@ -747,7 +775,7 @@ class TestRegionNameSource:
     """
 
     def test_header_uses_eaws_canonical_name_not_slf_label(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """region.name is shown on the page header even when region_name_at_time disagrees."""
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
@@ -788,7 +816,9 @@ class TestRegionNameSource:
 class TestTypography:
     """The outermost container carries font-sans to prevent serif leakage."""
 
-    def test_font_sans_on_container(self, client: Client, simple_bulletin, region):
+    def test_font_sans_on_container(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """The outermost container has the font-sans class."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -813,22 +843,26 @@ class TestDebuggingAids:
     """
 
     def test_x_bulletin_id_header_present(
-        self, client: Client, simple_bulletin, region
-    ):
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """Response carries the bulletin UUID in ``X-Bulletin-Id``."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
         assert response["X-Bulletin-Id"] == str(simple_bulletin.bulletin_id)
 
-    def test_x_bulletin_id_header_absent_on_empty_state(self, client: Client, region):
+    def test_x_bulletin_id_header_absent_on_empty_state(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """No bulletin → no ``X-Bulletin-Id`` header."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
         assert "X-Bulletin-Id" not in response
 
-    def test_raw_data_embedded_when_debug_true(self, client: Client, region, settings):
+    def test_raw_data_embedded_when_debug_true(
+        self, client: Client, region: MicroRegion, settings: SettingsWrapper
+    ) -> None:
         """DEBUG=True → raw_data JSON embedded in page source."""
         settings.DEBUG = True
         day = date(2026, 3, 17)
@@ -852,8 +886,12 @@ class TestDebuggingAids:
         assert response["X-Bulletin-Id"] == str(bulletin.bulletin_id)
 
     def test_raw_data_absent_when_debug_false(
-        self, client: Client, simple_bulletin, region, settings
-    ):
+        self,
+        client: Client,
+        simple_bulletin: Bulletin,
+        region: MicroRegion,
+        settings: SettingsWrapper,
+    ) -> None:
         """DEBUG=False → no raw_data script tag, header still present."""
         settings.DEBUG = False
         url = _url("ch-4115", "valais", "2026-03-15")
@@ -863,7 +901,9 @@ class TestDebuggingAids:
         assert 'id="bulletin-raw-data"' not in content
         assert response["X-Bulletin-Id"] == str(simple_bulletin.bulletin_id)
 
-    def test_script_breakout_payload_is_escaped(self, client: Client, region, settings):
+    def test_script_breakout_payload_is_escaped(
+        self, client: Client, region: MicroRegion, settings: SettingsWrapper
+    ) -> None:
         """A ``</script>`` substring in raw_data must not break out of the tag."""
         settings.DEBUG = True
         day = date(2026, 3, 18)
@@ -902,7 +942,9 @@ class TestRatingBlockGrouping:
     danger_level) pairs into one card each.
     """
 
-    def test_single_problem_produces_one_block(self, client: Client, region):
+    def test_single_problem_produces_one_block(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """One raw problem → one rating block."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems([_raw_problem()])
@@ -911,8 +953,8 @@ class TestRatingBlockGrouping:
         assert response.content.decode().count('data-testid="rating-block"') == 1
 
     def test_two_problems_same_kind_and_level_produce_two_blocks(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Two problems with same (kind, danger_level) → 2 separate cards."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems(
@@ -928,8 +970,8 @@ class TestRatingBlockGrouping:
         assert "New snow" in content
 
     def test_same_level_different_kind_produces_two_blocks_dry_before_wet(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Same danger level, dry vs wet → 2 cards; dry appears first (kind tiebreak)."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems(
@@ -949,8 +991,8 @@ class TestRatingBlockGrouping:
         assert dry_idx < wet_idx
 
     def test_different_levels_produces_two_blocks_high_danger_first(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Higher danger level appears first — aggregation order drives display order."""
         day = date(2026, 3, 15)
         # Put the higher-danger problem first in the aggregation (and problems list).
@@ -972,7 +1014,9 @@ class TestRatingBlockGrouping:
         dry_idx = content.index("Wind slab", probs_start)
         assert wet_idx < dry_idx
 
-    def test_three_problems_produce_three_blocks_in_order(self, client: Client, region):
+    def test_three_problems_produce_three_blocks_in_order(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Three problems → 3 cards in aggregation order (highest danger first)."""
         day = date(2026, 3, 15)
         # Put wet_snow (considerable) first in the aggregation order.
@@ -996,8 +1040,8 @@ class TestRatingBlockGrouping:
         assert wet_idx < wind_idx
 
     def test_prose_only_problem_shows_no_aspect_elevation_row(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Problem with no aspects and no elevation → no aspect/elevation row."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems([_raw_problem_no_geo(problem_type="wet_snow")])
@@ -1006,7 +1050,9 @@ class TestRatingBlockGrouping:
         assert 'data-testid="rating-block"' in content
         assert 'data-testid="aspect-elevation-row"' not in content
 
-    def test_problem_labels_appear_in_cards(self, client: Client, region):
+    def test_problem_labels_appear_in_cards(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Each problem type's display label appears in its card header."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems(
@@ -1023,7 +1069,9 @@ class TestRatingBlockGrouping:
         assert "Wet snow" in content
         assert "Gliding snow" in content
 
-    def test_empty_problems_shows_no_problems_card(self, client: Client, region):
+    def test_empty_problems_shows_no_problems_card(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Bulletin with avalancheProblems=[] → 'No avalanche problems reported.' empty state."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems([])
@@ -1045,7 +1093,9 @@ class TestAggregationDriven:
     one card per (aggregation entry, problem type), in aggregation order.
     """
 
-    def test_aggregation_order_preserved(self, client: Client, region):
+    def test_aggregation_order_preserved(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Cards appear in aggregation order, not sorted by danger level."""
         day = date(2026, 3, 15)
         # aggregation lists wet first (at low), dry second (at considerable)
@@ -1079,8 +1129,8 @@ class TestAggregationDriven:
         assert wet_idx < dry_idx
 
     def test_two_problems_in_one_entry_produce_one_card_with_combined_label(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Two problem types in one aggregation entry → one card with combined label."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_aggregation(
@@ -1107,7 +1157,9 @@ class TestAggregationDriven:
         probs_start = content.index('data-testid="avalanche-problems-heading"')
         assert "Wet snow + Gliding snow" in content[probs_start:]
 
-    def test_core_zone_text_as_aria_label(self, client: Client, region):
+    def test_core_zone_text_as_aria_label(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """coreZoneText from customData.CH appears as aria-label on aspect/elevation row."""
         day = date(2026, 3, 15)
         core_text = "Danger level moderate in N to E facing aspects above 2000m."
@@ -1152,7 +1204,9 @@ class TestDayWindowsPanel:
     absent; each row is badge + rating-name + chip.
     """
 
-    def test_default_renders_panel(self, client: Client, variable_bulletin, region):
+    def test_default_renders_panel(
+        self, client: Client, variable_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """The day-windows panel renders by default — no headline band."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -1161,8 +1215,8 @@ class TestDayWindowsPanel:
         assert 'data-testid="headline-band"' not in content
 
     def test_renders_day_risk_profile_heading_above_panel(
-        self, client: Client, variable_bulletin, region
-    ):
+        self, client: Client, variable_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """The 'Day Risk Profile' h2 sits above the day-windows panel."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -1174,7 +1228,9 @@ class TestDayWindowsPanel:
         panel_idx = content.index('data-testid="day-windows-panel"')
         assert heading_idx < panel_idx
 
-    def test_all_day_only_renders_single_row(self, client: Client, region):
+    def test_all_day_only_renders_single_row(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """A bulletin with only an all_day rating renders one row, chip = 'All day'."""
         day = date(2026, 3, 19)
         raw = _raw_data_with_ratings([_rating("moderate", "all_day")])
@@ -1187,7 +1243,9 @@ class TestDayWindowsPanel:
         assert 'data-window="all_day"' in content
         assert ">All day<" in content
 
-    def test_two_row_pills_read_all_day_and_later(self, client: Client, region):
+    def test_two_row_pills_read_all_day_and_later(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day + later cross-category → two rows with chips 'All day' / 'Later'."""
         day = date(2026, 3, 22)
         raw = _raw_data_with_ratings(
@@ -1212,7 +1270,9 @@ class TestDayWindowsPanel:
         assert ">Later<" in panel_html
         assert ">Earlier<" not in panel_html
 
-    def test_tile_carries_lv_class_and_level_number(self, client: Client, region):
+    def test_tile_carries_lv_class_and_level_number(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """The numbered tile uses ``lv-{level}`` so EAWS tokens drive the colour."""
         day = date(2026, 3, 20)
         raw = _raw_data_with_ratings([_rating("considerable", "all_day")])
@@ -1224,7 +1284,7 @@ class TestDayWindowsPanel:
         assert "dw-tile lv-considerable" in content
         assert "Considerable" in content
 
-    def test_caption_is_absent(self, client: Client, region):
+    def test_caption_is_absent(self, client: Client, region: MicroRegion) -> None:
         """No dw-caption element renders — captions are dropped in this design."""
         day = date(2026, 3, 21)
         raw = _raw_data_with_ratings([_rating("considerable", "all_day")])
@@ -1240,7 +1300,9 @@ class TestDayWindowsPanel:
     # Badge display — sublevel modifier
     # ------------------------------------------------------------------
 
-    def test_single_all_day_considerable_badge(self, client: Client, region):
+    def test_single_all_day_considerable_badge(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Single all_day considerable → badge '3', chip 'All day'."""
         day = date(2026, 3, 23)
         raw = _raw_data_with_ratings([_rating("considerable", "all_day")])
@@ -1254,7 +1316,9 @@ class TestDayWindowsPanel:
         assert ">3<" in content
         assert ">All day<" in content
 
-    def test_sublevel_modifier_minus_on_badge(self, client: Client, region):
+    def test_sublevel_modifier_minus_on_badge(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day moderate minus → badge '2-' in the tile."""
         day = date(2026, 3, 24)
         raw = _raw_data_with_ratings([_rating("moderate", "all_day", "minus")])
@@ -1271,7 +1335,9 @@ class TestDayWindowsPanel:
     # later_ filter — cross-category (always shown)
     # ------------------------------------------------------------------
 
-    def test_cross_category_later_up_renders_two_rows(self, client: Client, region):
+    def test_cross_category_later_up_renders_two_rows(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day low + later moderate (cross-category up) → 2 rows."""
         day = date(2026, 3, 25)
         raw = _raw_data_with_ratings(
@@ -1290,8 +1356,8 @@ class TestDayWindowsPanel:
         assert "lv-moderate" in content
 
     def test_cross_category_later_two_level_jump_renders_two_rows(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day low + later considerable (two-level jump) → 2 rows."""
         day = date(2026, 3, 26)
         raw = _raw_data_with_ratings(
@@ -1307,7 +1373,9 @@ class TestDayWindowsPanel:
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 2
 
-    def test_cross_category_later_down_suppressed(self, client: Client, region):
+    def test_cross_category_later_down_suppressed(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day considerable minus + later moderate (cross-band lower) → 1 row (suppressed)."""
         day = date(2026, 3, 27)
         raw = _raw_data_with_ratings(
@@ -1328,8 +1396,8 @@ class TestDayWindowsPanel:
     # ------------------------------------------------------------------
 
     def test_within_category_later_up_renders_two_rows_with_badge_differential(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day considerable minus + later considerable → 2 rows, badges '3-' / '3'."""
         day = date(2026, 3, 28)
         raw = _raw_data_with_ratings(
@@ -1354,7 +1422,9 @@ class TestDayWindowsPanel:
         panel_html = content[panel_start:panel_end]
         assert ">3<" in panel_html
 
-    def test_within_category_later_down_suppressed(self, client: Client, region):
+    def test_within_category_later_down_suppressed(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day moderate plus + later moderate minus (within-band lower) → 1 row (suppressed)."""
         day = date(2026, 3, 29)
         raw = _raw_data_with_ratings(
@@ -1374,7 +1444,9 @@ class TestDayWindowsPanel:
     # later_ filter — same-band no-op (filtered)
     # ------------------------------------------------------------------
 
-    def test_same_band_noop_considerable_filtered(self, client: Client, region):
+    def test_same_band_noop_considerable_filtered(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day considerable neutral + later considerable → 1 row (later filtered)."""
         day = date(2026, 3, 30)
         raw = _raw_data_with_ratings(
@@ -1390,7 +1462,9 @@ class TestDayWindowsPanel:
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 1
 
-    def test_same_band_noop_moderate_filtered(self, client: Client, region):
+    def test_same_band_noop_moderate_filtered(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day moderate neutral + later moderate → 1 row (later filtered)."""
         day = date(2026, 3, 31)
         raw = _raw_data_with_ratings(
@@ -1411,8 +1485,8 @@ class TestDayWindowsPanel:
     # ------------------------------------------------------------------
 
     def test_cross_band_lower_considerable_to_moderate_suppressed(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day considerable + later moderate (lower band) → 1 row."""
         day = date(2026, 4, 1)
         raw = _raw_data_with_ratings(
@@ -1428,7 +1502,9 @@ class TestDayWindowsPanel:
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 1
 
-    def test_same_band_plus_blocks_plain_later(self, client: Client, region):
+    def test_same_band_plus_blocks_plain_later(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day moderate plus + later moderate plain (lower sub) → 1 row."""
         day = date(2026, 4, 2)
         raw = _raw_data_with_ratings(
@@ -1444,7 +1520,9 @@ class TestDayWindowsPanel:
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 1
 
-    def test_same_band_minus_to_plain_shows_two_rows(self, client: Client, region):
+    def test_same_band_minus_to_plain_shows_two_rows(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """all_day moderate minus + later moderate plain (higher sub) → 2 rows."""
         day = date(2026, 4, 3)
         raw = _raw_data_with_ratings(
@@ -1474,7 +1552,9 @@ class TestBulletinPageContent:
     day-risk-profile panel that sits below the header.
     """
 
-    def test_subregion_uses_english_name_when_present(self, simple_bulletin, region):
+    def test_subregion_uses_english_name_when_present(
+        self, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """``SubRegion.name_en`` wins over native when SLF publishes one."""
         sub = region.subregion
         sub.name_en = "Lower Valais"
@@ -1486,8 +1566,8 @@ class TestBulletinPageContent:
         assert "Lower Valais" in content
 
     def test_subregion_falls_back_to_native_when_english_blank(
-        self, simple_bulletin, region
-    ):
+        self, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """When ``name_en`` is blank the H2 uses ``name_native``."""
         sub = region.subregion
         sub.name_en = ""
@@ -1499,8 +1579,8 @@ class TestBulletinPageContent:
         assert "Bas-Valais" in content
 
     def test_still_renders_day_risk_profile_panel(
-        self, client: Client, variable_bulletin, region
-    ):
+        self, client: Client, variable_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """The Day Risk Profile heading + day-windows panel render below the header."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -1532,8 +1612,8 @@ class TestSeasonSheet:
     """
 
     def test_renders_sheet_and_trigger_when_season_active(
-        self, client: Client, simple_bulletin, region
-    ):
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """A bulletin with a populated season header renders trigger + closed sheet shell."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -1551,8 +1631,8 @@ class TestSeasonSheet:
         )
 
     def test_omits_sheet_when_season_grid_empty(
-        self, client: Client, simple_bulletin, region
-    ):
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """With SEASON_START_DATE in the future, season_header is None and the sheet is omitted."""
         future_start = date(2099, 12, 1)
         with patch("django.conf.settings.SEASON_START_DATE", future_start):
@@ -1567,8 +1647,8 @@ class TestSeasonSheet:
         assert "data-season-trigger" not in content
 
     def test_season_grid_placeholder_in_sheet(
-        self, client: Client, simple_bulletin, region
-    ):
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """When the season is active the shell contains the #season-grid HTMX placeholder."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -1595,7 +1675,9 @@ class TestDayCharacterEyebrow:
     a warning panel.
     """
 
-    def test_renders_label_and_explainer(self, client: Client, simple_bulletin, region):
+    def test_renders_label_and_explainer(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """A normal bulletin renders the callout banner with favicon, label, and explainer."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -1609,8 +1691,8 @@ class TestDayCharacterEyebrow:
         assert "favicon.svg" in content
 
     def test_renders_hard_to_read_for_persistent_weak_layers(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """A bulletin with persistent weak layers renders the hard-to-read callout."""
         day = date(2026, 3, 20)
         trait = {
@@ -1635,8 +1717,8 @@ class TestDayCharacterEyebrow:
         assert "<strong" in content
 
     def test_callout_precedes_day_risk_profile_heading(
-        self, client: Client, simple_bulletin, region
-    ):
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
         """The callout banner sits above the Day Risk Profile heading in DOM order."""
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -1645,7 +1727,9 @@ class TestDayCharacterEyebrow:
         heading_idx = content.index('data-testid="day-risk-profile-heading"')
         assert callout_idx < heading_idx
 
-    def test_callout_absent_in_error_state(self, client: Client, region):
+    def test_callout_absent_in_error_state(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """A version=0 error bulletin replaces the body and suppresses the callout."""
         from bulletins.services.render_model import RENDER_MODEL_VERSION
 
@@ -1710,7 +1794,7 @@ class TestMapBackLink:
     """
 
     def test_dated_bulletin_includes_date_and_fragment(
-        self, client: Client, simple_bulletin, region
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
     ) -> None:
         """A dated bulletin URL produces a map link with ``?d=`` and ``#``."""
         url = _url("ch-4115", "valais", "2026-03-15")
@@ -1720,7 +1804,7 @@ class TestMapBackLink:
         assert 'href="/map/?d=2026-03-15#CH-4115"' in content
 
     def test_today_bulletin_omits_date_query_string(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """Today's bulletin URL produces a map link with fragment only, no ``?d=``."""
         today = date.today()

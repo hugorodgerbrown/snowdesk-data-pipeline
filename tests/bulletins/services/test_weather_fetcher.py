@@ -967,12 +967,14 @@ class TestFetchWeatherAsync:
             region=region, valid_for_date=target
         ).exists()
 
-    def test_sync_mode_swallows_inner_exception(self, monkeypatch) -> None:
+    def test_sync_mode_swallows_inner_exception(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A failure inside the worker is caught and logged; the caller still returns."""
         region = MicroRegionFactory.create()
         target = datetime.date.today() - datetime.timedelta(days=2)
 
-        def _boom(*args, **kwargs):
+        def _boom(*args: Any, **kwargs: Any) -> None:
             raise requests.HTTPError("503")
 
         monkeypatch.setattr(
@@ -985,7 +987,9 @@ class TestFetchWeatherAsync:
             region=region, valid_for_date=target
         ).exists()
 
-    def test_sync_mode_skips_when_snapshot_already_exists(self, monkeypatch) -> None:
+    def test_sync_mode_skips_when_snapshot_already_exists(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Idempotent guard: a pre-existing snapshot means no API call."""
         region = MicroRegionFactory.create()
         target = datetime.date.today() - datetime.timedelta(days=2)
@@ -993,7 +997,7 @@ class TestFetchWeatherAsync:
             region=region, valid_for_date=target, weather_code=0
         )
 
-        def _boom(*args, **kwargs):
+        def _boom(*args: Any, **kwargs: Any) -> None:
             raise AssertionError("API must not be called when snapshot already exists")
 
         monkeypatch.setattr(

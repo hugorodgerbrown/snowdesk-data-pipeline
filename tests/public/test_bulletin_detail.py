@@ -11,7 +11,10 @@ For past days the morning bulletin is preferred; for the current day the
 bulletin whose validity window contains *now* is shown.
 """
 
+from __future__ import annotations
+
 from datetime import UTC, date, datetime, timedelta
+from typing import Any, Generator
 from unittest.mock import patch
 
 import pytest
@@ -19,13 +22,14 @@ from django.core.cache import cache
 from django.test import Client, override_settings
 from django.urls import reverse
 
-from bulletins.models import RegionDayRating
+from bulletins.models import Bulletin, RegionDayRating
 from public.views import (
     _get_nav_dates,
     _issues_for_date,
     _resolve_selected_issue,
     _select_bulletin_for_date,
 )
+from regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -36,7 +40,7 @@ from tests.factories import (
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
+def _clear_cache() -> Generator[None, None, None]:
     """Clear the cache before and after each test."""
     cache.clear()
     yield
@@ -44,12 +48,12 @@ def _clear_cache():
 
 
 @pytest.fixture()
-def region():
+def region() -> MicroRegion:
     """Return a test Region."""
     return MicroRegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
 
 
-def _make_pm_bulletin(region, day, **kwargs):
+def _make_pm_bulletin(region: MicroRegion, day: date, **kwargs: Any) -> Bulletin:
     """Create an evening bulletin valid from 15:00 on *day* to 15:00 next day."""
     vf = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
     vt = vf + timedelta(hours=24)
@@ -67,7 +71,7 @@ def _make_pm_bulletin(region, day, **kwargs):
     return bulletin
 
 
-def _make_am_bulletin(region, day, **kwargs):
+def _make_am_bulletin(region: MicroRegion, day: date, **kwargs: Any) -> Bulletin:
     """Create a morning bulletin valid from 06:00 to 15:00 on *day*."""
     vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
     vt = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
@@ -85,7 +89,7 @@ def _make_am_bulletin(region, day, **kwargs):
     return bulletin
 
 
-def _freeze(dt_str):
+def _freeze(dt_str: str) -> Any:  # mock-typing-impractical
     """Return a patch that freezes django.utils.timezone.now to *dt_str*."""
     frozen = datetime.fromisoformat(dt_str)
     return patch("django.utils.timezone.now", return_value=frozen)
@@ -98,7 +102,7 @@ def _freeze(dt_str):
 class TestSelectBulletinForDate:
     """Tests for the _select_bulletin_for_date helper."""
 
-    def test_past_date_prefers_am_bulletin(self, region):
+    def test_past_date_prefers_am_bulletin(self, region: MicroRegion) -> None:
         """On a past date with both AM and PM bulletins, the AM is chosen."""
         day = date(2026, 3, 15)
         _make_pm_bulletin(region, date(2026, 3, 14))  # PM covers 3/15
@@ -110,7 +114,7 @@ class TestSelectBulletinForDate:
         assert result is not None
         assert result.pk == am.pk
 
-    def test_past_date_falls_back_to_pm_if_no_am(self, region):
+    def test_past_date_falls_back_to_pm_if_no_am(self, region: MicroRegion) -> None:
         """On a past date with only a PM bulletin, that is returned."""
         day = date(2026, 3, 15)
         pm = _make_pm_bulletin(region, date(2026, 3, 14))  # PM covers 3/15
@@ -121,7 +125,7 @@ class TestSelectBulletinForDate:
         assert result is not None
         assert result.pk == pm.pk
 
-    def test_today_returns_currently_valid_am(self, region):
+    def test_today_returns_currently_valid_am(self, region: MicroRegion) -> None:
         """During today's AM window the AM bulletin is selected."""
         day = date(2026, 3, 15)
         _make_pm_bulletin(region, date(2026, 3, 14))  # PM covers until 15:00
@@ -133,7 +137,7 @@ class TestSelectBulletinForDate:
         assert result is not None
         assert result.pk == am.pk
 
-    def test_today_before_am_returns_pm(self, region):
+    def test_today_before_am_returns_pm(self, region: MicroRegion) -> None:
         """Before the AM bulletin starts the PM bulletin is still valid."""
         day = date(2026, 3, 15)
         pm = _make_pm_bulletin(region, date(2026, 3, 14))  # valid until 15:00
@@ -145,7 +149,7 @@ class TestSelectBulletinForDate:
         assert result is not None
         assert result.pk == pm.pk
 
-    def test_no_bulletins_returns_none(self, region):
+    def test_no_bulletins_returns_none(self, region: MicroRegion) -> None:
         """When no bulletins exist for a date, None is returned."""
         with _freeze("2026-03-20T12:00:00+00:00"):
             result = _select_bulletin_for_date(region, date(2026, 3, 15))
@@ -160,7 +164,7 @@ class TestSelectBulletinForDate:
 class TestGetNavDates:
     """Tests for the _get_nav_dates helper."""
 
-    def test_returns_prev_and_next(self, region):
+    def test_returns_prev_and_next(self, region: MicroRegion) -> None:
         """When bulletins exist on adjacent dates, both are returned."""
         _make_am_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
@@ -172,7 +176,7 @@ class TestGetNavDates:
         assert prev_date == date(2026, 3, 14)
         assert next_date == date(2026, 3, 16)
 
-    def test_no_prev_at_earliest(self, region):
+    def test_no_prev_at_earliest(self, region: MicroRegion) -> None:
         """The earliest date has no prev_date."""
         _make_am_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
@@ -182,7 +186,7 @@ class TestGetNavDates:
 
         assert prev_date is None
 
-    def test_no_next_at_today(self, region):
+    def test_no_next_at_today(self, region: MicroRegion) -> None:
         """The current date has no next_date."""
         _make_am_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
@@ -192,7 +196,7 @@ class TestGetNavDates:
 
         assert next_date is None
 
-    def test_skips_gaps(self, region):
+    def test_skips_gaps(self, region: MicroRegion) -> None:
         """Navigation jumps over dates without bulletins."""
         _make_am_bulletin(region, date(2026, 3, 10))
         _make_am_bulletin(region, date(2026, 3, 15))
@@ -210,7 +214,7 @@ class TestGetNavDates:
 class TestBulletinDetailView:
     """Integration tests for the bulletin_detail view."""
 
-    def test_default_shows_today(self, client: Client, region):
+    def test_default_shows_today(self, client: Client, region: MicroRegion) -> None:
         """Without a date param the view shows today's bulletin."""
         day = date(2026, 3, 15)
         am = _make_am_bulletin(region, day)
@@ -230,7 +234,9 @@ class TestBulletinDetailView:
         assert response.context["bulletin"].pk == am.pk
         assert response.context["is_today"] is True
 
-    def test_date_segment_selects_day(self, client: Client, region):
+    def test_date_segment_selects_day(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """A date URL segment selects the requested day."""
         am_14 = _make_am_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
@@ -250,7 +256,9 @@ class TestBulletinDetailView:
         assert response.context["bulletin"].pk == am_14.pk
         assert response.context["is_today"] is False
 
-    def test_invalid_date_redirects_to_canonical_today(self, client: Client, region):
+    def test_invalid_date_redirects_to_canonical_today(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """An invalid date segment falls back to today and redirects."""
         # ``_parse_target_date`` falls back to today on unparseable input,
         # which makes the inbound path non-canonical (the slug
@@ -272,7 +280,9 @@ class TestBulletinDetailView:
         assert response.status_code == 302
         assert response["Location"] == "/ch-4115/valais/2026-03-15/"
 
-    def test_no_bulletin_shows_empty_state(self, client: Client, region):
+    def test_no_bulletin_shows_empty_state(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """When no bulletin exists for the date the empty state is rendered."""
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
@@ -288,7 +298,9 @@ class TestBulletinDetailView:
         assert response.status_code == 200
         assert response.context["bulletin"] is None
 
-    def test_prev_next_dates_in_context(self, client: Client, region):
+    def test_prev_next_dates_in_context(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Prev/next navigation context exposes the adjacent calendar days."""
         _make_am_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
@@ -308,7 +320,9 @@ class TestBulletinDetailView:
         assert response.context["prev_date"] == date(2026, 3, 14)
         assert response.context["next_date"] == date(2026, 3, 16)
 
-    def test_today_label_in_page_title(self, client: Client, region):
+    def test_today_label_in_page_title(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Today's bulletin renders the ``Today`` label in the page title."""
         _make_am_bulletin(region, date(2026, 3, 15))
 
@@ -326,7 +340,9 @@ class TestBulletinDetailView:
         content = response.content.decode()
         assert "Today" in content
 
-    def test_past_date_shown_in_header(self, client: Client, region):
+    def test_past_date_shown_in_header(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """A past page date appears in the bulletin header."""
         _make_am_bulletin(region, date(2026, 3, 14))
 
@@ -346,8 +362,8 @@ class TestBulletinDetailView:
         assert "Sat 14 Mar" in content
 
     def test_next_update_context_populated_today_before_due(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """On today, before the next bulletin is due, ``next_update_time`` is set."""
         # Context is still populated so a future chrome element (e.g. a
         # ``next: HH:MM`` tooltip on the disabled `»` chip) can opt in.
@@ -372,7 +388,9 @@ class TestBulletinDetailView:
 
         assert response.context["next_update_time"] is not None
 
-    def test_no_next_update_after_due_time(self, client: Client, region):
+    def test_no_next_update_after_due_time(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """After the next_update time has passed, the disabled label is absent."""
         am = _make_am_bulletin(region, date(2026, 3, 15))
         from bulletins.models import Bulletin
@@ -394,7 +412,7 @@ class TestBulletinDetailView:
 
         assert response.context["next_update_time"] is None
 
-    def test_unknown_region_returns_404(self, client: Client):
+    def test_unknown_region_returns_404(self, client: Client) -> None:
         """A region ID that doesn't match any Region should 404."""
         url = reverse(
             "public:bulletin_date",
@@ -409,8 +427,8 @@ class TestBulletinDetailView:
         assert response.status_code == 404
 
     def test_stale_render_model_triggers_warning_and_rebuilds(
-        self, client: Client, region, caplog
-    ):
+        self, client: Client, region: MicroRegion, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """A bulletin at a lower render_model_version triggers a warning and rebuilds."""
         # Create a bulletin whose stored render_model_version is 1.
         am = _make_am_bulletin(region, date(2026, 3, 15), render_model_version=1)
@@ -439,8 +457,8 @@ class TestBulletinDetailView:
         )
 
     def test_stale_render_model_rebuild_failure_returns_200_with_error_state(
-        self, client: Client, region, caplog
-    ):
+        self, client: Client, region: MicroRegion, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """When stale rebuild raises RenderModelBuildError, page returns 200 with error card."""
         from bulletins.services.render_model import RenderModelBuildError
 
@@ -484,7 +502,7 @@ class TestBulletinDetailView:
 class TestIssuesForDate:
     """All three SLF-style issues covering a calendar day are returned."""
 
-    def test_returns_all_three_overlapping_issues(self, region):
+    def test_returns_all_three_overlapping_issues(self, region: MicroRegion) -> None:
         """Previous evening + morning + same-day evening all overlap day D."""
         prev_evening = _make_pm_bulletin(region, date(2026, 3, 14))
         am = _make_am_bulletin(region, date(2026, 3, 15))
@@ -498,7 +516,7 @@ class TestIssuesForDate:
             f"for the tab strip; got {ids}"
         )
 
-    def test_empty_when_no_bulletins_touch_day(self, region):
+    def test_empty_when_no_bulletins_touch_day(self, region: MicroRegion) -> None:
         """Days with no valid bulletins return an empty list."""
         _make_am_bulletin(region, date(2026, 3, 10))
         assert _issues_for_date(region, date(2026, 3, 15)) == []
@@ -508,7 +526,9 @@ class TestIssuesForDate:
 class TestDefaultIssueSelection:
     """The default issue honours the 10:00-rule for past days and *now* for today."""
 
-    def test_past_day_prefers_morning_update_over_previous_evening(self, region):
+    def test_past_day_prefers_morning_update_over_previous_evening(
+        self, region: MicroRegion
+    ) -> None:
         """
         At the 10:00 pivot both the morning update AND the previous-day
         evening are valid — the morning update wins because it is the
@@ -525,7 +545,9 @@ class TestDefaultIssueSelection:
 
         assert result is not None and result.pk == am.pk
 
-    def test_past_day_falls_back_to_previous_evening_when_no_morning(self, region):
+    def test_past_day_falls_back_to_previous_evening_when_no_morning(
+        self, region: MicroRegion
+    ) -> None:
         """Without a morning update, the previous-day evening covers 10:00."""
         prev_evening = _make_pm_bulletin(region, date(2026, 3, 14))
         # No AM today.
@@ -535,7 +557,7 @@ class TestDefaultIssueSelection:
 
         assert result is not None and result.pk == prev_evening.pk
 
-    def test_today_prefers_window_containing_now(self, region):
+    def test_today_prefers_window_containing_now(self, region: MicroRegion) -> None:
         """For today, the pivot is *now* — not the synthetic 10:00 value."""
         _make_am_bulletin(region, date(2026, 3, 15))  # AM: 06:00–15:00
         same_evening = _make_pm_bulletin(region, date(2026, 3, 15))  # 17:00+
@@ -551,7 +573,7 @@ class TestDefaultIssueSelection:
 class TestResolveSelectedIssue:
     """The ``?issue=<uuid>`` override wins over the default when valid."""
 
-    def test_uuid_override_selects_matching_issue(self, region):
+    def test_uuid_override_selects_matching_issue(self, region: MicroRegion) -> None:
         """A recognised ``?issue`` UUID returns that specific issue."""
         prev_evening = _make_pm_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
@@ -564,7 +586,7 @@ class TestResolveSelectedIssue:
 
         assert result is not None and result.pk == prev_evening.pk
 
-    def test_unknown_uuid_falls_back_to_default(self, region):
+    def test_unknown_uuid_falls_back_to_default(self, region: MicroRegion) -> None:
         """A bogus ``?issue`` value degrades silently to the default issue."""
         _make_pm_bulletin(region, date(2026, 3, 14))
         am = _make_am_bulletin(region, date(2026, 3, 15))
@@ -582,7 +604,7 @@ class TestResolveSelectedIssue:
 class TestBulletinDetailIssueParam:
     """``?issue=<uuid>`` selects which issue renders on multi-issue days."""
 
-    def _url(self, region, date_str):
+    def _url(self, region: MicroRegion, date_str: str) -> str:
         return reverse(
             "public:bulletin_date",
             kwargs={
@@ -592,7 +614,9 @@ class TestBulletinDetailIssueParam:
             },
         )
 
-    def test_query_param_switches_rendered_issue(self, client: Client, region):
+    def test_query_param_switches_rendered_issue(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """``?issue=<uuid>`` renders that specific issue (via X-Bulletin-Id)."""
         prev_evening = _make_pm_bulletin(region, date(2026, 3, 14))
         am = _make_am_bulletin(region, date(2026, 3, 15))
@@ -611,8 +635,8 @@ class TestBulletinDetailIssueParam:
         assert override_resp["X-Bulletin-Id"] == str(prev_evening.bulletin_id)
 
     def test_page_date_stays_on_url_even_for_same_day_evening_issue(
-        self, client: Client, region
-    ):
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """
         Selecting the same-day evening issue (valid_to = D+1 17:00) must not
         bump the page header to D+1 — the URL is the source of truth for
@@ -636,7 +660,7 @@ class TestAdjoiningRegions:
     """Tests for the adjoining-regions context entry and rendered section."""
 
     def test_context_lists_neighbours_in_alphabetical_order(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """``adjoining_regions`` is sorted by name regardless of insertion order."""
         zoulou = MicroRegionFactory.create(
@@ -665,7 +689,7 @@ class TestAdjoiningRegions:
         assert names == ["Alpha", "Mike", "Zoulou"]
 
     def test_section_renders_with_links_to_each_neighbour(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """The Adjoining Regions section emits a link per neighbour."""
         neighbour = MicroRegionFactory.create(
@@ -701,7 +725,9 @@ class TestAdjoiningRegions:
         assert "Bordering" in content
         assert expected_url in content
 
-    def test_section_hidden_when_no_neighbours(self, client: Client, region) -> None:
+    def test_section_hidden_when_no_neighbours(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """No neighbours seeded → no adjoining-regions section in the HTML."""
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
@@ -719,7 +745,7 @@ class TestAdjoiningRegions:
         assert b'data-testid="adjoining-regions"' not in response.content
 
     def test_empty_state_includes_adjoining_regions(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """Even when there is no bulletin for the date, neighbours still render."""
         neighbour = MicroRegionFactory.create(
@@ -753,7 +779,9 @@ class TestSeasonCalendar:
     """
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
-    def test_context_has_season_calendar(self, client: Client, region) -> None:
+    def test_context_has_season_calendar(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """``season_calendar`` context is a truthy dict with season_label."""
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
@@ -772,7 +800,9 @@ class TestSeasonCalendar:
         assert ctx["season_label"]  # e.g. "25/26"
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
-    def test_section_renders_shell_not_grid(self, client: Client, region) -> None:
+    def test_section_renders_shell_not_grid(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """The bulletin page renders the sheet shell but not the grid markup."""
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
@@ -792,7 +822,9 @@ class TestSeasonCalendar:
         assert b'data-testid="season-calendar"' not in response.content
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
-    def test_today_tile_carries_today_modifier(self, client: Client, region) -> None:
+    def test_today_tile_carries_today_modifier(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Today's tile modifier is served by the partial, not the bulletin page (SNOW-170)."""
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
@@ -813,7 +845,7 @@ class TestSeasonCalendar:
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
     def test_historic_url_carries_selected_date_on_grid_placeholder(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """On a historic URL the #season-grid placeholder carries data-selected-date (SNOW-170)."""
         _make_am_bulletin(region, date(2026, 3, 5))
@@ -833,7 +865,9 @@ class TestSeasonCalendar:
         assert b'data-selected-date="2026-03-05"' in response.content
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
-    def test_tomorrow_row_renders_when_present(self, client: Client, region) -> None:
+    def test_tomorrow_row_renders_when_present(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """A RegionDayRating row for today + 1 surfaces in the season partial (SNOW-170)."""
         bulletin = BulletinFactory.create()
         RegionDayRatingFactory.create(
@@ -894,7 +928,9 @@ class TestWeatherHeader:
             },
         )
 
-    def test_no_snapshot_yields_none_in_context(self, client: Client, region) -> None:
+    def test_no_snapshot_yields_none_in_context(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """When no WeatherSnapshot exists, ``weather_display`` is None.
 
         The unified header partial (SNOW-100) still renders the panel chrome
@@ -916,7 +952,7 @@ class TestWeatherHeader:
         assert b'data-testid="bulletin-header-hero-icon"' not in response.content
 
     def test_daytime_snapshot_emits_day_attributes(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """A clear-sky daytime snapshot maps to bucket=clear, time=day."""
         _make_am_bulletin(region, date(2026, 3, 15))
@@ -947,7 +983,7 @@ class TestWeatherHeader:
         assert b">Clear<" in response.content
 
     def test_nighttime_snapshot_emits_night_attributes(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """A snowing snapshot read after sunset maps to bucket=snow, time=night."""
         _make_am_bulletin(region, date(2026, 3, 15))
@@ -976,7 +1012,9 @@ class TestWeatherHeader:
         assert b"icons/weather/light_snow-night.svg" in response.content
         assert b">Light snow<" in response.content
 
-    def test_cloudy_emits_no_day_night_suffix(self, client: Client, region) -> None:
+    def test_cloudy_emits_no_day_night_suffix(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """Overcast (WMO 3) uses cloudy.svg with no day/night suffix (SNOW-100).
 
         This guards the special-case logic: 'cloudy' is the only icon bucket
@@ -1004,7 +1042,7 @@ class TestWeatherHeader:
         assert b"cloudy-night.svg" not in response.content
 
     def test_historical_date_with_daytime_clock_renders_as_day(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """Browsing a past date at 11:09 wall-clock still renders as day.
 
@@ -1035,7 +1073,7 @@ class TestWeatherHeader:
         assert response.context["weather_display"]["time_of_day"] == "day"
 
     def test_historical_date_with_evening_clock_renders_as_night(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """Browsing a past date at 23:09 wall-clock renders as night."""
         _make_am_bulletin(region, date(2026, 3, 14))
@@ -1061,7 +1099,7 @@ class TestWeatherHeader:
         assert response.context["weather_display"]["time_of_day"] == "night"
 
     def test_empty_state_still_includes_weather_display(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """No bulletin but a snapshot exists → header still renders."""
         WeatherSnapshotFactory.create(
@@ -1082,7 +1120,7 @@ class TestWeatherHeader:
         assert display["bucket"] == "cloudy"
 
     def test_snapshot_for_other_region_does_not_leak(
-        self, client: Client, region
+        self, client: Client, region: MicroRegion
     ) -> None:
         """A snapshot for a different region must not surface on this page."""
         other = MicroRegionFactory.create(
@@ -1108,7 +1146,9 @@ class TestWeatherHeader:
 class TestCanonicalUrl:
     """The form-3 canonical URL is rendered as a ``<link rel="canonical">``."""
 
-    def test_canonical_url_in_full_render(self, client: Client, region) -> None:
+    def test_canonical_url_in_full_render(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """A normal render emits an absolute form-3 canonical URL."""
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
@@ -1128,7 +1168,9 @@ class TestCanonicalUrl:
         assert b'<link rel="canonical"' in response.content
         assert canonical.encode() in response.content
 
-    def test_canonical_url_in_empty_state(self, client: Client, region) -> None:
+    def test_canonical_url_in_empty_state(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """The empty-state render also emits a canonical URL."""
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(

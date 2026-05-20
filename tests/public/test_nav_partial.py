@@ -15,12 +15,15 @@ needs no DB at all).
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.template.loader import render_to_string
 from django.test import RequestFactory
 from django.urls import reverse
 
+from subscriptions.models import Subscriber
 from tests.factories import UserFactory
 
 
@@ -31,13 +34,13 @@ def rf() -> RequestFactory:
 
 
 @pytest.fixture()
-def staff_user(db):
+def staff_user(db: Any) -> Subscriber:
     """Return a staff Django user."""
     return UserFactory.create(is_staff=True)
 
 
 @pytest.fixture()
-def regular_user(db):
+def regular_user(db: Any) -> Subscriber:
     """Return a non-staff Django user."""
     return UserFactory.create(is_staff=False)
 
@@ -46,7 +49,9 @@ def regular_user(db):
 class TestNavAdminMenu:
     """Tests for the staff-only Admin dropdown rendered inside nav.html."""
 
-    def test_staff_sees_admin_links(self, rf: RequestFactory, staff_user) -> None:
+    def test_staff_sees_admin_links(
+        self, rf: RequestFactory, staff_user: Subscriber
+    ) -> None:
         """Staff users see the admin menu and all three destination links."""
         request = rf.get("/")
         request.user = staff_user
@@ -57,7 +62,7 @@ class TestNavAdminMenu:
         assert reverse("admin:index") in html
 
     def test_non_staff_sees_no_admin_menu(
-        self, rf: RequestFactory, regular_user
+        self, rf: RequestFactory, regular_user: Subscriber
     ) -> None:
         """Non-staff authenticated users do not see the admin menu."""
         request = rf.get("/")

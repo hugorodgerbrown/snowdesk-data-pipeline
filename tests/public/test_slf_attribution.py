@@ -26,12 +26,14 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+from regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MajorRegionFactory,
@@ -53,7 +55,7 @@ def _today_window() -> tuple[datetime, datetime]:
     return vf, vt
 
 
-def _make_today_bulletin(region) -> object:
+def _make_today_bulletin(region: MicroRegion) -> object:
     """Create a bulletin covering today for *region*."""
     vf, vt = _today_window()
     bulletin = BulletinFactory.create(
@@ -84,7 +86,7 @@ def _make_today_bulletin(region) -> object:
 
 
 @pytest.fixture()
-def region(db):
+def region(db: Any) -> MicroRegion:
     """A test MicroRegion instance with full hierarchy for breadcrumb rendering."""
     major = MajorRegionFactory.create(
         prefix="CH-9", country="CH", name_native="Test Major"
@@ -99,7 +101,7 @@ def region(db):
 
 
 @pytest.fixture()
-def client():
+def client() -> Client:
     """An anonymous Django test client."""
     return Client()
 
@@ -113,11 +115,11 @@ def client():
 class TestTermsPage:
     """The /terms page satisfies the SNOW-30 acceptance criteria."""
 
-    def test_returns_200(self, client):
+    def test_returns_200(self, client: Client) -> None:
         response = client.get(reverse("public:terms"))
         assert response.status_code == 200
 
-    def test_has_heading(self, client):
+    def test_has_heading(self, client: Client) -> None:
         response = client.get(reverse("public:terms"))
         assert b'data-testid="terms-heading"' in response.content
 
@@ -130,15 +132,15 @@ class TestTermsPage:
             b'data-testid="terms-slf-no-liability"',
         ],
     )
-    def test_has_four_required_sections(self, client, marker):
+    def test_has_four_required_sections(self, client: Client, marker: bytes) -> None:
         response = client.get(reverse("public:terms"))
         assert marker in response.content
 
-    def test_links_to_slf_data_service_terms(self, client):
+    def test_links_to_slf_data_service_terms(self, client: Client) -> None:
         response = client.get(reverse("public:terms"))
         assert b"slf.ch/en/services-and-products/slf-data-service" in response.content
 
-    def test_links_to_cc_by_4_0(self, client):
+    def test_links_to_cc_by_4_0(self, client: Client) -> None:
         response = client.get(reverse("public:terms"))
         assert b"creativecommons.org/licenses/by/4.0/" in response.content
 
@@ -152,23 +154,23 @@ class TestTermsPage:
 class TestGlobalSiteFooter:
     """The site-wide SLF licence footer renders on every public page."""
 
-    def test_home_renders_footer(self, client):
+    def test_home_renders_footer(self, client: Client) -> None:
         response = client.get(reverse("public:home"))
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
         assert b"slf.ch" in response.content
         assert b"CC BY 4.0" in response.content
 
-    def test_terms_renders_footer(self, client):
+    def test_terms_renders_footer(self, client: Client) -> None:
         response = client.get(reverse("public:terms"))
         assert b'data-testid="site-footer"' in response.content
 
-    def test_map_renders_footer(self, client):
+    def test_map_renders_footer(self, client: Client) -> None:
         response = client.get(reverse("public:map"))
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
 
-    def test_bulletin_renders_footer(self, client, region):
+    def test_bulletin_renders_footer(self, client: Client, region: MicroRegion) -> None:
         _make_today_bulletin(region)
         # SNOW-99: hit the canonical form-3 URL directly via the model's
         # ``get_absolute_url`` so the test isn't affected by the form-1/2
@@ -177,7 +179,7 @@ class TestGlobalSiteFooter:
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
 
-    def test_footer_links_to_terms(self, client):
+    def test_footer_links_to_terms(self, client: Client) -> None:
         response = client.get(reverse("public:home"))
         assert reverse("public:terms").encode() in response.content
 
@@ -216,14 +218,16 @@ class TestRegionExpandedAttribution:
     and that the drawer expanded fragment no longer duplicates it.
     """
 
-    def test_map_page_carries_slf_footer(self, client):
+    def test_map_page_carries_slf_footer(self, client: Client) -> None:
         """The /map/ page carries the global SLF attribution footer."""
         response = client.get(reverse("public:map"))
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
         assert b"slf.ch" in response.content
 
-    def test_expanded_fragment_does_not_duplicate_attribution(self, client, region):
+    def test_expanded_fragment_does_not_duplicate_attribution(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """The region tooltip HTML does NOT embed an inline SLF attribution block."""
         url = reverse("api:region_summary", kwargs={"region_id": region.region_id})
         response = client.get(url)
