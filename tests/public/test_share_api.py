@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
 from django.test import Client
-from django.test.client import _MonkeyPatchedWSGIResponse as TestResponse
 from django.urls import reverse
+
+if TYPE_CHECKING:
+    from django.test.client import _MonkeyPatchedWSGIResponse as _Response
 
 from bulletins.models import BulletinShare
 from regions.models import MicroRegion
@@ -44,7 +47,7 @@ def _post_share(
     client: Client,
     region_id: str,
     date_str: str,
-) -> TestResponse:
+) -> _Response:
     """POST to the share-create endpoint and return the response."""
     url = reverse("api:share_create")
     return client.post(

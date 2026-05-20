@@ -17,6 +17,7 @@ def test_bulletins_app_owns_the_expected_models() -> None:
     """SNOW-92 moved Bulletin / RegionBulletin / PipelineRun / RegionDayRating here.
 
     SNOW-97 adds WeatherSnapshot.
+    SNOW-217 adds BulletinShare and BulletinShareClick.
     """
     config = apps.get_app_config("bulletins")
     model_names = {m.__name__ for m in config.get_models()}
@@ -26,4 +27,6 @@ def test_bulletins_app_owns_the_expected_models() -> None:
         "PipelineRun",
         "RegionDayRating",
         "WeatherSnapshot",
+        "BulletinShare",
+        "BulletinShareClick",
     }
