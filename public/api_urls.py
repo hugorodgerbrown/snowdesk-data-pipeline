@@ -14,6 +14,8 @@ from . import api
 app_name = "api"
 
 urlpatterns = [
+    # Share-create endpoint (SNOW-217). POST only; returns a tokenised short URL.
+    path("bulletins/share/", api.share_create, name="share_create"),
     path("today-summaries/", api.today_summaries, name="today_summaries"),
     path("season-ratings/", api.season_ratings, name="season_ratings"),
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
