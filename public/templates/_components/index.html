@@ -45,9 +45,11 @@ Context:
                     {% for group in groups %}
                         {# Each group is collapsible — the one owning the active panel opens on first paint. #}
                         <details {% if group|contains_slug:active.slug %}open{% endif %}>
-                            {# Left inline — <summary> mixes interactive classes (cursor-pointer,
-                               select-none, hover:text-text-2, marker:text-text-3) that don't
-                               belong in the _eyebrow partial API. #}
+                            {% comment %}
+                                Left inline — <summary> mixes interactive classes (cursor-pointer,
+                                select-none, hover:text-text-2, marker:text-text-3) that don't
+                                belong in the _eyebrow partial API.
+                            {% endcomment %}
                             <summary class="text-xs font-mono uppercase tracking-widest text-text-3 mb-1 cursor-pointer select-none hover:text-text-2 marker:text-text-3">
                                 {{ group.label }}
                             </summary>
