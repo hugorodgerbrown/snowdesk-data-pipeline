@@ -34,6 +34,7 @@ from public._component_fixtures import (
     BUTTON_VARIANTS,
     CALLOUT_VARIANTS,
     CARD_VARIANTS,
+    CHIP_VARIANTS,
     COLLAPSIBLE_PANEL_VARIANTS,
     DAY_CHARACTER_VARIANTS,
     DAY_WINDOWS_VARIANTS,
@@ -863,6 +864,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_meta_cell.html",
         variants=META_CELL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="chip",
+        label="Chip",
+        description=(
+            "Mono uppercase pill chip used inside the rating-block "
+            "danger-band header for category, avalanche-type and time-"
+            "period labels. Two tints — strong (default) and subtle — "
+            "both designed to sit on saturated EAWS colour backgrounds."
+        ),
+        kind="components",
+        partial="includes/_chip.html",
+        variants=CHIP_VARIANTS,
         panel_layout="stack",
     ),
 )
