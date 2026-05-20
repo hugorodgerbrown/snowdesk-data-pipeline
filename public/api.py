@@ -1190,7 +1190,7 @@ def _create_share_with_retry(
 
 
 @require_POST
-@ratelimit(key="ip", rate="20/m", block=True)
+@ratelimit(key="ip", rate="20/m", block=False)
 def share_create(request: HttpRequest) -> JsonResponse:
     """Create a tokenised share link for a bulletin page.
 
@@ -1215,6 +1215,9 @@ def share_create(request: HttpRequest) -> JsonResponse:
         A JsonResponse with ``{"url": "..."}`` on success.
 
     """
+    if getattr(request, "limited", False):
+        return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
+
     error_response, region_id, target_date = _parse_share_request(request)
     if error_response is not None:
         return error_response

@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
-from django.test import Client
+from django.test import Client, RequestFactory
 from django.urls import reverse
 
 if TYPE_CHECKING:
@@ -229,3 +229,27 @@ class TestShareCreateMethodGuard:
         """GET on share_create returns 405 Method Not Allowed."""
         response = client.get(reverse("api:share_create"))
         assert response.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+
+
+class TestShareCreateRateLimit:
+    """share_create returns 429 when the rate limit is exceeded."""
+
+    def test_rate_limit_returns_429(self) -> None:
+        """Exceeding the rate limit returns 429."""
+        rf = RequestFactory()
+        request = rf.post(
+            reverse("api:share_create"),
+            data=json.dumps({"region_id": "CH-4222", "date": "2026-04-08"}),
+            content_type="application/json",
+        )
+        request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr added by middleware
+
+        from public.api import share_create
+
+        response = share_create(request)
+        assert response.status_code == 429
