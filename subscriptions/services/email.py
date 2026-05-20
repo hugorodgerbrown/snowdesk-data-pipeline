@@ -105,6 +105,7 @@ def _dispatch_async(callable_: Callable[[], None]) -> None:
         return
 
     def _run_safe() -> None:
+        """Invoke the callable, swallowing exceptions to protect the daemon thread."""
         try:
             callable_()
         except Exception:
@@ -146,6 +147,7 @@ def send_account_access_email(
     logger.info("Sending account-access email to %s", email)
 
     def _send() -> None:
+        """Dispatch the account-access email via Django's mail backend."""
         send_mail(
             subject=subject,
             message=plain_body,
@@ -203,6 +205,7 @@ def send_subscription_confirmation_email(
     )
 
     def _send() -> None:
+        """Dispatch the subscription confirmation email via Django's mail backend."""
         send_mail(
             subject=subject,
             message=plain_body,
@@ -232,6 +235,7 @@ def simulate_account_access_work(email: str) -> None:
     """
 
     def _do_simulated_work() -> None:
+        """Generate a token and render templates without dispatching any email."""
         token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
         account_url = _build_account_url(token, None)
         expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600

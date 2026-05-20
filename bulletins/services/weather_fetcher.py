@@ -621,6 +621,7 @@ def fetch_weather_async(region: MicroRegion, target_date: date) -> None:
     """
 
     def _worker() -> None:
+        """Fetch weather for the region and date in a background thread."""
         try:
             # Re-check DB inside the worker — another request may have
             # scheduled (and completed) the same fetch in the meantime.

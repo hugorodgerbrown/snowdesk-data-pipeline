@@ -2388,7 +2388,8 @@ class ElevationBounds:
     display: str
     bound_type: str
 
-    def __bool__(self) -> bool:  # noqa: D105
+    def __bool__(self) -> bool:
+        """Return True when the bound has a displayable value."""
         return bool(self.display)
 
 
