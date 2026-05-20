@@ -113,6 +113,14 @@ _DANGER_MAP: dict[str, dict[str, Any]] = {
     },
 }
 
+# Mapping from Bulletin.Source raw values to (display label, agency URL).
+# Used by the bulletin detail page to render the Source cell in the metadata strip.
+BULLETIN_SOURCE_LINKS: dict[str, tuple[str, str]] = {
+    Bulletin.Source.SLF: ("SLF", "https://www.slf.ch"),
+    Bulletin.Source.EUREGIO: ("EUREGIO", "https://avalanche.report"),
+    Bulletin.Source.MF: ("MétéoFrance", "https://meteofrance.com/meteo-montagne"),
+}
+
 # Mapping from SLF danger codes to EAWS icons
 _DANGER_PROBLEM_TYPE_ICONS = {
     "no_distinct_avalanche_problem": "Icon-Avalanche-Problem-No-Distinct"
@@ -1834,6 +1842,14 @@ def _bulletin_detail_response(
 
     season_calendar = season_header(today)
 
+    # Derive the source label and URL for the metadata strip Source cell
+    # (SNOW-211). Falls back to ("", "") for unknown or absent source values so
+    # the template renders an em-dash without crashing.
+    source_key = (selected.render_model or {}).get("source", "")
+    bulletin_source_label, bulletin_source_url = BULLETIN_SOURCE_LINKS.get(
+        source_key, ("", "")
+    )
+
     context = {
         "region": region,
         "region_name": region_name,
@@ -1862,6 +1878,9 @@ def _bulletin_detail_response(
         "canonical_url": canonical_url,
         # Context-aware back-link for the nav bar — see SNOW-183.
         "map_url": map_url,
+        # Source agency label and URL for the metadata strip Source cell (SNOW-211).
+        "bulletin_source_label": bulletin_source_label,
+        "bulletin_source_url": bulletin_source_url,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 
