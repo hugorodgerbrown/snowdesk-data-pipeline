@@ -281,6 +281,17 @@ METEOFRANCE_MASSIF_IDS: tuple[int, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# GeoIP
+# ---------------------------------------------------------------------------
+# Path to the MaxMind GeoLite2-Country mmdb database file. Used by
+# ``bulletins.services.geoip.country_code_for`` to resolve a client IP
+# to an ISO 3166-1 alpha-2 country code at share-click time. The file is
+# committed to data/geoip/ (see data/geoip/README.md). Set to None to
+# disable GeoIP lookups (country_code_for will return "" for every IP).
+
+GEOIP_PATH = BASE_DIR / "data" / "geoip" / "GeoLite2-Country.mmdb"
+
+# ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------
 # When True, ``core.middleware.QueryCountMiddleware`` forces the debug
