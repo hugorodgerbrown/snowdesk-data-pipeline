@@ -1700,9 +1700,12 @@ def _build_og_description(panel: dict[str, Any] | None) -> str:
     raw_key_message = strip_tags(str(panel.get("key_message") or "")).strip()
 
     if label and number:
-        prefix = f"Avalanche danger: {label} ({number})."
+        prefix = _gettext("Avalanche danger: %(label)s (%(number)s).") % {
+            "label": label,
+            "number": number,
+        }
     elif label:
-        prefix = f"Avalanche danger: {label}."
+        prefix = _gettext("Avalanche danger: %(label)s.") % {"label": label}
     else:
         prefix = ""
 
