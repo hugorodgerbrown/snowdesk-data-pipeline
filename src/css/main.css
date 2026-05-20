@@ -99,11 +99,16 @@
   --font-mono:  'DM Mono',  ui-monospace, monospace;
 
   /* Type scale — labels, chips and prose body.
-     Heading / base / sm / xs all stay on Tailwind's default ramp.
-     These three plug the gaps that previously appeared as
-     text-[9px] / text-[9.5px] / leading-[1.6] arbitraries. */
+     text-base / text-sm / text-xs / text-lg stay on Tailwind's default
+     ramp.  These tokens plug the gaps that were previously appearing as
+     text-[Npx] / leading-[1.6] arbitraries in templates. */
   --text-meta:     9px;     /* meta-cell uppercase mono label          */
   --text-chip:     9.5px;   /* aspect / elevation / hazard chip caption */
+  --text-caption:  11px;    /* mono caption (callout diagnostics, nav
+                               trigger, swatch / icon token labels)    */
+  --text-summary:  13px;    /* collapsible-panel summary title         */
+  --text-label:    15px;    /* rating-block problem label, nav back-
+                               state wordmark                          */
   --leading-prose: 1.6;     /* slf-prose body line-height               */
 
   /* Surface colours */

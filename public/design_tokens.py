@@ -193,6 +193,9 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         tokens=(
             Token("--text-meta", "Meta label", "9px", None),
             Token("--text-chip", "Chip caption", "9.5px", None),
+            Token("--text-caption", "Caption", "11px", None),
+            Token("--text-summary", "Summary title", "13px", None),
+            Token("--text-label", "Problem / wordmark label", "15px", None),
             Token("--leading-prose", "Prose body leading", "1.6", None),
         ),
     ),
