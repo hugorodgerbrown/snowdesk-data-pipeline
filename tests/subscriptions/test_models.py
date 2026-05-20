@@ -103,9 +103,21 @@ class TestSubscriberQuerySet:
         result = Subscriber.objects.active()
         assert result.count() == 0
 
-    def test_by_email_case_insensitive(self) -> None:
-        sub = SubscriberFactory.create(email="Test@Example.COM")
+    def test_by_email_exact_match(self) -> None:
+        """by_email finds a subscriber when the query is already lowercase."""
+        sub = SubscriberFactory.create(email="test@example.com")
         result = Subscriber.objects.by_email("test@example.com")
+        assert sub in result
+        assert result.count() == 1
+
+    def test_by_email_normalises_mixed_case_input(self) -> None:
+        """by_email normalises the query to lowercase before filtering.
+
+        Stored emails are always lowercase (form normalisation invariant);
+        callers may pass mixed-case input and should still find the record.
+        """
+        sub = SubscriberFactory.create(email="test@example.com")
+        result = Subscriber.objects.by_email("TEST@EXAMPLE.com")
         assert sub in result
         assert result.count() == 1
 
