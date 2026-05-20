@@ -1833,3 +1833,109 @@ class TestMapBackLink:
         assert response.status_code == 200
         content = response.content.decode()
         assert 'href="/map/?d=2025-12-01#CH-9999"' in content
+
+
+# ---------------------------------------------------------------------------
+# Test: OpenGraph / Twitter card meta tags (SNOW-218)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestOGMetaTags:
+    """Bulletin page renders the correct OpenGraph and Twitter card meta tags."""
+
+    def test_og_site_name_present(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:site_name is always Snowdesk."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:site_name" content="Snowdesk"' in content
+
+    def test_og_type_website(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:type is always 'website'."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:type" content="website"' in content
+
+    def test_twitter_card_summary_large_image(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """twitter:card is summary_large_image."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'name="twitter:card" content="summary_large_image"' in content
+
+    def test_og_image_contains_og_default_png(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:image and twitter:image both reference the placeholder image."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:image"' in content
+        assert "og-default.png" in content
+
+    def test_og_image_width_and_height(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:image:width and og:image:height are 1200 and 630."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:image:width" content="1200"' in content
+        assert 'property="og:image:height" content="630"' in content
+
+    def test_og_title_contains_region_name(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:title contains the region name on a bulletin page."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:title"' in content
+        assert "Valais" in content
+
+    def test_og_description_present(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:description is present when the panel has a danger rating."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:description"' in content
+
+    def test_og_url_matches_canonical(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:url matches the canonical URL link already in extra_head."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:url"' in content
+        assert "/ch-4115/valais/2026-03-15/" in content
+
+    def test_og_locale_is_formatted(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:locale is present and uses underscore format (e.g. en_GB)."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        # The og_locale filter converts "en-gb" → "en_GB".
+        assert 'property="og:locale"' in content
+        assert "en_GB" in content
+
+    def test_htmx_partial_omits_og_tags(self, client: Client, region: MicroRegion) -> None:
+        """An HTMX partial response does not include OG tags (no base.html inheritance)."""
+        url = reverse("public:season_partial", kwargs={"region_id": "ch-4115"})
+        response = client.get(url, HTTP_HX_REQUEST="true")
+        # The partial returns 404 because there is no bulletin, but even a 200
+        # partial does not extend base.html so it contains no og:site_name.
+        content = response.content.decode()
+        assert 'property="og:site_name"' not in content

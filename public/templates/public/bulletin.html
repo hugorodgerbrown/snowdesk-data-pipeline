@@ -42,6 +42,31 @@ reachable via the SNOW-81 deep-link in the masthead.
     {% if is_today %}{% trans "Today" %}{% else %}{{ page_date|date:"j F Y" }}{% endif %} &middot; Snowdesk
 {% endblock %}
 
+{% block og_tags %}
+    {# Site-wide defaults (og:site_name, og:type, og:locale, og:image, #}
+    {# twitter:image, dimensions, twitter:card) come from base.html.    #}
+    {{ block.super }}
+    {# Bulletin-specific overrides (SNOW-218). #}
+    {% if panel.danger_key %}
+        <meta
+            property="og:title"
+            content="{{ region_name }} · {% if is_today %}Today{% else %}{{ page_date|date:'j F Y' }}{% endif %} · Snowdesk"
+        >
+        {% if og_description %}
+            <meta property="og:description" content="{{ og_description }}">
+            <meta name="twitter:description" content="{{ og_description }}">
+        {% endif %}
+        {% if canonical_url %}
+            <meta property="og:url" content="{{ canonical_url }}">
+        {% endif %}
+        <meta property="og:image:alt" content="Snowdesk avalanche bulletin for {{ region_name }}">
+        <meta
+            name="twitter:title"
+            content="{{ region_name }} · {% if is_today %}Today{% else %}{{ page_date|date:'j F Y' }}{% endif %} · Snowdesk"
+        >
+    {% endif %}
+{% endblock og_tags %}
+
 {% block extra_head %}
     {# Canonical form-3 URL (SNOW-99). Set on every render path, including #}
     {# the empty-state and the /examples/ pages so search engines collapse #}
