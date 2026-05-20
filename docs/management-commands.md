@@ -34,12 +34,12 @@ fully navigable state — no additional steps required. The fixture bundles:
   CH Resorts.
 - One `Bulletin` + `RegionBulletin` + `RegionDayRating` + `WeatherSnapshot`
   per MicroRegion for 2026-04-08 (map-coverage layer).
-- Full April 2026 (2026-04-01 – 2026-04-30) for CH-4115 (Martigny-Verbier)
-  and CH-4222 (Zermatt), giving the calendar a 30-day colour gradient.
+- Full April 2026 (2026-04-01 – 2026-04-30) for CH-4115 (Martigny-Verbier),
+  giving the calendar a 30-day colour gradient.
 - All bulletins have `render_model_version = 4`; no `rebuild_render_models`
   step is needed after loading.
 
-The canonical preview URL after loading is `/ch-4222/zermatt/2026-04-08/`.
+The canonical preview URL after loading is `/ch-4115/martigny-verbier/2026-04-08/`.
 
 To regenerate (after a schema change, `RENDER_MODEL_VERSION` bump, or
 fixture-shape change):

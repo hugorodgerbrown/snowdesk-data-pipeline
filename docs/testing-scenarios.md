@@ -9,7 +9,7 @@
 > 5. Fixtures loaded: `poetry run python manage.py loaddata test_data`
 >    This single command loads all region, resort, bulletin, day-rating, and
 >    weather-snapshot data needed to navigate every scenario below. The
->    canonical preview URL is `/ch-4222/zermatt/2026-04-08/`.
+>    canonical preview URL is `/ch-4115/martigny-verbier/2026-04-08/`.
 
 ---
 

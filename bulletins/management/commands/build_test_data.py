@@ -7,8 +7,8 @@ to a fully navigable state via one ``loaddata test_data`` invocation.
 Coverage:
   - Every CH MicroRegion has a Bulletin + RegionBulletin + RegionDayRating on
     2026-04-08 (the "map reference date").
-  - CH-4115 and CH-4222 additionally have bulletins for every day of April 2026
-    (1st–30th).
+  - CH-4115 (Martigny-Verbier) additionally has bulletins for every day of
+    April 2026 (1st–30th) so the calendar shows a full month of colour.
   - WeatherSnapshot rows exist for every (region, date) pair covered by the
     bulletins.
   - ``Bulletin.render_model_version`` equals ``RENDER_MODEL_VERSION`` (4) so
@@ -62,7 +62,7 @@ _OUTPUT_FIXTURE = _REPO_ROOT / "bulletins" / "fixtures" / "test_data.json"
 
 MAP_DATE = date(2026, 4, 8)
 APRIL_DATES = [date(2026, 4, d) for d in range(1, 31)]
-DETAIL_REGIONS = {"CH-4115": "Martigny-Verbier", "CH-4222": "Zermatt"}
+DETAIL_REGIONS = {"CH-4115": "Martigny-Verbier"}
 
 # Danger ratings to cycle across April so the calendar shows a colour gradient.
 # Indices into APRIL_DATES are mapped to these levels (wrapping).
@@ -556,8 +556,9 @@ class Command(BaseCommand):
         Create map-coverage and detail-layer Bulletin rows.
 
         Map-coverage: one per MicroRegion on MAP_DATE.
-        Detail layer: one per day × {CH-4115, CH-4222} for full April 2026
-        (MAP_DATE is skipped since it is already covered by map-coverage).
+        Detail layer: one per day for each region in DETAIL_REGIONS across
+        full April 2026 (MAP_DATE is skipped since it is already covered by
+        the map-coverage layer).
 
         Args:
             region_name_map: region_id → name lookup.

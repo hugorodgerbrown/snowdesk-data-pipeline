@@ -113,13 +113,13 @@ class TestBuildTestDataCommit:
         assert model_counts["regions.microregion"] == 149
         assert model_counts["regions.resort"] == 148
 
-        # Bulletin layer: 149 map-coverage + 58 detail = 207.
-        assert model_counts["bulletins.bulletin"] == 207
-        assert model_counts["bulletins.regionbulletin"] == 207
+        # Bulletin layer: 149 map-coverage + 29 detail = 178.
+        assert model_counts["bulletins.bulletin"] == 178
+        assert model_counts["bulletins.regionbulletin"] == 178
 
-        # Day ratings and weather snapshots — 207 each.
-        assert model_counts["bulletins.regiondayrating"] == 207
-        assert model_counts["bulletins.weathersnapshot"] == 207
+        # Day ratings and weather snapshots — 178 each.
+        assert model_counts["bulletins.regiondayrating"] == 178
+        assert model_counts["bulletins.weathersnapshot"] == 178
 
     def test_all_bulletins_have_current_render_model_version(
         self, tmp_path: Path
@@ -188,10 +188,10 @@ class TestCheckedInFixture:
         assert model_counts["regions.subregion"] == 21
         assert model_counts["regions.microregion"] == 149
         assert model_counts["regions.resort"] == 148
-        assert model_counts["bulletins.bulletin"] == 207
-        assert model_counts["bulletins.regionbulletin"] == 207
-        assert model_counts["bulletins.regiondayrating"] == 207
-        assert model_counts["bulletins.weathersnapshot"] == 207
+        assert model_counts["bulletins.bulletin"] == 178
+        assert model_counts["bulletins.regionbulletin"] == 178
+        assert model_counts["bulletins.regiondayrating"] == 178
+        assert model_counts["bulletins.weathersnapshot"] == 178
 
     def test_all_bulletins_have_current_render_model_version(self) -> None:
         """Every Bulletin record has render_model_version == RENDER_MODEL_VERSION."""
@@ -211,8 +211,19 @@ class TestCheckedInFixture:
         ]
         assert len(rdr_records) == 30
 
-    def test_ch4222_has_30_weather_snapshots(self) -> None:
-        """CH-4222 has WeatherSnapshot rows for all 30 days in April 2026."""
+    def test_ch4115_has_30_weather_snapshots(self) -> None:
+        """CH-4115 has WeatherSnapshot rows for all 30 days in April 2026."""
+        records = json.loads(_FIXTURE_PATH.read_text())
+        ws_records = [
+            r
+            for r in records
+            if r["model"] == "bulletins.weathersnapshot"
+            and r["fields"]["region"] == ["CH-4115"]
+        ]
+        assert len(ws_records) == 30
+
+    def test_non_detail_region_has_single_map_date_weather_snapshot(self) -> None:
+        """A non-detail region (CH-4222) gets exactly one snapshot on the map date."""
         records = json.loads(_FIXTURE_PATH.read_text())
         ws_records = [
             r
@@ -220,7 +231,8 @@ class TestCheckedInFixture:
             if r["model"] == "bulletins.weathersnapshot"
             and r["fields"]["region"] == ["CH-4222"]
         ]
-        assert len(ws_records) == 30
+        assert len(ws_records) == 1
+        assert ws_records[0]["fields"]["valid_for_date"] == "2026-04-08"
 
     def test_weather_snapshots_use_wmo_code_1(self) -> None:
         """All WeatherSnapshot rows use WMO weather code 1."""
