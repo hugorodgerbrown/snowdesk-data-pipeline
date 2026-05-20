@@ -18,6 +18,7 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
+from regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -25,7 +26,7 @@ from tests.factories import (
 )
 
 
-def _make_bulletin_for_region(region, day: date) -> None:
+def _make_bulletin_for_region(region: MicroRegion, day: date) -> None:
     """Create a morning bulletin valid on *day* and link it to *region*."""
     valid_from = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
     valid_to = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
@@ -67,7 +68,9 @@ class TestSitemapContents:
 
     def test_today_bulletin_region_is_listed(self, client: Client) -> None:
         """A region with a bulletin for today appears in the sitemap."""
-        region = MicroRegionFactory.create(region_id="CH-4115", name="Valais", slug="ch-4115")
+        region = MicroRegionFactory.create(
+            region_id="CH-4115", name="Valais", slug="ch-4115"
+        )
         today = date.today()
         _make_bulletin_for_region(region, today)
 

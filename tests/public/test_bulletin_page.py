@@ -1931,7 +1931,9 @@ class TestOGMetaTags:
         assert 'property="og:locale"' in content
         assert "en_GB" in content
 
-    def test_htmx_partial_omits_og_tags(self, client: Client, region: MicroRegion) -> None:
+    def test_htmx_partial_omits_og_tags(
+        self, client: Client, region: MicroRegion
+    ) -> None:
         """An HTMX partial response does not include OG tags (no base.html inheritance)."""
         url = reverse("public:season_partial", kwargs={"region_id": "ch-4115"})
         response = client.get(url, HTTP_HX_REQUEST="true")
