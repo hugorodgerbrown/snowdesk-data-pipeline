@@ -128,7 +128,7 @@ def generate_unsubscribe_token(email: str, region_id: str) -> str:
             f"email and region_id must not contain '{_UNSUB_SEP}'; "
             f"got email={email!r}, region_id={region_id!r}"
         )
-    value = f"{email}{_UNSUB_SEP}{region_id}"
+    value = f"{email.lower()}{_UNSUB_SEP}{region_id}"
     return generate_token(value, salt=SALT_UNSUBSCRIBE)
 
 
@@ -153,4 +153,6 @@ def verify_unsubscribe_token(token: str) -> tuple[str, str] | None:
     if len(parts) != 2:
         logger.warning("Unsubscribe token value has unexpected format: %r", raw)
         return None
-    return parts[0], parts[1]
+    email = parts[0].lower()
+    region_id = parts[1]
+    return email, region_id
