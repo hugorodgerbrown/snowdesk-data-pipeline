@@ -1941,3 +1941,101 @@ class TestOGMetaTags:
         # partial does not extend base.html so it contains no og:site_name.
         content = response.content.decode()
         assert 'property="og:site_name"' not in content
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _build_og_description (pure-function, no DB required)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildOgDescription:
+    """Unit tests for the _build_og_description view helper."""
+
+    def test_short_panel_contains_label_and_number(self) -> None:
+        """A panel with label and number produces a description containing both."""
+        from public.views import _build_og_description
+
+        panel = {
+            "danger_key": "considerable",
+            "danger_label": "Considerable",
+            "danger_number": "3",
+            "key_message": "",
+        }
+        result = _build_og_description(panel)
+        assert "Considerable" in result
+        assert "3" in result
+
+    def test_long_key_message_truncates_to_155_chars(self) -> None:
+        """When label + key_message exceeds 155 chars the result is at most 155 chars."""
+        from public.views import _build_og_description
+
+        long_message = "word " * 50  # 250 chars
+        panel = {
+            "danger_key": "considerable",
+            "danger_label": "Considerable",
+            "danger_number": "3",
+            "key_message": long_message,
+        }
+        result = _build_og_description(panel)
+        assert len(result) <= 155
+
+    def test_long_key_message_truncates_on_word_boundary(self) -> None:
+        """Truncation never cuts a word mid-way; result does not end with a space."""
+        from public.views import _build_og_description
+
+        long_message = "word " * 50
+        panel = {
+            "danger_key": "considerable",
+            "danger_label": "Considerable",
+            "danger_number": "3",
+            "key_message": long_message,
+        }
+        result = _build_og_description(panel)
+        assert not result.endswith(" ")
+        # No fragment that is only a partial word (every token ends at a space boundary).
+        assert " " not in result or result == result.rstrip()
+
+    def test_html_tags_stripped_from_key_message(self) -> None:
+        """HTML markup in key_message is stripped; no angle brackets survive."""
+        from public.views import _build_og_description
+
+        panel = {
+            "danger_key": "high",
+            "danger_label": "High",
+            "danger_number": "4",
+            "key_message": "<p>danger headline</p>",
+        }
+        result = _build_og_description(panel)
+        assert "<" not in result
+        assert ">" not in result
+        assert "danger headline" in result
+
+    def test_panel_none_returns_empty_string(self) -> None:
+        """A None panel returns an empty string."""
+        from public.views import _build_og_description
+
+        assert _build_og_description(None) == ""
+
+    def test_panel_without_danger_key_returns_empty_string(self) -> None:
+        """A panel missing danger_key (empty-state) returns an empty string."""
+        from public.views import _build_og_description
+
+        panel = {
+            "danger_label": "High",
+            "danger_number": "4",
+            "key_message": "Some message",
+        }
+        assert _build_og_description(panel) == ""
+
+    def test_panel_with_label_only_no_number(self) -> None:
+        """When only danger_label is present (no number), label still appears."""
+        from public.views import _build_og_description
+
+        panel = {
+            "danger_key": "low",
+            "danger_label": "Low",
+            "danger_number": "",
+            "key_message": "",
+        }
+        result = _build_og_description(panel)
+        assert "Low" in result
