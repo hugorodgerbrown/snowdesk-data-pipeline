@@ -39,29 +39,20 @@ Renders:
                     >
                 {% endif %}
             {% endwith %}
-            <span class="text-[15px] font-semibold leading-tight flex-1 min-w-0">{{ card.label }}</span>
+            <span class="text-label font-semibold leading-tight flex-1 min-w-0">{{ card.label }}</span>
             {% if card.category %}
-                <span
-                    class="font-mono text-[9.5px] tracking-[0.08em] uppercase bg-black/[0.12] px-1.5 py-0.5 rounded shrink-0"
-                    data-testid="category-pill"
-                >
-                    {{ card.category }}
-                </span>
+                {% include "includes/_chip.html" with text=card.category data_testid="category-pill" %}
             {% endif %}
             {% if card.avalanche_type %}
-                <span
-                    class="font-mono text-[9.5px] tracking-[0.08em] uppercase bg-black/[0.08] px-1.5 py-0.5 rounded shrink-0"
-                    data-testid="avalanche-type-chip"
-                >
-                    {% if card.avalanche_type == "slab" %}{% trans "Slab" %}{% else %}{% trans "Loose" %}{% endif %}
-                </span>
+                {% if card.avalanche_type == "slab" %}
+                    {% trans "Slab" as avalanche_chip_text %}
+                {% else %}
+                    {% trans "Loose" as avalanche_chip_text %}
+                {% endif %}
+                {% include "includes/_chip.html" with text=avalanche_chip_text tint="subtle" data_testid="avalanche-type-chip" %}
             {% endif %}
             {% if card.time_period_label %}
-                <span
-                    class="font-mono text-[9.5px] tracking-[0.08em] uppercase bg-black/[0.12] px-1.5 py-0.5 rounded shrink-0"
-                >
-                    {{ card.time_period_label }}
-                </span>
+                {% include "includes/_chip.html" with text=card.time_period_label %}
             {% endif %}
         </div>
     </div>
@@ -102,7 +93,7 @@ Renders:
     {# ── Prose — SLF comment in full, no truncation ──────────────────────── #}
     {% if card.comment_html %}
         <div class="px-4 pt-3 pb-4">
-            <div class="slf-prose text-sm leading-[1.6] text-text-2">
+            <div class="slf-prose text-sm leading-prose text-text-2">
                 {{ card.comment_html|snowdesk_html }}
             </div>
         </div>

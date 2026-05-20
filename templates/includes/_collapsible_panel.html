@@ -33,14 +33,14 @@ Parameters (passed via ``{% include … with … %}``):
     {% endif %}
 >
     <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
-        <span class="text-[13px] font-semibold text-text-1">{{ title }}</span>
+        <span class="text-summary font-semibold text-text-1">{{ title }}</span>
         <span class="snowdesk-panel-chevron text-text-3 text-sm" aria-hidden="true">&#x25BE;</span>
     </summary>
     <div class="px-4 pb-4 pt-3 border-t border-border">
         {% if body_template %}
             {% include body_template %}
         {% else %}
-            <div class="slf-prose text-sm leading-[1.6] text-text-2">{{ body_html }}</div>
+            <div class="slf-prose text-sm leading-prose text-text-2">{{ body_html }}</div>
         {% endif %}
     </div>
 </details>

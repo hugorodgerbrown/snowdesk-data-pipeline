@@ -41,7 +41,7 @@ Usage
 {% endcomment %}
 {% load i18n %}
 <nav class="border-b border-border">
-    <div class="mx-auto max-w-[640px] flex items-center gap-3 px-4 py-2.5">
+    <div class="mx-auto max-w-narrow flex items-center gap-3 px-4 py-2.5">
         {% if back_url %}
             {% trans "Back" as back_default %}
             <a
@@ -67,14 +67,14 @@ Usage
         {% endif %}
         <a
             href="{% url 'public:home' %}"
-            class="text-text-1 leading-none font-semibold tracking-tight hover:opacity-80 {% if back_url %}text-[15px]{% else %}text-[18px]{% endif %}"
+            class="text-text-1 leading-none font-semibold tracking-tight hover:opacity-80 {% if back_url %}text-label{% else %}text-lg{% endif %}"
         >
             Snowdesk
         </a>
         {% if season_trigger %}
             <button
                 type="button"
-                class="ml-auto inline-flex items-center gap-1.5 px-1.5 py-1 text-text-2 hover:text-text-1 rounded font-mono text-[11px] uppercase tracking-widest"
+                class="ml-auto inline-flex items-center gap-1.5 px-1.5 py-1 text-text-2 hover:text-text-1 rounded font-mono text-caption uppercase tracking-widest"
                 data-season-trigger
                 aria-haspopup="dialog"
                 aria-expanded="false"

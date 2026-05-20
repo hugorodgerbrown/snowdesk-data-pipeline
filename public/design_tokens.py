@@ -34,6 +34,7 @@ from public._component_fixtures import (
     BUTTON_VARIANTS,
     CALLOUT_VARIANTS,
     CARD_VARIANTS,
+    CHIP_VARIANTS,
     COLLAPSIBLE_PANEL_VARIANTS,
     DAY_CHARACTER_VARIANTS,
     DAY_WINDOWS_VARIANTS,
@@ -183,6 +184,24 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         ),
     ),
     FoundationCategory(
+        slug="type-scale",
+        label="Type scale",
+        description=(
+            "Labels, chip captions and the prose body line-height. Plugs the "
+            "gaps in the Tailwind default ramp that previously appeared as "
+            "``text-[9px]`` / ``text-[9.5px]`` / ``leading-[1.6]`` arbitraries."
+        ),
+        kind="typescale",
+        tokens=(
+            Token("--text-meta", "Meta label", "9px", None),
+            Token("--text-chip", "Chip caption", "9.5px", None),
+            Token("--text-caption", "Caption", "11px", None),
+            Token("--text-summary", "Summary title", "13px", None),
+            Token("--text-label", "Problem / wordmark label", "15px", None),
+            Token("--leading-prose", "Prose body leading", "1.6", None),
+        ),
+    ),
+    FoundationCategory(
         slug="surfaces",
         label="Surfaces",
         description="Page background and card surface fills.",
@@ -329,8 +348,10 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         tokens=(
             Token("--breakpoint-tablet", "Tablet ≥", "600px", None),
             Token("--breakpoint-desktop", "Desktop ≥", "960px", None),
-            Token("--width-card-mobile", "Card (mobile)", "390px", None),
-            Token("--width-grid-max", "Grid (max)", "1200px", None),
+            Token("--container-card-mobile", "Card (mobile)", "390px", None),
+            Token("--container-narrow", "Content (narrow)", "640px", None),
+            Token("--container-wide", "Content (wide)", "720px", None),
+            Token("--container-grid-max", "Grid (max)", "1200px", None),
         ),
     ),
     FoundationCategory(
@@ -860,6 +881,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_meta_cell.html",
         variants=META_CELL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="chip",
+        label="Chip",
+        description=(
+            "Mono uppercase pill chip used inside the rating-block "
+            "danger-band header for category, avalanche-type and time-"
+            "period labels. Two tints — strong (default) and subtle — "
+            "both designed to sit on saturated EAWS colour backgrounds."
+        ),
+        kind="components",
+        partial="includes/_chip.html",
+        variants=CHIP_VARIANTS,
         panel_layout="stack",
     ),
 )

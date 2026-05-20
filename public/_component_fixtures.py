@@ -526,6 +526,31 @@ BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
 # Card variants (SNOW-200) ---------------------------------------------------
 # One per real-world padding value used across the codebase.
 
+CHIP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "tint=strong (default) — category / time-period chip",
+        "context": {
+            "text": "Wind slab",
+            "data_testid": "category-pill",
+        },
+    },
+    {
+        "caption": "tint=subtle — avalanche-type chip (Slab / Loose)",
+        "context": {
+            "text": "Slab",
+            "tint": "subtle",
+            "data_testid": "avalanche-type-chip",
+        },
+    },
+    {
+        "caption": "tint=strong — time-period chip (no testid)",
+        "context": {
+            "text": "Afternoon",
+        },
+    },
+)
+
+
 CARD_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "p-4 — compact passkey card",

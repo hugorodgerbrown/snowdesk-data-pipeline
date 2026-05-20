@@ -20,7 +20,7 @@ remains visible and disambiguated.
     {% if tendency_has_content %}
         {% for entry in prose.tendency %}
             {% if entry.comment %}
-                <div class="slf-prose text-sm leading-[1.6] text-text-2 {% if not forloop.first %}mt-3{% endif %}">
+                <div class="slf-prose text-sm leading-prose text-text-2 {% if not forloop.first %}mt-3{% endif %}">
                     {% if forloop.first %}
                         {{ entry.comment|prose_body|snowdesk_html }}
                     {% else %}
