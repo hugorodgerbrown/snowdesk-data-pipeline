@@ -347,8 +347,10 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         tokens=(
             Token("--breakpoint-tablet", "Tablet ≥", "600px", None),
             Token("--breakpoint-desktop", "Desktop ≥", "960px", None),
-            Token("--width-card-mobile", "Card (mobile)", "390px", None),
-            Token("--width-grid-max", "Grid (max)", "1200px", None),
+            Token("--container-card-mobile", "Card (mobile)", "390px", None),
+            Token("--container-narrow", "Content (narrow)", "640px", None),
+            Token("--container-wide", "Content (wide)", "720px", None),
+            Token("--container-grid-max", "Grid (max)", "1200px", None),
         ),
     ),
     FoundationCategory(

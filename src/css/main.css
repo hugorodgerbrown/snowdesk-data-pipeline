@@ -252,9 +252,11 @@
   --breakpoint-tablet:   600px;
   --breakpoint-desktop:  960px;
 
-  /* Content widths */
-  --width-card-mobile:   390px;   /* single-column mobile max-width  */
-  --width-grid-max:      1200px;  /* multi-column grid max-width      */
+  /* Content widths (Tailwind v4 --container-* namespace → max-w-* utilities) */
+  --container-card-mobile:    390px;   /* single-column mobile max-width      */
+  --container-narrow:         640px;   /* bulletin column, nav inner, sheet    */
+  --container-wide:           720px;   /* legal / info pages (terms, privacy)  */
+  --container-grid-max:      1200px;   /* multi-column grid max-width          */
 
 }
 
@@ -364,8 +366,7 @@
    and weather. Bucket-coloured background preserves
    the SNOW-98 day/night signal; a bg-black/35 overlay
    in the markup normalises text contrast. Height is
-   content-driven (min-height in markup), unlike the
-   fixed-96px decorative .weather-header band.
+   content-driven (min-height in markup).
 
    Usage in template (see includes/bulletin_header.html):
      <header class="bulletin-header"
@@ -651,7 +652,7 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     z-index: 41;
 }
 .season-sheet > * {
-    max-width: 640px;
+    max-width: var(--container-narrow);
     margin-left: auto;
     margin-right: auto;
     padding-left: 1rem;
