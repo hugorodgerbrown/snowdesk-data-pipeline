@@ -25,6 +25,32 @@ days), then the weather backstop (it iterates over the regions present
 in the DB). Schedule the weather job 15–30 minutes after bulletin
 ingestion to give the bulletin run headroom on a slow API day.
 
+### `test_data` fixture (local dev and CI)
+
+A single `loaddata test_data` invocation brings a freshly migrated DB to a
+fully navigable state — no additional steps required. The fixture bundles:
+
+- All 9 CH MajorRegions, 21 CH SubRegions, 149 CH MicroRegions, and 148
+  CH Resorts.
+- One `Bulletin` + `RegionBulletin` + `RegionDayRating` + `WeatherSnapshot`
+  per MicroRegion for 2026-04-08 (map-coverage layer).
+- Full April 2026 (2026-04-01 – 2026-04-30) for CH-4115 (Martigny-Verbier),
+  giving the calendar a 30-day colour gradient.
+- All bulletins have `render_model_version = 4`; no `rebuild_render_models`
+  step is needed after loading.
+
+The canonical preview URL after loading is `/ch-4115/martigny-verbier/2026-04-08/`.
+
+To regenerate (after a schema change, `RENDER_MODEL_VERSION` bump, or
+fixture-shape change):
+
+```bash
+poetry run python manage.py build_test_data --commit
+```
+
+Flags: `--commit` (write the fixture; omit for a read-only count summary),
+`--output PATH` (default: `bulletins/fixtures/test_data.json`).
+
 ### Region & resort fixtures (auto-loaded on deploy)
 
 `build.sh` and `build_headless.sh` run `loaddata` against all four

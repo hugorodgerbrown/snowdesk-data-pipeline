@@ -67,9 +67,7 @@ jobs:
         run: poetry run python manage.py migrate --noinput
 
       - name: Load fixtures
-        run: |
-          poetry run python manage.py loaddata eaws_CH resorts bulletins region_bulletins
-          poetry run python manage.py rebuild_render_models --commit
+        run: poetry run python manage.py loaddata test_data
 
       - name: Check query-count baseline (SNOW-13)
         run: poetry run python manage.py monitor_query_counts

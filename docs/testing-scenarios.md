@@ -6,8 +6,10 @@
 > 2. Mailhog running on localhost:1025 (web UI at http://localhost:8025)
 > 3. Tailwind CSS watcher running: `npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch`
 > 4. Database migrated: `poetry run python manage.py migrate`
-> 5. Fixtures loaded: `poetry run python manage.py loaddata eaws resorts`
-> 6. At least one day of bulletin data fetched: `poetry run python manage.py fetch_bulletins --source slf --date $(date +%Y-%m-%d) --commit` (or `fetch_bulletins --source slf --start-date 2026-04-01 --commit` for date navigation tests)
+> 5. Fixtures loaded: `poetry run python manage.py loaddata test_data`
+>    This single command loads all region, resort, bulletin, day-rating, and
+>    weather-snapshot data needed to navigate every scenario below. The
+>    canonical preview URL is `/ch-4115/martigny-verbier/2026-04-08/`.
 
 ---
 
