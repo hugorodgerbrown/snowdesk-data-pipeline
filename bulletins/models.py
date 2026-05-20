@@ -1,7 +1,7 @@
 """
 bulletins/models.py — Bulletin-derived database models.
 
-Owns the five bulletin-driven models:
+Owns the seven bulletin-driven models:
   - PipelineRun: records each execution of the data pipeline (scheduled or
     manual), its status, and timing metadata.
   - Bulletin: stores SLF avalanche bulletins fetched from the CAAML API,
@@ -17,6 +17,12 @@ Owns the five bulletin-driven models:
   - WeatherSnapshot: one row per (region, date) storing the WMO weather
     code and sunrise/sunset times fetched from Open-Meteo. Used by the
     render model (SNOW-98) to determine whether a day is daytime or night.
+  - BulletinShare: a tokenised short-URL share link for a bulletin page.
+    Stores (region, target_date, token, bulletin) so the redirect can
+    always recover the canonical destination even if the bulletin changes.
+  - BulletinShareClick: one row per follow of a BulletinShare link.
+    Captures client metadata (IP, UA, session, Referer, Sec-Purpose,
+    country_code, visitor_hash) for share-click analytics (SNOW-217).
 
 Region hierarchy (MicroRegion, MajorRegion, SubRegion, Resort) lives
 in ``regions.models`` — those are stable lookup tables shared across the
@@ -637,6 +643,186 @@ class WeatherSnapshot(BaseModel):
         Format: ``CH-4115 2026-05-01 wmo=1``
         """
         return f"{self.region.region_id} {self.valid_for_date} wmo={self.weather_code}"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# BulletinShare
+# ---------------------------------------------------------------------------
+
+
+class BulletinShareQuerySet(models.QuerySet["BulletinShare"]):
+    """Custom queryset for BulletinShare."""
+
+    pass
+
+
+class BulletinShare(BaseModel):
+    """A tokenised share link for a bulletin page.
+
+    Created when a user taps the share button on a bulletin page. Stores the
+    (region, target_date) the sharer was viewing so the redirect always lands
+    on the correct page regardless of later bulletin re-issues.
+
+    ``bulletin`` is nullable (SET_NULL) so the share row and its click data
+    are preserved even if the source bulletin is deleted or replaced.
+    ``region`` and ``target_date`` are the canonical identifiers used to
+    reconstruct the canonical URL on redirect.
+
+    ``token`` is generated via ``secrets.token_urlsafe(8)`` at creation
+    time — 11 URL-safe chars giving ~66 bits of entropy, sufficient for
+    click-tracking without guessing.
+    """
+
+    token = models.CharField(
+        max_length=32,
+        unique=True,
+        db_index=True,
+        help_text="URL-safe random token used in the /s/<token>/ short URL.",
+    )
+    bulletin = models.ForeignKey(
+        Bulletin,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="shares",
+        help_text=(
+            "The bulletin that was active when this share was created. "
+            "Nulled when the bulletin is deleted; the share row is preserved."
+        ),
+    )
+    region = models.ForeignKey(
+        "regions.MicroRegion",
+        on_delete=models.CASCADE,
+        related_name="bulletin_shares",
+        help_text="The region the sharer was viewing.",
+    )
+    target_date = models.DateField(
+        help_text="The calendar date the sharer was viewing.",
+    )
+
+    objects = BulletinShareQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this share.
+
+        Format: ``BulletinShare(<token>, <region.region_id>, <target_date>)``
+        """
+        region_id = self.region.region_id
+        return f"BulletinShare({self.token}, {region_id}, {self.target_date})"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# BulletinShareClick
+# ---------------------------------------------------------------------------
+
+
+class BulletinShareClickQuerySet(models.QuerySet["BulletinShareClick"]):
+    """Custom queryset for BulletinShareClick."""
+
+    pass
+
+
+class BulletinShareClick(BaseModel):
+    """A single click (follow) of a BulletinShare short URL.
+
+    One row per visitor follow of a ``/s/<token>/`` link. Stores client
+    metadata — IP address, user-agent, session key, Referer header,
+    Sec-Purpose header (for prefetch detection), GeoIP-resolved country
+    code, and a short visitor hash — for analytics purposes.
+
+    ``visitor_hash`` is the first 16 hex chars of
+    ``sha256((ip + "|" + ua).encode()).hexdigest()``. It is a privacy-
+    respecting pseudonymous identifier — not reversible to a real IP by
+    any party that doesn't already have the IP.
+
+    ``sec_purpose`` captures the ``Sec-Purpose: prefetch`` header so
+    speculative prefetches can be filtered at query time.
+
+    No bot filtering is applied at write time. Filter on ``sec_purpose``
+    or ``user_agent`` patterns at query time.
+    """
+
+    share = models.ForeignKey(
+        BulletinShare,
+        on_delete=models.CASCADE,
+        related_name="clicks",
+        help_text="The share link that was followed.",
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="Client IP address (REMOTE_ADDR or first X-Forwarded-For element).",
+    )
+    user_agent = models.TextField(
+        blank=True,
+        default="",
+        help_text="HTTP_USER_AGENT from the click request.",
+    )
+    session_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Session key at click time (empty when no session exists).",
+    )
+    referer = models.TextField(
+        blank=True,
+        default="",
+        help_text="HTTP Referer header at click time.",
+    )
+    sec_purpose = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "Sec-Purpose header value (e.g. 'prefetch') for speculative-load "
+            "detection. Empty on regular navigations."
+        ),
+    )
+    country_code = models.CharField(
+        max_length=2,
+        blank=True,
+        default="",
+        help_text=(
+            "ISO 3166-1 alpha-2 country code resolved from ip_address via GeoIP. "
+            "Empty when the lookup fails or the IP is private."
+        ),
+    )
+    visitor_hash = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        help_text=(
+            "First 16 hex chars of sha256(ip + '|' + ua). Pseudonymous "
+            "cross-visit identifier; not reversible without the original IP."
+        ),
+    )
+
+    objects = BulletinShareClickQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this click.
+
+        Format: ``BulletinShareClick(<share_token>, <country_code>)``
+        """
+        return f"BulletinShareClick({self.share.token}, {self.country_code!r})"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""

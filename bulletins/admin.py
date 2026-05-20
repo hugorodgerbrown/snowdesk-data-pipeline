@@ -28,6 +28,8 @@ from django.utils.html import format_html, format_html_join
 
 from bulletins.models import (
     Bulletin,
+    BulletinShare,
+    BulletinShareClick,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
@@ -615,3 +617,93 @@ class WeatherSnapshotAdmin(admin.ModelAdmin):
         self.message_user(request, summary, level)
 
         return HttpResponseRedirect(changelist_url)
+
+
+# ---------------------------------------------------------------------------
+# BulletinShare
+# ---------------------------------------------------------------------------
+
+
+class BulletinShareClickInline(admin.TabularInline):
+    """Inline display of click rows on the BulletinShare admin page."""
+
+    model = BulletinShareClick
+    extra = 0
+    readonly_fields = [
+        "ip_address",
+        "user_agent",
+        "session_id",
+        "referer",
+        "sec_purpose",
+        "country_code",
+        "visitor_hash",
+        "created_at",
+    ]
+    can_delete = False
+    verbose_name = "Click"
+    verbose_name_plural = "Clicks"
+
+
+@admin.register(BulletinShare)
+class BulletinShareAdmin(admin.ModelAdmin):
+    """Admin view for BulletinShare."""
+
+    list_display = [
+        "token",
+        "region",
+        "target_date",
+        "bulletin",
+        "click_count",
+        "created_at",
+    ]
+    list_filter = ["target_date"]
+    search_fields = ["token", "region__region_id", "region__name"]
+    readonly_fields = [
+        "token",
+        "bulletin",
+        "region",
+        "target_date",
+        "created_at",
+        "updated_at",
+    ]
+    ordering = ["-created_at"]
+    inlines = [BulletinShareClickInline]
+
+    @admin.display(description="Clicks")
+    def click_count(self, obj: BulletinShare) -> int:
+        """Return the number of clicks on this share link."""
+        return obj.clicks.count()
+
+
+# ---------------------------------------------------------------------------
+# BulletinShareClick
+# ---------------------------------------------------------------------------
+
+
+@admin.register(BulletinShareClick)
+class BulletinShareClickAdmin(admin.ModelAdmin):
+    """Admin view for BulletinShareClick."""
+
+    list_display = [
+        "id",
+        "share",
+        "ip_address",
+        "country_code",
+        "sec_purpose",
+        "created_at",
+    ]
+    list_filter = ["country_code", "sec_purpose"]
+    search_fields = ["share__token", "ip_address", "visitor_hash"]
+    readonly_fields = [
+        "share",
+        "ip_address",
+        "user_agent",
+        "session_id",
+        "referer",
+        "sec_purpose",
+        "country_code",
+        "visitor_hash",
+        "created_at",
+        "updated_at",
+    ]
+    ordering = ["-created_at"]
