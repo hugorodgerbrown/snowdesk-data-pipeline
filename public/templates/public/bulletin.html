@@ -473,10 +473,12 @@ reachable via the SNOW-81 deep-link in the masthead.
                 data-testid="adjoining-regions"
                 aria-labelledby="adjoining-regions-heading"
             >
-                {# Left inline — carries id="adjoining-regions-heading" (aria-labelledby target),
-                   uses mb-2 (not the standard mb-3/mb-6), and sits inside a section whose
-                   parent has no explicit text-colour reset, so inheriting from _eyebrow
-                   would differ from the surrounding context. #}
+                {% comment %}
+                    Left inline — carries id="adjoining-regions-heading" (aria-labelledby target),
+                    uses mb-2 (not the standard mb-3/mb-6), and sits inside a section whose
+                    parent has no explicit text-colour reset, so inheriting from _eyebrow
+                    would differ from the surrounding context.
+                {% endcomment %}
                 <h2
                     id="adjoining-regions-heading"
                     class="font-mono uppercase tracking-wider text-meta text-text-3 mb-2"
