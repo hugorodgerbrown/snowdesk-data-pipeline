@@ -115,6 +115,27 @@ RULES: tuple[Rule, ...] = (
         ),
     ),
     Rule(
+        slug="text-size-literal",
+        pattern=re.compile(r"\btext-\[\d+(?:\.\d+)?(?:px|rem|em)\]"),
+        message=(
+            "Hard-coded font-size literal — use a named utility "
+            "(`text-meta`, `text-chip`, `text-caption`, `text-summary`, "
+            "`text-label`) or the Tailwind default ramp (`text-xs`, "
+            "`text-sm`, `text-base`, `text-lg`). Add a new --text-* "
+            "token in src/css/main.css if no existing size fits."
+        ),
+    ),
+    Rule(
+        slug="leading-literal",
+        pattern=re.compile(r"\bleading-\[\d+(?:\.\d+)?(?:px|rem|em)?\]"),
+        message=(
+            "Hard-coded line-height literal — use `leading-prose` for "
+            "body text, or one of Tailwind's default `leading-*` "
+            "utilities. Add a new --leading-* token if no existing "
+            "value fits."
+        ),
+    ),
+    Rule(
         slug="hex-colour",
         pattern=re.compile(r"#[0-9a-fA-F]{3,8}\b(?![0-9a-fA-F])"),
         message=(
