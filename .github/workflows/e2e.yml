@@ -61,8 +61,6 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ hashFiles('poetry.lock') }}
-          restore-keys: |
-            playwright-chromium-
 
       - name: Install tox and run e2e env
         run: |
