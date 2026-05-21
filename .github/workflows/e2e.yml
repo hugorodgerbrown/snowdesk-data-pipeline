@@ -1,0 +1,70 @@
+# .github/workflows/e2e.yml — End-to-end browser tests (Playwright / Chromium).
+#
+# Runs the ``tox -e e2e`` env on every pull-request and push to main.
+# Isolated from ci.yml so the Chromium install step and its cache are
+# scoped to this workflow and do not bloat the main CI image.
+#
+# The Playwright binary cache is keyed on poetry.lock so a new cache entry
+# is created only when the Playwright package version changes.  Cache misses
+# fall back to a clean install (the Chromium download takes ~60 s on a
+# GitHub-hosted runner).
+
+name: End-to-end (Playwright)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.py"
+      - "**/*.html"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - "tox.ini"
+      - ".github/workflows/e2e.yml"
+
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.py"
+      - "**/*.html"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - "tox.ini"
+      - ".github/workflows/e2e.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Playwright smoke tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python (3.12)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create .env
+        run: |
+          echo "SECRET_KEY=ci-e2e-secret-key" > .env
+          echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            playwright-chromium-
+
+      - name: Install tox and run e2e env
+        run: |
+          pip install tox
+          tox -e e2e
