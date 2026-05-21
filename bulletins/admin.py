@@ -18,9 +18,11 @@ changelist page.
 import json
 import logging
 from datetime import date
+from typing import cast
 
 import bleach
 from django.contrib import admin, messages
+from django.db.models import Count, QuerySet
 from django.http import HttpRequest, HttpResponseRedirect
 from django.urls import URLPattern, path, reverse
 from django.utils import timezone
@@ -28,6 +30,8 @@ from django.utils.html import format_html, format_html_join
 
 from bulletins.models import (
     Bulletin,
+    BulletinShare,
+    BulletinShareClick,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
@@ -615,3 +619,98 @@ class WeatherSnapshotAdmin(admin.ModelAdmin):
         self.message_user(request, summary, level)
 
         return HttpResponseRedirect(changelist_url)
+
+
+# ---------------------------------------------------------------------------
+# BulletinShare
+# ---------------------------------------------------------------------------
+
+
+class BulletinShareClickInline(admin.TabularInline):
+    """Inline display of click rows on the BulletinShare admin page."""
+
+    model = BulletinShareClick
+    extra = 0
+    readonly_fields = [
+        "ip_address",
+        "user_agent",
+        "session_id",
+        "referer",
+        "sec_purpose",
+        "country_code",
+        "visitor_hash",
+        "created_at",
+    ]
+    can_delete = False
+    verbose_name = "Click"
+    verbose_name_plural = "Clicks"
+
+
+@admin.register(BulletinShare)
+class BulletinShareAdmin(admin.ModelAdmin):
+    """Admin view for BulletinShare."""
+
+    list_display = [
+        "token",
+        "region",
+        "target_date",
+        "bulletin",
+        "click_count",
+        "created_at",
+    ]
+    list_filter = ["target_date"]
+    search_fields = ["token", "region__region_id", "region__name"]
+    readonly_fields = [
+        "token",
+        "bulletin",
+        "region",
+        "target_date",
+        "created_at",
+        "updated_at",
+    ]
+    ordering = ["-created_at"]
+    inlines = [BulletinShareClickInline]
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet[BulletinShare]:
+        """Annotate with click count to avoid one query per row on the changelist."""
+        qs: QuerySet[BulletinShare] = super().get_queryset(request)
+        return qs.annotate(_click_count=Count("clicks"))
+
+    @admin.display(description="Clicks", ordering="_click_count")
+    def click_count(self, obj: BulletinShare) -> int:
+        """Return the pre-annotated click count for this share link."""
+        return cast(int, getattr(obj, "_click_count", 0))
+
+
+# ---------------------------------------------------------------------------
+# BulletinShareClick
+# ---------------------------------------------------------------------------
+
+
+@admin.register(BulletinShareClick)
+class BulletinShareClickAdmin(admin.ModelAdmin):
+    """Admin view for BulletinShareClick."""
+
+    list_display = [
+        "id",
+        "share",
+        "ip_address",
+        "country_code",
+        "sec_purpose",
+        "created_at",
+    ]
+    list_filter = ["country_code", "sec_purpose"]
+    search_fields = ["share__token", "ip_address", "visitor_hash"]
+    readonly_fields = [
+        "share",
+        "ip_address",
+        "user_agent",
+        "session_id",
+        "referer",
+        "sec_purpose",
+        "country_code",
+        "visitor_hash",
+        "created_at",
+        "updated_at",
+    ]
+    ordering = ["-created_at"]

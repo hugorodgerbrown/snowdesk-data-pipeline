@@ -253,6 +253,87 @@ reachable via the SNOW-81 deep-link in the masthead.
             }, { passive: true });
         });
     </script>
+    {# ── Share-button toast (SNOW-217) ───────────────────────────────── #}
+    {# The toast partial renders hidden by default. The share script     #}
+    {# removes the ``hidden`` class to reveal it after a successful copy #}
+    {# or share-sheet invocation.                                        #}
+    {% if bulletin %}
+        {% include "includes/_toast.html" with id="share-toast" kind="success" body="Link copied" %}
+    {% endif %}
+    {# ── Share script (SNOW-217) ─────────────────────────────────────── #}
+    {% if bulletin %}
+        <script nonce="{{ request.csp_nonce }}">
+            document.addEventListener('DOMContentLoaded', function () {
+                // The share button is rendered later in the body via the
+                // bulletin_header include, so we must wait for the DOM to
+                // finish parsing — querying at script-run time would find
+                // nothing and exit silently.
+                var btn = document.querySelector('[data-bulletin-share-button]');
+                var toast = document.getElementById('share-toast');
+                if (!btn) return;
+
+                function showToast() {
+                    if (!toast) return;
+                    toast.classList.remove('hidden');
+                    toast.style.display = 'flex';
+                    var dismissBtn = toast.querySelector('[data-action="dismiss"]');
+                    if (dismissBtn) {
+                        dismissBtn.addEventListener('click', function () {
+                            toast.classList.add('hidden');
+                            toast.style.display = '';
+                        }, { once: true });
+                    }
+                    setTimeout(function () {
+                        toast.classList.add('hidden');
+                        toast.style.display = '';
+                    }, 4000);
+                }
+
+                function copy(url) {
+                    if (window.navigator && window.navigator.clipboard) {
+                        window.navigator.clipboard.writeText(url).then(showToast).catch(function () {});
+                    }
+                }
+
+                // Chrome on desktop exposes ``navigator.share`` but may reject
+                // silently if the platform can't show a share sheet (e.g. when
+                // the page isn't an installed PWA). Treat ``navigator.share``
+                // as best-effort: AbortError means the user cancelled (no
+                // fallback); any other rejection falls back to clipboard so
+                // the share never silently no-ops.
+                function shareOrCopy(url) {
+                    var nav = window.navigator;
+                    var payload = { url: url, title: document.title };
+                    var canShare = nav && nav.share && (typeof nav.canShare !== 'function' || nav.canShare(payload));
+                    if (canShare) {
+                        nav.share(payload).catch(function (err) {
+                            if (err && err.name === 'AbortError') return;
+                            copy(url);
+                        });
+                    } else {
+                        copy(url);
+                    }
+                }
+
+                btn.addEventListener('click', function () {
+                    var regionId = btn.dataset.regionId;
+                    var date = btn.dataset.date;
+                    var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrftoken\s*=\s*([^;]*).*$)|^.*$/, '$1');
+                    fetch('/api/bulletins/share/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken
+                        },
+                        body: JSON.stringify({ region_id: regionId, date: date })
+                    })
+                        .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
+                        .then(function (data) { shareOrCopy(data.url); })
+                        .catch(function () { shareOrCopy(window.location.href); });
+                });
+            });
+        </script>
+    {% endif %}
     {# ── Outermost container: font-sans overrides any serif from @theme ── #}
     <div
         class="font-sans max-w-narrow mx-auto px-4 py-4"

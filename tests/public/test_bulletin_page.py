@@ -1836,6 +1836,43 @@ class TestMapBackLink:
 
 
 # ---------------------------------------------------------------------------
+# Share button smoke tests (SNOW-217)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestShareButtonSmoke:
+    """Share button renders when a bulletin exists; absent in empty state."""
+
+    def test_share_button_present_with_bulletin(self, client: Client) -> None:
+        """The share button is rendered when the page has a bulletin."""
+        region = MicroRegionFactory.create(
+            region_id="CH-4222", name="Zermatt", slug="zermatt"
+        )
+        day = date(2026, 4, 8)
+        _make_am_bulletin(region, day)
+        # Use canonical (lowercase) region_id to avoid the slug-correction redirect.
+        url = _url("ch-4222", "zermatt", "2026-04-08")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "data-bulletin-share-button" in content
+        assert 'data-region-id="CH-4222"' in content
+        assert 'data-date="2026-04-08"' in content
+
+    def test_share_button_absent_in_empty_state(self, client: Client) -> None:
+        """The share button is not rendered on the empty-state page."""
+        MicroRegionFactory.create(region_id="CH-4222", name="Zermatt", slug="zermatt")
+        # No bulletin created — page renders empty state.
+        # Use canonical (lowercase) region_id to avoid the slug-correction redirect.
+        url = _url("ch-4222", "zermatt", "2026-04-08")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "data-bulletin-share-button" not in content
+
+
+# ---------------------------------------------------------------------------
 # Test: OpenGraph / Twitter card meta tags (SNOW-218)
 # ---------------------------------------------------------------------------
 

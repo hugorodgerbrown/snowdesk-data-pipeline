@@ -19,6 +19,8 @@ from django.utils import timezone as django_timezone
 
 from bulletins.models import (
     Bulletin,
+    BulletinShare,
+    BulletinShareClick,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
@@ -235,6 +237,38 @@ class PasskeyCredentialFactory(factory.django.DjangoModelFactory[PasskeyCredenti
     device_type = "platform"
     backed_up = False
     last_used_at = None
+
+
+class BulletinShareFactory(factory.django.DjangoModelFactory[BulletinShare]):
+    """Factory for BulletinShare instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = BulletinShare
+
+    token = factory.Sequence(lambda n: f"tok{n:04d}")
+    bulletin = factory.SubFactory(BulletinFactory)
+    region = factory.SubFactory(MicroRegionFactory)
+    target_date = factory.LazyFunction(lambda: datetime.date.today())
+
+
+class BulletinShareClickFactory(factory.django.DjangoModelFactory[BulletinShareClick]):
+    """Factory for BulletinShareClick instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = BulletinShareClick
+
+    share = factory.SubFactory(BulletinShareFactory)
+    ip_address = "203.0.113.1"
+    user_agent = "Mozilla/5.0 (Test)"
+    session_id = ""
+    referer = ""
+    sec_purpose = ""
+    country_code = "CH"
+    visitor_hash = "abcdef1234567890"
 
 
 class UserFactory(factory.django.DjangoModelFactory[Subscriber]):

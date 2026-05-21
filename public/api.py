@@ -1,5 +1,5 @@
 """
-public/api.py — JSON endpoints for the interactive map.
+public/api.py — JSON endpoints for the interactive map and share feature.
 
 Lightweight endpoints consumed by ``static/js/map.js`` to render the
 Swiss region choropleth and back the per-region tooltip:
@@ -34,19 +34,23 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from datetime import date
 from typing import Any
 
 import waffle
+from django.db import IntegrityError
 from django.http import Http404, HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
+from django_ratelimit.decorators import ratelimit
 
-from bulletins.models import Bulletin, RegionBulletin, RegionDayRating
+from bulletins.models import Bulletin, BulletinShare, RegionBulletin, RegionDayRating
 from regions.models import (
     MajorRegion,
     MicroRegion,
@@ -56,6 +60,8 @@ from regions.models import (
 
 from .views import (
     _PROBLEM_LABELS,
+    _resolve_region_for_bulletin,
+    _select_bulletin_for_date,
     _select_default_issue,
 )
 
@@ -1097,3 +1103,139 @@ def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonRespons
 # service worker now caches static assets at runtime via
 # stale-while-revalidate, so there is no precache manifest for an SW to
 # fetch. See ``static/js/sw.js`` and ``docs/offline-map.md``.
+
+
+# ---------------------------------------------------------------------------
+# Share-create endpoint (SNOW-217)
+# ---------------------------------------------------------------------------
+
+# Maximum number of token-generation retries before giving up on collision.
+_SHARE_TOKEN_MAX_RETRIES = 2
+
+
+def _parse_share_request(
+    request: HttpRequest,
+) -> tuple[JsonResponse, None, None] | tuple[None, str, date]:
+    """Parse and validate the share-create request body.
+
+    Returns either ``(error_response, None, None)`` on validation failure,
+    or ``(None, region_id, target_date)`` on success.
+    """
+    try:
+        body = json.loads(request.body or b"")
+    except (ValueError, json.JSONDecodeError):
+        return JsonResponse({"error": "invalid_json"}, status=400), None, None
+
+    if not isinstance(body, dict):
+        return JsonResponse({"error": "invalid_json"}, status=400), None, None
+
+    region_id = body.get("region_id")
+    date_str = body.get("date")
+
+    if not region_id or not date_str:
+        return (
+            JsonResponse(
+                {
+                    "error": "missing_fields",
+                    "detail": "region_id and date are required",
+                },
+                status=400,
+            ),
+            None,
+            None,
+        )
+
+    try:
+        target_date = date.fromisoformat(str(date_str))
+    except (ValueError, TypeError):
+        return (
+            JsonResponse(
+                {"error": "invalid_date", "detail": "date must be YYYY-MM-DD"},
+                status=400,
+            ),
+            None,
+            None,
+        )
+
+    return None, str(region_id), target_date
+
+
+def _create_share_with_retry(
+    bulletin: Bulletin,
+    region: MicroRegion,
+    target_date: date,
+) -> BulletinShare | None:
+    """Create a BulletinShare with a unique token, retrying on collision.
+
+    Returns the created share, or None if all retries exhausted.
+    """
+    for _attempt in range(_SHARE_TOKEN_MAX_RETRIES):
+        token = secrets.token_urlsafe(8)
+        try:
+            return BulletinShare.objects.create(
+                token=token,
+                bulletin=bulletin,
+                region=region,
+                target_date=target_date,
+            )
+        except IntegrityError:
+            if _attempt == _SHARE_TOKEN_MAX_RETRIES - 1:
+                logger.error(
+                    "share_create: token collision after %d retries",
+                    _SHARE_TOKEN_MAX_RETRIES,
+                )
+            else:
+                logger.warning("share_create: token collision, retrying")
+    return None
+
+
+@require_POST
+@ratelimit(key="ip", rate="20/m", block=False)
+def share_create(request: HttpRequest) -> JsonResponse:
+    """Create a tokenised share link for a bulletin page.
+
+    Request body (JSON)::
+
+        {"region_id": "ch-4222", "date": "2026-04-08"}
+
+    Response (200)::
+
+        {"url": "https://snowdesk.app/s/<token>/"}
+
+    Errors:
+        400 — missing/malformed JSON, missing ``region_id`` or ``date``
+              field, malformed date string.
+        404 — unknown ``region_id`` or no bulletin covers the given date.
+        429 — rate limit exceeded (> 20 requests/min per IP).
+
+    Args:
+        request: The incoming HTTP request (must be POST).
+
+    Returns:
+        A JsonResponse with ``{"url": "..."}`` on success.
+
+    """
+    if getattr(request, "limited", False):
+        return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
+
+    error_response, region_id, target_date = _parse_share_request(request)
+    if error_response is not None:
+        return error_response
+
+    try:
+        region = _resolve_region_for_bulletin(region_id)  # type: ignore[arg-type]
+    except Http404:
+        return JsonResponse({"error": "region_not_found"}, status=404)
+
+    bulletin = _select_bulletin_for_date(region, target_date)  # type: ignore[arg-type]
+    if bulletin is None:
+        return JsonResponse({"error": "bulletin_not_found"}, status=404)
+
+    share = _create_share_with_retry(bulletin, region, target_date)  # type: ignore[arg-type]
+    if share is None:
+        return JsonResponse({"error": "token_collision"}, status=500)
+
+    url = request.build_absolute_uri(
+        reverse("public:share_redirect", args=[share.token])
+    )
+    return JsonResponse({"url": url})

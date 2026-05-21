@@ -78,6 +78,13 @@ urlpatterns = [
 ]
 
 urlpatterns += [
+    # Share-redirect (SNOW-217) — registered before the generic
+    # <str:region_id>/ catch-alls so "/s/<token>/" is never swallowed.
+    path(
+        "s/<str:token>/",
+        views.share_redirect,
+        name="share_redirect",
+    ),
     # Weather snippet — HTMX-triggered just-in-time weather fetch (SNOW-159).
     # Registered before the generic <str:region_id>/ pattern so "partials"
     # is never mistaken for a region ID.
