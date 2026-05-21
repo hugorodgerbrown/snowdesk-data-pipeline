@@ -84,9 +84,16 @@ class TestSlugify:
 class TestSlugToCode:
     """Tests for the SLUG_TO_CODE mapping."""
 
-    def test_count_is_23(self) -> None:
-        """SLUG_TO_CODE should contain exactly 23 Alpine massifs."""
-        assert len(SLUG_TO_CODE) == 23
+    def test_count_covers_alpine_plus_aliases(self) -> None:
+        """SLUG_TO_CODE has 23 canonical Alpine slugs plus a small alias tail.
+
+        The aliases are explicit entries for known upstream misspellings
+        (see ``_massifs._MASSIF_ALIASES``); they map onto the same integer
+        codes as their canonical counterparts.
+        """
+        assert len(SLUG_TO_CODE) >= 23
+        canonical = {s for s in SLUG_TO_CODE if s in ALPINE_MASSIFS}
+        assert len(canonical) == 23
 
     def test_chablais_maps_to_1(self) -> None:
         """CHABLAIS → massif code 1."""
@@ -136,3 +143,22 @@ class TestSlugToRegionId:
 
         with pytest.raises(KeyError):
             slug_to_region_id("UNKNOWN-MASSIF")
+
+    def test_space_form_is_normalised(self) -> None:
+        """Upstream space-form slugs resolve to the same region as the canonical form.
+
+        The BRA PDFs spell some massifs with spaces (``"EMBRUNAIS PARPAILLON"``,
+        ``"HAUT-VAR HAUT-VERDON"``) — slug_to_region_id must fold them onto
+        the same canonical region ID as the hyphenated form.
+        """
+        assert slug_to_region_id("EMBRUNAIS PARPAILLON") == "FR-20"
+        assert slug_to_region_id("HAUT-VAR HAUT-VERDON") == "FR-22"
+
+    def test_typo_alias_resolves(self) -> None:
+        """The upstream ``EMBRUNNAIS PARPAILLON`` typo resolves to FR-20.
+
+        Aliased in ``_massifs._MASSIF_ALIASES`` because 66 rows in the
+        2025-2026 archive carry the double-N misspelling.
+        """
+        assert slug_to_region_id("EMBRUNNAIS PARPAILLON") == "FR-20"
+        assert slug_to_region_id("EMBRUNNAIS-PARPAILLON") == "FR-20"

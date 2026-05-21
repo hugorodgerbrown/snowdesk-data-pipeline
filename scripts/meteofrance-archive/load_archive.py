@@ -105,29 +105,35 @@ def _fixup_envelope(
 
     Mutates ``properties`` in place:
     - ``regions[0]["regionID"]`` is translated from ``FR-{SLUG}`` to
-      ``FR-{NN}`` using ``slug_to_code``.
+      ``FR-{NN}`` using ``slug_to_code`` (after normalising the raw slug
+      via ``_normalise_slug`` to fold the space/hyphen variants used by
+      the upstream PDFs onto the canonical form).
     - ``bulletinID`` is synthesised as ``FR-{NN}-{customData.MF.date}``.
 
     Args:
         properties: The ``properties`` sub-dict of a CAAML GeoJSON Feature.
-        slug_to_code: Mapping of slug → integer massif code.
+        slug_to_code: Mapping of slug → integer massif code (already
+            includes the alias entries for known upstream misspellings).
 
     Returns:
         The synthesised ``bulletinID`` on success, or ``None`` if the slug
         is unknown or required fields are missing.
 
     """
+    from _massifs import _normalise_slug
+
     try:
-        slug: str = properties["customData"]["MF"]["massif"]
+        raw_slug: str = properties["customData"]["MF"]["massif"]
         date_str: str = properties["customData"]["MF"]["date"]
     except (KeyError, TypeError):
         logger.warning("Missing customData.MF.massif or customData.MF.date — skipping")
         return None
 
+    slug = _normalise_slug(raw_slug)
     try:
         region_id = _slug_to_region_id(slug, slug_to_code)
     except KeyError:
-        logger.warning("Unknown massif slug %r — skipping", slug)
+        logger.warning("Unknown massif slug %r — skipping", raw_slug)
         return None
 
     try:
@@ -223,8 +229,10 @@ def _process_line(
 
     bulletin_id = _fixup_envelope(properties, slug_to_code)
     if bulletin_id is None:
-        slug = properties.get("customData", {}).get("MF", {}).get("massif", "")
-        if slug and slug not in slug_to_code:
+        from _massifs import _normalise_slug
+
+        raw_slug = properties.get("customData", {}).get("MF", {}).get("massif", "")
+        if raw_slug and _normalise_slug(raw_slug) not in slug_to_code:
             counts.unknown_slug += 1
         else:
             counts.bad_shape += 1

@@ -30,6 +30,7 @@ from bulletins.models import Bulletin, PipelineRun  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_NDJSON = FIXTURES_DIR / "sample_archive.ndjson"
+REAL_SAMPLES_NDJSON = FIXTURES_DIR / "real_samples.ndjson"
 
 
 # ---------------------------------------------------------------------------
@@ -269,3 +270,47 @@ class TestCommitMode:
         run_loader(SAMPLE_NDJSON, commit=True, verbose=False)
         aravis = Bulletin.objects.get(bulletin_id="FR-02-2026-01-15")
         assert aravis.lang == "fr"
+
+
+# ---------------------------------------------------------------------------
+# Real-archive sample tests — verifies the loader handles the actual
+# upstream data shape, including the space-form massif names and the
+# EMBRUNNAIS typo aliased in ``_massifs._MASSIF_ALIASES``.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestRealSamples:
+    """Integration tests against verbatim lines from the real BRA archive.
+
+    The fixture ``real_samples.ndjson`` contains five lines lifted from the
+    2025-2026 ``bulletins.ndjson`` artefact, chosen to exercise every shape
+    of ``customData.MF.massif`` that appears upstream: canonical single-word,
+    canonical hyphenated, and the space-form variants used in some PDFs.
+    """
+
+    pytestmark = pytest.mark.usefixtures("_load_fr_regions")
+
+    def test_all_five_rows_land(self) -> None:
+        """Every real-archive sample lands as a Bulletin row."""
+        exit_code = run_loader(REAL_SAMPLES_NDJSON, commit=True, verbose=False)
+        assert exit_code == 0
+        assert Bulletin.objects.count() == 5
+
+    def test_canonical_hyphen_slugs_resolve(self) -> None:
+        """ARAVIS, MONT-BLANC, CHARTREUSE land under their canonical region IDs."""
+        run_loader(REAL_SAMPLES_NDJSON, commit=True, verbose=False)
+        ids = set(Bulletin.objects.values_list("bulletin_id", flat=True))
+        assert "FR-02-2026-11-04" in ids  # ARAVIS
+        assert "FR-03-2026-11-04" in ids  # MONT-BLANC
+        assert "FR-07-2025-11-20" in ids  # CHARTREUSE
+
+    def test_space_form_slug_resolves(self) -> None:
+        """EMBRUNAIS PARPAILLON (space form) lands under FR-20."""
+        run_loader(REAL_SAMPLES_NDJSON, commit=True, verbose=False)
+        assert Bulletin.objects.filter(bulletin_id="FR-20-2026-01-08").exists()
+
+    def test_mixed_hyphen_space_slug_resolves(self) -> None:
+        """HAUT-VAR HAUT-VERDON (internal hyphens + middle space) lands under FR-22."""
+        run_loader(REAL_SAMPLES_NDJSON, commit=True, verbose=False)
+        assert Bulletin.objects.filter(bulletin_id="FR-22-2026-11-05").exists()

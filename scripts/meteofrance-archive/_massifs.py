@@ -133,7 +133,40 @@ def _build_slug_to_code() -> dict[str, int]:
         raise ValueError(
             f"ALPINE_MASSIFS slugs not found in massifs.json catalogue: {missing!r}"
         )
+
+    mapping.update(_MASSIF_ALIASES)
     return mapping
+
+
+# Known-bad spellings that appear in the upstream BRA PDFs and therefore
+# leak into ``customData.MF.massif`` after PDF extraction.  Aliasing them
+# here lets the loader round-trip those bulletins instead of dropping them.
+# Each key is the slug form produced by ``_normalise_slug`` on the raw
+# upstream name; the value is the integer massif code from massifs.json.
+#
+# - ``EMBRUNNAIS-PARPAILLON`` (double N): 66 rows in the 2025-2026 archive.
+#   Canonical spelling is ``EMBRUNAIS-PARPAILLON`` (id 20).
+_MASSIF_ALIASES: dict[str, int] = {
+    "EMBRUNNAIS-PARPAILLON": 20,
+}
+
+
+def _normalise_slug(raw: str) -> str:
+    """Return the canonical slug form for an upstream massif identifier.
+
+    The BRA PDFs use a mix of hyphens and spaces in massif names (e.g.
+    ``"EMBRUNAIS PARPAILLON"`` vs ``"EMBRUNAIS-PARPAILLON"``).  This helper
+    folds them onto a single canonical form so a single ``SLUG_TO_CODE``
+    lookup covers every variant.
+
+    Args:
+        raw: Massif identifier as it appears in ``customData.MF.massif``.
+
+    Returns:
+        Uppercase, hyphen-joined slug (e.g. ``"EMBRUNAIS-PARPAILLON"``).
+
+    """
+    return raw.strip().upper().replace(" ", "-")
 
 
 # Slug-to-integer massif code mapping for the 23 Alpine massifs.
@@ -158,11 +191,16 @@ def slug_to_region_id(slug: str) -> str:
     Returns:
         Zero-padded region identifier, e.g. ``"FR-01"`` or ``"FR-03"``.
 
+    The input is normalised (uppercased, spaces folded to hyphens) before
+    lookup so callers can pass the upstream ``customData.MF.massif`` value
+    verbatim — the BRA PDFs use a mix of hyphens and spaces.
+
     Raises:
-        KeyError: The slug is not present in ``SLUG_TO_CODE``.
+        KeyError: The slug is not present in ``SLUG_TO_CODE`` even after
+            normalisation and alias resolution.
 
     """
-    code = SLUG_TO_CODE[slug]
+    code = SLUG_TO_CODE[_normalise_slug(slug)]
     return f"FR-{code:02d}"
 
 
