@@ -2,5 +2,65 @@
 # the index-archive and the PDF-to-CAAML parser stages.
 #
 # The envelope matches the GeoJSON Feature shape used by the SLF ingestion
-# pipeline so downstream consumers see a consistent record structure.
+# pipeline so downstream consumers see a consistent record structure:
+#   { "type": "Feature", "geometry": null, "properties": { … } }
+#
+# The `customData.MF` block is where Météo-France-specific fields that have
+# no direct CAAML equivalent (e.g. SAT labels, raw weather prose) are stored.
 """CAAML 6.0 GeoJSON Feature envelope builder."""
+
+from __future__ import annotations
+
+from datetime import date
+
+
+def build_envelope(
+    *,
+    massif: str,
+    bulletin_date: date,
+    lang: str = "fr",
+    properties: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Return a GeoJSON Feature dict wrapping CAAML bulletin properties.
+
+    Args:
+        massif: Canonical massif name (e.g. ``"CHABLAIS"``).
+        bulletin_date: The date for which the bulletin is valid.
+        lang: Language code (default ``"fr"``).
+        properties: Additional CAAML properties to merge into the envelope.
+
+    Returns:
+        A dict shaped as a GeoJSON Feature with ``type``, ``geometry``, and
+        ``properties`` keys.  The ``properties`` dict contains a minimal set
+        of CAAML 6.0 fields plus a ``customData.MF`` placeholder.
+
+    """
+    base_properties: dict[str, object] = {
+        "lang": lang,
+        "regions": [
+            {
+                "regionID": f"FR-{massif}",
+                "name": massif.replace("-", " ").title(),
+            }
+        ],
+        "validTime": {
+            "startTime": bulletin_date.isoformat() + "T00:00:00+00:00",
+            "endTime": bulletin_date.isoformat() + "T23:59:59+00:00",
+        },
+        "customData": {
+            "MF": {
+                "massif": massif,
+                "date": bulletin_date.isoformat(),
+            }
+        },
+    }
+    if properties:
+        # Merge top-level keys; caller is responsible for not clobbering
+        # the base keys unless intentional.
+        base_properties.update(properties)
+
+    return {
+        "type": "Feature",
+        "geometry": None,
+        "properties": base_properties,
+    }
