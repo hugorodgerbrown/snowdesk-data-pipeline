@@ -9,6 +9,9 @@
 #     current-day rating is extracted from page 1.
 #   - Snow-depth/cover series and fresh-snow series on page 2 are partially
 #     extracted but may miss values when text rendering is fragmented.
+#   - Trailing None in last-day fresh snow: when the value is 0 the chart
+#     sometimes omits the label entirely.  The missing value is left as None
+#     rather than assumed to be 0.
 #   - The SAT→problem-type mapping is an initial reasonable set; the official
 #     MF alignment is a separate follow-up ticket.
 #   - Page 2 position-based chart parsing is sensitive to layout drift across
@@ -569,6 +572,35 @@ def extract_tendency(page: "pdfplumber.page.Page") -> dict[str, object]:
 # ---------------------------------------------------------------------------
 
 
+def _infer_date_with_year(month: int, day: int, today: date) -> date | None:
+    """Infer the full calendar date from a month/day pair and a reference date.
+
+    Assumes the current year, then steps back one year if the resulting date
+    is 180 or more days in the future relative to ``today``.  This handles the
+    season boundary: when today is 2026-05-21 a "17 NOV" in-PDF date would
+    produce 2026-11-17 (180 days ahead), which belongs to the previous season
+    and is corrected to 2025-11-17.  The threshold is ``>= 180`` — not
+    ``> 180`` — so that the exact boundary day is also caught.
+
+    Args:
+        month: Calendar month (1–12).
+        day: Calendar day (1–31).
+        today: The reference date (normally ``date.today()``).
+
+    Returns:
+        The inferred :class:`datetime.date`, or ``None`` if the combination of
+        month and day is invalid (e.g. 30 February).
+
+    """
+    try:
+        candidate = date(today.year, month, day)
+        if (candidate - today).days >= 180:
+            candidate = date(today.year - 1, month, day)
+        return candidate
+    except ValueError:
+        return None
+
+
 def extract_bulletin_date(page: "pdfplumber.page.Page") -> date | None:
     """Extract the validity date from the 'Estimation des risques pour le' line.
 
@@ -594,18 +626,8 @@ def extract_bulletin_date(page: "pdfplumber.page.Page") -> date | None:
     month = FRENCH_MONTHS.get(month_str)
     if month is None:
         return None
-    # Infer year: if month < current month, it's next year (season wrap).
     today = date.today()
-    year = today.year
-    # Handle season boundary: if the month is >6 months ahead, use last year.
-    # E.g. November bulletins in a May session belong to the previous season.
-    try:
-        candidate = date(year, month, day)
-        if (candidate - today).days > 180:
-            candidate = date(year - 1, month, day)
-        return candidate
-    except ValueError:
-        return None
+    return _infer_date_with_year(month, day, today)
 
 
 def extract_massif_name(page: "pdfplumber.page.Page") -> str:
@@ -675,7 +697,10 @@ def parse_pdf(pdf_path: Path) -> dict[str, object] | None:
             isotherm = extract_isotherm(page1)
             tendency = extract_tendency(page1)
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — pdfplumber raises a wide variety
+        # of library-internal exceptions (PDFSyntaxError, struct.error, etc.)
+        # depending on the PDF.  Catching broadly here keeps the batch parser
+        # moving; the error is logged and the caller receives None.
         logger.error("Failed to parse %s: %s", pdf_path, exc)
         return None
 

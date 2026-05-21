@@ -59,7 +59,7 @@ for each day in a date range, and writes one NDJSON record per date:
 
 ```json
 {"date": "2026-01-15", "status": "ok", "massifs": [{"massif": "CHABLAIS", "heures": ["20260115100000"]}]}
-{"date": "2026-07-01", "status": "not_found"}
+{"date": "2026-07-01", "status": "not_found", "massifs": []}
 ```
 
 **Resumable:** dates already present in `bra_indexes.ndjson` are skipped.
@@ -236,18 +236,22 @@ an object store, not git.
 2. **Snow-depth and cover series (page 2)** are partially extracted. Text
    rendering in the chart area is fragmented and missing values are common.
 
-3. **SAT → problem type mapping** (`_sat_mapping.py`) is an initial reasonable
+3. **Trailing `None` in last-day fresh snow** — when the value is 0 the chart
+   sometimes omits the label entirely. The missing value is left as `None`
+   rather than assumed to be 0.
+
+4. **SAT → problem type mapping** (`_sat_mapping.py`) is an initial reasonable
    set. The official Météo-France → EAWS alignment has not been verified and is
    tracked as a follow-up ticket.
 
-4. **Wind direction** is not present in the BRA PDF (only speed is given).
+5. **Wind direction** is not present in the BRA PDF (only speed is given).
    The `speeds` array contains four time-slot values (nuit/matin/après-midi/soir).
 
-5. **Avalanche problem elevation/aspect** is extracted from free-text narrative
+6. **Avalanche problem elevation/aspect** is extracted from free-text narrative
    (best-effort). Structured per-problem elevation and aspect data are not
    reliably available in BRA PDFs.
 
-6. **Layout drift**: The column-crop constants (`COLUMN_SPLIT_X`, band
+7. **Layout drift**: The column-crop constants (`COLUMN_SPLIT_X`, band
    definitions in `_pdf_extract.py`) are calibrated against the 2025–2026
    layout. If Météo-France change the PDF template for older seasons, some
    fields may parse incorrectly. The `--dry-run` field-coverage report is the
