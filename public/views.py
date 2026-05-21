@@ -1644,15 +1644,17 @@ def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     """
     Look up a MicroRegion with the prefetches the bulletin page needs.
 
-    ``select_related("subregion")`` pre-loads the parent EAWS L2 row the
-    masthead's H2 reads — without it, the subregion lookup adds a second
-    SELECT on every bulletin pageview (SNOW-13 query-count monitor
-    caught the +1 regression). ``neighbours`` is prefetched ordered-by-
-    name so the "Adjoining regions" section in the template iterates in
-    display order without a per-render sort.
+    ``select_related("subregion__major")`` pre-loads the parent EAWS L2 row
+    (which the masthead's H2 reads) and its parent MajorRegion (which
+    ``_build_structured_data`` uses for the JSON-LD ``spatialCoverage``
+    ``containedInPlace`` field). Without the full chain, every bulletin
+    pageview fires an extra SELECT on ``regions_majorregion`` (SNOW-13
+    query-count monitor catches regressions). ``neighbours`` is prefetched
+    ordered-by-name so the "Adjoining regions" section iterates in display
+    order without a per-render sort.
     """
     return get_object_or_404(
-        MicroRegion.objects.select_related("subregion").prefetch_related(
+        MicroRegion.objects.select_related("subregion__major").prefetch_related(
             Prefetch("neighbours", queryset=MicroRegion.objects.order_by("name")),
         ),
         region_id__iexact=region_id,
