@@ -1290,7 +1290,9 @@ class TestAddRegion:
             **_HTMX_HEADERS,
         )
         assert response.status_code == 200
-        assert Subscription.objects.filter(subscriber=subscriber, region=region).exists()
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region
+        ).exists()
 
     def test_authenticated_returns_success_added_fragment(self) -> None:
         """Response contains the subscribe_success_added fragment content."""
@@ -1310,7 +1312,9 @@ class TestAddRegion:
         subscriber = SubscriberFactory.create()
         region = MicroRegionFactory.create()
         client = _make_session_client(subscriber)
-        url = reverse("subscriptions:add_region", kwargs={"region_id": region.region_id})
+        url = reverse(
+            "subscriptions:add_region", kwargs={"region_id": region.region_id}
+        )
         client.post(url, **_HTMX_HEADERS)
         response = client.post(url, **_HTMX_HEADERS)
         assert response.status_code == 200

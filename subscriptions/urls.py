@@ -6,8 +6,8 @@ All URLs are mounted under the ``/subscribe/`` prefix by the root URLconf.
 URL map
 -------
 /subscribe/                              subscribe              POST-only HTMX form
-/subscribe/add/<region_id>/             add_region             POST HTMX (authenticated)
-/subscribe/remove-region/<region_id>/   remove_region_from_bulletin POST HTMX (authenticated)
+/subscribe/add/<region_id>/             add_region             POST HTMX (authed)
+/subscribe/remove-region/<region_id>/   remove_region_from_bulletin  POST HTMX (authed)
 /subscribe/sign-in/                     sign_in                GET/POST — sign-in page
 /subscribe/account/<token>/             account                GET — verify token
 /subscribe/manage/                      manage                 GET — authenticated

@@ -824,9 +824,12 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="subscribe-form",
         label="Subscribe form",
         description=(
-            "Inline subscription CTA embedded on bulletin pages — email input and "
-            "subscribe button. Two variants: clean empty form and form re-displayed "
-            "with a validation error on the email field."
+            "Inline subscription CTA embedded on bulletin pages. Branches into four "
+            "variants based on authentication state and subscription status: "
+            "(1) anonymous — email-input form; "
+            "(2) anonymous with validation error — form re-displayed with an error; "
+            "(3) authenticated, not yet subscribed — one-click 'Add region' CTA; "
+            "(4) authenticated, already subscribed — one-click 'Unsubscribe' CTA."
         ),
         kind="components",
         partial="subscriptions/partials/subscribe_form.html",
