@@ -50,7 +50,7 @@ reachable via the SNOW-81 deep-link in the masthead.
     {% if panel.danger_key %}
         <meta
             property="og:title"
-            content="{{ region_name }} · {% if is_today %}{% trans "Today" %}{% else %}{{ page_date|date:'j F Y' }}{% endif %} · Snowdesk"
+            content="{{ region_name }} · {% if is_today %}{% trans 'Today' %}{% else %}{{ page_date|date:'j F Y' }}{% endif %} · Snowdesk"
         >
         {% if og_description %}
             <meta property="og:description" content="{{ og_description }}">
@@ -65,7 +65,7 @@ reachable via the SNOW-81 deep-link in the masthead.
         >
         <meta
             name="twitter:title"
-            content="{{ region_name }} · {% if is_today %}{% trans "Today" %}{% else %}{{ page_date|date:'j F Y' }}{% endif %} · Snowdesk"
+            content="{{ region_name }} · {% if is_today %}{% trans 'Today' %}{% else %}{{ page_date|date:'j F Y' }}{% endif %} · Snowdesk"
         >
     {% endif %}
 {% endblock og_tags %}
