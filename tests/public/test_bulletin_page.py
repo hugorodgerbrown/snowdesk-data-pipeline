@@ -20,7 +20,7 @@ import pytest
 from django.conf import settings
 from django.test import Client
 from django.urls import reverse
-from django.utils.translation import get_language
+from django.utils.translation import override as language_override
 from pytest_django.fixtures import SettingsWrapper
 
 from bulletins.models import Bulletin
@@ -2132,7 +2132,8 @@ class TestStructuredData:
     ) -> None:
         """The JSON-LD block has the expected schema.org WebPage + Report shape."""
         url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
+        with language_override("en-gb"):
+            response = client.get(url)
         content = response.content.decode()
         data = _extract_jsonld(content)
         assert data is not None
@@ -2151,25 +2152,28 @@ class TestStructuredData:
         assert main["sourceOrganization"]["name"] == slf_name
         assert main["sourceOrganization"]["url"] == slf_url
 
-        # datePublished is present and non-empty.
-        assert main["datePublished"]
+        # datePublished matches the fixture's publication_time exactly.
+        # The render model metadata sets publication_time to "2026-03-15T06:00:00+00:00".
+        assert main["datePublished"] == "2026-03-15T06:00:00+00:00"
 
-        # temporalCoverage is an ISO-8601 interval.
+        # temporalCoverage is an ISO-8601 interval covering the bulletin window.
         temporal = main["temporalCoverage"]
         assert "/" in temporal
         from_part, to_part = temporal.split("/", 1)
         assert from_part  # non-empty ISO timestamp
         assert to_part
 
-        # inLanguage is set.
-        assert data["inLanguage"] == get_language()
+        # inLanguage is the overridden language, not a runtime default.
+        assert data["inLanguage"] == "en-gb"
 
         # spatialCoverage carries the region name.
         assert main["spatialCoverage"]["name"] == region.name
 
-        # containedInPlace is populated (major region name from SubRegion.major).
+        # containedInPlace is populated with the MajorRegion name.
+        # MicroRegionFactory("CH-4115") → SubRegionFactory(prefix="CH-41") →
+        # MajorRegionFactory(prefix="CH-4") → name_en = "Major CH-4".
         contained = main["spatialCoverage"]["containedInPlace"]
-        assert contained["name"]  # non-empty; exact value depends on factory
+        assert contained["name"] == "Major CH-4"
 
         # about carries the danger level DefinedTerm.
         about = main["about"]
@@ -2177,6 +2181,19 @@ class TestStructuredData:
         # simple_bulletin uses "moderate" danger — number "2".
         assert about["termCode"] == "2"
         assert about["name"]  # non-empty label
+
+    def test_jsonld_inlanguage_none_fallback(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """When ``get_language()`` returns ``None``, ``inLanguage`` falls back to ``"en-gb"``."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        with language_override(None):
+            response = client.get(url)
+        content = response.content.decode()
+        data = _extract_jsonld(content)
+        assert data is not None
+        assert data["inLanguage"] == "en-gb"
+        assert data["mainEntity"]["inLanguage"] == "en-gb"
 
     def test_jsonld_absent_on_empty_state(
         self, client: Client, region: MicroRegion
@@ -2220,12 +2237,12 @@ class TestStructuredData:
         response = client.get(url)
         content = response.content.decode()
 
-        # The raw unescaped form must NOT appear inside a script block.
-        assert (
-            "</script>"
-            not in content.split('type="application/ld+json"')[1].split("</script>")[0]
-            if 'type="application/ld+json"' in content
-            else True
-        )
+        # The script block must be present in the response.
+        assert 'type="application/ld+json"' in content
+        # The raw unescaped form must NOT appear inside the JSON-LD script block.
+        script_body = content.split('type="application/ld+json"')[1].split("</script>")[
+            0
+        ]
+        assert "</script>" not in script_body
         # The escaped form must be present somewhere in the response.
         assert "<\\/script>" in content
