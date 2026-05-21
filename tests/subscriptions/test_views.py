@@ -891,6 +891,40 @@ class TestRemoveRegion:
         response = remove_region(request, region_id="CH-0001")
         assert response.status_code == 429
 
+    def test_region_not_held_returns_200_and_does_not_delete_subscriber(self) -> None:
+        """POST for a region the subscriber never held returns benign 200; no data changed.
+
+        The manage-page card list never showed the region, so a benign empty 200
+        is the correct response — matching the "card removed via outerHTML swap"
+        semantics — while ensuring the subscriber is not hard-deleted.
+        """
+        subscriber = SubscriberFactory.create()
+        region_a = MicroRegionFactory.create()
+        region_b = MicroRegionFactory.create()
+        region_c = MicroRegionFactory.create()  # subscriber does NOT hold region_c
+        SubscriptionFactory.create(subscriber=subscriber, region=region_a)
+        SubscriptionFactory.create(subscriber=subscriber, region=region_b)
+        sub_pk = subscriber.pk
+        client = _make_session_client(subscriber)
+
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region", kwargs={"region_id": region_c.region_id}
+            ),
+            **_HTMX_HEADERS,
+        )
+
+        assert response.status_code == 200
+        # Existing subscriptions must be untouched.
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region_a
+        ).exists()
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region_b
+        ).exists()
+        # Subscriber must not have been hard-deleted.
+        assert Subscriber.objects.filter(pk=sub_pk).exists()
+
 
 # ---------------------------------------------------------------------------
 # delete_account
@@ -1481,3 +1515,40 @@ class TestRemoveRegionFromBulletin:
         )
         assert response.status_code == 400
         assert b"went wrong" in response.content.lower()
+
+    def test_region_not_held_returns_400_and_does_not_delete_subscriber(self) -> None:
+        """POST for a region the subscriber never held returns 400; no data is changed.
+
+        Protects against the cascade bug where a zero-row delete could trigger
+        a hard-delete of the subscriber when they happened to have no subscriptions
+        for unrelated reasons (e.g. a stale or forged POST to a region_id the
+        subscriber never held).
+        """
+        subscriber = SubscriberFactory.create()
+        region_a = MicroRegionFactory.create()
+        region_b = MicroRegionFactory.create()
+        region_c = MicroRegionFactory.create()  # subscriber does NOT hold region_c
+        SubscriptionFactory.create(subscriber=subscriber, region=region_a)
+        SubscriptionFactory.create(subscriber=subscriber, region=region_b)
+        sub_pk = subscriber.pk
+        client = _make_session_client(subscriber)
+
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region_from_bulletin",
+                kwargs={"region_id": region_c.region_id},
+            ),
+            **_HTMX_HEADERS,
+        )
+
+        assert response.status_code == 400
+        assert b"went wrong" in response.content.lower()
+        # Existing subscriptions must be untouched.
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region_a
+        ).exists()
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region_b
+        ).exists()
+        # Subscriber must not have been hard-deleted.
+        assert Subscriber.objects.filter(pk=sub_pk).exists()

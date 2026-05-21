@@ -276,11 +276,14 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
 
 def _delete_subscription_with_cascade(
     subscriber: Subscriber, region: MicroRegion, request: HttpRequest
-) -> bool:
+) -> bool | None:
     """Delete a (subscriber, region) Subscription and apply the last-region cascade.
 
     If removing this region leaves the subscriber with no remaining subscriptions,
     hard-delete the subscriber row and log out the session.
+
+    Short-circuits when no matching Subscription row exists (deleted_count == 0)
+    to prevent accidental hard-deletion of a subscriber who never held that region.
 
     Args:
         subscriber: The authenticated Subscriber whose subscription is being removed.
@@ -289,10 +292,20 @@ def _delete_subscription_with_cascade(
 
     Returns:
         True when the subscriber was hard-deleted (last region removed); False
-        when the subscriber still has remaining subscriptions.
+        when the subscriber still has remaining subscriptions; None when the
+        (subscriber, region) pair had no Subscription row to begin with.
 
     """
-    Subscription.objects.filter(subscriber=subscriber, region=region).delete()
+    deleted_count, _ = Subscription.objects.filter(
+        subscriber=subscriber, region=region
+    ).delete()
+    if deleted_count == 0:
+        logger.info(
+            "Subscriber %s has no subscription for region %s — nothing removed",
+            subscriber.email,
+            region.region_id,
+        )
+        return None
     logger.info(
         "Subscriber %s removed region %s",
         subscriber.email,
@@ -390,7 +403,8 @@ def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpRes
 
     Returns:
         subscribe_unsubscribed fragment (200), HX-Redirect on last region,
-        403 when unauthenticated, 400 when region unknown, or 429 when rate-limited.
+        403 when unauthenticated, 400 when region unknown or subscriber never
+        held the region (stale/forged POST), or 429 when rate-limited.
 
     """
     if getattr(request, "limited", False):
@@ -413,8 +427,22 @@ def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpRes
             status=400,
         )
 
-    was_last = _delete_subscription_with_cascade(subscriber, region, request)
-    if was_last:
+    result = _delete_subscription_with_cascade(subscriber, region, request)
+    if result is None:
+        # The subscriber never held this region — stale or forged POST.
+        logger.warning(
+            "remove_region_from_bulletin: subscriber %s has no subscription for "
+            "region %s — returning 400",
+            subscriber.email,
+            region.region_id,
+        )
+        return render(
+            request,
+            "subscriptions/partials/subscribe_error.html",
+            {},
+            status=400,
+        )
+    if result is True:
         response = HttpResponse(status=200)
         response["HX-Redirect"] = _UNSUBSCRIBE_DONE_URL
         return response
@@ -569,13 +597,15 @@ def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
         return HttpResponse(status=403)
 
     region = get_object_or_404(MicroRegion, region_id=region_id)
-    was_last = _delete_subscription_with_cascade(subscriber, region, request)
-    if was_last:
+    result = _delete_subscription_with_cascade(subscriber, region, request)
+    if result is True:
         response = HttpResponse(status=200)
         response["HX-Redirect"] = _UNSUBSCRIBE_DONE_URL
         return response
 
     # Return empty content — hx-swap="outerHTML" on the card will remove it.
+    # This covers both the "subscription removed" and the "no row existed" (None)
+    # paths: either way the card should disappear from the manage UI.
     return HttpResponse(status=200)
 
 
