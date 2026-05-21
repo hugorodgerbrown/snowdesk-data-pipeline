@@ -1,0 +1,7 @@
+# Generated artefacts — do NOT commit.
+# These can be 100 MB+ of PDFs plus large NDJSON files.
+bra_indexes.ndjson
+bra_urls.csv
+bra_downloads.txt
+bulletins.ndjson
+*.pdf
