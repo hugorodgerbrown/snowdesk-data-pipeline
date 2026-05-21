@@ -11,6 +11,11 @@ Blocks
 ------
 title           : <title> contents. Default "Snowdesk".
 meta_description: <meta name="description"> content. Empty by default.
+og_tags         : OpenGraph / Twitter card meta tags. Default provides
+                  site-wide og:site_name, og:type, og:locale, og:image,
+                  twitter:image, og:image:width, og:image:height, and
+                  twitter:card.  Bulletin pages override with {{ block.super }}
+                  then add page-specific og:title, og:description, og:url.
 favicon         : the <link rel="icon"> tag. Default points at the plain
                   favicon.svg; bulletin.html overrides with a level-tinted
                   variant matching the page's danger rating.
@@ -37,7 +42,7 @@ site_footer     : the global site footer. Default = the small SLF
 extra_js        : scripts loaded at end of <body>. Used by
                   subscriptions/base.html to inject HTMX.
 {% endcomment %}
-{% load i18n static %}
+{% load i18n og_tags static %}
 <!DOCTYPE html>
 <html lang="{{ LANGUAGE_CODE }}">
     <head>
@@ -48,6 +53,18 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% endblock %}
         <meta name="description" content="{% block meta_description %}{% endblock %}">
         <title>{% block title %}Snowdesk{% endblock %}</title>
+        {# SNOW-218: OpenGraph / Twitter card defaults. Bulletin pages extend  #}
+        {# this block with {{ block.super }} then add page-specific tags.      #}
+        {% block og_tags %}
+            <meta property="og:site_name" content="Snowdesk">
+            <meta property="og:type" content="website">
+            <meta property="og:locale" content="{{ LANGUAGE_CODE|og_locale }}">
+            <meta property="og:image" content="{{ SITE_BASE_URL }}{% static 'social/og-default.png' %}">
+            <meta property="og:image:width" content="1200">
+            <meta property="og:image:height" content="630">
+            <meta name="twitter:card" content="summary_large_image">
+            <meta name="twitter:image" content="{{ SITE_BASE_URL }}{% static 'social/og-default.png' %}">
+        {% endblock og_tags %}
         {# SNOW-79: PWA manifest + theme colour are linked site-wide so the   #}
         {# browser's install affordance is available from any public page,    #}
         {# not just /map/. The SW registration script runs deferred at the    #}
