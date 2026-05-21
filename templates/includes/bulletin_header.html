@@ -62,7 +62,7 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
     {% if bulletin %}
         <button
             type="button"
-            class="absolute top-3 right-3 text-white/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded"
+            class="absolute top-3 right-3 z-10 text-white/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded"
             data-bulletin-share-button
             data-region-id="{{ region.region_id }}"
             data-date="{{ page_date|date:'Y-m-d' }}"

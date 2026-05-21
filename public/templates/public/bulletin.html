@@ -235,7 +235,11 @@ reachable via the SNOW-81 deep-link in the masthead.
     {# ── Share script (SNOW-217) ─────────────────────────────────────── #}
     {% if bulletin %}
         <script nonce="{{ request.csp_nonce }}">
-            (function () {
+            document.addEventListener('DOMContentLoaded', function () {
+                // The share button is rendered later in the body via the
+                // bulletin_header include, so we must wait for the DOM to
+                // finish parsing — querying at script-run time would find
+                // nothing and exit silently.
                 var btn = document.querySelector('[data-bulletin-share-button]');
                 var toast = document.getElementById('share-toast');
                 if (!btn) return;
@@ -257,11 +261,29 @@ reachable via the SNOW-81 deep-link in the masthead.
                     }, 4000);
                 }
 
-                function fallback(url) {
-                    if (window.navigator && window.navigator.share) {
-                        window.navigator.share({ url: url, title: document.title }).catch(function () {});
-                    } else if (window.navigator && window.navigator.clipboard) {
+                function copy(url) {
+                    if (window.navigator && window.navigator.clipboard) {
                         window.navigator.clipboard.writeText(url).then(showToast).catch(function () {});
+                    }
+                }
+
+                // Chrome on desktop exposes ``navigator.share`` but may reject
+                // silently if the platform can't show a share sheet (e.g. when
+                // the page isn't an installed PWA). Treat ``navigator.share``
+                // as best-effort: AbortError means the user cancelled (no
+                // fallback); any other rejection falls back to clipboard so
+                // the share never silently no-ops.
+                function shareOrCopy(url) {
+                    var nav = window.navigator;
+                    var payload = { url: url, title: document.title };
+                    var canShare = nav && nav.share && (typeof nav.canShare !== 'function' || nav.canShare(payload));
+                    if (canShare) {
+                        nav.share(payload).catch(function (err) {
+                            if (err && err.name === 'AbortError') return;
+                            copy(url);
+                        });
+                    } else {
+                        copy(url);
                     }
                 }
 
@@ -278,19 +300,10 @@ reachable via the SNOW-81 deep-link in the masthead.
                         body: JSON.stringify({ region_id: regionId, date: date })
                     })
                         .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
-                        .then(function (data) {
-                            var url = data.url;
-                            if (window.navigator && window.navigator.share) {
-                                window.navigator.share({ url: url, title: document.title }).catch(function () {});
-                            } else if (window.navigator && window.navigator.clipboard) {
-                                window.navigator.clipboard.writeText(url).then(showToast).catch(function () {});
-                            }
-                        })
-                        .catch(function () {
-                            fallback(window.location.href);
-                        });
+                        .then(function (data) { shareOrCopy(data.url); })
+                        .catch(function () { shareOrCopy(window.location.href); });
                 });
-            })();
+            });
         </script>
     {% endif %}
     {# ── Outermost container: font-sans overrides any serif from @theme ── #}
