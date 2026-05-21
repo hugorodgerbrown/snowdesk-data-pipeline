@@ -92,6 +92,7 @@ from bulletins.services.weather_fetcher import (
 from core.decorators import require_htmx
 from core.utils import html_to_markdown
 from regions.models import MicroRegion
+from subscriptions.models import Subscription
 
 from .guidance import load_field_guidance
 from .season_calendar import build_season_grid, season_header
@@ -2096,6 +2097,15 @@ def _bulletin_detail_response(
         # OG description — plain-text summary for og:description / twitter:description
         # (SNOW-218).  Built from the panel's danger rating and key message.
         "og_description": _build_og_description(panel),
+        # Subscribe panel state — whether the authenticated user already has a
+        # Subscription for this region (SNOW-222).  Anonymous users short-circuit
+        # to False so no DB query is issued for unauthenticated requests.
+        "user_subscribed_to_region": (
+            request.user.is_authenticated
+            and Subscription.objects.filter(
+                subscriber=request.user, region=region
+            ).exists()
+        ),
         # JSON-LD structured data (SNOW-220) — schema.org WebPage + Report.
         # Serialised with "</"-escaping; rendered unescaped in the template
         # inside a <script type="application/ld+json"> block.
