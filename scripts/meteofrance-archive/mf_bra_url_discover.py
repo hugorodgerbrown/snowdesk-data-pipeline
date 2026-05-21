@@ -260,6 +260,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Output CSV file path (default: bra_urls.csv)",
     )
     parser.add_argument(
+        "--massif",
+        nargs="+",
+        metavar="MASSIF",
+        help=(
+            "Restrict output to these massifs (space-separated). "
+            "Values must be from the 23 Alpine massifs (e.g. CHABLAIS MONT-BLANC). "
+            "Default: all 23 Alpine massifs."
+        ),
+    )
+    parser.add_argument(
         "--commit",
         action="store_true",
         help="Write output to disk (default: dry-run, no writes)",
@@ -294,12 +304,24 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"Error: index file not found: {index_path}\n")
         return 1
 
+    massif_filter: set[str] | None = None
+    if args.massif:
+        unknown = set(args.massif) - set(ALPINE_MASSIFS)
+        if unknown:
+            sys.stderr.write(
+                f"Error: unknown massif(s): {', '.join(sorted(unknown))}. "
+                f"Valid values: {', '.join(ALPINE_MASSIFS)}\n"
+            )
+            return 1
+        massif_filter = set(args.massif)
+
     if not args.commit:
         sys.stdout.write("DRY RUN — pass --commit to write output.\n")
 
     counts = run(
         index_path=index_path,
         output_path=output_path,
+        massif_filter=massif_filter,
         commit=args.commit,
         verbosity=args.verbosity,
     )

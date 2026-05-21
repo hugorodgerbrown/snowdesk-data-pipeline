@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parents[3] / "scripts" / "meteofrance-arch
 
 from mf_bra_url_discover import (  # noqa: E402
     CSV_COLUMNS,
+    _parse_args,
     build_pdf_url,
     expand_index_record,
     heures_to_date,
@@ -278,3 +279,79 @@ class TestRun:
             assert counts["rows_written"] == 23
         finally:
             index_path.unlink(missing_ok=True)
+
+
+class TestMassifCLIFlag:
+    """Tests for the --massif command-line flag."""
+
+    def test_parse_args_accepts_massif_flag(self) -> None:
+        """--massif should parse a single massif name."""
+        args = _parse_args(["--massif", "CHABLAIS"])
+        assert args.massif == ["CHABLAIS"]
+
+    def test_parse_args_accepts_multiple_massifs(self) -> None:
+        """--massif should accept multiple space-separated massif names."""
+        args = _parse_args(["--massif", "CHABLAIS", "MONT-BLANC"])
+        assert args.massif == ["CHABLAIS", "MONT-BLANC"]
+
+    def test_parse_args_massif_defaults_to_none(self) -> None:
+        """Without --massif, args.massif should be None (use all Alpine massifs)."""
+        args = _parse_args([])
+        assert args.massif is None
+
+    def test_run_with_massif_filter_limits_output(self, tmp_path: Path) -> None:
+        """run() with a massif_filter of {CHABLAIS} should only produce CHABLAIS rows."""
+        index = tmp_path / "bra_indexes.ndjson"
+        index.write_text(
+            json.dumps(
+                {
+                    "date": "20260521",
+                    "status": "ok",
+                    "massifs": [
+                        {"massif": "CHABLAIS", "heures": ["20260521140706"]},
+                        {"massif": "MONT-BLANC", "heures": ["20260521140702"]},
+                        {"massif": "BELLEDONNE", "heures": ["20260521140700"]},
+                    ],
+                }
+            )
+            + "\n"
+        )
+        output = tmp_path / "urls.csv"
+        counts = run(
+            index_path=index,
+            output_path=output,
+            massif_filter={"CHABLAIS"},
+            commit=True,
+            verbosity=0,
+        )
+        assert counts["rows_written"] == 1
+        rows = list(csv.DictReader(output.open()))
+        assert len(rows) == 1
+        assert rows[0]["massif"] == "CHABLAIS"
+
+    def test_run_with_two_massif_filter(self, tmp_path: Path) -> None:
+        """run() with massif_filter={CHABLAIS, MONT-BLANC} should emit two rows."""
+        index = tmp_path / "bra_indexes.ndjson"
+        index.write_text(
+            json.dumps(
+                {
+                    "date": "20260521",
+                    "status": "ok",
+                    "massifs": [
+                        {"massif": "CHABLAIS", "heures": ["20260521140706"]},
+                        {"massif": "MONT-BLANC", "heures": ["20260521140702"]},
+                        {"massif": "BELLEDONNE", "heures": ["20260521140700"]},
+                    ],
+                }
+            )
+            + "\n"
+        )
+        output = tmp_path / "urls.csv"
+        counts = run(
+            index_path=index,
+            output_path=output,
+            massif_filter={"CHABLAIS", "MONT-BLANC"},
+            commit=False,
+            verbosity=0,
+        )
+        assert counts["rows_written"] == 2
