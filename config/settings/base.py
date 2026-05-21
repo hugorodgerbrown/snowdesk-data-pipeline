@@ -415,6 +415,10 @@ ACCOUNT_TOKEN_MAX_AGE = config("ACCOUNT_TOKEN_MAX_AGE", default=86400, cast=int)
 # context (e.g. from management commands or background tasks).
 SITE_BASE_URL = config("SITE_BASE_URL", default="http://localhost:8000")
 
+# Human-readable site name — used in structured data (JSON-LD), email
+# subjects, and any other context that needs the brand string.
+SITE_NAME = "Snowdesk"
+
 # django.contrib.sites — required by django.contrib.sitemaps (SNOW-218).
 # Set to 1 (the default "example.com" site created by the sites migration).
 # Overridden at deploy time to match the production domain via
