@@ -151,10 +151,10 @@ class TestDryRunFlow:
         assert record["type"] == "Feature"
 
     def test_empty_directory_returns_zero_counts(self, tmp_path: Path) -> None:
-        """An input directory with no PDFs should return 0/0 counts."""
+        """An input directory with no PDFs should return 0/0/0 counts."""
         output = tmp_path / "bulletins.ndjson"
         counts = run(input_dir=tmp_path, output_path=output, dry_run=True, verbosity=0)
-        assert counts == {"parsed": 0, "failed": 0}
+        assert counts == {"parsed": 0, "failed": 0, "skipped": 0}
 
 
 class TestMainEntryPoint:

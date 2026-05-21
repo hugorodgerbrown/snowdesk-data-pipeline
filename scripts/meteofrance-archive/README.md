@@ -192,9 +192,16 @@ per bulletin to `bulletins.ndjson`. Each record is a CAAML 6.0 GeoJSON Feature:
 # Dry-run: prints field-coverage report across all PDFs (does not write output)
 python mf_bra_to_caaml.py --input bra_pdfs/ --dry-run
 
-# Write output
+# Write output (resumes from any existing file by default)
 python mf_bra_to_caaml.py --input bra_pdfs/ --output bulletins.ndjson
+
+# Force a fresh parse, overwriting any existing output
+python mf_bra_to_caaml.py --input bra_pdfs/ --output bulletins.ndjson --no-resume
 ```
+
+Output is written incrementally: each bulletin is appended and flushed
+before the next PDF is opened, so an interrupted run leaves a valid
+NDJSON file on disk that the next invocation will resume from.
 
 ---
 
@@ -205,8 +212,14 @@ python mf_bra_to_caaml.py --input bra_pdfs/ --output bulletins.ndjson
 - **Stages 2–3** are idempotent: re-running overwrites the output file.
 - **Stage 4 (aria2c)**: aria2c writes `.aria2` control files alongside each
   PDF. Interrupted downloads resume from the last byte.
-- **Stage 5**: all PDFs in the input directory are parsed on every run.
-  Idempotent if the input PDFs don't change.
+- **Stage 5** is resumable and idempotent. Envelopes are streamed to the
+  output file one line at a time with an explicit flush after each, so a
+  killed process leaves a valid NDJSON file behind. Re-running reads the
+  existing file, builds the set of PDFs already represented (keyed by
+  `customData.MF.source_file`), and skips them. If the previous run was
+  killed mid-write and the tail of the file is a partial line, that line
+  is truncated at the last clean boundary before appending. Pass
+  `--no-resume` to force a fresh parse over the whole input directory.
 
 ---
 

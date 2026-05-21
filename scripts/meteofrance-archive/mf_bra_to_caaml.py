@@ -913,32 +913,186 @@ def generate_coverage_report(envelopes: list[dict[str, object]]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _parse_all_pdfs(
-    pdf_files: list[Path], verbosity: int
-) -> tuple[list[dict[str, object]], int]:
-    """Parse all PDF files and return (envelopes, failed_count).
+# Django-style verbosity → stdlib logging level.
+_LOG_LEVEL: dict[int, int] = {
+    0: logging.WARNING,
+    1: logging.INFO,
+    2: logging.DEBUG,
+}
+
+
+def _envelope_source_file(envelope: dict[str, object]) -> str | None:
+    """Return the source PDF filename recorded in an envelope, if any.
+
+    The source file is written into ``properties.customData.MF.source_file``
+    by ``parse_pdf``; this helper is the inverse lookup used for resume
+    dedup keys.
 
     Args:
-        pdf_files: Sorted list of PDF paths to process.
-        verbosity: Django-style verbosity level.
+        envelope: A parsed CAAML GeoJSON Feature dict.
 
     Returns:
-        Tuple of (list of parsed envelopes, count of failures).
+        The ``source_file`` string, or ``None`` if the path is missing.
+
+    """
+    props = envelope.get("properties")
+    if not isinstance(props, dict):
+        return None
+    custom = props.get("customData")
+    if not isinstance(custom, dict):
+        return None
+    mf = custom.get("MF")
+    if not isinstance(mf, dict):
+        return None
+    value = mf.get("source_file")
+    return value if isinstance(value, str) else None
+
+
+def load_completed_sources(output_path: Path) -> set[str]:
+    """Return the set of PDF filenames already represented in ``output_path``.
+
+    This is the resume primitive: by reading the existing NDJSON output we
+    can skip any PDF whose envelope has already been written, making the
+    parser idempotent across restarts.
+
+    The function is crash-tolerant: if the file ends in a partial or
+    malformed JSON line (e.g. the previous run was killed mid-write), the
+    tail is truncated at the last newline that bounds a parseable record so
+    the next streamed write resumes from a clean boundary.
+
+    Args:
+        output_path: NDJSON file to inspect.  If absent, an empty set is
+            returned and the file is left untouched.
+
+    Returns:
+        Set of ``source_file`` strings already on disk.
+
+    """
+    if not output_path.exists():
+        return set()
+
+    completed: set[str] = set()
+    last_good_offset = 0
+    truncated = False
+    with output_path.open("rb") as fh:
+        while True:
+            line_start = fh.tell()
+            raw = fh.readline()
+            if not raw:
+                break
+            if not raw.endswith(b"\n"):
+                # Final line was never terminated — definitely a partial
+                # write.  Drop everything from the start of this line.
+                truncated = True
+                break
+            try:
+                envelope = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "Truncating malformed line in %s at offset %d",
+                    output_path,
+                    line_start,
+                )
+                truncated = True
+                break
+            source = _envelope_source_file(envelope)
+            if source:
+                completed.add(source)
+            last_good_offset = fh.tell()
+
+    if truncated:
+        with output_path.open("r+b") as fh:
+            fh.truncate(last_good_offset)
+
+    return completed
+
+
+def _run_dry(pdf_files: list[Path]) -> dict[str, int]:
+    """Parse every PDF and emit the coverage report — no NDJSON written.
+
+    Args:
+        pdf_files: Sorted list of BRA PDFs in the input directory.
+
+    Returns:
+        Dict with counts: ``parsed``, ``failed``, ``skipped`` (always 0
+        for dry-run — the coverage report is a full re-sweep).
 
     """
     envelopes: list[dict[str, object]] = []
     failed = 0
     for pdf_path in pdf_files:
-        if verbosity >= 2:
-            sys.stdout.write(f"  Parsing {pdf_path.name}...\n")
-        result = parse_pdf(pdf_path)
-        if result is None:
+        logger.info("  Parsing %s...", pdf_path.name)
+        envelope = parse_pdf(pdf_path)
+        if envelope is None:
             failed += 1
-            if verbosity >= 1:
-                sys.stdout.write(f"  FAILED: {pdf_path.name}\n")
+            logger.info("  FAILED: %s", pdf_path.name)
         else:
-            envelopes.append(result)
-    return envelopes, failed
+            envelopes.append(envelope)
+    logger.info(generate_coverage_report(envelopes))
+    return {"parsed": len(envelopes), "failed": failed, "skipped": 0}
+
+
+def _run_streaming(
+    pdf_files: list[Path], output_path: Path, *, resume: bool
+) -> dict[str, int]:
+    """Stream-parse PDFs, appending one envelope per line to ``output_path``.
+
+    Each successful parse is followed by ``fh.flush()`` so an interrupted
+    process leaves a valid NDJSON file on disk for the next run to resume
+    from.  When ``resume`` is True the existing file is consulted to skip
+    PDFs already represented; when False the file is overwritten.
+
+    Args:
+        pdf_files: Sorted list of BRA PDFs to consider.
+        output_path: NDJSON file to write.
+        resume: If True, append and skip; if False, truncate and re-parse.
+
+    Returns:
+        Dict with counts: ``parsed``, ``failed``, ``skipped``.
+
+    """
+    if resume:
+        completed = load_completed_sources(output_path)
+        if completed:
+            logger.info(
+                "Resuming: %d bulletin(s) already in %s",
+                len(completed),
+                output_path,
+            )
+        mode = "a"
+    else:
+        completed = set()
+        mode = "w"
+
+    parsed = 0
+    failed = 0
+    skipped = 0
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open(mode, encoding="utf-8") as fh:
+        for pdf_path in pdf_files:
+            if pdf_path.name in completed:
+                skipped += 1
+                logger.debug("  Skipping %s (already done)", pdf_path.name)
+                continue
+            logger.info("  Parsing %s...", pdf_path.name)
+            envelope = parse_pdf(pdf_path)
+            if envelope is None:
+                failed += 1
+                logger.info("  FAILED: %s", pdf_path.name)
+                continue
+            fh.write(json.dumps(envelope, ensure_ascii=False) + "\n")
+            fh.flush()
+            completed.add(pdf_path.name)
+            parsed += 1
+
+    logger.info(
+        "Done. parsed=%d skipped=%d failed=%d → %s",
+        parsed,
+        skipped,
+        failed,
+        output_path,
+    )
+    return {"parsed": parsed, "failed": failed, "skipped": skipped}
 
 
 def run(
@@ -946,37 +1100,49 @@ def run(
     input_dir: Path,
     output_path: Path,
     dry_run: bool,
-    verbosity: int,
+    resume: bool = True,
+    verbosity: int = 1,
 ) -> dict[str, int]:
-    """Run the PDF-to-CAAML parser over all PDFs in input_dir.
+    """Run the PDF-to-CAAML parser over all PDFs in ``input_dir``.
+
+    Envelopes are streamed to ``output_path`` one line at a time, with an
+    explicit ``flush()`` after each write so an interrupted run leaves a
+    valid NDJSON file behind.  Re-running the parser against the same
+    output is idempotent: any PDF whose ``source_file`` already appears in
+    the file is skipped.  Pass ``resume=False`` to force a fresh write
+    (the existing file is overwritten).
+
+    ``dry_run=True`` always re-parses every PDF in the directory regardless
+    of ``resume``, because the coverage report needs a full sweep to be
+    meaningful and no output file is touched.
 
     Args:
         input_dir: Directory containing BRA PDF files.
         output_path: Path to write the NDJSON output.
         dry_run: If True, print coverage report instead of writing NDJSON.
-        verbosity: Django-style verbosity (0=quiet, 1=normal, 2=verbose).
+        resume: If True (default), skip PDFs whose envelopes are already
+            in ``output_path`` and append new envelopes.  If False,
+            truncate ``output_path`` and re-parse everything.
+        verbosity: Django-style verbosity (0=warning, 1=info, 2=debug) —
+            sets the level of this module's logger for the duration of
+            the call.
 
     Returns:
-        Dict with counts: ``parsed``, ``failed``.
+        Dict with counts: ``parsed`` (newly written this run), ``failed``
+        (PDFs that returned ``None`` from ``parse_pdf``), ``skipped``
+        (PDFs already present in the output and not re-parsed).
 
     """
+    logger.setLevel(_LOG_LEVEL.get(verbosity, logging.INFO))
+
     pdf_files = sorted(input_dir.glob("BRA.*.pdf"))
     if not pdf_files:
         logger.warning("No BRA PDF files found in %s", input_dir)
-        return {"parsed": 0, "failed": 0}
-
-    envelopes, failed = _parse_all_pdfs(pdf_files, verbosity)
+        return {"parsed": 0, "failed": 0, "skipped": 0}
 
     if dry_run:
-        sys.stdout.write(generate_coverage_report(envelopes))
-    else:
-        with output_path.open("w", encoding="utf-8") as fh:
-            for env in envelopes:
-                fh.write(json.dumps(env, ensure_ascii=False) + "\n")
-        if verbosity >= 1:
-            sys.stdout.write(f"  Written {len(envelopes)} bulletins to {output_path}\n")
-
-    return {"parsed": len(envelopes), "failed": failed}
+        return _run_dry(pdf_files)
+    return _run_streaming(pdf_files, output_path, resume=resume)
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -1006,11 +1172,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Print field-coverage report instead of writing NDJSON",
     )
     parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help=(
+            "Overwrite the output file instead of appending to it.  "
+            "Default behaviour is to resume — skip PDFs whose envelopes "
+            "are already in the output file and append the rest."
+        ),
+    )
+    parser.add_argument(
         "--verbosity",
         type=int,
         default=1,
         choices=[0, 1, 2],
-        help="Output verbosity (0=quiet, 1=normal, 2=verbose)",
+        help="Output verbosity (0=warning, 1=info, 2=debug)",
     )
     return parser.parse_args(argv)
 
@@ -1025,24 +1200,23 @@ def main(argv: list[str] | None = None) -> int:
         Exit code (0 = success, 1 = some failures).
 
     """
-    logging.basicConfig(level=logging.WARNING)
     args = _parse_args(argv)
-
+    logging.basicConfig(level=_LOG_LEVEL.get(args.verbosity, logging.INFO))
     input_dir = Path(args.input)
     output_path = Path(args.output)
 
     if not input_dir.is_dir():
-        sys.stderr.write(f"Error: input directory not found: {input_dir}\n")
+        logger.error("Error: input directory not found: %s", input_dir)
         return 1
 
     counts = run(
         input_dir=input_dir,
         output_path=output_path,
         dry_run=args.dry_run,
+        resume=not args.no_resume,
         verbosity=args.verbosity,
     )
 
-    sys.stdout.write(f"Done. parsed={counts['parsed']}  failed={counts['failed']}\n")
     return 1 if counts["failed"] > 0 else 0
 
 
