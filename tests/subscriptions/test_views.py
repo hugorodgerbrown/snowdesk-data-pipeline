@@ -1177,6 +1177,49 @@ class TestEmailNormalisation:
             subscriber.email, request=mock_send.call_args[1]["request"]
         )
 
+    def test_account_view_resolves_mixed_case_token_to_lowercase_subscriber(
+        self,
+    ) -> None:
+        """A token generated for a mixed-case email activates the lowercase subscriber.
+
+        verify_token returns the raw value embedded in the token, which may
+        come from a mixed-case email.  account_view must normalise it before
+        the database lookup so the stored lowercase record is found.
+        """
+        subscriber = SubscriberFactory.create(
+            email="foo@bar.com", status=Subscriber.Status.PENDING
+        )
+        token = generate_token("FOO@BAR.com", salt=SALT_ACCOUNT_ACCESS)
+        client = Client()
+        response = client.get(reverse("subscriptions:account", kwargs={"token": token}))
+        # Should redirect to manage page, not render a link-expired 400.
+        assert response.status_code == 302
+        assert response["Location"].startswith(reverse("subscriptions:manage"))
+        subscriber.refresh_from_db()
+        assert subscriber.status == Subscriber.Status.ACTIVE
+
+    def test_unsubscribe_post_resolves_mixed_case_token(self) -> None:
+        """An unsubscribe token generated for a mixed-case email removes the subscription.
+
+        verify_unsubscribe_token now lowercases the email component, and
+        unsubscribe_view POSTs against email.lower(), so the subscription
+        for the lowercase-stored subscriber is deleted correctly.
+        """
+        subscriber = SubscriberFactory.create(
+            email="foo@bar.com", status=Subscriber.Status.ACTIVE
+        )
+        region = MicroRegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        token = generate_unsubscribe_token("FOO@BAR.com", region.region_id)
+        client = Client()
+        response = client.post(
+            reverse("subscriptions:unsubscribe", kwargs={"token": token}),
+        )
+        assert response.status_code == 200
+        assert not Subscription.objects.filter(
+            subscriber=subscriber, region=region
+        ).exists()
+
 
 class TestEmailFormNormalisation:
     """Unit tests for SubscribeForm and EmailForm clean_email."""

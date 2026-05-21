@@ -13,6 +13,7 @@ DO_NOT_ADD/
 
 # Environments
 .env
+.envrc
 .claude/worktrees/
 .venv
 .venv/

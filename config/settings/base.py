@@ -52,6 +52,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # Required by django.contrib.sitemaps (SNOW-218).
+    "django.contrib.sites",
+    "django.contrib.sitemaps",
     # Third-party
     "django_htmx",
     # ``core.apps.BootstrapTolerantCSPTrackerConfig`` is a thin subclass of
@@ -114,6 +117,8 @@ TEMPLATES = [
                 "django.template.context_processors.i18n",
                 # Injects nav_subscriptions for the subscriber avatar dropdown.
                 "subscriptions.context_processors.nav_subscriptions",
+                # Exposes SITE_BASE_URL for absolute-URL construction in OG tags.
+                "public.context_processors.site_base_url",
             ],
         },
     },
@@ -409,6 +414,12 @@ ACCOUNT_TOKEN_MAX_AGE = config("ACCOUNT_TOKEN_MAX_AGE", default=86400, cast=int)
 # Base URL used when building absolute links in emails sent outside a request
 # context (e.g. from management commands or background tasks).
 SITE_BASE_URL = config("SITE_BASE_URL", default="http://localhost:8000")
+
+# django.contrib.sites — required by django.contrib.sitemaps (SNOW-218).
+# Set to 1 (the default "example.com" site created by the sites migration).
+# Overridden at deploy time to match the production domain via
+# the django_site fixture or by editing the Site table directly.
+SITE_ID = 1
 
 # Run outbound email on a background daemon thread so SMTP round-trip does not
 # block the request thread (closes the timing-side-channel on

@@ -1680,6 +1680,64 @@ def _build_map_url(
     return f"{base}?d={target_date.isoformat()}#{region_id}"
 
 
+_OG_DESCRIPTION_MAX_CHARS = 155
+
+
+def _build_og_description(panel: dict[str, Any] | None) -> str:
+    """
+    Build an OpenGraph ``og:description`` string from the panel context.
+
+    Constructs a human-readable one-liner of the form:
+
+        "Avalanche danger: {label} ({number}). {key_message}"
+
+    Strips any HTML tags from ``key_message`` (the field may contain inline
+    markup from the SLF CAAML prose fields).  Truncates to at most
+    ``_OG_DESCRIPTION_MAX_CHARS`` characters on a word boundary so the string
+    fits comfortably in a SERP snippet.
+
+    Falls back gracefully: returns an empty string when ``panel`` is ``None``
+    or when the ``danger_key`` field is absent (empty-state pages).
+
+    Args:
+        panel: The panel context dict built by :func:`_build_panel_context`,
+            or ``None`` for empty-state pages.
+
+    Returns:
+        A plain-text description string of at most ``_OG_DESCRIPTION_MAX_CHARS``
+        characters, or ``""`` when no meaningful content is available.
+
+    """
+    if not panel or not panel.get("danger_key"):
+        return ""
+
+    label = str(panel.get("danger_label") or "")
+    number = str(panel.get("danger_number") or "")
+    raw_key_message = strip_tags(str(panel.get("key_message") or "")).strip()
+
+    if label and number:
+        prefix = _gettext("Avalanche danger: %(label)s (%(number)s).") % {
+            "label": label,
+            "number": number,
+        }
+    elif label:
+        prefix = _gettext("Avalanche danger: %(label)s.") % {"label": label}
+    else:
+        prefix = ""
+
+    description = f"{prefix} {raw_key_message}".strip() if raw_key_message else prefix
+
+    if len(description) <= _OG_DESCRIPTION_MAX_CHARS:
+        return description
+
+    # Truncate at a word boundary to avoid mid-word splits.
+    truncated = description[:_OG_DESCRIPTION_MAX_CHARS]
+    last_space = truncated.rfind(" ")
+    if last_space > 0:
+        truncated = truncated[:last_space]
+    return truncated.rstrip(".,;:")
+
+
 def _bulletin_detail_response(
     request: HttpRequest,
     region: MicroRegion,
@@ -1898,6 +1956,9 @@ def _bulletin_detail_response(
         # Source agency label and URL for the metadata strip Source cell (SNOW-211).
         "bulletin_source_label": bulletin_source_label,
         "bulletin_source_url": bulletin_source_url,
+        # OG description — plain-text summary for og:description / twitter:description
+        # (SNOW-218).  Built from the panel's danger rating and key message.
+        "og_description": _build_og_description(panel),
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 

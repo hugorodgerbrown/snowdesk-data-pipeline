@@ -29,8 +29,10 @@ check (``urls.W005``) is satisfied. Production never imports any mirror module.
 
 from django.conf import settings
 from django.contrib import admin
+from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path
 
+from public.sitemaps import BulletinSitemap
 from public.views import serve_manifest, serve_sw
 
 urlpatterns = [
@@ -54,4 +56,12 @@ if settings.DEBUG:
         ]
     )
 
+urlpatterns.append(
+    path(
+        "sitemap.xml",
+        sitemap,
+        {"sitemaps": {"bulletins": BulletinSitemap}},
+        name="sitemap",
+    )
+)
 urlpatterns.append(path("", include("public.urls")))

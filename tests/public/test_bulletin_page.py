@@ -1870,3 +1870,209 @@ class TestShareButtonSmoke:
         assert response.status_code == 200
         content = response.content.decode()
         assert "data-bulletin-share-button" not in content
+
+
+# ---------------------------------------------------------------------------
+# Test: OpenGraph / Twitter card meta tags (SNOW-218)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestOGMetaTags:
+    """Bulletin page renders the correct OpenGraph and Twitter card meta tags."""
+
+    def test_og_site_name_present(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:site_name is always Snowdesk."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:site_name" content="Snowdesk"' in content
+
+    def test_og_type_website(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:type is always 'website'."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:type" content="website"' in content
+
+    def test_twitter_card_summary_large_image(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """twitter:card is summary_large_image."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'name="twitter:card" content="summary_large_image"' in content
+
+    def test_og_image_contains_og_default_png(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:image and twitter:image both reference the placeholder image."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:image"' in content
+        assert "og-default.png" in content
+
+    def test_og_image_width_and_height(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:image:width and og:image:height are 1200 and 630."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:image:width" content="1200"' in content
+        assert 'property="og:image:height" content="630"' in content
+
+    def test_og_title_contains_region_name(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:title contains the region name on a bulletin page."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:title"' in content
+        assert "Valais" in content
+
+    def test_og_description_present(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:description is present when the panel has a danger rating."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:description"' in content
+
+    def test_og_url_matches_canonical(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:url matches the canonical URL link already in extra_head."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'property="og:url"' in content
+        assert "/ch-4115/valais/2026-03-15/" in content
+
+    def test_og_locale_is_formatted(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """og:locale is present and uses underscore format (e.g. en_GB)."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        # The og_locale filter converts "en-gb" → "en_GB".
+        assert 'property="og:locale"' in content
+        assert "en_GB" in content
+
+    def test_htmx_partial_omits_og_tags(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """An HTMX partial response does not include OG tags (no base.html inheritance)."""
+        url = reverse("public:season_partial", kwargs={"region_id": "ch-4115"})
+        response = client.get(url, HTTP_HX_REQUEST="true")
+        # The partial returns 404 because there is no bulletin, but even a 200
+        # partial does not extend base.html so it contains no og:site_name.
+        content = response.content.decode()
+        assert 'property="og:site_name"' not in content
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _build_og_description (pure-function, no DB required)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildOgDescription:
+    """Unit tests for the _build_og_description view helper."""
+
+    def test_short_panel_contains_label_and_number(self) -> None:
+        """A panel with label and number produces a description containing both."""
+        from public.views import _build_og_description
+
+        panel = {
+            "danger_key": "considerable",
+            "danger_label": "Considerable",
+            "danger_number": "3",
+            "key_message": "",
+        }
+        result = _build_og_description(panel)
+        assert "Considerable" in result
+        assert "3" in result
+
+    def test_long_key_message_truncates_to_155_chars(self) -> None:
+        """When label + key_message exceeds 155 chars the result is at most 155 chars."""
+        from public.views import _build_og_description
+
+        long_message = "word " * 50  # 250 chars
+        panel = {
+            "danger_key": "considerable",
+            "danger_label": "Considerable",
+            "danger_number": "3",
+            "key_message": long_message,
+        }
+        result = _build_og_description(panel)
+        assert len(result) <= 155
+
+    def test_long_key_message_truncates_on_word_boundary(self) -> None:
+        """Truncation never cuts a word mid-way; result does not end with a space."""
+        from public.views import _build_og_description
+
+        long_message = "word " * 50
+        panel = {
+            "danger_key": "considerable",
+            "danger_label": "Considerable",
+            "danger_number": "3",
+            "key_message": long_message,
+        }
+        result = _build_og_description(panel)
+        assert not result.endswith(" ")
+        # No fragment that is only a partial word (every token ends at a space boundary).
+        assert " " not in result or result == result.rstrip()
+
+    def test_html_tags_stripped_from_key_message(self) -> None:
+        """HTML markup in key_message is stripped; no angle brackets survive."""
+        from public.views import _build_og_description
+
+        panel = {
+            "danger_key": "high",
+            "danger_label": "High",
+            "danger_number": "4",
+            "key_message": "<p>danger headline</p>",
+        }
+        result = _build_og_description(panel)
+        assert "<" not in result
+        assert ">" not in result
+        assert "danger headline" in result
+
+    def test_panel_none_returns_empty_string(self) -> None:
+        """A None panel returns an empty string."""
+        from public.views import _build_og_description
+
+        assert _build_og_description(None) == ""
+
+    def test_panel_without_danger_key_returns_empty_string(self) -> None:
+        """A panel missing danger_key (empty-state) returns an empty string."""
+        from public.views import _build_og_description
+
+        panel = {
+            "danger_label": "High",
+            "danger_number": "4",
+            "key_message": "Some message",
+        }
+        assert _build_og_description(panel) == ""
+
+    def test_panel_with_label_only_no_number(self) -> None:
+        """When only danger_label is present (no number), label still appears."""
+        from public.views import _build_og_description
+
+        panel = {
+            "danger_key": "low",
+            "danger_label": "Low",
+            "danger_number": "",
+            "key_message": "",
+        }
+        result = _build_og_description(panel)
+        assert "Low" in result
