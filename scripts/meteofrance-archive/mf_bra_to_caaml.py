@@ -1101,7 +1101,6 @@ def run(
     output_path: Path,
     dry_run: bool,
     resume: bool = True,
-    verbosity: int = 1,
 ) -> dict[str, int]:
     """Run the PDF-to-CAAML parser over all PDFs in ``input_dir``.
 
@@ -1116,6 +1115,10 @@ def run(
     of ``resume``, because the coverage report needs a full sweep to be
     meaningful and no output file is touched.
 
+    Logging is the caller's responsibility — configure ``logging`` at the
+    desired level before calling this function (``main`` does so based on
+    the ``--verbosity`` CLI flag).
+
     Args:
         input_dir: Directory containing BRA PDF files.
         output_path: Path to write the NDJSON output.
@@ -1123,9 +1126,6 @@ def run(
         resume: If True (default), skip PDFs whose envelopes are already
             in ``output_path`` and append new envelopes.  If False,
             truncate ``output_path`` and re-parse everything.
-        verbosity: Django-style verbosity (0=warning, 1=info, 2=debug) —
-            sets the level of this module's logger for the duration of
-            the call.
 
     Returns:
         Dict with counts: ``parsed`` (newly written this run), ``failed``
@@ -1133,8 +1133,6 @@ def run(
         (PDFs already present in the output and not re-parsed).
 
     """
-    logger.setLevel(_LOG_LEVEL.get(verbosity, logging.INFO))
-
     pdf_files = sorted(input_dir.glob("BRA.*.pdf"))
     if not pdf_files:
         logger.warning("No BRA PDF files found in %s", input_dir)
@@ -1214,7 +1212,6 @@ def main(argv: list[str] | None = None) -> int:
         output_path=output_path,
         dry_run=args.dry_run,
         resume=not args.no_resume,
-        verbosity=args.verbosity,
     )
 
     return 1 if counts["failed"] > 0 else 0

@@ -115,7 +115,7 @@ class TestDryRunFlow:
         pdf_dir.mkdir()
         shutil.copy(chablais_pdf_path, pdf_dir / chablais_pdf_path.name)
         output = tmp_path / "bulletins.ndjson"
-        run(input_dir=pdf_dir, output_path=output, dry_run=True, verbosity=0)
+        run(input_dir=pdf_dir, output_path=output, dry_run=True)
         assert not output.exists()
 
     def test_dry_run_returns_counts(
@@ -128,7 +128,7 @@ class TestDryRunFlow:
         pdf_dir.mkdir()
         shutil.copy(chablais_pdf_path, pdf_dir / chablais_pdf_path.name)
         output = tmp_path / "bulletins.ndjson"
-        counts = run(input_dir=pdf_dir, output_path=output, dry_run=True, verbosity=0)
+        counts = run(input_dir=pdf_dir, output_path=output, dry_run=True)
         assert counts["parsed"] == 1
         assert counts["failed"] == 0
 
@@ -143,7 +143,7 @@ class TestDryRunFlow:
         pdf_dir.mkdir()
         shutil.copy(chablais_pdf_path, pdf_dir / chablais_pdf_path.name)
         output = tmp_path / "bulletins.ndjson"
-        run(input_dir=pdf_dir, output_path=output, dry_run=False, verbosity=0)
+        run(input_dir=pdf_dir, output_path=output, dry_run=False)
         assert output.exists()
         lines = output.read_text().strip().splitlines()
         assert len(lines) == 1
@@ -153,7 +153,7 @@ class TestDryRunFlow:
     def test_empty_directory_returns_zero_counts(self, tmp_path: Path) -> None:
         """An input directory with no PDFs should return 0/0/0 counts."""
         output = tmp_path / "bulletins.ndjson"
-        counts = run(input_dir=tmp_path, output_path=output, dry_run=True, verbosity=0)
+        counts = run(input_dir=tmp_path, output_path=output, dry_run=True)
         assert counts == {"parsed": 0, "failed": 0, "skipped": 0}
 
 
