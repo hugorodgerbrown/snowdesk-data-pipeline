@@ -58,7 +58,11 @@ from django.utils.cache import add_never_cache_headers, patch_cache_control
 from django.utils.functional import Promise
 from django.utils.html import strip_tags
 from django.utils.text import slugify
-from django.utils.translation import gettext as _gettext, gettext_lazy as _
+from django.utils.translation import (
+    get_language,
+    gettext as _gettext,
+    gettext_lazy as _,
+)
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition, require_POST
 
@@ -1640,15 +1644,17 @@ def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     """
     Look up a MicroRegion with the prefetches the bulletin page needs.
 
-    ``select_related("subregion")`` pre-loads the parent EAWS L2 row the
-    masthead's H2 reads — without it, the subregion lookup adds a second
-    SELECT on every bulletin pageview (SNOW-13 query-count monitor
-    caught the +1 regression). ``neighbours`` is prefetched ordered-by-
-    name so the "Adjoining regions" section in the template iterates in
-    display order without a per-render sort.
+    ``select_related("subregion__major")`` pre-loads the parent EAWS L2 row
+    (which the masthead's H2 reads) and its parent MajorRegion (which
+    ``_build_structured_data`` uses for the JSON-LD ``spatialCoverage``
+    ``containedInPlace`` field). Without the full chain, every bulletin
+    pageview fires an extra SELECT on ``regions_majorregion`` (SNOW-13
+    query-count monitor catches regressions). ``neighbours`` is prefetched
+    ordered-by-name so the "Adjoining regions" section iterates in display
+    order without a per-render sort.
     """
     return get_object_or_404(
-        MicroRegion.objects.select_related("subregion").prefetch_related(
+        MicroRegion.objects.select_related("subregion__major").prefetch_related(
             Prefetch("neighbours", queryset=MicroRegion.objects.order_by("name")),
         ),
         region_id__iexact=region_id,
@@ -1736,6 +1742,114 @@ def _build_og_description(panel: dict[str, Any] | None) -> str:
     if last_space > 0:
         truncated = truncated[:last_space]
     return truncated.rstrip(".,;:")
+
+
+def _build_structured_data(
+    region: MicroRegion,
+    bulletin: Bulletin,
+    panel: dict[str, Any],
+    canonical_url: str,
+) -> str:
+    r"""
+    Build a JSON-LD ``WebPage`` + ``Report`` structured-data payload.
+
+    Serialises the payload to a JSON string suitable for embedding directly
+    inside a ``<script type="application/ld+json">`` tag.  The ``</``
+    substring is escaped to ``<\/`` so that a stray ``</script>`` in any
+    string field cannot terminate the embedding script tag.  JSON decoders
+    treat ``\/`` identically to ``/``, so the round-trip through
+    ``JSON.parse`` is unaffected.
+
+    Snowdesk is the page *publisher*; SLF (or another source agency) is
+    attached to the ``Report`` as ``sourceOrganization``.  The two roles are
+    kept strictly separate — Snowdesk displays bulletins, it does not issue
+    them.
+
+    Args:
+        region: The ``MicroRegion`` the bulletin covers.  Must have
+            ``subregion`` and ``subregion.major`` available (i.e. fetched
+            with ``select_related("subregion__major")``).
+        bulletin: The ``Bulletin`` being rendered.
+        panel: The panel context dict built by :func:`_build_panel_context`.
+            Must contain a ``danger_key`` entry.
+        canonical_url: The absolute canonical URL for the page; used as the
+            ``@id`` anchor for both the ``WebPage`` and the ``Report``.
+
+    Returns:
+        A JSON string (with ``</`` escaped as ``<\/``) ready for
+        ``{{ structured_data_json|safe }}`` in a template.
+
+    """
+    # Source organisation details (SLF / EUREGIO / MF).
+    source_key = (panel.get("render_model") or {}).get("source", "")
+    source_name, source_url = BULLETIN_SOURCE_LINKS.get(source_key, ("", ""))
+
+    # Major-region name for spatialCoverage.containedInPlace.
+    major = region.subregion.major if region.subregion else None
+    major_name = (major.name_en or major.name_native) if major else ""
+
+    # Danger level label and numeric code.
+    danger_key: str = panel.get("danger_key") or "low"
+    danger_meta = _DANGER_MAP.get(danger_key, _DANGER_MAP["low"])
+    danger_label = str(danger_meta["label"])
+    danger_number = str(danger_meta["number"])
+
+    # Publication timestamp from the render model; fall through to bulletin
+    # ``valid_from`` as a safe default so the field is always present.
+    render_model_meta: dict[str, Any] = (panel.get("render_model") or {}).get(
+        "metadata"
+    ) or {}
+    date_published: str = (
+        render_model_meta.get("publication_time") or bulletin.valid_from.isoformat()
+    )
+
+    # ISO-8601 interval for temporalCoverage.
+    temporal_coverage = (
+        f"{bulletin.valid_from.isoformat()}/{bulletin.valid_to.isoformat()}"
+    )
+
+    payload: dict[str, Any] = {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        "@id": canonical_url,
+        "url": canonical_url,
+        "name": f"{region.name} — Snowdesk",
+        "inLanguage": get_language() or "en-gb",
+        "publisher": {
+            "@type": "Organization",
+            "name": settings.SITE_NAME,
+            "url": settings.SITE_BASE_URL,
+        },
+        "mainEntity": {
+            "@type": "Report",
+            "@id": f"{canonical_url}#report",
+            "name": f"Avalanche bulletin — {region.name}",
+            "datePublished": date_published,
+            "temporalCoverage": temporal_coverage,
+            "inLanguage": get_language() or "en-gb",
+            "sourceOrganization": {
+                "@type": "Organization",
+                "name": source_name,
+                "url": source_url,
+            },
+            "spatialCoverage": {
+                "@type": "Place",
+                "name": region.name,
+                "containedInPlace": {
+                    "@type": "Place",
+                    "name": major_name,
+                },
+            },
+            "about": {
+                "@type": "DefinedTerm",
+                "name": danger_label,
+                "termCode": danger_number,
+                "inDefinedTermSet": "https://www.avalanches.org/standards/avalanche-danger-scale/",
+            },
+        },
+    }
+
+    return json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
 
 
 def _bulletin_detail_response(
@@ -1959,6 +2073,12 @@ def _bulletin_detail_response(
         # OG description — plain-text summary for og:description / twitter:description
         # (SNOW-218).  Built from the panel's danger rating and key message.
         "og_description": _build_og_description(panel),
+        # JSON-LD structured data (SNOW-220) — schema.org WebPage + Report.
+        # Serialised with "</"-escaping; rendered unescaped in the template
+        # inside a <script type="application/ld+json"> block.
+        "structured_data_json": _build_structured_data(
+            region, selected, panel, canonical_url
+        ),
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 

@@ -79,6 +79,16 @@ reachable via the SNOW-81 deep-link in the masthead.
             rel="prefetch"
             href="{% url 'public:bulletin_date' region_id=region.canonical_region_id slug=slug date_str=prev_date|date:'Y-m-d' %}"
         >{% endif %}
+    {% if structured_data_json %}
+        {# JSON-LD structured data (SNOW-220) — schema.org WebPage + Report.       #}
+        {# structured_data_json is server-built via json.dumps + a "</" → "<\/"   #}
+        {# escape pass (see public/views.py:_build_structured_data) so it is safe  #}
+        {# to render unescaped inside a <script type="application/ld+json"> block. #}
+        <script type="application/ld+json" nonce="{{ request.csp_nonce }}">
+        {# nosemgrep: generic.html-templates.security.var-in-script-tag.var-in-script-tag,python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe #}
+        {{ structured_data_json|safe }}
+        </script>
+    {% endif %}
     <script src="{% static 'js/htmx.min.js' %}"></script>
     {% if raw_data_json %}
         {# DEBUG-only: raw CAAML payload embedded for source-level inspection. #}

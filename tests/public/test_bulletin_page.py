@@ -10,21 +10,28 @@ factories) to stay consistent with the existing test suite.
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from unittest.mock import patch
 
 import pytest
+from django.conf import settings
 from django.test import Client
 from django.urls import reverse
+from django.utils.translation import override as language_override
 from pytest_django.fixtures import SettingsWrapper
 
 from bulletins.models import Bulletin
+from public.views import BULLETIN_SOURCE_LINKS
 from regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
+    MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
+    SubRegionFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -2076,3 +2083,166 @@ class TestBuildOgDescription:
         }
         result = _build_og_description(panel)
         assert "Low" in result
+
+
+# ---------------------------------------------------------------------------
+# Test: JSON-LD structured data block (SNOW-220)
+# ---------------------------------------------------------------------------
+
+_JSONLD_SCRIPT_RE = re.compile(
+    r'<script\s+type="application/ld\+json"[^>]*>(.*?)</script>',
+    re.DOTALL,
+)
+"""Regex that extracts the first ``application/ld+json`` script body."""
+
+
+def _extract_jsonld(content: str) -> dict | None:
+    """Return parsed JSON-LD payload from *content*, or ``None`` if absent."""
+    match = _JSONLD_SCRIPT_RE.search(content)
+    if match is None:
+        return None
+    return json.loads(match.group(1).strip())  # type: ignore[no-any-return]
+
+
+@pytest.mark.django_db
+class TestStructuredData:
+    """
+    Schema.org JSON-LD block on the bulletin detail page (SNOW-220).
+
+    Each test renders a factory-built bulletin via the canonical URL pattern
+    and either extracts the ``<script type="application/ld+json">`` block or
+    asserts its absence.
+    """
+
+    def test_jsonld_block_present_on_bulletin_page(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """An ``application/ld+json`` script tag is emitted when a bulletin exists."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'type="application/ld+json"' in content
+        data = _extract_jsonld(content)
+        assert data is not None
+        # Must be valid JSON — already asserted by _extract_jsonld not returning None.
+
+    def test_jsonld_shape(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """The JSON-LD block has the expected schema.org WebPage + Report shape."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        with language_override("en-gb"):
+            response = client.get(url)
+        content = response.content.decode()
+        data = _extract_jsonld(content)
+        assert data is not None
+
+        # Top-level WebPage.
+        assert data["@type"] == "WebPage"
+        assert data["publisher"]["name"] == settings.SITE_NAME
+        assert data["publisher"]["url"] == settings.SITE_BASE_URL
+
+        # mainEntity is a Report (string, not a list).
+        main = data["mainEntity"]
+        assert main["@type"] == "Report"
+
+        # Source organisation — simple_bulletin uses the default "slf" source.
+        slf_name, slf_url = BULLETIN_SOURCE_LINKS[Bulletin.Source.SLF]
+        assert main["sourceOrganization"]["name"] == slf_name
+        assert main["sourceOrganization"]["url"] == slf_url
+
+        # datePublished matches the fixture's publication_time exactly.
+        # The render model metadata sets publication_time to "2026-03-15T06:00:00+00:00".
+        assert main["datePublished"] == "2026-03-15T06:00:00+00:00"
+
+        # temporalCoverage is an ISO-8601 interval covering the bulletin window.
+        temporal = main["temporalCoverage"]
+        assert "/" in temporal
+        from_part, to_part = temporal.split("/", 1)
+        assert from_part  # non-empty ISO timestamp
+        assert to_part
+
+        # inLanguage is the overridden language, not a runtime default.
+        assert data["inLanguage"] == "en-gb"
+
+        # spatialCoverage carries the region name.
+        assert main["spatialCoverage"]["name"] == region.name
+
+        # containedInPlace is populated with the MajorRegion name.
+        # MicroRegionFactory("CH-4115") → SubRegionFactory(prefix="CH-41") →
+        # MajorRegionFactory(prefix="CH-4") → name_en = "Major CH-4".
+        contained = main["spatialCoverage"]["containedInPlace"]
+        assert contained["name"] == "Major CH-4"
+
+        # about carries the danger level DefinedTerm.
+        about = main["about"]
+        assert about["@type"] == "DefinedTerm"
+        # simple_bulletin uses "moderate" danger — number "2".
+        assert about["termCode"] == "2"
+        assert about["name"]  # non-empty label
+
+    def test_jsonld_inlanguage_none_fallback(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """When ``get_language()`` returns ``None``, ``inLanguage`` falls back to ``"en-gb"``."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        with language_override(None):
+            response = client.get(url)
+        content = response.content.decode()
+        data = _extract_jsonld(content)
+        assert data is not None
+        assert data["inLanguage"] == "en-gb"
+        assert data["mainEntity"]["inLanguage"] == "en-gb"
+
+    def test_jsonld_absent_on_empty_state(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """No ``application/ld+json`` block is emitted when there is no bulletin."""
+        # Request a date for which no bulletin has been created.
+        url = _url("ch-4115", "valais", "2099-01-01")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "application/ld+json" not in content
+
+    def test_jsonld_escapes_closing_script_tag(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        r"""
+        A ``</script>`` substring inside a field value is escaped.
+
+        Checks that ``<\/`` escaping prevents a crafted string in the bulletin
+        data from terminating the embedding ``<script>`` tag prematurely.
+        """
+        # Build a MicroRegion whose name contains the dangerous substring.
+        major = MajorRegionFactory.create(
+            prefix="CH-X", name_en="Major </script> Region"
+        )
+        sub = SubRegionFactory.create(prefix="CH-X1", major=major, name_en="Sub X1")
+        tricky_region = MicroRegionFactory.create(
+            region_id="CH-9999",
+            name="Valais </script> Test",
+            slug="ch-9999",
+            subregion=sub,
+        )
+        day = date(2026, 3, 15)
+        rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
+        raw = _raw_data_with_problems([_raw_problem()])
+        _make_am_bulletin(
+            tricky_region, day, render_model=rm, render_model_version=4, raw_data=raw
+        )
+
+        url = _url("ch-9999", "valais-script-test", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+
+        # The script block must be present in the response.
+        assert 'type="application/ld+json"' in content
+        # The raw unescaped form must NOT appear inside the JSON-LD script block.
+        script_body = content.split('type="application/ld+json"')[1].split("</script>")[
+            0
+        ]
+        assert "</script>" not in script_body
+        # The escaped form must be present somewhere in the response.
+        assert "<\\/script>" in content
