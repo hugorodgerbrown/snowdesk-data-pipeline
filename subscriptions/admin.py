@@ -1,9 +1,10 @@
 """
 subscriptions/admin.py — Django admin registrations for subscriptions models.
 
-Provides list and detail views for Subscriber, Subscription, and
-PasskeyCredential records so that operators can inspect and manage newsletter
-subscriptions and registered passkeys without direct database access.
+Provides list and detail views for Subscriber, Subscription, PasskeyCredential,
+and PushSubscription records so that operators can inspect and manage newsletter
+subscriptions, registered passkeys, and Web Push subscriptions without direct
+database access.
 
 Subscriber uses UserAdmin as the base so password management works for staff
 accounts.  Fieldsets are customised to expose subscription-specific fields
@@ -15,7 +16,7 @@ import logging
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import PasskeyCredential, Subscriber, Subscription
+from .models import PasskeyCredential, PushSubscription, Subscriber, Subscription
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,32 @@ class PasskeyCredentialAdmin(admin.ModelAdmin):
         "credential_id",
         "public_key",
         "aaguid",
+        "created_at",
+        "updated_at",
+    ]
+
+
+@admin.register(PushSubscription)
+class PushSubscriptionAdmin(admin.ModelAdmin):
+    """Admin view for PushSubscription (Web Push).
+
+    Read-only inspection view — rows are created by the JS register flow on
+    the ``/_push-demo/`` staff page, not via the admin add form. All fields
+    are readonly so the admin is purely a diagnostic surface.
+    """
+
+    list_display = ["endpoint", "subscriber", "created_at", "last_used_at"]
+    list_filter = ["created_at"]
+    list_select_related = ["subscriber"]
+    ordering = ["-created_at"]
+    readonly_fields = [
+        "uuid",
+        "subscriber",
+        "endpoint",
+        "p256dh",
+        "auth",
+        "user_agent",
+        "last_used_at",
         "created_at",
         "updated_at",
     ]
