@@ -836,18 +836,35 @@
    data-state="loading". Transport buttons and the track are hidden via
    display:none so pointer events are naturally suppressed until the data
    arrives. The pill retains its full left:12px / right:12px footprint so
-   there is no layout reflow when the state switches to "ready". */
-.season-scrubber[data-state="loading"] .scrubber-transport-button {
+   there is no layout reflow when the state switches to "ready".
+   The -demo variant mirrors the live widget class for the component library
+   demo wrapper, which uses class="season-scrubber-demo" instead of
+   class="season-scrubber". */
+.season-scrubber[data-state="loading"] .scrubber-transport-button,
+.season-scrubber-demo[data-state="loading"] .scrubber-transport-button {
     display: none;
 }
 
-.season-scrubber[data-state="loading"] .season-scrubber-track {
+.season-scrubber[data-state="loading"] .season-scrubber-track,
+.season-scrubber-demo[data-state="loading"] .season-scrubber-track {
     display: none;
 }
 
-/* Once the fetch resolves (or errors), the loading placeholder is hidden. */
+/* Once the fetch resolves successfully, the loading placeholder is hidden.
+   Error state intentionally does NOT hide the placeholder — the JS error
+   path writes "Season data unavailable" into the element, so it must stay
+   visible. Controls are hidden in error state by the rule below. */
 .season-scrubber[data-state="ready"] .season-scrubber-loading,
-.season-scrubber[data-state="error"] .season-scrubber-loading {
+.season-scrubber-demo[data-state="ready"] .season-scrubber-loading {
+    display: none;
+}
+
+/* In error state the controls are hidden (no data to scrub) but the
+   loading/error placeholder remains visible so the user sees the message. */
+.season-scrubber[data-state="error"] .scrubber-transport-button,
+.season-scrubber-demo[data-state="error"] .scrubber-transport-button,
+.season-scrubber[data-state="error"] .season-scrubber-track,
+.season-scrubber-demo[data-state="error"] .season-scrubber-track {
     display: none;
 }
 
