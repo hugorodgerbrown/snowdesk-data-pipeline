@@ -57,6 +57,10 @@ INSTALLED_APPS = [
     "django.contrib.sitemaps",
     # Third-party
     "django_htmx",
+    # Provides the ORM-backed task queue (DatabaseBackend) and the db_worker /
+    # prune_db_task_results management commands. django_tasks (the decorator
+    # package) does not need to be in INSTALLED_APPS per its README.
+    "django_tasks_db",
     # ``core.apps.BootstrapTolerantCSPTrackerConfig`` is a thin subclass of
     # ``csp.apps.CSPTrackerConfig`` that tolerates a missing ``django_cache``
     # table on first boot — see core/apps.py for the why.
@@ -434,6 +438,22 @@ SUBSCRIPTIONS_EMAIL_ASYNC = config(
     default=True,
     cast=bool,
 )
+
+# ---------------------------------------------------------------------------
+# django-tasks background task queue
+# ---------------------------------------------------------------------------
+# Base default: ImmediateBackend — tasks run synchronously in the same process.
+# This is a safe fallback (email is sent, just not off-thread) that prevents
+# silent message loss if a deployment forgets to override to DatabaseBackend.
+# development.py also sets ImmediateBackend explicitly (inline send into Mailhog).
+# production.py overrides this to DatabaseBackend for durability + off-thread
+# dispatch (requires a Render Background Worker running ``db_worker``).
+
+TASKS = {
+    "default": {
+        "BACKEND": "django_tasks.backends.immediate.ImmediateBackend",
+    }
+}
 
 # Warm weather snapshots on a background daemon thread when bulletin_detail
 # renders a past-date page with no snapshot (SNOW-164). Default True; tests
