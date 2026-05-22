@@ -1269,10 +1269,16 @@ const clearRegionRepaint = () => {
     // has already called loadRegionSummary → dismissActivePopupSilently and
     // started a new fetch. queryRenderedFeatures returns non-empty for those
     // clicks, so this handler only fires for true empty-area taps.
+    //
+    // SNOW-235: the resorts-pin layer is now lazy-installed, so it may not
+    // exist at query time. queryRenderedFeatures throws on any unknown layer
+    // id, so filter the list to layers currently present on the map.
     map.on('click', (e) => {
-      const features = map.queryRenderedFeatures(e.point, {
-        layers: ['regions-fill', 'resorts-pin'],
-      });
+      const layers = ['regions-fill', 'resorts-pin'].filter(
+        (id) => map.getLayer(id),
+      );
+      if (!layers.length) return;
+      const features = map.queryRenderedFeatures(e.point, { layers });
       if (features.length === 0) clearTooltip();
     });
 
