@@ -147,10 +147,7 @@ def load_archive(
         logger.exception("Fatal error during archive load: %s", exc)
         return 1
 
-    if commit:
-        logger.info(result.as_summary())
-    else:
-        logger.info(result.as_summary())
+    logger.info(result.as_summary())
 
     failed = result.failed if commit else result.unknown_slug + result.bad_shape
     return 1 if failed > 0 else 0

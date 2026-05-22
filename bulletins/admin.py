@@ -131,8 +131,8 @@ class PipelineRunAdmin(admin.ModelAdmin):
             request.user,
         )
 
+        text_file = io.TextIOWrapper(upload, encoding="utf-8")
         try:
-            text_file = io.TextIOWrapper(upload, encoding="utf-8")
             result = load_mf_archive(
                 text_file,
                 commit=True,
@@ -146,6 +146,8 @@ class PipelineRunAdmin(admin.ModelAdmin):
                 messages.ERROR,
             )
             return HttpResponseRedirect(changelist_url)
+        finally:
+            text_file.detach()
 
         summary = result.as_summary()
         level = (
