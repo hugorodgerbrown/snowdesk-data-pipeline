@@ -33,7 +33,12 @@ from regions.models import (
     Resort,
     SubRegion,
 )
-from subscriptions.models import PasskeyCredential, Subscriber, Subscription
+from subscriptions.models import (
+    PasskeyCredential,
+    PushSubscription,
+    Subscriber,
+    Subscription,
+)
 
 
 class PipelineRunFactory(factory.django.DjangoModelFactory[PipelineRun]):
@@ -269,6 +274,22 @@ class BulletinShareClickFactory(factory.django.DjangoModelFactory[BulletinShareC
     sec_purpose = ""
     country_code = "CH"
     visitor_hash = "abcdef1234567890"
+
+
+class PushSubscriptionFactory(factory.django.DjangoModelFactory[PushSubscription]):
+    """Factory for PushSubscription instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = PushSubscription
+
+    subscriber = None  # nullable — use SubscriberFactory() to set
+    endpoint = factory.Sequence(lambda n: f"https://push.example.com/endpoint/{n:04d}")
+    p256dh = factory.Sequence(lambda n: f"p256dh-key-{n:04d}")
+    auth = factory.Sequence(lambda n: f"auth-secret-{n:04d}")
+    user_agent = "Mozilla/5.0 (Test)"
+    last_used_at = None
 
 
 class UserFactory(factory.django.DjangoModelFactory[Subscriber]):
