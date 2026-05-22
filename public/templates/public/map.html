@@ -461,7 +461,9 @@
             {# The track holds both the draggable thumb and the floating   #}
             {# date pill so the pill percentage is track-relative (not     #}
             {# scrubber-relative, which would include the button widths).  #}
-            <div class="season-scrubber-track" aria-hidden="true">
+            {# aria-hidden removed: the pill inside carries aria-live so   #}
+            {# it must remain in the accessibility tree.                   #}
+            <div class="season-scrubber-track">
                 {# Date pill: server-rendered for first-paint correctness; #}
                 {# map.js moves it horizontally via --thumb-pct and        #}
                 {# updates the text on snowdesk:date-changed / date-preview#}
