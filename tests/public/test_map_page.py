@@ -178,19 +178,25 @@ def test_map_page_renders_unified_time_controls() -> None:
 
 
 @pytest.mark.django_db
-def test_map_page_renders_timelapse_speed_button() -> None:
+def test_map_page_renders_timelapse_transport_buttons() -> None:
     """
-    The timelapse speed cycler renders alongside the play button with the
-    1× default. The JS rehydrates ``data-speed`` and the visible label
-    from localStorage on first paint, but the markup contract is the
-    default — verifying it pins the entry point the JS hooks into.
+    The four transport buttons (skip-start, play, fast-forward, skip-end)
+    must all be present in the rendered markup so that map.js can wire
+    behaviour onto pre-existing DOM nodes.  The old single-button speed
+    cycler (``#scrubber-speed`` / ``data-speed``) was replaced in SNOW-230
+    with this four-button layout — assert the new IDs are present and the
+    removed ones are absent.
     """
     client = Client()
     response = client.get(reverse("public:map"))
     content = response.content.decode()
-    assert 'id="scrubber-speed"' in content
-    assert 'data-speed="1"' in content
-    assert "aria-label='Timelapse speed'" in content
+    assert 'id="scrubber-skip-start"' in content
+    assert 'id="scrubber-play"' in content
+    assert 'id="scrubber-fast"' in content
+    assert 'id="scrubber-skip-end"' in content
+    # Removed elements must no longer appear.
+    assert 'id="scrubber-speed"' not in content
+    assert "data-speed=" not in content
 
 
 @pytest.mark.django_db
