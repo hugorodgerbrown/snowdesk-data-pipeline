@@ -29,20 +29,8 @@
                 <dd id="push-endpoint" class="text-text-1 font-mono break-all text-xs">—</dd>
             </dl>
             <div class="flex gap-2 pt-2">
-                <button
-                    id="push-enable"
-                    type="button"
-                    class="bg-status-considerable text-white px-3 py-2 rounded-sm text-sm"
-                >
-                    Enable push
-                </button>
-                <button
-                    id="push-disable"
-                    type="button"
-                    class="bg-card border border-border text-text-1 px-3 py-2 rounded-sm text-sm"
-                >
-                    Disable push
-                </button>
+                {% include "includes/_button.html" with label="Enable push" button_type="button" button_id="push-enable" variant="primary" size="compact" %}
+                {% include "includes/_button.html" with label="Disable push" button_type="button" button_id="push-disable" variant="secondary" size="compact" %}
             </div>
         </section>
 
@@ -74,9 +62,7 @@
                     >
                 </label>
             </div>
-            <button id="push-test" type="button" class="bg-status-considerable text-white px-3 py-2 rounded-sm text-sm">
-                Send test push to this device
-            </button>
+            {% include "includes/_button.html" with label="Send test push to this device" button_type="button" button_id="push-test" variant="primary" size="compact" %}
         </section>
 
         <section class="bg-card border border-border rounded-card p-4 space-y-2">
