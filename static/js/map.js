@@ -261,11 +261,19 @@ const clearRegionRepaint = () => {
     // extended from 17° to 23° to cover the full Austrian / Slovenian /
     // northern-Balkan arc visible in the avalanche-region polygons.
     maxBounds: [[0.9482, 41.9952], [19.6674, 49.9983]],
-    attributionControl: { compact: true },
+    // SNOW-230: attribution moved to top-right so the scrubber can sit
+    // flush at the bottom edge. Disable the default bottom-right slot and
+    // add it explicitly at the desired corner after the Map is constructed.
+    attributionControl: false,
   });
   // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
+
+  // SNOW-230: place the attribution puck at top-right so it doesn't
+  // compete with the bottom-pinned scrubber. The compact (i) toggle sits
+  // below the utility cluster via MapLibre's own top-right slot stacking.
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'top-right');
 
   // SNOW-68: log zoom level on each zoom gesture when debug mode is active.
   // Also logs visible bounds on every move (zoom or pan) so the current
@@ -1867,49 +1875,39 @@ const clearRegionRepaint = () => {
   });
 })();
 
-// Season timelapse — the play button on the scrubber cycles through
-// every dated frame in the season at ~10 fps. Each frame repaints
-// region colours via feature-state and announces a snowdesk:date-changed
-// event so the date pill (and any open popup) stays in sync. A second
-// click — or any user scrub — stops playback and reverts to today.
+// Season timelapse — four transport buttons on the scrubber:
+//   |<  skip to season start
+//   >   play at 1× from current thumb position (second press = stop)
+//   >>  play at 2× from current thumb position (second press = stop)
+//   >|  skip to season end
+//
+// Each frame repaints region colours via feature-state and announces a
+// snowdesk:date-changed event so the date pill stays in sync. Pressing
+// the other speed button mid-playback switches speed without losing
+// the current frame index.
 (function timelapseInit() {
-  const button = document.getElementById('scrubber-play');
-  if (!button) return;
+  const playButton = document.getElementById('scrubber-play');
+  if (!playButton) return;
 
-  // 1× = 10 fps. The speed-button cycles through SPEED_PRESETS; the
-  // active multiplier divides BASE_FRAME_MS to derive the setInterval
-  // delay. The 10ms floor in frameMs() guards against a future >10×
-  // preset starving the main thread.
+  // BASE_FRAME_MS gives ~10 fps at 1×; 2× halves the interval.
+  // The 10 ms floor prevents a future multiplier from starving the thread.
   const BASE_FRAME_MS = 200;
-  const SPEED_PRESETS = [1, 2, 4, 0.5];
-  const SPEED_STORAGE_KEY = 'snowdesk.map.timelapse-speed';
 
-  // Drive the existing scrubber thumb so the playback position is
-  // visible on the same control the user can drag.
+  // Drive the scrubber thumb so playback position is visible.
   const scrubber = document.getElementById('season-scrubber');
   const scrubberThumb = scrubber ? scrubber.querySelector('.season-scrubber-thumb') : null;
   const seasonStartMs = scrubber ? Date.parse(scrubber.dataset.seasonStart) : NaN;
   const seasonEndMs = scrubber ? Date.parse(scrubber.dataset.seasonEnd) : NaN;
-  const todayPct = scrubber ? parseFloat(scrubber.dataset.todayPct) : NaN;
-  const todayKey = scrubber ? scrubber.dataset.today : null;
   const seasonSpanMs = seasonEndMs - seasonStartMs;
 
-  const speedButton = document.getElementById('scrubber-speed');
+  const fastButton = document.getElementById('scrubber-fast');
+  const skipStartButton = document.getElementById('scrubber-skip-start');
+  const skipEndButton = document.getElementById('scrubber-skip-end');
+
+  // Active playback speed — set per button click (1 for play, 2 for fast).
   let speed = 1;
-  try {
-    const stored = parseFloat(localStorage.getItem(SPEED_STORAGE_KEY));
-    if (SPEED_PRESETS.includes(stored)) speed = stored;
-  } catch (_) {}
 
   const frameMs = () => Math.max(10, Math.round(BASE_FRAME_MS / speed));
-
-  const formatSpeedLabel = (s) => (s === 0.5 ? '½×' : s + '×');
-
-  const renderSpeedButton = () => {
-    if (!speedButton) return;
-    speedButton.textContent = formatSpeedLabel(speed);
-    speedButton.dataset.speed = String(speed);
-  };
 
   const moveScrubber = (dateKey) => {
     if (!scrubberThumb || !Number.isFinite(seasonSpanMs) || seasonSpanMs <= 0) return;
@@ -1917,6 +1915,25 @@ const clearRegionRepaint = () => {
     if (Number.isNaN(dateMs)) return;
     const pct = Math.max(0, Math.min(100, ((dateMs - seasonStartMs) / seasonSpanMs) * 100));
     scrubberThumb.style.left = pct + '%';
+  };
+
+  // Determine the frame index to start from so playback begins at the
+  // current thumb position rather than always rewinding to frame 0.
+  const currentFrameIdx = () => {
+    if (!sortedDates || sortedDates.length === 0) return 0;
+    const ariaNow = scrubber ? parseFloat(scrubber.getAttribute('aria-valuenow')) : NaN;
+    if (!Number.isFinite(ariaNow) || !Number.isFinite(seasonSpanMs) || seasonSpanMs <= 0) {
+      return 0;
+    }
+    const targetMs = seasonStartMs + (ariaNow / 100) * seasonSpanMs;
+    // Find the nearest sortedDates entry to the current thumb position.
+    let best = 0;
+    let bestDelta = Math.abs(Date.parse(sortedDates[0]) - targetMs);
+    for (let i = 1; i < sortedDates.length; i++) {
+      const delta = Math.abs(Date.parse(sortedDates[i]) - targetMs);
+      if (delta < bestDelta) { best = i; bestDelta = delta; }
+    }
+    return best;
   };
 
   let cache = null;        // {date_iso: {region_id: int}}
@@ -1936,14 +1953,12 @@ const clearRegionRepaint = () => {
     announce(dateKey);
   };
 
-  // Hoisted so the speed-button handler can re-arm setInterval with the
-  // same callback when the user changes speed mid-playback.
+  // Hoisted so start() can re-arm setInterval at a new speed without
+  // losing the current frame index.
   const tick = () => {
     frameIdx += 1;
     if (frameIdx >= sortedDates.length) {
-      // Last frame already painted on the previous tick — stop here so
-      // the final value sits long enough to register before regions
-      // snap back to today.
+      // Last frame already painted — stop so the final value settles.
       stop();
       return;
     }
@@ -1955,14 +1970,22 @@ const clearRegionRepaint = () => {
       clearInterval(timer);
       timer = null;
     }
-    button.dataset.state = 'stopped';
-    button.setAttribute('aria-label', 'Play season timelapse');
-    // Leave the map painted on the current frame — do not clear feature-state,
-    // reset the thumb, or announce today. The user sees exactly what the
-    // timelapse was showing when they pressed stop.
+    // Reset data-state on both transport buttons.
+    playButton.dataset.state = 'stopped';
+    playButton.setAttribute('aria-label', 'Play season timelapse');
+    if (fastButton) {
+      fastButton.dataset.state = 'stopped';
+      fastButton.setAttribute('aria-label', 'Fast-forward season timelapse');
+    }
+    // Leave the map painted on the current frame — do not clear
+    // feature-state or reset the thumb. The user sees what was playing.
   };
 
-  const start = async () => {
+  // start(speedArg) — begins playback from the current thumb position.
+  // If timer is already running (speed switch mid-playback), re-arms the
+  // interval at the new rate without resetting frameIdx so position is
+  // preserved.
+  const start = async (speedArg) => {
     if (!MAP || !MAP.isStyleLoaded()) return;
     if (cache === null) {
       try {
@@ -1973,62 +1996,164 @@ const clearRegionRepaint = () => {
       }
     }
     if (sortedDates.length === 0) return;
-    frameIdx = 0;
-    button.dataset.state = 'playing';
-    button.setAttribute('aria-label', 'Stop season timelapse');
+
+    speed = speedArg;
+
+    // Only update frameIdx when starting fresh (not a speed switch).
+    if (timer === null) {
+      frameIdx = currentFrameIdx();
+    }
+
+    // Clear any existing timer before arming the new one.
+    if (timer !== null) {
+      clearInterval(timer);
+      timer = null;
+    }
+
+    // Update button states to reflect which transport is now active.
+    if (speedArg === 1) {
+      playButton.dataset.state = 'playing';
+      playButton.setAttribute('aria-label', 'Stop season timelapse');
+      if (fastButton) {
+        fastButton.dataset.state = 'stopped';
+        fastButton.setAttribute('aria-label', 'Fast-forward season timelapse');
+      }
+    } else {
+      if (fastButton) {
+        fastButton.dataset.state = 'playing';
+        fastButton.setAttribute('aria-label', 'Stop fast-forward timelapse');
+      }
+      playButton.dataset.state = 'stopped';
+      playButton.setAttribute('aria-label', 'Play season timelapse');
+    }
+
     applyFrame(sortedDates[frameIdx]);
     timer = setInterval(tick, frameMs());
   };
 
   // When the scrubber commits a new date, the timelapse must surrender
-  // control — both consumers paint via feature-state on the same source,
-  // so a running timer would fight any user scrub.
+  // control — both paint via feature-state on the same source, so a
+  // running timer would fight a user scrub.
   document.addEventListener('snowdesk:date-changed', (e) => {
     if (timer !== null && (!e.detail || e.detail.source !== 'timelapse')) {
       stop();
     }
   });
 
-  // SNOW-58: a basemap swap wipes the regions source mid-frame — the
-  // setInterval would keep firing repaintRegionsForDate() against a
-  // source that doesn't exist yet during the style.load gap. Stop here
-  // and let the user re-press play after the new basemap settles.
+  // SNOW-58: a basemap swap wipes the regions source mid-frame — stop
+  // so setInterval doesn't paint into a half-loaded style.
   document.addEventListener('snowdesk:basemap-changing', () => {
     if (timer !== null) stop();
   });
 
-  button.addEventListener('click', () => {
-    if (timer !== null) stop();
-    else start();
+  // Play button: same speed → stop; other speed active → switch to 1×;
+  // stopped → start at 1×.
+  playButton.addEventListener('click', () => {
+    if (timer !== null && speed === 1) {
+      stop();
+    } else {
+      start(1);
+    }
   });
 
-  if (speedButton) {
-    renderSpeedButton();
-    speedButton.addEventListener('click', () => {
-      const idx = SPEED_PRESETS.indexOf(speed);
-      speed = SPEED_PRESETS[(idx + 1) % SPEED_PRESETS.length];
-      try { localStorage.setItem(SPEED_STORAGE_KEY, String(speed)); } catch (_) {}
-      renderSpeedButton();
-      // Re-arm the running loop at the new rate without losing position
-      // so the user sees the speed change take effect immediately.
-      if (timer !== null) {
-        clearInterval(timer);
-        timer = setInterval(tick, frameMs());
+  // Fast-forward button: same speed → stop; other speed active → switch
+  // to 2×; stopped → start at 2×.
+  if (fastButton) {
+    fastButton.addEventListener('click', () => {
+      if (timer !== null && speed === 2) {
+        stop();
+      } else {
+        start(2);
+      }
+    });
+  }
+
+  // Skip-to-start: jump to the first date in the season.
+  // Falls back to data-season-start before the ratings cache resolves.
+  if (skipStartButton) {
+    skipStartButton.addEventListener('click', () => {
+      const target = sortedDates
+        ? sortedDates[0]
+        : (scrubber ? scrubber.dataset.seasonStart : null);
+      if (target) {
+        // commitDate lives in seasonScrubberInit — trigger via a
+        // simulated scrubber event rather than calling it directly, since
+        // the two IIFEs do not share scope. Use the same approach as
+        // timelapse: dispatch a custom event with source:'timelapse' so
+        // the stop listener does not fire redundantly. Actually, the
+        // cleanest path is to call the shared repaint + announce directly,
+        // then update the thumb and aria-valuenow ourselves.
+        if (cache) repaintRegionsForDate(target, cache);
+        moveScrubber(target);
+        if (scrubber && Number.isFinite(seasonSpanMs) && seasonSpanMs > 0) {
+          const ms = Date.parse(target);
+          const pct = Number.isNaN(ms) ? 0 : Math.max(0, Math.min(100, ((ms - seasonStartMs) / seasonSpanMs) * 100));
+          scrubber.setAttribute('aria-valuenow', String(Math.round(pct)));
+        }
+        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+          detail: { date: target, source: 'scrubber' },
+        }));
+      }
+    });
+  }
+
+  // Skip-to-end: jump to the last date in the season.
+  if (skipEndButton) {
+    skipEndButton.addEventListener('click', () => {
+      const target = sortedDates
+        ? sortedDates[sortedDates.length - 1]
+        : (scrubber ? scrubber.dataset.seasonEnd : null);
+      if (target) {
+        if (cache) repaintRegionsForDate(target, cache);
+        moveScrubber(target);
+        if (scrubber && Number.isFinite(seasonSpanMs) && seasonSpanMs > 0) {
+          const ms = Date.parse(target);
+          const pct = Number.isNaN(ms) ? 100 : Math.max(0, Math.min(100, ((ms - seasonStartMs) / seasonSpanMs) * 100));
+          scrubber.setAttribute('aria-valuenow', String(Math.round(pct)));
+        }
+        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+          detail: { date: target, source: 'scrubber' },
+        }));
       }
     });
   }
 })();
 
-// Always-visible date pill anchored next to the (i) legend toggle.
-// Server-rendered with today's date for first-paint correctness; this
-// IIFE keeps it in sync as the user scrubs or watches the timelapse.
+// Date pill — floats above the scrubber thumb inside .season-scrubber-track.
+// Server-rendered for first-paint correctness; this IIFE keeps both the
+// horizontal position (via --thumb-pct) and the text content in sync as
+// the user scrubs or the timelapse advances.
 (function mapDatePillInit() {
   const pill = document.getElementById('map-date-pill');
   if (!pill) return;
+
+  // Read season bounds once — the same constants used by seasonScrubberInit
+  // and timelapseInit. The pill uses them to compute the thumb percentage
+  // for any incoming date key without needing a reference to the thumb DOM.
+  const scrubber = document.getElementById('season-scrubber');
+  const seasonStartMs = scrubber ? Date.parse(scrubber.dataset.seasonStart) : NaN;
+  const seasonEndMs = scrubber ? Date.parse(scrubber.dataset.seasonEnd) : NaN;
+  const seasonSpanMs = seasonEndMs - seasonStartMs;
+  const todayPct = scrubber ? parseFloat(scrubber.dataset.todayPct) : 50;
+
+  const dateKeyToPct = (dateKey) => {
+    const ms = Date.parse(dateKey);
+    if (Number.isNaN(ms) || !Number.isFinite(seasonSpanMs) || seasonSpanMs <= 0) {
+      return todayPct;
+    }
+    return Math.max(0, Math.min(100, ((ms - seasonStartMs) / seasonSpanMs) * 100));
+  };
+
   const setFrom = (e) => {
     const dk = e.detail && e.detail.date;
-    if (dk) pill.textContent = formatDateLong(dk);
+    if (!dk) return;
+    // Update text content so the pill always shows the correct date.
+    pill.textContent = formatDateLong(dk);
+    // Slide the pill horizontally to track the thumb.
+    const pct = dateKeyToPct(dk);
+    pill.style.setProperty('--thumb-pct', pct + '%');
   };
+
   // Both events carry the same shape; date-changed fires on commit
   // (scrubber release, timelapse frame, popstate), date-preview fires
   // continuously during a drag so the pill follows the thumb live.
