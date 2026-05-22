@@ -1224,26 +1224,61 @@ REGION_TOOLTIP_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
-# ── Subscribe form (SNOW-201) ───────────────────────────────────────────────
-# Two variants: the clean empty form, and the form re-displayed with a
-# validation error on the email field.
+# ── Subscribe form (SNOW-222) ───────────────────────────────────────────────
+# Four variants covering every auth/subscription state:
+#   1. Anonymous — empty email-input form (original state).
+#   2. Anonymous with validation error — form re-displayed with an error.
+#   3. Authenticated, not yet subscribed — one-click "Add region" CTA.
+#   4. Authenticated, already subscribed — one-click "Unsubscribe" CTA.
+#
+# Variants 3 and 4 supply a SimpleNamespace ``request.user`` so the partial's
+# ``{% if not request.user.is_authenticated %}`` branch can be exercised without
+# a real HTTP request.
+
+_SUBSCRIBE_ANON_REQUEST = SimpleNamespace(user=SimpleNamespace(is_authenticated=False))
+
+_SUBSCRIBE_AUTHED_REQUEST = SimpleNamespace(user=SimpleNamespace(is_authenticated=True))
 
 SUBSCRIBE_FORM_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "Default — empty form",
+        "caption": "Anonymous — empty form",
         "context": {
             "region_id": "CH-VS-3431",
+            "region_name": "Bex–Villars",
+            "request": _SUBSCRIBE_ANON_REQUEST,
+            "user_subscribed_to_region": False,
         },
     },
     {
-        "caption": "With validation error",
+        "caption": "Anonymous — with validation error",
         "context": {
             "region_id": "CH-VS-3431",
+            "region_name": "Bex–Villars",
+            "request": _SUBSCRIBE_ANON_REQUEST,
+            "user_subscribed_to_region": False,
             "form": SimpleNamespace(
                 email=SimpleNamespace(
                     errors=["Enter a valid email address."],
                 )
             ),
+        },
+    },
+    {
+        "caption": "Authenticated — not yet subscribed",
+        "context": {
+            "region_id": "CH-VS-3431",
+            "region_name": "Bex–Villars",
+            "request": _SUBSCRIBE_AUTHED_REQUEST,
+            "user_subscribed_to_region": False,
+        },
+    },
+    {
+        "caption": "Authenticated — already subscribed",
+        "context": {
+            "region_id": "CH-VS-3431",
+            "region_name": "Bex–Villars",
+            "request": _SUBSCRIBE_AUTHED_REQUEST,
+            "user_subscribed_to_region": True,
         },
     },
 )

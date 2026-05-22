@@ -891,6 +891,40 @@ class TestRemoveRegion:
         response = remove_region(request, region_id="CH-0001")
         assert response.status_code == 429
 
+    def test_region_not_held_returns_200_and_does_not_delete_subscriber(self) -> None:
+        """POST for a region the subscriber never held returns benign 200; no data changed.
+
+        The manage-page card list never showed the region, so a benign empty 200
+        is the correct response — matching the "card removed via outerHTML swap"
+        semantics — while ensuring the subscriber is not hard-deleted.
+        """
+        subscriber = SubscriberFactory.create()
+        region_a = MicroRegionFactory.create()
+        region_b = MicroRegionFactory.create()
+        region_c = MicroRegionFactory.create()  # subscriber does NOT hold region_c
+        SubscriptionFactory.create(subscriber=subscriber, region=region_a)
+        SubscriptionFactory.create(subscriber=subscriber, region=region_b)
+        sub_pk = subscriber.pk
+        client = _make_session_client(subscriber)
+
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region", kwargs={"region_id": region_c.region_id}
+            ),
+            **_HTMX_HEADERS,
+        )
+
+        assert response.status_code == 200
+        # Existing subscriptions must be untouched.
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region_a
+        ).exists()
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region_b
+        ).exists()
+        # Subscriber must not have been hard-deleted.
+        assert Subscriber.objects.filter(pk=sub_pk).exists()
+
 
 # ---------------------------------------------------------------------------
 # delete_account
@@ -1269,3 +1303,252 @@ class TestEmailFormNormalisation:
         form = EmailForm(data={"email": "  user@example.com  "})
         assert form.is_valid(), form.errors
         assert form.cleaned_data["email"] == "user@example.com"
+
+
+# ---------------------------------------------------------------------------
+# add_region
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestAddRegion:
+    """Tests for the add_region HTMX view."""
+
+    def test_authenticated_creates_subscription(self) -> None:
+        """Session-authenticated POST creates a Subscription row and returns 200."""
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.post(
+            reverse("subscriptions:add_region", kwargs={"region_id": region.region_id}),
+            **_HTMX_HEADERS,
+        )
+        assert response.status_code == 200
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region
+        ).exists()
+
+    def test_authenticated_returns_success_added_fragment(self) -> None:
+        """Response contains the subscribe_success_added fragment content."""
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create(name="Davos Region")
+        client = _make_session_client(subscriber)
+        response = client.post(
+            reverse("subscriptions:add_region", kwargs={"region_id": region.region_id}),
+            **_HTMX_HEADERS,
+        )
+        assert response.status_code == 200
+        assert b"Davos Region" in response.content
+        assert b"Added" in response.content
+
+    def test_idempotent_second_post_returns_success(self) -> None:
+        """POSTing twice does not raise IntegrityError — returns success fragment."""
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create()
+        client = _make_session_client(subscriber)
+        url = reverse(
+            "subscriptions:add_region", kwargs={"region_id": region.region_id}
+        )
+        client.post(url, **_HTMX_HEADERS)
+        response = client.post(url, **_HTMX_HEADERS)
+        assert response.status_code == 200
+        # Exactly one Subscription row (idempotent).
+        assert (
+            Subscription.objects.filter(subscriber=subscriber, region=region).count()
+            == 1
+        )
+
+    def test_unauthenticated_returns_403(self) -> None:
+        """Unauthenticated POST returns 403."""
+        region = MicroRegionFactory.create()
+        client = Client()
+        response = client.post(
+            reverse("subscriptions:add_region", kwargs={"region_id": region.region_id}),
+            **_HTMX_HEADERS,
+        )
+        assert response.status_code == 403
+
+    def test_non_htmx_returns_400(self) -> None:
+        """Non-HTMX POST returns 400."""
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.post(
+            reverse("subscriptions:add_region", kwargs={"region_id": region.region_id}),
+        )
+        assert response.status_code == 400
+
+    def test_rate_limit_returns_429(self) -> None:
+        """Exceeding rate limit returns 429."""
+        rf = RequestFactory()
+        request = rf.post(
+            reverse("subscriptions:add_region", kwargs={"region_id": "CH-0001"}),
+        )
+        request.htmx = True  # type: ignore[attr-defined]  # noqa: B010 — django-htmx attr
+        request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr
+
+        from subscriptions.views import add_region
+
+        response = add_region(request, region_id="CH-0001")
+        assert response.status_code == 429
+
+    def test_unknown_region_returns_400(self) -> None:
+        """POST with a region_id that does not exist returns 400 error fragment."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.post(
+            reverse("subscriptions:add_region", kwargs={"region_id": "CH-NOTEXIST"}),
+            **_HTMX_HEADERS,
+        )
+        assert response.status_code == 400
+        assert b"went wrong" in response.content.lower()
+
+
+# ---------------------------------------------------------------------------
+# remove_region_from_bulletin
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestRemoveRegionFromBulletin:
+    """Tests for the remove_region_from_bulletin HTMX view."""
+
+    def test_removes_subscription_row_and_returns_confirmation(self) -> None:
+        """Multi-region subscriber: removes target subscription, returns confirmation fragment."""
+        subscriber = SubscriberFactory.create()
+        region1 = MicroRegionFactory.create(name="Davos Region")
+        region2 = MicroRegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region1)
+        SubscriptionFactory.create(subscriber=subscriber, region=region2)
+        client = _make_session_client(subscriber)
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region_from_bulletin",
+                kwargs={"region_id": region1.region_id},
+            ),
+            **_HTMX_HEADERS,
+        )
+        assert response.status_code == 200
+        assert not Subscription.objects.filter(
+            subscriber=subscriber, region=region1
+        ).exists()
+        # Other subscription retained.
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region2
+        ).exists()
+        assert b"unsubscribed" in response.content.lower()
+        assert b"Davos Region" in response.content
+
+    def test_last_region_hard_deletes_subscriber_and_redirects(self) -> None:
+        """Last-region removal hard-deletes the subscriber and sends HX-Redirect."""
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        sub_pk = subscriber.pk
+        client = _make_session_client(subscriber)
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region_from_bulletin",
+                kwargs={"region_id": region.region_id},
+            ),
+            **_HTMX_HEADERS,
+        )
+        assert response.status_code == 200
+        assert not Subscriber.objects.filter(pk=sub_pk).exists()
+        assert "HX-Redirect" in response
+        assert "unsubscribe" in response["HX-Redirect"]
+
+    def test_unauthenticated_returns_403(self) -> None:
+        """Unauthenticated POST returns 403."""
+        region = MicroRegionFactory.create()
+        client = Client()
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region_from_bulletin",
+                kwargs={"region_id": region.region_id},
+            ),
+            **_HTMX_HEADERS,
+        )
+        assert response.status_code == 403
+
+    def test_non_htmx_returns_400(self) -> None:
+        """Non-HTMX POST returns 400."""
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = _make_session_client(subscriber)
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region_from_bulletin",
+                kwargs={"region_id": region.region_id},
+            ),
+        )
+        assert response.status_code == 400
+
+    def test_rate_limit_returns_429(self) -> None:
+        """Exceeding rate limit returns 429."""
+        rf = RequestFactory()
+        request = rf.post(
+            reverse(
+                "subscriptions:remove_region_from_bulletin",
+                kwargs={"region_id": "CH-0001"},
+            ),
+        )
+        request.htmx = True  # type: ignore[attr-defined]  # noqa: B010 — django-htmx attr
+        request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr
+
+        from subscriptions.views import remove_region_from_bulletin
+
+        response = remove_region_from_bulletin(request, region_id="CH-0001")
+        assert response.status_code == 429
+
+    def test_unknown_region_returns_400(self) -> None:
+        """POST with a region_id that does not exist returns 400 error fragment."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region_from_bulletin",
+                kwargs={"region_id": "CH-NOTEXIST"},
+            ),
+            **_HTMX_HEADERS,
+        )
+        assert response.status_code == 400
+        assert b"went wrong" in response.content.lower()
+
+    def test_region_not_held_returns_400_and_does_not_delete_subscriber(self) -> None:
+        """POST for a region the subscriber never held returns 400; no data is changed.
+
+        Protects against the cascade bug where a zero-row delete could trigger
+        a hard-delete of the subscriber when they happened to have no subscriptions
+        for unrelated reasons (e.g. a stale or forged POST to a region_id the
+        subscriber never held).
+        """
+        subscriber = SubscriberFactory.create()
+        region_a = MicroRegionFactory.create()
+        region_b = MicroRegionFactory.create()
+        region_c = MicroRegionFactory.create()  # subscriber does NOT hold region_c
+        SubscriptionFactory.create(subscriber=subscriber, region=region_a)
+        SubscriptionFactory.create(subscriber=subscriber, region=region_b)
+        sub_pk = subscriber.pk
+        client = _make_session_client(subscriber)
+
+        response = client.post(
+            reverse(
+                "subscriptions:remove_region_from_bulletin",
+                kwargs={"region_id": region_c.region_id},
+            ),
+            **_HTMX_HEADERS,
+        )
+
+        assert response.status_code == 400
+        assert b"went wrong" in response.content.lower()
+        # Existing subscriptions must be untouched.
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region_a
+        ).exists()
+        assert Subscription.objects.filter(
+            subscriber=subscriber, region=region_b
+        ).exists()
+        # Subscriber must not have been hard-deleted.
+        assert Subscriber.objects.filter(pk=sub_pk).exists()

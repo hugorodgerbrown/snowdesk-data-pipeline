@@ -26,12 +26,15 @@ from pytest_django.fixtures import SettingsWrapper
 from bulletins.models import Bulletin
 from public.views import BULLETIN_SOURCE_LINKS
 from regions.models import MicroRegion
+from subscriptions.models import Subscriber
 from tests.factories import (
     BulletinFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
     SubRegionFactory,
+    SubscriberFactory,
+    SubscriptionFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -2246,3 +2249,70 @@ class TestStructuredData:
         assert "</script>" not in script_body
         # The escaped form must be present somewhere in the response.
         assert "<\\/script>" in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-222: subscribe panel states
+# ---------------------------------------------------------------------------
+
+_TOKEN_BACKEND = "subscriptions.backends.TokenBackend"
+
+
+def _make_session_client(subscriber: Subscriber) -> Client:
+    """Return a test client logged in as subscriber via Django auth."""
+    client = Client()
+    client.force_login(subscriber, backend=_TOKEN_BACKEND)
+    return client
+
+
+@pytest.mark.django_db
+class TestSubscribePanelStates:
+    """Bulletin page subscribe panel renders the correct state for each user/subscription combo.
+
+    Three states (SNOW-222):
+      1. Anonymous — email-input form.
+      2. Authenticated + not subscribed to this region — "Add region" CTA.
+      3. Authenticated + already subscribed to this region — "Unsubscribe" CTA.
+    """
+
+    def test_panel_renders_anonymous_form_when_logged_out(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """Anonymous visitor sees the email-input form."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'name="email"' in content
+        assert 'type="email"' in content
+
+    def test_panel_renders_add_cta_when_authed_but_not_subscribed(
+        self, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """Authenticated visitor with no subscription sees the 'Add region' CTA."""
+        subscriber = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
+        client = _make_session_client(subscriber)
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Add-region form POSTs to the add_region endpoint.
+        assert "/subscribe/add/" in content
+        # Should NOT show the email input (anonymous form).
+        assert 'name="email"' not in content
+
+    def test_panel_renders_unsubscribe_cta_when_authed_and_subscribed(
+        self, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """Authenticated visitor already subscribed sees the 'Unsubscribe' CTA."""
+        subscriber = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = _make_session_client(subscriber)
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Unsubscribe form POSTs to the remove_region_from_bulletin endpoint.
+        assert "/subscribe/remove-region/" in content
+        # Should NOT show the email input (anonymous form).
+        assert 'name="email"' not in content

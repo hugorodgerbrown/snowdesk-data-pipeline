@@ -10,6 +10,11 @@ Implements the subscription flow built around Django's TimestampSigner:
                             on (subscriber_created, subscription_created) to
                             decide which email to send and which fragment to
                             return.
+  add_region          POST — HTMX: authenticated one-click add of a region from
+                            the bulletin page. Idempotent; no email sent.
+  remove_region_from_bulletin
+                      POST — HTMX: authenticated one-click unsubscribe from the
+                            bulletin page. Mirrors remove_region cascade logic.
   account_view        GET  — verify account-access token; activate subscriber;
                             log in via Django auth; redirect to /subscribe/manage/.
   manage_view         GET  — authenticated "your subscriptions" page.
@@ -20,8 +25,10 @@ Implements the subscription flow built around Django's TimestampSigner:
 
 Rate limiting via django-ratelimit (block=False pattern):
   subscribe_partial:  5 requests/min per IP.
+  add_region:         5 requests/min per IP.
   sign_in_view POST:  3 requests/min per IP.
   remove_region POST: 10 requests/min per IP.
+  remove_region_from_bulletin POST: 10 requests/min per IP.
   delete_account POST: 3 requests/min per IP.
   unsubscribe_view: 10 requests/min per IP.
 
@@ -263,6 +270,191 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
+# _delete_subscription_with_cascade — shared cascade helper
+# ---------------------------------------------------------------------------
+
+
+def _delete_subscription_with_cascade(
+    subscriber: Subscriber, region: MicroRegion, request: HttpRequest
+) -> bool | None:
+    """Delete a (subscriber, region) Subscription and apply the last-region cascade.
+
+    If removing this region leaves the subscriber with no remaining subscriptions,
+    hard-delete the subscriber row and log out the session.
+
+    Short-circuits when no matching Subscription row exists (deleted_count == 0)
+    to prevent accidental hard-deletion of a subscriber who never held that region.
+
+    Args:
+        subscriber: The authenticated Subscriber whose subscription is being removed.
+        region: The MicroRegion to unsubscribe from.
+        request: The current HTTP request (used to clear the session on hard-delete).
+
+    Returns:
+        True when the subscriber was hard-deleted (last region removed); False
+        when the subscriber still has remaining subscriptions; None when the
+        (subscriber, region) pair had no Subscription row to begin with.
+
+    """
+    deleted_count, _ = Subscription.objects.filter(
+        subscriber=subscriber, region=region
+    ).delete()
+    if deleted_count == 0:
+        logger.info(
+            "Subscriber %s has no subscription for region %s — nothing removed",
+            subscriber.email,
+            region.region_id,
+        )
+        return None
+    logger.info(
+        "Subscriber %s removed region %s",
+        subscriber.email,
+        region.region_id,
+    )
+    if not subscriber.subscriptions.exists():
+        email = subscriber.email
+        subscriber.delete()
+        logout(request)
+        logger.info("Subscriber %s hard-deleted (last region removed)", email)
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# add_region — HTMX: authenticated one-click add from bulletin page
+# ---------------------------------------------------------------------------
+
+
+@require_POST
+@require_htmx
+@ratelimit(key="ip", rate="5/m", block=False)
+def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
+    """Add a Subscription for the authenticated user and the given region.
+
+    Idempotent — uses ``get_or_create`` so POSTing twice returns the same
+    success fragment without raising an IntegrityError.  No email is sent
+    because the subscriber is already active.
+
+    Guarded by authentication (no session → 403), ``@require_POST``,
+    ``@require_htmx``, and rate-limited at 5 requests/min per IP.
+
+    Args:
+        request: HTMX POST request.
+        region_id: The SLF region identifier to add.
+
+    Returns:
+        subscribe_success_added fragment (200), or 403 / 400 / 429 on error.
+
+    """
+    if getattr(request, "limited", False):
+        return HttpResponse(status=429)
+
+    subscriber = _get_subscriber(request)
+    if subscriber is None:
+        return HttpResponse(status=403)
+
+    try:
+        region = MicroRegion.objects.get(region_id=region_id)
+    except MicroRegion.DoesNotExist:
+        logger.warning("add_region: region_id %s not found in DB", region_id)
+        return render(
+            request,
+            "subscriptions/partials/subscribe_error.html",
+            {},
+            status=400,
+        )
+
+    Subscription.objects.get_or_create(subscriber=subscriber, region=region)
+    logger.info(
+        "Subscriber %s added region %s via bulletin page (idempotent)",
+        subscriber.email,
+        region_id,
+    )
+    return render(
+        request,
+        "subscriptions/partials/subscribe_success_added.html",
+        {"region_name": region.name},
+    )
+
+
+# ---------------------------------------------------------------------------
+# remove_region_from_bulletin — HTMX: authenticated unsubscribe from bulletin page
+# ---------------------------------------------------------------------------
+
+
+@require_POST
+@require_htmx
+@ratelimit(key="ip", rate="10/m", block=False)
+def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpResponse:
+    """Remove a Subscription for the authenticated user from the bulletin page.
+
+    Deletes the ``(subscriber, region)`` Subscription row.  If this was the
+    subscriber's last region, delegates to the cascade helper which hard-deletes
+    the Subscriber and responds with an ``HX-Redirect`` header pointing to the
+    unsubscribe-done page — matching the ``remove_region`` manage-page behaviour.
+    Otherwise swaps the panel for a confirmation fragment.
+
+    Guarded by authentication (no session → 403), ``@require_POST``,
+    ``@require_htmx``, and rate-limited at 10 requests/min per IP.
+
+    Args:
+        request: HTMX POST request.
+        region_id: The SLF region identifier to unsubscribe from.
+
+    Returns:
+        subscribe_unsubscribed fragment (200), HX-Redirect on last region,
+        403 when unauthenticated, 400 when region unknown or subscriber never
+        held the region (stale/forged POST), or 429 when rate-limited.
+
+    """
+    if getattr(request, "limited", False):
+        return HttpResponse(status=429)
+
+    subscriber = _get_subscriber(request)
+    if subscriber is None:
+        return HttpResponse(status=403)
+
+    try:
+        region = MicroRegion.objects.get(region_id=region_id)
+    except MicroRegion.DoesNotExist:
+        logger.warning(
+            "remove_region_from_bulletin: region_id %s not found in DB", region_id
+        )
+        return render(
+            request,
+            "subscriptions/partials/subscribe_error.html",
+            {},
+            status=400,
+        )
+
+    result = _delete_subscription_with_cascade(subscriber, region, request)
+    if result is None:
+        # The subscriber never held this region — stale or forged POST.
+        logger.warning(
+            "remove_region_from_bulletin: subscriber %s has no subscription for "
+            "region %s — returning 400",
+            subscriber.email,
+            region.region_id,
+        )
+        return render(
+            request,
+            "subscriptions/partials/subscribe_error.html",
+            {},
+            status=400,
+        )
+    if result is True:
+        response = HttpResponse(status=200)
+        response["HX-Redirect"] = _UNSUBSCRIBE_DONE_URL
+        return response
+
+    return render(
+        request,
+        "subscriptions/partials/subscribe_unsubscribed.html",
+        {"region_name": region.name},
+    )
+
+
+# ---------------------------------------------------------------------------
 # account_view — verify account-access token
 # ---------------------------------------------------------------------------
 
@@ -405,26 +597,15 @@ def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
         return HttpResponse(status=403)
 
     region = get_object_or_404(MicroRegion, region_id=region_id)
-    Subscription.objects.filter(subscriber=subscriber, region=region).delete()
-    logger.info(
-        "Subscriber %s removed region %s via manage page",
-        subscriber.email,
-        region_id,
-    )
-
-    # If no subscriptions remain, hard-delete the subscriber.
-    if not subscriber.subscriptions.exists():
-        email = subscriber.email
-        subscriber.delete()
-        logout(request)
-        logger.info(
-            "Subscriber %s hard-deleted (last region removed via manage page)", email
-        )
+    result = _delete_subscription_with_cascade(subscriber, region, request)
+    if result is True:
         response = HttpResponse(status=200)
         response["HX-Redirect"] = _UNSUBSCRIBE_DONE_URL
         return response
 
     # Return empty content — hx-swap="outerHTML" on the card will remove it.
+    # This covers both the "subscription removed" and the "no row existed" (None)
+    # paths: either way the card should disappear from the manage UI.
     return HttpResponse(status=200)
 
 
