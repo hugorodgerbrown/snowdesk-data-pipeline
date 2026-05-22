@@ -1321,4 +1321,12 @@ SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
             "today_pct": 100,
         },
     },
+    {
+        "caption": "Loading state",
+        "context": {
+            "loading": True,
+            "today": datetime.date(2026, 2, 14),
+            "today_pct": 50,
+        },
+    },
 )
