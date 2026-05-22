@@ -1,0 +1,16 @@
+{% load i18n %}
+{% comment %}
+public/partials/_season_scrubber_demo.html — Component-library wrapper
+for the four-button scrubber transport plus the track and date pill.
+Renders the same controls partial used on /map/, but inside a static
+`.season-scrubber-demo` pill that pins the position (`position:
+relative`, not `absolute`) so the demo can be laid out in a normal
+document flow rather than over a MapLibre viewport.
+
+No JS is wired to the buttons on this page — pressing them is a no-op.
+Variant context drives the static thumb position and date text so the
+library can show the pill at start, mid-season, and end positions.
+{% endcomment %}
+<div class="season-scrubber-demo">
+    {% include "public/partials/_season_scrubber_controls.html" %}
+</div>

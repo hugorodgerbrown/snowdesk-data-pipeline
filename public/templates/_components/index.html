@@ -19,6 +19,12 @@ Context:
 {% block body_class %}bg-bg text-text-1 font-sans min-h-screen{% endblock %}
 {% block extra_head %}
     <script src="{% static 'js/htmx.min.js' %}"></script>
+    {% comment %}
+    Map-only chrome (scrubber, region-tooltip) reuses styles from map.css;
+    loading it here means the season-scrubber and region-tooltip panels
+    render with the same chrome users see on /map/.
+    {% endcomment %}
+    <link rel="stylesheet" href="{% static 'css/map.css' %}">
 {% endblock %}
 {% block nav %}{% endblock %}
 {% block site_footer %}{% endblock %}

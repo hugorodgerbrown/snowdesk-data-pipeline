@@ -19,6 +19,10 @@
     --ink: #1a1a1a;
     --muted: #5f5e5a;
     --border: rgba(0, 0, 0, 0.12);
+    /* Icon / label colour painted on top of a dark filled circle (the
+       scrubber play button at rest, fast-forward when active). Kept as a
+       named token so the inversion stays consistent if --ink ever shifts. */
+    --on-ink: #ffffff;
     --serif: Georgia, "Times New Roman", serif;
     --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
 }
@@ -650,12 +654,8 @@
    Attribution was relocated to top-right so the scrubber now sits flush
    at the bottom edge above the safe-area inset. */
 
-.season-scrubber {
-    position: absolute;
-    left: 12px;
-    right: 12px;
-    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-    z-index: 2;
+.season-scrubber,
+.season-scrubber-demo {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -669,6 +669,22 @@
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 11px;
     user-select: none;
+}
+
+/* On the map page, the scrubber is pinned over the MapLibre viewport. */
+.season-scrubber {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index: 2;
+}
+
+/* On the component-library page, the demo pill flows in normal document
+   order and sits on the parchment surface rather than a map. */
+.season-scrubber-demo {
+    position: relative;
+    margin: 8px 0;
 }
 
 .season-scrubber-track {
@@ -703,24 +719,38 @@
     transition: left 200ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* Inline play / stop button on the scrubber. Sits at the left edge as a
-   filled dark circle echoing the thumb visual, so the scrubber reads as
-   a single unified time-control surface. SVG state is swapped via the
-   data-state attribute set by static/js/map.js. */
-.scrubber-play {
+/* Shared geometry for every transport button on the scrubber — play,
+   skip-to-start, fast-forward, skip-to-end. Each button is a circular
+   flex-centred target with no padding or margin; the per-variant rules
+   below add size, fill, and stroke. SVG state-swap (play icon when
+   stopped, stop icon when playing) is shared across the play and
+   fast-forward variants. */
+.scrubber-transport-button {
     flex: 0 0 auto;
-    width: 28px;
-    height: 28px;
     margin: 0;
     padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: var(--ink);
-    color: #fff;
-    border: none;
     border-radius: 50%;
     cursor: pointer;
+}
+
+.scrubber-transport-button[data-state="playing"] .scrubber-play-icon,
+.scrubber-transport-button[data-state="stopped"] .scrubber-stop-icon {
+    display: none;
+}
+
+/* Inline play / stop button on the scrubber. Sits at the left edge as a
+   filled dark circle echoing the thumb visual, so the scrubber reads as
+   a single unified time-control surface. SVG state is swapped via the
+   data-state attribute set by static/js/map.js. */
+.scrubber-play {
+    width: 28px;
+    height: 28px;
+    background: var(--ink);
+    color: var(--on-ink);
+    border: none;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
@@ -728,53 +758,31 @@
     background: #000;
 }
 
-.scrubber-play[data-state="playing"] .scrubber-play-icon,
-.scrubber-play[data-state="stopped"] .scrubber-stop-icon {
-    display: none;
-}
-
-/* Skip-to-start / skip-to-end transport buttons — same glass treatment
+/* Skip-to-start / skip-to-end transport buttons — same shared geometry
    as .scrubber-play but 22×22 so the play button remains the visual
    anchor. Colour inherits from the scrubber context (dark text on the
    frosted pill) rather than the inverted play-button style. */
 .scrubber-skip {
-    flex: 0 0 auto;
     width: 22px;
     height: 22px;
-    margin: 0;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     background: transparent;
     color: var(--ink);
     border: 0.5px solid var(--border);
-    border-radius: 50%;
-    cursor: pointer;
 }
 
 .scrubber-skip:hover {
     background: rgba(0, 0, 0, 0.06);
 }
 
-/* Fast-forward transport button — same dimensions and glass style as
-   .scrubber-skip. Uses the same SVG state-swap pattern as .scrubber-play
-   (play icon when stopped, stop icon when playing) so the user can see
-   at a glance whether fast-forward is the active transport. */
+/* Fast-forward transport button — same dimensions and resting style as
+   .scrubber-skip. The state-swap rule on .scrubber-transport-button
+   above handles the play/stop icon toggle. */
 .scrubber-fast {
-    flex: 0 0 auto;
     width: 22px;
     height: 22px;
-    margin: 0;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     background: transparent;
     color: var(--ink);
     border: 0.5px solid var(--border);
-    border-radius: 50%;
-    cursor: pointer;
 }
 
 .scrubber-fast:hover {
@@ -782,15 +790,10 @@
 }
 
 /* When fast-forward is active, invert colours to match .scrubber-play's
-   playing state — dark circle with white icon. */
+   resting style — dark circle with white icon. */
 .scrubber-fast[data-state="playing"] {
     background: var(--ink);
-    color: #fff;
+    color: var(--on-ink);
     border-color: transparent;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.scrubber-fast[data-state="playing"] .scrubber-play-icon,
-.scrubber-fast[data-state="stopped"] .scrubber-stop-icon {
-    display: none;
 }

@@ -45,6 +45,7 @@ from public._component_fixtures import (
     RATING_BLOCK_VARIANTS,
     REGION_TOOLTIP_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
+    SEASON_SCRUBBER_VARIANTS,
     SITE_FOOTER_VARIANTS,
     STATUS_PAGE_VARIANTS,
     SUBSCRIBE_FORM_VARIANTS,
@@ -708,6 +709,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_season_calendar_demo.html",
         variants=SEASON_CALENDAR_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="season-scrubber",
+        label="Season scrubber",
+        description=(
+            "Floating media-player transport at the bottom of /map/. Four circular "
+            "buttons (skip-to-start, play, fast-forward, skip-to-end) bracket a "
+            "draggable track with a date pill that floats above the thumb. The "
+            "library variants pin the thumb at season start, mid-season, and "
+            "season end so the date-pill positioning is visible at the extremes; "
+            "interaction is non-functional on this page (the JS lives in map.js)."
+        ),
+        kind="components",
+        partial="public/partials/_season_scrubber_demo.html",
+        variants=SEASON_SCRUBBER_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
