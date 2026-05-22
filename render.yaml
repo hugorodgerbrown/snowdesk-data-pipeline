@@ -1,0 +1,73 @@
+# Render deployment Blueprint for Snowdesk.
+#
+# Documentation only — Blueprint auto-sync is NOT enabled. Changes to the
+# live deployment are still made via the Render dashboard; this file is the
+# checked-in record of that configuration so the production topology
+# (one web service, two cron jobs, env-var wiring) is discoverable from
+# the repo.
+#
+# Originally exported from Render on 2026-05-22. Two corrections were
+# applied against the raw export so the cron commands match the canonical
+# form in docs/management-commands.md:
+#   * snowdesk-cron-bulletins: added `meteofrance` to --source.
+#   * snowdesk-cron-bulletins: dropped --today so a missed run self-heals.
+#
+# Env vars marked `sync: false` must be set manually in the Render
+# dashboard — they are not auto-populated from a Blueprint import.
+
+version: "1"
+projects:
+  - name: Snowdesk
+    environments:
+      - name: Production
+        services:
+          - type: web
+            name: snowdesk-website
+            runtime: python
+            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
+            plan: starter
+            region: frankfurt
+            buildCommand: . ./build.sh
+            startCommand: gunicorn config.wsgi
+            domains:
+              - www.snowdesk.info
+              - snowdesk.info
+            autoDeployTrigger: commit
+            envVars:
+              - key: METEOFRANCE_API_KEY
+                sync: false
+              - key: CSP_REPORT_ONLY
+                sync: false
+              - key: WEBAUTHN_ORIGIN
+                sync: false
+              - key: WEBAUTHN_RP_NAME
+                sync: false
+              - key: WEBAUTHN_RP_ID
+                sync: false
+              - fromGroup: Django App Settings
+
+          - type: cron
+            name: snowdesk-cron-bulletins
+            runtime: python
+            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
+            plan: starter
+            region: frankfurt
+            buildCommand: ./build_headless.sh
+            startCommand: python manage.py fetch_bulletins --source slf euregio meteofrance --commit
+            schedule: "0,5 * * * *"
+            autoDeployTrigger: commit
+            envVars:
+              - fromGroup: Django App Settings
+
+          - type: cron
+            name: snowdesk-cron-weather
+            runtime: python
+            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
+            plan: starter
+            region: frankfurt
+            buildCommand: ./build_headless.sh
+            startCommand: python manage.py fetch_weather --commit
+            schedule: "0 0-18/6 * * *"
+            autoDeployTrigger: commit
+            envVars:
+              - fromGroup: Django App Settings

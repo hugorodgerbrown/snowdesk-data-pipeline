@@ -10,10 +10,11 @@ convention in CLAUDE.md (read-only by default; opt in to writes with
 ## Operational requirements
 
 Two scheduled jobs keep the public site in sync with upstream data. Both
-must be configured in the Render dashboard (the pipeline has no
-in-process scheduler — if Render's cron is paused, no new data arrives).
-Both run with `--commit` so they actually persist; both exit non-zero
-on failure so a missed run is visible in Render's job history.
+are declared in [`render.yaml`](../render.yaml) at the repo root and run
+on Render's cron (the pipeline has no in-process scheduler — if Render's
+cron is paused, no new data arrives). Both run with `--commit` so they
+actually persist; both exit non-zero on failure so a missed run is
+visible in Render's job history.
 
 | Job | Command | Cadence | Purpose |
 |-----|---------|---------|---------|
