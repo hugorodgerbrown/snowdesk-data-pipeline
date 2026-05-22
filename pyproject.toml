@@ -53,6 +53,7 @@ semgrep = "^1.95"
 types-defusedxml = "^0.7.0.20260504"
 playwright = "^1.0"
 pytest-playwright = ">=0.7,<0.8"
+pytest-xdist = "^3.8.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -88,7 +89,7 @@ django_settings_module = "config.settings.development"
 DJANGO_SETTINGS_MODULE = "config.settings.development"
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "--cov=core --cov=bulletins --cov=regions --cov=public --cov=subscriptions --ignore=tests/e2e"
+addopts = "-n auto --cov=core --cov=bulletins --cov=regions --cov=public --cov=subscriptions --ignore=tests/e2e"
 # pytest-django defaults to DEBUG=False at test time, which silently
 # drops URL-conf entries gated on ``if settings.DEBUG:`` (the dev-only
 # SLF mirror in config/urls.py, the scrubber-perf debug page in
