@@ -144,6 +144,41 @@ class TestPushRegister:
         assert response.status_code == 400
         assert response.json()["ok"] is False
 
+    def test_duplicate_endpoint_upserts_not_duplicates(
+        self, staff_client: Client
+    ) -> None:
+        """Registering the same endpoint twice upserts the row rather than creating a second.
+
+        First registration returns created=True; the second returns created=False.
+        Only one row exists after both calls, and its p256dh/auth reflect the
+        second registration's values.
+        """
+        endpoint = "https://push.example.com/upsert-test-endpoint"
+        first_body: dict[str, Any] = {
+            "endpoint": endpoint,
+            "keys": {"p256dh": "p256dh-first", "auth": "auth-first"},
+        }
+        second_body: dict[str, Any] = {
+            "endpoint": endpoint,
+            "keys": {"p256dh": "p256dh-second", "auth": "auth-second"},
+        }
+
+        resp1 = _post_json(staff_client, _REGISTER_URL, first_body)
+        assert resp1.status_code == 200
+        assert resp1.json()["created"] is True
+
+        resp2 = _post_json(staff_client, _REGISTER_URL, second_body)
+        assert resp2.status_code == 200
+        assert resp2.json()["created"] is False
+
+        # Exactly one row for this endpoint.
+        assert PushSubscription.objects.filter(endpoint=endpoint).count() == 1
+
+        # The row carries the updated keys from the second registration.
+        row = PushSubscription.objects.get(endpoint=endpoint)
+        assert row.p256dh == "p256dh-second"
+        assert row.auth == "auth-second"
+
 
 # ---------------------------------------------------------------------------
 # push_unregister

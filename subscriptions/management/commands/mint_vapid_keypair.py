@@ -60,7 +60,7 @@ def _public_key_b64(vapid: py_vapid.Vapid) -> str:
     The key is the raw 65-byte uncompressed point (0x04 prefix + X + Y),
     encoded without padding per RFC 7515.
     """
-    pub_key = vapid._private_key.public_key()  # noqa: SLF001 — no public API for this
+    pub_key = vapid.public_key
     pub_bytes = pub_key.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
     return base64.urlsafe_b64encode(pub_bytes).rstrip(b"=").decode("ascii")
 
