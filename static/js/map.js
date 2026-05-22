@@ -1745,10 +1745,20 @@ const clearRegionRepaint = () => {
   // will snap.
   let ratingsCache = null;
   let sortedDates = null;
+  // SNOW-234: transition the scrubber out of the loading state once the
+  // season-ratings fetch settles. On success, populate the cache and mark
+  // the scrubber ready so the transport controls become visible. On failure,
+  // keep the loading placeholder visible (now showing an error message) so
+  // the user sees feedback rather than a blank pill.
   getSeasonRatings().then((data) => {
     ratingsCache = data;
     sortedDates = Object.keys(data).sort();
-  }).catch(() => { /* network fail → leave snap disabled, drag still works */ });
+    scrubber.dataset.state = 'ready';
+  }).catch(() => {
+    scrubber.dataset.state = 'error';
+    const loadingEl = scrubber.querySelector('.season-scrubber-loading');
+    if (loadingEl) loadingEl.textContent = 'Season data unavailable';
+  });
 
   const snapToNearestDataDay = (dateKey) => {
     if (!sortedDates || sortedDates.length === 0) return dateKey;
