@@ -1,12 +1,18 @@
 # test_massifs.py — Tests for _massifs.py canonical name list and slugify helper.
-"""Tests for the canonical massif list and slugify helper."""
+"""Tests for the canonical massif list, slugify helper, and slug→code lookup."""
 
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[3] / "scripts" / "meteofrance-archive"))
 
-from _massifs import ALL_MASSIFS, ALPINE_MASSIFS, slugify  # noqa: E402
+from _massifs import (  # noqa: E402
+    ALL_MASSIFS,
+    ALPINE_MASSIFS,
+    SLUG_TO_CODE,
+    slug_to_region_id,
+    slugify,
+)
 
 
 class TestAlpineMassifs:
@@ -73,3 +79,86 @@ class TestSlugify:
     def test_upcases_lowercase(self) -> None:
         """Lowercase input is converted to uppercase."""
         assert slugify("chablais") == "CHABLAIS"
+
+
+class TestSlugToCode:
+    """Tests for the SLUG_TO_CODE mapping."""
+
+    def test_count_covers_alpine_plus_aliases(self) -> None:
+        """SLUG_TO_CODE has 23 canonical Alpine slugs plus a small alias tail.
+
+        The aliases are explicit entries for known upstream misspellings
+        (see ``_massifs._MASSIF_ALIASES``); they map onto the same integer
+        codes as their canonical counterparts.
+        """
+        assert len(SLUG_TO_CODE) >= 23
+        canonical = {s for s in SLUG_TO_CODE if s in ALPINE_MASSIFS}
+        assert len(canonical) == 23
+
+    def test_chablais_maps_to_1(self) -> None:
+        """CHABLAIS → massif code 1."""
+        assert SLUG_TO_CODE["CHABLAIS"] == 1
+
+    def test_mont_blanc_maps_to_3(self) -> None:
+        """MONT-BLANC → massif code 3."""
+        assert SLUG_TO_CODE["MONT-BLANC"] == 3
+
+    def test_embrunais_parpaillon_maps_to_20(self) -> None:
+        """EMBRUNAIS-PARPAILLON → massif code 20 (space→hyphen normalisation)."""
+        assert SLUG_TO_CODE["EMBRUNAIS-PARPAILLON"] == 20
+
+    def test_no_pyrenean_massifs(self) -> None:
+        """Pyrenean massifs (cluster != Alps) must not appear in SLUG_TO_CODE."""
+        pyrenean = {"ASPE-OSSAU", "AURE-LOURON", "HAUTE-BIGORRE", "LUCHONNAIS"}
+        assert not pyrenean.intersection(SLUG_TO_CODE)
+
+    def test_all_alpine_massifs_present(self) -> None:
+        """Every slug in ALPINE_MASSIFS must be a key in SLUG_TO_CODE."""
+        for slug in ALPINE_MASSIFS:
+            assert slug in SLUG_TO_CODE, f"Missing slug: {slug!r}"
+
+
+class TestSlugToRegionId:
+    """Tests for the slug_to_region_id() helper."""
+
+    def test_chablais_returns_fr_01(self) -> None:
+        """CHABLAIS → 'FR-01' (code 1, zero-padded)."""
+        assert slug_to_region_id("CHABLAIS") == "FR-01"
+
+    def test_mont_blanc_returns_fr_03(self) -> None:
+        """MONT-BLANC → 'FR-03' (code 3, zero-padded)."""
+        assert slug_to_region_id("MONT-BLANC") == "FR-03"
+
+    def test_embrunais_returns_fr_20(self) -> None:
+        """EMBRUNAIS-PARPAILLON → 'FR-20'."""
+        assert slug_to_region_id("EMBRUNAIS-PARPAILLON") == "FR-20"
+
+    def test_mercantour_returns_fr_23(self) -> None:
+        """MERCANTOUR → 'FR-23' (highest Alpine code)."""
+        assert slug_to_region_id("MERCANTOUR") == "FR-23"
+
+    def test_unknown_slug_raises_key_error(self) -> None:
+        """Unknown slug raises KeyError."""
+        import pytest
+
+        with pytest.raises(KeyError):
+            slug_to_region_id("UNKNOWN-MASSIF")
+
+    def test_space_form_is_normalised(self) -> None:
+        """Upstream space-form slugs resolve to the same region as the canonical form.
+
+        The BRA PDFs spell some massifs with spaces (``"EMBRUNAIS PARPAILLON"``,
+        ``"HAUT-VAR HAUT-VERDON"``) — slug_to_region_id must fold them onto
+        the same canonical region ID as the hyphenated form.
+        """
+        assert slug_to_region_id("EMBRUNAIS PARPAILLON") == "FR-20"
+        assert slug_to_region_id("HAUT-VAR HAUT-VERDON") == "FR-22"
+
+    def test_typo_alias_resolves(self) -> None:
+        """The upstream ``EMBRUNNAIS PARPAILLON`` typo resolves to FR-20.
+
+        Aliased in ``_massifs._MASSIF_ALIASES`` because 66 rows in the
+        2025-2026 archive carry the double-N misspelling.
+        """
+        assert slug_to_region_id("EMBRUNNAIS PARPAILLON") == "FR-20"
+        assert slug_to_region_id("EMBRUNNAIS-PARPAILLON") == "FR-20"
