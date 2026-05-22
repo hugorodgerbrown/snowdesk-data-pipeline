@@ -15,9 +15,12 @@ VAPID (Voluntary Application Server Identification) is the authentication
 mechanism that proves to the browser's push service (Apple, Google, Mozilla)
 that a push originates from your server. It requires a P-256 keypair:
 
-- The **private key** lives on the server (in a secret file on Render).
 - The **public key** is sent to the browser at subscribe time so the push
   service can verify the server's JWT.
+- The **private key** lives on the server in a secret file. We store it as
+  the raw 32-byte private scalar encoded as URL-safe-base64 (a single 43-char
+  line) — **not** as a PEM. See [Why raw scalar and not PEM?](#why-raw-scalar-and-not-pem)
+  below for the reason.
 
 Generate the keypair with the management command:
 
@@ -25,26 +28,34 @@ Generate the keypair with the management command:
 # Dry-run first — shows what would be written, no disk changes:
 python manage.py mint_vapid_keypair
 
-# Generate and write the PEM:
+# Generate and write the secret file:
 python manage.py mint_vapid_keypair --commit
 ```
 
-The `--commit` run writes `<BASE_DIR>/.vapid-private.pem` (or the path set by
-`VAPID_PRIVATE_KEY_PATH`) and prints the `VAPID_PUBLIC_KEY` value and wiring
-instructions.
+The `--commit` run:
 
-**Rotation warning.** The command refuses to overwrite an existing PEM. To
-rotate, delete the PEM manually first — but be aware that rotating the keypair
-invalidates every live `PushSubscription` row. All subscribed devices must
-re-register (re-click "Enable push" on `/_push-demo/`). There is no automated
-re-subscription path in the current spike.
+1. Generates a fresh P-256 keypair.
+2. Writes the raw private scalar to `<BASE_DIR>/.vapid-private.key`
+   (or the path set by `VAPID_PRIVATE_KEY_PATH`).
+3. Runs a self-test — loads the file back via `py_vapid.Vapid.from_string()`
+   and confirms the derived public key matches the printed one. If the
+   self-test fails, the command exits non-zero so you can't deploy a broken
+   keypair.
+4. Prints both the `VAPID_PUBLIC_KEY` env-var value and the raw-scalar
+   secret-file contents, plus a Render wiring template.
+
+**Rotation warning.** The command refuses to overwrite an existing secret
+file. To rotate, delete the file manually first — but be aware that rotating
+the keypair invalidates every live `PushSubscription` row. All subscribed
+devices must re-register (re-click "Enable push" on `/_push-demo/`). There
+is no automated re-subscription path in the current spike.
 
 ---
 
 ## Wiring on Render
 
-After running `mint_vapid_keypair --commit` locally (or in a one-off shell),
-do the following in the Render dashboard:
+After running `mint_vapid_keypair --commit` (locally or in a one-off
+Render shell), do the following in the Render dashboard:
 
 1. **Add environment variables** (Settings → Environment):
 
@@ -52,17 +63,59 @@ do the following in the Render dashboard:
    |-----|-------|
    | `VAPID_PUBLIC_KEY` | The 87-character URL-safe-base64 string printed by the command. |
    | `VAPID_CLAIM_EMAIL` | `mailto:ops@yourdomain.com` (your contact address for the push service). |
-   | `VAPID_PRIVATE_KEY_PATH` | `.vapid-private.pem` (relative to the app root; must match where the secret file is mounted). |
+   | `VAPID_PRIVATE_KEY_PATH` | `.vapid-private.key` (relative to the app root; must match the secret-file name). |
 
-2. **Upload the PEM as a secret file** (Settings → Secret Files → Add Secret File):
+2. **Upload the secret file** (Settings → Secret Files → Add Secret File):
 
-   - Filename: `.vapid-private.pem` (must match `VAPID_PRIVATE_KEY_PATH`).
-   - Content: paste the full PEM contents (including `-----BEGIN PRIVATE KEY-----` header/footer).
+   - **Filename:** `.vapid-private.key` (must match `VAPID_PRIVATE_KEY_PATH`).
+   - **Contents:** the single-line raw scalar printed by the command. Do
+     **not** paste the PEM — see [Why raw scalar and not PEM?](#why-raw-scalar-and-not-pem).
 
-3. Trigger a new deploy so the environment variables and secret file take effect.
+3. Trigger a new deploy so the environment variables and secret file take
+   effect.
+
+> **Important:** The public key in `VAPID_PUBLIC_KEY` and the private key in
+> the secret file **must come from the same `mint_vapid_keypair` run.** If
+> they don't match, browsers will subscribe successfully against the public
+> key but every push dispatch will fail because the JWT signed by the private
+> key won't verify against it. The command's self-test ensures the two halves
+> match at generation time; the only way to ship a mismatch is to copy them
+> from different runs by hand. Don't.
 
 There is no `render.yaml` in this repository — all deploy configuration is
 dashboard-only.
+
+---
+
+## Why raw scalar and not PEM?
+
+py_vapid 1.9's `Vapid.from_pem()` decodes the PEM body via a URL-safe-base64
+decoder (`b64urldecode`) instead of the standard base64 decoder that PEM bodies
+actually use. Whenever the DER body happens to contain a `+` or `/` character
+— roughly 25% of generated keys, depending on the bit alignment of the
+underlying numbers — parsing fails with:
+
+```
+ValueError: Could not deserialize key data. The data may be in an incorrect
+format ... ASN.1 parsing error: unexpected tag
+```
+
+The same bug fires in pywebpush's dispatch path, so an unlucky keypair would
+make every push delivery fail silently in production, even though the secret
+"looks" loadable in local testing.
+
+The raw private scalar form (the 32-byte EC scalar as URL-safe-base64) routes
+through py_vapid's `Vapid.from_string()` instead — a completely separate code
+path that's bug-free. By writing the secret in that form we sidestep the issue
+entirely.
+
+This means:
+
+- The secret file extension is `.key`, not `.pem`.
+- Its contents are a single ~43-char line, not a multi-line block with
+  `-----BEGIN PRIVATE KEY-----` headers.
+- The PEM is still printed (with `--verbosity 2`) for human inspection, but
+  you should never upload it as the secret.
 
 ---
 
@@ -104,6 +157,57 @@ Safari on iOS only delivers Web Push in standalone (installed PWA) mode.
 
 ---
 
+## Troubleshooting
+
+### `InvalidAccessError: applicationServerKey is not valid`
+
+The browser couldn't decode the public key into a valid 65-byte P-256
+point. Almost always means `VAPID_PUBLIC_KEY` isn't set (or is set to an
+empty string) in the environment, so the page rendered an empty
+`<meta name="vapid-public-key" content="">` tag. Check in the browser console:
+
+```js
+document.querySelector('meta[name="vapid-public-key"]').content.length
+// should be 87
+```
+
+If it's 0, set the env var on Render and redeploy. If it's 87 but you still
+get the error, the page may be cached — DevTools → Application → Service
+Workers → Unregister, then Storage → Clear site data, reload.
+
+### `Could not deserialize key data ... unexpected tag` from py_vapid
+
+You uploaded a PEM as the secret file. See
+[Why raw scalar and not PEM?](#why-raw-scalar-and-not-pem). Re-run
+`mint_vapid_keypair --commit` (after deleting the old secret), upload the
+**raw scalar** output instead, and update `VAPID_PUBLIC_KEY` to match.
+
+### Push notification doesn't arrive even though subscribe succeeded
+
+Most common cause: the public key in `VAPID_PUBLIC_KEY` and the private key in
+the secret file don't come from the same `mint_vapid_keypair` run. The browser
+registered with one public key; the server is signing with a different private
+key; the push service rejects the JWT.
+
+Diagnose on Render with:
+
+```python
+from py_vapid import Vapid
+from subscriptions import push_config
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+import base64
+
+vapid = Vapid.from_string(push_config.VAPID_PRIVATE_KEY)
+pub = vapid.public_key.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+print("from secret:", base64.urlsafe_b64encode(pub).rstrip(b"=").decode())
+print("from env:   ", push_config.VAPID_PUBLIC_KEY)
+```
+
+If those two lines differ, regenerate the keypair end-to-end and update both
+halves together.
+
+---
+
 ## Rotation
 
 Avoid rotating the keypair unless strictly necessary — rotation invalidates
@@ -114,10 +218,11 @@ If you must rotate:
 1. Run `python manage.py mint_vapid_keypair` (dry-run) to confirm the target
    path.
 2. On Render, remove the existing secret file.
-3. Delete the old PEM locally: `rm .vapid-private.pem`.
+3. Delete the old secret locally: `rm .vapid-private.key`.
 4. Run `python manage.py mint_vapid_keypair --commit` to generate a new keypair.
-5. Update `VAPID_PUBLIC_KEY` in Render's environment variables with the new key.
-6. Upload the new PEM as a secret file on Render.
+5. Update `VAPID_PUBLIC_KEY` in Render's environment variables with the new
+   key the command printed.
+6. Upload the new secret file on Render (raw scalar; same filename).
 7. Deploy.
 8. Every existing `PushSubscription` row is now invalid. A bulk-delete via the
    Django admin (`/admin/subscriptions/pushsubscription/`) cleans up the dead

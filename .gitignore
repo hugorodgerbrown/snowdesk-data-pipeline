@@ -59,4 +59,8 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets — Web Push VAPID keypair (raw scalar in .key; PEM only for inspection)
 *.pem
+*.key
+.vapid-private.*
