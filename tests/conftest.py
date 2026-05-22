@@ -1,13 +1,6 @@
 """
 tests/conftest.py — shared pytest fixtures.
 
-The ``_force_sync_email`` autouse fixture forces
-``settings.SUBSCRIPTIONS_EMAIL_ASYNC = False`` for every test so existing
-locmem-backend ``mail.outbox`` assertions in test_email.py / test_views.py
-keep working synchronously.  Tests that need to exercise the async
-dispatch path opt back in via ``@override_settings(...)`` per-test or
-per-class.
-
 The ``_force_sync_weather_fetch`` autouse fixture forces
 ``settings.WEATHER_FETCH_ASYNC = False`` so any direct call to
 ``fetch_weather_async`` in tests runs synchronously on the main thread
@@ -26,18 +19,16 @@ attribute with a spy; ``monkeypatch.setattr`` is LIFO so the spy wins
 over this autouse no-op. Tests that exercise the helper itself import it
 from ``bulletins.services.weather_fetcher`` and are unaffected by the
 ``public.views`` patch.
+
+Email tests no longer need a sync-force fixture — the test settings module
+inherits ``ImmediateBackend`` from ``development.py``, which runs tasks inline
+and populates ``mail.outbox`` synchronously.
 """
 
 from __future__ import annotations
 
 import pytest
 from pytest_django.fixtures import SettingsWrapper
-
-
-@pytest.fixture(autouse=True)
-def _force_sync_email(settings: SettingsWrapper) -> None:
-    """Force synchronous email dispatch in tests by default."""
-    settings.SUBSCRIPTIONS_EMAIL_ASYNC = False
 
 
 @pytest.fixture(autouse=True)
