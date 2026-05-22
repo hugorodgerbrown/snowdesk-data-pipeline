@@ -2076,13 +2076,10 @@ const clearRegionRepaint = () => {
         ? sortedDates[0]
         : (scrubber ? scrubber.dataset.seasonStart : null);
       if (target) {
-        // commitDate lives in seasonScrubberInit — trigger via a
-        // simulated scrubber event rather than calling it directly, since
-        // the two IIFEs do not share scope. Use the same approach as
-        // timelapse: dispatch a custom event with source:'timelapse' so
-        // the stop listener does not fire redundantly. Actually, the
-        // cleanest path is to call the shared repaint + announce directly,
-        // then update the thumb and aria-valuenow ourselves.
+        // Call repaint + moveScrubber directly (both are module-scope) and
+        // update aria-valuenow here, mirroring the math in
+        // seasonScrubberInit's dateKeyToPct. A custom event announces the
+        // committed date to sibling IIFEs (date pill, timelapse).
         if (cache) repaintRegionsForDate(target, cache);
         moveScrubber(target);
         if (scrubber && Number.isFinite(seasonSpanMs) && seasonSpanMs > 0) {
