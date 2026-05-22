@@ -66,6 +66,8 @@ urlpatterns = [
         debug_views.component_library_panel,
         name="components_panel",
     ),
+    # Web Push spike — staff-only demo page.
+    path("_push-demo/", debug_views.push_demo, name="push_demo"),
     # Examples — sample bulletin links rendered inline using the canonical view.
     path("examples/random/", views.examples_random, name="examples_random"),
     path(

@@ -22,6 +22,8 @@ from django.shortcuts import render
 
 from core.decorators import require_htmx
 from public.design_tokens import LIBRARY_GROUPS, get_category
+from subscriptions.models import PushSubscription
+from subscriptions.push_config import VAPID_PUBLIC_KEY
 
 DEFAULT_SLUG = "typography"
 
@@ -72,4 +74,17 @@ def component_library_panel(
         request,
         "_components/partials/_panel.html",
         {"active": category},
+    )
+
+
+@staff_member_required
+def push_demo(request: HttpRequest) -> HttpResponse:
+    """Spike demo page for Web Push notifications."""
+    return render(
+        request,
+        "_debug/push_demo.html",
+        {
+            "vapid_public_key": VAPID_PUBLIC_KEY,
+            "subscriptions": PushSubscription.objects.all(),
+        },
     )
