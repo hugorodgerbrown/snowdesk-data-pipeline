@@ -33,6 +33,8 @@ from tests.factories import (
     MicroRegionFactory,
     RegionBulletinFactory,
     SubRegionFactory,
+    SubscriberFactory,
+    SubscriptionFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -2247,7 +2249,8 @@ class TestStructuredData:
         assert "</script>" not in script_body
         # The escaped form must be present somewhere in the response.
         assert "<\\/script>" in content
-        
+
+
 # ---------------------------------------------------------------------------
 # SNOW-222: subscribe panel states
 # ---------------------------------------------------------------------------
@@ -2313,4 +2316,3 @@ class TestSubscribePanelStates:
         assert "/subscribe/remove-region/" in content
         # Should NOT show the email input (anonymous form).
         assert 'name="email"' not in content
-
