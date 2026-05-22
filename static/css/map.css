@@ -19,6 +19,10 @@
     --ink: #1a1a1a;
     --muted: #5f5e5a;
     --border: rgba(0, 0, 0, 0.12);
+    /* Icon / label colour painted on top of a dark filled circle (the
+       scrubber play button at rest, fast-forward when active). Kept as a
+       named token so the inversion stays consistent if --ink ever shifts. */
+    --on-ink: #ffffff;
     --serif: Georgia, "Times New Roman", serif;
     --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
 }
@@ -377,29 +381,41 @@
     border-top: 0.5px solid var(--border);
 }
 
-/* Collapsible danger-scale legend (SNOW-38) — bottom-left overlay,
-   anchored above the season scrubber. The card is absolutely positioned
-   relative to the container so toggling it does not reflow the page.
+/* Collapsible map-info panel (SNOW-38, redesigned SNOW-230) — top-left
+   overlay holding the danger-scale legend, the active tile attribution,
+   and the SLF data licence. Single (i) entry point so map chrome stays
+   uncluttered. The card is absolutely positioned relative to the toggle
+   and opens to the right so it never collides with the scrubber.
    Stacking: scrubber=2, legend=3, utility cluster=4. */
 
 .map-legend {
     position: absolute;
     left: calc(env(safe-area-inset-left, 0px) + 12px);
-    /* 56px scrubber baseline + ~40px scrubber height + 12px gap. */
-    bottom: calc(108px + env(safe-area-inset-bottom, 0px));
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
     z-index: 3;
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-/* Always-visible date readout, styled to match the (i) toggle so the
-   pair reads as one grouped control. Updated by static/js/map.js on
-   snowdesk:date-changed (scrubber commits + timelapse frames) and on
-   snowdesk:date-preview (live drag). */
+/* Date pill — floats above the scrubber thumb and slides horizontally
+   as the user drags or the timelapse advances. Anchored inside
+   .season-scrubber-track so the --thumb-pct percentage is track-relative.
+   Server-rendered for first-paint correctness; map.js updates both the
+   --thumb-pct custom property and the text content on every
+   snowdesk:date-changed / snowdesk:date-preview event. */
 .map-date-pill {
-    height: 32px;
-    padding: 0 12px;
+    position: absolute;
+    bottom: 100%;
+    left: var(--thumb-pct, 50%);
+    transform: translateX(-50%);
+    /* Lift the pill above the entire scrubber container, not just the 3px
+       track. The scrubber pill is ~43px tall with the track at its
+       vertical centre (20px from the top), so a 22px margin-bottom pushes
+       the pill 2px clear of the scrubber's top edge. */
+    margin-bottom: 22px;
+    height: 28px;
+    padding: 0 10px;
     display: inline-flex;
     align-items: center;
     background: var(--color-glass);
@@ -415,6 +431,8 @@
     letter-spacing: 0.06em;
     white-space: nowrap;
     user-select: none;
+    pointer-events: none;
+    z-index: 1;
 }
 
 .map-legend-toggle {
@@ -436,11 +454,12 @@
 
 .map-legend-card {
     position: absolute;
-    /* Anchor above the (i) toggle (the rightmost item in the flex row). */
-    right: 0;
-    bottom: 40px;            /* 32px button + 8px gap */
-    min-width: 132px;
-    padding: 8px 10px;
+    /* Anchor to the right of the (i) toggle, top-aligned with it. */
+    left: 40px;              /* 32px button + 8px gap */
+    top: 0;
+    min-width: 200px;
+    max-width: 260px;
+    padding: 10px 12px;
     background: var(--color-glass);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
@@ -450,11 +469,38 @@
     font-size: 11px;
     line-height: 1.5;
     color: var(--color-text-1);
-    transform-origin: bottom right;
+    transform-origin: top left;
     opacity: 0;
-    transform: translateY(4px) scale(0.98);
+    transform: translateX(-4px) scale(0.98);
     pointer-events: none;
     transition: opacity 160ms ease-out, transform 160ms ease-out;
+}
+
+/* Hairline divider between the three sections of the info card so the
+   legend, map attribution and bulletin attribution read as separate
+   groups without needing extra chrome. */
+.map-legend-section + .map-legend-section {
+    border-top: 0.5px solid var(--color-border);
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+/* Attribution text styling — smaller and more muted than the legend rows
+   so the legend remains the primary read in the card. */
+.map-legend-attribution {
+    margin: 0;
+    font-size: 10px;
+    line-height: 1.4;
+    color: var(--color-text-2);
+}
+
+.map-legend-attribution-link {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.map-legend-attribution-link:hover {
+    color: var(--color-text-1);
 }
 
 .map-legend[data-state="expanded"] .map-legend-card {
@@ -637,20 +683,15 @@
     margin-top: 4px;
 }
 
-/* Season scrubber — floating bottom-pinned pill (SNOW-37).
-   The pill sits above MapLibre's attribution control (which stays pinned at
-   bottom: 0 — legally required to remain visible). 44px is the height of the
-   expanded attribution box; 12px is the gap between the two. */
+/* Season scrubber — floating bottom-pinned pill (SNOW-37 / SNOW-230).
+   Attribution was relocated to top-right so the scrubber now sits flush
+   at the bottom edge above the safe-area inset. */
 
-.season-scrubber {
-    position: absolute;
-    left: 12px;
-    right: 12px;
-    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
-    z-index: 2;
+.season-scrubber,
+.season-scrubber-demo {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 10px;
     padding: 10px 16px;
     background: rgba(255, 255, 255, 0.75);
     backdrop-filter: blur(14px);
@@ -663,12 +704,20 @@
     user-select: none;
 }
 
-.season-scrubber-bound {
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    white-space: nowrap;
-    flex: 0 0 auto;
-    color: var(--muted);
+/* On the map page, the scrubber is pinned over the MapLibre viewport. */
+.season-scrubber {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(5px + env(safe-area-inset-bottom, 0px));
+    z-index: 2;
+}
+
+/* On the component-library page, the demo pill flows in normal document
+   order and sits on the parchment surface rather than a map. */
+.season-scrubber-demo {
+    position: relative;
+    margin: 8px 0;
 }
 
 .season-scrubber-track {
@@ -677,6 +726,9 @@
     background: rgba(0, 0, 0, 0.08);
     border-radius: 2px;
     position: relative;
+    /* overflow: visible so the date pill (absolutely positioned above the
+       track) is not clipped by the 3px track height. */
+    overflow: visible;
     cursor: grab;
 }
 
@@ -700,24 +752,38 @@
     transition: left 200ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* Inline play / stop button on the scrubber. Sits at the left edge as a
-   filled dark circle echoing the thumb visual, so the scrubber reads as
-   a single unified time-control surface. SVG state is swapped via the
-   data-state attribute set by static/js/map.js. */
-.scrubber-play {
+/* Shared geometry for every transport button on the scrubber — play,
+   skip-to-start, fast-forward, skip-to-end. Each button is a circular
+   flex-centred target with no padding or margin; the per-variant rules
+   below add size, fill, and stroke. SVG state-swap (play icon when
+   stopped, stop icon when playing) is shared across the play and
+   fast-forward variants. */
+.scrubber-transport-button {
     flex: 0 0 auto;
-    width: 28px;
-    height: 28px;
     margin: 0;
     padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: var(--ink);
-    color: #fff;
-    border: none;
     border-radius: 50%;
     cursor: pointer;
+}
+
+.scrubber-transport-button[data-state="playing"] .scrubber-play-icon,
+.scrubber-transport-button[data-state="stopped"] .scrubber-stop-icon {
+    display: none;
+}
+
+/* Inline play / stop button on the scrubber. Same 22×22 geometry as the
+   skip and fast-forward buttons so the transport reads as a uniform row;
+   the filled dark fill picks it out as the primary action. SVG state is
+   swapped via the data-state attribute set by static/js/map.js. */
+.scrubber-play {
+    width: 22px;
+    height: 22px;
+    background: var(--ink);
+    color: var(--on-ink);
+    border: none;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
@@ -725,35 +791,42 @@
     background: #000;
 }
 
-.scrubber-play[data-state="playing"] .scrubber-play-icon,
-.scrubber-play[data-state="stopped"] .scrubber-stop-icon {
-    display: none;
-}
-
-/* Speed cycler — sits to the right of the play button. Mirrors the play
-   button's pill geometry but swaps the filled circle for an outlined
-   capsule with the current multiplier as a numeric label. min-width
-   keeps the layout stable as the label cycles 1× / 2× / 4× / ½×. */
-.scrubber-speed {
-    flex: 0 0 auto;
+/* Skip-to-start / skip-to-end transport buttons — same shared geometry
+   as .scrubber-play but 22×22 so the play button remains the visual
+   anchor. Colour inherits from the scrubber context (dark text on the
+   frosted pill) rather than the inverted play-button style. */
+.scrubber-skip {
+    width: 22px;
     height: 22px;
-    min-width: 32px;
-    margin: 0;
-    padding: 0 6px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     background: transparent;
     color: var(--ink);
     border: 0.5px solid var(--border);
-    border-radius: 999px;
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
 }
 
-.scrubber-speed:hover {
-    background: rgba(0, 0, 0, 0.05);
+.scrubber-skip:hover {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+/* Fast-forward transport button — same dimensions and resting style as
+   .scrubber-skip. The state-swap rule on .scrubber-transport-button
+   above handles the play/stop icon toggle. */
+.scrubber-fast {
+    width: 22px;
+    height: 22px;
+    background: transparent;
+    color: var(--ink);
+    border: 0.5px solid var(--border);
+}
+
+.scrubber-fast:hover {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+/* When fast-forward is active, invert colours to match .scrubber-play's
+   resting style — dark circle with white icon. */
+.scrubber-fast[data-state="playing"] {
+    background: var(--ink);
+    color: var(--on-ink);
+    border-color: transparent;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }

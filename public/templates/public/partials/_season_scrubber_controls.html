@@ -1,0 +1,140 @@
+{% load i18n %}
+{% comment %}
+public/partials/_season_scrubber_controls.html — the four transport
+buttons and the draggable track that together make up the scrubber
+media-player UI. Included by /map/ inside #season-scrubber and by the
+component library at /_components/?slug=season-scrubber.
+
+Context expected:
+* today        — a date (used to label the floating date pill).
+* today_pct    — float 0..100, the thumb's starting position.
+{% endcomment %}
+{% comment %}
+Skip-to-start transport button — jumps the scrubber to the
+first date in the season. Falls back to data-season-start
+before the ratings cache resolves.
+{% endcomment %}
+<button
+    id="scrubber-skip-start"
+    type="button"
+    class="scrubber-transport-button scrubber-skip"
+    aria-label='{% trans "Skip to season start" %}'
+>
+    <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+    >
+        <rect x="5" y="5" width="2.5" height="14" rx="1" />
+        <path d="M10 12L20 5.5v13z" />
+    </svg>
+</button>
+{% comment %}
+Play / stop transport button — starts timelapse from the
+current thumb position at 1× speed. Second press stops.
+{% endcomment %}
+<button
+    id="scrubber-play"
+    type="button"
+    class="scrubber-transport-button scrubber-play"
+    aria-label='{% trans "Play season timelapse" %}'
+    data-state="stopped"
+>
+    <svg
+        class="scrubber-play-icon"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+    >
+        <path d="M8 5.5v13l11-6.5z" />
+    </svg>
+    <svg
+        class="scrubber-stop-icon"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+    >
+        <rect x="6" y="6" width="12" height="12" rx="1.5" />
+    </svg>
+</button>
+{% comment %}
+Fast-forward transport button — plays at 2× from the
+current position. Pressing while 1× is playing switches
+speed; pressing while already at 2× stops playback.
+{% endcomment %}
+<button
+    id="scrubber-fast"
+    type="button"
+    class="scrubber-transport-button scrubber-fast"
+    aria-label='{% trans "Fast-forward season timelapse" %}'
+    data-state="stopped"
+>
+    <svg
+        class="scrubber-play-icon"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+    >
+        <path d="M5 5.5v13l8-6.5zm8 0v13l8-6.5z" />
+    </svg>
+    <svg
+        class="scrubber-stop-icon"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+    >
+        <rect x="6" y="6" width="12" height="12" rx="1.5" />
+    </svg>
+</button>
+{% comment %}
+The track holds both the draggable thumb and the floating
+date pill so the pill percentage is track-relative (not
+scrubber-relative, which would include the button widths).
+No aria-hidden: the pill inside carries aria-live so it
+must remain in the accessibility tree.
+{% endcomment %}
+<div class="season-scrubber-track">
+    {% comment %}
+    Date pill: server-rendered for first-paint correctness;
+    map.js moves it horizontally via --thumb-pct and updates
+    the text on snowdesk:date-changed / date-preview.
+    {% endcomment %}
+    <span
+        id="map-date-pill"
+        class="map-date-pill"
+        aria-live="polite"
+        style="--thumb-pct: {{ today_pct }}%"
+    >{{ today|date:'M j Y'|upper }}</span>
+    <div class="season-scrubber-thumb" style="left: {{ today_pct }}%"></div>
+</div>
+{% comment %}
+Skip-to-end transport button — jumps to the last date in
+the season. Falls back to data-season-end before cache.
+{% endcomment %}
+<button
+    id="scrubber-skip-end"
+    type="button"
+    class="scrubber-transport-button scrubber-skip"
+    aria-label='{% trans "Skip to season end" %}'
+>
+    <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+    >
+        <rect x="16.5" y="5" width="2.5" height="14" rx="1" />
+        <path d="M14 12L4 18.5V5.5z" />
+    </svg>
+</button>

@@ -1293,3 +1293,32 @@ NO_DATA_SUPPLIED_VARIANTS: tuple[dict[str, Any], ...] = (
         "context": {},
     },
 )
+
+
+# Season scrubber transport demo (SNOW-230). Each variant pins the static
+# thumb position at a different point in the season so the library shows
+# the pill at season start, mid-season, and season end. The buttons are
+# not wired to JS on the library page — pressing them is a no-op.
+SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Season start — thumb at 0%",
+        "context": {
+            "today": datetime.date(2025, 12, 1),
+            "today_pct": 0,
+        },
+    },
+    {
+        "caption": "Mid-season — thumb at 50%",
+        "context": {
+            "today": datetime.date(2026, 2, 14),
+            "today_pct": 50,
+        },
+    },
+    {
+        "caption": "Season end — thumb at 100%",
+        "context": {
+            "today": datetime.date(2026, 4, 30),
+            "today_pct": 100,
+        },
+    },
+)
