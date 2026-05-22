@@ -218,6 +218,25 @@ class BulletinQuerySet(models.QuerySet["Bulletin"]):
             return None
         return timezone.localtime(latest).date()
 
+    def earliest_valid_to_date(self) -> _date | None:
+        """
+        Return the ``valid_to`` day of the oldest stored bulletin.
+
+        Used by ``_get_nav_dates`` to establish the lower bound of
+        backward day navigation.  Once the user reaches a day on or before
+        the oldest bulletin's ``valid_to`` date, no earlier ``prev_date`` is
+        offered.
+
+        Returns:
+            The local-timezone ``valid_to`` day of the oldest bulletin in
+            this queryset, or ``None`` if the queryset is empty.
+
+        """
+        earliest = self.aggregate(earliest=models.Min("valid_to"))["earliest"]
+        if earliest is None:
+            return None
+        return timezone.localtime(earliest).date()
+
 
 class Bulletin(BaseModel):
     """

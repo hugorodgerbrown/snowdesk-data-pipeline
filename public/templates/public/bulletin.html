@@ -365,9 +365,7 @@ reachable via the SNOW-81 deep-link in the masthead.
 
         {% if not bulletin %}
             {# ── Empty state ─────────────────────────────────────────── #}
-            <div class="text-center text-text-3 py-16 text-sm">
-                {% trans "No bulletins available for this region." %}
-            </div>
+            {% include "includes/_callout.html" with kind="info" heading=_("No bulletin available") body=_("There is no bulletin published for this region on this date.") only %}
         {% else %}
             {# ── Error state (version == 0) ──────────────────────────────── #}
             {% if panel.render_model.version == 0 %}
