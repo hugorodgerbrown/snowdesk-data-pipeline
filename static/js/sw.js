@@ -50,7 +50,7 @@
 
 'use strict';
 
-const CACHE_VERSION = 'snowdesk-shell-v5';
+const CACHE_VERSION = 'snowdesk-shell-v6';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
@@ -80,11 +80,17 @@ const STATIC_SHELL_EXTENSIONS = new Set([
 ]);
 
 // Same-origin URL paths that are versioned-by-deploy and therefore
-// safe to serve stale-while-revalidate. Limited to the regions
-// GeoJSON feed today; any new entry must be similarly safe to cache
-// across a session (a stale region polygon never misleads the user
-// about danger; a stale rating would).
-const STATIC_PATHS = new Set(['/api/regions.geojson']);
+// safe to serve stale-while-revalidate. All four region/resort geo
+// feeds are included — polygon and resort geometry changes only on
+// deploy, so a stale polygon never misleads the user about danger
+// (unlike a stale rating, which would). Any new entry must be
+// similarly safe to cache across a session.
+const STATIC_PATHS = new Set([
+  '/api/regions.geojson',
+  '/api/major-regions.geojson',
+  '/api/sub-regions.geojson',
+  '/api/resorts.geojson',
+]);
 
 // ---------------------------------------------------------------------------
 // Lifecycle — install

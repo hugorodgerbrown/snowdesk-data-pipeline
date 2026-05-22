@@ -769,6 +769,68 @@ const clearRegionRepaint = () => {
     }
   };
 
+  // SNOW-235: Lazy-load an overlay tier (l1 / l2 / resorts) on first use.
+  // Modelled on ensureCountryLoaded — guard flag prevents duplicate fetches,
+  // errors degrade silently (no layer install), applyCountryFilters is called
+  // after install so freshly-added L1/L2 layers respect the active country
+  // filter immediately.
+  const overlayLoaded = { l1: false, l2: false, resorts: false };
+
+  const ensureOverlayLoaded = async (key) => {
+    if (overlayLoaded[key]) return;
+    if (key === 'l1') {
+      if (!MAJOR_REGIONS_URL) return;
+      const data = await fetch(MAJOR_REGIONS_URL + '?country=ch')
+        .then(r => r.json()).catch(() => null);
+      if (!data) return;
+      majorGeojsonCache = data;
+      installOverlayLayers(majorGeojsonCache, subGeojsonCache);
+    } else if (key === 'l2') {
+      if (!SUB_REGIONS_URL) return;
+      const data = await fetch(SUB_REGIONS_URL + '?country=ch')
+        .then(r => r.json()).catch(() => null);
+      if (!data) return;
+      subGeojsonCache = data;
+      installOverlayLayers(majorGeojsonCache, subGeojsonCache);
+    } else if (key === 'resorts') {
+      if (!RESORTS_GEOJSON_URL) return;
+      const data = await fetch(RESORTS_GEOJSON_URL)
+        .then(r => r.json()).catch(() => null);
+      if (!data) return;
+      resortsGeojsonCache = data;
+      installResortsLayer(resortsGeojsonCache);
+    }
+    overlayLoaded[key] = true;
+    // Apply country filters to the freshly-added L1/L2 layers so they
+    // respect whichever countries are currently enabled.
+    applyCountryFilters();
+  };
+
+  // SNOW-235: Layer IDs for the lazily-loaded overlay tiers, restricted
+  // to l1 / l2 / resorts (l4 / Micro regions is always-on and not lazy).
+  // Mirrors OVERLAY_LAYER_IDS in basemapPickerInit but scoped here so
+  // the snowdesk:overlay-load handler below can reach them without
+  // crossing IIFE boundaries.
+  const OVERLAY_LAYER_IDS_MAIN = {
+    l1: ['major-regions-line', 'major-regions-label'],
+    l2: ['sub-regions-line', 'sub-regions-label'],
+    resorts: ['resorts-pin', 'resorts-label'],
+  };
+
+  // SNOW-235: Bridge for the basemapPickerInit IIFE — dispatched when
+  // the user enables an overlay tier that hasn't been fetched yet.
+  // We fetch the GeoJSON, install the layers, then make them visible.
+  document.addEventListener('snowdesk:overlay-load', (e) => {
+    const { key } = e.detail;
+    ensureOverlayLoaded(key).then(() => {
+      for (const layerId of OVERLAY_LAYER_IDS_MAIN[key]) {
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty(layerId, 'visibility', 'visible');
+        }
+      }
+    }).catch(() => {});
+  });
+
   // SNOW-172: Bridge for the basemapPickerInit IIFE, which lives in a separate
   // scope and cannot reference countryState / ensureCountryLoaded directly.
   // The picker dispatches this event; we own the state mutation here.
@@ -790,25 +852,17 @@ const clearRegionRepaint = () => {
   });
 
   map.on('load', async () => {
-    // Fetch everything in parallel. All requests are independent —
-    // geometry, bulletin summaries, resort lists, and the L1/L2 overlay
-    // geometry (SNOW-59) — so they can all fly at once. The overlay
-    // fetches degrade gracefully on failure: a missing payload just
-    // skips that layer install.
-    const [geojson, summaries, resorts, majorGeojson, subGeojson, resortsGeojson] =
+    // SNOW-235: Fetch only the choropleth-critical payloads at boot.
+    // L1/L2/resorts overlay fetches have been removed from this
+    // Promise.all — they are off by default and loaded lazily on first
+    // toggle via ensureOverlayLoaded (see above). This trims ~123 KB
+    // uncompressed from the critical path on every default-preference
+    // first-load.
+    const [geojson, summaries, resorts] =
       await Promise.all([
         fetch(REGIONS_URL + '?country=ch').then(r => r.json()),
         fetch(SUMMARIES_URL).then(r => r.json()),
         fetch(RESORTS_URL).then(r => r.json()),
-        MAJOR_REGIONS_URL
-          ? fetch(MAJOR_REGIONS_URL + '?country=ch').then(r => r.json()).catch(() => null)
-          : Promise.resolve(null),
-        SUB_REGIONS_URL
-          ? fetch(SUB_REGIONS_URL + '?country=ch').then(r => r.json()).catch(() => null)
-          : Promise.resolve(null),
-        RESORTS_GEOJSON_URL
-          ? fetch(RESORTS_GEOJSON_URL).then(r => r.json()).catch(() => null)
-          : Promise.resolve(null),
       ]);
     Object.assign(BULLETIN_SUMMARIES, summaries);
     Object.assign(RESORTS_BY_REGION, resorts);
@@ -831,12 +885,14 @@ const clearRegionRepaint = () => {
     });
 
     geojsonCache = geojson;
-    majorGeojsonCache = majorGeojson;
-    subGeojsonCache = subGeojson;
-    resortsGeojsonCache = resortsGeojson;
+    // SNOW-235: majorGeojsonCache / subGeojsonCache / resortsGeojsonCache
+    // remain null until the user first enables that overlay tier; they are
+    // populated by ensureOverlayLoaded below.
     installRegionsLayers(geojson);
-    installOverlayLayers(majorGeojson, subGeojson);
-    installResortsLayer(resortsGeojson);
+    // SNOW-235: installOverlayLayers / installResortsLayer are no longer
+    // called here; they run inside ensureOverlayLoaded when each tier is
+    // first requested. The styledata re-install handler below is
+    // already null-safe (passes null caches ⇒ early-returns cleanly).
 
     // SNOW-172: CH geometry is now loaded; record it and apply initial filter.
     loadedCountries.add('ch');
@@ -847,6 +903,15 @@ const clearRegionRepaint = () => {
       if (code !== 'ch' && countryState[code]) {
         ensureCountryLoaded(code).catch(() => {});
       }
+    }
+
+    // SNOW-235: Restore any overlay tiers the user had enabled in a prior
+    // session. These fire after the choropleth installs (not awaited) so
+    // they never block first paint. There will be a brief window where the
+    // choropleth is visible but the overlay is still fetching — this is
+    // intentional and an improvement over the previous blocking behaviour.
+    for (const key of ['l1', 'l2', 'resorts']) {
+      if (overlayState[key]) ensureOverlayLoaded(key).catch(() => {});
     }
 
     // Interaction
@@ -1204,10 +1269,16 @@ const clearRegionRepaint = () => {
     // has already called loadRegionSummary → dismissActivePopupSilently and
     // started a new fetch. queryRenderedFeatures returns non-empty for those
     // clicks, so this handler only fires for true empty-area taps.
+    //
+    // SNOW-235: the resorts-pin layer is now lazy-installed, so it may not
+    // exist at query time. queryRenderedFeatures throws on any unknown layer
+    // id, so filter the list to layers currently present on the map.
     map.on('click', (e) => {
-      const features = map.queryRenderedFeatures(e.point, {
-        layers: ['regions-fill', 'resorts-pin'],
-      });
+      const layers = ['regions-fill', 'resorts-pin'].filter(
+        (id) => map.getLayer(id),
+      );
+      if (!layers.length) return;
+      const features = map.queryRenderedFeatures(e.point, { layers });
       if (features.length === 0) clearTooltip();
     });
 
@@ -2281,15 +2352,30 @@ const clearRegionRepaint = () => {
           return;
         }
 
-        // Tier overlay — toggle layer visibility (existing SNOW-59 logic).
+        // Tier overlay — toggle layer visibility.
         try { localStorage.setItem(OVERLAY_STORAGE_KEY[overlayKey], String(next)); }
         catch (_) { /* private mode — choice still applies for this session */ }
         if (MAP) {
-          for (const layerId of OVERLAY_LAYER_IDS[overlayKey]) {
-            if (MAP.getLayer(layerId)) {
-              MAP.setLayoutProperty(
-                layerId, 'visibility', next ? 'visible' : 'none',
-              );
+          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts')) {
+            // SNOW-235: First enable of a lazy overlay tier — delegate to the
+            // main IIFE via snowdesk:overlay-load so it can fetch the GeoJSON,
+            // install the layers, and then make them visible. The main IIFE
+            // listener handles both the fetch and the setLayoutProperty call,
+            // so we return here without running the direct visibility loop.
+            document.dispatchEvent(new CustomEvent('snowdesk:overlay-load', {
+              detail: { key: overlayKey },
+            }));
+          } else {
+            // Toggling off, or toggling a non-lazy tier (l4): use the direct
+            // setLayoutProperty path. For the lazy tiers toggling off, the
+            // layer may not exist yet (if the user enabled then immediately
+            // disabled before the fetch resolved) — getLayer guards cover this.
+            for (const layerId of OVERLAY_LAYER_IDS[overlayKey]) {
+              if (MAP.getLayer(layerId)) {
+                MAP.setLayoutProperty(
+                  layerId, 'visibility', next ? 'visible' : 'none',
+                );
+              }
             }
           }
         }
