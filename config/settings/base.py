@@ -435,6 +435,23 @@ SUBSCRIPTIONS_EMAIL_ASYNC = config(
     cast=bool,
 )
 
+# ---------------------------------------------------------------------------
+# Background tasks (django.tasks — SNOW-229)
+# ---------------------------------------------------------------------------
+# ImmediateBackend runs enqueued tasks synchronously inline — a safe fallback
+# when no off-process worker is configured.  development.py overrides this
+# explicitly; production.py points at the same backend until a persistent
+# database-backed backend is available in a stable Django release.
+#
+# Django 6.0.5 ships ImmediateBackend and DummyBackend only.  DummyBackend
+# enqueues tasks without executing them (useful in tests that want to assert
+# the request cycle returns quickly without side-effects).
+TASKS = {
+    "default": {
+        "BACKEND": "django.tasks.backends.immediate.ImmediateBackend",
+    },
+}
+
 # Warm weather snapshots on a background daemon thread when bulletin_detail
 # renders a past-date page with no snapshot (SNOW-164). Default True; tests
 # pin this False in tests/conftest.py so the fetch runs synchronously and

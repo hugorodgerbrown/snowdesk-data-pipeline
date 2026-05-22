@@ -61,6 +61,15 @@ RATELIMIT_ENABLE = False
 # which can be killed by the dev server's auto-reloader before delivery.
 SUBSCRIPTIONS_EMAIL_ASYNC = False
 
+# ImmediateBackend runs tasks inline so Mailhog sees every email as soon as
+# the view returns.  Explicitly declared here so the setting is visible and
+# auditable; mirrors the base.py default.
+TASKS = {
+    "default": {
+        "BACKEND": "django.tasks.backends.immediate.ImmediateBackend",
+    },
+}
+
 # Allow per-request flag overrides via ``?dwf_<flag_name>=1`` (or ``=0``)
 # while developing locally. Lets you flip a flag on the fly without
 # touching the DB or the admin. Production deliberately omits this — an

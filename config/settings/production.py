@@ -90,6 +90,22 @@ CSRF_TRUSTED_ORIGINS = config(
 )
 
 # ---------------------------------------------------------------------------
+# Background tasks (django.tasks — SNOW-229)
+# ---------------------------------------------------------------------------
+# ImmediateBackend runs enqueued tasks synchronously in the request cycle.
+# Django 6.0.5 does not yet ship a DatabaseBackend; upgrade this setting to
+# ``django.tasks.backends.database.DatabaseBackend`` and add ``"django.tasks"``
+# to INSTALLED_APPS once a persistent backend is available in a stable Django
+# release.  Until then, ImmediateBackend is the safe choice — it sends every
+# email synchronously and will not silently drop in-flight work on a worker
+# restart.
+TASKS = {
+    "default": {
+        "BACKEND": "django.tasks.backends.immediate.ImmediateBackend",
+    },
+}
+
+# ---------------------------------------------------------------------------
 # Content Security Policy — enabled, report-only initially
 # ---------------------------------------------------------------------------
 # Flip CSP_REPORT_ONLY=False to enforce once violation reports stabilise.
