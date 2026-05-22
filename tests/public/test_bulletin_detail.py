@@ -25,6 +25,7 @@ from django.urls import reverse
 from bulletins.models import Bulletin, RegionDayRating
 from public.views import (
     _get_nav_dates,
+    _has_later_bulletin,
     _issues_for_date,
     _resolve_selected_issue,
     _select_bulletin_for_date,
@@ -165,10 +166,11 @@ class TestGetNavDates:
     """Tests for the _get_nav_dates helper."""
 
     def test_returns_prev_and_next(self, region: MicroRegion) -> None:
-        """When bulletins exist on adjacent dates, both are returned."""
+        """Prev and next are calendar adjacents regardless of bulletin gaps."""
+        # Anchor the lower bound by creating a bulletin whose valid_to day
+        # is 2026-03-14, so that current_date 2026-03-15 > oldest_date and
+        # prev_date is populated.
         _make_am_bulletin(region, date(2026, 3, 14))
-        _make_am_bulletin(region, date(2026, 3, 15))
-        _make_am_bulletin(region, date(2026, 3, 16))
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             prev_date, next_date = _get_nav_dates(region, date(2026, 3, 15))
@@ -177,7 +179,7 @@ class TestGetNavDates:
         assert next_date == date(2026, 3, 16)
 
     def test_no_prev_at_earliest(self, region: MicroRegion) -> None:
-        """The earliest date has no prev_date."""
+        """The oldest bulletin's date has no prev_date."""
         _make_am_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
 
@@ -186,25 +188,78 @@ class TestGetNavDates:
 
         assert prev_date is None
 
-    def test_no_next_at_today(self, region: MicroRegion) -> None:
-        """The current date has no next_date."""
+    def test_next_is_tomorrow_when_today(self, region: MicroRegion) -> None:
+        """On today, next_date is tomorrow (the adjacent calendar day)."""
         _make_am_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
             _, next_date = _get_nav_dates(region, date(2026, 3, 15))
 
-        assert next_date is None
+        assert next_date == date(2026, 3, 16)
 
-    def test_skips_gaps(self, region: MicroRegion) -> None:
-        """Navigation jumps over dates without bulletins."""
+    def test_does_not_skip_gaps(self, region: MicroRegion) -> None:
+        """Navigation steps one calendar day at a time, not to the next bulletin."""
         _make_am_bulletin(region, date(2026, 3, 10))
         _make_am_bulletin(region, date(2026, 3, 15))
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             prev_date, _ = _get_nav_dates(region, date(2026, 3, 15))
 
-        assert prev_date == date(2026, 3, 10)
+        # prev is current-1, not the older bulletin date
+        assert prev_date == date(2026, 3, 14)
+
+    def test_no_next_at_tomorrow(self, region: MicroRegion) -> None:
+        """When current_date is tomorrow, next_date is None (upper bound)."""
+        _make_am_bulletin(region, date(2026, 3, 14))
+
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            # Tomorrow relative to the frozen today (2026-03-15) is 2026-03-16.
+            _, next_date = _get_nav_dates(region, date(2026, 3, 16))
+
+        assert next_date is None
+
+    def test_no_prev_when_region_has_no_bulletins(self, region: MicroRegion) -> None:
+        """When a region has no bulletins, prev_date is None."""
+        with _freeze("2026-03-20T12:00:00+00:00"):
+            prev_date, _ = _get_nav_dates(region, date(2026, 3, 15))
+
+        assert prev_date is None
+
+    def test_no_prev_at_oldest_bulletin_date(self, region: MicroRegion) -> None:
+        """When current_date equals the oldest bulletin date, prev_date is None."""
+        # Only one bulletin; its valid_to day is 2026-03-14 (AM bulletin).
+        _make_am_bulletin(region, date(2026, 3, 14))
+
+        with _freeze("2026-03-20T12:00:00+00:00"):
+            prev_date, _ = _get_nav_dates(region, date(2026, 3, 14))
+
+        assert prev_date is None
+
+
+# ── _has_later_bulletin ─────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestHasLaterBulletin:
+    """Tests for the _has_later_bulletin helper."""
+
+    def test_returns_true_when_later_bulletin_exists(self, region: MicroRegion) -> None:
+        """Returns True when a bulletin exists with valid_to after page_date."""
+        _make_am_bulletin(region, date(2026, 3, 15))  # valid_to: 15:00 on 3/15
+        _make_am_bulletin(region, date(2026, 3, 16))  # valid_to: 15:00 on 3/16
+
+        assert _has_later_bulletin(region, date(2026, 3, 15)) is True
+
+    def test_returns_false_when_no_later_bulletin(self, region: MicroRegion) -> None:
+        """Returns False when no bulletin exists after page_date."""
+        _make_am_bulletin(region, date(2026, 3, 15))  # valid_to: 15:00 on 3/15
+
+        assert _has_later_bulletin(region, date(2026, 3, 15)) is False
+
+    def test_returns_false_for_empty_region(self, region: MicroRegion) -> None:
+        """Returns False when the region has no bulletins at all."""
+        assert _has_later_bulletin(region, date(2026, 3, 15)) is False
 
 
 # ── bulletin_detail view ─────────────────────────────────────────────────────
@@ -283,7 +338,7 @@ class TestBulletinDetailView:
     def test_no_bulletin_shows_empty_state(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """When no bulletin exists for the date the empty state is rendered."""
+        """When no bulletin exists for the date the callout empty state is rendered."""
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
                 "public:bulletin_date",
@@ -297,6 +352,81 @@ class TestBulletinDetailView:
 
         assert response.status_code == 200
         assert response.context["bulletin"] is None
+        content = response.content.decode()
+        assert 'data-testid="callout"' in content
+        assert 'data-kind="info"' in content
+        assert "No bulletin available" in content
+
+    def test_no_bulletin_has_nav_data_attrs(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """The empty-state page carries data-prev-url / data-next-url attributes."""
+        # A bulletin on 2026-03-14 anchors the lower bound so both prev and
+        # next are populated when viewing 2026-03-15 (no bulletin on that day).
+        _make_am_bulletin(region, date(2026, 3, 14))
+
+        with _freeze("2026-03-20T12:00:00+00:00"):
+            url = reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "ch-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-15",
+                },
+            )
+            response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.context["bulletin"] is None
+        content = response.content.decode()
+        assert "data-prev-url=" in content
+        assert "data-next-url=" in content
+
+    def test_future_date_beyond_tomorrow_renders_empty_state(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A direct URL five days in the future renders the callout and has no next link."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            # today+5 = 2026-03-20, which is beyond tomorrow (2026-03-16)
+            url = reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "ch-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-20",
+                },
+            )
+            response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.context["bulletin"] is None
+        content = response.content.decode()
+        assert 'data-testid="callout"' in content
+        # Upper bound: tomorrow is 2026-03-16, so 2026-03-20 has no next link
+        assert "data-next-url=" not in content
+
+    def test_empty_state_includes_subregion_name(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """The subregion subtitle renders on an empty-state bulletin page."""
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            url = reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "ch-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-15",
+                },
+            )
+            response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.context["bulletin"] is None
+        assert response.context["subregion_name"] != ""
+        content = response.content.decode()
+        assert response.context["subregion_name"] in content
 
     def test_prev_next_dates_in_context(
         self, client: Client, region: MicroRegion

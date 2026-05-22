@@ -543,47 +543,63 @@ def _get_nav_dates(
     current_date: datetime.date,
 ) -> tuple[datetime.date | None, datetime.date | None]:
     """
-    Find the previous and next dates with bulletins for a region.
+    Return calendar-adjacent prev/next dates for day-by-day navigation.
 
-    Dates are derived from the ``valid_to`` field so that each calendar day
-    maps to exactly one page.
+    Navigation steps one calendar day at a time regardless of whether a
+    bulletin exists for the adjacent day — users can reach empty-state pages
+    by navigating.  The upper bound is tomorrow (dates further in the future
+    offer no next link); the lower bound is the oldest bulletin's
+    ``valid_to`` date for the region (once the user reaches that day, no
+    earlier prev link is offered).
 
     Args:
         region: The MicroRegion to navigate within.
         current_date: The date currently being viewed.
 
     Returns:
-        A (prev_date, next_date) tuple; either may be None.
+        A (prev_date, next_date) tuple; either may be None when the
+        corresponding bound is reached.
 
     """
     today = timezone.now().date()
-
-    prev_b = (
-        Bulletin.objects.filter(
-            regions=region,
-            valid_to__date__lt=current_date,
-        )
-        .order_by("-valid_to")
-        .only("valid_to")
-        .first()
-    )
-    prev_date = prev_b.valid_to.date() if prev_b else None
+    tomorrow = today + datetime.timedelta(days=1)
 
     next_date: datetime.date | None = None
-    if current_date < today:
-        next_b = (
-            Bulletin.objects.filter(
-                regions=region,
-                valid_to__date__gt=current_date,
-                valid_to__date__lte=today,
-            )
-            .order_by("valid_to")
-            .only("valid_to")
-            .first()
-        )
-        next_date = next_b.valid_to.date() if next_b else None
+    if current_date < tomorrow:
+        next_date = current_date + datetime.timedelta(days=1)
+
+    oldest_date = Bulletin.objects.filter(regions=region).earliest_valid_to_date()
+    prev_date: datetime.date | None = None
+    if oldest_date is not None and current_date > oldest_date:
+        prev_date = current_date - datetime.timedelta(days=1)
 
     return prev_date, next_date
+
+
+def _has_later_bulletin(region: MicroRegion, page_date: datetime.date) -> bool:
+    """
+    Return True when a bulletin exists for any date after *page_date*.
+
+    Used on the today branch as a proxy for "a later bulletin has already
+    been published for this region", replacing the old ``next_date is None``
+    check.  Now that next_date always points to the adjacent calendar day,
+    its presence no longer signals the absence of a later bulletin.
+
+    The check is a cheap EXISTS query; callers should short-circuit behind
+    ``is_today`` so it only fires on the current-day page.
+
+    Args:
+        region: The MicroRegion whose bulletins are searched.
+        page_date: The calendar day of the page being rendered.
+
+    Returns:
+        True if any bulletin for the region has ``valid_to`` strictly after
+        *page_date*.
+
+    """
+    return Bulletin.objects.filter(
+        regions=region, valid_to__date__gt=page_date
+    ).exists()
 
 
 def _cache_key(zone_slug: str) -> str:
@@ -1952,15 +1968,51 @@ def _bulletin_detail_response(
     issues = _issues_for_date(region, target_date)
     selected = _resolve_selected_issue(issues, target_date, requested_issue_id)
 
+    # The page represents the calendar day chosen in the URL, independent
+    # of which issue the viewer has selected — otherwise flipping to the
+    # same-day-evening issue would silently bump the header to D+1.
+    page_date = target_date
+
+    # Day-based prev/next navigation — shared by both the populated and
+    # empty-state branches so the outer nav container always has its
+    # data-prev-url / data-next-url attributes.
+    prev_date, next_date = _get_nav_dates(region, page_date)
+
+    # Always use the EAWS canonical name from MicroRegion. The
+    # ``RegionBulletin.region_name_at_time`` field stores the per-bulletin
+    # label SLF publishes alongside each ``regionID`` — but those labels
+    # are not the EAWS canonical names (e.g. SLF labels CH-2133 "Stoos"
+    # whereas the EAWS reference calls it "Küssnacht - Arth"). Falling
+    # back to that field produced visibly-wrong headers for affected
+    # regions; preferring ``region.name`` keeps the page consistent with
+    # the URL, the map, and any other view that derives names from the
+    # MicroRegion fixture. The field is retained on the model as an
+    # ingestion-time audit trail but is no longer used for display.
+    region_name = region.name
+
+    # The masthead subtitles the H1 with the parent EAWS L2 sub-region.
+    # Prefer the English name where SLF publishes one, otherwise fall back
+    # to the locally-dominant native name. ``MicroRegion.subregion`` is
+    # non-nullable so this lookup is always safe.
+    subregion_name = (
+        region.subregion.name_en or region.subregion.name_native
+        if region.subregion
+        else ""
+    )
+
     if selected is None:
         response = _render_bulletin_page(
             request,
             {
                 "bulletin": None,
                 "region": region,
-                "region_name": region.name,
+                "region_name": region_name,
                 "region_id": region.region_id,
+                "slug": slugify(region.name),
+                "subregion_name": subregion_name,
                 "page_date": target_date,
+                "prev_date": prev_date,
+                "next_date": next_date,
                 "year": datetime.date.today().year,
                 "adjoining_regions": adjoining_regions,
                 "season_calendar": season_header(today),
@@ -1984,32 +2036,12 @@ def _bulletin_detail_response(
             patch_cache_control(response, public=True, max_age=60)
         return response
 
-    # The page represents the calendar day chosen in the URL, independent
-    # of which issue the viewer has selected — otherwise flipping to the
-    # same-day-evening issue would silently bump the header to D+1.
-    page_date = target_date
-
-    # Always use the EAWS canonical name from MicroRegion. The
-    # ``RegionBulletin.region_name_at_time`` field stores the per-bulletin
-    # label SLF publishes alongside each ``regionID`` — but those labels
-    # are not the EAWS canonical names (e.g. SLF labels CH-2133 "Stoos"
-    # whereas the EAWS reference calls it "Küssnacht - Arth"). Falling
-    # back to that field produced visibly-wrong headers for affected
-    # regions; preferring ``region.name`` keeps the page consistent with
-    # the URL, the map, and any other view that derives names from the
-    # MicroRegion fixture. The field is retained on the model as an
-    # ingestion-time audit trail but is no longer used for display.
-    region_name = region.name
-
-    # Day-based prev/next navigation.
-    prev_date, next_date = _get_nav_dates(region, page_date)
-
     is_today = page_date == today
     next_update_time: datetime.datetime | None = None
     now = timezone.now()
     if (
         is_today
-        and next_date is None
+        and not _has_later_bulletin(region, page_date)
         and selected.next_update
         and selected.next_update > now
     ):
@@ -2018,15 +2050,6 @@ def _bulletin_detail_response(
     panel = _build_panel_context(selected)
 
     day_windows: list[dict[str, Any]] = _build_day_windows(selected)
-    # The masthead subtitles the H1 with the parent EAWS L2 sub-region.
-    # Prefer the English name where SLF publishes one, otherwise fall back
-    # to the locally-dominant native name. ``MicroRegion.subregion`` is
-    # non-nullable so this lookup is always safe.
-    subregion_name = (
-        region.subregion.name_en or region.subregion.name_native
-        if region.subregion
-        else ""
-    )
 
     season_calendar = season_header(today)
 
