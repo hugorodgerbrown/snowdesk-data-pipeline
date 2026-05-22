@@ -4,7 +4,7 @@
 """
 subscriptions/services/email.py — Email delivery for the subscription flow.
 
-Provides three public functions:
+Provides two public functions:
 
 ``send_account_access_email(email, *, request=None)``
     Generates an account-access token, builds an absolute URL pointing at
@@ -17,16 +17,8 @@ Provides three public functions:
     account-access flow) so the link in the email lands directly on the
     manage page.  Includes the region name in the subject and body.
 
-``simulate_account_access_work(email)``
-    Performs the same token generation and template rendering as
-    ``send_account_access_email`` but does **not** call ``send_mail``.  Used
-    on the unknown-email branch of ``POST /subscribe/manage/`` so the CPU
-    timing profile roughly matches the real send path — a mitigation against
-    enumeration timing attacks against the re-auth endpoint.
-
-All three enqueue work via the django-tasks ``@task`` decorator so the SMTP
-round-trip runs off the request cycle, returning immediately and closing the
-timing-side-channel on the manage POST endpoint (SNOW-26).
+Both enqueue work via the django-tasks ``@task`` decorator so the SMTP
+round-trip runs off the request cycle, returning immediately (SNOW-26).
 
 In development and tests the ``ImmediateBackend`` runs tasks inline;
 production uses ``django_tasks_db.DatabaseBackend`` with a Render Background
@@ -209,36 +201,6 @@ def _worker_send_subscription_confirmation_email(
     )
 
 
-@task()
-def _worker_simulate_account_access_work(email: str) -> None:
-    """
-    Background worker: perform the CPU work of account-access email without sending.
-
-    Generates a token and renders both email templates but skips the
-    ``send_mail`` call.  Used on the unknown-email branch of
-    ``POST /subscribe/manage/`` so the enqueue-side timing profile matches
-    the real send path (both branches enqueue a task and return immediately).
-
-    Args:
-        email: The email address to use for token generation (not sent to).
-
-    """
-    token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
-    account_url = _build_account_url(token, None)
-    expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
-
-    context = {
-        "account_url": account_url,
-        "expiry_hours": expiry_hours,
-    }
-
-    # Render both templates to mirror the real code path's CPU cost.
-    render_to_string("subscriptions/emails/account_access.txt", context)
-    render_to_string("subscriptions/emails/account_access.html", context)
-
-    logger.debug("Simulated account-access work for %s (no message sent)", email)
-
-
 # ---------------------------------------------------------------------------
 # Public API — thin wrappers that extract request data and enqueue a worker.
 # ---------------------------------------------------------------------------
@@ -286,18 +248,3 @@ def send_subscription_confirmation_email(
     """
     base_url = _extract_base_url(request)
     _worker_send_subscription_confirmation_email.enqueue(email, region.name, base_url)
-
-
-def simulate_account_access_work(email: str) -> None:
-    """
-    Enqueue the CPU work of ``send_account_access_email`` without sending.
-
-    Both the real send path and this path enqueue a task and return
-    immediately, so the request-handler timing is indistinguishable — the
-    SNOW-26 timing-side-channel mitigation.
-
-    Args:
-        email: The email address to use for token generation (not sent to).
-
-    """
-    _worker_simulate_account_access_work.enqueue(email)

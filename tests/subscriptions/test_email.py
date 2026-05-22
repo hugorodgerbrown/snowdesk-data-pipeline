@@ -8,7 +8,6 @@ Covers:
   - send_subscription_confirmation_email sends one email with region name in
     subject/body; the embedded URL round-trips through verify_token with
     SALT_ACCOUNT_ACCESS.
-  - simulate_account_access_work does not send any email.
 """
 
 from typing import cast
@@ -23,7 +22,6 @@ from pytest_django.fixtures import SettingsWrapper
 from subscriptions.services.email import (
     send_account_access_email,
     send_subscription_confirmation_email,
-    simulate_account_access_work,
 )
 from subscriptions.services.token import SALT_ACCOUNT_ACCESS, verify_token
 from tests.factories import MicroRegionFactory
@@ -220,17 +218,3 @@ class TestSendSubscriptionConfirmationEmail:
         assert "WSL Institute for Snow and Avalanche Research SLF" in html
         assert "https://www.slf.ch" in html
         assert "CC BY 4.0" in html
-
-
-@pytest.mark.django_db
-class TestSimulateAccountAccessWork:
-    """The manage-POST unknown-email timing equaliser."""
-
-    def test_sends_no_email(self) -> None:
-        """simulate_account_access_work must not populate mail.outbox."""
-        simulate_account_access_work("ghost@example.com")
-        assert len(mail.outbox) == 0
-
-    def test_executes_without_error(self) -> None:
-        """Should run token-gen + template-render cleanly for any string email."""
-        simulate_account_access_work("anyone@example.com")
