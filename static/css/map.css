@@ -381,16 +381,17 @@
     border-top: 0.5px solid var(--border);
 }
 
-/* Collapsible danger-scale legend (SNOW-38) — bottom-left overlay,
-   anchored above the season scrubber. The card is absolutely positioned
-   relative to the container so toggling it does not reflow the page.
+/* Collapsible map-info panel (SNOW-38, redesigned SNOW-230) — top-left
+   overlay holding the danger-scale legend, the active tile attribution,
+   and the SLF data licence. Single (i) entry point so map chrome stays
+   uncluttered. The card is absolutely positioned relative to the toggle
+   and opens to the right so it never collides with the scrubber.
    Stacking: scrubber=2, legend=3, utility cluster=4. */
 
 .map-legend {
     position: absolute;
     left: calc(env(safe-area-inset-left, 0px) + 12px);
-    /* 12px scrubber bottom + ~40px scrubber height + 12px gap. */
-    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
     z-index: 3;
     display: flex;
     align-items: center;
@@ -408,7 +409,11 @@
     bottom: 100%;
     left: var(--thumb-pct, 50%);
     transform: translateX(-50%);
-    margin-bottom: 8px;
+    /* Lift the pill above the entire scrubber container, not just the 3px
+       track. The scrubber pill is ~43px tall with the track at its
+       vertical centre (20px from the top), so a 22px margin-bottom pushes
+       the pill 2px clear of the scrubber's top edge. */
+    margin-bottom: 22px;
     height: 28px;
     padding: 0 10px;
     display: inline-flex;
@@ -449,11 +454,12 @@
 
 .map-legend-card {
     position: absolute;
-    /* Anchor above the (i) toggle (the rightmost item in the flex row). */
-    right: 0;
-    bottom: 40px;            /* 32px button + 8px gap */
-    min-width: 132px;
-    padding: 8px 10px;
+    /* Anchor to the right of the (i) toggle, top-aligned with it. */
+    left: 40px;              /* 32px button + 8px gap */
+    top: 0;
+    min-width: 200px;
+    max-width: 260px;
+    padding: 10px 12px;
     background: var(--color-glass);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
@@ -463,11 +469,38 @@
     font-size: 11px;
     line-height: 1.5;
     color: var(--color-text-1);
-    transform-origin: bottom right;
+    transform-origin: top left;
     opacity: 0;
-    transform: translateY(4px) scale(0.98);
+    transform: translateX(-4px) scale(0.98);
     pointer-events: none;
     transition: opacity 160ms ease-out, transform 160ms ease-out;
+}
+
+/* Hairline divider between the three sections of the info card so the
+   legend, map attribution and bulletin attribution read as separate
+   groups without needing extra chrome. */
+.map-legend-section + .map-legend-section {
+    border-top: 0.5px solid var(--color-border);
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+/* Attribution text styling — smaller and more muted than the legend rows
+   so the legend remains the primary read in the card. */
+.map-legend-attribution {
+    margin: 0;
+    font-size: 10px;
+    line-height: 1.4;
+    color: var(--color-text-2);
+}
+
+.map-legend-attribution-link {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.map-legend-attribution-link:hover {
+    color: var(--color-text-1);
 }
 
 .map-legend[data-state="expanded"] .map-legend-card {
@@ -676,7 +709,7 @@
     position: absolute;
     left: 12px;
     right: 12px;
-    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(5px + env(safe-area-inset-bottom, 0px));
     z-index: 2;
 }
 
@@ -741,13 +774,13 @@
     display: none;
 }
 
-/* Inline play / stop button on the scrubber. Sits at the left edge as a
-   filled dark circle echoing the thumb visual, so the scrubber reads as
-   a single unified time-control surface. SVG state is swapped via the
-   data-state attribute set by static/js/map.js. */
+/* Inline play / stop button on the scrubber. Same 22×22 geometry as the
+   skip and fast-forward buttons so the transport reads as a uniform row;
+   the filled dark fill picks it out as the primary action. SVG state is
+   swapped via the data-state attribute set by static/js/map.js. */
 .scrubber-play {
-    width: 28px;
-    height: 28px;
+    width: 22px;
+    height: 22px;
     background: var(--ink);
     color: var(--on-ink);
     border: none;

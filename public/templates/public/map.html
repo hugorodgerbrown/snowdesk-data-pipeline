@@ -296,54 +296,92 @@
             {# data" reports). Removed wholesale.                          #}
             <ul id="search-results" class="search-results" role="listbox" hidden></ul>
         </div>
-        {# Collapsible danger-scale legend (SNOW-38). Anchored bottom-left, #}
-        {# above the season scrubber. Card is absolutely positioned        #}
-        {# relative to the container so toggling it never reflows the page.#}
+        {% comment %}
+        Map info panel (SNOW-38, redesigned SNOW-230). A single (i) toggle
+        at top-left expands a card with three sections: today's danger
+        scale, map-tile attribution (populated by map.js from each source's
+        attribution string), and avalanche-data attribution (SLF CC BY 4.0).
+        Replaces what used to be three separate UI surfaces — the legend,
+        the MapLibre attribution control, and the site footer line.
+        {% endcomment %}
         <div id="map-legend" class="map-legend" data-state="collapsed">
             <div
                 class="map-legend-card"
                 id="map-legend-card"
                 role="region"
-                aria-label='{% trans "Avalanche danger legend" %}'
+                aria-label='{% trans "Map information" %}'
             >
-                <div class="map-legend-title">{% trans "Today" %}</div>
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--low"
-                        aria-hidden="true"
-                    ></span>{% trans "Low (1)" %}
-                </div>
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--moderate"
-                        aria-hidden="true"
-                    ></span>{% trans "Moderate (2)" %}
-                </div>
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--considerable"
-                        aria-hidden="true"
-                    ></span>{% trans "Considerable (3)" %}
-                </div>
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--high"
-                        aria-hidden="true"
-                    ></span>{% trans "High (4)" %}
-                </div>
-                {# SNOW-78: Resorts overlay legend entry — only meaningful   #}
-                {# when the user has enabled the layer in the basemap menu, #}
-                {# but rendered unconditionally so the legend is a complete #}
-                {# key for everything the map can show.                      #}
-                <div class="map-legend-row" data-testid="map-legend-resorts">
-                    <span class="map-legend-pin" aria-hidden="true"></span>{% trans "Resorts" %}
-                </div>
+                <section class="map-legend-section">
+                    <div class="map-legend-title">{% trans "Today" %}</div>
+                    <div class="map-legend-row">
+                        <span
+                            class="map-legend-swatch map-legend-swatch--low"
+                            aria-hidden="true"
+                        ></span>{% trans "Low (1)" %}
+                    </div>
+                    <div class="map-legend-row">
+                        <span
+                            class="map-legend-swatch map-legend-swatch--moderate"
+                            aria-hidden="true"
+                        ></span>{% trans "Moderate (2)" %}
+                    </div>
+                    <div class="map-legend-row">
+                        <span
+                            class="map-legend-swatch map-legend-swatch--considerable"
+                            aria-hidden="true"
+                        ></span>{% trans "Considerable (3)" %}
+                    </div>
+                    <div class="map-legend-row">
+                        <span
+                            class="map-legend-swatch map-legend-swatch--high"
+                            aria-hidden="true"
+                        ></span>{% trans "High (4)" %}
+                    </div>
+                    {% comment %}
+                    SNOW-78: Resorts overlay legend entry — only meaningful
+                    when the user has enabled the layer in the basemap menu,
+                    but rendered unconditionally so the legend is a complete
+                    key for everything the map can show.
+                    {% endcomment %}
+                    <div class="map-legend-row" data-testid="map-legend-resorts">
+                        <span class="map-legend-pin" aria-hidden="true"></span>{% trans "Resorts" %}
+                    </div>
+                </section>
+                <section class="map-legend-section">
+                    <div class="map-legend-title">{% trans "Map data" %}</div>
+                    {% comment %}
+                    Populated by map.js from the current style's source
+                    attributions; refreshed on every basemap swap. The
+                    placeholder text is replaced before paint completes.
+                    {% endcomment %}
+                    <p id="map-attribution-text" class="map-legend-attribution"></p>
+                </section>
+                <section class="map-legend-section">
+                    <div class="map-legend-title">{% trans "Avalanche data" %}</div>
+                    <p class="map-legend-attribution">
+                        {% blocktrans trimmed %}
+                            <a
+                                class="map-legend-attribution-link"
+                                href="https://www.slf.ch"
+                                target="_blank"
+                                rel="noopener"
+                            >WSL Institute for Snow and Avalanche Research SLF</a>
+                            &middot; Licensed under
+                            <a
+                                class="map-legend-attribution-link"
+                                href="https://creativecommons.org/licenses/by/4.0/"
+                                target="_blank"
+                                rel="noopener"
+                            >CC BY 4.0</a>
+                        {% endblocktrans %}
+                    </p>
+                </section>
             </div>
             <button
                 id="map-legend-toggle"
                 type="button"
                 class="map-legend-toggle"
-                aria-label='{% trans "Show avalanche danger legend" %}'
+                aria-label='{% trans "Map information" %}'
                 aria-expanded="false"
                 aria-controls="map-legend-card"
             >

@@ -270,10 +270,35 @@ const clearRegionRepaint = () => {
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
 
-  // SNOW-230: place the attribution puck at top-right so it doesn't
-  // compete with the bottom-pinned scrubber. The compact (i) toggle sits
-  // below the utility cluster via MapLibre's own top-right slot stacking.
-  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'top-right');
+  // SNOW-230: render tile attribution inside the unified map-info panel
+  // rather than as a separate MapLibre corner control. We walk the active
+  // style's sources and join their unique attribution strings, refreshing
+  // on every basemap swap so the panel always reflects the current tile
+  // provider. MapLibre's own attribution control is disabled via
+  // ``attributionControl: false`` on the Map constructor above.
+  const attributionTarget = document.getElementById('map-attribution-text');
+  const updateMapAttribution = () => {
+    if (!attributionTarget) return;
+    const style = map.getStyle && map.getStyle();
+    if (!style || !style.sources) return;
+    const seen = new Set();
+    // ``getStyle().sources`` returns the static style config, which does
+    // not include the attribution string for tilejson-backed sources —
+    // that arrives on the runtime ``Source`` instance after the tilejson
+    // resolves. ``map.getSource(id)`` is the public path to that
+    // instance, mirroring what MapLibre's own AttributionControl uses.
+    for (const id of Object.keys(style.sources)) {
+      const src = map.getSource(id);
+      if (src && src.attribution) seen.add(src.attribution);
+    }
+    // Source attribution strings carry trusted HTML (provider links) — we
+    // assign innerHTML rather than textContent so the same anchors that
+    // MapLibre's stock AttributionControl renders stay clickable. The
+    // basemap URLs are server-controlled, so the trust boundary matches.
+    attributionTarget.innerHTML = Array.from(seen).join(' &middot; ');
+  };
+  map.on('sourcedata', updateMapAttribution);
+  map.on('style.load', updateMapAttribution);
 
   // SNOW-68: log zoom level on each zoom gesture when debug mode is active.
   // Also logs visible bounds on every move (zoom or pan) so the current
@@ -1915,6 +1940,14 @@ const clearRegionRepaint = () => {
     if (Number.isNaN(dateMs)) return;
     const pct = Math.max(0, Math.min(100, ((dateMs - seasonStartMs) / seasonSpanMs) * 100));
     scrubberThumb.style.left = pct + '%';
+    // Keep aria-valuenow in lock-step with the visual thumb position so
+    // ``currentFrameIdx`` resumes from the right spot when the user stops
+    // playback mid-season and then presses play again — without this,
+    // the next start() falls back to the last user-committed pct rather
+    // than the last frame painted by the timelapse.
+    if (scrubber) {
+      scrubber.setAttribute('aria-valuenow', String(Math.round(pct)));
+    }
   };
 
   // Determine the frame index to start from so playback begins at the
@@ -2068,50 +2101,30 @@ const clearRegionRepaint = () => {
     });
   }
 
-  // Skip-to-start: jump to the first date in the season.
-  // Falls back to data-season-start before the ratings cache resolves.
+  // Skip-to-start / skip-to-end: jump the thumb to the first/last data
+   // day. Falls back to ``data-season-start``/``data-season-end`` before
+  // the ratings cache resolves. moveScrubber owns the thumb position +
+  // aria-valuenow update; the synthetic date-changed event (source:
+  // 'scrubber') causes the running timelapse to surrender control via
+  // its own listener.
+  const commitJump = (target) => {
+    if (!target) return;
+    if (cache) repaintRegionsForDate(target, cache);
+    moveScrubber(target);
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+      detail: { date: target, source: 'scrubber' },
+    }));
+  };
+
   if (skipStartButton) {
     skipStartButton.addEventListener('click', () => {
-      const target = sortedDates
-        ? sortedDates[0]
-        : (scrubber ? scrubber.dataset.seasonStart : null);
-      if (target) {
-        // Call repaint + moveScrubber directly (both are module-scope) and
-        // update aria-valuenow here, mirroring the math in
-        // seasonScrubberInit's dateKeyToPct. A custom event announces the
-        // committed date to sibling IIFEs (date pill, timelapse).
-        if (cache) repaintRegionsForDate(target, cache);
-        moveScrubber(target);
-        if (scrubber && Number.isFinite(seasonSpanMs) && seasonSpanMs > 0) {
-          const ms = Date.parse(target);
-          const pct = Number.isNaN(ms) ? 0 : Math.max(0, Math.min(100, ((ms - seasonStartMs) / seasonSpanMs) * 100));
-          scrubber.setAttribute('aria-valuenow', String(Math.round(pct)));
-        }
-        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
-          detail: { date: target, source: 'scrubber' },
-        }));
-      }
+      commitJump(sortedDates ? sortedDates[0] : (scrubber ? scrubber.dataset.seasonStart : null));
     });
   }
 
-  // Skip-to-end: jump to the last date in the season.
   if (skipEndButton) {
     skipEndButton.addEventListener('click', () => {
-      const target = sortedDates
-        ? sortedDates[sortedDates.length - 1]
-        : (scrubber ? scrubber.dataset.seasonEnd : null);
-      if (target) {
-        if (cache) repaintRegionsForDate(target, cache);
-        moveScrubber(target);
-        if (scrubber && Number.isFinite(seasonSpanMs) && seasonSpanMs > 0) {
-          const ms = Date.parse(target);
-          const pct = Number.isNaN(ms) ? 100 : Math.max(0, Math.min(100, ((ms - seasonStartMs) / seasonSpanMs) * 100));
-          scrubber.setAttribute('aria-valuenow', String(Math.round(pct)));
-        }
-        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
-          detail: { date: target, source: 'scrubber' },
-        }));
-      }
+      commitJump(sortedDates ? sortedDates[sortedDates.length - 1] : (scrubber ? scrubber.dataset.seasonEnd : null));
     });
   }
 })();
