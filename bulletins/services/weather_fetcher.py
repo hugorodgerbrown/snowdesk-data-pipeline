@@ -40,12 +40,12 @@ dispatcher used by the bulletin page render:
       Schedules an idempotent inline fetch on a background daemon thread so
       ``bulletin_detail`` can return immediately on prefetched past-date page
       renders. Routes to the archive or forecast fetcher based on whether
-      ``target_date`` is in the past. Mirrors the
-      ``subscriptions.services.email._dispatch_async`` pattern: settings toggle
-      ``WEATHER_FETCH_ASYNC`` flips the work synchronous for tests, exceptions
-      are swallowed at WARNING, and the per-thread DB connection is closed in
-      ``finally`` (skipped on the main thread to keep sync-mode tests' own
-      transaction connection alive). See ``docs/async-operations.md``.
+      ``target_date`` is in the past. Uses a daemon-thread dispatch pattern:
+      settings toggle ``WEATHER_FETCH_ASYNC`` flips the work synchronous for
+      tests, exceptions are swallowed at WARNING, and the per-thread DB
+      connection is closed in ``finally`` (skipped on the main thread to keep
+      sync-mode tests' own transaction connection alive). See
+      ``docs/async-operations.md``.
 
 Uses ``requests`` with a 30-second timeout (matching data_fetcher.py's pattern).
 Per-region HTTP failures bubble up from the single-region functions; the wrapper

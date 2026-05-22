@@ -10,22 +10,18 @@ Covers:
     SALT_ACCOUNT_ACCESS.
 """
 
-import threading
-import time
 from typing import cast
 
 import pytest
 from django.conf import settings
 from django.core import mail
 from django.core.mail import EmailMultiAlternatives
-from django.test import RequestFactory, override_settings
+from django.test import RequestFactory
 from pytest_django.fixtures import SettingsWrapper
 
 from subscriptions.services.email import (
-    _dispatch_async,
     send_account_access_email,
     send_subscription_confirmation_email,
-    simulate_account_access_work,
 )
 from subscriptions.services.token import SALT_ACCOUNT_ACCESS, verify_token
 from tests.factories import MicroRegionFactory
@@ -222,75 +218,3 @@ class TestSendSubscriptionConfirmationEmail:
         assert "WSL Institute for Snow and Avalanche Research SLF" in html
         assert "https://www.slf.ch" in html
         assert "CC BY 4.0" in html
-
-
-@pytest.mark.django_db
-class TestSimulateAccountAccessWork:
-    """The manage-POST unknown-email timing equaliser."""
-
-    def test_sends_no_email(self) -> None:
-        """simulate_account_access_work must not populate mail.outbox."""
-        simulate_account_access_work("ghost@example.com")
-        assert len(mail.outbox) == 0
-
-    def test_executes_without_error(self) -> None:
-        """Should run token-gen + template-render cleanly for any string email."""
-        simulate_account_access_work("anyone@example.com")
-
-
-class TestDispatchAsync:
-    """SNOW-26: _dispatch_async sync gate, async return, and exception logging."""
-
-    @override_settings(SUBSCRIPTIONS_EMAIL_ASYNC=True)
-    def test_returns_before_callable_finishes(self) -> None:
-        """With async on, the dispatcher must return before the callable runs."""
-        done = threading.Event()
-
-        def slow() -> None:
-            time.sleep(0.5)
-            done.set()
-
-        t0 = time.perf_counter()
-        _dispatch_async(slow)
-        elapsed = time.perf_counter() - t0
-        assert elapsed < 0.1, f"_dispatch_async blocked for {elapsed:.3f}s"
-        assert done.wait(timeout=2.0), "Background callable never completed"
-
-    @override_settings(SUBSCRIPTIONS_EMAIL_ASYNC=False)
-    def test_runs_synchronously_when_disabled(self) -> None:
-        """With async off, the callable runs inline before _dispatch_async returns."""
-        called: list[int] = []
-        _dispatch_async(lambda: called.append(1))
-        assert called == [1]
-
-    @override_settings(SUBSCRIPTIONS_EMAIL_ASYNC=True)
-    def test_exception_in_thread_is_logged_not_raised(self) -> None:
-        """Exceptions inside the daemon thread are caught and logged."""
-        import logging
-
-        # The "subscriptions" logger sets propagate=False (see config/settings
-        # /base.py LOGGING), so pytest's caplog cannot see records from it.
-        # Attach a handler directly to the email-service logger instead.
-        captured: list[logging.LogRecord] = []
-
-        class _Listener(logging.Handler):
-            def emit(self, record: logging.LogRecord) -> None:
-                captured.append(record)
-
-        log = logging.getLogger("subscriptions.services.email")
-        listener = _Listener(level=logging.ERROR)
-        log.addHandler(listener)
-        try:
-
-            def boom() -> None:
-                raise RuntimeError("smtp died")
-
-            _dispatch_async(boom)
-            # Give the daemon thread a moment to run and emit the log record.
-            time.sleep(0.1)
-        finally:
-            log.removeHandler(listener)
-
-        assert any(
-            "Background email dispatch" in record.getMessage() for record in captured
-        ), f"Expected dispatch-error log; got {[r.getMessage() for r in captured]!r}"

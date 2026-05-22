@@ -4,7 +4,7 @@
 """
 subscriptions/services/email.py — Email delivery for the subscription flow.
 
-Provides three public functions:
+Provides two public functions:
 
 ``send_account_access_email(email, *, request=None)``
     Generates an account-access token, builds an absolute URL pointing at
@@ -17,29 +17,29 @@ Provides three public functions:
     account-access flow) so the link in the email lands directly on the
     manage page.  Includes the region name in the subject and body.
 
-``simulate_account_access_work(email)``
-    Performs the same token generation and template rendering as
-    ``send_account_access_email`` but does **not** call ``send_mail``.  Used
-    on the unknown-email branch of ``POST /subscribe/manage/`` so the CPU
-    timing profile roughly matches the real send path — a mitigation against
-    enumeration timing attacks against the re-auth endpoint.
+Both enqueue work via the django-tasks ``@task`` decorator so the SMTP
+round-trip runs off the request cycle, returning immediately (SNOW-26).
 
-All three are dispatched through ``_dispatch_async`` so the SMTP round-trip
-runs on a daemon thread and the request handler returns immediately, closing
-the timing-side-channel on the manage POST endpoint (SNOW-26).
+In development and tests the ``ImmediateBackend`` runs tasks inline;
+production uses ``django_tasks_db.DatabaseBackend`` with a Render Background
+Worker consuming the queue via ``python manage.py db_worker``.
+
+Worker functions receive only JSON-serialisable primitives (str, int) so they
+can be serialised into the DB and replayed on retry.  Token generation is
+deferred into the worker so that a retry issues a fresh token rather than
+replaying a potentially-stale one.
 """
 
 from __future__ import annotations
 
 import logging
-import threading
-from collections.abc import Callable
 
 from django.conf import settings
 from django.core.mail import send_mail
 from django.http import HttpRequest
 from django.template.loader import render_to_string
 from django.utils.translation import gettext_lazy
+from django_tasks import task
 
 from regions.models import MicroRegion
 
@@ -57,82 +57,74 @@ _SUBJECT_ACCESS = gettext_lazy("Your Snowdesk account link")
 _SUBJECT_SUBSCRIBED = gettext_lazy("Snowdesk: you're subscribed to %(region_name)s")
 
 
-def _build_account_url(token: str, request: HttpRequest | None) -> str:
+def _build_account_url(token: str, base_url: str | None) -> str:
     """
     Build the absolute account-access URL for a given token.
 
-    Uses ``request.build_absolute_uri()`` when available; falls back to
-    ``settings.SITE_BASE_URL`` so that callers outside a request context
-    (management commands, background tasks) still produce a valid URL.
+    Uses ``base_url`` when provided; falls back to ``settings.SITE_BASE_URL``
+    so that callers outside a request context (management commands, background
+    tasks) still produce a valid URL.
 
     Args:
         token: The signed token string.
-        request: Optional incoming HTTP request.
+        base_url: Optional absolute base URL (scheme + host) extracted from
+            the originating request before enqueueing.
 
     Returns:
         Absolute URL string, e.g. ``https://example.com/subscribe/account/<token>/``.
 
     """
     path = f"{_ACCOUNT_PATH_PREFIX}{token}/"
-    if request is not None:
-        return request.build_absolute_uri(path)
-    base = getattr(settings, "SITE_BASE_URL", "http://localhost:8000").rstrip("/")
-    return f"{base}{path}"
+    resolved_base = (
+        base_url
+        if base_url is not None
+        else getattr(settings, "SITE_BASE_URL", "http://localhost:8000").rstrip("/")
+    )
+    return f"{resolved_base.rstrip('/')}{path}"
 
 
-def _dispatch_async(callable_: Callable[[], None]) -> None:
+def _extract_base_url(request: HttpRequest | None) -> str | None:
     """
-    Dispatch a zero-arg callable on a background daemon thread.
+    Extract the absolute base URL (scheme + host) from an HTTP request.
 
-    Runs the callable synchronously instead when
-    ``settings.SUBSCRIPTIONS_EMAIL_ASYNC`` is False.
-
-    Used to keep SMTP I/O off the request-handling thread so that response
-    timing does not leak SMTP round-trip cost on ``POST /subscribe/manage/``
-    (SNOW-26).
-
-    Exceptions raised inside the background thread are caught and logged
-    through this module's logger; they would otherwise vanish silently when
-    the daemon thread exits.
+    Returns ``None`` when no request is available; ``_build_account_url``
+    falls back to ``settings.SITE_BASE_URL`` in that case.
 
     Args:
-        callable_: Zero-argument callable, typically a closure that calls
-            ``send_mail`` or performs equivalent CPU-bound work.
+        request: Optional incoming HTTP request.
+
+    Returns:
+        Absolute base URL string (no trailing slash) or ``None``.
 
     """
-    if not getattr(settings, "SUBSCRIPTIONS_EMAIL_ASYNC", True):
-        callable_()
-        return
-
-    def _run_safe() -> None:
-        """Invoke the callable, swallowing exceptions to protect the daemon thread."""
-        try:
-            callable_()
-        except Exception:
-            logger.exception("Background email dispatch raised")
-
-    threading.Thread(target=_run_safe, daemon=True).start()
+    if request is None:
+        return None
+    # build_absolute_uri("/") gives "https://host/" — strip the trailing slash.
+    return request.build_absolute_uri("/").rstrip("/")
 
 
-def send_account_access_email(
-    email: str,
-    *,
-    request: HttpRequest | None = None,
-) -> None:
+# ---------------------------------------------------------------------------
+# Worker functions — decorated with @task so django-tasks can enqueue and
+# replay them.  Each accepts only JSON-serialisable primitives.
+# ---------------------------------------------------------------------------
+
+
+@task()
+def _worker_send_account_access_email(email: str, base_url: str | None) -> None:
     """
-    Send an account-access email to ``email``.
+    Background worker: generate a token and send the account-access email.
 
-    Generates a short-lived token signed with ``SALT_ACCOUNT_ACCESS``,
-    builds an absolute URL, renders templates, and dispatches via the
-    configured ``EMAIL_BACKEND``.
+    Token generation is deferred into the worker so that a retry issues a
+    fresh token rather than replaying a stale one from the original enqueue.
 
     Args:
         email: Recipient email address.
-        request: Optional HttpRequest used to derive the absolute base URL.
+        base_url: Absolute base URL (scheme + host) extracted from the
+            originating request, or ``None`` to fall back to SITE_BASE_URL.
 
     """
     token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
-    account_url = _build_account_url(token, request)
+    account_url = _build_account_url(token, base_url)
     expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
 
     context = {
@@ -146,51 +138,46 @@ def send_account_access_email(
 
     logger.info("Sending account-access email to %s", email)
 
-    def _send() -> None:
-        """Dispatch the account-access email via Django's mail backend."""
-        send_mail(
-            subject=subject,
-            message=plain_body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            html_message=html_body,
-            fail_silently=False,
-        )
-
-    _dispatch_async(_send)
+    send_mail(
+        subject=subject,
+        message=plain_body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[email],
+        html_message=html_body,
+        fail_silently=False,
+    )
 
 
-def send_subscription_confirmation_email(
+@task()
+def _worker_send_subscription_confirmation_email(
     email: str,
-    *,
-    region: MicroRegion,
-    request: HttpRequest | None = None,
+    region_name: str,
+    base_url: str | None,
 ) -> None:
     """
-    Send a subscription confirmation email to an active subscriber.
+    Background worker: generate a token and send the subscription confirmation email.
 
-    Called when an already-active subscriber adds a new region via the
-    inline subscribe CTA.  Generates an account-access token (same salt as
-    ``send_account_access_email``) so the embedded link lands directly on
-    the manage page without re-authentication.
+    Token generation is deferred into the worker so that a retry issues a
+    fresh token rather than replaying a stale one from the original enqueue.
 
     Args:
         email: Recipient email address.
-        region: The newly-added MicroRegion instance (provides ``region.name``).
-        request: Optional HttpRequest used to derive the absolute base URL.
+        region_name: Human-readable name of the newly-subscribed region.
+        base_url: Absolute base URL (scheme + host) extracted from the
+            originating request, or ``None`` to fall back to SITE_BASE_URL.
 
     """
     token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
-    account_url = _build_account_url(token, request)
+    account_url = _build_account_url(token, base_url)
     expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
 
     context = {
         "account_url": account_url,
         "expiry_hours": expiry_hours,
-        "region_name": region.name,
+        "region_name": region_name,
     }
 
-    subject = str(_SUBJECT_SUBSCRIBED % {"region_name": region.name})
+    subject = str(_SUBJECT_SUBSCRIBED % {"region_name": region_name})
     plain_body = render_to_string(
         "subscriptions/emails/account_subscribed.txt", context
     )
@@ -201,54 +188,63 @@ def send_subscription_confirmation_email(
     logger.info(
         "Sending subscription confirmation email to %s for region %s",
         email,
-        region.name,
+        region_name,
     )
 
-    def _send() -> None:
-        """Dispatch the subscription confirmation email via Django's mail backend."""
-        send_mail(
-            subject=subject,
-            message=plain_body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            html_message=html_body,
-            fail_silently=False,
-        )
-
-    _dispatch_async(_send)
+    send_mail(
+        subject=subject,
+        message=plain_body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[email],
+        html_message=html_body,
+        fail_silently=False,
+    )
 
 
-def simulate_account_access_work(email: str) -> None:
+# ---------------------------------------------------------------------------
+# Public API — thin wrappers that extract request data and enqueue a worker.
+# ---------------------------------------------------------------------------
+
+
+def send_account_access_email(
+    email: str,
+    *,
+    request: HttpRequest | None = None,
+) -> None:
     """
-    Perform the CPU work of ``send_account_access_email`` without sending.
+    Enqueue an account-access email to ``email``.
 
-    Generates a token and renders both email templates but skips the
-    ``send_mail`` call.  Used on the unknown-email branch of
-    ``POST /subscribe/manage/`` so the response timing profile matches the
-    real send path — both branches dispatch through ``_dispatch_async`` and
-    return to the client immediately, leaving any residual CPU work to
-    happen off-thread.
+    Extracts the base URL from ``request`` (if provided) before enqueueing so
+    the worker carries no request dependency.  Token generation is deferred to
+    the worker so a retry issues a fresh token.
 
     Args:
-        email: The email address to use for token generation (not sent to).
+        email: Recipient email address.
+        request: Optional HttpRequest used to derive the absolute base URL.
 
     """
+    base_url = _extract_base_url(request)
+    _worker_send_account_access_email.enqueue(email, base_url)
 
-    def _do_simulated_work() -> None:
-        """Generate a token and render templates without dispatching any email."""
-        token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
-        account_url = _build_account_url(token, None)
-        expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
 
-        context = {
-            "account_url": account_url,
-            "expiry_hours": expiry_hours,
-        }
+def send_subscription_confirmation_email(
+    email: str,
+    *,
+    region: MicroRegion,
+    request: HttpRequest | None = None,
+) -> None:
+    """
+    Enqueue a subscription confirmation email to an active subscriber.
 
-        # Render both templates to mirror the real code path's CPU cost.
-        render_to_string("subscriptions/emails/account_access.txt", context)
-        render_to_string("subscriptions/emails/account_access.html", context)
+    Called when an already-active subscriber adds a new region via the
+    inline subscribe CTA.  The embedded link uses an account-access token
+    so the subscriber lands directly on the manage page.
 
-        logger.debug("Simulated account-access work for %s (no message sent)", email)
+    Args:
+        email: Recipient email address.
+        region: The newly-added MicroRegion instance (provides ``region.name``).
+        request: Optional HttpRequest used to derive the absolute base URL.
 
-    _dispatch_async(_do_simulated_work)
+    """
+    base_url = _extract_base_url(request)
+    _worker_send_subscription_confirmation_email.enqueue(email, region.name, base_url)

@@ -97,3 +97,19 @@ CSRF_TRUSTED_ORIGINS = config(
 # if the enforcing policy causes an unexpected regression.
 CSP_ENABLED = config("CSP_ENABLED", default=True, cast=bool)
 CSP_REPORT_ONLY = config("CSP_REPORT_ONLY", default=True, cast=bool)
+
+# ---------------------------------------------------------------------------
+# django-tasks background task queue — production uses the ORM-backed backend
+# ---------------------------------------------------------------------------
+# DatabaseBackend persists tasks in the DB and retries on failure. Requires
+# a Render Background Worker service running ``python manage.py db_worker``.
+# Without an active worker, tasks accumulate in the DB but are not consumed.
+# The base.py default (ImmediateBackend) acts as a safe fallback, but
+# production explicitly sets DatabaseBackend for durability + off-thread send.
+
+TASKS = {
+    "default": {
+        "BACKEND": "django_tasks_db.DatabaseBackend",
+        "QUEUES": ["default"],
+    }
+}
