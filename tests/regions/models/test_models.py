@@ -211,3 +211,51 @@ class TestBulletinLatestValidFromDate:
         assert Bulletin.objects.filter(lang="en").latest_valid_from_date() == date(
             2026, 4, 15
         )
+
+
+@pytest.mark.django_db
+class TestBulletinEarliestValidToDate:
+    """Tests for ``BulletinQuerySet.earliest_valid_to_date()``."""
+
+    def test_returns_none_when_empty(self) -> None:
+        """Empty queryset returns ``None`` rather than raising."""
+        assert Bulletin.objects.earliest_valid_to_date() is None
+
+    def test_returns_min_valid_to_day(self) -> None:
+        """Returns the ``valid_to`` day of the oldest bulletin."""
+        BulletinFactory.create(
+            issued_at=datetime(2026, 4, 10, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 10, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 11, 12, 0, tzinfo=UTC),
+        )
+        BulletinFactory.create(
+            issued_at=datetime(2026, 4, 15, 8, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 15, 8, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 16, 17, 0, tzinfo=UTC),
+        )
+        BulletinFactory.create(
+            issued_at=datetime(2026, 4, 12, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 12, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 13, 12, 0, tzinfo=UTC),
+        )
+
+        assert Bulletin.objects.earliest_valid_to_date() == date(2026, 4, 11)
+
+    def test_honours_queryset_filters(self) -> None:
+        """Works off the chained queryset rather than the full table."""
+        BulletinFactory.create(
+            lang="en",
+            issued_at=datetime(2026, 4, 10, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 10, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 11, 12, 0, tzinfo=UTC),
+        )
+        BulletinFactory.create(
+            lang="de",
+            issued_at=datetime(2026, 4, 12, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 12, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 13, 12, 0, tzinfo=UTC),
+        )
+
+        assert Bulletin.objects.filter(lang="de").earliest_valid_to_date() == date(
+            2026, 4, 13
+        )
