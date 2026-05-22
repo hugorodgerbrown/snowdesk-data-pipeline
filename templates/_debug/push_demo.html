@@ -1,0 +1,105 @@
+{% extends "public/base.html" %}
+{% load static %}
+
+{% block title %}Push notifications — spike{% endblock %}
+
+{% block extra_head %}
+    <meta name="vapid-public-key" content="{{ vapid_public_key }}">
+{% endblock %}
+
+{% block content %}
+    <main class="max-w-3xl mx-auto px-4 py-8 space-y-6">
+        <header class="space-y-2">
+            <p class="text-text-3 text-sm uppercase tracking-wide">spike</p>
+            <h1 class="text-2xl font-semibold text-text-1">Web Push demo</h1>
+            <p class="text-text-2">
+                Enable push, then send a test notification to this device. On iOS, install Snowdesk to the home screen
+                first — Safari only delivers Web Push in standalone-PWA mode.
+            </p>
+        </header>
+
+        <section class="bg-card border border-border rounded-card p-4 space-y-2">
+            <h2 class="font-semibold text-text-1">State</h2>
+            <dl class="grid grid-cols-[8rem_1fr] gap-y-1 text-sm">
+                <dt class="text-text-3">Permission</dt>
+                <dd id="push-permission" class="text-text-1 font-mono">—</dd>
+                <dt class="text-text-3">Subscription</dt>
+                <dd id="push-state" class="text-text-1 font-mono">—</dd>
+                <dt class="text-text-3">Endpoint</dt>
+                <dd id="push-endpoint" class="text-text-1 font-mono break-all text-xs">—</dd>
+            </dl>
+            <div class="flex gap-2 pt-2">
+                <button
+                    id="push-enable"
+                    type="button"
+                    class="bg-status-considerable text-white px-3 py-2 rounded-sm text-sm"
+                >
+                    Enable push
+                </button>
+                <button
+                    id="push-disable"
+                    type="button"
+                    class="bg-card border border-border text-text-1 px-3 py-2 rounded-sm text-sm"
+                >
+                    Disable push
+                </button>
+            </div>
+        </section>
+
+        <section class="bg-card border border-border rounded-card p-4 space-y-3">
+            <h2 class="font-semibold text-text-1">Send a test push</h2>
+            <div class="grid gap-2">
+                <label class="text-sm text-text-2">Title
+                    <input
+                        id="push-title"
+                        type="text"
+                        value="Snowdesk"
+                        class="block w-full mt-1 px-2 py-1 bg-bg border border-border rounded-sm text-text-1"
+                    >
+                </label>
+                <label class="text-sm text-text-2">Body
+                    <input
+                        id="push-body"
+                        type="text"
+                        value="New bulletin available for your region."
+                        class="block w-full mt-1 px-2 py-1 bg-bg border border-border rounded-sm text-text-1"
+                    >
+                </label>
+                <label class="text-sm text-text-2">Open URL
+                    <input
+                        id="push-url"
+                        type="text"
+                        value="/"
+                        class="block w-full mt-1 px-2 py-1 bg-bg border border-border rounded-sm text-text-1"
+                    >
+                </label>
+            </div>
+            <button id="push-test" type="button" class="bg-status-considerable text-white px-3 py-2 rounded-sm text-sm">
+                Send test push to this device
+            </button>
+        </section>
+
+        <section class="bg-card border border-border rounded-card p-4 space-y-2">
+            <h2 class="font-semibold text-text-1">All stored subscriptions ({{ subscriptions.count }})</h2>
+            <ul class="text-xs text-text-2 space-y-1">
+                {% for sub in subscriptions %}
+                    <li class="font-mono break-all">
+                        {{ sub.subscriber.email|default:"(anon)" }}
+                        — {{ sub.endpoint|slice:":80" }}…
+                    </li>
+                {% empty %}
+                    <li class="text-text-3">No subscriptions yet.</li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        <section class="bg-card border border-border rounded-card p-4">
+            <h2 class="font-semibold text-text-1 mb-2">Log</h2>
+            <pre id="push-log" class="text-xs text-text-2 whitespace-pre-wrap min-h-[8rem]"></pre>
+        </section>
+    </main>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/push_demo.js' %}" defer></script>
+{% endblock %}

@@ -319,3 +319,73 @@ class PasskeyCredential(models.Model):
     def __str__(self) -> str:
         """Return a human-readable representation."""
         return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# PushSubscription (Web Push — spike)
+# ---------------------------------------------------------------------------
+
+
+class PushSubscriptionQuerySet(models.QuerySet["PushSubscription"]):
+    """Custom queryset for PushSubscription."""
+
+    def for_subscriber(self, subscriber: Subscriber) -> PushSubscriptionQuerySet:
+        """Return all push subscriptions belonging to the given subscriber."""
+        return self.filter(subscriber=subscriber)
+
+
+class PushSubscription(models.Model):
+    """
+    A browser/device Web Push subscription registered for a Subscriber.
+
+    Stores the three pieces returned by ``PushManager.subscribe()`` on the
+    client: the endpoint URL (one of Apple/Mozilla/Google's push services),
+    plus the P-256 ECDH ``p256dh`` key and HMAC ``auth`` secret used to
+    encrypt the payload.
+
+    For the spike we let ``subscriber`` be nullable so a staff tester on
+    the ``/_push-demo/`` page (which uses ``staff_member_required``, not
+    the regular subscriber session) can opt their device in without
+    needing a regular subscriber account first.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    subscriber = models.ForeignKey(
+        Subscriber,
+        on_delete=models.CASCADE,
+        related_name="push_subscriptions",
+        null=True,
+        blank=True,
+    )
+    endpoint = models.URLField(max_length=2048, unique=True)
+    p256dh = models.CharField(max_length=128)
+    auth = models.CharField(max_length=64)
+    user_agent = models.CharField(max_length=512, blank=True, default="")
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    objects: PushSubscriptionQuerySet = PushSubscriptionQuerySet.as_manager()  # type: ignore[assignment]
+
+    class Meta:
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+
+    def to_dict(self) -> dict[str, object]:
+        """Return the dict shape pywebpush expects as its first argument."""
+        return {
+            "endpoint": self.endpoint,
+            "keys": {"p256dh": self.p256dh, "auth": self.auth},
+        }
+
+    def to_string(self) -> str:
+        """Return a human-readable representation."""
+        who = self.subscriber.email if self.subscriber else "anon"
+        return f"{who} — {self.endpoint[:60]}…"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()

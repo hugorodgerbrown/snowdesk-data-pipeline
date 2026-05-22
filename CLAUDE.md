@@ -334,8 +334,12 @@ drift against this list on every PR.
    auto-escaping for data that originates outside the codebase.
 2. **Email addresses normalised to lowercase** before storage and lookup —
    `email = email.lower()` at every entry point.
-3. **Resend calls are always async** — never block the request cycle with a
-   synchronous email send; use `async_to_sync` only in management commands.
+3. **Subscription emails are always async** — never block the request cycle
+   with a synchronous SMTP send. Use `django_tasks.task` + `.enqueue()` to
+   dispatch email work off the request. The `ImmediateBackend` (dev/test) runs
+   tasks inline; `DatabaseBackend` (production) persists and dispatches via
+   `db_worker`. Direct `send_mail()` calls outside a `@task` worker are
+   prohibited on the hot request path.
 4. **HTMX partial views guarded by `require_htmx`** — every fragment endpoint
    must reject plain HTTP requests with a 400.
 5. **No secrets in source** — all credentials via `python-decouple`; `.env`
@@ -363,3 +367,4 @@ Read these when working in the relevant area:
 | Feature flags (django-waffle) | [`docs/feature-flags.md`](docs/feature-flags.md) |
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |
 | Async operations (background threads, failure modes) | [`docs/async-operations.md`](docs/async-operations.md) |
+| Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |

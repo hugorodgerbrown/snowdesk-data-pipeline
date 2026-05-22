@@ -49,6 +49,29 @@ def test_serve_sw_references_offline_fallback() -> None:
     assert b"OFFLINE_FALLBACK" in response.content
 
 
+def test_serve_sw_contains_push_event_handler() -> None:
+    """The SW source contains a 'push' event listener (SNOW-228 Web Push spike).
+
+    Asserts the static contract that ``addEventListener('push', ...)`` is
+    present in the SW source — a runtime test isn't possible in pytest since
+    the SW only executes inside a browser context.
+    """
+    client = Client()
+    response = client.get("/sw.js")
+    assert b"addEventListener('push'" in response.content
+
+
+def test_serve_sw_contains_notificationclick_handler() -> None:
+    """The SW source contains a 'notificationclick' event listener (SNOW-228).
+
+    Asserts that the handler that focuses or opens the target URL on
+    notification click is present in the SW source.
+    """
+    client = Client()
+    response = client.get("/sw.js")
+    assert b"addEventListener('notificationclick'" in response.content
+
+
 def test_offline_fallback_page_exists_on_disk() -> None:
     """``static/offline.html`` ships and contains the expected heading (SNOW-118)."""
     path = Path(settings.BASE_DIR) / "static" / "offline.html"
