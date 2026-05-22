@@ -830,3 +830,55 @@
     border-color: transparent;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
+
+/* Season scrubber loading state (SNOW-234).
+   While the season-ratings fetch is in flight the scrubber carries
+   data-state="loading". Transport buttons and the track are hidden via
+   display:none so pointer events are naturally suppressed until the data
+   arrives. The pill retains its full left:12px / right:12px footprint so
+   there is no layout reflow when the state switches to "ready".
+   The -demo variant mirrors the live widget class for the component library
+   demo wrapper, which uses class="season-scrubber-demo" instead of
+   class="season-scrubber". */
+.season-scrubber[data-state="loading"] .scrubber-transport-button,
+.season-scrubber-demo[data-state="loading"] .scrubber-transport-button {
+    display: none;
+}
+
+.season-scrubber[data-state="loading"] .season-scrubber-track,
+.season-scrubber-demo[data-state="loading"] .season-scrubber-track {
+    display: none;
+}
+
+/* Once the fetch resolves successfully, the loading placeholder is hidden.
+   Error state intentionally does NOT hide the placeholder — the JS error
+   path writes "Season data unavailable" into the element, so it must stay
+   visible. Controls are hidden in error state by the rule below. */
+.season-scrubber[data-state="ready"] .season-scrubber-loading,
+.season-scrubber-demo[data-state="ready"] .season-scrubber-loading {
+    display: none;
+}
+
+/* In error state the controls are hidden (no data to scrub) but the
+   loading/error placeholder remains visible so the user sees the message. */
+.season-scrubber[data-state="error"] .scrubber-transport-button,
+.season-scrubber-demo[data-state="error"] .scrubber-transport-button,
+.season-scrubber[data-state="error"] .season-scrubber-track,
+.season-scrubber-demo[data-state="error"] .season-scrubber-track {
+    display: none;
+}
+
+/* Loading / error placeholder text — centred single-line label that sits
+   inside the existing pill flex container. Inherits the pill's monospace
+   font stack and matches the muted label colour used elsewhere on the
+   scrubber (the date pill uses --ink; the placeholder is secondary copy). */
+.season-scrubber-loading {
+    flex: 1 1 auto;
+    text-align: center;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

@@ -414,7 +414,9 @@
             data-season-end="{{ season_end|date:'Y-m-d' }}"
             data-today="{{ today|date:'Y-m-d' }}"
             data-today-pct="{{ today_pct }}"
+            data-state="loading"
         >
+            <div class="season-scrubber-loading">{% trans "Season data loading…" %}</div>
             {% include "public/partials/_season_scrubber_controls.html" %}
         </div>
         {% if edit_mode %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}

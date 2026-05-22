@@ -245,6 +245,28 @@ def test_map_page_loads_vendored_maplibre_assets() -> None:
 
 
 @pytest.mark.django_db
+def test_map_page_renders_scrubber_loading_state() -> None:
+    """
+    SNOW-234: the scrubber is rendered with data-state="loading" and a
+    loading placeholder element so the user sees feedback immediately
+    while the season_ratings fetch is in flight. The transport controls
+    stay in the DOM (hidden by CSS) so map.js can wire behaviour onto
+    pre-existing nodes regardless of fetch timing.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'data-state="loading"' in content
+    assert "season-scrubber-loading" in content
+    assert "Season data loading" in content
+    # Transport controls must remain in the DOM (hidden by CSS only).
+    assert 'id="scrubber-play"' in content
+    assert 'id="scrubber-skip-start"' in content
+    assert 'id="scrubber-skip-end"' in content
+    assert 'id="scrubber-fast"' in content
+
+
+@pytest.mark.django_db
 class TestMapPageDataDrivenSeasonBounds:
     """
     SNOW-173: data-season-start / data-season-end reflect the actual

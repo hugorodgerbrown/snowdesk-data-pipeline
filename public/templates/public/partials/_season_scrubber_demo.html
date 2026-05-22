@@ -10,7 +10,17 @@ document flow rather than over a MapLibre viewport.
 No JS is wired to the buttons on this page — pressing them is a no-op.
 Variant context drives the static thumb position and date text so the
 library can show the pill at start, mid-season, and end positions.
+
+When `loading` is True in context, the pill renders in its loading state
+(SNOW-234): transport controls are hidden and a placeholder label is shown.
 {% endcomment %}
-<div class="season-scrubber-demo">
-    {% include "public/partials/_season_scrubber_controls.html" %}
-</div>
+{% if loading %}
+    <div class="season-scrubber-demo" data-state="loading">
+        <div class="season-scrubber-loading">{% trans "Season data loading…" %}</div>
+        {% include "public/partials/_season_scrubber_controls.html" %}
+    </div>
+{% else %}
+    <div class="season-scrubber-demo">
+        {% include "public/partials/_season_scrubber_controls.html" %}
+    </div>
+{% endif %}
