@@ -13,8 +13,14 @@ backfill action that triggers a full season re-ingest from the admin UI.
 Also includes the WeatherSnapshot admin with a one-click "Fetch today's
 weather" button that calls fetch_all_regions() directly from the
 changelist page.
+
+Also includes the PipelineRunAdmin with an upload UI for the Météo-France
+BRA NDJSON archive (SNOW-227) — operators can drop a ``bulletins.ndjson``
+file produced by the offline script pipeline directly into the production
+database without needing SSH access.
 """
 
+import io
 import json
 import logging
 from datetime import date
@@ -38,6 +44,7 @@ from bulletins.models import (
     WeatherSnapshot,
 )
 from bulletins.services.data_fetcher import run_pipeline
+from bulletins.services.mf_archive_loader import load_mf_archive
 from bulletins.services.weather_fetcher import fetch_all_regions
 from core.utils import html_to_markdown
 
@@ -46,7 +53,15 @@ logger = logging.getLogger(__name__)
 
 @admin.register(PipelineRun)
 class PipelineRunAdmin(admin.ModelAdmin):
-    """Admin view for PipelineRun."""
+    """Admin view for PipelineRun.
+
+    Extends the standard changelist with an "Upload MF archive" button that
+    lets operators load a ``bulletins.ndjson`` file (produced by the offline
+    Météo-France BRA pipeline) into the production database without needing
+    SSH access (SNOW-227).
+    """
+
+    change_list_template = "admin/bulletins/pipelinerun/change_list.html"
 
     list_display = [
         "id",
@@ -67,6 +82,81 @@ class PipelineRunAdmin(admin.ModelAdmin):
         "error_message",
     ]
     ordering = ["-started_at"]
+
+    def get_urls(self) -> list[URLPattern]:
+        """Add a custom URL for the MF archive upload endpoint."""
+        custom_urls = [
+            path(
+                "upload-mf-archive/",
+                self.admin_site.admin_view(self.upload_mf_archive_view),
+                name="bulletins_pipelinerun_upload_mf_archive",
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def upload_mf_archive_view(self, request: HttpRequest) -> HttpResponseRedirect:
+        """Handle the "Upload MF archive" form POST.
+
+        Reads the uploaded ``archive`` file, passes it to
+        ``load_mf_archive`` with ``commit=True``, and redirects back to
+        the PipelineRun changelist with an informative admin message.
+
+        Message levels:
+        - ``SUCCESS`` — all rows processed cleanly.
+        - ``WARNING`` — at least one row failed or had an unknown slug.
+        - ``ERROR`` — no file was provided, or an unexpected exception
+          occurred during processing.
+
+        A GET request is simply redirected to the changelist without
+        calling the loader.
+        """
+        changelist_url = reverse("admin:bulletins_pipelinerun_changelist")
+
+        if request.method != "POST":
+            return HttpResponseRedirect(changelist_url)
+
+        upload = request.FILES.get("archive")
+        if upload is None:
+            self.message_user(
+                request,
+                "No archive file was provided. Please select a .ndjson file to upload.",
+                messages.ERROR,
+            )
+            return HttpResponseRedirect(changelist_url)
+
+        logger.info(
+            "Admin MF archive upload: %s (%d bytes), triggered by %s",
+            upload.name,
+            upload.size,
+            request.user,
+        )
+
+        text_file = io.TextIOWrapper(upload, encoding="utf-8")
+        try:
+            result = load_mf_archive(
+                text_file,
+                commit=True,
+                triggered_by="admin upload",
+            )
+        except Exception:
+            logger.exception("Admin MF archive upload failed")
+            self.message_user(
+                request,
+                "Archive upload failed — check the server logs for details.",
+                messages.ERROR,
+            )
+            return HttpResponseRedirect(changelist_url)
+        finally:
+            text_file.detach()
+
+        summary = result.as_summary()
+        level = (
+            messages.WARNING
+            if result.failed > 0 or result.unknown_slug > 0
+            else messages.SUCCESS
+        )
+        self.message_user(request, summary, level)
+        return HttpResponseRedirect(changelist_url)
 
 
 class RegionBulletinInline(admin.TabularInline):
