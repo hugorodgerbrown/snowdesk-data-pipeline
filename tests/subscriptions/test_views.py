@@ -596,11 +596,18 @@ class TestSignInPostTimingSideChannel:
     """SNOW-26: known vs unknown email POST on sign_in must not leak via response time."""
 
     @override_settings(
-        SUBSCRIPTIONS_EMAIL_ASYNC=True,
+        TASKS={
+            "default": {
+                # DummyBackend enqueues tasks without executing them, so neither
+                # branch incurs SMTP cost in-request — the same timing profile
+                # a persistent (database-backed) production backend would give.
+                "BACKEND": "django.tasks.backends.dummy.DummyBackend",
+            }
+        },
         EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     )
     def test_known_and_unknown_response_time_within_bound(self) -> None:
-        """With async dispatch on, the known and unknown branches converge."""
+        """With DummyBackend, enqueue is off-request and both branches converge."""
         SubscriberFactory.create(email="known@example.com")
         client = Client()
         # Warm-up — first request pays template-cache and DB-connection cost.
