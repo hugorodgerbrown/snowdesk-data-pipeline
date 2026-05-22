@@ -50,7 +50,7 @@
 
 'use strict';
 
-const CACHE_VERSION = 'snowdesk-shell-v4';
+const CACHE_VERSION = 'snowdesk-shell-v5';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
