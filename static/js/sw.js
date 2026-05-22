@@ -50,7 +50,7 @@
 
 'use strict';
 
-const CACHE_VERSION = 'snowdesk-shell-v3';
+const CACHE_VERSION = 'snowdesk-shell-v4';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
@@ -241,4 +241,53 @@ self.addEventListener('message', (event) => {
   if (event.data === 'version') {
     event.source?.postMessage({ type: 'version', version: CACHE_VERSION });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Web Push (spike) — receive + click
+// ---------------------------------------------------------------------------
+//
+// The 'push' event fires when the OS push service delivers a payload to
+// this SW. We parse the JSON body the server sent (title, body, url) and
+// display a notification. On click we focus an existing tab on the
+// payload URL if one is already open, otherwise open a new window.
+
+self.addEventListener('push', (event) => {
+  let payload = { title: 'Snowdesk', body: '', url: '/' };
+  if (event.data) {
+    try {
+      payload = { ...payload, ...event.data.json() };
+    } catch (_err) {
+      payload.body = event.data.text();
+    }
+  }
+  const promise = self.registration.showNotification(payload.title, {
+    body: payload.body,
+    icon: '/static/icons/pwa/icon-192.png',
+    badge: '/static/icons/pwa/icon-192.png',
+    data: { url: payload.url },
+    tag: 'snowdesk-push',
+  });
+  event.waitUntil(promise);
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || '/';
+  const promise = (async () => {
+    const all = await self.clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true,
+    });
+    for (const client of all) {
+      if (new URL(client.url).pathname === target && 'focus' in client) {
+        return client.focus();
+      }
+    }
+    if (self.clients.openWindow) {
+      return self.clients.openWindow(target);
+    }
+    return null;
+  })();
+  event.waitUntil(promise);
 });

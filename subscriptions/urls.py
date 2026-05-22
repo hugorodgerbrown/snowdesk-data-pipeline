@@ -23,7 +23,7 @@ URL map
 
 from django.urls import path
 
-from . import views, views_passkey
+from . import push_views, views, views_passkey
 
 app_name = "subscriptions"
 
@@ -63,4 +63,8 @@ urlpatterns = [
         views_passkey.passkey_register_response,
         name="passkey_register_response",
     ),
+    # Web Push (spike)
+    path("push/register/", push_views.push_register, name="push_register"),
+    path("push/unregister/", push_views.push_unregister, name="push_unregister"),
+    path("push/test/", push_views.push_test, name="push_test"),
 ]
