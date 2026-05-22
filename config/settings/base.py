@@ -425,16 +425,6 @@ SITE_NAME = "Snowdesk"
 # the django_site fixture or by editing the Site table directly.
 SITE_ID = 1
 
-# Run outbound email on a background daemon thread so SMTP round-trip does not
-# block the request thread (closes the timing-side-channel on
-# POST /subscribe/manage/, SNOW-26).  Tests force this False in
-# tests/conftest.py so existing locmem mail.outbox assertions stay synchronous.
-SUBSCRIPTIONS_EMAIL_ASYNC = config(
-    "SUBSCRIPTIONS_EMAIL_ASYNC",
-    default=True,
-    cast=bool,
-)
-
 # ---------------------------------------------------------------------------
 # Background tasks (django.tasks — SNOW-229)
 # ---------------------------------------------------------------------------
