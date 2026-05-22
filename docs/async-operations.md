@@ -38,6 +38,12 @@ Background Worker service running:
 python manage.py db_worker
 ```
 
+The worker is documented in [`render.yaml`](../render.yaml) as
+`snowdesk-worker-tasks` alongside the web and cron services. Note that
+Blueprint auto-sync is **not** enabled — the worker must also be created
+manually in the Render dashboard before the deployed code can consume
+enqueued tasks.
+
 **Without an active `db_worker`, tasks accumulate in the DB but are not
 consumed.** The `ImmediateBackend` default in `base.py` acts as a safe fallback
 if a deployment forgets to set the production backend — mail is sent
