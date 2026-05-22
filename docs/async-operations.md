@@ -1,18 +1,59 @@
 # Async operations
 
-Background-thread work — anything dispatched off the request cycle — is a
-classic source of untraceable errors. This doc catalogues every fire-and-forget
-callsite in the Snowdesk codebase, the failure mode for each, and the on/off
-toggle if one exists.
+Background work — anything dispatched off the request cycle — is a classic
+source of untraceable errors. This doc catalogues every async callsite in the
+Snowdesk codebase, the failure mode for each, and the on/off toggle if one exists.
 
 ## Catalogue
 
 | Callsite | Trigger | Work | Persistence | Failure mode | Log channel | Toggle |
 |----------|---------|------|-------------|--------------|-------------|--------|
-| `subscriptions.services.email._dispatch_async` | Any of the three `send_*_email` functions on the subscriptions flow | SMTP send via Django's configured backend | None (mail provider is the persistence) | `Exception` caught, logged at ERROR via `logger.exception` | `subscriptions.services.email` | `SUBSCRIPTIONS_EMAIL_ASYNC` (default True; tests pin False) |
+| `subscriptions.services.email` — `_worker_send_account_access_email`, `_worker_send_subscription_confirmation_email`, `_worker_simulate_account_access_work` | Any of the three `send_*` / `simulate_*` public functions on the subscription flow | SMTP send via Django's configured backend (or, for the simulate path, token-gen + template-render without send) | `django_tasks_db.DatabaseBackend` in production (DB row); `ImmediateBackend` in dev/test (in-process, no persistence) | `django-tasks` captures unhandled exceptions and marks the task failed; failed tasks are visible in the admin under the `DbTaskResult` model; no silent loss | `subscriptions.services.email` | Backend setting: `TASKS["default"]["BACKEND"]` — `ImmediateBackend` for dev/test; `DatabaseBackend` for production |
 | `bulletins.services.weather_fetcher.fetch_weather_async` | `bulletin_detail` page render where no `WeatherSnapshot` exists for `(region, target_date)` and `target_date < today` | Idempotent DB pre-check, then `fetch_archive_for_region` / `fetch_weather_for_region` (Open-Meteo) | `WeatherSnapshot` row via `update_or_create` | `Exception` caught, logged at WARNING via `logger.warning(exc_info=True)`; `connections.close_all()` in `finally` so the thread releases its DB connection | `bulletins.services.weather_fetcher` | `WEATHER_FETCH_ASYNC` (default True; tests pin False) |
 
-## Django background-thread caveats
+## django-tasks backend split
+
+Snowdesk uses the third-party `django-tasks` package (PyPI: `django-tasks`,
+`django-tasks-db`) to enqueue subscription emails off the request cycle.
+
+### Development and tests
+
+`TASKS["default"]["BACKEND"]` is set to
+`"django_tasks.backends.immediate.ImmediateBackend"` in `development.py` (and
+inherited by the test settings). Tasks run **inline** in the same process the
+moment `.enqueue()` is called, so:
+
+- Email lands in Mailhog immediately during local dev.
+- `mail.outbox` is populated synchronously during tests — no fixture hacks needed.
+- No `db_worker` process is required.
+
+### Production
+
+`TASKS["default"]["BACKEND"]` is set to `"django_tasks_db.DatabaseBackend"` with
+`"QUEUES": ["default"]` in `production.py`. Tasks are serialised into the
+`django_tasks_database_dbtaskresult` table and consumed by a separate Render
+Background Worker service running:
+
+```
+python manage.py db_worker
+```
+
+**Without an active `db_worker`, tasks accumulate in the DB but are not
+consumed.** The `ImmediateBackend` default in `base.py` acts as a safe fallback
+if a deployment forgets to set the production backend — mail is sent
+synchronously rather than silently dropped — but production always sets
+`DatabaseBackend` explicitly.
+
+### Task retention
+
+`django_tasks_db` accumulates completed task results indefinitely unless
+`prune_db_task_results` is run. This is a candidate for a future scheduled
+management command. It is not in scope for SNOW-229.
+
+## Daemon-thread operations (`fetch_weather_async`)
+
+The weather-fetch path still uses a daemon thread (not `django-tasks`). The
+following caveats apply to that path only:
 
 - **Daemon threads do not block worker shutdown.** Gunicorn killing or
   recycling a worker (`--max-requests`, SIGTERM) leaves any in-flight
@@ -24,8 +65,7 @@ toggle if one exists.
   Long-running worker processes will leak connections under sustained
   background traffic unless the worker calls
   `django.db.connections.close_all()` in a `finally` clause. The
-  `fetch_weather_async` worker does this; `_dispatch_async` does not
-  need to because the email path does not touch the ORM.
+  `fetch_weather_async` worker does this.
 - **No request-cycle transaction.** Background threads run *outside* the
   request's atomic transaction. If you need atomicity across multiple DB
   writes inside the worker, wrap them in your own
@@ -37,10 +77,18 @@ toggle if one exists.
 
 ## When to add a new async operation
 
-1. Add the callsite to the catalogue above with all six columns filled in.
-2. Mirror the on/off toggle pattern: a `settings.<NAME>_ASYNC` (default
-   `True`) and a pin in `tests/conftest.py`.
-3. Wrap the work in `try/except Exception → logger.<level>(..., exc_info=True)`.
-4. Close DB connections in `finally` if the work touches the ORM.
-5. Make the work idempotent inside the worker — the snapshot/row might already
-   exist by the time the worker runs.
+**Prefer `django-tasks` over daemon threads for new work.** django-tasks gives
+durability (tasks survive process restart), visibility (admin UI over
+`DbTaskResult`), and retry without requiring custom error handling.
+
+1. Decorate the worker function with `@task()` from `django_tasks`.
+2. Accept only JSON-serialisable primitives in the worker signature — no
+   `HttpRequest`, no model instances, no callables.
+3. Add a thin public wrapper that extracts any request data and calls
+   `.enqueue()`. The wrapper matches the old sync signature so callers
+   need no changes.
+4. Add the callsite to the catalogue above with all columns filled in.
+5. If adding a daemon-thread operation instead (rare — prefer django-tasks),
+   mirror the on/off toggle pattern: a `settings.<NAME>_ASYNC` (default
+   `True`) and a pin in `tests/conftest.py`; wrap in `try/except Exception →
+   logger.<level>(..., exc_info=True)`; close DB connections in `finally`.

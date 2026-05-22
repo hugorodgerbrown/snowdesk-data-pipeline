@@ -56,11 +56,6 @@ DATABASES = {
 # (including the full test suite) are never throttled.
 RATELIMIT_ENABLE = False
 
-# Send email synchronously in development so Mailhog receives every message
-# immediately. The base-settings default (True) runs email on a daemon thread,
-# which can be killed by the dev server's auto-reloader before delivery.
-SUBSCRIPTIONS_EMAIL_ASYNC = False
-
 # Use ImmediateBackend in development: tasks run inline so email lands in
 # Mailhog immediately without needing a separate db_worker process.
 TASKS = {
