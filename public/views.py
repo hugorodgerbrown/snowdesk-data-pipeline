@@ -1538,7 +1538,14 @@ _DAY_WINDOW_PILL_LABELS: dict[str, Promise] = {
 
 
 def _parse_danger_rating(rating: dict[str, Any]) -> tuple[str, str, str]:
-    """Return ``(period, main_value, subdivision)`` for a CAAML dangerRating dict."""
+    """Return ``(period, main_value, subdivision)`` for a CAAML dangerRating dict.
+
+    This function reads the raw CAAML shape (with ``customData.CH.subdivision``).
+    It is kept for use by ``_danger_rank`` and ``_max_rating_per_period`` which
+    are used by the ``build_problem_cards`` path. New code should use
+    ``_rm_danger_rank`` and ``_max_rm_rating_per_period`` which operate on the
+    projected ``danger.ratings`` entries.
+    """
     period = rating.get("validTimePeriod") or "all_day"
     level = rating.get("mainValue") or ""
     raw_sub = (rating.get("customData") or {}).get("CH", {}).get("subdivision", "")
@@ -1546,15 +1553,29 @@ def _parse_danger_rating(rating: dict[str, Any]) -> tuple[str, str, str]:
 
 
 def _danger_rank(level: str, sub: str) -> tuple[int, int]:
-    """Return a sortable rank for a danger level + subdivision pair.
+    """Return a sortable rank for a danger level + raw-token subdivision pair.
 
-    Band index from ``_DANGER_ORDER`` is the primary key; subdivision maps to
-    an integer offset (minus → -1, neutral/absent → 0, plus → +1).  Tuple
-    comparison gives the correct total ordering:
+    Band index from ``_DANGER_ORDER`` is the primary key; the raw ``customData.CH``
+    subdivision token maps to an integer offset (minus → -1, neutral/absent → 0,
+    plus → +1). Tuple comparison gives the correct total ordering:
     ``(2, -1) < (2, 0) < (2, 1) < (3, -1)``.
+
+    For projected subdivision display chars (``+``/``-``/``=``), use
+    :func:`_rm_danger_rank` instead.
     """
     band = _DANGER_ORDER.index(level)
     offset = {"minus": -1, "neutral": 0, "plus": 1}.get(sub, 0)
+    return (band, offset)
+
+
+def _rm_danger_rank(level: str, sub: str) -> tuple[int, int]:
+    """Return a sortable rank for a danger level + projected subdivision display char.
+
+    Mirrors :func:`_danger_rank` but accepts projected subdivision display chars
+    (``"+"``, ``"-"``, ``"="``, or ``""``) from ``danger.ratings[*].subdivision``.
+    """
+    band = _DANGER_ORDER.index(level) if level in _DANGER_ORDER else 0
+    offset = {"+": 1, "=": 0, "-": -1}.get(sub, 0)
     return (band, offset)
 
 
@@ -1567,6 +1588,9 @@ def _max_rating_per_period(
     rank — so elevation-split ratings within a single period are collapsed
     to the more dangerous of the two. Ratings with an unknown ``mainValue``
     are skipped.
+
+    Operates on raw CAAML ``dangerRatings`` dicts. See
+    :func:`_max_rm_rating_per_period` for the projected variant.
     """
     by_period: dict[str, dict[str, Any]] = {}
     for r in ratings:
@@ -1583,10 +1607,58 @@ def _max_rating_per_period(
     return by_period
 
 
-def _day_window_row(rating: dict[str, Any]) -> dict[str, Any]:
-    """Build one day-window row dict from a CAAML dangerRating."""
-    period, level, sub = _parse_danger_rating(rating)
-    suffix = _SUBDIVISION_SUFFIX.get(sub, "")
+def _max_rm_rating_per_period(
+    rm_ratings: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Group projected ``danger.ratings`` by ``period``, keeping the highest-rank.
+
+    Each entry in ``rm_ratings`` is a projected rating dict with ``period``,
+    ``key``, ``subdivision`` (display char or None), and ``elevation``. For
+    each period, the entry with the highest (band, subdivision) rank is kept
+    so that elevation-split ratings within a period collapse to the more
+    dangerous entry.
+
+    Args:
+        rm_ratings: The ``danger.ratings`` list from the render model.
+
+    Returns:
+        Dict mapping ``period`` string to the highest-ranked projected rating
+        entry for that period.
+
+    """
+    by_period: dict[str, dict[str, Any]] = {}
+    for r in rm_ratings:
+        period: str = r.get("period") or "all_day"
+        level: str = r.get("key") or ""
+        if level not in _DANGER_ORDER:
+            continue
+        sub: str = r.get("subdivision") or ""
+        incumbent = by_period.get(period)
+        if incumbent is None:
+            by_period[period] = r
+            continue
+        inc_level: str = incumbent.get("key") or ""
+        inc_sub: str = incumbent.get("subdivision") or ""
+        if _rm_danger_rank(level, sub) > _rm_danger_rank(inc_level, inc_sub):
+            by_period[period] = r
+    return by_period
+
+
+def _day_window_row_from_rm(rm_rating: dict[str, Any]) -> dict[str, Any]:
+    """Build one day-window row dict from a projected ``danger.ratings`` entry.
+
+    Args:
+        rm_rating: One entry from ``render_model["danger"]["ratings"]``.
+
+    Returns:
+        A window row dict consumed by the day-windows panel partial.
+
+    """
+    period: str = rm_rating.get("period") or "all_day"
+    level: str = rm_rating.get("key") or "low"
+    if level not in _DANGER_PANEL_META:
+        level = "low"
+    suffix: str = rm_rating.get("subdivision") or ""
     number = _DANGER_PANEL_META[level]["number"]
     return {
         "type": period,
@@ -1599,11 +1671,97 @@ def _day_window_row(rating: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
+def _day_windows_from_rm_ratings(
+    rm_ratings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Build day-window rows from the projected danger.ratings list.
+
+    SLF style: prefers ``all_day`` row plus ``later`` when the later rank is
+    strictly higher. ALBINA style: emits one row per period (earlier → later)
+    when no ``all_day`` entry is present.
+    """
+    by_period = _max_rm_rating_per_period(rm_ratings)
+    all_day_entry = by_period.get("all_day")
+    if all_day_entry is not None:
+        windows = [_day_window_row_from_rm(all_day_entry)]
+        later_entry = by_period.get("later")
+        if later_entry is not None:
+            later_rank = _rm_danger_rank(
+                later_entry.get("key") or "", later_entry.get("subdivision") or ""
+            )
+            ad_rank = _rm_danger_rank(
+                all_day_entry.get("key") or "",
+                all_day_entry.get("subdivision") or "",
+            )
+            if later_rank > ad_rank:
+                windows.append(_day_window_row_from_rm(later_entry))
+        return windows
+
+    # ALBINA-style: no all_day entry — one row per period, earlier → later.
+    period_order = ("earlier", "later")
+    return [
+        _day_window_row_from_rm(by_period[p]) for p in period_order if p in by_period
+    ]
+
+
+def _day_windows_from_raw_ratings(bulletin: Bulletin) -> list[dict[str, Any]]:
+    """
+    Build day-window rows from raw CAAML dangerRatings.
+
+    Fallback used for bulletins that predate the ``danger.ratings``
+    projection (v4 and earlier). Applies the same SLF / ALBINA logic as
+    ``_day_windows_from_rm_ratings`` but reads directly from the raw
+    ``dangerRatings`` CAAML properties.
+    """
+    props = _get_properties(bulletin)
+    raw_ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
+    by_period_raw = _max_rating_per_period(raw_ratings)
+
+    def _day_window_row(rating: dict[str, Any]) -> dict[str, Any]:
+        """Build one day-window row dict from a CAAML dangerRating."""
+        period, level, sub = _parse_danger_rating(rating)
+        suffix = _SUBDIVISION_SUFFIX.get(sub, "")
+        number = _DANGER_PANEL_META[level]["number"]
+        return {
+            "type": period,
+            "level_key": level,
+            "level_css": level.replace("_", "-"),
+            "level_label": _DANGER_PANEL_META[level]["label"],
+            "level_number": f"{number}{suffix}",
+            "caption": "",
+            "pill_label": _DAY_WINDOW_PILL_LABELS.get(period, period),
+        }
+
+    all_day_rating = by_period_raw.get("all_day")
+    if all_day_rating is not None:
+        windows = [_day_window_row(all_day_rating)]
+        later_rating = by_period_raw.get("later")
+        if later_rating is not None:
+            _, later_level, later_sub = _parse_danger_rating(later_rating)
+            _, ad_level, ad_sub = _parse_danger_rating(all_day_rating)
+            if _danger_rank(later_level, later_sub) > _danger_rank(ad_level, ad_sub):
+                windows.append(_day_window_row(later_rating))
+        return windows
+
+    # ALBINA-style: one row per period, ordered earlier → later.
+    period_order = ("earlier", "later")
+    return [
+        _day_window_row(by_period_raw[p]) for p in period_order if p in by_period_raw
+    ]
+
+
+def _build_day_windows(
+    bulletin: Bulletin,
+    render_model: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """
     Return the list[Window] consumed by the day-windows panel partial.
 
-    Reads ``dangerRatings`` directly from the bulletin's CAAML properties.
+    Reads from the projected ``danger.ratings`` list in the render model when
+    available. Falls back to reading raw ``dangerRatings`` from CAAML properties
+    when the render model is absent or carries no ``danger.ratings`` (e.g. for
+    v4 bulletins that predate this projection).
 
     SLF editorial style: always one ``all_day`` rating, optionally a
     ``later`` overlay when the day deteriorates. Emits one row for the
@@ -1618,27 +1776,26 @@ def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
     bands for that period. The bulletin's problem cards below the panel
     carry the full per-trait + elevation detail.
 
-    Returns an empty list only when ``dangerRatings`` carries no usable
-    rating at all — the template hides the panel in that case.
+    Returns an empty list only when no usable ratings are found — the
+    template hides the panel in that case.
+
+    Args:
+        bulletin: The Bulletin to build windows for.
+        render_model: The render model dict (enriched or raw). When supplied,
+            the projected ``danger.ratings`` list is used in preference to
+            raw CAAML properties.
+
     """
-    props = _get_properties(bulletin)
-    ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
-    by_period = _max_rating_per_period(ratings)
+    rm_ratings: list[dict[str, Any]] = []
+    if render_model:
+        rm_ratings = (render_model.get("danger") or {}).get("ratings") or []
 
-    all_day_rating = by_period.get("all_day")
-    if all_day_rating is not None:
-        windows = [_day_window_row(all_day_rating)]
-        later_rating = by_period.get("later")
-        if later_rating is not None:
-            _, later_level, later_sub = _parse_danger_rating(later_rating)
-            _, ad_level, ad_sub = _parse_danger_rating(all_day_rating)
-            if _danger_rank(later_level, later_sub) > _danger_rank(ad_level, ad_sub):
-                windows.append(_day_window_row(later_rating))
-        return windows
+    if rm_ratings:
+        return _day_windows_from_rm_ratings(rm_ratings)
 
-    # ALBINA-style fallback: one row per period, ordered earlier → later.
-    period_order = ("earlier", "later")
-    return [_day_window_row(by_period[p]) for p in period_order if p in by_period]
+    # Fallback: read raw dangerRatings from CAAML properties.
+    # Used for bulletins that predate the danger.ratings projection (v4 and earlier).
+    return _day_windows_from_raw_ratings(bulletin)
 
 
 def _build_canonical_url(
@@ -1800,7 +1957,7 @@ def _build_structured_data(
         ``{{ structured_data_json|safe }}`` in a template.
 
     """
-    # Source organisation details (SLF / ALBINA / MF).
+    # Source organisation details (SLF / ALBINA / METEOFRANCE).
     source_key = (panel.get("render_model") or {}).get("source", "")
     source_name, source_url = BULLETIN_SOURCE_LINKS.get(source_key, ("", ""))
 
@@ -2053,7 +2210,9 @@ def _bulletin_detail_response(
 
     panel = _build_panel_context(selected)
 
-    day_windows: list[dict[str, Any]] = _build_day_windows(selected)
+    day_windows: list[dict[str, Any]] = _build_day_windows(
+        selected, render_model=panel.get("render_model")
+    )
 
     season_calendar = season_header(today)
 
@@ -2572,89 +2731,78 @@ _SUBDIVISION_SUFFIX: dict[str, str] = {
 }
 
 
-def _highest_danger_key(ratings: list[dict[str, Any]]) -> tuple[str, str]:
-    """
-    Return the highest CAAML ``mainValue`` and its subdivision suffix.
-
-    When multiple ratings share the same highest ``mainValue``, the
-    subdivision from the last one encountered is used.
-
-    Args:
-        ratings: The CAAML ``dangerRatings`` list.
-
-    Returns:
-        A ``(key, subdivision_suffix)`` tuple. *key* is one of the keys in
-        :data:`_DANGER_PANEL_META` (defaults to ``"low"``).
-        *subdivision_suffix* is ``"-"``, ``"="``, ``"+"``, or ``""`` if
-        no subdivision is present.
-
-    """
-    highest = "low"
-    subdivision = ""
-    for rating in ratings:
-        value = rating.get("mainValue", "")
-        if value in _DANGER_ORDER and _DANGER_ORDER.index(value) >= _DANGER_ORDER.index(
-            highest
-        ):
-            highest = value
-            raw = (rating.get("customData") or {}).get("CH", {}).get("subdivision", "")
-            subdivision = _SUBDIVISION_SUFFIX.get(raw, "")
-    return highest, subdivision
-
-
 # Mirrors WhiteRisk's split: a dangerRating whose validTimePeriod is
 # ``all_day`` applies in both halves; ``earlier`` (morning-only) and
 # ``later`` (afternoon-only) are scoped to one half each.  Used by
-# :func:`_resolve_period_danger` to pick the ratings that cover a given
-# half of the day.
+# :func:`_resolve_period_danger_from_rm` to pick the projected ratings that
+# cover a given half of the day.
 _MORNING_PERIODS: frozenset[str] = frozenset({"all_day", "earlier"})
 _AFTERNOON_PERIODS: frozenset[str] = frozenset({"all_day", "later"})
 
 
-def _resolve_period_danger(
-    ratings: list[dict[str, Any]],
+def _best_rating_from_rm_entries(
+    entries: list[dict[str, Any]],
+) -> tuple[str, str] | None:
+    """
+    Return the highest (key, subdivision_suffix) from a list of rm rating entries.
+
+    Returns ``None`` when no entry has a recognised key so the caller can
+    fall through to an alternative source.
+    """
+    best_key: str | None = None
+    best_sub: str = ""
+    for r in entries:
+        rk: str = r.get("key") or ""
+        if rk not in _DANGER_ORDER:
+            continue
+        if best_key is None or _DANGER_ORDER.index(rk) >= _DANGER_ORDER.index(best_key):
+            best_key = rk
+            best_sub = r.get("subdivision") or ""
+    if best_key is None:
+        return None
+    return best_key, best_sub
+
+
+def _resolve_period_danger_from_rm(
+    rm_ratings: list[dict[str, Any]],
     traits: list[dict[str, Any]],
     period_group: frozenset[str],
 ) -> tuple[str, str]:
     """
     Return the highest danger key + subdivision covering a half of the day.
 
-    Primary source is the CAAML ``dangerRatings`` list — filtered to entries
-    whose ``validTimePeriod`` is in ``period_group`` (defaulting absent values
-    to ``"all_day"`` since an unscoped rating applies all day), then reduced
-    with :func:`_highest_danger_key` to pick the highest ``mainValue`` and
-    its subdivision suffix.
+    Primary source is the projected ``danger.ratings`` list from the render
+    model — one entry per CAAML dangerRating with ``period``, ``key``,
+    ``subdivision`` (display char ``"+"/"-"/"="`` or ``None``), and
+    ``elevation``. Entries whose ``period`` is in ``period_group`` are
+    candidates; the highest ``key`` wins. When multiple entries tie on
+    ``key``, the subdivision from the last one encountered is used.
 
-    When ``dangerRatings`` carries nothing for the period, falls back to the
-    render-model ``traits`` and returns the highest ``danger_level`` among
-    traits whose ``time_period`` covers the half.  Subdivision is ``""`` in
-    the fallback path — traits don't carry it.  This branch exists so test
-    fixtures that populate only ``render_model`` (not ``raw_data``) still
-    render the headline band correctly; real SLF bulletins always populate
-    ``dangerRatings`` and hit the primary path.
-
-    Returns ``("no_rating", "")`` only when *both* sources are empty for
-    this half.
+    Falls back to the render-model ``traits`` when no projected ratings cover
+    the period — this matches the behaviour of the old
+    :func:`_resolve_period_danger` fallback and keeps test fixtures that
+    populate only ``render_model`` (not ``raw_data``) rendering correctly.
 
     Args:
-        ratings: The CAAML ``dangerRatings`` list from ``raw_data``.
-        traits: The render-model ``traits`` list (used as the fallback).
+        rm_ratings: The ``danger.ratings`` list from the render model.
+        traits: The render-model ``traits`` list (fallback when no ratings
+            cover the target period).
         period_group: Set of ``validTimePeriod`` tokens covering the target
             half of the day (``_MORNING_PERIODS`` or ``_AFTERNOON_PERIODS``).
 
     Returns:
-        A ``(key, subdivision_suffix)`` tuple, same shape as
-        :func:`_highest_danger_key`.
+        A ``(key, subdivision_suffix)`` tuple where ``subdivision_suffix`` is
+        one of ``"+"``, ``"-"``, ``"="``, or ``""`` when absent/None.
 
     """
-    relevant_ratings = [
-        r for r in ratings if r.get("validTimePeriod", "all_day") in period_group
-    ]
-    if relevant_ratings:
-        return _highest_danger_key(relevant_ratings)
+    relevant = [r for r in rm_ratings if r.get("period", "all_day") in period_group]
+    if relevant:
+        result = _best_rating_from_rm_entries(relevant)
+        if result is not None:
+            return result
 
-    # Fallback: derive the half's level from traits when ``dangerRatings``
-    # is absent or omits a covering entry.  Tests populate ``render_model``
+    # Fallback: derive the half's level from traits when projected ratings
+    # are absent or omit a covering entry.  Tests populate ``render_model``
     # directly and leave ``raw_data`` empty — without this fallback the
     # headline band would read ``no_rating`` on every test bulletin.
     levels: list[int] = []
@@ -2992,30 +3140,25 @@ def build_problem_cards(
 
 
 def _resolve_problem_cards(
-    raw_problems: list[dict[str, Any]],
-    aggregation: list[dict[str, Any]],
     traits: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """
-    Resolve problem cards from either the CAAML aggregation or render model traits.
+    Resolve problem cards from render-model traits.
 
-    SLF bulletins carry ``customData.CH.aggregation`` so ``build_problem_cards``
-    produces a non-empty list.  ALBINA bulletins have no aggregation; in that
-    case the enriched render-model traits are used as the card source instead.
+    Both SLF and ALBINA bulletins now source their problem cards from the
+    enriched render-model traits list. The render model synthesises
+    aggregation for all sources and records traits in editorial
+    (aggregation) order, so trait ordering matches the previous SLF
+    aggregation-driven ordering.
 
     Args:
-        raw_problems: CAAML avalancheProblems list from the bulletin properties.
-        aggregation: SLF aggregation list (may be empty for ALBINA).
-        traits: Enriched render-model traits (used as fallback).
+        traits: Enriched render-model traits list.
 
     Returns:
         Flat list of card dicts ready for ``_rating_block.html``.
 
     """
-    cards = build_problem_cards(raw_problems, aggregation)
-    if not cards and traits:
-        cards = _problem_cards_from_render_model_traits(traits)
-    return cards
+    return _problem_cards_from_render_model_traits(traits)
 
 
 def _problem_cards_from_render_model_traits(
@@ -3047,18 +3190,46 @@ def _problem_cards_from_render_model_traits(
         danger_level: int = trait.get("danger_level") or 1
         time_period: str = trait.get("time_period") or "all_day"
         time_period_label: str | Promise = _TIME_PERIOD_LABELS.get(time_period, "")
-        title: str = trait.get("title") or ""
         problems: list[dict[str, Any]] = trait.get("problems") or []
         if not problems:
             continue
-        # Use the first problem for spatial data; label from the trait title.
+        # Use the first problem for spatial data.
         first = problems[0]
+
+        # Derive the card label from individual problem type labels rather than
+        # the trait's editorial title. For a single-problem trait the label is
+        # the problem type label (e.g. "Wind slab"); for a multi-problem trait
+        # labels are joined with " + " (e.g. "Wet snow + Gliding snow"). This
+        # matches the presentation produced by the old SLF aggregation path.
+        problem_labels = [
+            str(
+                _PROBLEM_LABELS.get(
+                    p.get("problem_type", ""),
+                    p.get("problem_type", "").replace("_", " ").capitalize(),
+                )
+            )
+            for p in problems
+        ]
+        label = (
+            " + ".join(problem_labels) if problem_labels else (trait.get("title") or "")
+        )
+
+        # Danger level is the maximum across all problems in this trait.
+        max_danger_level = danger_level
+        for p in problems:
+            drv: str = p.get("danger_rating_value") or ""
+            plevel = _DANGER_RATING_INT.get(drv, 0)
+            if plevel > max_danger_level:
+                max_danger_level = plevel
+
         cards.append(
             {
                 "category": category,
-                "danger_level": danger_level,
-                "danger_level_key": _DANGER_ORDER[danger_level - 1].replace("_", "-"),
-                "label": title,
+                "danger_level": max_danger_level,
+                "danger_level_key": _DANGER_ORDER[max(max_danger_level, 1) - 1].replace(
+                    "_", "-"
+                ),
+                "label": label,
                 "time_period_label": time_period_label,
                 "aspects": first.get("aspects") or [],
                 "elevation": first.get("elevation"),
@@ -3263,16 +3434,28 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
 
     """
     props = _get_properties(bulletin)
-    raw_problems: list[dict[str, Any]] = props.get("avalancheProblems") or []
-    ch_data: dict[str, Any] = (props.get("customData") or {}).get("CH") or {}
-    aggregation: list[dict[str, Any]] = ch_data.get("aggregation") or []
-    ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
-    if not ratings:
+
+    # Retrieve or build the render model. Bulletins ingested before this
+    # feature was deployed will have render_model_version == 0; build on
+    # the fly so the page renders correctly while a backfill job catches up.
+    raw_render_model = _get_render_model(bulletin, props)
+
+    # Enrich the render model with presentation-ready fields (labels,
+    # ElevationBounds, field_guidance, hide_comment per trait).
+    render_model = enrich_render_model(raw_render_model)
+
+    # Danger key and subdivision come from the render model projection.
+    # The render model reads customData.CH.subdivision for SLF; ALBINA
+    # and METEOFRANCE carry None. This avoids re-reading raw customData here.
+    rm_danger: dict[str, Any] = raw_render_model.get("danger") or {}
+    danger_key: str = rm_danger.get("key") or "low"
+    danger_subdivision: str = rm_danger.get("subdivision") or ""
+    if not danger_key or danger_key not in _DANGER_PANEL_META:
         logger.error(
-            "_build_panel_context: bulletin %s has no dangerRatings",
+            "_build_panel_context: %s has no usable danger key in render model",
             bulletin.pk,
         )
-    danger_key, danger_subdivision = _highest_danger_key(ratings)
+        danger_key = "low"
     danger_meta = _DANGER_PANEL_META[danger_key]
 
     # Fallback key-message: used by the template when the bulletin has no
@@ -3296,32 +3479,24 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
 
     snowpack_structure = (props.get("snowpackStructure") or {}).get("comment") or ""
 
-    # Retrieve or build the render model. Bulletins ingested before this
-    # feature was deployed will have render_model_version == 0; build on
-    # the fly so the page renders correctly while a backfill job catches up.
-    raw_render_model = _get_render_model(bulletin, props)
-
-    # Enrich the render model with presentation-ready fields (labels,
-    # ElevationBounds, field_guidance, hide_comment per trait).
-    render_model = enrich_render_model(raw_render_model)
-
     traits: list[dict[str, Any]] = render_model.get("traits") or []
 
-    # Source-aware problem cards: SLF bulletins use the CAAML aggregation;
-    # ALBINA bulletins have no aggregation so we fall back to render-model traits.
-    problem_cards = _resolve_problem_cards(raw_problems, aggregation, traits)
+    # Problem cards: both SLF and ALBINA bulletins are now served from
+    # render-model traits. The render model synthesises aggregation for all
+    # sources and records traits in editorial (aggregation) order, so trait
+    # ordering matches the previous SLF aggregation-driven ordering.
+    problem_cards = _resolve_problem_cards(traits)
 
-    # Per-half danger resolution for the AM/PM split headline.  Mirrors
-    # WhiteRisk's "Morning" + "As the day progresses" maps: the half's
-    # level is the highest of any rating that covers it (``all_day`` is
-    # always counted, plus ``earlier`` for morning or ``later`` for
-    # afternoon).  Primary source is ``dangerRatings``; traits are the
-    # fallback when the raw data omits per-period entries.
-    morning_key, morning_subdivision = _resolve_period_danger(
-        ratings, traits, _MORNING_PERIODS
+    # Per-half danger resolution for the AM/PM split headline. Reads the
+    # projected danger.ratings list from the render model — one entry per
+    # CAAML dangerRating with period, key, subdivision, and elevation.
+    # Primary source is the projected list; traits are the fallback.
+    rm_ratings: list[dict[str, Any]] = rm_danger.get("ratings") or []
+    morning_key, morning_subdivision = _resolve_period_danger_from_rm(
+        rm_ratings, traits, _MORNING_PERIODS
     )
-    afternoon_key, afternoon_subdivision = _resolve_period_danger(
-        ratings, traits, _AFTERNOON_PERIODS
+    afternoon_key, afternoon_subdivision = _resolve_period_danger_from_rm(
+        rm_ratings, traits, _AFTERNOON_PERIODS
     )
     morning_meta = _DANGER_PANEL_META[morning_key]
     afternoon_meta = _DANGER_PANEL_META[afternoon_key]
@@ -3346,7 +3521,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "danger_label": danger_meta["label"],
         "danger_sub": danger_meta["sub"],
         "danger_icon": danger_meta["icon"],
-        "danger_source": "dangerRatings[*].mainValue (highest)",
+        "danger_source": "render_model.danger.key (highest)",
         "key_message": key_message,
         "key_message_source": key_message_source,
         "snowpack_structure": snowpack_structure,
@@ -3368,13 +3543,11 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "afternoon_subdivision": afternoon_subdivision,
         "problem_cards": problem_cards,
     }
-    panel["day_character"] = _resolve_day_lead(props, raw_render_model)
+    panel["day_character"] = _resolve_day_lead(raw_render_model)
     return panel
 
 
-def _resolve_day_lead(
-    props: dict[str, Any], raw_render_model: dict[str, Any]
-) -> DayCharacter:
+def _resolve_day_lead(raw_render_model: dict[str, Any]) -> DayCharacter:
     """
     Return the eyebrow callout to show above the rating blocks.
 
@@ -3382,16 +3555,26 @@ def _resolve_day_lead(
     classify the day via the five-rule cascade in ``compute_day_character``
     (Stable / Manageable / Hard-to-read / Widespread / Dangerous).
 
-    ALBINA bulletins, by contrast, ship a short editorial lead at
-    ``properties.tendency[0].highlights`` — a forecaster-authored
-    one-liner describing how the day is expected to play out. When
-    that lead is present, use it verbatim and suppress the computed
-    label. The callout template renders the label as a bold prefix
-    when non-empty and as a single explainer paragraph when empty.
+    ALBINA bulletins, by contrast, ship a short editorial lead projected
+    into ``render_model["prose"]["tendency_lead"]`` — a forecaster-authored
+    one-liner describing how the day is expected to play out. When that lead
+    is present, use it verbatim and suppress the computed label. The callout
+    template renders the label as a bold prefix when non-empty and as a
+    single explainer paragraph when empty.
+
+    Args:
+        raw_render_model: The render model dict as returned by
+            :func:`bulletins.services.render_model.build_render_model` or
+            retrieved from ``Bulletin.render_model``.
+
+    Returns:
+        A :class:`DayCharacter` with label and explainer fields populated.
+
+
     """
-    tendency = props.get("tendency") or []
-    if tendency:
-        highlights = (tendency[0] or {}).get("highlights") or ""
-        if highlights.strip():
-            return DayCharacter(label="", explainer=highlights)
+    tendency_lead: str | None = (raw_render_model.get("prose") or {}).get(
+        "tendency_lead"
+    )
+    if tendency_lead and tendency_lead.strip():
+        return DayCharacter(label="", explainer=tendency_lead)
     return compute_day_character(raw_render_model)

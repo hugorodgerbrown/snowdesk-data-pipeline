@@ -66,6 +66,24 @@ Version 4 changes:
     ``avalancheActivity`` for ALBINA and MeteoFrance).
   - Added top-level ``danger_patterns`` list (``[]`` for SLF and MeteoFrance;
     ``customData.LWD_Tyrol.dangerPatterns`` for ALBINA).
+
+Version 5 changes:
+  - Introduced ``CustomDataAdapter`` Protocol and three concrete adapter
+    classes (``SlfAdapter``, ``AlbinaAdapter``, ``MeteoFranceAdapter``)
+    registered in ``_ADAPTERS``. Each adapter reads its own ``customData``
+    namespace and projects source-neutral fields. Source-conditional
+    ``if source == X`` branches in helper functions now dispatch through the
+    registry, eliminating scattered branching.
+  - Added ``danger.ratings`` list: one entry per CAAML ``dangerRating`` with
+    ``period``, ``key``, ``subdivision``, and ``elevation`` keys. SLF entries
+    carry the per-rating subdivision from ``customData.CH``; ALBINA and
+    METEOFRANCE entries carry ``subdivision=None``.
+  - Added ``prose.tendency_lead`` string: ALBINA bulletins project
+    ``tendency[0].highlights`` here when present; SLF and METEOFRANCE
+    always ``None``.
+  - Added per-problem named slots ``avalanche_size``, ``frequency``, and
+    ``snowpack_stability``: populated from ALBINA raw problem fields;
+    ``None`` for SLF and MeteoFrance.
 """
 
 from __future__ import annotations
@@ -73,7 +91,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from django.utils.translation import gettext_lazy as _
 
@@ -93,7 +111,7 @@ logger = logging.getLogger(__name__)
 # Version
 # ---------------------------------------------------------------------------
 
-RENDER_MODEL_VERSION: int = 4
+RENDER_MODEL_VERSION: int = 5
 
 # ---------------------------------------------------------------------------
 # Constants — EAWS problem-type enum (openapi.json lines 670–683)
@@ -234,21 +252,33 @@ def _parse_elevation(
 # ---------------------------------------------------------------------------
 
 
-def _resolve_danger(ratings: list[dict[str, Any]]) -> dict[str, Any]:
+def _resolve_danger(
+    ratings: list[dict[str, Any]],
+    source: Bulletin.Source = Bulletin.Source.SLF,
+) -> dict[str, Any]:
     """
     Resolve the highest danger level and its subdivision from dangerRatings.
 
     When multiple ratings share the same highest mainValue the subdivision
     from the last one encountered is used.
 
+    Also builds a ``ratings`` list: one entry per raw CAAML dangerRating
+    with ``period``, ``key``, ``subdivision``, and ``elevation`` keys.
+    The per-rating subdivision is adapter-specific — SLF reads
+    ``customData.CH.subdivision``; ALBINA and METEOFRANCE carry ``None``.
+
     Args:
         ratings: The CAAML ``dangerRatings`` list.
+        source: A ``Bulletin.Source`` member (used to select the adapter for
+            per-rating subdivision resolution).
 
     Returns:
-        Dict with ``key`` (str), ``number`` (str), and
-        ``subdivision`` (``"+"``, ``"="``, ``"-"``, or None) keys.
+        Dict with ``key`` (str), ``number`` (str),
+        ``subdivision`` (``"+"``, ``"="``, ``"-"``, or None), and
+        ``ratings`` (list of per-rating dicts) keys.
 
     """
+    adapter = _get_adapter(source)
     highest = "low"
     raw_subdivision: str = ""
 
@@ -263,10 +293,26 @@ def _resolve_danger(ratings: list[dict[str, Any]]) -> dict[str, Any]:
 
     subdivision: str | None = _SUBDIVISION_MAP.get(raw_subdivision, None)
 
+    # Build the normalised per-rating list.
+    ratings_list: list[dict[str, Any]] = []
+    for rating in ratings:
+        main_value = rating.get("mainValue", "")
+        if main_value not in _DANGER_ORDER:
+            continue
+        ratings_list.append(
+            {
+                "period": rating.get("validTimePeriod") or "all_day",
+                "key": main_value,
+                "subdivision": adapter.resolve_danger_rating_subdivision(rating),
+                "elevation": _parse_elevation(rating.get("elevation") or None),
+            }
+        )
+
     return {
         "key": highest,
         "number": _DANGER_NUMBER.get(highest, "1"),
         "subdivision": subdivision,
+        "ratings": ratings_list,
     }
 
 
@@ -318,62 +364,8 @@ def _detect_source(properties: dict[str, Any]) -> Bulletin.Source:
 
 
 # ---------------------------------------------------------------------------
-# Source-specific helpers
+# Low-level elevation and danger helpers (used by adapters and helpers below)
 # ---------------------------------------------------------------------------
-
-
-def _resolve_aggregations(
-    properties: dict[str, Any], source: Bulletin.Source
-) -> list[dict[str, Any]]:
-    """
-    Resolve the aggregation list from bulletin properties.
-
-    For SLF bulletins this reads ``customData.CH.aggregation`` verbatim.
-    For ALBINA and MeteoFrance bulletins it synthesises aggregation entries
-    by grouping ``avalancheProblems`` on ``(category, validTimePeriod)``.
-
-    The output shape is the same in all cases:
-    ``[{"category": str, "problemTypes": [str], "validTimePeriod": str|None,
-       "title": str|None}, ...]``
-
-    Args:
-        properties: The CAAML properties dict.
-        source: A ``Bulletin.Source`` member.
-
-    Returns:
-        A list of aggregation entry dicts.
-
-    """
-    if source == Bulletin.Source.SLF:
-        return (properties.get("customData") or {}).get("CH", {}).get(
-            "aggregation"
-        ) or []
-
-    # ALBINA and MeteoFrance: synthesise from avalancheProblems.
-    # Group on (category, validTimePeriod). Preserve problem order.
-    problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
-    seen: dict[tuple[str, str], dict[str, Any]] = {}
-    order: list[tuple[str, str]] = []
-
-    for problem in problems:
-        pt: str = problem.get("problemType", "")
-        vtp: str = problem.get("validTimePeriod") or "all_day"
-        category: str = PROBLEM_TYPE_TO_CATEGORY.get(pt, "dry")
-        key = (category, vtp)
-        if key not in seen:
-            seen[key] = {
-                "category": category,
-                "validTimePeriod": vtp,
-                "problemTypes": [],
-                "title": None,
-            }
-            order.append(key)
-        entry = seen[key]
-        # Avoid duplicates within the same aggregation group.
-        if pt not in entry["problemTypes"]:
-            entry["problemTypes"].append(pt)
-
-    return [seen[k] for k in order]
 
 
 def _to_int_safe(val: Any) -> int | None:
@@ -448,6 +440,480 @@ def _filter_ratings_by_elevation(
     return specific if specific else fallback
 
 
+# ---------------------------------------------------------------------------
+# CustomDataAdapter Protocol and concrete implementations
+# ---------------------------------------------------------------------------
+
+
+class CustomDataAdapter(Protocol):
+    """
+    Protocol for source-specific bulletin field adapters.
+
+    Each concrete adapter reads its own ``customData`` namespace and projects
+    the values into a source-neutral shape. The build pipeline selects the
+    appropriate adapter via ``_ADAPTERS`` keyed on ``Bulletin.Source``.
+
+    All methods are pure — no I/O, no side effects.
+    """
+
+    def resolve_aggregations(self, properties: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return the aggregation list for this source."""
+        ...
+
+    def resolve_problem_rating(
+        self,
+        problem: dict[str, Any],
+        danger_ratings: list[dict[str, Any]],
+    ) -> str | None:
+        """Return the danger rating value for a single problem."""
+        ...
+
+    def resolve_problem_comment(self, problem: dict[str, Any]) -> str:
+        """Return the display comment for a single problem."""
+        ...
+
+    def resolve_problem_extras(self, problem: dict[str, Any]) -> dict[str, Any]:
+        """Return source-specific passthrough fields for a problem."""
+        ...
+
+    def resolve_problem_avalanche_type(self, problem: dict[str, Any]) -> str | None:
+        """Return the avalanche type (slab/loose/None) for a problem."""
+        ...
+
+    def resolve_problem_eaws_fields(self, problem: dict[str, Any]) -> dict[str, Any]:
+        """
+        Return EAWS optional problem-level fields.
+
+        Returns a dict with ``avalanche_size`` (int|None), ``frequency``
+        (str|None), and ``snowpack_stability`` (str|None).
+        """
+        ...
+
+    def resolve_avalanche_activity(self, properties: dict[str, Any]) -> dict[str, str]:
+        """Return the avalanche activity prose dict."""
+        ...
+
+    def resolve_danger_patterns(self, properties: dict[str, Any]) -> list[str]:
+        """Return the danger patterns list."""
+        ...
+
+    def resolve_tendency_lead(self, properties: dict[str, Any]) -> str | None:
+        """Return the tendency lead string, or None when absent."""
+        ...
+
+    def resolve_danger_rating_subdivision(self, rating: dict[str, Any]) -> str | None:
+        """
+        Return the subdivision suffix for a single dangerRating entry.
+
+        The raw token (``"plus"``, ``"minus"``, ``"equal"``) is resolved to
+        the display character (``"+"``, ``"-"``, ``"="``) or ``None``.
+        """
+        ...
+
+
+class SlfAdapter:
+    """
+    Adapter for SLF (Swiss) bulletins.
+
+    Reads ``customData.CH`` for aggregation, subdivision, and coreZoneText.
+    Per-problem EAWS fields (avalanche_size, frequency, snowpack_stability)
+    are absent in SLF data — always returns ``None`` for those.
+    """
+
+    def resolve_aggregations(self, properties: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return the CH aggregation list verbatim."""
+        return (properties.get("customData") or {}).get("CH", {}).get(
+            "aggregation"
+        ) or []
+
+    def resolve_problem_rating(
+        self,
+        problem: dict[str, Any],
+        danger_ratings: list[dict[str, Any]],  # noqa: ARG002 — not used for SLF
+    ) -> str | None:
+        """SLF carries per-problem dangerRatingValue directly."""
+        raw = problem.get("dangerRatingValue")
+        return raw if raw else None
+
+    def resolve_problem_comment(self, problem: dict[str, Any]) -> str:
+        """SLF carries a per-problem comment field with HTML prose."""
+        return problem.get("comment") or ""
+
+    def resolve_problem_extras(self, problem: dict[str, Any]) -> dict[str, Any]:
+        """Return subdivision and coreZoneText from customData.CH."""
+        ch_data: dict[str, Any] = (problem.get("customData") or {}).get("CH", {})
+        return {
+            "subdivision": ch_data.get("subdivision", "") or "",
+            "core_zone_text": ch_data.get("coreZoneText") or None,
+        }
+
+    def resolve_problem_avalanche_type(
+        self,
+        problem: dict[str, Any],  # noqa: ARG002 — not used for SLF
+    ) -> str | None:
+        """SLF bulletins do not carry an avalanche type."""
+        return None
+
+    def resolve_problem_eaws_fields(
+        self,
+        problem: dict[str, Any],  # noqa: ARG002 — not used for SLF
+    ) -> dict[str, Any]:
+        """SLF bulletins do not carry EAWS problem-level fields."""
+        return {
+            "avalanche_size": None,
+            "frequency": None,
+            "snowpack_stability": None,
+        }
+
+    def resolve_avalanche_activity(
+        self,
+        properties: dict[str, Any],  # noqa: ARG002 — not used for SLF
+    ) -> dict[str, str]:
+        """SLF does not carry bulletin-level avalanche activity."""
+        return {"highlights": "", "comment": ""}
+
+    def resolve_danger_patterns(
+        self,
+        properties: dict[str, Any],  # noqa: ARG002 — not used for SLF
+    ) -> list[str]:
+        """SLF bulletins do not carry danger patterns."""
+        return []
+
+    def resolve_tendency_lead(
+        self,
+        properties: dict[str, Any],  # noqa: ARG002 — not used for SLF
+    ) -> str | None:
+        """SLF bulletins do not carry a tendency lead."""
+        return None
+
+    def resolve_danger_rating_subdivision(self, rating: dict[str, Any]) -> str | None:
+        """Read subdivision from customData.CH on each dangerRating."""
+        ch_data = (rating.get("customData") or {}).get("CH", {})
+        raw_subdivision: str = ch_data.get("subdivision", "") or ""
+        return _SUBDIVISION_MAP.get(raw_subdivision, None)
+
+
+def _synthesise_aggregation_from_problems(
+    properties: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """
+    Synthesise an aggregation list from ``avalancheProblems`` by (category, vtp).
+
+    Shared by AlbinaAdapter and MeteoFranceAdapter which both lack a
+    ``customData`` aggregation block and derive the same grouping from their
+    problems list.
+
+    Args:
+        properties: The CAAML bulletin properties dict.
+
+    Returns:
+        An aggregation list in problem-encounter order with deduplicated entries.
+
+    """
+    problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
+    seen: dict[tuple[str, str], dict[str, Any]] = {}
+    order: list[tuple[str, str]] = []
+    for problem in problems:
+        pt: str = problem.get("problemType", "")
+        vtp: str = problem.get("validTimePeriod") or "all_day"
+        category: str = PROBLEM_TYPE_TO_CATEGORY.get(pt, "dry")
+        key = (category, vtp)
+        if key not in seen:
+            seen[key] = {
+                "category": category,
+                "validTimePeriod": vtp,
+                "problemTypes": [],
+                "title": None,
+            }
+            order.append(key)
+        entry = seen[key]
+        if pt not in entry["problemTypes"]:
+            entry["problemTypes"].append(pt)
+    return [seen[k] for k in order]
+
+
+class AlbinaAdapter:
+    """
+    Adapter for ALBINA (ALBINA) bulletins.
+
+    Synthesises aggregation from avalancheProblems. Reads
+    ``customData.ALBINA`` for avalanche type, ``customData.LWD_Tyrol``
+    (or any ``LWD_*`` key) for danger patterns, and ``tendency[0].highlights``
+    for the tendency lead. Per-problem EAWS fields
+    (``avalancheSize``, ``frequency``, ``snowpackStability``) are read
+    from the raw problem dict.
+    """
+
+    def resolve_aggregations(self, properties: dict[str, Any]) -> list[dict[str, Any]]:
+        """Synthesise aggregation from avalancheProblems by (category, vtp)."""
+        return _synthesise_aggregation_from_problems(properties)
+
+    def resolve_problem_rating(
+        self,
+        problem: dict[str, Any],
+        danger_ratings: list[dict[str, Any]],
+    ) -> str | None:
+        """Derive danger rating by matching the problem's elevation/vtp."""
+        return _match_problem_rating(problem, danger_ratings)
+
+    def resolve_problem_comment(
+        self,
+        problem: dict[str, Any],  # noqa: ARG002 — not used for ALBINA
+    ) -> str:
+        """ALBINA carries activity prose at bulletin level, not per-problem."""
+        return ""
+
+    def resolve_problem_extras(self, problem: dict[str, Any]) -> dict[str, Any]:
+        """Return avalanche_type from customData.ALBINA."""
+        albina_data: dict[str, Any] = (problem.get("customData") or {}).get(
+            "ALBINA", {}
+        )
+        return {
+            "avalanche_type": albina_data.get("avalancheType") or None,
+        }
+
+    def resolve_problem_avalanche_type(self, problem: dict[str, Any]) -> str | None:
+        """Return the avalanche type from customData.ALBINA."""
+        albina_data: dict[str, Any] = (problem.get("customData") or {}).get(
+            "ALBINA", {}
+        )
+        return albina_data.get("avalancheType") or None
+
+    def resolve_problem_eaws_fields(self, problem: dict[str, Any]) -> dict[str, Any]:
+        """Return EAWS fields from the raw problem dict."""
+        return {
+            "avalanche_size": problem.get("avalancheSize"),
+            "frequency": problem.get("frequency") or None,
+            "snowpack_stability": problem.get("snowpackStability") or None,
+        }
+
+    def resolve_avalanche_activity(self, properties: dict[str, Any]) -> dict[str, str]:
+        """Return avalancheActivity highlights and comment."""
+        activity: dict[str, Any] = properties.get("avalancheActivity") or {}
+        return {
+            "highlights": activity.get("highlights") or "",
+            "comment": activity.get("comment") or "",
+        }
+
+    def resolve_danger_patterns(self, properties: dict[str, Any]) -> list[str]:
+        """Return dangerPatterns from customData.LWD_Tyrol (or any LWD_* key)."""
+        custom_data: dict[str, Any] = properties.get("customData") or {}
+        lwd_data = custom_data.get("LWD_Tyrol") or {}
+        if not lwd_data:
+            for key, value in custom_data.items():
+                if key.startswith("LWD_") and value:
+                    lwd_data = value
+                    break
+        patterns = lwd_data.get("dangerPatterns") or []
+        return [str(p) for p in patterns]
+
+    def resolve_tendency_lead(self, properties: dict[str, Any]) -> str | None:
+        """Return tendency[0].highlights when present and non-empty."""
+        tendency = properties.get("tendency") or []
+        if tendency:
+            highlights = (tendency[0] or {}).get("highlights") or ""
+            if highlights.strip():
+                return highlights
+        return None
+
+    def resolve_danger_rating_subdivision(
+        self,
+        rating: dict[str, Any],  # noqa: ARG002 — ALBINA has no per-rating subdivision
+    ) -> str | None:
+        """ALBINA dangerRatings carry no subdivision."""
+        return None
+
+
+class MeteoFranceAdapter:
+    """
+    Adapter for MeteoFrance (METEOFRANCE / BRA) bulletins.
+
+    Synthesises aggregation from avalancheProblems. Per-problem EAWS fields
+    and danger patterns are absent in METEOFRANCE data. No tendency lead.
+    """
+
+    def resolve_aggregations(self, properties: dict[str, Any]) -> list[dict[str, Any]]:
+        """Synthesise aggregation from avalancheProblems by (category, vtp)."""
+        return _synthesise_aggregation_from_problems(properties)
+
+    def resolve_problem_rating(
+        self,
+        problem: dict[str, Any],
+        danger_ratings: list[dict[str, Any]],
+    ) -> str | None:
+        """Derive danger rating by matching the problem's elevation/vtp."""
+        return _match_problem_rating(problem, danger_ratings)
+
+    def resolve_problem_comment(
+        self,
+        problem: dict[str, Any],  # noqa: ARG002 — not used for METEOFRANCE
+    ) -> str:
+        """METEOFRANCE carries activity prose at bulletin level, not per-problem."""
+        return ""
+
+    def resolve_problem_extras(
+        self,
+        problem: dict[str, Any],  # noqa: ARG002 — no METEOFRANCE problem-level extras
+    ) -> dict[str, Any]:
+        """MeteoFrance has no source-specific problem-level extras."""
+        return {}
+
+    def resolve_problem_avalanche_type(
+        self,
+        problem: dict[str, Any],  # noqa: ARG002 — not used for METEOFRANCE
+    ) -> str | None:
+        """METEOFRANCE bulletins do not carry an avalanche type."""
+        return None
+
+    def resolve_problem_eaws_fields(
+        self,
+        problem: dict[str, Any],  # noqa: ARG002 — not used for METEOFRANCE
+    ) -> dict[str, Any]:
+        """METEOFRANCE bulletins do not carry EAWS problem-level fields."""
+        return {
+            "avalanche_size": None,
+            "frequency": None,
+            "snowpack_stability": None,
+        }
+
+    def resolve_avalanche_activity(self, properties: dict[str, Any]) -> dict[str, str]:
+        """Return avalancheActivity highlights and comment."""
+        activity: dict[str, Any] = properties.get("avalancheActivity") or {}
+        return {
+            "highlights": activity.get("highlights") or "",
+            "comment": activity.get("comment") or "",
+        }
+
+    def resolve_danger_patterns(
+        self,
+        properties: dict[str, Any],  # noqa: ARG002 — not used for METEOFRANCE
+    ) -> list[str]:
+        """METEOFRANCE bulletins do not carry danger patterns."""
+        return []
+
+    def resolve_tendency_lead(
+        self,
+        properties: dict[str, Any],  # noqa: ARG002 — not used for METEOFRANCE
+    ) -> str | None:
+        """METEOFRANCE bulletins do not carry a tendency lead."""
+        return None
+
+    def resolve_danger_rating_subdivision(
+        self,
+        rating: dict[str, Any],  # noqa: ARG002 — METEOFRANCE has no per-rating subdivision
+    ) -> str | None:
+        """METEOFRANCE dangerRatings carry no subdivision."""
+        return None
+
+
+# Registry mapping source → adapter instance.
+_ADAPTERS: dict[Bulletin.Source, CustomDataAdapter] = {
+    Bulletin.Source.SLF: SlfAdapter(),
+    Bulletin.Source.ALBINA: AlbinaAdapter(),
+    Bulletin.Source.METEOFRANCE: MeteoFranceAdapter(),
+}
+
+
+def _get_adapter(source: Bulletin.Source) -> CustomDataAdapter:
+    """
+    Return the adapter for a given bulletin source.
+
+    Raises ``RenderModelBuildError`` when no adapter is registered for
+    the source — this should never happen in practice, but surfaces
+    any future source additions that were not paired with a new adapter.
+
+    Args:
+        source: A ``Bulletin.Source`` member.
+
+    Returns:
+        The registered :class:`CustomDataAdapter` instance.
+
+    Raises:
+        RenderModelBuildError: When the source has no registered adapter.
+
+    """
+    adapter = _ADAPTERS.get(source)
+    if adapter is None:
+        raise RenderModelBuildError(
+            f"No CustomDataAdapter registered for source {source!r}. "
+            f"Registered sources: {sorted(str(s) for s in _ADAPTERS)}"
+        )
+    return adapter
+
+
+# ---------------------------------------------------------------------------
+# Shared problem-rating matcher (used by both ALBINA and METEOFRANCE adapters)
+# ---------------------------------------------------------------------------
+
+
+def _match_problem_rating(
+    problem: dict[str, Any],
+    danger_ratings: list[dict[str, Any]],
+) -> str | None:
+    """
+    Derive the danger rating for a non-SLF problem by elevation + period matching.
+
+    Used by AlbinaAdapter and MeteoFranceAdapter which share the same
+    matching algorithm. See ``_resolve_problem_rating`` for the full spec.
+
+    Args:
+        problem: A single raw CAAML avalanche problem dict.
+        danger_ratings: Bulletin-level danger ratings list.
+
+    Returns:
+        The highest matching mainValue string, or ``None``.
+
+    """
+    problem_vtp: str = problem.get("validTimePeriod") or "all_day"
+    problem_elevation: dict[str, Any] | None = problem.get("elevation") or None
+    problem_lower = _to_int_safe((problem_elevation or {}).get("lowerBound"))
+    problem_upper = _to_int_safe((problem_elevation or {}).get("upperBound"))
+
+    matching = [
+        r
+        for r in danger_ratings
+        if (r.get("validTimePeriod") or "all_day") == problem_vtp
+    ]
+    if not matching:
+        matching = list(danger_ratings)
+
+    candidates = _filter_ratings_by_elevation(matching, problem_lower, problem_upper)
+    if not candidates:
+        candidates = matching
+
+    return _highest_danger(candidates)
+
+
+# ---------------------------------------------------------------------------
+# Source-specific helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_aggregations(
+    properties: dict[str, Any], source: Bulletin.Source
+) -> list[dict[str, Any]]:
+    """
+    Resolve the aggregation list from bulletin properties via the adapter registry.
+
+    For SLF bulletins this reads ``customData.CH.aggregation`` verbatim.
+    For ALBINA and MeteoFrance bulletins it synthesises aggregation entries
+    by grouping ``avalancheProblems`` on ``(category, validTimePeriod)``.
+
+    The output shape is the same in all cases:
+    ``[{"category": str, "problemTypes": [str], "validTimePeriod": str|None,
+       "title": str|None}, ...]``
+
+    Args:
+        properties: The CAAML properties dict.
+        source: A ``Bulletin.Source`` member.
+
+    Returns:
+        A list of aggregation entry dicts.
+
+    """
+    return _get_adapter(source).resolve_aggregations(properties)
+
+
 def _resolve_problem_rating(
     problem: dict[str, Any],
     danger_ratings: list[dict[str, Any]],
@@ -456,23 +922,11 @@ def _resolve_problem_rating(
     """
     Resolve the danger rating value for a single avalanche problem.
 
-    For SLF bulletins the value is read directly from
-    ``problem["dangerRatingValue"]``.
-
-    For ALBINA and MeteoFrance bulletins the danger rating is derived by
-    matching the problem's elevation and validTimePeriod against the
-    bulletin-level ``dangerRatings``.  Matching rules (in order of
-    specificity):
-
-    1. ``validTimePeriod`` must match the problem's period (or the rating
-       must have no validTimePeriod, which is treated as ``all_day``).
-    2. Elevation: a rating with ``lowerBound`` matches a problem whose
-       ``elevation.lowerBound >= lowerBound``; a rating with ``upperBound``
-       matches when ``elevation.upperBound <= upperBound``; a rating with no
-       bounds matches any elevation.
-    3. Most specific wins (a rating with an elevation bound is preferred
-       over one with no bound).
-    4. Fallback: highest danger value among remaining matching ratings.
+    Dispatches to the source adapter. For SLF bulletins the value is read
+    directly from ``problem["dangerRatingValue"]``. For ALBINA and
+    MeteoFrance bulletins the danger rating is derived by matching the
+    problem's elevation and validTimePeriod against the bulletin-level
+    ``dangerRatings``.
 
     Args:
         problem: A single raw CAAML avalanche problem dict.
@@ -484,31 +938,7 @@ def _resolve_problem_rating(
         no match can be found.
 
     """
-    if source == Bulletin.Source.SLF:
-        raw = problem.get("dangerRatingValue")
-        return raw if raw else None
-
-    # ALBINA and MeteoFrance: match against bulletin-level danger ratings.
-    problem_vtp: str = problem.get("validTimePeriod") or "all_day"
-    problem_elevation: dict[str, Any] | None = problem.get("elevation") or None
-    problem_lower = _to_int_safe((problem_elevation or {}).get("lowerBound"))
-    problem_upper = _to_int_safe((problem_elevation or {}).get("upperBound"))
-
-    # Partition ratings by validTimePeriod match.
-    matching = [
-        r
-        for r in danger_ratings
-        if (r.get("validTimePeriod") or "all_day") == problem_vtp
-    ]
-    if not matching:
-        matching = list(danger_ratings)
-
-    # Among matching, find the most specific elevation match.
-    candidates = _filter_ratings_by_elevation(matching, problem_lower, problem_upper)
-    if not candidates:
-        candidates = matching
-
-    return _highest_danger(candidates)
+    return _get_adapter(source).resolve_problem_rating(problem, danger_ratings)
 
 
 def _resolve_problem_comment(problem: dict[str, Any], source: Bulletin.Source) -> str:
@@ -525,12 +955,10 @@ def _resolve_problem_comment(problem: dict[str, Any], source: Bulletin.Source) -
         source: A ``Bulletin.Source`` member.
 
     Returns:
-        HTML comment string, or empty string when absent, ALBINA, or MF.
+        HTML comment string, or empty string when absent, ALBINA, or METEOFRANCE.
 
     """
-    if source == Bulletin.Source.SLF:
-        return problem.get("comment") or ""
-    return ""
+    return _get_adapter(source).resolve_problem_comment(problem)
 
 
 def _resolve_problem_extras(
@@ -555,20 +983,7 @@ def _resolve_problem_extras(
         Source-specific extras dict.
 
     """
-    custom_data: dict[str, Any] = problem.get("customData") or {}
-    if source == Bulletin.Source.SLF:
-        ch_data: dict[str, Any] = custom_data.get("CH", {})
-        return {
-            "subdivision": ch_data.get("subdivision", "") or "",
-            "core_zone_text": ch_data.get("coreZoneText") or None,
-        }
-    if source == Bulletin.Source.ALBINA:
-        albina_data: dict[str, Any] = custom_data.get("ALBINA", {})
-        return {
-            "avalanche_type": albina_data.get("avalancheType") or None,
-        }
-    # MeteoFrance: no problem-level source-specific extras.
-    return {}
+    return _get_adapter(source).resolve_problem_extras(problem)
 
 
 def _resolve_problem_avalanche_type(
@@ -588,11 +1003,7 @@ def _resolve_problem_avalanche_type(
         ``"slab"``, ``"loose"``, or ``None``.
 
     """
-    if source != Bulletin.Source.ALBINA:
-        return None
-    custom_data: dict[str, Any] = problem.get("customData") or {}
-    albina_data: dict[str, Any] = custom_data.get("ALBINA", {})
-    return albina_data.get("avalancheType") or None
+    return _get_adapter(source).resolve_problem_avalanche_type(problem)
 
 
 def _resolve_avalanche_activity(
@@ -615,13 +1026,7 @@ def _resolve_avalanche_activity(
         Dict with ``"highlights"`` and ``"comment"`` string fields.
 
     """
-    if source == Bulletin.Source.SLF:
-        return {"highlights": "", "comment": ""}
-    activity: dict[str, Any] = properties.get("avalancheActivity") or {}
-    return {
-        "highlights": activity.get("highlights") or "",
-        "comment": activity.get("comment") or "",
-    }
+    return _get_adapter(source).resolve_avalanche_activity(properties)
 
 
 def _resolve_danger_patterns(
@@ -644,18 +1049,7 @@ def _resolve_danger_patterns(
         List of danger pattern strings, e.g. ``["DP10", "DP1"]``, or ``[]``.
 
     """
-    if source in {Bulletin.Source.SLF, Bulletin.Source.METEOFRANCE}:
-        return []
-    custom_data: dict[str, Any] = properties.get("customData") or {}
-    # Prefer LWD_Tyrol; fall back to any other LWD_* key.
-    lwd_data = custom_data.get("LWD_Tyrol") or {}
-    if not lwd_data:
-        for key, value in custom_data.items():
-            if key.startswith("LWD_") and value:
-                lwd_data = value
-                break
-    patterns = lwd_data.get("dangerPatterns") or []
-    return [str(p) for p in patterns]
+    return _get_adapter(source).resolve_danger_patterns(properties)
 
 
 # ---------------------------------------------------------------------------
@@ -681,17 +1075,21 @@ def _build_problem(
         A rendered problem dict suitable for the render model.
 
     """
+    adapter = _get_adapter(source)
     elevation = _parse_elevation(problem.get("elevation") or None)
     aspects: list[str] = problem.get("aspects") or []
-    comment_html: str = _resolve_problem_comment(problem, source)
-    core_zone_text: str | None = (problem.get("customData") or {}).get("CH", {}).get(
-        "coreZoneText"
-    ) or None
-    danger_rating_value: str | None = _resolve_problem_rating(
-        problem, danger_ratings, source
+    comment_html: str = adapter.resolve_problem_comment(problem)
+    extras: dict[str, Any] = adapter.resolve_problem_extras(problem)
+    # core_zone_text is projected by SlfAdapter.resolve_problem_extras; ALBINA
+    # and METEOFRANCE adapters return {} so extras.get() yields None for those sources.
+    # Reading from extras rather than raw customData.CH keeps the namespace
+    # boundary clean — callers never need to know the SLF namespace key.
+    core_zone_text: str | None = extras.get("core_zone_text") or None
+    danger_rating_value: str | None = adapter.resolve_problem_rating(
+        problem, danger_ratings
     )
-    avalanche_type: str | None = _resolve_problem_avalanche_type(problem, source)
-    extras: dict[str, Any] = _resolve_problem_extras(problem, source)
+    avalanche_type: str | None = adapter.resolve_problem_avalanche_type(problem)
+    eaws_fields: dict[str, Any] = adapter.resolve_problem_eaws_fields(problem)
 
     return {
         "problem_type": problem.get("problemType", ""),
@@ -703,6 +1101,9 @@ def _build_problem(
         "danger_rating_value": danger_rating_value,
         "avalanche_type": avalanche_type,
         "extras": extras,
+        "avalanche_size": eaws_fields["avalanche_size"],
+        "frequency": eaws_fields["frequency"],
+        "snowpack_stability": eaws_fields["snowpack_stability"],
     }
 
 
@@ -1109,13 +1510,18 @@ def _build_prose(
     Missing or empty tendency array → ``[]``. Missing scalar prose → ``None``.
     ``avalanche_activity`` is always present; empty strings for SLF.
 
+    Also projects ``tendency_lead`` (str|None): ALBINA bulletins carry a
+    short editorial lead at ``tendency[0].highlights`` — a forecaster-authored
+    one-liner. SLF and MeteoFrance always return ``None`` here.
+
     Args:
         properties: The CAAML properties dict.
         source: A ``Bulletin.Source`` member.
 
     Returns:
         A prose dict with ``snowpack_structure``, ``weather_review``,
-        ``weather_forecast``, ``tendency``, and ``avalanche_activity`` keys.
+        ``weather_forecast``, ``tendency``, ``avalanche_activity``, and
+        ``tendency_lead`` keys.
 
     """
     snowpack_structure: str | None = (properties.get("snowpackStructure") or {}).get(
@@ -1144,6 +1550,7 @@ def _build_prose(
         )
 
     avalanche_activity = _resolve_avalanche_activity(properties, source)
+    tendency_lead: str | None = _get_adapter(source).resolve_tendency_lead(properties)
 
     return {
         "snowpack_structure": snowpack_structure,
@@ -1151,6 +1558,7 @@ def _build_prose(
         "weather_forecast": weather_forecast,
         "tendency": tendency,
         "avalanche_activity": avalanche_activity,
+        "tendency_lead": tendency_lead,
     }
 
 
@@ -1170,7 +1578,7 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     bulletin source cannot be identified from ``customData`` keys. The
     caller is responsible for catching this and storing an error sentinel.
 
-    Supports SLF, ALBINA, and MeteoFrance (MF) bulletin formats.
+    Supports SLF, ALBINA, and MeteoFrance (METEOFRANCE) bulletin formats.
     The source is detected automatically via ``_detect_source()`` and
     stamped in the output as ``render_model["source"]``.
 
@@ -1192,7 +1600,7 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     source = _detect_source(properties)
 
     ratings: list[dict[str, Any]] = properties.get("dangerRatings") or []
-    danger = _resolve_danger(ratings)
+    danger = _resolve_danger(ratings, source)
 
     avalanche_problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
     aggregation: list[dict[str, Any]] = _resolve_aggregations(properties, source)

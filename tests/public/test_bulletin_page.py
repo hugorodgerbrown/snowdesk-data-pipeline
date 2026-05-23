@@ -63,24 +63,32 @@ def _make_am_bulletin(region: MicroRegion, day: date, **kwargs: Any) -> Bulletin
 def _render_model_with_traits(
     traits: list, metadata: dict | None = None, prose: dict | None = None
 ) -> dict:
-    """Build a minimal v4 render_model dict for testing."""
+    """Build a minimal v5 render_model dict for testing."""
     default_prose: dict = {
         "snowpack_structure": "<p>The snowpack is generally stable.</p>",
         "weather_review": None,
         "weather_forecast": None,
         "tendency": [],
         "avalanche_activity": {"highlights": "", "comment": ""},
+        "tendency_lead": None,
     }
     # Merge caller-supplied prose over the default so callers don't need to
-    # repeat keys they don't care about; always ensure avalanche_activity is
-    # present so the v4 version check doesn't trigger a rebuild.
+    # repeat keys they don't care about; always ensure avalanche_activity and
+    # tendency_lead are present so the v5 version check doesn't trigger a rebuild.
     merged_prose = {**default_prose, **(prose or {})}
     if "avalanche_activity" not in merged_prose:
         merged_prose["avalanche_activity"] = {"highlights": "", "comment": ""}
+    if "tendency_lead" not in merged_prose:
+        merged_prose["tendency_lead"] = None
     return {
-        "version": 4,
+        "version": 5,
         "source": "slf",
-        "danger": {"key": "moderate", "number": "2", "subdivision": None},
+        "danger": {
+            "key": "moderate",
+            "number": "2",
+            "subdivision": None,
+            "ratings": [],
+        },
         "danger_patterns": [],
         "traits": traits,
         "snowpack_structure": None,
@@ -284,7 +292,7 @@ def simple_bulletin(region: MicroRegion) -> Bulletin:
     rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
     raw = _raw_data_with_problems([_raw_problem()])
     return _make_am_bulletin(
-        region, day, render_model=rm, render_model_version=4, raw_data=raw
+        region, day, render_model=rm, render_model_version=5, raw_data=raw
     )
 
 
@@ -336,7 +344,7 @@ def variable_bulletin(region: MicroRegion) -> Bulletin:
         },
     }
     return _make_am_bulletin(
-        region, day, render_model=rm, render_model_version=4, raw_data=raw_data
+        region, day, render_model=rm, render_model_version=5, raw_data=raw_data
     )
 
 
@@ -501,7 +509,7 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -523,7 +531,7 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -546,7 +554,7 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -568,7 +576,7 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -598,7 +606,7 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -633,7 +641,7 @@ class TestMetadataStrip:
             [_dry_trait_problems([_problem()])],
             metadata=metadata,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -656,7 +664,7 @@ class TestMetadataStrip:
             [_dry_trait_problems([_problem()])],
             metadata=metadata,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -674,7 +682,7 @@ class TestMetadataStrip:
         day = date(2026, 3, 15)
         # _render_model_with_traits already defaults source to "slf".
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -692,7 +700,7 @@ class TestMetadataStrip:
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
         # Remove the source key to simulate a bulletin without a known source.
         rm.pop("source", None)
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -754,7 +762,7 @@ class TestNoBulletinPageFooter:
         day = date(2026, 3, 15)
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
         bulletin = _make_am_bulletin(
-            region, day, render_model=rm, render_model_version=4
+            region, day, render_model=rm, render_model_version=5
         )
         other_region = MicroRegionFactory.create(name="Münstertal", slug="ch-4116")
         RegionBulletinFactory.create(
@@ -794,7 +802,7 @@ class TestRegionNameSource:
             valid_from=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
             valid_to=datetime(2026, 3, 15, 15, 0, tzinfo=UTC),
             render_model=rm,
-            render_model_version=4,
+            render_model_version=5,
         )
         # SLF labels this region "Stoos" in its CAAML payload, but the
         # EAWS canonical name (loaded from the fixture into ``region.name``)
@@ -880,7 +888,7 @@ class TestDebuggingAids:
             region,
             day,
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
-            render_model_version=4,
+            render_model_version=5,
             raw_data={"properties": {"bulletinID": "sentinel-uuid-12345"}},
         )
         url = _url("ch-4115", "valais", "2026-03-17")
@@ -921,7 +929,7 @@ class TestDebuggingAids:
             region,
             day,
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
-            render_model_version=4,
+            render_model_version=5,
             raw_data={"properties": {"comment": "hostile </script><b>pwn</b>"}},
         )
         url = _url("ch-4115", "valais", "2026-03-18")
@@ -1716,7 +1724,7 @@ class TestDayCharacterEyebrow:
         }
         rm = _render_model_with_traits([trait])
         rm["danger"] = {"key": "considerable", "number": "3", "subdivision": None}
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=4)
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
 
         url = _url("ch-4115", "valais", "2026-03-20")
         response = client.get(url)
@@ -2233,7 +2241,7 @@ class TestStructuredData:
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
         raw = _raw_data_with_problems([_raw_problem()])
         _make_am_bulletin(
-            tricky_region, day, render_model=rm, render_model_version=4, raw_data=raw
+            tricky_region, day, render_model=rm, render_model_version=5, raw_data=raw
         )
 
         url = _url("ch-9999", "valais-script-test", "2026-03-15")
@@ -2316,3 +2324,63 @@ class TestSubscribePanelStates:
         assert "/subscribe/remove-region/" in content
         # Should NOT show the email input (anonymous form).
         assert 'name="email"' not in content
+
+
+# ── _best_rating_from_rm_entries unit tests ───────────────────────────────────
+
+
+class TestBestRatingFromRmEntries:
+    """
+    Unit tests for the _best_rating_from_rm_entries helper.
+
+    This function is the core of _resolve_period_danger_from_rm.  The key
+    contract is that it returns None when no entry carries a recognised
+    danger key, so the caller can fall through to the traits fallback.
+    A tautological guard in the original implementation meant it never
+    returned None; these tests pin the corrected behaviour.
+    """
+
+    def _call(self, entries: list[dict[str, Any]]) -> tuple[str, str] | None:
+        """Call the helper under test."""
+        from public.views import _best_rating_from_rm_entries
+
+        return _best_rating_from_rm_entries(entries)
+
+    def test_returns_none_for_empty_list(self) -> None:
+        """An empty entry list returns None so the caller can use its fallback."""
+        assert self._call([]) is None
+
+    def test_returns_none_for_unrecognised_keys_only(self) -> None:
+        """Entries with only unrecognised keys return None, not a default 'low'."""
+        entries: list[dict[str, Any]] = [
+            {"period": "all_day", "key": "extreme", "subdivision": None},
+            {"period": "all_day", "key": "", "subdivision": None},
+        ]
+        assert self._call(entries) is None
+
+    def test_returns_highest_recognised_key(self) -> None:
+        """The highest recognised key wins when multiple entries are present."""
+        entries: list[dict[str, Any]] = [
+            {"period": "all_day", "key": "low", "subdivision": None},
+            {"period": "all_day", "key": "considerable", "subdivision": "+"},
+            {"period": "all_day", "key": "moderate", "subdivision": None},
+        ]
+        result = self._call(entries)
+        assert result == ("considerable", "+")
+
+    def test_unrecognised_key_is_ignored_when_recognised_present(self) -> None:
+        """Unrecognised keys are skipped; the best recognised key is returned."""
+        entries: list[dict[str, Any]] = [
+            {"period": "all_day", "key": "extreme", "subdivision": None},
+            {"period": "all_day", "key": "high", "subdivision": "-"},
+        ]
+        result = self._call(entries)
+        assert result == ("high", "-")
+
+    def test_subdivision_none_becomes_empty_string(self) -> None:
+        """A None subdivision is normalised to an empty string in the result."""
+        entries: list[dict[str, Any]] = [
+            {"period": "all_day", "key": "moderate", "subdivision": None}
+        ]
+        result = self._call(entries)
+        assert result == ("moderate", "")
