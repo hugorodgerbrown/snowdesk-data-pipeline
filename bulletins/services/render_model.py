@@ -1060,14 +1060,16 @@ def _build_problem(
     elevation = _parse_elevation(problem.get("elevation") or None)
     aspects: list[str] = problem.get("aspects") or []
     comment_html: str = adapter.resolve_problem_comment(problem)
-    core_zone_text: str | None = (problem.get("customData") or {}).get("CH", {}).get(
-        "coreZoneText"
-    ) or None
+    extras: dict[str, Any] = adapter.resolve_problem_extras(problem)
+    # core_zone_text is projected by SlfAdapter.resolve_problem_extras; EUREGIO
+    # and MF adapters return {} so extras.get() yields None for those sources.
+    # Reading from extras rather than raw customData.CH keeps the namespace
+    # boundary clean — callers never need to know the SLF namespace key.
+    core_zone_text: str | None = extras.get("core_zone_text") or None
     danger_rating_value: str | None = adapter.resolve_problem_rating(
         problem, danger_ratings
     )
     avalanche_type: str | None = adapter.resolve_problem_avalanche_type(problem)
-    extras: dict[str, Any] = adapter.resolve_problem_extras(problem)
     eaws_fields: dict[str, Any] = adapter.resolve_problem_eaws_fields(problem)
 
     return {

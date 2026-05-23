@@ -2728,104 +2728,13 @@ _SUBDIVISION_SUFFIX: dict[str, str] = {
 }
 
 
-def _highest_danger_key(ratings: list[dict[str, Any]]) -> tuple[str, str]:
-    """
-    Return the highest CAAML ``mainValue`` and its subdivision suffix.
-
-    When multiple ratings share the same highest ``mainValue``, the
-    subdivision from the last one encountered is used.
-
-    Args:
-        ratings: The CAAML ``dangerRatings`` list.
-
-    Returns:
-        A ``(key, subdivision_suffix)`` tuple. *key* is one of the keys in
-        :data:`_DANGER_PANEL_META` (defaults to ``"low"``).
-        *subdivision_suffix* is ``"-"``, ``"="``, ``"+"``, or ``""`` if
-        no subdivision is present.
-
-    """
-    highest = "low"
-    subdivision = ""
-    for rating in ratings:
-        value = rating.get("mainValue", "")
-        if value in _DANGER_ORDER and _DANGER_ORDER.index(value) >= _DANGER_ORDER.index(
-            highest
-        ):
-            highest = value
-            raw = (rating.get("customData") or {}).get("CH", {}).get("subdivision", "")
-            subdivision = _SUBDIVISION_SUFFIX.get(raw, "")
-    return highest, subdivision
-
-
 # Mirrors WhiteRisk's split: a dangerRating whose validTimePeriod is
 # ``all_day`` applies in both halves; ``earlier`` (morning-only) and
 # ``later`` (afternoon-only) are scoped to one half each.  Used by
-# :func:`_resolve_period_danger` to pick the ratings that cover a given
-# half of the day.
+# :func:`_resolve_period_danger_from_rm` to pick the projected ratings that
+# cover a given half of the day.
 _MORNING_PERIODS: frozenset[str] = frozenset({"all_day", "earlier"})
 _AFTERNOON_PERIODS: frozenset[str] = frozenset({"all_day", "later"})
-
-
-def _resolve_period_danger(
-    ratings: list[dict[str, Any]],
-    traits: list[dict[str, Any]],
-    period_group: frozenset[str],
-) -> tuple[str, str]:
-    """
-    Return the highest danger key + subdivision covering a half of the day.
-
-    Primary source is the CAAML ``dangerRatings`` list — filtered to entries
-    whose ``validTimePeriod`` is in ``period_group`` (defaulting absent values
-    to ``"all_day"`` since an unscoped rating applies all day), then reduced
-    with :func:`_highest_danger_key` to pick the highest ``mainValue`` and
-    its subdivision suffix.
-
-    When ``dangerRatings`` carries nothing for the period, falls back to the
-    render-model ``traits`` and returns the highest ``danger_level`` among
-    traits whose ``time_period`` covers the half.  Subdivision is ``""`` in
-    the fallback path — traits don't carry it.  This branch exists so test
-    fixtures that populate only ``render_model`` (not ``raw_data``) still
-    render the headline band correctly; real SLF bulletins always populate
-    ``dangerRatings`` and hit the primary path.
-
-    Returns ``("no_rating", "")`` only when *both* sources are empty for
-    this half.
-
-    Args:
-        ratings: The CAAML ``dangerRatings`` list from ``raw_data``.
-        traits: The render-model ``traits`` list (used as the fallback).
-        period_group: Set of ``validTimePeriod`` tokens covering the target
-            half of the day (``_MORNING_PERIODS`` or ``_AFTERNOON_PERIODS``).
-
-    Returns:
-        A ``(key, subdivision_suffix)`` tuple, same shape as
-        :func:`_highest_danger_key`.
-
-    """
-    relevant_ratings = [
-        r for r in ratings if r.get("validTimePeriod", "all_day") in period_group
-    ]
-    if relevant_ratings:
-        return _highest_danger_key(relevant_ratings)
-
-    # Fallback: derive the half's level from traits when ``dangerRatings``
-    # is absent or omits a covering entry.  Tests populate ``render_model``
-    # directly and leave ``raw_data`` empty — without this fallback the
-    # headline band would read ``no_rating`` on every test bulletin.
-    levels: list[int] = []
-    for t in traits:
-        if t.get("time_period") not in period_group:
-            continue
-        try:
-            level = int(t.get("danger_level") or 0)
-        except (TypeError, ValueError):
-            continue
-        if 1 <= level <= 5:
-            levels.append(level)
-    if not levels:
-        return "no_rating", ""
-    return _DANGER_ORDER[max(levels) - 1], ""
 
 
 def _best_rating_from_rm_entries(
@@ -2837,18 +2746,18 @@ def _best_rating_from_rm_entries(
     Returns ``None`` when no entry has a recognised key so the caller can
     fall through to an alternative source.
     """
-    best_key = "low"
+    best_key: str | None = None
     best_sub: str = ""
     for r in entries:
-        rk: str = r.get("key") or "low"
+        rk: str = r.get("key") or ""
         if rk not in _DANGER_ORDER:
             continue
-        if _DANGER_ORDER.index(rk) >= _DANGER_ORDER.index(best_key):
+        if best_key is None or _DANGER_ORDER.index(rk) >= _DANGER_ORDER.index(best_key):
             best_key = rk
             best_sub = r.get("subdivision") or ""
-    if best_key in _DANGER_PANEL_META or best_key != "low":
-        return best_key, best_sub
-    return None
+    if best_key is None:
+        return None
+    return best_key, best_sub
 
 
 def _resolve_period_danger_from_rm(

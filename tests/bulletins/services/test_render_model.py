@@ -1063,15 +1063,15 @@ class TestComputeDayCharacterRoundTrip:
 class TestRenderModelVersion:
     """Tests that RENDER_MODEL_VERSION and built version are both 5."""
 
-    def test_constant_is_4(self) -> None:
-        """RENDER_MODEL_VERSION constant equals 5."""
+    def test_constant_is_current(self) -> None:
+        """RENDER_MODEL_VERSION constant equals the current version."""
         assert RENDER_MODEL_VERSION == 5
 
-    def test_build_render_model_returns_version_4(self) -> None:
-        """build_render_model returns a dict with version == 5."""
+    def test_build_render_model_returns_current_version(self) -> None:
+        """build_render_model returns a dict with the current version."""
         props = _load_sample("sample_variable_day.json")
         rm = build_render_model(props)
-        assert rm["version"] == 5
+        assert rm["version"] == RENDER_MODEL_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -2012,7 +2012,7 @@ class TestBuildRenderModelEuregio:
             f"Expected at least one non-None avalanche_type; got {types!r}"
         )
 
-    def test_version_is_4(self) -> None:
+    def test_version_is_current(self) -> None:
         """EUREGIO bulletin render model has the current RENDER_MODEL_VERSION."""
         props = _load_euregio_bulletin()
         rm = build_render_model(props)
