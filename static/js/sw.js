@@ -10,9 +10,12 @@
  * Strategies:
  *
  *   - Same-origin static shell  (CSS, JS, fonts, images, manifest,
- *                                /sw.js itself, the regions GeoJSON
- *                                feed which doesn't change between
- *                                deploys for a given session)
+ *                                /sw.js itself, the region/resort
+ *                                GeoJSON feeds which don't change
+ *                                between deploys, and /api/ratings/
+ *                                whose URL encodes the date window —
+ *                                see STATIC_PATHS below for the full
+ *                                list and the per-entry safety argument)
  *     → stale-while-revalidate.
  *
  *   - HTML navigations          → network-first with a per-page cache
@@ -96,6 +99,13 @@ const STATIC_SHELL_EXTENSIONS = new Set([
 //   the wrong day. The cache rule is the same as for geo feeds; the
 //   safety argument is URL-encoded date window rather than
 //   deploy-versioned geometry.
+//
+// Note on Vary: the ratings view emits ``Vary: Accept-Encoding`` and
+// the Cache API honours Vary on match. In practice every request from
+// a given browser session carries the same Accept-Encoding header (the
+// UA sets it, not page JS), so cached entries hit reliably. A UA that
+// somehow rotated Accept-Encoding mid-session would just cache-miss
+// and re-fetch — not a correctness risk.
 //
 // Any new entry must be similarly safe to cache across a session.
 const STATIC_PATHS = new Set([
