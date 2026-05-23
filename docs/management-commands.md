@@ -360,10 +360,10 @@ prefers the gentler default of "start at the latest bulletin's
 overlap (duplicates are ignored downstream — it's the fetch that's being
 optimised).
 
-**Render cron entry:** update the cron job to
-`fetch_bulletins --source slf euregio --commit` after this change lands
-(the previous entry `fetch_bulletins --commit` will error with a missing
-`--source` argument).
+**Scheduler note:** `fetch_bulletins` is invoked by the `snowdesk-scheduler`
+Background Worker via `schedule.py` — see the Operational requirements section
+below. To add or change sources, update `_run_fetch_bulletins` in `schedule.py`
+and redeploy the worker.
 
 ---
 
@@ -380,9 +380,10 @@ writes `WeatherSnapshot` rows (one per region). Read-only by default;
 the API is always called even without `--commit`, making a bare
 invocation a useful connectivity probe.
 
-> **Note:** The Render cron entry for scheduled runs must be added
-> separately in the Render dashboard — this command only provides the
-> Django management-command entry point.
+> **Scheduler note:** `fetch_weather` is invoked by the `snowdesk-scheduler`
+> Background Worker via `schedule.py` — see the Operational requirements section
+> below. To change the schedule, update `_run_fetch_weather` in `schedule.py`
+> and redeploy the worker.
 
 ```bash
 # Read-only probe for today — no DB writes; real API call.
