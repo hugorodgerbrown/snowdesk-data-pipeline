@@ -138,8 +138,11 @@ _DANGER_MAP: dict[str, dict[str, Any]] = {
 # Used by the bulletin detail page to render the Source cell in the metadata strip.
 BULLETIN_SOURCE_LINKS: dict[str, tuple[str, str]] = {
     Bulletin.Source.SLF: ("SLF", "https://www.slf.ch"),
-    Bulletin.Source.EUREGIO: ("EUREGIO", "https://avalanche.report"),
-    Bulletin.Source.MF: ("MétéoFrance", "https://meteofrance.com/meteo-montagne"),
+    Bulletin.Source.ALBINA: ("ALBINA", "https://avalanche.report"),
+    Bulletin.Source.METEOFRANCE: (
+        "Météo-France",
+        "https://meteofrance.com/meteo-montagne",
+    ),
 }
 
 # Mapping from SLF danger codes to EAWS icons
@@ -1675,7 +1678,7 @@ def _day_windows_from_rm_ratings(
     Build day-window rows from the projected danger.ratings list.
 
     SLF style: prefers ``all_day`` row plus ``later`` when the later rank is
-    strictly higher. EUREGIO style: emits one row per period (earlier → later)
+    strictly higher. ALBINA style: emits one row per period (earlier → later)
     when no ``all_day`` entry is present.
     """
     by_period = _max_rm_rating_per_period(rm_ratings)
@@ -1695,7 +1698,7 @@ def _day_windows_from_rm_ratings(
                 windows.append(_day_window_row_from_rm(later_entry))
         return windows
 
-    # EUREGIO-style: no all_day entry — one row per period, earlier → later.
+    # ALBINA-style: no all_day entry — one row per period, earlier → later.
     period_order = ("earlier", "later")
     return [
         _day_window_row_from_rm(by_period[p]) for p in period_order if p in by_period
@@ -1707,7 +1710,7 @@ def _day_windows_from_raw_ratings(bulletin: Bulletin) -> list[dict[str, Any]]:
     Build day-window rows from raw CAAML dangerRatings.
 
     Fallback used for bulletins that predate the ``danger.ratings``
-    projection (v4 and earlier). Applies the same SLF / EUREGIO logic as
+    projection (v4 and earlier). Applies the same SLF / ALBINA logic as
     ``_day_windows_from_rm_ratings`` but reads directly from the raw
     ``dangerRatings`` CAAML properties.
     """
@@ -1741,7 +1744,7 @@ def _day_windows_from_raw_ratings(bulletin: Bulletin) -> list[dict[str, Any]]:
                 windows.append(_day_window_row(later_rating))
         return windows
 
-    # EUREGIO-style: one row per period, ordered earlier → later.
+    # ALBINA-style: one row per period, ordered earlier → later.
     period_order = ("earlier", "later")
     return [
         _day_window_row(by_period_raw[p]) for p in period_order if p in by_period_raw
@@ -1766,7 +1769,7 @@ def _build_day_windows(
     is strictly higher than ``all_day`` — equal or lower implies no
     change, so the overlay would be noise.
 
-    EUREGIO / ALBINA style: no ``all_day``; ratings split by
+    ALBINA / ALBINA style: no ``all_day``; ratings split by
     ``validTimePeriod`` (and often by elevation within a period). When
     no ``all_day`` rating exists, fall back to one row per period found
     in the source, picking the highest-rank rating across any elevation
@@ -1954,7 +1957,7 @@ def _build_structured_data(
         ``{{ structured_data_json|safe }}`` in a template.
 
     """
-    # Source organisation details (SLF / EUREGIO / MF).
+    # Source organisation details (SLF / ALBINA / METEOFRANCE).
     source_key = (panel.get("render_model") or {}).get("source", "")
     source_name, source_url = BULLETIN_SOURCE_LINKS.get(source_key, ("", ""))
 
@@ -3124,7 +3127,7 @@ def build_problem_cards(
         # back to the render-model traits when this returns [].
         return []
     if not aggregation:
-        # EUREGIO bulletins never carry customData.CH.aggregation — that's
+        # ALBINA bulletins never carry customData.CH.aggregation — that's
         # source-specific to SLF. Callers (_resolve_problem_cards) fall back
         # to the render-model traits in that case.
         return []
@@ -3142,7 +3145,7 @@ def _resolve_problem_cards(
     """
     Resolve problem cards from render-model traits.
 
-    Both SLF and EUREGIO bulletins now source their problem cards from the
+    Both SLF and ALBINA bulletins now source their problem cards from the
     enriched render-model traits list. The render model synthesises
     aggregation for all sources and records traits in editorial
     (aggregation) order, so trait ordering matches the previous SLF
@@ -3164,14 +3167,14 @@ def _problem_cards_from_render_model_traits(
     """
     Build one problem card per render-model trait.
 
-    Used as a fallback for EUREGIO bulletins which carry no
+    Used as a fallback for ALBINA bulletins which carry no
     ``customData.CH.aggregation``, so ``build_problem_cards`` returns [].
     The traits list comes from the **enriched** render model (already processed
     by ``enrich_render_model``), so elevation and label fields are already in
     the presentation-ready shape the ``_rating_block.html`` partial expects.
 
     One card is emitted per trait using the first problem in each trait for
-    spatial data (aspects / elevation) — EUREGIO aggregation entries always
+    spatial data (aspects / elevation) — ALBINA aggregation entries always
     contain a single problem type per time-period group.
 
     Args:
@@ -3442,8 +3445,8 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     render_model = enrich_render_model(raw_render_model)
 
     # Danger key and subdivision come from the render model projection.
-    # The render model reads customData.CH.subdivision for SLF; EUREGIO
-    # and MF carry None. This avoids re-reading raw customData here.
+    # The render model reads customData.CH.subdivision for SLF; ALBINA
+    # and METEOFRANCE carry None. This avoids re-reading raw customData here.
     rm_danger: dict[str, Any] = raw_render_model.get("danger") or {}
     danger_key: str = rm_danger.get("key") or "low"
     danger_subdivision: str = rm_danger.get("subdivision") or ""
@@ -3478,7 +3481,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
 
     traits: list[dict[str, Any]] = render_model.get("traits") or []
 
-    # Problem cards: both SLF and EUREGIO bulletins are now served from
+    # Problem cards: both SLF and ALBINA bulletins are now served from
     # render-model traits. The render model synthesises aggregation for all
     # sources and records traits in editorial (aggregation) order, so trait
     # ordering matches the previous SLF aggregation-driven ordering.
@@ -3552,7 +3555,7 @@ def _resolve_day_lead(raw_render_model: dict[str, Any]) -> DayCharacter:
     classify the day via the five-rule cascade in ``compute_day_character``
     (Stable / Manageable / Hard-to-read / Widespread / Dangerous).
 
-    EUREGIO bulletins, by contrast, ship a short editorial lead projected
+    ALBINA bulletins, by contrast, ship a short editorial lead projected
     into ``render_model["prose"]["tendency_lead"]`` — a forecaster-authored
     one-liner describing how the day is expected to play out. When that lead
     is present, use it verbatim and suppress the computed label. The callout
@@ -3566,6 +3569,7 @@ def _resolve_day_lead(raw_render_model: dict[str, Any]) -> DayCharacter:
 
     Returns:
         A :class:`DayCharacter` with label and explainer fields populated.
+
 
     """
     tendency_lead: str | None = (raw_render_model.get("prose") or {}).get(

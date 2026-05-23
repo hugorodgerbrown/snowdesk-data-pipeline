@@ -17,8 +17,8 @@ Contains three mirrors:
     fully present in the archive — fail loudly so missing fixtures surface
     in tests.
 
-``euregio_mirror``
-    Replays ``bulletins/local_mirrors/euregio_archive.ndjson`` with the
+``albina_mirror``
+    Replays ``bulletins/local_mirrors/albina_archive.ndjson`` with the
     same per-date, per-region URL shape as the ALBINA CDN:
     ``/<date>/<date>_<region>_en_CAAMLv6.json``. Returns bulletins whose
     ``customData.ALBINA.mainDate`` matches ``date_str`` and which cover at
@@ -29,7 +29,7 @@ Contains three mirrors:
 All views are wired up only when ``settings.DEBUG`` is true (see
 ``config/urls.py``); production never imports this module. Companion
 commands ``fetch_bulletins --source local-mirror``, ``fetch_weather
---source local-mirror``, and ``fetch_euregio_bulletins --source
+--source local-mirror``, and ``fetch_albina_bulletins --source
 local-mirror`` use these views to replay committed sample data end-to-end
 through the production fetch paths.
 """
@@ -219,12 +219,12 @@ def openmeteo_mirror(
     return JsonResponse(payload)
 
 
-def _read_euregio_archive(path: Path) -> list[dict]:
+def _read_albina_archive(path: Path) -> list[dict]:
     """
-    Read the EUREGIO NDJSON archive and return all bulletin dicts.
+    Read the ALBINA NDJSON archive and return all bulletin dicts.
 
     Args:
-        path: Filesystem path to the ``euregio_archive.ndjson`` file.
+        path: Filesystem path to the ``albina_archive.ndjson`` file.
 
     Returns:
         A list of raw bulletin dicts, one per non-empty line.
@@ -239,11 +239,11 @@ def _read_euregio_archive(path: Path) -> list[dict]:
     return results
 
 
-def euregio_mirror(request: HttpRequest, date_str: str, region: str) -> JsonResponse:
+def albina_mirror(request: HttpRequest, date_str: str, region: str) -> JsonResponse:
     """
-    Replay ``euregio_archive.ndjson`` in the same shape as the ALBINA CDN.
+    Replay ``albina_archive.ndjson`` in the same shape as the ALBINA CDN.
 
-    URL pattern: ``/dev/euregio-mirror/<date>/<date>_<region>_en_CAAMLv6.json``
+    URL pattern: ``/dev/albina-mirror/<date>/<date>_<region>_en_CAAMLv6.json``
 
     Returns the subset of bulletins from the archive whose
     ``customData.ALBINA.mainDate`` equals ``date_str`` and which cover at
@@ -261,7 +261,7 @@ def euregio_mirror(request: HttpRequest, date_str: str, region: str) -> JsonResp
     Args:
         request: The incoming Django request.
         date_str: ISO date string extracted from the URL (e.g. ``"2026-01-15"``).
-        region: EUREGIO region code extracted from the URL (e.g. ``"AT-07"``).
+        region: ALBINA region code extracted from the URL (e.g. ``"AT-07"``).
 
     Returns:
         A ``JsonResponse`` with a flat JSON array of matching bulletin dicts.
@@ -275,7 +275,7 @@ def euregio_mirror(request: HttpRequest, date_str: str, region: str) -> JsonResp
             status=400,
         )
 
-    archive = _read_euregio_archive(settings.EUREGIO_ARCHIVE_PATH)
+    archive = _read_albina_archive(settings.ALBINA_ARCHIVE_PATH)
 
     matching = [
         b
@@ -285,7 +285,7 @@ def euregio_mirror(request: HttpRequest, date_str: str, region: str) -> JsonResp
     ]
 
     logger.debug(
-        "euregio_mirror: date=%s region=%s -> %d/%d bulletin(s) matched",
+        "albina_mirror: date=%s region=%s -> %d/%d bulletin(s) matched",
         date_str,
         region,
         len(matching),

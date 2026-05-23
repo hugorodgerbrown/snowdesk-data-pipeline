@@ -141,7 +141,7 @@ def test_fetch_bulletins_calls_call_command() -> None:
         "fetch_bulletins",
         "--source",
         "slf",
-        "euregio",
+        "albina",
         "meteofrance",
         "--commit",
     )

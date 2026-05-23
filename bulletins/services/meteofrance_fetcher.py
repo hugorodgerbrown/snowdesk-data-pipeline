@@ -271,7 +271,7 @@ def _resolve_base_url(base_url: str | None) -> str:
     An explicit ``base_url`` wins (used by ``fetch_bulletins --local-mirror``
     to forward ``settings.METEOFRANCE_API_LOCAL_MIRROR_URL``); otherwise the
     live ``settings.METEOFRANCE_API_BASE_URL`` is used. The mirror setting
-    is *never* picked up implicitly — matching the SLF and EUREGIO fetchers
+    is *never* picked up implicitly — matching the SLF and ALBINA fetchers
     so a stale ``.env`` value cannot silently redirect a live run.
 
     Args:
@@ -455,8 +455,8 @@ def latest_meteofrance_date() -> date | None:
     """
     Return the most recent ``valid_from`` date of any MeteoFrance bulletin in the DB.
 
-    Filters on ``render_model.source == Bulletin.Source.MF`` — mirrors the
-    approach used in ``latest_euregio_date()``. Bulletins with a failed
+    Filters on ``render_model.source == Bulletin.Source.METEOFRANCE`` — mirrors the
+    approach used in ``latest_albina_date()``. Bulletins with a failed
     render-model build (version 0 error sentinel) carry no ``source`` key
     and are naturally excluded, which is the desired behaviour for
     resume-from-last-success.
@@ -471,7 +471,7 @@ def latest_meteofrance_date() -> date | None:
 
     """
     result = (
-        Bulletin.objects.filter(render_model__source=Bulletin.Source.MF)
+        Bulletin.objects.filter(render_model__source=Bulletin.Source.METEOFRANCE)
         .order_by("-valid_from")
         .values_list("valid_from", flat=True)
         .first()

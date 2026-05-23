@@ -3,16 +3,16 @@
 **Status:** draft.
 **Scope:** authoritative field-by-field translation reference for the
 MeteoFrance source adapter — a function that converts one DPBRA XML
-document into the same CAAML JSON dict shape that SLF and EUREGIO emit,
+document into the same CAAML JSON dict shape that SLF and ALBINA emit,
 ready to feed straight into `bulletins/services/data_fetcher.py::upsert_bulletin()`.
 **Source format:** Météo-France DPBRA XML
 (`<BULLETINS_NEIGE_AVALANCHE>` root element with bulletin attributes on
 the root itself — there is no inner `<BULLETIN>` wrapper despite the
 plural element name).
-**Target:** CAAML v6 JSON dict, identical in shape to the SLF and EUREGIO
+**Target:** CAAML v6 JSON dict, identical in shape to the SLF and ALBINA
 payloads already stored in `Bulletin.raw_data`. Provider-specific extras
 go under `customData.MF` (mirroring `customData.CH` for SLF and
-`customData.ALBINA` for EUREGIO).
+`customData.ALBINA` for ALBINA).
 **Evidence base:** 35 live bulletins covering every active French massif
 plus 1 delegated-region redirect, captured on 2026-05-18. See
 [`docs/research/meteofrance/`](research/meteofrance/) for the raw XML,
@@ -29,7 +29,7 @@ The three providers we now plan to consume differ along enough axes that
 they justify a shared adapter contract rather than three near-duplicate
 fetchers. MeteoFrance is the most divergent of the three.
 
-| Axis | SLF | EUREGIO (ALBINA) | MeteoFrance (DPBRA) |
+| Axis | SLF | ALBINA | MeteoFrance (DPBRA) |
 |---|---|---|---|
 | Format | CAAML v6 JSON | CAAML v6 JSON (+ provider extras) | Custom XML — not CAAML. Translator emits CAAML v6 JSON to match the other providers. |
 | Discovery | Single paginated list endpoint `?limit&offset` | Per-`(date, region)` GET on CDN; 404 = "no bulletin" | One XML per massif from `public-api.meteofrance.fr/public/DPBRA/v1/…`; regions enumerated via `liste-massifs` |
@@ -89,7 +89,7 @@ bulletinID = "FR-{NN}-{validity_date}[-A{amendment_seq}]"
   amendment so we can derive the suffix.
 
 `bulletinID` is globally unique by construction — the `FR-` prefix
-separates MF from SLF (`CH-`) and EUREGIO (`AT-…`, `IT-…`).
+separates MF from SLF (`CH-`) and ALBINA (`AT-…`, `IT-…`).
 
 ## 4. Timezone handling
 
@@ -181,7 +181,7 @@ caaml["dangerRatings"] = [{
 }]
 ```
 
-`_LEVEL` is the EAWS mapping shared with SLF/EUREGIO
+`_LEVEL` is the EAWS mapping shared with SLF/ALBINA
 (1=`low`, 2=`moderate`, 3=`considerable`, 4=`high`, 5=`very_high`).
 
 `LOC1`/`LOC2` (e.g. `<2200`, `>2200`) are decorative — `@ALTITUDE` is the
@@ -213,7 +213,7 @@ caaml["avalancheProblems"] = problems
 
 DPBRA encodes neither `avalancheSize` (only free-text "Taille 1 à 2" in
 prose) nor `snowpackStability` — both keys are omitted from the emitted
-problem dict, matching how EUREGIO handles partial data.
+problem dict, matching how ALBINA handles partial data.
 
 **`SAT_TO_EAWS` lookup (verified against the MF avalanche guide 2025):**
 
@@ -242,7 +242,7 @@ positions exactly.
 
 The implementation MUST raise (not silently fall back) on unknown SAT
 codes — silent fallback would mask MF feed changes. The orchestrator
-catches and increments `PipelineRun.records_failed`, matching SLF/EUREGIO
+catches and increments `PipelineRun.records_failed`, matching SLF/ALBINA
 behaviour.
 
 ### 5.5 Aspects
@@ -314,13 +314,13 @@ caaml["tendency"] = [{
 
 `_evolution_from_levels` is a 3-way comparator on the numeric danger
 codes — DPBRA gives us a numeric next-day value (`RISQUEMAXIJ2`), which
-SLF/EUREGIO don't, so the tendency for MF is more deterministic than for
+SLF/ALBINA don't, so the tendency for MF is more deterministic than for
 the other two providers.
 
 ### 5.10 `customData.MF`
 
 Everything DPBRA carries that CAAML can't represent goes here, mirroring
-the `customData.CH` (SLF) and `customData.ALBINA` (EUREGIO) conventions.
+the `customData.CH` (SLF) and `customData.ALBINA` (ALBINA) conventions.
 The render-model builder reads keys from this namespace when an
 MF-specific field is needed; nothing here is required for the basic
 calendar / map render:
@@ -368,7 +368,7 @@ caaml["customData"] = {
 ```
 
 camelCase keys mirror the surrounding CAAML JSON convention. The `MF`
-namespace is unique (SLF uses `CH`, EUREGIO uses `ALBINA` and
+namespace is unique (SLF uses `CH`, ALBINA uses `ALBINA` and
 `LWD_Tyrol`) — no collision risk.
 
 ## 6. Deliberately dropped DPBRA content
@@ -391,7 +391,7 @@ on:
 - SAT code not in `SAT_TO_EAWS` (the {1..6} keys defined in §5.4).
 
 The orchestrator catches per-bulletin and increments
-`PipelineRun.records_failed`, matching the existing SLF/EUREGIO behaviour.
+`PipelineRun.records_failed`, matching the existing SLF/ALBINA behaviour.
 
 ### 7.1 Delegated-region redirect (the Andorre case)
 
@@ -419,7 +419,7 @@ maintain a static "delegated regions" set seeded from the catalogue.
 - **Render-model aggregation.** The "blank problem cards" issue lives in
   `build_render_model`, not the translator. Address separately by teaching
   the builder to fall back to top-level `avalancheProblems` when
-  `customData.CH.aggregation` is absent — fixes EUREGIO and MF in one go.
+  `customData.CH.aggregation` is absent — fixes ALBINA and MF in one go.
 - **Discovery / HTTP.** The DPBRA endpoint shape (single massif fetch URL,
   rate limits, auth header) is the orchestrator's concern.
 - **Region fixtures.** Already loaded by **SNOW-179**

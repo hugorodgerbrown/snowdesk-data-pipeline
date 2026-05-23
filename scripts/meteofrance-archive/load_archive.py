@@ -1,12 +1,12 @@
-# load_archive.py — Thin CLI wrapper over the canonical MF archive loader.
+# load_archive.py — Thin CLI wrapper over the canonical Météo-France archive loader.
 #
 # The canonical loading logic has moved to
-# ``bulletins.services.mf_archive_loader.load_mf_archive`` so it can be
-# invoked by both this offline script and the Django admin upload view
-# (SNOW-227).
+# ``bulletins.services.meteofrance_archive_loader.load_meteofrance_archive``
+# so it can be invoked by both this offline script and the Django admin
+# upload view (SNOW-227).
 #
 # This script bootstraps Django, opens the NDJSON file from the filesystem,
-# and delegates to ``load_mf_archive``.  The ``load_archive(path, *, commit,
+# and delegates to ``load_meteofrance_archive``.  The ``load_archive(path, *, commit,
 # verbose) -> int`` public function preserves its original signature so that
 # existing tests in ``tests/scripts/meteofrance_archive/test_load_archive.py``
 # keep passing without modification.
@@ -91,7 +91,9 @@ def _fixup_envelope(properties: object, slug_to_code: dict[str, int]) -> str | N
         The synthesised ``bulletinID`` on success, or ``None`` on failure.
 
     """
-    from bulletins.services.mf_archive_loader import _fixup_envelope as _svc_fixup
+    from bulletins.services.meteofrance_archive_loader import (
+        _fixup_envelope as _svc_fixup,
+    )
 
     # The service-layer version no longer takes slug_to_code as an argument;
     # it imports SLUG_TO_CODE internally.  Cast here to keep the existing
@@ -127,7 +129,7 @@ def load_archive(
         Exit code: ``0`` on clean completion, ``1`` if any row failed.
 
     """
-    from bulletins.services.mf_archive_loader import load_mf_archive
+    from bulletins.services.meteofrance_archive_loader import load_meteofrance_archive
 
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -138,7 +140,7 @@ def load_archive(
 
     try:
         with input_path.open("r", encoding="utf-8") as fh:
-            result = load_mf_archive(
+            result = load_meteofrance_archive(
                 fh,
                 commit=commit,
                 triggered_by=TRIGGERED_BY,

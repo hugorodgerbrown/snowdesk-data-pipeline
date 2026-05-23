@@ -1,5 +1,5 @@
 """
-bulletins/services/render_model.py — Render model builder (SLF, EUREGIO, MeteoFrance).
+bulletins/services/render_model.py — Render model builder (SLF, ALBINA, MeteoFrance).
 
 Converts the raw CAAML properties dict stored in Bulletin.raw_data into a
 versioned, presentation-ready ``render_model`` dict. The render model is a
@@ -44,44 +44,45 @@ Version 3 (continued — no shape change requiring regeneration):
     returned empty traits instead of synthesising from problem types.
 
 Version 4 changes:
-  - Source-aware builder: ``_detect_source()`` identifies SLF vs. EUREGIO
+  - Source-aware builder: ``_detect_source()`` identifies SLF vs. ALBINA
     bulletins and routes to source-specific helpers. Now also supports
-    MeteoFrance (``"meteofrance"`` / ``Bulletin.Source.MF``). Raises
+    MeteoFrance (``"meteofrance"`` / ``Bulletin.Source.METEOFRANCE``). Raises
     ``RenderModelBuildError`` on unrecognised ``customData`` keys — the
     previous silent SLF fallback is removed so that unknown sources surface
     immediately rather than being silently misfiled.
-  - Added ``source`` top-level key: ``"slf"``, ``"euregio"``, or
+  - Added ``source`` top-level key: ``"slf"``, ``"albina"``, or
     ``"meteofrance"``.
   - ``_resolve_aggregations()`` synthesises aggregation from problem types
-    for EUREGIO and MeteoFrance bulletins (no CH aggregation in either).
+    for ALBINA and MeteoFrance bulletins (no CH aggregation in either).
   - Added per-problem ``avalanche_type`` field (``"slab"``, ``"loose"``,
-    or ``None``), drawn from ``customData.ALBINA.avalancheType`` for EUREGIO.
+    or ``None``), drawn from ``customData.ALBINA.avalancheType`` for ALBINA.
     Always ``None`` for SLF and MeteoFrance.
   - Added per-problem ``extras`` field: source-specific passthrough dict.
     SLF: ``{"subdivision": str, "core_zone_text": str|None}``.
-    EUREGIO: ``{"avalanche_type": str|None}``.
+    ALBINA: ``{"avalanche_type": str|None}``.
     MeteoFrance: ``{}``.
   - Added ``prose.avalanche_activity`` dict with ``highlights`` and
     ``comment`` string fields (empty strings for SLF; populated from
-    ``avalancheActivity`` for EUREGIO and MeteoFrance).
+    ``avalancheActivity`` for ALBINA and MeteoFrance).
   - Added top-level ``danger_patterns`` list (``[]`` for SLF and MeteoFrance;
-    ``customData.LWD_Tyrol.dangerPatterns`` for EUREGIO).
+    ``customData.LWD_Tyrol.dangerPatterns`` for ALBINA).
 
 Version 5 changes:
   - Introduced ``CustomDataAdapter`` Protocol and three concrete adapter
-    classes (``SlfAdapter``, ``EuregioAdapter``, ``MeteoFranceAdapter``)
+    classes (``SlfAdapter``, ``AlbinaAdapter``, ``MeteoFranceAdapter``)
     registered in ``_ADAPTERS``. Each adapter reads its own ``customData``
     namespace and projects source-neutral fields. Source-conditional
     ``if source == X`` branches in helper functions now dispatch through the
     registry, eliminating scattered branching.
   - Added ``danger.ratings`` list: one entry per CAAML ``dangerRating`` with
     ``period``, ``key``, ``subdivision``, and ``elevation`` keys. SLF entries
-    carry the per-rating subdivision from ``customData.CH``; EUREGIO and MF
-    entries carry ``subdivision=None``.
-  - Added ``prose.tendency_lead`` string: EUREGIO bulletins project
-    ``tendency[0].highlights`` here when present; SLF and MF always ``None``.
+    carry the per-rating subdivision from ``customData.CH``; ALBINA and
+    METEOFRANCE entries carry ``subdivision=None``.
+  - Added ``prose.tendency_lead`` string: ALBINA bulletins project
+    ``tendency[0].highlights`` here when present; SLF and METEOFRANCE
+    always ``None``.
   - Added per-problem named slots ``avalanche_size``, ``frequency``, and
-    ``snowpack_stability``: populated from EUREGIO raw problem fields;
+    ``snowpack_stability``: populated from ALBINA raw problem fields;
     ``None`` for SLF and MeteoFrance.
 """
 
@@ -264,7 +265,7 @@ def _resolve_danger(
     Also builds a ``ratings`` list: one entry per raw CAAML dangerRating
     with ``period``, ``key``, ``subdivision``, and ``elevation`` keys.
     The per-rating subdivision is adapter-specific — SLF reads
-    ``customData.CH.subdivision``; EUREGIO and MF carry ``None``.
+    ``customData.CH.subdivision``; ALBINA and METEOFRANCE carry ``None``.
 
     Args:
         ratings: The CAAML ``dangerRatings`` list.
@@ -322,10 +323,10 @@ def _resolve_danger(
 
 def _detect_source(properties: dict[str, Any]) -> Bulletin.Source:
     """
-    Detect whether a bulletin originates from SLF, EUREGIO (ALBINA), or MeteoFrance.
+    Detect whether a bulletin originates from SLF, ALBINA, or MeteoFrance.
 
     Inspects ``customData`` keys:
-    - ``"ALBINA"`` or any ``"LWD_*"`` key → EUREGIO.
+    - ``"ALBINA"`` or any ``"LWD_*"`` key → ALBINA.
     - ``"MF"`` → MeteoFrance.
     - ``"CH"`` → SLF.
 
@@ -347,12 +348,12 @@ def _detect_source(properties: dict[str, Any]) -> Bulletin.Source:
     """
     custom_data: dict[str, Any] = properties.get("customData") or {}
     if "ALBINA" in custom_data:
-        return Bulletin.Source.EUREGIO
+        return Bulletin.Source.ALBINA
     for key in custom_data:
         if key.startswith("LWD_"):
-            return Bulletin.Source.EUREGIO
+            return Bulletin.Source.ALBINA
     if "MF" in custom_data:
-        return Bulletin.Source.MF
+        return Bulletin.Source.METEOFRANCE
     if "CH" in custom_data:
         return Bulletin.Source.SLF
     keys = sorted(custom_data.keys())
@@ -598,7 +599,7 @@ def _synthesise_aggregation_from_problems(
     """
     Synthesise an aggregation list from ``avalancheProblems`` by (category, vtp).
 
-    Shared by EuregioAdapter and MeteoFranceAdapter which both lack a
+    Shared by AlbinaAdapter and MeteoFranceAdapter which both lack a
     ``customData`` aggregation block and derive the same grouping from their
     problems list.
 
@@ -631,9 +632,9 @@ def _synthesise_aggregation_from_problems(
     return [seen[k] for k in order]
 
 
-class EuregioAdapter:
+class AlbinaAdapter:
     """
-    Adapter for EUREGIO (ALBINA) bulletins.
+    Adapter for ALBINA (ALBINA) bulletins.
 
     Synthesises aggregation from avalancheProblems. Reads
     ``customData.ALBINA`` for avalanche type, ``customData.LWD_Tyrol``
@@ -657,9 +658,9 @@ class EuregioAdapter:
 
     def resolve_problem_comment(
         self,
-        problem: dict[str, Any],  # noqa: ARG002 — not used for EUREGIO
+        problem: dict[str, Any],  # noqa: ARG002 — not used for ALBINA
     ) -> str:
-        """EUREGIO carries activity prose at bulletin level, not per-problem."""
+        """ALBINA carries activity prose at bulletin level, not per-problem."""
         return ""
 
     def resolve_problem_extras(self, problem: dict[str, Any]) -> dict[str, Any]:
@@ -717,18 +718,18 @@ class EuregioAdapter:
 
     def resolve_danger_rating_subdivision(
         self,
-        rating: dict[str, Any],  # noqa: ARG002 — EUREGIO has no per-rating subdivision
+        rating: dict[str, Any],  # noqa: ARG002 — ALBINA has no per-rating subdivision
     ) -> str | None:
-        """EUREGIO dangerRatings carry no subdivision."""
+        """ALBINA dangerRatings carry no subdivision."""
         return None
 
 
 class MeteoFranceAdapter:
     """
-    Adapter for MeteoFrance (MF / BRA) bulletins.
+    Adapter for MeteoFrance (METEOFRANCE / BRA) bulletins.
 
     Synthesises aggregation from avalancheProblems. Per-problem EAWS fields
-    and danger patterns are absent in MF data. No tendency lead.
+    and danger patterns are absent in METEOFRANCE data. No tendency lead.
     """
 
     def resolve_aggregations(self, properties: dict[str, Any]) -> list[dict[str, Any]]:
@@ -745,30 +746,30 @@ class MeteoFranceAdapter:
 
     def resolve_problem_comment(
         self,
-        problem: dict[str, Any],  # noqa: ARG002 — not used for MF
+        problem: dict[str, Any],  # noqa: ARG002 — not used for METEOFRANCE
     ) -> str:
-        """MF carries activity prose at bulletin level, not per-problem."""
+        """METEOFRANCE carries activity prose at bulletin level, not per-problem."""
         return ""
 
     def resolve_problem_extras(
         self,
-        problem: dict[str, Any],  # noqa: ARG002 — no MF problem-level extras
+        problem: dict[str, Any],  # noqa: ARG002 — no METEOFRANCE problem-level extras
     ) -> dict[str, Any]:
         """MeteoFrance has no source-specific problem-level extras."""
         return {}
 
     def resolve_problem_avalanche_type(
         self,
-        problem: dict[str, Any],  # noqa: ARG002 — not used for MF
+        problem: dict[str, Any],  # noqa: ARG002 — not used for METEOFRANCE
     ) -> str | None:
-        """MF bulletins do not carry an avalanche type."""
+        """METEOFRANCE bulletins do not carry an avalanche type."""
         return None
 
     def resolve_problem_eaws_fields(
         self,
-        problem: dict[str, Any],  # noqa: ARG002 — not used for MF
+        problem: dict[str, Any],  # noqa: ARG002 — not used for METEOFRANCE
     ) -> dict[str, Any]:
-        """MF bulletins do not carry EAWS problem-level fields."""
+        """METEOFRANCE bulletins do not carry EAWS problem-level fields."""
         return {
             "avalanche_size": None,
             "frequency": None,
@@ -785,31 +786,31 @@ class MeteoFranceAdapter:
 
     def resolve_danger_patterns(
         self,
-        properties: dict[str, Any],  # noqa: ARG002 — not used for MF
+        properties: dict[str, Any],  # noqa: ARG002 — not used for METEOFRANCE
     ) -> list[str]:
-        """MF bulletins do not carry danger patterns."""
+        """METEOFRANCE bulletins do not carry danger patterns."""
         return []
 
     def resolve_tendency_lead(
         self,
-        properties: dict[str, Any],  # noqa: ARG002 — not used for MF
+        properties: dict[str, Any],  # noqa: ARG002 — not used for METEOFRANCE
     ) -> str | None:
-        """MF bulletins do not carry a tendency lead."""
+        """METEOFRANCE bulletins do not carry a tendency lead."""
         return None
 
     def resolve_danger_rating_subdivision(
         self,
-        rating: dict[str, Any],  # noqa: ARG002 — MF has no per-rating subdivision
+        rating: dict[str, Any],  # noqa: ARG002 — METEOFRANCE has no per-rating subdivision
     ) -> str | None:
-        """MF dangerRatings carry no subdivision."""
+        """METEOFRANCE dangerRatings carry no subdivision."""
         return None
 
 
 # Registry mapping source → adapter instance.
 _ADAPTERS: dict[Bulletin.Source, CustomDataAdapter] = {
     Bulletin.Source.SLF: SlfAdapter(),
-    Bulletin.Source.EUREGIO: EuregioAdapter(),
-    Bulletin.Source.MF: MeteoFranceAdapter(),
+    Bulletin.Source.ALBINA: AlbinaAdapter(),
+    Bulletin.Source.METEOFRANCE: MeteoFranceAdapter(),
 }
 
 
@@ -841,7 +842,7 @@ def _get_adapter(source: Bulletin.Source) -> CustomDataAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Shared problem-rating matcher (used by both EUREGIO and MF adapters)
+# Shared problem-rating matcher (used by both ALBINA and METEOFRANCE adapters)
 # ---------------------------------------------------------------------------
 
 
@@ -852,7 +853,7 @@ def _match_problem_rating(
     """
     Derive the danger rating for a non-SLF problem by elevation + period matching.
 
-    Used by EuregioAdapter and MeteoFranceAdapter which share the same
+    Used by AlbinaAdapter and MeteoFranceAdapter which share the same
     matching algorithm. See ``_resolve_problem_rating`` for the full spec.
 
     Args:
@@ -895,7 +896,7 @@ def _resolve_aggregations(
     Resolve the aggregation list from bulletin properties via the adapter registry.
 
     For SLF bulletins this reads ``customData.CH.aggregation`` verbatim.
-    For EUREGIO and MeteoFrance bulletins it synthesises aggregation entries
+    For ALBINA and MeteoFrance bulletins it synthesises aggregation entries
     by grouping ``avalancheProblems`` on ``(category, validTimePeriod)``.
 
     The output shape is the same in all cases:
@@ -922,7 +923,7 @@ def _resolve_problem_rating(
     Resolve the danger rating value for a single avalanche problem.
 
     Dispatches to the source adapter. For SLF bulletins the value is read
-    directly from ``problem["dangerRatingValue"]``. For EUREGIO and
+    directly from ``problem["dangerRatingValue"]``. For ALBINA and
     MeteoFrance bulletins the danger rating is derived by matching the
     problem's elevation and validTimePeriod against the bulletin-level
     ``dangerRatings``.
@@ -945,7 +946,7 @@ def _resolve_problem_comment(problem: dict[str, Any], source: Bulletin.Source) -
     Resolve the display comment for a single avalanche problem.
 
     SLF bulletins carry a per-problem ``comment`` field with HTML prose.
-    EUREGIO and MeteoFrance bulletins carry avalanche activity prose at
+    ALBINA and MeteoFrance bulletins carry avalanche activity prose at
     bulletin level (surfaced via ``prose.avalanche_activity``), so
     per-problem comments are returned as empty strings.
 
@@ -954,7 +955,7 @@ def _resolve_problem_comment(problem: dict[str, Any], source: Bulletin.Source) -
         source: A ``Bulletin.Source`` member.
 
     Returns:
-        HTML comment string, or empty string when absent, EUREGIO, or MF.
+        HTML comment string, or empty string when absent, ALBINA, or METEOFRANCE.
 
     """
     return _get_adapter(source).resolve_problem_comment(problem)
@@ -969,7 +970,7 @@ def _resolve_problem_extras(
     SLF: returns ``{"subdivision": str, "core_zone_text": str|None}`` drawn
     from ``customData.CH``.
 
-    EUREGIO: returns ``{"avalanche_type": str|None}`` drawn from
+    ALBINA: returns ``{"avalanche_type": str|None}`` drawn from
     ``customData.ALBINA.avalancheType``.
 
     MeteoFrance: returns ``{}`` (no source-specific problem-level extras).
@@ -991,7 +992,7 @@ def _resolve_problem_avalanche_type(
     """
     Resolve the avalanche type (slab/loose) for a problem, if available.
 
-    Only present for EUREGIO bulletins; SLF and MeteoFrance bulletins
+    Only present for ALBINA bulletins; SLF and MeteoFrance bulletins
     always return ``None``.
 
     Args:
@@ -1014,7 +1015,7 @@ def _resolve_avalanche_activity(
     SLF bulletins do not carry an ``avalancheActivity`` field at the bulletin
     level; returns empty strings for both fields.
 
-    EUREGIO and MeteoFrance bulletins carry ``avalancheActivity.highlights``
+    ALBINA and MeteoFrance bulletins carry ``avalancheActivity.highlights``
     and ``avalancheActivity.comment``.
 
     Args:
@@ -1037,7 +1038,7 @@ def _resolve_danger_patterns(
     SLF and MeteoFrance bulletins do not carry danger patterns; returns an
     empty list.
 
-    EUREGIO bulletins may carry ``customData.LWD_Tyrol.dangerPatterns``.
+    ALBINA bulletins may carry ``customData.LWD_Tyrol.dangerPatterns``.
     Other ``LWD_*`` keys are searched when ``LWD_Tyrol`` is absent.
 
     Args:
@@ -1066,7 +1067,7 @@ def _build_problem(
 
     Args:
         problem: A single raw avalanche problem dict from CAAML.
-        danger_ratings: Bulletin-level danger ratings (used for EUREGIO
+        danger_ratings: Bulletin-level danger ratings (used for ALBINA
             and MeteoFrance to derive per-problem danger rating values).
         source: A ``Bulletin.Source`` member.
 
@@ -1079,8 +1080,8 @@ def _build_problem(
     aspects: list[str] = problem.get("aspects") or []
     comment_html: str = adapter.resolve_problem_comment(problem)
     extras: dict[str, Any] = adapter.resolve_problem_extras(problem)
-    # core_zone_text is projected by SlfAdapter.resolve_problem_extras; EUREGIO
-    # and MF adapters return {} so extras.get() yields None for those sources.
+    # core_zone_text is projected by SlfAdapter.resolve_problem_extras; ALBINA
+    # and METEOFRANCE adapters return {} so extras.get() yields None for those sources.
     # Reading from extras rather than raw customData.CH keeps the namespace
     # boundary clean — callers never need to know the SLF namespace key.
     core_zone_text: str | None = extras.get("core_zone_text") or None
@@ -1165,7 +1166,7 @@ def _validate_aggregation(aggregation: list[dict[str, Any]]) -> None:
 
     Args:
         aggregation: The resolved aggregation list (from either the SLF
-            ``customData.CH.aggregation`` field or the synthesised EUREGIO list).
+            ``customData.CH.aggregation`` field or the synthesised ALBINA list).
 
     Raises:
         RenderModelBuildError: On structural anomalies in any entry.
@@ -1332,17 +1333,17 @@ def _build_synthesised_traits(
     source: Bulletin.Source,
 ) -> list[dict[str, Any]]:
     """
-    Build traits for EUREGIO and MeteoFrance bulletins using a per-(type, vtp) lookup.
+    Build traits for ALBINA and MeteoFrance bulletins using a per-(type, vtp) lookup.
 
     The same problem type can appear in multiple validTimePeriods in both
-    EUREGIO and MeteoFrance bulletins, so each aggregation entry is resolved
+    ALBINA and MeteoFrance bulletins, so each aggregation entry is resolved
     against the subset of problems that match its validTimePeriod.
 
     Args:
         aggregation: The synthesised aggregation list.
         avalanche_problems: The raw ``avalancheProblems`` list.
         ratings: Bulletin-level danger ratings.
-        source: Either ``Bulletin.Source.EUREGIO`` or ``Bulletin.Source.MF``.
+        source: Either ``Bulletin.Source.ALBINA`` or ``Bulletin.Source.METEOFRANCE``.
 
     Returns:
         Flat list of trait dicts in aggregation order.
@@ -1381,7 +1382,7 @@ def _build_traits(
     """
     Build the complete traits list from aggregation entries and problems.
 
-    For EUREGIO and MeteoFrance bulletins the same problem type may appear
+    For ALBINA and MeteoFrance bulletins the same problem type may appear
     in multiple validTimePeriods, so a per-(type, vtp) lookup is used to
     ensure each aggregation group resolves to the correct problem instance.
 
@@ -1400,7 +1401,7 @@ def _build_traits(
     """
     traits: list[dict[str, Any]] = []
 
-    if source in {Bulletin.Source.EUREGIO, Bulletin.Source.MF}:
+    if source in {Bulletin.Source.ALBINA, Bulletin.Source.METEOFRANCE}:
         traits = _build_synthesised_traits(
             aggregation, avalanche_problems, ratings, source
         )
@@ -1502,14 +1503,14 @@ def _build_prose(
     Extract prose sections from CAAML properties.
 
     Reads ``snowpackStructure.comment``, ``weatherReview.comment``,
-    ``weatherForecast.comment``, the ``tendency`` array, and (for EUREGIO)
+    ``weatherForecast.comment``, the ``tendency`` array, and (for ALBINA)
     ``avalancheActivity``. Each tendency entry captures ``comment``,
     ``tendency_type`` (from ``tendencyType``), ``valid_from``, and
     ``valid_until`` (from the entry's ``validTime``).
     Missing or empty tendency array → ``[]``. Missing scalar prose → ``None``.
     ``avalanche_activity`` is always present; empty strings for SLF.
 
-    Also projects ``tendency_lead`` (str|None): EUREGIO bulletins carry a
+    Also projects ``tendency_lead`` (str|None): ALBINA bulletins carry a
     short editorial lead at ``tendency[0].highlights`` — a forecaster-authored
     one-liner. SLF and MeteoFrance always return ``None`` here.
 
@@ -1577,7 +1578,7 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     bulletin source cannot be identified from ``customData`` keys. The
     caller is responsible for catching this and storing an error sentinel.
 
-    Supports SLF, EUREGIO (ALBINA), and MeteoFrance (MF) bulletin formats.
+    Supports SLF, ALBINA, and MeteoFrance (METEOFRANCE) bulletin formats.
     The source is detected automatically via ``_detect_source()`` and
     stamped in the output as ``render_model["source"]``.
 

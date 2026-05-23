@@ -313,7 +313,7 @@ class TestTendencyHasComment:
         assert tendency_has_comment(prose) is True
 
     def test_returns_false_when_all_comments_empty(self) -> None:
-        """EUREGIO entries with empty comment strings return False."""
+        """ALBINA entries with empty comment strings return False."""
         prose = {
             "tendency": [
                 {"comment": "", "tendency_type": "steady"},

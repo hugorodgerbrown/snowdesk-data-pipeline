@@ -393,24 +393,24 @@ class TestSlfSubdivisionPlusCanary:
 
 
 @pytest.mark.django_db
-class TestEuregioPanelContextCanary:
+class TestAlbinaPanelContextCanary:
     """
-    Integration canary: EUREGIO bulletin produces a well-formed panel context.
+    Integration canary: ALBINA bulletin produces a well-formed panel context.
 
     The adapter unit tests cover projection in isolation; this test exercises
-    the full path from raw EUREGIO bulletin JSON through
+    the full path from raw ALBINA bulletin JSON through
     ``build_render_model`` → ``_build_panel_context`` and asserts that
     ``problem_cards`` and ``day_character`` are non-empty.  A regression that
-    decouples the EUREGIO adapter from the view layer will surface here.
+    decouples the ALBINA adapter from the view layer will surface here.
     """
 
-    def test_euregio_panel_context_has_problem_cards_and_day_character(
+    def test_albina_panel_context_has_problem_cards_and_day_character(
         self,
     ) -> None:
-        """EUREGIO panel context populates problem_cards and day_character."""
+        """ALBINA panel context populates problem_cards and day_character."""
         from public.views import _build_panel_context
 
-        props = json.loads((_FIXTURE_DIR / "euregio_sample_bulletin.json").read_text())
+        props = json.loads((_FIXTURE_DIR / "albina_sample_bulletin.json").read_text())
         bulletin = BulletinFactory.create(
             raw_data=_wrap_feature(props),
             issued_at=datetime(2025, 11, 28, 18, 6, 1, tzinfo=UTC),
@@ -420,9 +420,9 @@ class TestEuregioPanelContextCanary:
         ctx = _build_panel_context(bulletin)
 
         assert ctx["problem_cards"], (
-            "Expected at least one problem card for EUREGIO bulletin"
+            "Expected at least one problem card for ALBINA bulletin"
         )
         day_char = ctx["day_character"]
-        # EUREGIO bulletins carry a tendency lead that overrides the computed
+        # ALBINA bulletins carry a tendency lead that overrides the computed
         # label — day_character.explainer carries the forecaster-authored text.
         assert day_char.explainer, "Expected non-empty day_character explainer"

@@ -100,16 +100,17 @@ SLF_API_LOCAL_MIRROR_URL = config(
 )
 
 # ---------------------------------------------------------------------------
-# Local EUREGIO mirror (dev only)
+# Local ALBINA mirror (dev only)
 # ---------------------------------------------------------------------------
-# URL of the development-only view at ``bulletins.dev_views.euregio_mirror``,
-# which replays ``bulletins/local_mirrors/euregio_archive.ndjson`` with the
-# same date/region path contract as the upstream ALBINA CDN. Only defined in
-# development.py so that ``fetch_euregio_bulletins --source local-mirror``
-# errors loudly if anyone tries to run it against a production-like environment.
-EUREGIO_API_LOCAL_MIRROR_URL = config(
-    "EUREGIO_API_LOCAL_MIRROR_URL",
-    default="http://localhost:8000/dev/euregio-mirror",
+# URL of the development-only view at ``bulletins.dev_views.albina_mirror``,
+# which replays ``bulletins/local_mirrors/albina_archive.ndjson`` with the
+# same date/region path contract as the upstream avalanche.report CDN. Only
+# defined in development.py so that ``fetch_bulletins --source albina
+# --local-mirror`` errors loudly if anyone tries to run it against a
+# production-like environment.
+ALBINA_API_LOCAL_MIRROR_URL = config(
+    "ALBINA_API_LOCAL_MIRROR_URL",
+    default="http://localhost:8000/dev/albina-mirror",
 )
 
 # ---------------------------------------------------------------------------

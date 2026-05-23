@@ -11,7 +11,7 @@ Covers:
   - Happy paths: both empty, empty title fallback, 3+ aggregation warning.
   - Version 3: metadata and prose extraction, _parse_iso_timestamp helper,
     tendency list, back-compat top-level snowpack_structure.
-  - Version 4: source detection, EUREGIO aggregation synthesis,
+  - Version 4: source detection, ALBINA aggregation synthesis,
     per-problem extras and avalanche_type, avalanche_activity prose,
     danger_patterns; CH regression tests asserting empty new slots.
 """
@@ -1543,36 +1543,36 @@ class TestDetectSource:
         }
         assert _detect_source(props) == Bulletin.Source.SLF
 
-    def test_euregio_via_albina_custom_data(self) -> None:
-        """Properties with customData.ALBINA → Bulletin.Source.EUREGIO."""
+    def test_albina_via_albina_custom_data(self) -> None:
+        """Properties with customData.ALBINA → Bulletin.Source.ALBINA."""
         props: dict[str, Any] = {
             "customData": {"ALBINA": {"mainDate": "2026-05-03"}},
         }
-        assert _detect_source(props) == Bulletin.Source.EUREGIO
+        assert _detect_source(props) == Bulletin.Source.ALBINA
 
-    def test_euregio_via_lwd_key(self) -> None:
-        """Properties with customData.LWD_Tyrol → Bulletin.Source.EUREGIO."""
+    def test_albina_via_lwd_key(self) -> None:
+        """Properties with customData.LWD_Tyrol → Bulletin.Source.ALBINA."""
         props: dict[str, Any] = {
             "customData": {"LWD_Tyrol": {"dangerPatterns": ["DP10"]}},
         }
-        assert _detect_source(props) == Bulletin.Source.EUREGIO
+        assert _detect_source(props) == Bulletin.Source.ALBINA
 
-    def test_euregio_via_combined_custom_data(self) -> None:
-        """Properties with both ALBINA and LWD_Tyrol → Bulletin.Source.EUREGIO."""
+    def test_albina_via_combined_custom_data(self) -> None:
+        """Properties with both ALBINA and LWD_Tyrol → Bulletin.Source.ALBINA."""
         props: dict[str, Any] = {
             "customData": {
                 "ALBINA": {"mainDate": "2026-05-03"},
                 "LWD_Tyrol": {"dangerPatterns": ["DP10"]},
             },
         }
-        assert _detect_source(props) == Bulletin.Source.EUREGIO
+        assert _detect_source(props) == Bulletin.Source.ALBINA
 
     def test_meteofrance_via_mf_custom_data(self) -> None:
-        """Properties with customData.MF → Bulletin.Source.MF."""
+        """Properties with customData.MF → Bulletin.Source.METEOFRANCE."""
         props: dict[str, Any] = {
             "customData": {"MF": {"massif_id": "1"}},
         }
-        assert _detect_source(props) == Bulletin.Source.MF
+        assert _detect_source(props) == Bulletin.Source.METEOFRANCE
 
     def test_raises_when_no_custom_data(self) -> None:
         """No customData → RenderModelBuildError naming the offending keys."""
@@ -1619,8 +1619,8 @@ class TestResolveAggregations:
         result = _resolve_aggregations(props, Bulletin.Source.SLF)
         assert result == []
 
-    def test_euregio_single_dry_problem(self) -> None:
-        """EUREGIO with one dry problem synthesises one dry aggregation entry."""
+    def test_albina_single_dry_problem(self) -> None:
+        """ALBINA with one dry problem synthesises one dry aggregation entry."""
         props: dict[str, Any] = {
             "avalancheProblems": [
                 {
@@ -1630,14 +1630,14 @@ class TestResolveAggregations:
                 }
             ]
         }
-        result = _resolve_aggregations(props, Bulletin.Source.EUREGIO)
+        result = _resolve_aggregations(props, Bulletin.Source.ALBINA)
         assert len(result) == 1
         assert result[0]["category"] == "dry"
         assert result[0]["problemTypes"] == ["wind_slab"]
         assert result[0]["validTimePeriod"] == "all_day"
 
-    def test_euregio_single_wet_problem(self) -> None:
-        """EUREGIO with one wet problem synthesises one wet aggregation entry."""
+    def test_albina_single_wet_problem(self) -> None:
+        """ALBINA with one wet problem synthesises one wet aggregation entry."""
         props: dict[str, Any] = {
             "avalancheProblems": [
                 {
@@ -1647,14 +1647,14 @@ class TestResolveAggregations:
                 }
             ]
         }
-        result = _resolve_aggregations(props, Bulletin.Source.EUREGIO)
+        result = _resolve_aggregations(props, Bulletin.Source.ALBINA)
         assert len(result) == 1
         assert result[0]["category"] == "wet"
         assert result[0]["problemTypes"] == ["wet_snow"]
         assert result[0]["validTimePeriod"] == "later"
 
-    def test_euregio_dry_split_across_time_periods(self) -> None:
-        """EUREGIO dry problems in different time periods produce two entries."""
+    def test_albina_dry_split_across_time_periods(self) -> None:
+        """ALBINA dry problems in different time periods produce two entries."""
         props: dict[str, Any] = {
             "avalancheProblems": [
                 {
@@ -1669,14 +1669,14 @@ class TestResolveAggregations:
                 },
             ]
         }
-        result = _resolve_aggregations(props, Bulletin.Source.EUREGIO)
+        result = _resolve_aggregations(props, Bulletin.Source.ALBINA)
         assert len(result) == 2
         assert result[0]["validTimePeriod"] == "earlier"
         assert result[1]["validTimePeriod"] == "later"
         assert all(e["category"] == "dry" for e in result)
 
-    def test_euregio_mixed_dry_and_wet(self) -> None:
-        """EUREGIO with dry + wet problems synthesises two separate entries."""
+    def test_albina_mixed_dry_and_wet(self) -> None:
+        """ALBINA with dry + wet problems synthesises two separate entries."""
         props: dict[str, Any] = {
             "avalancheProblems": [
                 {
@@ -1691,19 +1691,19 @@ class TestResolveAggregations:
                 },
             ]
         }
-        result = _resolve_aggregations(props, Bulletin.Source.EUREGIO)
+        result = _resolve_aggregations(props, Bulletin.Source.ALBINA)
         assert len(result) == 2
         categories = {e["category"] for e in result}
         assert categories == {"dry", "wet"}
 
-    def test_euregio_empty_problems(self) -> None:
-        """EUREGIO with no problems returns empty aggregation."""
+    def test_albina_empty_problems(self) -> None:
+        """ALBINA with no problems returns empty aggregation."""
         props: dict[str, Any] = {"avalancheProblems": []}
-        result = _resolve_aggregations(props, Bulletin.Source.EUREGIO)
+        result = _resolve_aggregations(props, Bulletin.Source.ALBINA)
         assert result == []
 
     def test_mf_single_dry_problem(self) -> None:
-        """MF with one dry problem synthesises one dry aggregation entry (shared path)."""
+        """METEOFRANCE with one dry problem synthesises one dry aggregation entry (shared path)."""
         props: dict[str, Any] = {
             "avalancheProblems": [
                 {
@@ -1713,13 +1713,13 @@ class TestResolveAggregations:
                 }
             ]
         }
-        result = _resolve_aggregations(props, Bulletin.Source.MF)
+        result = _resolve_aggregations(props, Bulletin.Source.METEOFRANCE)
         assert len(result) == 1
         assert result[0]["category"] == "dry"
         assert result[0]["problemTypes"] == ["wind_slab"]
 
     def test_mf_single_wet_problem(self) -> None:
-        """MF with one wet problem synthesises one wet aggregation entry."""
+        """METEOFRANCE with one wet problem synthesises one wet aggregation entry."""
         props: dict[str, Any] = {
             "avalancheProblems": [
                 {
@@ -1729,12 +1729,12 @@ class TestResolveAggregations:
                 }
             ]
         }
-        result = _resolve_aggregations(props, Bulletin.Source.MF)
+        result = _resolve_aggregations(props, Bulletin.Source.METEOFRANCE)
         assert len(result) == 1
         assert result[0]["category"] == "wet"
 
     def test_mf_dry_and_wet_problems(self) -> None:
-        """MF dry + wet problems produce two separate aggregation entries."""
+        """METEOFRANCE dry + wet problems produce two separate aggregation entries."""
         props: dict[str, Any] = {
             "avalancheProblems": [
                 {
@@ -1749,19 +1749,19 @@ class TestResolveAggregations:
                 },
             ]
         }
-        result = _resolve_aggregations(props, Bulletin.Source.MF)
+        result = _resolve_aggregations(props, Bulletin.Source.METEOFRANCE)
         assert len(result) == 2
         categories = {e["category"] for e in result}
         assert categories == {"dry", "wet"}
 
 
 # ---------------------------------------------------------------------------
-# Version 4 — _resolve_problem_rating (EUREGIO branch)
+# Version 4 — _resolve_problem_rating (ALBINA branch)
 # ---------------------------------------------------------------------------
 
 
 class TestResolveProblemRatingEuregio:
-    """Tests for _resolve_problem_rating EUREGIO branch."""
+    """Tests for _resolve_problem_rating ALBINA branch."""
 
     def _ratings_low_earlier_moderate_later_above_2600(
         self,
@@ -1791,7 +1791,7 @@ class TestResolveProblemRatingEuregio:
         result = _resolve_problem_rating(
             problem,
             self._ratings_low_earlier_moderate_later_above_2600(),
-            Bulletin.Source.EUREGIO,
+            Bulletin.Source.ALBINA,
         )
         assert result == "low"
 
@@ -1805,7 +1805,7 @@ class TestResolveProblemRatingEuregio:
         result = _resolve_problem_rating(
             problem,
             self._ratings_low_earlier_moderate_later_above_2600(),
-            Bulletin.Source.EUREGIO,
+            Bulletin.Source.ALBINA,
         )
         assert result == "moderate"
 
@@ -1854,28 +1854,28 @@ class TestResolveProblemExtras:
         assert extras["subdivision"] == ""
         assert extras["core_zone_text"] is None
 
-    def test_euregio_returns_avalanche_type_slab(self) -> None:
-        """EUREGIO problem with slab type returns avalanche_type='slab'."""
+    def test_albina_returns_avalanche_type_slab(self) -> None:
+        """ALBINA problem with slab type returns avalanche_type='slab'."""
         problem: dict[str, Any] = {"customData": {"ALBINA": {"avalancheType": "slab"}}}
-        extras = _resolve_problem_extras(problem, Bulletin.Source.EUREGIO)
+        extras = _resolve_problem_extras(problem, Bulletin.Source.ALBINA)
         assert extras["avalanche_type"] == "slab"
 
-    def test_euregio_returns_avalanche_type_loose(self) -> None:
-        """EUREGIO problem with loose type returns avalanche_type='loose'."""
+    def test_albina_returns_avalanche_type_loose(self) -> None:
+        """ALBINA problem with loose type returns avalanche_type='loose'."""
         problem: dict[str, Any] = {"customData": {"ALBINA": {"avalancheType": "loose"}}}
-        extras = _resolve_problem_extras(problem, Bulletin.Source.EUREGIO)
+        extras = _resolve_problem_extras(problem, Bulletin.Source.ALBINA)
         assert extras["avalanche_type"] == "loose"
 
-    def test_euregio_missing_albina_data_returns_none_type(self) -> None:
-        """EUREGIO problem missing ALBINA data returns avalanche_type=None."""
+    def test_albina_missing_albina_data_returns_none_type(self) -> None:
+        """ALBINA problem missing ALBINA data returns avalanche_type=None."""
         problem: dict[str, Any] = {}
-        extras = _resolve_problem_extras(problem, Bulletin.Source.EUREGIO)
+        extras = _resolve_problem_extras(problem, Bulletin.Source.ALBINA)
         assert extras["avalanche_type"] is None
 
-    def test_euregio_extras_do_not_include_slf_fields(self) -> None:
-        """EUREGIO extras do not include subdivision or core_zone_text."""
+    def test_albina_extras_do_not_include_slf_fields(self) -> None:
+        """ALBINA extras do not include subdivision or core_zone_text."""
         problem: dict[str, Any] = {}
-        extras = _resolve_problem_extras(problem, Bulletin.Source.EUREGIO)
+        extras = _resolve_problem_extras(problem, Bulletin.Source.ALBINA)
         assert "subdivision" not in extras
         assert "core_zone_text" not in extras
 
@@ -1899,22 +1899,22 @@ class TestResolveAvalancheActivity:
         result = _resolve_avalanche_activity(props, Bulletin.Source.SLF)
         assert result == {"highlights": "", "comment": ""}
 
-    def test_euregio_returns_populated_activity(self) -> None:
-        """EUREGIO source returns populated highlights and comment."""
+    def test_albina_returns_populated_activity(self) -> None:
+        """ALBINA source returns populated highlights and comment."""
         props: dict[str, Any] = {
             "avalancheActivity": {
                 "highlights": "Weak layers require caution.",
                 "comment": "Wet slides possible in afternoon.",
             }
         }
-        result = _resolve_avalanche_activity(props, Bulletin.Source.EUREGIO)
+        result = _resolve_avalanche_activity(props, Bulletin.Source.ALBINA)
         assert result["highlights"] == "Weak layers require caution."
         assert result["comment"] == "Wet slides possible in afternoon."
 
-    def test_euregio_missing_activity_returns_empty_strings(self) -> None:
-        """EUREGIO source with no avalancheActivity returns empty strings."""
+    def test_albina_missing_activity_returns_empty_strings(self) -> None:
+        """ALBINA source with no avalancheActivity returns empty strings."""
         props: dict[str, Any] = {}
-        result = _resolve_avalanche_activity(props, Bulletin.Source.EUREGIO)
+        result = _resolve_avalanche_activity(props, Bulletin.Source.ALBINA)
         assert result == {"highlights": "", "comment": ""}
 
 
@@ -1934,51 +1934,51 @@ class TestResolveDangerPatterns:
         result = _resolve_danger_patterns(props, Bulletin.Source.SLF)
         assert result == []
 
-    def test_euregio_returns_lwd_tyrol_patterns(self) -> None:
-        """EUREGIO source returns dangerPatterns from LWD_Tyrol."""
+    def test_albina_returns_lwd_tyrol_patterns(self) -> None:
+        """ALBINA source returns dangerPatterns from LWD_Tyrol."""
         props: dict[str, Any] = {
             "customData": {"LWD_Tyrol": {"dangerPatterns": ["DP10", "DP1"]}}
         }
-        result = _resolve_danger_patterns(props, Bulletin.Source.EUREGIO)
+        result = _resolve_danger_patterns(props, Bulletin.Source.ALBINA)
         assert result == ["DP10", "DP1"]
 
-    def test_euregio_missing_patterns_returns_empty(self) -> None:
-        """EUREGIO source with no patterns returns empty list."""
+    def test_albina_missing_patterns_returns_empty(self) -> None:
+        """ALBINA source with no patterns returns empty list."""
         props: dict[str, Any] = {"customData": {"ALBINA": {"mainDate": "2026-05-03"}}}
-        result = _resolve_danger_patterns(props, Bulletin.Source.EUREGIO)
+        result = _resolve_danger_patterns(props, Bulletin.Source.ALBINA)
         assert result == []
 
 
 # ---------------------------------------------------------------------------
-# Version 4 — end-to-end with tests/fixtures/euregio_sample_bulletin.json
+# Version 4 — end-to-end with tests/fixtures/albina_sample_bulletin.json
 # ---------------------------------------------------------------------------
 
 
-def _load_euregio_bulletin() -> dict[str, Any]:
-    """Load the EUREGIO sample bulletin from tests/fixtures/euregio_sample_bulletin.json."""
-    path = _FIXTURE_DIR / "euregio_sample_bulletin.json"
+def _load_albina_bulletin() -> dict[str, Any]:
+    """Load the ALBINA sample bulletin from tests/fixtures/albina_sample_bulletin.json."""
+    path = _FIXTURE_DIR / "albina_sample_bulletin.json"
     data: dict[str, Any] = json.loads(path.read_text())
     return data
 
 
 class TestBuildRenderModelEuregio:
-    """End-to-end tests using the committed EUREGIO sample bulletin."""
+    """End-to-end tests using the committed ALBINA sample bulletin."""
 
-    def test_source_is_euregio(self) -> None:
-        """EUREGIO bulletin produces source='euregio'."""
-        props = _load_euregio_bulletin()
+    def test_source_is_albina(self) -> None:
+        """ALBINA bulletin produces source='albina'."""
+        props = _load_albina_bulletin()
         rm = build_render_model(props)
-        assert rm["source"] == "euregio"
+        assert rm["source"] == "albina"
 
     def test_has_populated_traits(self) -> None:
-        """EUREGIO bulletin produces traits (non-empty)."""
-        props = _load_euregio_bulletin()
+        """ALBINA bulletin produces traits (non-empty)."""
+        props = _load_albina_bulletin()
         rm = build_render_model(props)
         assert len(rm["traits"]) > 0
 
     def test_has_danger(self) -> None:
-        """EUREGIO bulletin produces a danger dict."""
-        props = _load_euregio_bulletin()
+        """ALBINA bulletin produces a danger dict."""
+        props = _load_albina_bulletin()
         rm = build_render_model(props)
         assert rm["danger"]["key"] in {
             "low",
@@ -1989,21 +1989,21 @@ class TestBuildRenderModelEuregio:
         }
 
     def test_avalanche_activity_populated(self) -> None:
-        """EUREGIO bulletin prose has non-empty avalanche_activity."""
-        props = _load_euregio_bulletin()
+        """ALBINA bulletin prose has non-empty avalanche_activity."""
+        props = _load_albina_bulletin()
         rm = build_render_model(props)
         activity = rm["prose"]["avalanche_activity"]
         assert activity["highlights"] != "" or activity["comment"] != ""
 
     def test_danger_patterns_present(self) -> None:
-        """EUREGIO bulletin has danger_patterns (at least one)."""
-        props = _load_euregio_bulletin()
+        """ALBINA bulletin has danger_patterns (at least one)."""
+        props = _load_albina_bulletin()
         rm = build_render_model(props)
         assert len(rm["danger_patterns"]) > 0
 
     def test_problems_have_avalanche_type(self) -> None:
-        """EUREGIO problems carry avalanche_type in their extras."""
-        props = _load_euregio_bulletin()
+        """ALBINA problems carry avalanche_type in their extras."""
+        props = _load_albina_bulletin()
         rm = build_render_model(props)
         all_problems = [p for t in rm["traits"] for p in t["problems"]]
         # At least one problem should have a non-None avalanche_type.
@@ -2013,8 +2013,8 @@ class TestBuildRenderModelEuregio:
         )
 
     def test_version_is_current(self) -> None:
-        """EUREGIO bulletin render model has the current RENDER_MODEL_VERSION."""
-        props = _load_euregio_bulletin()
+        """ALBINA bulletin render model has the current RENDER_MODEL_VERSION."""
+        props = _load_albina_bulletin()
         rm = build_render_model(props)
         assert rm["version"] == RENDER_MODEL_VERSION
 
@@ -2101,7 +2101,7 @@ class TestResolveProblemMeteoFrance:
     """Targeted unit tests for resolver helpers on the MeteoFrance branch."""
 
     def test_mf_problem_rating_derived_from_danger_ratings(self) -> None:
-        """MF rating is derived by elevation match, not dangerRatingValue."""
+        """METEOFRANCE rating is derived by elevation match, not dangerRatingValue."""
         problem: dict[str, Any] = {
             "problemType": "wet_snow",
             "validTimePeriod": "all_day",
@@ -2119,53 +2119,53 @@ class TestResolveProblemMeteoFrance:
                 "validTimePeriod": "all_day",
             },
         ]
-        result = _resolve_problem_rating(problem, ratings, Bulletin.Source.MF)
+        result = _resolve_problem_rating(problem, ratings, Bulletin.Source.METEOFRANCE)
         assert result == "moderate"
 
     def test_mf_problem_comment_is_empty(self) -> None:
-        """MF per-problem comment is always empty (activity lives at bulletin level)."""
+        """METEOFRANCE per-problem comment is always empty (activity lives at bulletin level)."""
         from bulletins.services.render_model import _resolve_problem_comment
 
         problem: dict[str, Any] = {"comment": "Some prose."}
-        result = _resolve_problem_comment(problem, Bulletin.Source.MF)
+        result = _resolve_problem_comment(problem, Bulletin.Source.METEOFRANCE)
         assert result == ""
 
     def test_mf_problem_extras_is_empty_dict(self) -> None:
-        """MF extras dict is empty — no source-specific problem-level fields."""
+        """METEOFRANCE extras dict is empty — no source-specific problem-level fields."""
         problem: dict[str, Any] = {}
-        extras = _resolve_problem_extras(problem, Bulletin.Source.MF)
+        extras = _resolve_problem_extras(problem, Bulletin.Source.METEOFRANCE)
         assert extras == {}
 
     def test_mf_problem_avalanche_type_is_none(self) -> None:
-        """MF avalanche_type is always None (no ALBINA customData)."""
+        """METEOFRANCE avalanche_type is always None (no ALBINA customData)."""
         from bulletins.services.render_model import _resolve_problem_avalanche_type
 
         problem: dict[str, Any] = {}
-        result = _resolve_problem_avalanche_type(problem, Bulletin.Source.MF)
+        result = _resolve_problem_avalanche_type(problem, Bulletin.Source.METEOFRANCE)
         assert result is None
 
     def test_mf_avalanche_activity_populated(self) -> None:
-        """MF avalanche activity is read from properties.avalancheActivity."""
+        """METEOFRANCE avalanche activity is read from properties.avalancheActivity."""
         props: dict[str, Any] = {
             "avalancheActivity": {
                 "highlights": "Wet slides possible.",
                 "comment": "Caution near steep terrain.",
             }
         }
-        result = _resolve_avalanche_activity(props, Bulletin.Source.MF)
+        result = _resolve_avalanche_activity(props, Bulletin.Source.METEOFRANCE)
         assert result["highlights"] == "Wet slides possible."
         assert result["comment"] == "Caution near steep terrain."
 
     def test_mf_avalanche_activity_missing_returns_empty_strings(self) -> None:
-        """MF avalanche activity with no field returns empty strings."""
+        """METEOFRANCE avalanche activity with no field returns empty strings."""
         props: dict[str, Any] = {}
-        result = _resolve_avalanche_activity(props, Bulletin.Source.MF)
+        result = _resolve_avalanche_activity(props, Bulletin.Source.METEOFRANCE)
         assert result == {"highlights": "", "comment": ""}
 
     def test_mf_danger_patterns_is_empty(self) -> None:
-        """MF danger_patterns is always an empty list."""
+        """METEOFRANCE danger_patterns is always an empty list."""
         props: dict[str, Any] = {"customData": {"MF": {"someField": "value"}}}
-        result = _resolve_danger_patterns(props, Bulletin.Source.MF)
+        result = _resolve_danger_patterns(props, Bulletin.Source.METEOFRANCE)
         assert result == []
 
 
@@ -2175,7 +2175,7 @@ class TestResolveProblemMeteoFrance:
 
 
 def _load_mf_bulletin(filename: str) -> dict[str, Any]:
-    """Load a MF XML file and parse it with parse_dpbra_xml."""
+    """Load a METEOFRANCE XML file and parse it with parse_dpbra_xml."""
     path = _MF_BULLETIN_DIR / filename
     xml_bytes = path.read_bytes()
     return parse_dpbra_xml(xml_bytes)
@@ -2185,38 +2185,38 @@ class TestBuildRenderModelMeteoFranceEndToEnd:
     """End-to-end tests using a captured MeteoFrance BRA XML bulletin."""
 
     def test_source_is_meteofrance(self) -> None:
-        """MF bulletin produces source='meteofrance'."""
+        """METEOFRANCE bulletin produces source='meteofrance'."""
         props = _load_mf_bulletin("massif-001.xml")
         rm = build_render_model(props)
         assert rm["source"] == "meteofrance"
 
     def test_has_populated_traits(self) -> None:
-        """MF bulletin with avalancheProblems produces non-empty traits."""
+        """METEOFRANCE bulletin with avalancheProblems produces non-empty traits."""
         props = _load_mf_bulletin("massif-001.xml")
         rm = build_render_model(props)
         assert len(rm["traits"]) > 0
 
     def test_danger_patterns_is_empty(self) -> None:
-        """MF bulletin always has empty danger_patterns."""
+        """METEOFRANCE bulletin always has empty danger_patterns."""
         props = _load_mf_bulletin("massif-001.xml")
         rm = build_render_model(props)
         assert rm["danger_patterns"] == []
 
     def test_avalanche_activity_is_populated(self) -> None:
-        """MF bulletin prose has non-empty avalanche_activity."""
+        """METEOFRANCE bulletin prose has non-empty avalanche_activity."""
         props = _load_mf_bulletin("massif-001.xml")
         rm = build_render_model(props)
         activity = rm["prose"]["avalanche_activity"]
         assert activity["highlights"] != "" or activity["comment"] != ""
 
     def test_version_is_current(self) -> None:
-        """MF bulletin render model has the current RENDER_MODEL_VERSION."""
+        """METEOFRANCE bulletin render model has the current RENDER_MODEL_VERSION."""
         props = _load_mf_bulletin("massif-001.xml")
         rm = build_render_model(props)
         assert rm["version"] == RENDER_MODEL_VERSION
 
     def test_problem_extras_is_empty_dict(self) -> None:
-        """MF problems carry an empty extras dict."""
+        """METEOFRANCE problems carry an empty extras dict."""
         props = _load_mf_bulletin("massif-001.xml")
         rm = build_render_model(props)
         for trait in rm["traits"]:
@@ -2224,7 +2224,7 @@ class TestBuildRenderModelMeteoFranceEndToEnd:
                 assert problem["extras"] == {}
 
     def test_problem_avalanche_type_is_none(self) -> None:
-        """MF problems always have avalanche_type=None."""
+        """METEOFRANCE problems always have avalanche_type=None."""
         props = _load_mf_bulletin("massif-001.xml")
         rm = build_render_model(props)
         for trait in rm["traits"]:
@@ -2346,20 +2346,20 @@ class TestSlfAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Version 5 — EuregioAdapter unit tests
+# Version 5 — AlbinaAdapter unit tests
 # ---------------------------------------------------------------------------
 
 
-class TestEuregioAdapter:
-    """Unit tests for the EuregioAdapter class."""
+class TestAlbinaAdapter:
+    """Unit tests for the AlbinaAdapter class."""
 
     def _adapter(self) -> Any:
-        from bulletins.services.render_model import EuregioAdapter
+        from bulletins.services.render_model import AlbinaAdapter
 
-        return EuregioAdapter()
+        return AlbinaAdapter()
 
     def test_resolve_aggregations_dry_problem(self) -> None:
-        """EuregioAdapter synthesises one dry aggregation entry from a dry problem."""
+        """AlbinaAdapter synthesises one dry aggregation entry from a dry problem."""
         props: dict[str, Any] = {
             "avalancheProblems": [
                 {
@@ -2375,7 +2375,7 @@ class TestEuregioAdapter:
         assert result[0]["problemTypes"] == ["wind_slab"]
 
     def test_resolve_aggregations_wet_problem(self) -> None:
-        """EuregioAdapter synthesises one wet entry from a wet problem."""
+        """AlbinaAdapter synthesises one wet entry from a wet problem."""
         props: dict[str, Any] = {
             "avalancheProblems": [
                 {
@@ -2389,11 +2389,11 @@ class TestEuregioAdapter:
         assert result[0]["category"] == "wet"
 
     def test_resolve_aggregations_empty_problems_returns_empty(self) -> None:
-        """EuregioAdapter returns empty aggregation when no problems exist."""
+        """AlbinaAdapter returns empty aggregation when no problems exist."""
         assert self._adapter().resolve_aggregations({"avalancheProblems": []}) == []
 
     def test_resolve_problem_rating_matches_by_elevation_and_period(self) -> None:
-        """EuregioAdapter derives rating by elevation + vtp matching."""
+        """AlbinaAdapter derives rating by elevation + vtp matching."""
         problem: dict[str, Any] = {
             "problemType": "persistent_weak_layers",
             "validTimePeriod": "all_day",
@@ -2415,31 +2415,31 @@ class TestEuregioAdapter:
         assert result == "moderate"
 
     def test_resolve_problem_comment_always_empty(self) -> None:
-        """EuregioAdapter per-problem comment is always empty."""
+        """AlbinaAdapter per-problem comment is always empty."""
         assert self._adapter().resolve_problem_comment({"comment": "Some text."}) == ""
 
     def test_resolve_problem_extras_reads_albina_avalanche_type(self) -> None:
-        """EuregioAdapter extras include avalanche_type from customData.ALBINA."""
+        """AlbinaAdapter extras include avalanche_type from customData.ALBINA."""
         problem: dict[str, Any] = {"customData": {"ALBINA": {"avalancheType": "slab"}}}
         extras = self._adapter().resolve_problem_extras(problem)
         assert extras["avalanche_type"] == "slab"
 
     def test_resolve_problem_extras_missing_albina_returns_none_type(self) -> None:
-        """EuregioAdapter extras have avalanche_type=None when ALBINA absent."""
+        """AlbinaAdapter extras have avalanche_type=None when ALBINA absent."""
         extras = self._adapter().resolve_problem_extras({})
         assert extras["avalanche_type"] is None
 
     def test_resolve_problem_avalanche_type_reads_albina(self) -> None:
-        """EuregioAdapter reads avalanche_type from customData.ALBINA."""
+        """AlbinaAdapter reads avalanche_type from customData.ALBINA."""
         problem: dict[str, Any] = {"customData": {"ALBINA": {"avalancheType": "loose"}}}
         assert self._adapter().resolve_problem_avalanche_type(problem) == "loose"
 
-    def test_resolve_problem_eaws_fields_from_euregio_sample(self) -> None:
-        """EuregioAdapter reads avalanche_size/frequency/snowpack_stability from the sample bulletin."""
-        # The euregio_sample_bulletin.json has avalancheSize=3, frequency='some', snowpackStability='poor'
-        props = _load_euregio_bulletin()
+    def test_resolve_problem_eaws_fields_from_albina_sample(self) -> None:
+        """AlbinaAdapter reads avalanche_size/frequency/snowpack_stability from the sample bulletin."""
+        # The albina_sample_bulletin.json has avalancheSize=3, frequency='some', snowpackStability='poor'
+        props = _load_albina_bulletin()
         problems = props.get("avalancheProblems") or []
-        assert problems, "Sanity check: euregio sample must have problems"
+        assert problems, "Sanity check: albina sample must have problems"
         first_problem = problems[0]
         fields = self._adapter().resolve_problem_eaws_fields(first_problem)
         # Verify the three slots are present and non-None (sample has all three).
@@ -2451,7 +2451,7 @@ class TestEuregioAdapter:
         assert fields["snowpack_stability"] is not None
 
     def test_resolve_problem_eaws_fields_populated_values(self) -> None:
-        """EuregioAdapter returns exact EAWS field values from the problem dict."""
+        """AlbinaAdapter returns exact EAWS field values from the problem dict."""
         problem: dict[str, Any] = {
             "avalancheSize": 3,
             "frequency": "some",
@@ -2463,14 +2463,14 @@ class TestEuregioAdapter:
         assert fields["snowpack_stability"] == "poor"
 
     def test_resolve_problem_eaws_fields_missing_returns_none(self) -> None:
-        """EuregioAdapter returns None for absent EAWS fields."""
+        """AlbinaAdapter returns None for absent EAWS fields."""
         fields = self._adapter().resolve_problem_eaws_fields({})
         assert fields["avalanche_size"] is None
         assert fields["frequency"] is None
         assert fields["snowpack_stability"] is None
 
     def test_resolve_avalanche_activity_reads_properties(self) -> None:
-        """EuregioAdapter reads avalancheActivity from properties."""
+        """AlbinaAdapter reads avalancheActivity from properties."""
         props: dict[str, Any] = {
             "avalancheActivity": {"highlights": "Weak layers.", "comment": "Caution."}
         }
@@ -2479,7 +2479,7 @@ class TestEuregioAdapter:
         assert result["comment"] == "Caution."
 
     def test_resolve_danger_patterns_reads_lwd_tyrol(self) -> None:
-        """EuregioAdapter reads dangerPatterns from customData.LWD_Tyrol."""
+        """AlbinaAdapter reads dangerPatterns from customData.LWD_Tyrol."""
         props: dict[str, Any] = {
             "customData": {"LWD_Tyrol": {"dangerPatterns": ["DP10", "DP1"]}}
         }
@@ -2487,7 +2487,7 @@ class TestEuregioAdapter:
         assert result == ["DP10", "DP1"]
 
     def test_resolve_danger_patterns_reads_other_lwd_key(self) -> None:
-        """EuregioAdapter reads dangerPatterns from any LWD_* key."""
+        """AlbinaAdapter reads dangerPatterns from any LWD_* key."""
         props: dict[str, Any] = {
             "customData": {"LWD_Salzburg": {"dangerPatterns": ["DP6"]}}
         }
@@ -2495,7 +2495,7 @@ class TestEuregioAdapter:
         assert result == ["DP6"]
 
     def test_resolve_tendency_lead_from_first_tendency_highlights(self) -> None:
-        """EuregioAdapter reads tendency_lead from tendency[0].highlights."""
+        """AlbinaAdapter reads tendency_lead from tendency[0].highlights."""
         props: dict[str, Any] = {
             "tendency": [
                 {"highlights": "Weak layers require caution.", "comment": "..."}
@@ -2505,16 +2505,16 @@ class TestEuregioAdapter:
         assert result == "Weak layers require caution."
 
     def test_resolve_tendency_lead_returns_none_when_empty(self) -> None:
-        """EuregioAdapter returns None when tendency[0].highlights is empty."""
+        """AlbinaAdapter returns None when tendency[0].highlights is empty."""
         props: dict[str, Any] = {"tendency": [{"highlights": ""}]}
         assert self._adapter().resolve_tendency_lead(props) is None
 
     def test_resolve_tendency_lead_returns_none_when_tendency_absent(self) -> None:
-        """EuregioAdapter returns None when tendency list is absent."""
+        """AlbinaAdapter returns None when tendency list is absent."""
         assert self._adapter().resolve_tendency_lead({}) is None
 
     def test_resolve_danger_rating_subdivision_always_none(self) -> None:
-        """EuregioAdapter per-rating subdivision is always None."""
+        """AlbinaAdapter per-rating subdivision is always None."""
         rating: dict[str, Any] = {
             "customData": {"CH": {"subdivision": "plus"}},  # CH data must not be read
             "mainValue": "moderate",
@@ -2694,19 +2694,19 @@ class TestDangerRatingsProjection:
         )
         assert result["ratings"][0]["subdivision"] == "+"
 
-    def test_euregio_subdivision_always_none(self) -> None:
-        """EUREGIO per-rating subdivision is always None."""
+    def test_albina_subdivision_always_none(self) -> None:
+        """ALBINA per-rating subdivision is always None."""
         result = _resolve_danger(
             [{"mainValue": "moderate", "customData": {"CH": {"subdivision": "plus"}}}],
-            source=Bulletin.Source.EUREGIO,
+            source=Bulletin.Source.ALBINA,
         )
         assert result["ratings"][0]["subdivision"] is None
 
     def test_mf_subdivision_always_none(self) -> None:
-        """MF per-rating subdivision is always None."""
+        """METEOFRANCE per-rating subdivision is always None."""
         result = _resolve_danger(
             [{"mainValue": "moderate"}],
-            source=Bulletin.Source.MF,
+            source=Bulletin.Source.METEOFRANCE,
         )
         assert result["ratings"][0]["subdivision"] is None
 
@@ -2744,16 +2744,16 @@ class TestTendencyLeadProjection:
         rm = build_render_model(props)
         assert rm["prose"]["tendency_lead"] is None
 
-    def test_euregio_tendency_lead_populated_from_highlights(self) -> None:
-        """EUREGIO bulletin extracts tendency[0].highlights as tendency_lead."""
-        props = _load_euregio_bulletin()
+    def test_albina_tendency_lead_populated_from_highlights(self) -> None:
+        """ALBINA bulletin extracts tendency[0].highlights as tendency_lead."""
+        props = _load_albina_bulletin()
         rm = build_render_model(props)
-        # The euregio fixture has highlights='Weak layers in the old snowpack necessitate caution.'
+        # The albina fixture has highlights='Weak layers in the old snowpack necessitate caution.'
         assert rm["prose"]["tendency_lead"] is not None
         assert "caution" in rm["prose"]["tendency_lead"].lower()
 
     def test_mf_tendency_lead_is_none(self) -> None:
-        """MF bulletins always produce tendency_lead=None in prose."""
+        """METEOFRANCE bulletins always produce tendency_lead=None in prose."""
         props = _load_mf_bulletin("massif-001.xml")
         rm = build_render_model(props)
         assert rm["prose"]["tendency_lead"] is None
@@ -2780,12 +2780,12 @@ class TestTendencyLeadProjection:
 class TestPerProblemEawsFields:
     """Tests for avalanche_size / frequency / snowpack_stability added in v5."""
 
-    def test_euregio_problems_carry_eaws_fields(self) -> None:
-        """EUREGIO build_render_model populates EAWS fields on problems from the sample fixture."""
-        props = _load_euregio_bulletin()
+    def test_albina_problems_carry_eaws_fields(self) -> None:
+        """ALBINA build_render_model populates EAWS fields on problems from the sample fixture."""
+        props = _load_albina_bulletin()
         rm = build_render_model(props)
         all_problems = [p for t in rm["traits"] for p in t["problems"]]
-        assert all_problems, "Sanity: EUREGIO sample must produce problems"
+        assert all_problems, "Sanity: ALBINA sample must produce problems"
         # The sample fixture has exactly one problem with avalancheSize=3.
         problem = all_problems[0]
         assert problem["avalanche_size"] == 3
@@ -2805,7 +2805,7 @@ class TestPerProblemEawsFields:
                 assert problem["snowpack_stability"] is None
 
     def test_mf_problems_have_none_eaws_fields(self) -> None:
-        """MF problems always have None for all three EAWS fields."""
+        """METEOFRANCE problems always have None for all three EAWS fields."""
         props = _load_mf_bulletin("massif-001.xml")
         rm = build_render_model(props)
         for trait in rm["traits"]:
@@ -2818,7 +2818,7 @@ class TestPerProblemEawsFields:
         """All three EAWS field keys are present in every problem dict regardless of source."""
         for filename, source_props in [
             ("sample_variable_day.json", _load_sample("sample_variable_day.json")),
-            (None, _load_euregio_bulletin()),
+            (None, _load_albina_bulletin()),
         ]:
             try:
                 rm = build_render_model(source_props)
@@ -2827,11 +2827,11 @@ class TestPerProblemEawsFields:
             for trait in rm["traits"]:
                 for problem in trait["problems"]:
                     assert "avalanche_size" in problem, (
-                        f"missing avalanche_size in {filename or 'euregio'}"
+                        f"missing avalanche_size in {filename or 'albina'}"
                     )
                     assert "frequency" in problem, (
-                        f"missing frequency in {filename or 'euregio'}"
+                        f"missing frequency in {filename or 'albina'}"
                     )
                     assert "snowpack_stability" in problem, (
-                        f"missing snowpack_stability in {filename or 'euregio'}"
+                        f"missing snowpack_stability in {filename or 'albina'}"
                     )

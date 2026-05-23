@@ -1,13 +1,13 @@
 """
-tests/bulletins/services/test_euregio_fetcher.py — Tests for the EUREGIO fetcher service.
+tests/bulletins/services/test_albina_fetcher.py — Tests for the ALBINA fetcher service.
 
 Covers:
-  - fetch_euregio_for_date: URL construction, 404 tolerance, HTTP errors,
+  - fetch_albina_for_date: URL construction, 404 tolerance, HTTP errors,
     list/envelope response shapes, unexpected shapes.
   - _normalise_response: all response shapes + unexpected.
-  - run_euregio_pipeline: dedup by bulletinID, date-range filtering,
+  - run_albina_pipeline: dedup by bulletinID, date-range filtering,
     dry-run, force, HTTP error slot-skip, on_fetched callback.
-  - latest_euregio_date: returns None when no EUREGIO bulletins; returns
+  - latest_albina_date: returns None when no ALBINA bulletins; returns
     the latest valid_from date otherwise.
 
 All HTTP calls are mocked via unittest.mock.patch so no real network is used.
@@ -21,12 +21,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bulletins.services.euregio_fetcher import (
+from bulletins.services.albina_fetcher import (
     _normalise_response,
     _parse_issued_at,
-    fetch_euregio_for_date,
-    latest_euregio_date,
-    run_euregio_pipeline,
+    fetch_albina_for_date,
+    latest_albina_date,
+    run_albina_pipeline,
 )
 from tests.factories import MicroRegionFactory
 
@@ -36,11 +36,11 @@ from tests.factories import MicroRegionFactory
 
 
 def _make_raw_bulletin(
-    bulletin_id: str = "euregio-001",
+    bulletin_id: str = "albina-001",
     publication_time: str = "2026-01-15T18:00:00Z",
     **overrides: Any,
 ) -> dict[str, Any]:
-    """Build a minimal raw EUREGIO bulletin dict."""
+    """Build a minimal raw ALBINA bulletin dict."""
     base: dict[str, Any] = {
         "bulletinID": bulletin_id,
         "publicationTime": publication_time,
@@ -175,60 +175,60 @@ class TestNormaliseResponse:
 
 
 # ---------------------------------------------------------------------------
-# fetch_euregio_for_date
+# fetch_albina_for_date
 # ---------------------------------------------------------------------------
 
 
 class TestFetchEuregioForDate:
-    """fetch_euregio_for_date constructs the correct URL and handles responses."""
+    """fetch_albina_for_date constructs the correct URL and handles responses."""
 
-    @patch("bulletins.services.euregio_fetcher.requests.get")
+    @patch("bulletins.services.albina_fetcher.requests.get")
     def test_url_construction(self, mock_get: MagicMock) -> None:
         """URL uses {base}/{date}/{date}_{region}_en_CAAMLv6.json shape."""
         mock_get.return_value = _mock_ok([])
-        fetch_euregio_for_date(date(2026, 1, 15), "AT-07", base_url="https://cdn")
+        fetch_albina_for_date(date(2026, 1, 15), "AT-07", base_url="https://cdn")
         expected_url = "https://cdn/2026-01-15/2026-01-15_AT-07_en_CAAMLv6.json"
         mock_get.assert_called_once_with(expected_url, timeout=30)
 
-    @patch("bulletins.services.euregio_fetcher.requests.get")
+    @patch("bulletins.services.albina_fetcher.requests.get")
     def test_returns_bulletins_on_200(self, mock_get: MagicMock) -> None:
         """A 200 response returns the list of bulletin dicts."""
         bulletins = [_make_raw_bulletin()]
         mock_get.return_value = _mock_ok(bulletins)
-        result = fetch_euregio_for_date(
+        result = fetch_albina_for_date(
             date(2026, 1, 15), "AT-07", base_url="https://cdn"
         )
         assert result == bulletins
 
-    @patch("bulletins.services.euregio_fetcher.requests.get")
+    @patch("bulletins.services.albina_fetcher.requests.get")
     def test_returns_empty_on_404(self, mock_get: MagicMock) -> None:
         """A 404 response returns [] (off-season gap, not an error)."""
         mock_get.return_value = _mock_404()
-        result = fetch_euregio_for_date(
+        result = fetch_albina_for_date(
             date(2026, 1, 15), "AT-07", base_url="https://cdn"
         )
         assert result == []
 
-    @patch("bulletins.services.euregio_fetcher.requests.get")
+    @patch("bulletins.services.albina_fetcher.requests.get")
     def test_raises_on_non_404_error(self, mock_get: MagicMock) -> None:
         """A 500 response raises requests.HTTPError."""
         import requests
 
         mock_get.return_value = _mock_error(500)
         with pytest.raises(requests.HTTPError):
-            fetch_euregio_for_date(date(2026, 1, 15), "AT-07", base_url="https://cdn")
+            fetch_albina_for_date(date(2026, 1, 15), "AT-07", base_url="https://cdn")
 
-    @patch("bulletins.services.euregio_fetcher.requests.get")
+    @patch("bulletins.services.albina_fetcher.requests.get")
     def test_uses_settings_base_url_when_none(self, mock_get: MagicMock) -> None:
-        """When base_url is None, falls back to settings.EUREGIO_API_BASE_URL."""
+        """When base_url is None, falls back to settings.ALBINA_API_BASE_URL."""
         mock_get.return_value = _mock_ok([])
-        with patch("bulletins.services.euregio_fetcher.settings") as mock_settings:
-            mock_settings.EUREGIO_API_BASE_URL = "https://settings-cdn"
-            fetch_euregio_for_date(date(2026, 1, 15), "IT-32-BZ")
+        with patch("bulletins.services.albina_fetcher.settings") as mock_settings:
+            mock_settings.ALBINA_API_BASE_URL = "https://settings-cdn"
+            fetch_albina_for_date(date(2026, 1, 15), "IT-32-BZ")
         call_url = mock_get.call_args[0][0]
         assert call_url.startswith("https://settings-cdn/")
 
-    @patch("bulletins.services.euregio_fetcher.requests.get")
+    @patch("bulletins.services.albina_fetcher.requests.get")
     def test_unwraps_envelope_response(self, mock_get: MagicMock) -> None:
         """A {"bulletins": [...]} envelope is unwrapped."""
         bulletins = [_make_raw_bulletin()]
@@ -237,20 +237,20 @@ class TestFetchEuregioForDate:
             json=lambda: {"bulletins": bulletins},
             raise_for_status=lambda: None,
         )
-        result = fetch_euregio_for_date(
+        result = fetch_albina_for_date(
             date(2026, 1, 15), "AT-07", base_url="https://cdn"
         )
         assert result == bulletins
 
 
 # ---------------------------------------------------------------------------
-# run_euregio_pipeline
+# run_albina_pipeline
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestRunEuregioPipeline:
-    """run_euregio_pipeline: dedup, date filter, dry-run, force, error handling."""
+    """run_albina_pipeline: dedup, date filter, dry-run, force, error handling."""
 
     def test_creates_bulletin_for_known_region(self) -> None:
         """A bulletin whose region is seeded gets stored and run returns SUCCESS."""
@@ -258,10 +258,10 @@ class TestRunEuregioPipeline:
         raw = _make_raw_bulletin()
 
         with patch(
-            "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
+            "bulletins.services.albina_fetcher.fetch_albina_for_date"
         ) as mock_fetch:
             mock_fetch.return_value = [raw]
-            run = run_euregio_pipeline(
+            run = run_albina_pipeline(
                 date(2026, 1, 15),
                 date(2026, 1, 15),
                 regions=("AT-07",),
@@ -270,7 +270,7 @@ class TestRunEuregioPipeline:
 
         from bulletins.models import Bulletin
 
-        assert Bulletin.objects.filter(bulletin_id="euregio-001").exists()
+        assert Bulletin.objects.filter(bulletin_id="albina-001").exists()
         assert run.records_created == 1
 
     def test_deduplication_by_bulletin_id(self) -> None:
@@ -279,11 +279,11 @@ class TestRunEuregioPipeline:
         raw = _make_raw_bulletin()
 
         with patch(
-            "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
+            "bulletins.services.albina_fetcher.fetch_albina_for_date"
         ) as mock_fetch:
             # Return the same bulletin for two different regions.
             mock_fetch.return_value = [raw]
-            run = run_euregio_pipeline(
+            run = run_albina_pipeline(
                 date(2026, 1, 15),
                 date(2026, 1, 15),
                 regions=("AT-07", "IT-32-BZ"),
@@ -301,10 +301,10 @@ class TestRunEuregioPipeline:
         raw = _make_raw_bulletin()
 
         with patch(
-            "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
+            "bulletins.services.albina_fetcher.fetch_albina_for_date"
         ) as mock_fetch:
             mock_fetch.return_value = [raw]
-            run_euregio_pipeline(
+            run_albina_pipeline(
                 date(2026, 1, 15),
                 date(2026, 1, 15),
                 regions=("AT-07",),
@@ -322,10 +322,10 @@ class TestRunEuregioPipeline:
 
         http_exc = requests.HTTPError("500 Server Error")
         with patch(
-            "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
+            "bulletins.services.albina_fetcher.fetch_albina_for_date"
         ) as mock_fetch:
             mock_fetch.side_effect = http_exc
-            run = run_euregio_pipeline(
+            run = run_albina_pipeline(
                 date(2026, 1, 15),
                 date(2026, 1, 15),
                 regions=("AT-07",),
@@ -341,10 +341,10 @@ class TestRunEuregioPipeline:
         collected: list[dict] = []
 
         with patch(
-            "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
+            "bulletins.services.albina_fetcher.fetch_albina_for_date"
         ) as mock_fetch:
             mock_fetch.return_value = [raw1, raw2]
-            run_euregio_pipeline(
+            run_albina_pipeline(
                 date(2026, 1, 15),
                 date(2026, 1, 15),
                 regions=("AT-07",),
@@ -364,10 +364,10 @@ class TestRunEuregioPipeline:
         collected: list[dict] = []
 
         with patch(
-            "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
+            "bulletins.services.albina_fetcher.fetch_albina_for_date"
         ) as mock_fetch:
             mock_fetch.return_value = [shared]
-            run_euregio_pipeline(
+            run_albina_pipeline(
                 date(2026, 1, 15),
                 date(2026, 1, 15),
                 regions=("AT-07", "IT-32-BZ", "IT-32-TN"),
@@ -389,10 +389,10 @@ class TestRunEuregioPipeline:
         collected: list[dict] = []
 
         with patch(
-            "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
+            "bulletins.services.albina_fetcher.fetch_albina_for_date"
         ) as mock_fetch:
             mock_fetch.return_value = [raw]
-            run_euregio_pipeline(
+            run_albina_pipeline(
                 date(2026, 1, 15),
                 date(2026, 1, 15),
                 regions=("AT-07",),
@@ -406,10 +406,10 @@ class TestRunEuregioPipeline:
     def test_multi_day_range_fetches_each_day(self) -> None:
         """A multi-day range makes one CDN request per (date, region) pair."""
         with patch(
-            "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
+            "bulletins.services.albina_fetcher.fetch_albina_for_date"
         ) as mock_fetch:
             mock_fetch.return_value = []
-            run_euregio_pipeline(
+            run_albina_pipeline(
                 date(2026, 1, 1),
                 date(2026, 1, 3),
                 regions=("AT-07",),
@@ -427,10 +427,10 @@ class TestRunEuregioPipeline:
         raw = _make_raw_bulletin(publication_time="2026-01-10T18:00:00Z")
 
         with patch(
-            "bulletins.services.euregio_fetcher.fetch_euregio_for_date"
+            "bulletins.services.albina_fetcher.fetch_albina_for_date"
         ) as mock_fetch:
             mock_fetch.return_value = [raw]
-            run_euregio_pipeline(
+            run_albina_pipeline(
                 date(2026, 1, 15),
                 date(2026, 1, 15),
                 regions=("AT-07",),
@@ -443,35 +443,35 @@ class TestRunEuregioPipeline:
 
 
 # ---------------------------------------------------------------------------
-# latest_euregio_date
+# latest_albina_date
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestLatestEuregioDate:
-    """latest_euregio_date returns the most recent EUREGIO valid_from date."""
+    """latest_albina_date returns the most recent ALBINA valid_from date."""
 
-    def test_returns_none_when_no_euregio_bulletins(self) -> None:
-        """Returns None when the DB has no EUREGIO bulletins."""
-        assert latest_euregio_date() is None
+    def test_returns_none_when_no_albina_bulletins(self) -> None:
+        """Returns None when the DB has no ALBINA bulletins."""
+        assert latest_albina_date() is None
 
     def test_returns_latest_valid_from(self) -> None:
-        """Returns the date of the most recent EUREGIO bulletin's valid_from."""
+        """Returns the date of the most recent ALBINA bulletin's valid_from."""
         from tests.factories import BulletinFactory
 
         BulletinFactory.create(
             valid_from=datetime(2026, 1, 15, 16, tzinfo=UTC),
             valid_to=datetime(2026, 1, 16, 16, tzinfo=UTC),
-            render_model={"source": "euregio", "version": 4},
+            render_model={"source": "albina", "version": 4},
             render_model_version=4,
         )
         BulletinFactory.create(
             valid_from=datetime(2026, 1, 10, 16, tzinfo=UTC),
             valid_to=datetime(2026, 1, 11, 16, tzinfo=UTC),
-            render_model={"source": "euregio", "version": 4},
+            render_model={"source": "albina", "version": 4},
             render_model_version=4,
         )
-        result = latest_euregio_date()
+        result = latest_albina_date()
         assert result == date(2026, 1, 15)
 
     def test_ignores_slf_bulletins(self) -> None:
@@ -484,4 +484,4 @@ class TestLatestEuregioDate:
             render_model={"source": "slf", "version": 4},
             render_model_version=4,
         )
-        assert latest_euregio_date() is None
+        assert latest_albina_date() is None

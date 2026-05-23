@@ -6,7 +6,7 @@ Renders the body content of the Outlook/tendency panel.  Reads ``prose``
 from the inherited template context (provided by bulletin.html via the
 enclosing ``{% with %}`` block).
 
-EUREGIO/ALBINA bulletins ship a ``tendency`` list whose entries have
+ALBINA bulletins ship a ``tendency`` list whose entries have
 ``highlights`` text but an empty ``comment``.  The ``tendency_has_comment``
 filter detects this case and falls back to the "No data supplied" placeholder
 rather than rendering a blank body.

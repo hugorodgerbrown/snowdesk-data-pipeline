@@ -44,7 +44,7 @@ from bulletins.models import (
     WeatherSnapshot,
 )
 from bulletins.services.data_fetcher import run_pipeline
-from bulletins.services.mf_archive_loader import load_mf_archive
+from bulletins.services.meteofrance_archive_loader import load_meteofrance_archive
 from bulletins.services.weather_fetcher import fetch_all_regions
 from core.utils import html_to_markdown
 
@@ -55,10 +55,10 @@ logger = logging.getLogger(__name__)
 class PipelineRunAdmin(admin.ModelAdmin):
     """Admin view for PipelineRun.
 
-    Extends the standard changelist with an "Upload MF archive" button that
-    lets operators load a ``bulletins.ndjson`` file (produced by the offline
-    Météo-France BRA pipeline) into the production database without needing
-    SSH access (SNOW-227).
+    Extends the standard changelist with an "Upload Météo-France archive"
+    button that lets operators load a ``bulletins.ndjson`` file (produced by
+    the offline Météo-France BRA pipeline) into the production database
+    without needing SSH access (SNOW-227).
     """
 
     change_list_template = "admin/bulletins/pipelinerun/change_list.html"
@@ -84,21 +84,23 @@ class PipelineRunAdmin(admin.ModelAdmin):
     ordering = ["-started_at"]
 
     def get_urls(self) -> list[URLPattern]:
-        """Add a custom URL for the MF archive upload endpoint."""
+        """Add a custom URL for the Météo-France archive upload endpoint."""
         custom_urls = [
             path(
-                "upload-mf-archive/",
-                self.admin_site.admin_view(self.upload_mf_archive_view),
-                name="bulletins_pipelinerun_upload_mf_archive",
+                "upload-meteofrance-archive/",
+                self.admin_site.admin_view(self.upload_meteofrance_archive_view),
+                name="bulletins_pipelinerun_upload_meteofrance_archive",
             ),
         ]
         return custom_urls + super().get_urls()
 
-    def upload_mf_archive_view(self, request: HttpRequest) -> HttpResponseRedirect:
-        """Handle the "Upload MF archive" form POST.
+    def upload_meteofrance_archive_view(
+        self, request: HttpRequest
+    ) -> HttpResponseRedirect:
+        """Handle the "Upload Météo-France archive" form POST.
 
         Reads the uploaded ``archive`` file, passes it to
-        ``load_mf_archive`` with ``commit=True``, and redirects back to
+        ``load_meteofrance_archive`` with ``commit=True``, and redirects back to
         the PipelineRun changelist with an informative admin message.
 
         Message levels:
@@ -125,7 +127,7 @@ class PipelineRunAdmin(admin.ModelAdmin):
             return HttpResponseRedirect(changelist_url)
 
         logger.info(
-            "Admin MF archive upload: %s (%d bytes), triggered by %s",
+            "Admin Météo-France archive upload: %s (%d bytes), triggered by %s",
             upload.name,
             upload.size,
             request.user,
@@ -133,13 +135,13 @@ class PipelineRunAdmin(admin.ModelAdmin):
 
         text_file = io.TextIOWrapper(upload, encoding="utf-8")
         try:
-            result = load_mf_archive(
+            result = load_meteofrance_archive(
                 text_file,
                 commit=True,
                 triggered_by="admin upload",
             )
         except Exception:
-            logger.exception("Admin MF archive upload failed")
+            logger.exception("Admin Météo-France archive upload failed")
             self.message_user(
                 request,
                 "Archive upload failed — check the server logs for details.",
