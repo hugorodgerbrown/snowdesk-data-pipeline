@@ -10,21 +10,23 @@ convention in CLAUDE.md (read-only by default; opt in to writes with
 ## Operational requirements
 
 Two scheduled jobs keep the public site in sync with upstream data. Both
-are declared in [`render.yaml`](../render.yaml) at the repo root and run
-on Render's cron (the pipeline has no in-process scheduler — if Render's
-cron is paused, no new data arrives). Both run with `--commit` so they
-actually persist; both exit non-zero on failure so a missed run is
-visible in Render's job history.
+are driven by the `snowdesk-scheduler` Render Background Worker, which
+runs `python manage.py run_scheduler` and uses APScheduler (SNOW-238) to
+fire the jobs on their cron schedules via `django.core.management.call_command`.
+The schedule is declared in [`schedule.py`](../schedule.py) at the repo root
+and documented in [`render.yaml`](../render.yaml). Both jobs run with `--commit`
+so they actually persist; both exit non-zero on failure so a missed run is
+visible in the worker logs.
 
 | Job | Command | Cadence | Purpose |
 |-----|---------|---------|---------|
-| Bulletin ingestion | `poetry run python manage.py fetch_bulletins --source slf euregio meteofrance --commit` | Daily, after the providers publish their morning re-issues | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
-| Weather backstop | `poetry run python manage.py fetch_weather --commit` | Daily, after bulletin ingestion | Pre-warms `WeatherSnapshot` rows for every region. The live path is the HTMX-triggered `public:weather_snippet` view (see [`async-operations.md`](async-operations.md)); this cron is a backstop so the first page-view of the day doesn't pay the Open-Meteo round-trip. |
+| Bulletin ingestion | `fetch_bulletins --source slf euregio meteofrance --commit` | `0,5 * * * *` (every hour at :00 and :05 UTC) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
+| Weather backstop | `fetch_weather --commit` | `0 0-18/6 * * *` (00:00, 06:00, 12:00, 18:00 UTC) | Pre-warms `WeatherSnapshot` rows for every region. The live path is the HTMX-triggered `public:weather_snippet` view (see [`async-operations.md`](async-operations.md)); this job is a backstop so the first page-view of the day doesn't pay the Open-Meteo round-trip. |
 
-Run order matters: bulletin ingestion first (it discovers new regions /
-days), then the weather backstop (it iterates over the regions present
-in the DB). Schedule the weather job 15–30 minutes after bulletin
-ingestion to give the bulletin run headroom on a slow API day.
+Run order is handled automatically: APScheduler fires both jobs
+independently on their own triggers. The weather job fires less frequently
+than bulletin ingestion, so by design the weather backstop typically runs
+after bulletin data has already been refreshed for that hour.
 
 ### `test_data` fixture (local dev and CI)
 
