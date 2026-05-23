@@ -1171,6 +1171,33 @@ RATING_BLOCK_VARIANTS: tuple[dict[str, Any], ...] = (
             ),
         },
     },
+    {
+        "caption": "Wet snow · prose only — no structured terrain",
+        "solo": True,
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wet_snow",
+                time_period="all_day",
+                aspects=[],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="",
+                    display="",
+                    bound_type="",
+                ),
+                label="Wet snow",
+                time_period_label="",
+                core_zone_text="",
+                comment_html=(
+                    "<p>Moist snowpack at all elevations following overnight warming. "
+                    "Wet-snow avalanches are possible on all aspects below 2200m.</p>"
+                ),
+            ),
+        },
+    },
 )
 
 
