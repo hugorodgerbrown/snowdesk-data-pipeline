@@ -29,7 +29,7 @@
     {# first visit (no SW cache) these would otherwise be a serial chain #}
     {# HTML → JS parse → fetch.                                          #}
     <link rel="prefetch" href="{% url 'api:regions_geojson' %}?country=ch">
-    <link rel="prefetch" href="{% url 'api:ratings' %}?d={% now "Y-m-d" %}&country=ch">
+    <link rel="prefetch" href="{% url 'api:ratings' %}?d={{ season_end|date:'Y-m-d' }}&country=ch">
     <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
     <link rel="stylesheet" href="{% static 'css/map.css' %}">
 {% endblock %}
@@ -53,6 +53,8 @@
     {# subscription manage page can reuse the same symbols without        #}
     {# duplicating the SVG block.                                         #}
     {% include "includes/country_flags_sprite.html" %}
+    {# SNOW-236: data-season-end is read by map.js at boot to clamp the cold-open #}
+    {# fetch to the last populated date when today is past the season end.       #}
     <div
         id="map"
         data-regions-url="{% url 'api:regions_geojson' %}"
@@ -63,6 +65,7 @@
         data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
         data-region-summary-url="{% url 'api:region_summary' '__REGION__' %}"
         data-default-basemap-key="{{ default_basemap_key }}"
+        data-season-end="{{ season_end|date:'Y-m-d' }}"
     >
         <div class="map-utility-cluster" id="map-utility-cluster">
             <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">

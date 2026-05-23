@@ -21,6 +21,18 @@ let MAP = null;
 const FEATURE_BY_ID = {};
 const FEATURE_BY_REGION_ID = {};
 
+// SNOW-236: Country visibility state — which countries are currently shown.
+// Populated by the main IIFE from localStorage + the country-toggle
+// buttons; read by the scrubber IIFE for country-aware effective-last
+// computation (deriveEffectiveTodayKey).
+const COUNTRY_STATE = { ch: true, fr: false, at: false, it: false };
+
+// SNOW-236: The clamped boot date (min(today, seasonEnd)) computed by the
+// main IIFE and shared with the scrubber IIFE. The scrubber uses this as
+// the baseline when deciding whether to snap the thumb after getSeasonRatings
+// resolves — the initial paint was at bootDateKey, not necessarily at todayKey.
+let BOOT_DATE_KEY = null;
+
 // Whether a single click on a region auto-pans/zooms to fit it into view.
 // Off by default; persisted in localStorage under
 // 'snowdesk.map.autozoom'. The autozoomToggleInit IIFE at the bottom of
@@ -115,6 +127,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // full-season fetch via getSeasonRatings().
   RATINGS_URL = mapEl.dataset.ratingsUrl;
 
+  // SNOW-236: Clamp the cold-open boot date to the season end so the
+  // choropleth paints at the last populated date after season end.
+  // bootDateKey is hoisted to the outer IIFE scope so the country-toggle
+  // paint path can reuse it without re-reading the DOM.
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const seasonEndFromMap = mapEl.dataset.seasonEnd || todayISO;
+  const bootDateKey = todayISO < seasonEndFromMap ? todayISO : seasonEndFromMap;
+  // Expose to sibling IIFEs (seasonScrubberInit) via module scope.
+  BOOT_DATE_KEY = bootDateKey;
+
   // SNOW-58: Basemap layer picker — resolve the active style URL.
   //
   // The catalogue is rendered server-side as an in-DOM <ul role="menu">
@@ -198,6 +220,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (stored !== null) countryState[code] = stored === 'true';
     } catch (_) { /* private mode — use defaults */ }
   }
+  // SNOW-236: Mirror the initial state into the module-scope COUNTRY_STATE
+  // so the scrubber IIFE can read it for country-aware effective-last computation.
+  Object.assign(COUNTRY_STATE, countryState);
   // loadedCountries tracks which countries' GeoJSON has been fetched already
   // so we don't re-fetch on each toggle-on.
   const loadedCountries = new Set();
@@ -779,6 +804,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
                 if (!cache[dateKey]) cache[dateKey] = {};
                 Object.assign(cache[dateKey], regions);
               }
+              // SNOW-236: Notify the scrubber that the merged cache now includes
+              // this country's ratings so it can re-derive effectiveTodayKey.
+              document.dispatchEvent(new CustomEvent('snowdesk:country-ratings-loaded', {
+                detail: { code },
+              }));
             }).catch(() => {});
           }
           // Paint the currently-displayed date for the new country's regions.
@@ -792,8 +822,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
               const d = new URL(location.href).searchParams.get('d');
               return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
             })();
-            const todayISO = new Date().toISOString().slice(0, 10);
-            const paintDate = displayDate || todayISO;
+            // SNOW-236: fall back to bootDateKey (season-end clamped) rather than
+            // raw today so post-season country toggles paint a populated frame.
+            const paintDate = displayDate || bootDateKey;
             const frame = countryRatings[paintDate] || {};
             // Mirror the paintTodayRatings guard: setFeatureState is a no-op
             // if the source has not finished loading. Gate on isSourceLoaded
@@ -895,6 +926,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
   document.addEventListener('snowdesk:country-toggle', (e) => {
     const { code, next } = e.detail;
     countryState[code] = next;
+    // SNOW-236: Mirror the mutation into module-scope COUNTRY_STATE so the
+    // scrubber IIFE can read the latest state for effective-last computation.
+    COUNTRY_STATE[code] = next;
     try {
       localStorage.setItem(COUNTRY_STORAGE_KEY(code), String(next));
     } catch (_) { /* private mode */ }
@@ -989,12 +1023,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // SNOW-239: today-summaries replaced by a compact ratings fetch
     // (?d=<today>&country=ch, ~2 KB). Choropleth is painted via
     // setFeatureState — no more property-based rating on features.
-    const todayISO = new Date().toISOString().slice(0, 10);
+    // SNOW-236: fetch using bootDateKey (clamped to season end) so the
+    // choropleth paints the last populated date when today is post-season.
     const [geojson, todayRatingsPayload, resorts] =
       await Promise.all([
         fetch(REGIONS_URL + '?country=ch').then(r => r.json()),
         RATINGS_URL
-          ? fetch(RATINGS_URL + '?d=' + todayISO + '&country=ch').then(r => {
+          ? fetch(RATINGS_URL + '?d=' + bootDateKey + '&country=ch').then(r => {
               if (!r.ok) throw new Error('ratings fetch failed');
               return r.json();
             }).catch(() => ({}))
@@ -1003,7 +1038,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       ]);
     Object.assign(RESORTS_BY_REGION, resorts);
     // todayRatingsPayload shape: { "YYYY-MM-DD": { region_id: rating_int } }
-    const todayRatings = todayRatingsPayload[todayISO] || {};
+    const todayRatings = todayRatingsPayload[bootDateKey] || {};
 
     // Assign a numeric id to every feature and build the lookup.
     // MapLibre's feature-state API requires numeric ids; regionID is a string
@@ -1968,6 +2003,43 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // will snap.
   let ratingsCache = null;
   let sortedDates = null;
+
+  // SNOW-236: The effective "today" frame — the latest date in the merged
+  // ratings cache that contains at least one visible country. Defaults to
+  // todayKey (server-rendered) until the season-ratings fetch resolves and
+  // proves that a later or earlier date is actually the last populated one.
+  // Mutated by the getSeasonRatings callback and by snowdesk:country-ratings-loaded.
+  let effectiveTodayKey = todayKey;
+
+  // SNOW-236: Walk sortedDates from the end and return the latest entry
+  // whose payload contains at least one region whose country prefix
+  // (region_id.split('-')[0].toLowerCase()) matches an active country in
+  // COUNTRY_STATE (the module-scope mirror of the main IIFE's countryState).
+  // Falls back to the last entry if nothing matches.
+  const deriveEffectiveTodayKey = (dates, cache) => {
+    if (!dates || dates.length === 0) return todayKey;
+    // Dedupe unexpected-prefix warnings per call: a full-season payload
+    // can contain hundreds of regions and we don't want one stray prefix
+    // (e.g. a future Liechtenstein "LI-…") to spam the console once per
+    // region per date.
+    const warnedPrefixes = new Set();
+    for (let i = dates.length - 1; i >= 0; i--) {
+      const dateKey = dates[i];
+      const frame = cache[dateKey] || {};
+      for (const regionID of Object.keys(frame)) {
+        const prefix = regionID.split('-')[0].toLowerCase();
+        if (COUNTRY_STATE[prefix] === true) return dateKey;
+        // Guard: unexpected prefix — don't silently swallow it.
+        if (!(prefix in COUNTRY_STATE) && !warnedPrefixes.has(prefix)) {
+          warnedPrefixes.add(prefix);
+          console.warn('[map] SNOW-236: unexpected region prefix', prefix, 'in ratings payload');
+        }
+      }
+    }
+    // No date matched any active country — return the last date as a safe fallback.
+    return dates[dates.length - 1];
+  };
+
   // SNOW-234: transition the scrubber out of the loading state once the
   // season-ratings fetch settles. On success, populate the cache and mark
   // the scrubber ready so the transport controls become visible. On failure,
@@ -1977,6 +2049,22 @@ const repaintRegionsForDate = (dateKey, cache) => {
     ratingsCache = data;
     sortedDates = Object.keys(data).sort();
     scrubber.dataset.state = 'ready';
+
+    // SNOW-236: Compute the country-aware effective last date and snap
+    // the thumb to it if the page has not been loaded with an explicit
+    // ?d= param (i.e. the user hasn't deep-linked to a specific date).
+    // Always commit silently so the date pill (server-rendered with today)
+    // is corrected to the effective date — including the post-season case
+    // where newEffective === BOOT_DATE_KEY but the pill still shows today.
+    const newEffective = deriveEffectiveTodayKey(sortedDates, ratingsCache);
+    effectiveTodayKey = newEffective;
+    const bootParam = new URL(location.href).searchParams.get('d');
+    if (!bootParam) {
+      // Snap silently — no history entry, just reposition the thumb and repaint.
+      Promise.all([MAP_READY_PROMISE]).then(() => {
+        commitDate(newEffective, { silent: true });
+      });
+    }
   }).catch(() => {
     scrubber.dataset.state = 'error';
     const loadingEl = scrubber.querySelector('.season-scrubber-loading');
@@ -2057,7 +2145,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
     dragging = false;
     pointerId = null;
     track.classList.remove('dragging');
-    const snapped = snapToNearestDataDay(liveDate || todayKey);
+    // SNOW-236: use effectiveTodayKey (country-aware last populated date)
+    // as the snap target when the user releases without having dragged.
+    const snapped = snapToNearestDataDay(liveDate || effectiveTodayKey);
     commitDate(snapped);
     liveDate = null;
   };
@@ -2087,8 +2177,28 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // ---- Browser back/forward ----
   window.addEventListener('popstate', () => {
     const d = new URL(location.href).searchParams.get('d');
-    const target = d && /^\d{4}-\d{2}-\d{2}$/.test(d) && isInSeason(d) ? d : todayKey;
+    // SNOW-236: fall back to effectiveTodayKey (country-aware last populated
+    // date) rather than todayKey so back-nav restores a coloured choropleth
+    // when today is past the season end.
+    const target = d && /^\d{4}-\d{2}-\d{2}$/.test(d) && isInSeason(d) ? d : effectiveTodayKey;
     commitDate(target, { silent: true });
+  });
+
+  // ---- SNOW-236: Re-derive effective today on country ratings load ----
+  // ensureCountryLoaded dispatches this event after merging a new country's
+  // ratings into the shared cache. Re-run the effective-last computation so
+  // the scrubber snaps to the correct date for the newly-active country set.
+  document.addEventListener('snowdesk:country-ratings-loaded', () => {
+    if (!sortedDates || !ratingsCache) return;
+    const newEffective = deriveEffectiveTodayKey(sortedDates, ratingsCache);
+    const prevEffective = effectiveTodayKey;
+    effectiveTodayKey = newEffective;
+    // Only snap if the page is in "today mode" — no explicit ?d= in the URL
+    // and the effective date has actually changed.
+    const bootParam = new URL(location.href).searchParams.get('d');
+    if (!bootParam && newEffective !== prevEffective) {
+      commitDate(newEffective, { silent: true });
+    }
   });
 
 })();
