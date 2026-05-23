@@ -1,5 +1,5 @@
 """
-bulletins/services/euregio_fetcher.py — Fetching and persisting EUREGIO bulletins.
+bulletins/services/albina_fetcher.py — Fetching and persisting ALBINA bulletins.
 
 Walks the ALBINA CDN at::
 
@@ -13,9 +13,9 @@ CAAML v6 bulletin dicts. A 404 response for a given (date, region) pair means
 "no bulletin published for this slot" — not an error. Any other 4xx/5xx
 response logs a warning and skips the slot.
 
-``fetch_euregio_for_date``, ``run_euregio_pipeline``, and ``write_archive`` are
+``fetch_albina_for_date``, ``run_albina_pipeline``, and ``write_archive`` are
 the public entry points. The management command ``fetch_bulletins`` calls
-``run_euregio_pipeline`` and ``write_archive``; unit tests can call any of
+``run_albina_pipeline`` and ``write_archive``; unit tests can call any of
 them independently via mocked ``requests.get``.
 """
 
@@ -43,13 +43,13 @@ REQUEST_TIMEOUT = 30  # seconds
 _ONE_DAY = timedelta(days=1)
 
 
-def fetch_euregio_for_date(
+def fetch_albina_for_date(
     target_date: date,
     region: str,
     base_url: str | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Fetch EUREGIO bulletins for one (date, region) pair from the ALBINA CDN.
+    Fetch ALBINA bulletins for one (date, region) pair from the ALBINA CDN.
 
     The CDN publishes per-date, per-region CAAMLv6 files at::
 
@@ -63,7 +63,7 @@ def fetch_euregio_for_date(
         target_date: The date whose bulletin to fetch.
         region: ALBINA region code, e.g. ``"AT-07"``.
         base_url: Override the ALBINA CDN base URL. Falls back to
-            ``settings.EUREGIO_API_BASE_URL`` when ``None``.
+            ``settings.ALBINA_API_BASE_URL`` when ``None``.
 
     Returns:
         A flat list of raw bulletin dicts. Empty when the CDN returns 404
@@ -73,12 +73,12 @@ def fetch_euregio_for_date(
         requests.HTTPError: If the CDN returns any non-404 error status.
 
     """
-    resolved_base = base_url if base_url is not None else settings.EUREGIO_API_BASE_URL
+    resolved_base = base_url if base_url is not None else settings.ALBINA_API_BASE_URL
     date_str = target_date.isoformat()
     url = f"{resolved_base}/{date_str}/{date_str}_{region}_en_CAAMLv6.json"
 
     logger.debug(
-        "Fetching EUREGIO bulletins: date=%s region=%s url=%s",
+        "Fetching ALBINA bulletins: date=%s region=%s url=%s",
         date_str,
         region,
         url,
@@ -130,7 +130,7 @@ def _normalise_response(data: Any, date_str: str, region: str) -> list[dict[str,
 
 def _parse_issued_at(raw: dict[str, Any], fallback: datetime) -> datetime:
     """
-    Derive an ``issued_at`` datetime from a raw EUREGIO bulletin dict.
+    Derive an ``issued_at`` datetime from a raw ALBINA bulletin dict.
 
     Tries ``publicationTime`` first, then ``validTime.startTime``, then
     falls back to ``fallback`` when neither parses.
@@ -157,7 +157,7 @@ def _parse_issued_at(raw: dict[str, Any], fallback: datetime) -> datetime:
     return fallback
 
 
-def _process_euregio_bulletin(
+def _process_albina_bulletin(
     raw: dict[str, Any],
     run: PipelineRun,
     seen_ids: set[str],
@@ -169,7 +169,7 @@ def _process_euregio_bulletin(
     on_fetched: Callable[[dict[str, Any]], None] | None,
 ) -> str:
     """
-    Decide how to handle a single EUREGIO bulletin.
+    Decide how to handle a single ALBINA bulletin.
 
     Returns a short outcome tag: ``"created"``, ``"updated"``, ``"skipped"``,
     ``"duplicate"``, or ``"failed"``.
@@ -189,7 +189,7 @@ def _process_euregio_bulletin(
     """
     bulletin_id: str = raw.get("bulletinID", "")
     if not bulletin_id:
-        logger.warning("EUREGIO bulletin with no bulletinID — skipping")
+        logger.warning("ALBINA bulletin with no bulletinID — skipping")
         return "skipped"
 
     # Deduplicate — the same bulletin ID appears in multiple region files
@@ -206,7 +206,7 @@ def _process_euregio_bulletin(
         return "skipped"
 
     if dry_run:
-        logger.info("[dry-run] Would store EUREGIO %s", bulletin_id)
+        logger.info("[dry-run] Would store ALBINA %s", bulletin_id)
         return "created"
 
     if not force and Bulletin.objects.filter(bulletin_id=bulletin_id).exists():
@@ -215,7 +215,7 @@ def _process_euregio_bulletin(
     try:
         created = upsert_bulletin(raw, run)
     except Exception as exc:
-        logger.exception("Failed to upsert EUREGIO bulletin %s: %s", bulletin_id, exc)
+        logger.exception("Failed to upsert ALBINA bulletin %s: %s", bulletin_id, exc)
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
         return "failed"
@@ -223,7 +223,7 @@ def _process_euregio_bulletin(
     return "created" if created else "updated"
 
 
-def run_euregio_pipeline(
+def run_albina_pipeline(
     start: date,
     end: date,
     regions: tuple[str, ...] | None = None,
@@ -235,7 +235,7 @@ def run_euregio_pipeline(
     delay: float = 0.0,
 ) -> PipelineRun:
     """
-    Orchestrate a full EUREGIO bulletin ingest over a date range × region set.
+    Orchestrate a full ALBINA bulletin ingest over a date range × region set.
 
     Walks the ALBINA CDN for every (date, region) combination in the
     Cartesian product of ``[start..end]`` × ``regions``, deduplicating
@@ -245,13 +245,13 @@ def run_euregio_pipeline(
     Args:
         start: First date to include (inclusive).
         end: Last date to include (inclusive).
-        regions: Tuple of EUREGIO region codes to query. Falls back to
-            ``settings.EUREGIO_REGIONS`` when ``None``.
+        regions: Tuple of ALBINA region codes to query. Falls back to
+            ``settings.ALBINA_REGIONS`` when ``None``.
         triggered_by: Human-readable label for who/what triggered the run.
         dry_run: If True, fetch data but do not write to the database.
         force: If True, upsert bulletins that already exist in the DB.
         base_url: Override the ALBINA CDN base URL. ``None`` defers to
-            ``settings.EUREGIO_API_BASE_URL``.
+            ``settings.ALBINA_API_BASE_URL``.
         on_fetched: Optional per-record callback invoked once for each
             unique bulletin (after dedup, before date-range/dry-run
             decisions). The ``--stash`` flag on the management command
@@ -266,7 +266,7 @@ def run_euregio_pipeline(
 
     """
     resolved_regions: tuple[str, ...] = (
-        regions if regions is not None else settings.EUREGIO_REGIONS
+        regions if regions is not None else settings.ALBINA_REGIONS
     )
 
     run = PipelineRun.objects.create(triggered_by=triggered_by)
@@ -287,7 +287,7 @@ def run_euregio_pipeline(
 
     try:
         logger.info(
-            "EUREGIO pipeline run %s: range %s–%s regions=%s force=%s dry_run=%s",
+            "ALBINA pipeline run %s: range %s–%s regions=%s force=%s dry_run=%s",
             run.pk,
             start,
             end,
@@ -303,7 +303,7 @@ def run_euregio_pipeline(
                     time.sleep(delay)
 
                 try:
-                    bulletins = fetch_euregio_for_date(
+                    bulletins = fetch_albina_for_date(
                         current, region, base_url=base_url
                     )
                 except requests.HTTPError as exc:
@@ -321,7 +321,7 @@ def run_euregio_pipeline(
                 request_count += 1
 
                 for raw in bulletins:
-                    outcome = _process_euregio_bulletin(
+                    outcome = _process_albina_bulletin(
                         raw,
                         run,
                         seen_ids,
@@ -340,7 +340,7 @@ def run_euregio_pipeline(
         return run
 
     logger.info(
-        "EUREGIO pipeline run %s finished: %d requests, "
+        "ALBINA pipeline run %s finished: %d requests, "
         "%d created, %d updated, %d skipped",
         run.pk,
         request_count,
@@ -357,20 +357,20 @@ def run_euregio_pipeline(
     return run
 
 
-def latest_euregio_date() -> date | None:
+def latest_albina_date() -> date | None:
     """
-    Return the most recent ``valid_from`` date of any EUREGIO bulletin in the DB.
+    Return the most recent ``valid_from`` date of any ALBINA bulletin in the DB.
 
     Used by the management command to derive the default ``--start-date``
     (resume from where the last run left off). Returns ``None`` when no
-    EUREGIO bulletins exist yet.
+    ALBINA bulletins exist yet.
 
     Returns:
-        The latest ``valid_from.date()`` of any EUREGIO bulletin, or ``None``.
+        The latest ``valid_from.date()`` of any ALBINA bulletin, or ``None``.
 
     """
     result = (
-        Bulletin.objects.filter(render_model__source=Bulletin.Source.EUREGIO)
+        Bulletin.objects.filter(render_model__source=Bulletin.Source.ALBINA)
         .order_by("-valid_from")
         .values_list("valid_from", flat=True)
         .first()
@@ -382,7 +382,7 @@ def latest_euregio_date() -> date | None:
 
 def write_archive(records: list[dict[str, Any]], path: Path) -> int:
     """
-    Merge ``records`` into the on-disk EUREGIO archive and return the new size.
+    Merge ``records`` into the on-disk ALBINA archive and return the new size.
 
     Reads the existing archive at ``path`` (if it exists), overlays the
     supplied records (later ``bulletinID`` wins), sorts ascending by
@@ -391,8 +391,8 @@ def write_archive(records: list[dict[str, Any]], path: Path) -> int:
     never leaves a half-written archive in place.
 
     Args:
-        records: Raw EUREGIO bulletin dicts collected during a pipeline run.
-        path: Filesystem path to the EUREGIO archive NDJSON file.
+        records: Raw ALBINA bulletin dicts collected during a pipeline run.
+        path: Filesystem path to the ALBINA archive NDJSON file.
 
     Returns:
         The total number of records in the archive after the merge.
@@ -427,7 +427,7 @@ def write_archive(records: list[dict[str, Any]], path: Path) -> int:
     os.replace(tmp, path)
 
     logger.info(
-        "euregio write_archive: records_in=%d archive_total=%d path=%s",
+        "albina write_archive: records_in=%d archive_total=%d path=%s",
         len(records),
         len(merged),
         path,

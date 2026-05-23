@@ -138,8 +138,11 @@ _DANGER_MAP: dict[str, dict[str, Any]] = {
 # Used by the bulletin detail page to render the Source cell in the metadata strip.
 BULLETIN_SOURCE_LINKS: dict[str, tuple[str, str]] = {
     Bulletin.Source.SLF: ("SLF", "https://www.slf.ch"),
-    Bulletin.Source.EUREGIO: ("EUREGIO", "https://avalanche.report"),
-    Bulletin.Source.MF: ("MétéoFrance", "https://meteofrance.com/meteo-montagne"),
+    Bulletin.Source.ALBINA: ("ALBINA", "https://avalanche.report"),
+    Bulletin.Source.METEOFRANCE: (
+        "Météo-France",
+        "https://meteofrance.com/meteo-montagne",
+    ),
 }
 
 # Mapping from SLF danger codes to EAWS icons
@@ -1608,7 +1611,7 @@ def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
     is strictly higher than ``all_day`` — equal or lower implies no
     change, so the overlay would be noise.
 
-    EUREGIO / ALBINA style: no ``all_day``; ratings split by
+    ALBINA / ALBINA style: no ``all_day``; ratings split by
     ``validTimePeriod`` (and often by elevation within a period). When
     no ``all_day`` rating exists, fall back to one row per period found
     in the source, picking the highest-rank rating across any elevation
@@ -1633,7 +1636,7 @@ def _build_day_windows(bulletin: Bulletin) -> list[dict[str, Any]]:
                 windows.append(_day_window_row(later_rating))
         return windows
 
-    # EUREGIO-style fallback: one row per period, ordered earlier → later.
+    # ALBINA-style fallback: one row per period, ordered earlier → later.
     period_order = ("earlier", "later")
     return [_day_window_row(by_period[p]) for p in period_order if p in by_period]
 
@@ -1797,7 +1800,7 @@ def _build_structured_data(
         ``{{ structured_data_json|safe }}`` in a template.
 
     """
-    # Source organisation details (SLF / EUREGIO / MF).
+    # Source organisation details (SLF / ALBINA / MF).
     source_key = (panel.get("render_model") or {}).get("source", "")
     source_name, source_url = BULLETIN_SOURCE_LINKS.get(source_key, ("", ""))
 
@@ -2976,7 +2979,7 @@ def build_problem_cards(
         # back to the render-model traits when this returns [].
         return []
     if not aggregation:
-        # EUREGIO bulletins never carry customData.CH.aggregation — that's
+        # ALBINA bulletins never carry customData.CH.aggregation — that's
         # source-specific to SLF. Callers (_resolve_problem_cards) fall back
         # to the render-model traits in that case.
         return []
@@ -2997,12 +3000,12 @@ def _resolve_problem_cards(
     Resolve problem cards from either the CAAML aggregation or render model traits.
 
     SLF bulletins carry ``customData.CH.aggregation`` so ``build_problem_cards``
-    produces a non-empty list.  EUREGIO bulletins have no aggregation; in that
+    produces a non-empty list.  ALBINA bulletins have no aggregation; in that
     case the enriched render-model traits are used as the card source instead.
 
     Args:
         raw_problems: CAAML avalancheProblems list from the bulletin properties.
-        aggregation: SLF aggregation list (may be empty for EUREGIO).
+        aggregation: SLF aggregation list (may be empty for ALBINA).
         traits: Enriched render-model traits (used as fallback).
 
     Returns:
@@ -3021,14 +3024,14 @@ def _problem_cards_from_render_model_traits(
     """
     Build one problem card per render-model trait.
 
-    Used as a fallback for EUREGIO bulletins which carry no
+    Used as a fallback for ALBINA bulletins which carry no
     ``customData.CH.aggregation``, so ``build_problem_cards`` returns [].
     The traits list comes from the **enriched** render model (already processed
     by ``enrich_render_model``), so elevation and label fields are already in
     the presentation-ready shape the ``_rating_block.html`` partial expects.
 
     One card is emitted per trait using the first problem in each trait for
-    spatial data (aspects / elevation) — EUREGIO aggregation entries always
+    spatial data (aspects / elevation) — ALBINA aggregation entries always
     contain a single problem type per time-period group.
 
     Args:
@@ -3305,7 +3308,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     traits: list[dict[str, Any]] = render_model.get("traits") or []
 
     # Source-aware problem cards: SLF bulletins use the CAAML aggregation;
-    # EUREGIO bulletins have no aggregation so we fall back to render-model traits.
+    # ALBINA bulletins have no aggregation so we fall back to render-model traits.
     problem_cards = _resolve_problem_cards(raw_problems, aggregation, traits)
 
     # Per-half danger resolution for the AM/PM split headline.  Mirrors
@@ -3379,7 +3382,7 @@ def _resolve_day_lead(
     classify the day via the five-rule cascade in ``compute_day_character``
     (Stable / Manageable / Hard-to-read / Widespread / Dangerous).
 
-    EUREGIO bulletins, by contrast, ship a short editorial lead at
+    ALBINA bulletins, by contrast, ship a short editorial lead at
     ``properties.tendency[0].highlights`` — a forecaster-authored
     one-liner describing how the day is expected to play out. When
     that lead is present, use it verbatim and suppress the computed

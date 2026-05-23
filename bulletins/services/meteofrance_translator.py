@@ -4,7 +4,7 @@ bulletins/services/meteofrance_translator.py — DPBRA XML → CAAML JSON transl
 Converts a single Météo-France DPBRA XML document into the CAAML v6 JSON dict
 shape that ``upsert_bulletin()`` in ``bulletins/services/data_fetcher.py``
 consumes — identical in structure to the payloads produced by the SLF and
-EUREGIO adapters.
+ALBINA adapters.
 
 The translator is **pure**: it performs no I/O, makes no database calls, and
 has no side effects. Calling code (the fetcher) supplies XML bytes and
@@ -23,7 +23,7 @@ ending in ``Z`` — the format ``_parse_dt()`` in ``data_fetcher.py`` expects.
 
 Provider-specific DPBRA content that has no CAAML equivalent is stored under
 ``customData.MF``, mirroring ``customData.CH`` (SLF) and
-``customData.ALBINA`` (EUREGIO).
+``customData.ALBINA`` (ALBINA, AT/IT/Tyrol).
 """
 
 from __future__ import annotations
@@ -154,7 +154,7 @@ def _parse_local_to_utc(value: str) -> str:
     The DPBRA API returns all ``DATE*`` attributes as naive local-time strings
     (e.g. ``"2026-05-17T16:00:00"``). This helper localises them to
     Europe/Paris and converts to UTC, emitting a ``Z``-suffixed string that
-    matches the format produced by the SLF and EUREGIO adapters.
+    matches the format produced by the SLF and ALBINA adapters.
 
     Args:
         value: A naive ISO-8601 datetime string in Europe/Paris local time.
@@ -1000,7 +1000,7 @@ def parse_dpbra_xml(xml_bytes: bytes) -> dict[str, Any]:
     """
     Parse a single DPBRA XML document and return a CAAML v6 JSON dict.
 
-    The returned dict has the same top-level keys as the SLF and EUREGIO
+    The returned dict has the same top-level keys as the SLF and ALBINA
     payloads stored in ``Bulletin.raw_data.properties`` so it can be fed
     directly into ``upsert_bulletin(raw, run)``.
 

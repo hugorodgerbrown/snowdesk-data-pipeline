@@ -18,10 +18,10 @@ When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
   (``bulletins.dev_urls_openmeteo``, namespace ``dev_om``), so ``fetch_weather
   --source local-mirror`` and ``backfill_weather --source local-mirror`` can
   replay ``bulletins/local_mirrors/openmeteo_archive.ndjson``.
-- ``/dev/euregio-mirror/`` — EUREGIO/ALBINA bulletin mirror
-  (``bulletins.dev_urls_euregio``, namespace ``dev_euregio``), so
-  ``fetch_euregio_bulletins --source local-mirror`` can replay
-  ``bulletins/local_mirrors/euregio_archive.ndjson``.
+- ``/dev/albina-mirror/`` — ALBINA bulletin mirror
+  (``bulletins.dev_urls_albina``, namespace ``dev_albina``), so
+  ``fetch_bulletins --source albina --local-mirror`` can replay
+  ``bulletins/local_mirrors/albina_archive.ndjson``.
 
 The three mirrors live in separate URL modules so Django's namespace-uniqueness
 check (``urls.W005``) is satisfied. Production never imports any mirror module.
@@ -52,7 +52,7 @@ if settings.DEBUG:
         [
             path("dev/slf-mirror/", include("bulletins.dev_urls")),
             path("dev/openmeteo-mirror/", include("bulletins.dev_urls_openmeteo")),
-            path("dev/euregio-mirror/", include("bulletins.dev_urls_euregio")),
+            path("dev/albina-mirror/", include("bulletins.dev_urls_albina")),
         ]
     )
 

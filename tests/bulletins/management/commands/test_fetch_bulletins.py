@@ -32,7 +32,7 @@ from tests.factories import BulletinFactory, PipelineRunFactory
 # ---------------------------------------------------------------------------
 
 PATCH_SLF = "bulletins.services.data_fetcher.run_pipeline"
-PATCH_EUREGIO = "bulletins.services.euregio_fetcher.run_euregio_pipeline"
+PATCH_ALBINA = "bulletins.services.albina_fetcher.run_albina_pipeline"
 PATCH_METEOFRANCE = "bulletins.services.meteofrance_fetcher.run_meteofrance_pipeline"
 # The registry is built lazily; patch the underlying functions at their
 # canonical locations so both the command and the registry pick up the mock.
@@ -277,61 +277,61 @@ class TestFetchBulletinsDateResolution:
 class TestFetchBulletinsSourceDispatch:
     """Tests verifying which pipeline functions are called for each --source value."""
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_source_slf_calls_only_slf_pipeline(
-        self, mock_slf: MagicMock, mock_euregio: MagicMock
+        self, mock_slf: MagicMock, mock_albina: MagicMock
     ) -> None:
-        """--source slf calls run_pipeline but not run_euregio_pipeline."""
+        """--source slf calls run_pipeline but not run_albina_pipeline."""
         mock_slf.return_value = _make_successful_run()
 
         call_command("fetch_bulletins", "--source", "slf", "--date", "2026-03-15")
 
         mock_slf.assert_called_once()
-        mock_euregio.assert_not_called()
+        mock_albina.assert_not_called()
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
-    def test_source_euregio_calls_only_euregio_pipeline(
-        self, mock_slf: MagicMock, mock_euregio: MagicMock
+    def test_source_albina_calls_only_albina_pipeline(
+        self, mock_slf: MagicMock, mock_albina: MagicMock
     ) -> None:
-        """--source euregio calls run_euregio_pipeline but not run_pipeline."""
-        mock_euregio.return_value = _make_successful_run()
+        """--source albina calls run_albina_pipeline but not run_pipeline."""
+        mock_albina.return_value = _make_successful_run()
 
-        call_command("fetch_bulletins", "--source", "euregio", "--date", "2026-03-15")
+        call_command("fetch_bulletins", "--source", "albina", "--date", "2026-03-15")
 
-        mock_euregio.assert_called_once()
+        mock_albina.assert_called_once()
         mock_slf.assert_not_called()
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
-    def test_source_slf_euregio_space_separated_calls_both(
-        self, mock_slf: MagicMock, mock_euregio: MagicMock
+    def test_source_slf_albina_space_separated_calls_both(
+        self, mock_slf: MagicMock, mock_albina: MagicMock
     ) -> None:
-        """--source slf euregio calls both pipelines."""
+        """--source slf albina calls both pipelines."""
         mock_slf.return_value = _make_successful_run()
-        mock_euregio.return_value = _make_successful_run()
+        mock_albina.return_value = _make_successful_run()
 
         call_command(
             "fetch_bulletins",
             "--source",
             "slf",
-            "euregio",
+            "albina",
             "--date",
             "2026-03-15",
         )
 
         mock_slf.assert_called_once()
-        mock_euregio.assert_called_once()
+        mock_albina.assert_called_once()
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
-    def test_source_euregio_slf_preserves_order(
-        self, mock_slf: MagicMock, mock_euregio: MagicMock
+    def test_source_albina_slf_preserves_order(
+        self, mock_slf: MagicMock, mock_albina: MagicMock
     ) -> None:
-        """--source euregio slf runs EUREGIO first, then SLF (AC#5 ordering)."""
+        """--source albina slf runs ALBINA first, then SLF (AC#5 ordering)."""
         mock_slf.return_value = _make_successful_run()
-        mock_euregio.return_value = _make_successful_run()
+        mock_albina.return_value = _make_successful_run()
 
         call_order: list[str] = []
 
@@ -339,50 +339,50 @@ class TestFetchBulletinsSourceDispatch:
             call_order.append("slf")
             return _make_successful_run()
 
-        def _record_euregio(**kw: object) -> PipelineRun:
-            call_order.append("euregio")
+        def _record_albina(**kw: object) -> PipelineRun:
+            call_order.append("albina")
             return _make_successful_run()
 
         mock_slf.side_effect = _record_slf
-        mock_euregio.side_effect = _record_euregio
+        mock_albina.side_effect = _record_albina
 
         call_command(
             "fetch_bulletins",
             "--source",
-            "euregio",
+            "albina",
             "slf",
             "--date",
             "2026-03-15",
         )
 
-        assert call_order == ["euregio", "slf"]
+        assert call_order == ["albina", "slf"]
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_source_repeated_flag_calls_both(
-        self, mock_slf: MagicMock, mock_euregio: MagicMock
+        self, mock_slf: MagicMock, mock_albina: MagicMock
     ) -> None:
-        """--source slf --source euregio (repeated) is equivalent to space-separated."""
+        """--source slf --source albina (repeated) is equivalent to space-separated."""
         mock_slf.return_value = _make_successful_run()
-        mock_euregio.return_value = _make_successful_run()
+        mock_albina.return_value = _make_successful_run()
 
         call_command(
             "fetch_bulletins",
             "--source",
             "slf",
             "--source",
-            "euregio",
+            "albina",
             "--date",
             "2026-03-15",
         )
 
         mock_slf.assert_called_once()
-        mock_euregio.assert_called_once()
+        mock_albina.assert_called_once()
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_duplicate_source_deduped_to_one_call(
-        self, mock_slf: MagicMock, mock_euregio: MagicMock
+        self, mock_slf: MagicMock, mock_albina: MagicMock
     ) -> None:
         """--source slf slf deduplicates to a single SLF pipeline call."""
         mock_slf.return_value = _make_successful_run()
@@ -397,12 +397,12 @@ class TestFetchBulletinsSourceDispatch:
         )
 
         mock_slf.assert_called_once()
-        mock_euregio.assert_not_called()
+        mock_albina.assert_not_called()
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_triggered_by_includes_source_name_slf(
-        self, mock_slf: MagicMock, mock_euregio: MagicMock
+        self, mock_slf: MagicMock, mock_albina: MagicMock
     ) -> None:
         """triggered_by label identifies both the command and the provider."""
         mock_slf.return_value = _make_successful_run()
@@ -413,27 +413,27 @@ class TestFetchBulletinsSourceDispatch:
         assert "fetch_bulletins" in kwargs["triggered_by"]
         assert "SLF" in kwargs["triggered_by"]
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
-    def test_triggered_by_includes_source_name_euregio(
-        self, mock_slf: MagicMock, mock_euregio: MagicMock
+    def test_triggered_by_includes_source_name_albina(
+        self, mock_slf: MagicMock, mock_albina: MagicMock
     ) -> None:
-        """triggered_by label identifies the euregio provider."""
-        mock_euregio.return_value = _make_successful_run()
+        """triggered_by label identifies the albina provider."""
+        mock_albina.return_value = _make_successful_run()
 
-        call_command("fetch_bulletins", "--source", "euregio", "--date", "2026-03-15")
+        call_command("fetch_bulletins", "--source", "albina", "--date", "2026-03-15")
 
-        _, kwargs = mock_euregio.call_args
+        _, kwargs = mock_albina.call_args
         assert "fetch_bulletins" in kwargs["triggered_by"]
-        assert "EUREGIO" in kwargs["triggered_by"]
+        assert "ALBINA" in kwargs["triggered_by"]
 
     @patch(PATCH_METEOFRANCE)
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_source_meteofrance_calls_only_meteofrance_pipeline(
         self,
         mock_slf: MagicMock,
-        mock_euregio: MagicMock,
+        mock_albina: MagicMock,
         mock_meteofrance: MagicMock,
     ) -> None:
         """--source meteofrance calls run_meteofrance_pipeline only."""
@@ -445,15 +445,15 @@ class TestFetchBulletinsSourceDispatch:
 
         mock_meteofrance.assert_called_once()
         mock_slf.assert_not_called()
-        mock_euregio.assert_not_called()
+        mock_albina.assert_not_called()
 
     @patch(PATCH_METEOFRANCE)
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_source_meteofrance_case_insensitive(
         self,
         mock_slf: MagicMock,
-        mock_euregio: MagicMock,
+        mock_albina: MagicMock,
         mock_meteofrance: MagicMock,
     ) -> None:
         """--source METEOFRANCE / MeteoFrance / meteofrance all resolve."""
@@ -465,7 +465,7 @@ class TestFetchBulletinsSourceDispatch:
             mock_meteofrance.assert_called_once()
 
         mock_slf.assert_not_called()
-        mock_euregio.assert_not_called()
+        mock_albina.assert_not_called()
 
     @patch(PATCH_METEOFRANCE)
     def test_triggered_by_includes_source_name_meteofrance(
@@ -632,38 +632,38 @@ class TestFetchBulletinsLocalMirror:
         mock_run.assert_not_called()
 
     @override_settings(
-        EUREGIO_API_LOCAL_MIRROR_URL="http://localhost:8000/dev/euregio-mirror"
+        ALBINA_API_LOCAL_MIRROR_URL="http://localhost:8000/dev/albina-mirror"
     )
-    @patch(PATCH_EUREGIO)
-    def test_local_mirror_euregio_forwards_setting_url(
+    @patch(PATCH_ALBINA)
+    def test_local_mirror_albina_forwards_setting_url(
         self, mock_run: MagicMock
     ) -> None:
-        """--local-mirror --source euregio forwards EUREGIO_API_LOCAL_MIRROR_URL."""
+        """--local-mirror --source albina forwards ALBINA_API_LOCAL_MIRROR_URL."""
         mock_run.return_value = _make_successful_run()
 
         call_command(
             "fetch_bulletins",
             "--source",
-            "euregio",
+            "albina",
             "--date",
             "2026-03-15",
             "--local-mirror",
         )
 
         _, kwargs = mock_run.call_args
-        assert kwargs["base_url"] == "http://localhost:8000/dev/euregio-mirror"
+        assert kwargs["base_url"] == "http://localhost:8000/dev/albina-mirror"
 
-    @override_settings(EUREGIO_API_LOCAL_MIRROR_URL=None)
-    @patch(PATCH_EUREGIO)
-    def test_local_mirror_euregio_without_setting_raises(
+    @override_settings(ALBINA_API_LOCAL_MIRROR_URL=None)
+    @patch(PATCH_ALBINA)
+    def test_local_mirror_albina_without_setting_raises(
         self, mock_run: MagicMock
     ) -> None:
-        """None EUREGIO_API_LOCAL_MIRROR_URL with --local-mirror raises CommandError."""
-        with pytest.raises(CommandError, match="EUREGIO_API_LOCAL_MIRROR_URL"):
+        """None ALBINA_API_LOCAL_MIRROR_URL with --local-mirror raises CommandError."""
+        with pytest.raises(CommandError, match="ALBINA_API_LOCAL_MIRROR_URL"):
             call_command(
                 "fetch_bulletins",
                 "--source",
-                "euregio",
+                "albina",
                 "--date",
                 "2026-03-15",
                 "--local-mirror",
@@ -720,85 +720,85 @@ class TestFetchBulletinsErrorHandling:
                 "--commit",
             )
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_fail_at_end_one_source_raises_other_still_runs(
-        self, mock_slf: MagicMock, mock_euregio: MagicMock
+        self, mock_slf: MagicMock, mock_albina: MagicMock
     ) -> None:
-        """SLF pipeline raises → EUREGIO still runs → CommandError names both."""
+        """SLF pipeline raises → ALBINA still runs → CommandError names both."""
         mock_slf.side_effect = RuntimeError("SLF network error")
-        mock_euregio.return_value = _make_successful_run()
+        mock_albina.return_value = _make_successful_run()
 
         with pytest.raises(CommandError, match="(?i)slf"):
             call_command(
                 "fetch_bulletins",
                 "--source",
                 "slf",
-                "euregio",
+                "albina",
                 "--date",
                 "2026-03-15",
             )
 
-        # EUREGIO must still have been called despite SLF failing.
-        mock_euregio.assert_called_once()
+        # ALBINA must still have been called despite SLF failing.
+        mock_albina.assert_called_once()
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_fail_at_end_error_message_names_failed_source(
-        self, mock_slf: MagicMock, mock_euregio: MagicMock
+        self, mock_slf: MagicMock, mock_albina: MagicMock
     ) -> None:
         """The final CommandError message names the failed source."""
         mock_slf.side_effect = RuntimeError("SLF boom")
-        mock_euregio.return_value = _make_successful_run()
+        mock_albina.return_value = _make_successful_run()
 
         with pytest.raises(CommandError) as exc_info:
             call_command(
                 "fetch_bulletins",
                 "--source",
                 "slf",
-                "euregio",
+                "albina",
                 "--date",
                 "2026-03-15",
             )
 
         assert "slf" in str(exc_info.value).lower()
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_fail_at_end_records_failed_on_one_source(
-        self, mock_slf: MagicMock, mock_euregio: MagicMock
+        self, mock_slf: MagicMock, mock_albina: MagicMock
     ) -> None:
         """records_failed > 0 on one source causes non-zero exit; other source ran."""
         mock_slf.return_value = _make_failed_records_run(records_failed=1)
-        mock_euregio.return_value = _make_successful_run()
+        mock_albina.return_value = _make_successful_run()
 
         with pytest.raises(CommandError, match="(?i)slf"):
             call_command(
                 "fetch_bulletins",
                 "--source",
                 "slf",
-                "euregio",
+                "albina",
                 "--date",
                 "2026-03-15",
                 "--commit",
             )
 
-        # EUREGIO ran regardless.
-        mock_euregio.assert_called_once()
+        # ALBINA ran regardless.
+        mock_albina.assert_called_once()
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_stash_failure_is_per_source_error_other_source_still_runs(
         self,
         mock_slf: MagicMock,
-        mock_euregio: MagicMock,
+        mock_albina: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Stash writer raising does not abort remaining sources (fail-at-end)."""
         mock_slf.return_value = _make_successful_run()
-        mock_euregio.return_value = _make_successful_run()
+        mock_albina.return_value = _make_successful_run()
 
-        euregio_archive = tmp_path / "euregio.ndjson"
+        albina_archive = tmp_path / "albina.ndjson"
 
         with (
             patch(
@@ -807,7 +807,7 @@ class TestFetchBulletinsErrorHandling:
             ),
             override_settings(
                 SLF_ARCHIVE_PATH=tmp_path / "slf.ndjson",
-                EUREGIO_ARCHIVE_PATH=euregio_archive,
+                ALBINA_ARCHIVE_PATH=albina_archive,
             ),
             pytest.raises(CommandError) as exc_info,
         ):
@@ -815,7 +815,7 @@ class TestFetchBulletinsErrorHandling:
                 "fetch_bulletins",
                 "--source",
                 "slf",
-                "euregio",
+                "albina",
                 "--date",
                 "2026-03-15",
                 "--stash",
@@ -823,8 +823,8 @@ class TestFetchBulletinsErrorHandling:
 
         # SLF stash failure is named in the final error.
         assert "slf" in str(exc_info.value).lower()
-        # EUREGIO pipeline was still invoked despite SLF stash failure.
-        mock_euregio.assert_called_once()
+        # ALBINA pipeline was still invoked despite SLF stash failure.
+        mock_albina.assert_called_once()
 
 
 @pytest.mark.django_db
@@ -939,17 +939,17 @@ class TestFetchBulletinsStash:
         archived = list(read_archive(archive_path))
         assert [r["bulletinID"] for r in archived] == ["old", "new"]
 
-    @patch(PATCH_EUREGIO)
+    @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_stash_multi_source_writes_both_archives(
         self,
         mock_slf: MagicMock,
-        mock_euregio: MagicMock,
+        mock_albina: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """--stash --source slf euregio invokes both archive writers."""
+        """--stash --source slf albina invokes both archive writers."""
         slf_archive = tmp_path / "slf.ndjson"
-        euregio_archive = tmp_path / "euregio.ndjson"
+        albina_archive = tmp_path / "albina.ndjson"
 
         slf_record = {
             "bulletinID": "slf-1",
@@ -959,7 +959,7 @@ class TestFetchBulletinsStash:
                 "endTime": "2026-03-16T17:00:00Z",
             },
         }
-        euregio_record = {
+        albina_record = {
             "bulletinID": "eu-1",
             "validTime": {
                 "startTime": "2026-03-15T16:00:00Z",
@@ -974,25 +974,25 @@ class TestFetchBulletinsStash:
                 on_fetched(slf_record)  # type: ignore[operator]
             return _make_successful_run()
 
-        def fake_euregio(**kwargs: object) -> PipelineRun:
-            """EUREGIO pipeline yields one record."""
+        def fake_albina(**kwargs: object) -> PipelineRun:
+            """ALBINA pipeline yields one record."""
             on_fetched = kwargs.get("on_fetched")
             if on_fetched is not None:
-                on_fetched(euregio_record)  # type: ignore[operator]
+                on_fetched(albina_record)  # type: ignore[operator]
             return _make_successful_run()
 
         mock_slf.side_effect = fake_slf
-        mock_euregio.side_effect = fake_euregio
+        mock_albina.side_effect = fake_albina
 
         with override_settings(
             SLF_ARCHIVE_PATH=slf_archive,
-            EUREGIO_ARCHIVE_PATH=euregio_archive,
+            ALBINA_ARCHIVE_PATH=albina_archive,
         ):
             call_command(
                 "fetch_bulletins",
                 "--source",
                 "slf",
-                "euregio",
+                "albina",
                 "--date",
                 "2026-03-15",
                 "--stash",
@@ -1003,9 +1003,9 @@ class TestFetchBulletinsStash:
         slf_archived = list(read_archive(slf_archive))
         assert {r["bulletinID"] for r in slf_archived} == {"slf-1"}
 
-        euregio_archived = [
+        albina_archived = [
             json.loads(line)
-            for line in euregio_archive.read_text().splitlines()
+            for line in albina_archive.read_text().splitlines()
             if line.strip()
         ]
-        assert {r["bulletinID"] for r in euregio_archived} == {"eu-1"}
+        assert {r["bulletinID"] for r in albina_archived} == {"eu-1"}

@@ -8,7 +8,7 @@ Contains pure-ish functions that:
 
 Also defines the ``BulletinSource`` registry used by the unified
 ``fetch_bulletins`` management command. The registry maps provider names
-(``"SLF"``, ``"EUREGIO"``, ``"METEOFRANCE"``) to their pipeline function,
+(``"SLF"``, ``"ALBINA"``, ``"METEOFRANCE"``) to their pipeline function,
 latest-date function, settings keys, and archive-writer adapter so the
 command can iterate over requested sources without owning any
 provider-specific logic.
@@ -535,9 +535,9 @@ def run_pipeline(
 # ---------------------------------------------------------------------------
 
 SOURCE_SLF = "SLF"
-SOURCE_EUREGIO = "EUREGIO"
+SOURCE_ALBINA = "ALBINA"
 SOURCE_METEOFRANCE = "METEOFRANCE"
-SOURCE_CHOICES = (SOURCE_SLF, SOURCE_EUREGIO, SOURCE_METEOFRANCE)
+SOURCE_CHOICES = (SOURCE_SLF, SOURCE_ALBINA, SOURCE_METEOFRANCE)
 
 
 def latest_slf_date() -> date | None:
@@ -596,7 +596,7 @@ class BulletinSource:
 
     Attributes:
         name: Short provider name used in ``--source`` choices and log
-            output (e.g. ``"SLF"``, ``"EUREGIO"``, ``"METEOFRANCE"``).
+            output (e.g. ``"SLF"``, ``"ALBINA"``, ``"METEOFRANCE"``).
         pipeline_fn: Callable with the signature
             ``(start, end, triggered_by, dry_run, force, base_url,
             on_fetched, delay) -> PipelineRun`` that runs the full ingest.
@@ -634,23 +634,23 @@ def get_sources() -> dict[str, BulletinSource]:
     """
     Return the bulletin-provider registry.
 
-    Built on each call so the EUREGIO imports (which themselves import
+    Built on each call so the ALBINA imports (which themselves import
     from this module) are not executed at module load time — avoiding a
     circular import. Not cached on the module: tests patch
-    ``run_pipeline`` / ``run_euregio_pipeline`` at the module level, and
+    ``run_pipeline`` / ``run_albina_pipeline`` at the module level, and
     caching the resolved references would freeze the unpatched originals
     inside the registry. The rebuild cost is negligible — the command
     runs once per cron invocation.
 
     Returns:
-        A dict mapping ``SOURCE_SLF`` / ``SOURCE_EUREGIO`` /
+        A dict mapping ``SOURCE_SLF`` / ``SOURCE_ALBINA`` /
         ``SOURCE_METEOFRANCE`` to their ``BulletinSource`` entries.
 
     """
-    from bulletins.services.euregio_fetcher import (
-        latest_euregio_date,
-        run_euregio_pipeline,
-        write_archive as euregio_write_archive,
+    from bulletins.services.albina_fetcher import (
+        latest_albina_date,
+        run_albina_pipeline,
+        write_archive as albina_write_archive,
     )
     from bulletins.services.meteofrance_fetcher import (
         latest_meteofrance_date,
@@ -668,14 +668,14 @@ def get_sources() -> dict[str, BulletinSource]:
             archive_path_setting="SLF_ARCHIVE_PATH",
             stash_writer=slf_stash_writer,
         ),
-        SOURCE_EUREGIO: BulletinSource(
-            name=SOURCE_EUREGIO,
-            pipeline_fn=run_euregio_pipeline,
-            latest_date_fn=latest_euregio_date,
-            live_url_setting="EUREGIO_API_BASE_URL",
-            mirror_url_setting="EUREGIO_API_LOCAL_MIRROR_URL",
-            archive_path_setting="EUREGIO_ARCHIVE_PATH",
-            stash_writer=euregio_write_archive,
+        SOURCE_ALBINA: BulletinSource(
+            name=SOURCE_ALBINA,
+            pipeline_fn=run_albina_pipeline,
+            latest_date_fn=latest_albina_date,
+            live_url_setting="ALBINA_API_BASE_URL",
+            mirror_url_setting="ALBINA_API_LOCAL_MIRROR_URL",
+            archive_path_setting="ALBINA_ARCHIVE_PATH",
+            stash_writer=albina_write_archive,
         ),
         SOURCE_METEOFRANCE: BulletinSource(
             name=SOURCE_METEOFRANCE,

@@ -1,29 +1,29 @@
 r"""
-scripts/fetch_euregio_archive.py — One-off season fetcher for EUREGIO bulletins.
+scripts/fetch_albina_archive.py — One-off season fetcher for ALBINA bulletins.
 
 Walks the ALBINA CDN at ``static.avalanche.report/bulletins/YYYY-MM-DD/``
-and pulls every EUREGIO regional CAAMLv6 bulletin (AT-07, IT-32-BZ,
+and pulls every ALBINA regional CAAMLv6 bulletin (AT-07, IT-32-BZ,
 IT-32-TN) for the date range, then writes one bulletin per line to
-``bulletins/local_mirrors/euregio_archive.ndjson`` (ascending by
+``bulletins/local_mirrors/albina_archive.ndjson`` (ascending by
 ``validTime.startTime``).
 
 The output mirrors the shape of ``bulletins/local_mirrors/slf_archive.ndjson``
-so ``fetch_euregio_bulletins --source local-mirror --commit`` can seed a
+so ``fetch_bulletins --source albina --source local-mirror --commit`` can seed a
 dev DB from the committed artefact without a network call.
 
 This is a committed one-off script — not a management command. ALBINA's
 archive is append-only and indexed by date directory, so a single full
 season fetch is sufficient to populate a season's worth of dev data.
 Re-running the script overwrites the output file; new-day additions are
-handled by running ``fetch_euregio_bulletins --stash`` inside the
+handled by running ``fetch_bulletins --source albina --stash`` inside the
 management command.
 
 Usage::
 
-    python scripts/fetch_euregio_archive.py
-    python scripts/fetch_euregio_archive.py \
+    python scripts/fetch_albina_archive.py
+    python scripts/fetch_albina_archive.py \
         --start-date 2025-11-01 --end-date 2026-05-14
-    python scripts/fetch_euregio_archive.py --regions AT-07 IT-32-BZ
+    python scripts/fetch_albina_archive.py --regions AT-07 IT-32-BZ
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_OUTPUT = REPO_ROOT / "bulletins" / "local_mirrors" / "euregio_archive.ndjson"
+DEFAULT_OUTPUT = REPO_ROOT / "bulletins" / "local_mirrors" / "albina_archive.ndjson"
 
 # Regions Snowdesk has fixture coverage for. Pulling other ALBINA regions
 # (AT-02..AT-08, etc.) would 200 but the resulting bulletins would fail
@@ -204,9 +204,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
     """
     parser = argparse.ArgumentParser(
-        description=(
-            "Fetch a season of EUREGIO bulletins into a local NDJSON archive."
-        ),
+        description=("Fetch a season of ALBINA bulletins into a local NDJSON archive."),
     )
     parser.add_argument(
         "--start-date",
