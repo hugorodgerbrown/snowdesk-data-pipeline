@@ -32,6 +32,9 @@ def test_map_page_renders() -> None:
     # SNOW-174: the region popup URL template must be baked into the markup
     # so that map.js can fetch tooltip HTML without hard-coding the path.
     assert "data-region-summary-url" in content
+    # SNOW-236: data-season-end must be present on #map so map.js can clamp
+    # the cold-open fetch to the last populated date after season end.
+    assert 'data-season-end="' in content
 
 
 @pytest.mark.django_db
@@ -49,6 +52,28 @@ def test_map_page_injects_api_urls() -> None:
     assert f'data-ratings-url="{reverse("api:ratings")}"' in content
     assert f'data-resorts-url="{reverse("api:resorts_by_region")}"' in content
     assert f'data-resorts-geojson-url="{reverse("api:resorts_geojson")}"' in content
+
+
+@pytest.mark.django_db
+@freeze_time("2026-02-15")
+def test_map_element_has_season_end_attribute() -> None:
+    """
+    SNOW-236: data-season-end must appear on the #map element itself
+    (not just on #season-scrubber) so that map.js can read it at module
+    scope during the cold-open boot path — before the scrubber IIFE runs.
+    """
+    region = MicroRegionFactory.create(region_id="CH-5500")
+    RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 5))
+
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    # Verify the attribute sits on the #map div, not only on #season-scrubber.
+    map_div_start = content.index('id="map"')
+    map_div_close_tag = content.index(">", map_div_start)
+    map_div_attrs = content[map_div_start:map_div_close_tag]
+    assert 'data-season-end="2026-03-05"' in map_div_attrs
 
 
 @pytest.mark.django_db
