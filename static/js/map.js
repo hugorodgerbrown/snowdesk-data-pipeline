@@ -27,6 +27,12 @@ const FEATURE_BY_REGION_ID = {};
 // computation (deriveEffectiveTodayKey).
 const COUNTRY_STATE = { ch: true, fr: false, at: false, it: false };
 
+// SNOW-236: The clamped boot date (min(today, seasonEnd)) computed by the
+// main IIFE and shared with the scrubber IIFE. The scrubber uses this as
+// the baseline when deciding whether to snap the thumb after getSeasonRatings
+// resolves — the initial paint was at bootDateKey, not necessarily at todayKey.
+let BOOT_DATE_KEY = null;
+
 // Whether a single click on a region auto-pans/zooms to fit it into view.
 // Off by default; persisted in localStorage under
 // 'snowdesk.map.autozoom'. The autozoomToggleInit IIFE at the bottom of
@@ -121,6 +127,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const todayISO = new Date().toISOString().slice(0, 10);
   const seasonEndFromMap = mapEl.dataset.seasonEnd || todayISO;
   const bootDateKey = todayISO < seasonEndFromMap ? todayISO : seasonEndFromMap;
+  // Expose to sibling IIFEs (seasonScrubberInit) via module scope.
+  BOOT_DATE_KEY = bootDateKey;
 
   // SNOW-58: Basemap layer picker — resolve the active style URL.
   //
@@ -1978,7 +1986,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const newEffective = deriveEffectiveTodayKey(sortedDates, ratingsCache);
     effectiveTodayKey = newEffective;
     const bootParam = new URL(location.href).searchParams.get('d');
-    if (!bootParam && newEffective !== todayKey) {
+    if (!bootParam && newEffective !== BOOT_DATE_KEY) {
       // Snap silently — no history entry, just reposition the thumb and repaint.
       Promise.all([MAP_READY_PROMISE]).then(() => {
         commitDate(newEffective, { silent: true });
@@ -2113,10 +2121,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const prevEffective = effectiveTodayKey;
     effectiveTodayKey = newEffective;
     // Only snap if the page is in "today mode" — no explicit ?d= in the URL
-    // and the currently displayed date was the previous effectiveTodayKey.
+    // and the effective date has actually changed.
     const bootParam = new URL(location.href).searchParams.get('d');
-    const currentDate = new URL(location.href).searchParams.get('d') || prevEffective;
-    if (!bootParam && currentDate === prevEffective && newEffective !== prevEffective) {
+    if (!bootParam && newEffective !== prevEffective) {
       commitDate(newEffective, { silent: true });
     }
   });
