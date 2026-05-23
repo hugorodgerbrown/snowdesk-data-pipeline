@@ -23,12 +23,13 @@
     {# install affordance works site-wide, not just on /map/. #}
     {# Preconnect to the MapLibre CDN so DNS + TLS are resolved before   #}
     {# the <script> tag in extra_js is encountered.                      #}
-    {# Prefetch the two API calls that map.js fires immediately on load: #}
+    {# SNOW-239: Prefetch the two API calls that map.js fires at boot:  #}
     {# region boundaries for the choropleth, and today's danger ratings  #}
-    {# for the colour fill. On a cold first visit (no SW cache) these    #}
-    {# would otherwise be a serial chain: HTML → JS parse → fetch.      #}
+    {# (?d=<today>&country=ch, ~2 KB) for the colour fill. On a cold   #}
+    {# first visit (no SW cache) these would otherwise be a serial chain #}
+    {# HTML → JS parse → fetch.                                          #}
     <link rel="prefetch" href="{% url 'api:regions_geojson' %}?country=ch">
-    <link rel="prefetch" href="{% url 'api:today_summaries' %}">
+    <link rel="prefetch" href="{% url 'api:ratings' %}?d={% now "Y-m-d" %}&country=ch">
     <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
     <link rel="stylesheet" href="{% static 'css/map.css' %}">
 {% endblock %}
@@ -57,10 +58,9 @@
         data-regions-url="{% url 'api:regions_geojson' %}"
         data-major-regions-url="{% url 'api:major_regions_geojson' %}"
         data-sub-regions-url="{% url 'api:sub_regions_geojson' %}"
-        data-summaries-url="{% url 'api:today_summaries' %}"
+        data-ratings-url="{% url 'api:ratings' %}"
         data-resorts-url="{% url 'api:resorts_by_region' %}"
         data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
-        data-season-ratings-url="{% url 'api:season_ratings' %}"
         data-region-summary-url="{% url 'api:region_summary' '__REGION__' %}"
         data-default-basemap-key="{{ default_basemap_key }}"
     >
