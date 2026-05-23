@@ -207,18 +207,13 @@ class TestProblemCardRendering:
         self, anon_client: Client, region: MicroRegion
     ) -> None:
         """Problem type label ('Wind slab') appears in the card header area."""
-        from bulletins.services.render_model import RENDER_MODEL_VERSION
-
         day = date(2026, 5, 10)
         _make_am_bulletin(
             region,
             day,
-            render_model={
-                "version": RENDER_MODEL_VERSION,
-                "traits": [],
-                "danger": {},
-            },
-            render_model_version=RENDER_MODEL_VERSION,
+            # render_model_version=0 triggers an on-the-fly rebuild from raw_data
+            # so the test exercises the full render path including problem cards.
+            render_model_version=0,
             raw_data={
                 "type": "Feature",
                 "geometry": None,
@@ -255,18 +250,12 @@ class TestProblemCardRendering:
         self, anon_client: Client, region: MicroRegion
     ) -> None:
         """A bulletin with dry + wet problems produces two separate rating blocks."""
-        from bulletins.services.render_model import RENDER_MODEL_VERSION
-
         day = date(2026, 5, 11)
         _make_am_bulletin(
             region,
             day,
-            render_model={
-                "version": RENDER_MODEL_VERSION,
-                "traits": [],
-                "danger": {},
-            },
-            render_model_version=RENDER_MODEL_VERSION,
+            # render_model_version=0 triggers an on-the-fly rebuild from raw_data.
+            render_model_version=0,
             raw_data={
                 "type": "Feature",
                 "geometry": None,

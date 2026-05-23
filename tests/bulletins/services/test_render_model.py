@@ -1061,17 +1061,17 @@ class TestComputeDayCharacterRoundTrip:
 
 
 class TestRenderModelVersion:
-    """Tests that RENDER_MODEL_VERSION and built version are both 4."""
+    """Tests that RENDER_MODEL_VERSION and built version are both 5."""
 
     def test_constant_is_4(self) -> None:
-        """RENDER_MODEL_VERSION constant equals 4."""
-        assert RENDER_MODEL_VERSION == 4
+        """RENDER_MODEL_VERSION constant equals 5."""
+        assert RENDER_MODEL_VERSION == 5
 
     def test_build_render_model_returns_version_4(self) -> None:
-        """build_render_model returns a dict with version == 4."""
+        """build_render_model returns a dict with version == 5."""
         props = _load_sample("sample_variable_day.json")
         rm = build_render_model(props)
-        assert rm["version"] == 4
+        assert rm["version"] == 5
 
 
 # ---------------------------------------------------------------------------
@@ -1247,7 +1247,7 @@ class TestBuildProseHappyPath:
     """Tests for _build_prose using sample_variable_day.json."""
 
     def test_all_keys_present(self) -> None:
-        """Prose dict has all five keys (v4: includes avalanche_activity)."""
+        """Prose dict has all keys (v5: includes tendency_lead)."""
         props = _load_sample("sample_variable_day.json")
         prose = _build_prose(props)
         assert set(prose.keys()) == {
@@ -1256,6 +1256,7 @@ class TestBuildProseHappyPath:
             "weather_forecast",
             "tendency",
             "avalanche_activity",
+            "tendency_lead",
         }
 
     def test_snowpack_structure_is_html_string(self) -> None:
@@ -2012,10 +2013,10 @@ class TestBuildRenderModelEuregio:
         )
 
     def test_version_is_4(self) -> None:
-        """EUREGIO bulletin render model has version 4."""
+        """EUREGIO bulletin render model has the current RENDER_MODEL_VERSION."""
         props = _load_euregio_bulletin()
         rm = build_render_model(props)
-        assert rm["version"] == 4
+        assert rm["version"] == RENDER_MODEL_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -2229,3 +2230,608 @@ class TestBuildRenderModelMeteoFranceEndToEnd:
         for trait in rm["traits"]:
             for problem in trait["problems"]:
                 assert problem["avalanche_type"] is None
+
+
+# ---------------------------------------------------------------------------
+# Version 5 — SlfAdapter unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestSlfAdapter:
+    """Unit tests for the SlfAdapter class."""
+
+    def _adapter(self) -> Any:
+        from bulletins.services.render_model import SlfAdapter
+
+        return SlfAdapter()
+
+    def test_resolve_aggregations_reads_ch_key(self) -> None:
+        """SlfAdapter reads aggregation from customData.CH verbatim."""
+        agg = [
+            {
+                "category": "dry",
+                "problemTypes": ["new_snow"],
+                "validTimePeriod": "all_day",
+            }
+        ]
+        props: dict[str, Any] = {"customData": {"CH": {"aggregation": agg}}}
+        result = self._adapter().resolve_aggregations(props)
+        assert result == agg
+
+    def test_resolve_aggregations_missing_returns_empty(self) -> None:
+        """SlfAdapter returns empty list when CH aggregation is absent."""
+        result = self._adapter().resolve_aggregations({})
+        assert result == []
+
+    def test_resolve_problem_rating_reads_danger_rating_value(self) -> None:
+        """SlfAdapter reads dangerRatingValue directly from the problem."""
+        problem: dict[str, Any] = {"dangerRatingValue": "considerable"}
+        result = self._adapter().resolve_problem_rating(problem, [])
+        assert result == "considerable"
+
+    def test_resolve_problem_rating_missing_returns_none(self) -> None:
+        """SlfAdapter returns None when dangerRatingValue is absent."""
+        result = self._adapter().resolve_problem_rating({}, [])
+        assert result is None
+
+    def test_resolve_problem_comment_returns_comment_field(self) -> None:
+        """SlfAdapter returns the per-problem comment field."""
+        problem: dict[str, Any] = {"comment": "<p>Wind slab hazard.</p>"}
+        assert (
+            self._adapter().resolve_problem_comment(problem)
+            == "<p>Wind slab hazard.</p>"
+        )
+
+    def test_resolve_problem_extras_reads_subdivision_and_core_zone_text(self) -> None:
+        """SlfAdapter reads subdivision and coreZoneText from customData.CH."""
+        problem: dict[str, Any] = {
+            "customData": {
+                "CH": {"subdivision": "plus", "coreZoneText": "Danger 3+ above 2800m."}
+            }
+        }
+        extras = self._adapter().resolve_problem_extras(problem)
+        assert extras["subdivision"] == "plus"
+        assert extras["core_zone_text"] == "Danger 3+ above 2800m."
+
+    def test_resolve_problem_extras_missing_ch_returns_defaults(self) -> None:
+        """SlfAdapter returns empty subdivision and None core_zone_text when CH absent."""
+        extras = self._adapter().resolve_problem_extras({})
+        assert extras["subdivision"] == ""
+        assert extras["core_zone_text"] is None
+
+    def test_resolve_problem_avalanche_type_is_always_none(self) -> None:
+        """SlfAdapter always returns None for avalanche_type."""
+        assert self._adapter().resolve_problem_avalanche_type({}) is None
+
+    def test_resolve_problem_eaws_fields_all_none(self) -> None:
+        """SlfAdapter returns None for all three EAWS problem fields."""
+        fields = self._adapter().resolve_problem_eaws_fields({})
+        assert fields["avalanche_size"] is None
+        assert fields["frequency"] is None
+        assert fields["snowpack_stability"] is None
+
+    def test_resolve_avalanche_activity_always_empty(self) -> None:
+        """SlfAdapter returns empty strings for avalanche_activity regardless of properties."""
+        props: dict[str, Any] = {
+            "avalancheActivity": {"highlights": "Some text.", "comment": "More text."}
+        }
+        result = self._adapter().resolve_avalanche_activity(props)
+        assert result == {"highlights": "", "comment": ""}
+
+    def test_resolve_danger_patterns_always_empty(self) -> None:
+        """SlfAdapter always returns an empty danger_patterns list."""
+        result = self._adapter().resolve_danger_patterns(
+            {"customData": {"LWD_Tyrol": {"dangerPatterns": ["DP10"]}}}
+        )
+        assert result == []
+
+    def test_resolve_tendency_lead_always_none(self) -> None:
+        """SlfAdapter always returns None for tendency_lead."""
+        props: dict[str, Any] = {"tendency": [{"highlights": "Some lead text."}]}
+        assert self._adapter().resolve_tendency_lead(props) is None
+
+    def test_resolve_danger_rating_subdivision_reads_ch(self) -> None:
+        """SlfAdapter reads subdivision from customData.CH on a dangerRating."""
+        rating: dict[str, Any] = {"customData": {"CH": {"subdivision": "plus"}}}
+        assert self._adapter().resolve_danger_rating_subdivision(rating) == "+"
+
+    def test_resolve_danger_rating_subdivision_minus(self) -> None:
+        """SlfAdapter maps 'minus' to '-'."""
+        rating: dict[str, Any] = {"customData": {"CH": {"subdivision": "minus"}}}
+        assert self._adapter().resolve_danger_rating_subdivision(rating) == "-"
+
+    def test_resolve_danger_rating_subdivision_none_when_absent(self) -> None:
+        """SlfAdapter returns None when no CH subdivision is present."""
+        assert self._adapter().resolve_danger_rating_subdivision({}) is None
+
+
+# ---------------------------------------------------------------------------
+# Version 5 — EuregioAdapter unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestEuregioAdapter:
+    """Unit tests for the EuregioAdapter class."""
+
+    def _adapter(self) -> Any:
+        from bulletins.services.render_model import EuregioAdapter
+
+        return EuregioAdapter()
+
+    def test_resolve_aggregations_dry_problem(self) -> None:
+        """EuregioAdapter synthesises one dry aggregation entry from a dry problem."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wind_slab",
+                    "validTimePeriod": "all_day",
+                    "aspects": ["N"],
+                }
+            ]
+        }
+        result = self._adapter().resolve_aggregations(props)
+        assert len(result) == 1
+        assert result[0]["category"] == "dry"
+        assert result[0]["problemTypes"] == ["wind_slab"]
+
+    def test_resolve_aggregations_wet_problem(self) -> None:
+        """EuregioAdapter synthesises one wet entry from a wet problem."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wet_snow",
+                    "validTimePeriod": "later",
+                    "aspects": ["S"],
+                }
+            ]
+        }
+        result = self._adapter().resolve_aggregations(props)
+        assert result[0]["category"] == "wet"
+
+    def test_resolve_aggregations_empty_problems_returns_empty(self) -> None:
+        """EuregioAdapter returns empty aggregation when no problems exist."""
+        assert self._adapter().resolve_aggregations({"avalancheProblems": []}) == []
+
+    def test_resolve_problem_rating_matches_by_elevation_and_period(self) -> None:
+        """EuregioAdapter derives rating by elevation + vtp matching."""
+        problem: dict[str, Any] = {
+            "problemType": "persistent_weak_layers",
+            "validTimePeriod": "all_day",
+            "elevation": {"lowerBound": "2000"},
+        }
+        ratings = [
+            {
+                "mainValue": "low",
+                "elevation": {"upperBound": "2000"},
+                "validTimePeriod": "all_day",
+            },
+            {
+                "mainValue": "moderate",
+                "elevation": {"lowerBound": "2000"},
+                "validTimePeriod": "all_day",
+            },
+        ]
+        result = self._adapter().resolve_problem_rating(problem, ratings)
+        assert result == "moderate"
+
+    def test_resolve_problem_comment_always_empty(self) -> None:
+        """EuregioAdapter per-problem comment is always empty."""
+        assert self._adapter().resolve_problem_comment({"comment": "Some text."}) == ""
+
+    def test_resolve_problem_extras_reads_albina_avalanche_type(self) -> None:
+        """EuregioAdapter extras include avalanche_type from customData.ALBINA."""
+        problem: dict[str, Any] = {"customData": {"ALBINA": {"avalancheType": "slab"}}}
+        extras = self._adapter().resolve_problem_extras(problem)
+        assert extras["avalanche_type"] == "slab"
+
+    def test_resolve_problem_extras_missing_albina_returns_none_type(self) -> None:
+        """EuregioAdapter extras have avalanche_type=None when ALBINA absent."""
+        extras = self._adapter().resolve_problem_extras({})
+        assert extras["avalanche_type"] is None
+
+    def test_resolve_problem_avalanche_type_reads_albina(self) -> None:
+        """EuregioAdapter reads avalanche_type from customData.ALBINA."""
+        problem: dict[str, Any] = {"customData": {"ALBINA": {"avalancheType": "loose"}}}
+        assert self._adapter().resolve_problem_avalanche_type(problem) == "loose"
+
+    def test_resolve_problem_eaws_fields_from_euregio_sample(self) -> None:
+        """EuregioAdapter reads avalanche_size/frequency/snowpack_stability from the sample bulletin."""
+        # The euregio_sample_bulletin.json has avalancheSize=3, frequency='some', snowpackStability='poor'
+        props = _load_euregio_bulletin()
+        problems = props.get("avalancheProblems") or []
+        assert problems, "Sanity check: euregio sample must have problems"
+        first_problem = problems[0]
+        fields = self._adapter().resolve_problem_eaws_fields(first_problem)
+        # Verify the three slots are present and non-None (sample has all three).
+        assert "avalanche_size" in fields
+        assert "frequency" in fields
+        assert "snowpack_stability" in fields
+        assert fields["avalanche_size"] is not None
+        assert fields["frequency"] is not None
+        assert fields["snowpack_stability"] is not None
+
+    def test_resolve_problem_eaws_fields_populated_values(self) -> None:
+        """EuregioAdapter returns exact EAWS field values from the problem dict."""
+        problem: dict[str, Any] = {
+            "avalancheSize": 3,
+            "frequency": "some",
+            "snowpackStability": "poor",
+        }
+        fields = self._adapter().resolve_problem_eaws_fields(problem)
+        assert fields["avalanche_size"] == 3
+        assert fields["frequency"] == "some"
+        assert fields["snowpack_stability"] == "poor"
+
+    def test_resolve_problem_eaws_fields_missing_returns_none(self) -> None:
+        """EuregioAdapter returns None for absent EAWS fields."""
+        fields = self._adapter().resolve_problem_eaws_fields({})
+        assert fields["avalanche_size"] is None
+        assert fields["frequency"] is None
+        assert fields["snowpack_stability"] is None
+
+    def test_resolve_avalanche_activity_reads_properties(self) -> None:
+        """EuregioAdapter reads avalancheActivity from properties."""
+        props: dict[str, Any] = {
+            "avalancheActivity": {"highlights": "Weak layers.", "comment": "Caution."}
+        }
+        result = self._adapter().resolve_avalanche_activity(props)
+        assert result["highlights"] == "Weak layers."
+        assert result["comment"] == "Caution."
+
+    def test_resolve_danger_patterns_reads_lwd_tyrol(self) -> None:
+        """EuregioAdapter reads dangerPatterns from customData.LWD_Tyrol."""
+        props: dict[str, Any] = {
+            "customData": {"LWD_Tyrol": {"dangerPatterns": ["DP10", "DP1"]}}
+        }
+        result = self._adapter().resolve_danger_patterns(props)
+        assert result == ["DP10", "DP1"]
+
+    def test_resolve_danger_patterns_reads_other_lwd_key(self) -> None:
+        """EuregioAdapter reads dangerPatterns from any LWD_* key."""
+        props: dict[str, Any] = {
+            "customData": {"LWD_Salzburg": {"dangerPatterns": ["DP6"]}}
+        }
+        result = self._adapter().resolve_danger_patterns(props)
+        assert result == ["DP6"]
+
+    def test_resolve_tendency_lead_from_first_tendency_highlights(self) -> None:
+        """EuregioAdapter reads tendency_lead from tendency[0].highlights."""
+        props: dict[str, Any] = {
+            "tendency": [
+                {"highlights": "Weak layers require caution.", "comment": "..."}
+            ]
+        }
+        result = self._adapter().resolve_tendency_lead(props)
+        assert result == "Weak layers require caution."
+
+    def test_resolve_tendency_lead_returns_none_when_empty(self) -> None:
+        """EuregioAdapter returns None when tendency[0].highlights is empty."""
+        props: dict[str, Any] = {"tendency": [{"highlights": ""}]}
+        assert self._adapter().resolve_tendency_lead(props) is None
+
+    def test_resolve_tendency_lead_returns_none_when_tendency_absent(self) -> None:
+        """EuregioAdapter returns None when tendency list is absent."""
+        assert self._adapter().resolve_tendency_lead({}) is None
+
+    def test_resolve_danger_rating_subdivision_always_none(self) -> None:
+        """EuregioAdapter per-rating subdivision is always None."""
+        rating: dict[str, Any] = {
+            "customData": {"CH": {"subdivision": "plus"}},  # CH data must not be read
+            "mainValue": "moderate",
+        }
+        assert self._adapter().resolve_danger_rating_subdivision(rating) is None
+
+
+# ---------------------------------------------------------------------------
+# Version 5 — MeteoFranceAdapter unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestMeteoFranceAdapter:
+    """Unit tests for the MeteoFranceAdapter class."""
+
+    def _adapter(self) -> Any:
+        from bulletins.services.render_model import MeteoFranceAdapter
+
+        return MeteoFranceAdapter()
+
+    def test_resolve_aggregations_dry_problem(self) -> None:
+        """MeteoFranceAdapter synthesises dry aggregation from a dry problem."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "new_snow",
+                    "validTimePeriod": "all_day",
+                    "aspects": ["N"],
+                }
+            ]
+        }
+        result = self._adapter().resolve_aggregations(props)
+        assert len(result) == 1
+        assert result[0]["category"] == "dry"
+
+    def test_resolve_aggregations_empty_returns_empty(self) -> None:
+        """MeteoFranceAdapter returns empty aggregation with no problems."""
+        assert self._adapter().resolve_aggregations({"avalancheProblems": []}) == []
+
+    def test_resolve_problem_rating_matches_by_elevation_and_period(self) -> None:
+        """MeteoFranceAdapter derives rating by elevation + vtp matching."""
+        problem: dict[str, Any] = {
+            "problemType": "wet_snow",
+            "validTimePeriod": "all_day",
+            "elevation": {"lowerBound": "2400"},
+        }
+        ratings = [
+            {
+                "mainValue": "low",
+                "elevation": {"upperBound": "2400"},
+                "validTimePeriod": "all_day",
+            },
+            {
+                "mainValue": "moderate",
+                "elevation": {"lowerBound": "2400"},
+                "validTimePeriod": "all_day",
+            },
+        ]
+        result = self._adapter().resolve_problem_rating(problem, ratings)
+        assert result == "moderate"
+
+    def test_resolve_problem_comment_always_empty(self) -> None:
+        """MeteoFranceAdapter per-problem comment is always empty."""
+        assert self._adapter().resolve_problem_comment({"comment": "Some text."}) == ""
+
+    def test_resolve_problem_extras_always_empty_dict(self) -> None:
+        """MeteoFranceAdapter extras dict is always empty."""
+        assert self._adapter().resolve_problem_extras({}) == {}
+
+    def test_resolve_problem_avalanche_type_always_none(self) -> None:
+        """MeteoFranceAdapter avalanche_type is always None."""
+        assert self._adapter().resolve_problem_avalanche_type({}) is None
+
+    def test_resolve_problem_eaws_fields_all_none(self) -> None:
+        """MeteoFranceAdapter returns None for all three EAWS problem fields."""
+        fields = self._adapter().resolve_problem_eaws_fields({})
+        assert fields["avalanche_size"] is None
+        assert fields["frequency"] is None
+        assert fields["snowpack_stability"] is None
+
+    def test_resolve_avalanche_activity_reads_properties(self) -> None:
+        """MeteoFranceAdapter reads avalancheActivity from properties."""
+        props: dict[str, Any] = {
+            "avalancheActivity": {
+                "highlights": "Wet slides possible.",
+                "comment": "Caution.",
+            }
+        }
+        result = self._adapter().resolve_avalanche_activity(props)
+        assert result["highlights"] == "Wet slides possible."
+        assert result["comment"] == "Caution."
+
+    def test_resolve_danger_patterns_always_empty(self) -> None:
+        """MeteoFranceAdapter always returns an empty danger_patterns list."""
+        result = self._adapter().resolve_danger_patterns(
+            {"customData": {"LWD_Tyrol": {"dangerPatterns": ["DP10"]}}}
+        )
+        assert result == []
+
+    def test_resolve_tendency_lead_always_none(self) -> None:
+        """MeteoFranceAdapter always returns None for tendency_lead."""
+        props: dict[str, Any] = {"tendency": [{"highlights": "Some lead text."}]}
+        assert self._adapter().resolve_tendency_lead(props) is None
+
+    def test_resolve_danger_rating_subdivision_always_none(self) -> None:
+        """MeteoFranceAdapter per-rating subdivision is always None."""
+        rating: dict[str, Any] = {"customData": {"CH": {"subdivision": "plus"}}}
+        assert self._adapter().resolve_danger_rating_subdivision(rating) is None
+
+
+# ---------------------------------------------------------------------------
+# Version 5 — danger.ratings projection
+# ---------------------------------------------------------------------------
+
+
+class TestDangerRatingsProjection:
+    """Tests for the danger.ratings list added in v5."""
+
+    def test_single_rating_produces_one_entry(self) -> None:
+        """A single CAAML dangerRating produces one entry in danger.ratings."""
+        result = _resolve_danger([{"mainValue": "moderate"}])
+        assert len(result["ratings"]) == 1
+
+    def test_entry_shape_has_required_keys(self) -> None:
+        """Each ratings entry has period, key, subdivision, and elevation keys."""
+        result = _resolve_danger([{"mainValue": "moderate"}])
+        entry = result["ratings"][0]
+        assert set(entry.keys()) == {"period", "key", "subdivision", "elevation"}
+
+    def test_period_defaults_to_all_day(self) -> None:
+        """A rating without validTimePeriod gets period='all_day'."""
+        result = _resolve_danger([{"mainValue": "moderate"}])
+        assert result["ratings"][0]["period"] == "all_day"
+
+    def test_period_is_preserved_from_rating(self) -> None:
+        """validTimePeriod from a dangerRating is preserved in the entry."""
+        result = _resolve_danger([{"mainValue": "low", "validTimePeriod": "earlier"}])
+        assert result["ratings"][0]["period"] == "earlier"
+
+    def test_key_matches_main_value(self) -> None:
+        """The entry key matches the mainValue."""
+        result = _resolve_danger([{"mainValue": "considerable"}])
+        assert result["ratings"][0]["key"] == "considerable"
+
+    def test_elevation_parsed_when_present(self) -> None:
+        """Elevation is parsed to a structured dict when present."""
+        result = _resolve_danger(
+            [{"mainValue": "moderate", "elevation": {"lowerBound": "2000"}}]
+        )
+        elev = result["ratings"][0]["elevation"]
+        assert elev is not None
+        assert elev["lower"] == 2000
+
+    def test_elevation_none_when_absent(self) -> None:
+        """Elevation is None when not present in the rating."""
+        result = _resolve_danger([{"mainValue": "moderate"}])
+        assert result["ratings"][0]["elevation"] is None
+
+    def test_unknown_main_value_excluded_from_ratings(self) -> None:
+        """Ratings with unknown mainValue are excluded from the ratings list."""
+        result = _resolve_danger(
+            [{"mainValue": "not_a_level"}, {"mainValue": "moderate"}]
+        )
+        assert len(result["ratings"]) == 1
+        assert result["ratings"][0]["key"] == "moderate"
+
+    def test_slf_subdivision_read_from_ch_custom_data(self) -> None:
+        """SLF per-rating subdivision is read from customData.CH."""
+        result = _resolve_danger(
+            [
+                {
+                    "mainValue": "considerable",
+                    "customData": {"CH": {"subdivision": "plus"}},
+                }
+            ],
+            source=Bulletin.Source.SLF,
+        )
+        assert result["ratings"][0]["subdivision"] == "+"
+
+    def test_euregio_subdivision_always_none(self) -> None:
+        """EUREGIO per-rating subdivision is always None."""
+        result = _resolve_danger(
+            [{"mainValue": "moderate", "customData": {"CH": {"subdivision": "plus"}}}],
+            source=Bulletin.Source.EUREGIO,
+        )
+        assert result["ratings"][0]["subdivision"] is None
+
+    def test_mf_subdivision_always_none(self) -> None:
+        """MF per-rating subdivision is always None."""
+        result = _resolve_danger(
+            [{"mainValue": "moderate"}],
+            source=Bulletin.Source.MF,
+        )
+        assert result["ratings"][0]["subdivision"] is None
+
+    def test_multiple_ratings_all_appear_in_list(self) -> None:
+        """All valid ratings appear in the ratings list."""
+        result = _resolve_danger(
+            [
+                {"mainValue": "low", "validTimePeriod": "earlier"},
+                {"mainValue": "moderate", "validTimePeriod": "later"},
+            ]
+        )
+        assert len(result["ratings"]) == 2
+        periods = {r["period"] for r in result["ratings"]}
+        assert periods == {"earlier", "later"}
+
+    def test_ratings_list_present_in_full_render_model(self) -> None:
+        """build_render_model includes danger.ratings in the output."""
+        props = _load_sample("sample_variable_day.json")
+        rm = build_render_model(props)
+        assert "ratings" in rm["danger"]
+        assert isinstance(rm["danger"]["ratings"], list)
+
+
+# ---------------------------------------------------------------------------
+# Version 5 — prose.tendency_lead projection
+# ---------------------------------------------------------------------------
+
+
+class TestTendencyLeadProjection:
+    """Tests for the prose.tendency_lead field added in v5."""
+
+    def test_slf_tendency_lead_is_none(self) -> None:
+        """SLF bulletins always produce tendency_lead=None in prose."""
+        props = _load_sample("sample_variable_day.json")
+        rm = build_render_model(props)
+        assert rm["prose"]["tendency_lead"] is None
+
+    def test_euregio_tendency_lead_populated_from_highlights(self) -> None:
+        """EUREGIO bulletin extracts tendency[0].highlights as tendency_lead."""
+        props = _load_euregio_bulletin()
+        rm = build_render_model(props)
+        # The euregio fixture has highlights='Weak layers in the old snowpack necessitate caution.'
+        assert rm["prose"]["tendency_lead"] is not None
+        assert "caution" in rm["prose"]["tendency_lead"].lower()
+
+    def test_mf_tendency_lead_is_none(self) -> None:
+        """MF bulletins always produce tendency_lead=None in prose."""
+        props = _load_mf_bulletin("massif-001.xml")
+        rm = build_render_model(props)
+        assert rm["prose"]["tendency_lead"] is None
+
+    def test_tendency_lead_key_present_for_all_sample_fixtures(self) -> None:
+        """Every SLF sample produces a tendency_lead key in prose (may be None)."""
+        for path in _FIXTURE_DIR.iterdir():
+            if not (path.name.startswith("sample_") and path.name.endswith(".json")):
+                continue
+            data = json.loads(path.read_text())
+            props = data["properties"]
+            try:
+                rm = build_render_model(props)
+            except RenderModelBuildError:
+                continue
+            assert "tendency_lead" in rm["prose"], f"{path.name} missing tendency_lead"
+
+
+# ---------------------------------------------------------------------------
+# Version 5 — per-problem EAWS fields
+# ---------------------------------------------------------------------------
+
+
+class TestPerProblemEawsFields:
+    """Tests for avalanche_size / frequency / snowpack_stability added in v5."""
+
+    def test_euregio_problems_carry_eaws_fields(self) -> None:
+        """EUREGIO build_render_model populates EAWS fields on problems from the sample fixture."""
+        props = _load_euregio_bulletin()
+        rm = build_render_model(props)
+        all_problems = [p for t in rm["traits"] for p in t["problems"]]
+        assert all_problems, "Sanity: EUREGIO sample must produce problems"
+        # The sample fixture has exactly one problem with avalancheSize=3.
+        problem = all_problems[0]
+        assert problem["avalanche_size"] == 3
+        assert problem["frequency"] == "some"
+        assert problem["snowpack_stability"] == "poor"
+
+    def test_slf_problems_have_none_eaws_fields(self) -> None:
+        """SLF problems always have None for all three EAWS fields."""
+        props = _load_sample("sample_variable_day.json")
+        rm = build_render_model(props)
+        for trait in rm["traits"]:
+            for problem in trait["problems"]:
+                assert problem["avalanche_size"] is None, (
+                    f"expected None, got {problem['avalanche_size']!r}"
+                )
+                assert problem["frequency"] is None
+                assert problem["snowpack_stability"] is None
+
+    def test_mf_problems_have_none_eaws_fields(self) -> None:
+        """MF problems always have None for all three EAWS fields."""
+        props = _load_mf_bulletin("massif-001.xml")
+        rm = build_render_model(props)
+        for trait in rm["traits"]:
+            for problem in trait["problems"]:
+                assert problem["avalanche_size"] is None
+                assert problem["frequency"] is None
+                assert problem["snowpack_stability"] is None
+
+    def test_eaws_fields_present_in_problem_dict(self) -> None:
+        """All three EAWS field keys are present in every problem dict regardless of source."""
+        for filename, source_props in [
+            ("sample_variable_day.json", _load_sample("sample_variable_day.json")),
+            (None, _load_euregio_bulletin()),
+        ]:
+            try:
+                rm = build_render_model(source_props)
+            except RenderModelBuildError:
+                continue
+            for trait in rm["traits"]:
+                for problem in trait["problems"]:
+                    assert "avalanche_size" in problem, (
+                        f"missing avalanche_size in {filename or 'euregio'}"
+                    )
+                    assert "frequency" in problem, (
+                        f"missing frequency in {filename or 'euregio'}"
+                    )
+                    assert "snowpack_stability" in problem, (
+                        f"missing snowpack_stability in {filename or 'euregio'}"
+                    )
