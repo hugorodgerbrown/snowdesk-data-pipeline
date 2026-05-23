@@ -27,6 +27,13 @@ const FEATURE_BY_REGION_ID = {};
 // this file owns the button wiring; selectFeature reads this flag.
 let AUTOZOOM = false;
 
+// True while timelapse playback is running. Set directly by timelapseInit()'s
+// start() and stop() functions; after each mutation those functions also
+// dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
+// clearTooltip(). The main IIFE reads IS_PLAYING to suppress redundant
+// /api/region/<id>/summary/ requests on every timelapse frame advance.
+let IS_PLAYING = false;
+
 // Resolved by the main IIFE once the MapLibre style has loaded and the
 // regions source has been added. Sibling IIFEs that need to call
 // setFeatureState during boot (e.g. the scrubber on /map/?d=...) await
@@ -902,6 +909,75 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   });
 
+  // Most recent date the choropleth is showing — seeded from any ``?d=`` on
+  // the URL, then kept in sync by every ``snowdesk:date-changed`` event.
+  // Hoisted to outer-IIFE scope so the date-changed listener below can be
+  // registered synchronously (before the map's 'load' event fires), making
+  // it active in environments where the map never loads (e.g. Playwright
+  // offline headless tests).
+  let currentDisplayedDate = (() => {
+    const d = new URL(location.href).searchParams.get('d');
+    return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+  })();
+
+  // Forward references to map.on('load')-scoped functions.  Populated by the
+  // map-load callback after the full popup machinery is defined.  The defaults
+  // below are intentional no-ops so the listeners registered before map.on('load')
+  // can call through without a null-guard — in environments where the map never
+  // loads (e.g. Playwright offline headless), no popup is ever open so both
+  // functions return immediately, which is the correct observable behaviour.
+  let _clearTooltip = () => {};
+  let _refreshActivePopupForDate = async (_dateKey) => {};
+
+  // SNOW-240: Test hook — active only when window.__SNOWDESK_TEST_MODE__ is
+  // set before the page JS runs (via Playwright's page.add_init_script).
+  // Exposes setRefreshFn() and setIsPlaying() so tests can inject a spy into
+  // the forwarding variable and control the IS_PLAYING flag directly, making
+  // the IS_PLAYING guard observable without needing the basemap to load or
+  // the timelapse start()/stop() functions to execute.
+  // In production (no test-mode flag) this entire block is dead and adds no
+  // closures, no globals, and no measurable overhead.
+  if (window.__SNOWDESK_TEST_MODE__) {
+    window.__snowdesk_test = {
+      // Replace _refreshActivePopupForDate with a caller-supplied function.
+      // The date-changed listener calls through this variable; injecting a
+      // spy here lets tests observe whether the IS_PLAYING guard allows or
+      // blocks the call.
+      setRefreshFn: (fn) => { _refreshActivePopupForDate = fn; },
+      // Read IS_PLAYING so tests can assert state-machine transitions.
+      getIsPlaying: () => IS_PLAYING,
+      // Set IS_PLAYING directly so tests can control the guard without
+      // invoking the timelapse start()/stop() functions (which require a
+      // loaded map and populated sortedDates).
+      setIsPlaying: (val) => { IS_PLAYING = val; },
+    };
+  }
+
+  // SNOW-47 / SNOW-174: keep currentDisplayedDate in sync and refresh the
+  // open popup when the scrubber commits a new date. If a popup is open,
+  // swap its HTML to reflect the new day's danger rating without closing and
+  // re-opening it. During timelapse playback the popup is suppressed, so skip
+  // the API call — just track the date.
+  //
+  // Registered at outer-IIFE scope (not inside map.on('load')) so this
+  // listener is active in offline headless test environments where MapLibre's
+  // 'load' event never fires.
+  document.addEventListener('snowdesk:date-changed', (e) => {
+    currentDisplayedDate = (e.detail && e.detail.date) || null;
+    if (!IS_PLAYING) _refreshActivePopupForDate(currentDisplayedDate);
+  });
+
+  // Dismiss the open popup at the very start of timelapse playback so
+  // per-frame /api/region/<id>/summary/ requests are not fired while the
+  // choropleth animates through the season.
+  //
+  // Registered at outer-IIFE scope (not inside map.on('load')) so this
+  // listener is active in offline headless test environments where MapLibre's
+  // 'load' event never fires.
+  document.addEventListener('snowdesk:timelapse-state', (e) => {
+    if (e.detail && e.detail.playing) _clearTooltip();
+  });
+
   map.on('load', async () => {
     // SNOW-235: Fetch only the choropleth-critical payloads at boot.
     // L1/L2/resorts overlay fetches have been removed from this
@@ -1007,16 +1083,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // Tracks the most recent inflight summary fetch so a slow tap-A
     // followed by a fast tap-B never lets A's response overwrite B's.
     let summarySeq = 0;
-    // Most recent date the choropleth is showing — seeded from any
-    // ``?d=`` on the URL, then kept in sync by every
-    // ``snowdesk:date-changed`` event (scrubber commit, timelapse frame).
-    // ``currentDisplayedDate`` is used only by the choropleth/scrubber
-    // path; the region tooltip is date-independent.
-    let currentDisplayedDate = (() => {
-      const d = new URL(location.href).searchParams.get('d');
-      return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
-    })();
-
     // The currently-open MapLibre Popup, or null when none is open.
     let activePopup = null;
 
@@ -1129,6 +1195,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
       clearPopupDom();
     };
+    // Publish clearTooltip to the outer-IIFE forwarding variable so the
+    // listeners registered before map.on('load') can reach it.
+    _clearTooltip = clearTooltip;
 
     // Push or replace the URL hash to point at ``regionID``. First open
     // of a session pushes a single entry; subsequent region taps replace
@@ -1263,6 +1332,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
         if (activePopup) activePopup.setHTML(data.html);
       } catch (_err) { /* silently ignore refresh errors */ }
     };
+    // Publish to the outer-IIFE forwarding variable so the date-changed
+    // listener registered before map.on('load') can reach it.
+    _refreshActivePopupForDate = refreshActivePopupForDate;
 
     // Re-usable selection logic. Both the map click handler and the search
     // dropdown route through this so "make this region the active one" has
@@ -1329,6 +1401,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
     map.on('click', 'regions-fill', (e) => {
       if (!e.features.length) return;
+      if (IS_PLAYING) return;
       // Pass the click's lngLat so the popup opens over the tapped point,
       // not the region bbox centre. dismissActivePopupSilently() at the top
       // of loadRegionSummary handles swapping away any existing popup without
@@ -1740,15 +1813,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (pillEl.contains(e.target)) return;
       if (resultsEl.contains(e.target)) return;
       collapseSearch();
-    });
-
-    // SNOW-47 / SNOW-174: keep currentDisplayedDate in sync and refresh
-    // the open popup when the scrubber commits a new date. If a popup is
-    // open, swap its HTML to reflect the new day's danger rating without
-    // closing and re-opening it.
-    document.addEventListener('snowdesk:date-changed', (e) => {
-      currentDisplayedDate = (e.detail && e.detail.date) || null;
-      refreshActivePopupForDate(currentDisplayedDate);
     });
 
     // SNOW-174: dismiss the popup on clicks that land outside both the
@@ -2181,6 +2245,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     // Leave the map painted on the current frame — do not clear
     // feature-state or reset the thumb. The user sees what was playing.
+    IS_PLAYING = false;
+    document.dispatchEvent(new CustomEvent('snowdesk:timelapse-state', { detail: { playing: false } }));
   };
 
   // start(speedArg) — begins playback from the current thumb position.
@@ -2229,6 +2295,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
       playButton.setAttribute('aria-label', 'Play season timelapse');
     }
 
+    IS_PLAYING = true;
+    document.dispatchEvent(new CustomEvent('snowdesk:timelapse-state', { detail: { playing: true } }));
     applyFrame(sortedDates[frameIdx]);
     timer = setInterval(tick, frameMs());
   };
