@@ -58,9 +58,10 @@ Renders:
     </div>
 
     {# ── Aspect / elevation row ──────────────────────────────────────────── #}
-    {# Shown only when the problem has structured aspects or elevation data. #}
-    {# aria-label uses SLF's coreZoneText when present — a pre-formatted    #}
-    {# summary of aspect + elevation for screen readers.                    #}
+    {# When the problem has structured aspects or elevation data, show the   #}
+    {# rose + altitude row.  When the forecaster described spatial scope in  #}
+    {# prose only, show an explicit pointer to the comment below so the     #}
+    {# empty state is never silently invisible.                              #}
     {% if card.aspects or card.elevation %}
         <div
             class="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card"
@@ -87,6 +88,13 @@ Renders:
                     <span class="text-xs text-text-2">{{ card.elevation.display }}</span>
                 </div>
             {% endif %}
+        </div>
+    {% else %}
+        <div
+            class="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card"
+            data-testid="aspect-elevation-fallback"
+        >
+            <span class="text-xs text-text-2">{% trans "See description below" %}</span>
         </div>
     {% endif %}
 
