@@ -1983,10 +1983,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // SNOW-236: Compute the country-aware effective last date and snap
     // the thumb to it if the page has not been loaded with an explicit
     // ?d= param (i.e. the user hasn't deep-linked to a specific date).
+    // Always commit silently so the date pill (server-rendered with today)
+    // is corrected to the effective date — including the post-season case
+    // where newEffective === BOOT_DATE_KEY but the pill still shows today.
     const newEffective = deriveEffectiveTodayKey(sortedDates, ratingsCache);
     effectiveTodayKey = newEffective;
     const bootParam = new URL(location.href).searchParams.get('d');
-    if (!bootParam && newEffective !== BOOT_DATE_KEY) {
+    if (!bootParam) {
       // Snap silently — no history entry, just reposition the thumb and repaint.
       Promise.all([MAP_READY_PROMISE]).then(() => {
         commitDate(newEffective, { silent: true });
