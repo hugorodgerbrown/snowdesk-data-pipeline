@@ -104,6 +104,31 @@ class TestChablaisWeather:
         assert row["speeds"] == [10, 5, 5, 10]
 
 
+class TestChablaisCommentHtml:
+    """Verify that prose comment fields are emitted as HTML (not plain-text)."""
+
+    def test_snowpack_comment_contains_html(
+        self, parsed_chablais: dict[str, Any]
+    ) -> None:
+        """snowpackStructure.comment must contain at least one HTML tag."""
+        comment = parsed_chablais["properties"]["snowpackStructure"]["comment"]
+        assert "<" in comment
+
+    def test_avalanche_activity_comment_contains_html(
+        self, parsed_chablais: dict[str, Any]
+    ) -> None:
+        """avalancheActivity.comment must contain at least one HTML tag."""
+        comment = parsed_chablais["properties"]["avalancheActivity"]["comment"]
+        assert "<" in comment
+
+    def test_tendency_comment_contains_html(
+        self, parsed_chablais: dict[str, Any]
+    ) -> None:
+        """tendency[0].comment must contain at least one HTML tag."""
+        comment = parsed_chablais["properties"]["tendency"][0]["comment"]
+        assert "<" in comment
+
+
 class TestChablaisTendency:
     """Verify tendency extraction."""
 

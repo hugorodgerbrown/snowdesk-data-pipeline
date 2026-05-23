@@ -132,6 +132,31 @@ class TestMontBlancWeather:
         assert row["speeds"] == [25, 25, 25, 20]
 
 
+class TestMontBlancCommentHtml:
+    """Verify that prose comment fields are emitted as HTML (not plain-text)."""
+
+    def test_snowpack_comment_contains_html(
+        self, parsed_mont_blanc: dict[str, Any]
+    ) -> None:
+        """snowpackStructure.comment must contain at least one HTML tag."""
+        comment = parsed_mont_blanc["properties"]["snowpackStructure"]["comment"]
+        assert "<" in comment
+
+    def test_avalanche_activity_comment_contains_html(
+        self, parsed_mont_blanc: dict[str, Any]
+    ) -> None:
+        """avalancheActivity.comment must contain at least one HTML tag."""
+        comment = parsed_mont_blanc["properties"]["avalancheActivity"]["comment"]
+        assert "<" in comment
+
+    def test_tendency_comment_contains_html(
+        self, parsed_mont_blanc: dict[str, Any]
+    ) -> None:
+        """tendency[0].comment must contain at least one HTML tag."""
+        comment = parsed_mont_blanc["properties"]["tendency"][0]["comment"]
+        assert "<" in comment
+
+
 class TestMontBlancTendency:
     """Verify tendency extraction for MONT-BLANC."""
 
