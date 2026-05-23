@@ -39,10 +39,17 @@ python manage.py db_worker
 ```
 
 The worker is documented in [`render.yaml`](../render.yaml) as
-`snowdesk-worker-tasks` alongside the web and cron services. Note that
-Blueprint auto-sync is **not** enabled — the worker must also be created
-manually in the Render dashboard before the deployed code can consume
+`snowdesk-worker-tasks` alongside the web service and the scheduler worker.
+Note that Blueprint auto-sync is **not** enabled — the worker must also be
+created manually in the Render dashboard before the deployed code can consume
 enqueued tasks.
+
+Scheduling (running `fetch_bulletins` and `fetch_weather` on a cron cadence)
+lives in a separate `snowdesk-scheduler` worker — do not conflate the two.
+`snowdesk-worker-tasks` runs `db_worker` (consuming enqueued tasks from the
+DB); `snowdesk-scheduler` runs `run_scheduler` (APScheduler blocking loop).
+See [`schedule.py`](../schedule.py) and the "Operational requirements" section
+of [`docs/management-commands.md`](management-commands.md).
 
 **Without an active `db_worker`, tasks accumulate in the DB but are not
 consumed.** The `ImmediateBackend` default in `base.py` acts as a safe fallback
