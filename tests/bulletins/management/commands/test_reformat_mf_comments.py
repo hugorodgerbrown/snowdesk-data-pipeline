@@ -10,11 +10,14 @@ Covers:
     snowpack is upgraded, tendency is left alone.
   - Default mode (no --commit) is read-only and does not write.
   - --commit writes changes.
-  - --bulletin-id restricts to one row.
+  - --bulletin-id restricts to one row; rejects non-FR ids.
   - Non-FR rows are never touched.
   - --skip-day-ratings suppresses the day-rating refresh call.
   - Render-model side-effect: render_model_version bumped and
     render_model.prose reflects new HTML after --commit.
+  - RenderModelBuildError: error sentinel stored, errored counter increments,
+    command exits non-zero.
+  - Day-rating failure: non-zero exit when recompute_region_day raises.
 """
 
 from __future__ import annotations
@@ -27,7 +30,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from bulletins.models import Bulletin
-from bulletins.services.render_model import RENDER_MODEL_VERSION
+from bulletins.services.render_model import RENDER_MODEL_VERSION, RenderModelBuildError
 from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 # ---------------------------------------------------------------------------
@@ -151,24 +154,28 @@ class TestReformatUpgradesAllThreeFields:
         assert "<h2>" in snowpack or "<p>" in snowpack
 
     def test_activity_comment_becomes_html(self) -> None:
-        """After --commit, avalancheActivity.comment contains HTML tags."""
+        """After --commit, avalancheActivity.comment contains structural HTML."""
         b = _make_fr_bulletin()
 
         call_command("reformat_mf_comments", commit=True, verbosity=0)
 
         b.refresh_from_db()
         activity = b.raw_data["properties"]["avalancheActivity"]["comment"]
-        assert "<" in activity
+        assert "<h2>" in activity or "<p>" in activity or "<li>" in activity
 
     def test_tendency_comment_becomes_html(self) -> None:
-        """After --commit, tendency[0].comment contains HTML tags."""
+        """After --commit, tendency[0].comment contains structural HTML."""
         b = _make_fr_bulletin()
 
         call_command("reformat_mf_comments", commit=True, verbosity=0)
 
         b.refresh_from_db()
         tendency_comment = b.raw_data["properties"]["tendency"][0]["comment"]
-        assert "<" in tendency_comment
+        assert (
+            "<h2>" in tendency_comment
+            or "<p>" in tendency_comment
+            or "<li>" in tendency_comment
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +321,15 @@ class TestReformatBulletinIdScoping:
                 verbosity=0,
             )
 
+    def test_raises_command_error_on_non_fr_bulletin_id(self) -> None:
+        """--bulletin-id that does not start with 'FR' raises CommandError immediately."""
+        with pytest.raises(CommandError, match="must start with 'FR'"):
+            call_command(
+                "reformat_mf_comments",
+                bulletin_id="CH-4115-2026-05-18",
+                verbosity=0,
+            )
+
 
 # ---------------------------------------------------------------------------
 # Non-FR rows are skipped
@@ -393,7 +409,7 @@ class TestReformatSkipDayRatings:
                 verbosity=0,
             )
 
-        mock_recompute.assert_called()
+        mock_recompute.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -439,3 +455,123 @@ class TestReformatRenderModelSideEffect:
         b.refresh_from_db()
         # Version must remain at the current level — no unnecessary write.
         assert b.render_model_version == RENDER_MODEL_VERSION
+
+
+# ---------------------------------------------------------------------------
+# RenderModelBuildError handling
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestReformatRenderModelBuildError:
+    """A RenderModelBuildError is caught per-bulletin, stored as sentinel, exit non-zero."""
+
+    def test_build_error_stores_sentinel(self) -> None:
+        """When build_render_model raises, the row gets a version=0 error sentinel."""
+        b = _make_fr_bulletin()
+
+        with patch(
+            "bulletins.management.commands.reformat_mf_comments.build_render_model",
+            side_effect=RenderModelBuildError("forced failure"),
+        ):
+            with pytest.raises(CommandError):
+                call_command("reformat_mf_comments", commit=True, verbosity=0)
+
+        b.refresh_from_db()
+        assert b.render_model_version == 0
+        assert b.render_model is not None
+        assert b.render_model.get("version") == 0
+        assert "error" in b.render_model
+        assert "RenderModelBuildError" in b.render_model.get("error_type", "")
+
+    def test_build_error_exits_non_zero(self) -> None:
+        """Command exits non-zero (raises CommandError) when any bulletin fails."""
+        _make_fr_bulletin()
+
+        with patch(
+            "bulletins.management.commands.reformat_mf_comments.build_render_model",
+            side_effect=RenderModelBuildError("forced failure"),
+        ):
+            with pytest.raises(CommandError, match="failed render-model rebuild"):
+                call_command("reformat_mf_comments", commit=True, verbosity=0)
+
+    def test_build_error_does_not_abort_batch(self) -> None:
+        """A RenderModelBuildError on one bulletin does not abort processing others."""
+        b1 = _make_fr_bulletin(bulletin_id="FR-01-2026-05-20")
+        b2 = _make_fr_bulletin(bulletin_id="FR-02-2026-05-20")
+
+        call_count = 0
+
+        from typing import Any as _Any
+
+        from bulletins.services.render_model import build_render_model as _real_build
+
+        def _fail_first(props: dict[str, _Any]) -> dict[str, _Any]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RenderModelBuildError("first bulletin fails")
+            return _real_build(props)
+
+        with patch(
+            "bulletins.management.commands.reformat_mf_comments.build_render_model",
+            side_effect=_fail_first,
+        ):
+            with pytest.raises(CommandError):
+                call_command("reformat_mf_comments", commit=True, verbosity=0)
+
+        b1.refresh_from_db()
+        b2.refresh_from_db()
+        # b1 got the error sentinel; b2 was rebuilt successfully.
+        assert b1.render_model_version == 0
+        assert b2.render_model_version == RENDER_MODEL_VERSION
+
+
+# ---------------------------------------------------------------------------
+# Day-rating failure handling
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestReformatDayRatingFailure:
+    """A recompute_region_day failure is logged, counted, and causes non-zero exit."""
+
+    def test_day_rating_failure_exits_non_zero(self) -> None:
+        """Command exits non-zero when a day-rating recompute raises."""
+        region = MicroRegionFactory.create(region_id="FR-BELLEDONNE-ERR")
+        b = _make_fr_bulletin(bulletin_id="FR-11-2026-05-22")
+        RegionBulletinFactory.create(bulletin=b, region=region)
+
+        with patch(
+            "bulletins.management.commands.reformat_mf_comments.recompute_region_day",
+            side_effect=Exception("forced rating failure"),
+        ):
+            with pytest.raises(CommandError, match="day-rating recompute"):
+                call_command("reformat_mf_comments", commit=True, verbosity=0)
+
+    def test_day_rating_failure_does_not_abort_other_pairs(self) -> None:
+        """Other (region, day) pairs are still attempted after one failure."""
+        region1 = MicroRegionFactory.create(region_id="FR-BELLEDONNE-ERR1")
+        region2 = MicroRegionFactory.create(region_id="FR-BELLEDONNE-ERR2")
+        b1 = _make_fr_bulletin(bulletin_id="FR-01-2026-05-23")
+        b2 = _make_fr_bulletin(bulletin_id="FR-02-2026-05-23")
+        RegionBulletinFactory.create(bulletin=b1, region=region1)
+        RegionBulletinFactory.create(bulletin=b2, region=region2)
+
+        call_count = 0
+
+        def _fail_first(*args: object, **kwargs: object) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise Exception("first pair fails")
+
+        with patch(
+            "bulletins.management.commands.reformat_mf_comments.recompute_region_day",
+            side_effect=_fail_first,
+        ):
+            with pytest.raises(CommandError):
+                call_command("reformat_mf_comments", commit=True, verbosity=0)
+
+        # Both pairs were attempted — call_count must be 2.
+        assert call_count == 2

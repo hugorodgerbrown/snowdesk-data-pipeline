@@ -138,23 +138,23 @@ class TestMontBlancCommentHtml:
     def test_snowpack_comment_contains_html(
         self, parsed_mont_blanc: dict[str, Any]
     ) -> None:
-        """snowpackStructure.comment must contain at least one HTML tag."""
+        """snowpackStructure.comment must contain structural HTML (h2, p, or li)."""
         comment = parsed_mont_blanc["properties"]["snowpackStructure"]["comment"]
-        assert "<" in comment
+        assert "<h2>" in comment or "<p>" in comment or "<li>" in comment
 
     def test_avalanche_activity_comment_contains_html(
         self, parsed_mont_blanc: dict[str, Any]
     ) -> None:
-        """avalancheActivity.comment must contain at least one HTML tag."""
+        """avalancheActivity.comment must contain structural HTML (h2, p, or li)."""
         comment = parsed_mont_blanc["properties"]["avalancheActivity"]["comment"]
-        assert "<" in comment
+        assert "<h2>" in comment or "<p>" in comment or "<li>" in comment
 
     def test_tendency_comment_contains_html(
         self, parsed_mont_blanc: dict[str, Any]
     ) -> None:
-        """tendency[0].comment must contain at least one HTML tag."""
+        """tendency[0].comment must contain structural HTML (h2, p, or li)."""
         comment = parsed_mont_blanc["properties"]["tendency"][0]["comment"]
-        assert "<" in comment
+        assert "<h2>" in comment or "<p>" in comment or "<li>" in comment
 
 
 class TestMontBlancTendency:

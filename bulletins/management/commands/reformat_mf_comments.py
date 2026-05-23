@@ -32,6 +32,8 @@ Skip day-rating refresh::
     python manage.py reformat_mf_comments --commit --skip-day-ratings
 """
 
+import copy
+import datetime
 import logging
 from argparse import ArgumentParser
 from typing import Any
@@ -39,9 +41,13 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from bulletins.models import Bulletin
-from bulletins.services.day_rating import recompute_region_day
+from bulletins.services.day_rating import _target_day, recompute_region_day
 from bulletins.services.meteofrance_translator import format_comment_as_html
-from bulletins.services.render_model import RENDER_MODEL_VERSION, build_render_model
+from bulletins.services.render_model import (
+    RENDER_MODEL_VERSION,
+    RenderModelBuildError,
+    build_render_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +91,6 @@ def _upgrade_raw_data(raw_data: dict) -> tuple[dict, int]:
         of comment strings that were wrapped.
 
     """
-    import copy
-
     new_raw_data: dict = copy.deepcopy(raw_data)
     props: dict = new_raw_data.get("properties", {})
     fields_upgraded = 0
@@ -171,6 +175,11 @@ class Command(BaseCommand):
 
         """
         if bulletin_id_arg:
+            if not bulletin_id_arg.startswith("FR"):
+                raise CommandError(
+                    f"--bulletin-id must start with 'FR'; got {bulletin_id_arg!r}. "
+                    "This command is scoped to French bulletins only."
+                )
             qs = Bulletin.objects.filter(bulletin_id=bulletin_id_arg)
             if not qs.exists():
                 raise CommandError(
@@ -181,7 +190,7 @@ class Command(BaseCommand):
 
     def _process_bulletin(
         self, bulletin: Bulletin, *, commit: bool
-    ) -> tuple[bool, int]:
+    ) -> tuple[bool, bool, int]:
         """
         Reformat comments on one bulletin and optionally write to the database.
 
@@ -190,16 +199,19 @@ class Command(BaseCommand):
             commit: If True, persist changes; otherwise report only.
 
         Returns:
-            A ``(changed, fields_upgraded)`` tuple.  ``changed`` is True if at
-            least one comment field was upgraded.
+            A ``(changed, success, fields_upgraded)`` tuple.  ``changed`` is
+            True if at least one comment field was upgraded.  ``success`` is
+            False if ``build_render_model`` raised ``RenderModelBuildError``
+            (in which case an error sentinel is written and the caller should
+            count this as a failure).
 
         """
         if not bulletin.raw_data:
-            return False, 0
+            return False, True, 0
 
         new_raw_data, fields_upgraded = _upgrade_raw_data(bulletin.raw_data)
         if fields_upgraded == 0:
-            return False, 0
+            return False, True, 0
 
         if not commit:
             logger.info(
@@ -207,24 +219,41 @@ class Command(BaseCommand):
                 bulletin.bulletin_id,
                 fields_upgraded,
             )
-            return True, fields_upgraded
+            return True, True, fields_upgraded
 
         props = new_raw_data.get("properties", {})
-        new_render_model = build_render_model(props)
+        try:
+            new_render_model = build_render_model(props)
+            new_version = RENDER_MODEL_VERSION
+            success = True
+        except RenderModelBuildError as exc:
+            logger.exception(
+                "Failed to build render model for bulletin %s: %s",
+                bulletin.bulletin_id,
+                exc,
+            )
+            new_render_model = {
+                "version": 0,
+                "error": str(exc),
+                "error_type": exc.__class__.__name__,
+            }
+            new_version = 0
+            success = False
 
         Bulletin.objects.filter(pk=bulletin.pk).update(
             raw_data=new_raw_data,
             render_model=new_render_model,
-            render_model_version=RENDER_MODEL_VERSION,
+            render_model_version=new_version,
         )
-        logger.info(
-            "Reformatted bulletin %s (%d field(s))",
-            bulletin.bulletin_id,
-            fields_upgraded,
-        )
-        return True, fields_upgraded
+        if success:
+            logger.info(
+                "Reformatted bulletin %s (%d field(s))",
+                bulletin.bulletin_id,
+                fields_upgraded,
+            )
+        return True, success, fields_upgraded
 
-    def _refresh_day_ratings(self, bulletins: list[Bulletin]) -> None:
+    def _refresh_day_ratings(self, bulletins: list[Bulletin]) -> int:
         """
         Recompute RegionDayRating for every (region, day) touched by ``bulletins``.
 
@@ -234,11 +263,10 @@ class Command(BaseCommand):
         Args:
             bulletins: Bulletins whose day ratings should be refreshed.
 
+        Returns:
+            The number of (region, day) pairs that failed to recompute.
+
         """
-        import datetime
-
-        from bulletins.services.day_rating import _target_day
-
         pairs: set[tuple[Any, datetime.date]] = set()
         for bulletin in bulletins:
             regions = list(bulletin.regions.all())
@@ -249,16 +277,58 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Refreshing day ratings for {len(pairs)} (region, day) pair(s)."
         )
+        rating_failures = 0
         for region, day in pairs:
             try:
                 recompute_region_day(region, day, commit=True)
             except Exception:
+                rating_failures += 1
                 logger.exception(
                     "Failed to refresh day rating for region=%s day=%s",
                     region.region_id,
                     day,
                 )
         self.stdout.write(self.style.SUCCESS("Day ratings refreshed."))
+        return rating_failures
+
+    def _process_in_batches(
+        self, qs: Any, total: int, batch_size: int, commit: bool
+    ) -> tuple[int, int, list[Bulletin]]:
+        """
+        Iterate the queryset in pk-ordered batches, processing each bulletin.
+
+        Returns:
+            A ``(changed_count, errored, successfully_changed_bulletins)`` tuple.
+            ``successfully_changed_bulletins`` contains only bulletins that were
+            both changed and built without error, so day ratings are not refreshed
+            for error sentinels.
+
+        """
+        changed_count = 0
+        errored = 0
+        changed_bulletins: list[Bulletin] = []
+        offset = 0
+
+        while offset < total:
+            batch_ids = list(
+                qs.values_list("pk", flat=True)[offset : offset + batch_size]
+            )
+            if not batch_ids:
+                break
+
+            batch = Bulletin.objects.filter(pk__in=batch_ids).order_by("pk")
+            for bulletin in batch:
+                changed, success, _ = self._process_bulletin(bulletin, commit=commit)
+                if changed:
+                    changed_count += 1
+                    if success:
+                        changed_bulletins.append(bulletin)
+                    else:
+                        errored += 1
+
+            offset += batch_size
+
+        return changed_count, errored, changed_bulletins
 
     def handle(self, *args: Any, **options: Any) -> None:
         """
@@ -298,25 +368,9 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Nothing to do."))
             return
 
-        changed_count = 0
-        changed_bulletins: list[Bulletin] = []
-        offset = 0
-
-        while offset < total:
-            batch_ids = list(
-                qs.values_list("pk", flat=True)[offset : offset + batch_size]
-            )
-            if not batch_ids:
-                break
-
-            batch = Bulletin.objects.filter(pk__in=batch_ids).order_by("pk")
-            for bulletin in batch:
-                changed, _ = self._process_bulletin(bulletin, commit=commit)
-                if changed:
-                    changed_count += 1
-                    changed_bulletins.append(bulletin)
-
-            offset += batch_size
+        changed_count, errored, changed_bulletins = self._process_in_batches(
+            qs, total, batch_size, commit
+        )
 
         if not commit:
             self.stdout.write(
@@ -327,14 +381,24 @@ class Command(BaseCommand):
             )
         else:
             self.stdout.write(
-                self.style.SUCCESS(f"Reformatted {changed_count} bulletin(s).")
+                self.style.SUCCESS(
+                    f"Reformatted {changed_count} bulletin(s), {errored} failed."
+                )
             )
 
         logger.info(
-            "reformat_mf_comments finished: changed=%d commit=%s",
+            "reformat_mf_comments finished: changed=%d errored=%d commit=%s",
             changed_count,
+            errored,
             commit,
         )
 
+        rating_failures = 0
         if commit and not skip_day_ratings and changed_bulletins:
-            self._refresh_day_ratings(changed_bulletins)
+            rating_failures = self._refresh_day_ratings(changed_bulletins)
+
+        if errored > 0 or rating_failures > 0:
+            raise CommandError(
+                f"{errored} bulletin(s) failed render-model rebuild; "
+                f"{rating_failures} day-rating recompute(s) failed."
+            )
