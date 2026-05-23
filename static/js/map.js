@@ -1954,6 +1954,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Falls back to the last entry if nothing matches.
   const deriveEffectiveTodayKey = (dates, cache) => {
     if (!dates || dates.length === 0) return todayKey;
+    // Dedupe unexpected-prefix warnings per call: a full-season payload
+    // can contain hundreds of regions and we don't want one stray prefix
+    // (e.g. a future Liechtenstein "LI-…") to spam the console once per
+    // region per date.
+    const warnedPrefixes = new Set();
     for (let i = dates.length - 1; i >= 0; i--) {
       const dateKey = dates[i];
       const frame = cache[dateKey] || {};
@@ -1961,7 +1966,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
         const prefix = regionID.split('-')[0].toLowerCase();
         if (COUNTRY_STATE[prefix] === true) return dateKey;
         // Guard: unexpected prefix — don't silently swallow it.
-        if (!(prefix in COUNTRY_STATE)) {
+        if (!(prefix in COUNTRY_STATE) && !warnedPrefixes.has(prefix)) {
+          warnedPrefixes.add(prefix);
           console.warn('[map] SNOW-236: unexpected region prefix', prefix, 'in ratings payload');
         }
       }
