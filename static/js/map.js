@@ -27,6 +27,12 @@ const FEATURE_BY_REGION_ID = {};
 // this file owns the button wiring; selectFeature reads this flag.
 let AUTOZOOM = false;
 
+// True while timelapse playback is running; set by timelapseInit() via the
+// snowdesk:timelapse-state event. The main IIFE reads this to suppress popup
+// interactions that would fire redundant /api/region/<id>/summary/ requests
+// on every frame advance.
+let IS_PLAYING = false;
+
 // Resolved by the main IIFE once the MapLibre style has loaded and the
 // regions source has been added. Sibling IIFEs that need to call
 // setFeatureState during boot (e.g. the scrubber on /map/?d=...) await
@@ -1241,6 +1247,7 @@ const clearRegionRepaint = () => {
 
     map.on('click', 'regions-fill', (e) => {
       if (!e.features.length) return;
+      if (IS_PLAYING) return;
       // Pass the click's lngLat so the popup opens over the tapped point,
       // not the region bbox centre. dismissActivePopupSilently() at the top
       // of loadRegionSummary handles swapping away any existing popup without
@@ -1657,10 +1664,18 @@ const clearRegionRepaint = () => {
     // SNOW-47 / SNOW-174: keep currentDisplayedDate in sync and refresh
     // the open popup when the scrubber commits a new date. If a popup is
     // open, swap its HTML to reflect the new day's danger rating without
-    // closing and re-opening it.
+    // closing and re-opening it. During timelapse playback the popup is
+    // suppressed, so skip the API call — just track the date.
     document.addEventListener('snowdesk:date-changed', (e) => {
       currentDisplayedDate = (e.detail && e.detail.date) || null;
-      refreshActivePopupForDate(currentDisplayedDate);
+      if (!IS_PLAYING) refreshActivePopupForDate(currentDisplayedDate);
+    });
+
+    // Dismiss the open popup at the very start of timelapse playback so
+    // per-frame /api/region/<id>/summary/ requests are not fired while
+    // the choropleth animates through the season.
+    document.addEventListener('snowdesk:timelapse-state', (e) => {
+      if (e.detail && e.detail.playing) clearTooltip();
     });
 
     // SNOW-174: dismiss the popup on clicks that land outside both the
@@ -2093,6 +2108,8 @@ const clearRegionRepaint = () => {
     }
     // Leave the map painted on the current frame — do not clear
     // feature-state or reset the thumb. The user sees what was playing.
+    IS_PLAYING = false;
+    document.dispatchEvent(new CustomEvent('snowdesk:timelapse-state', { detail: { playing: false } }));
   };
 
   // start(speedArg) — begins playback from the current thumb position.
@@ -2141,6 +2158,8 @@ const clearRegionRepaint = () => {
       playButton.setAttribute('aria-label', 'Play season timelapse');
     }
 
+    IS_PLAYING = true;
+    document.dispatchEvent(new CustomEvent('snowdesk:timelapse-state', { detail: { playing: true } }));
     applyFrame(sortedDates[frameIdx]);
     timer = setInterval(tick, frameMs());
   };
