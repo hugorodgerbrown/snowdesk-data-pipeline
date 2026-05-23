@@ -431,7 +431,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                     {% endif %}
 
                     {% comment %}
-                       SECTION 3b — Avalanche activity (EUREGIO only).
+                       SECTION 3b — Avalanche activity (ALBINA only).
                        Rendered when prose.avalanche_activity carries non-empty
                        highlights or comment strings. Suppressed for SLF bulletins
                        whose activity prose is empty by the source-aware builder.
@@ -508,7 +508,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                                     {# — Outlook (tendency[]) ─────────────────── #}
                                     {# Summary uses the first tendency entry's <h1>; subsequent entries  #}
                                     {# keep their own <h1> so multi-day outlooks remain disambiguated.   #}
-                                    {# EUREGIO bulletins ship tendency entries with highlights but empty  #}
+                                    {# ALBINA bulletins ship tendency entries with highlights but empty   #}
                                     {# comment — tendency_has_comment detects this so we can show the    #}
                                     {# "No data supplied" placeholder rather than a blank body.          #}
                                     {% if prose.tendency %}

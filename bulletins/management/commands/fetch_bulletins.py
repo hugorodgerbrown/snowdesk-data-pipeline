@@ -1,8 +1,8 @@
 """
 bulletins/management/commands/fetch_bulletins.py — Management command: fetch_bulletins.
 
-Unified bulletin-fetch command that consolidates the former ``fetch_bulletins``
-(SLF) and ``fetch_euregio_bulletins`` (EUREGIO) commands into a single entry
+Unified bulletin-fetch command that dispatches to any of the configured
+bulletin providers (SLF, ALBINA, Météo-France) through a single entry
 point. Providers are selected via a required ``--source`` flag; multiple
 providers can be supplied in one invocation and are processed in the order
 given. Failures are collected and surfaced at the end so a single provider
@@ -13,7 +13,7 @@ The ``--source`` flag is **case-insensitive**: ``--source slf``,
 the canonical upper-case provider key.
 
 Defaults:
-  * ``--source`` is required. Pass ``--source slf``, ``--source euregio``,
+  * ``--source`` is required. Pass ``--source slf``, ``--source albina``,
     ``--source meteofrance``, or any combination.
   * ``--start-date`` defaults to the ``valid_from`` day of the most recent
     bulletin already in the DB for each requested source — i.e. a one-day
@@ -32,24 +32,24 @@ Usage::
     # Read-only walk — the "what would happen?" probe.
     python manage.py fetch_bulletins --source slf
 
-    # Persist today's SLF and EUREGIO bulletins (typical cron shape).
-    python manage.py fetch_bulletins --source slf euregio --commit
+    # Persist today's SLF and ALBINA bulletins (typical cron shape).
+    python manage.py fetch_bulletins --source slf albina --commit
 
     # Single-day SLF backfill.
     python manage.py fetch_bulletins --source slf --date 2026-01-15 --commit
 
     # Narrow to today only.
-    python manage.py fetch_bulletins --source euregio --today --commit
+    python manage.py fetch_bulletins --source albina --today --commit
 
     # Explicit window.
     python manage.py fetch_bulletins --source slf
         --start-date 2026-01-01 --commit
 
     # Re-pull existing rows.
-    python manage.py fetch_bulletins --source slf euregio --commit --force
+    python manage.py fetch_bulletins --source slf albina --commit --force
 
     # Capture fetched bulletins into the on-disk archives without DB writes.
-    python manage.py fetch_bulletins --source slf euregio --stash
+    python manage.py fetch_bulletins --source slf albina --stash
 
     # Bootstrap an empty DB against the local mirrors (dev server must be running).
     python manage.py fetch_bulletins --source slf --local-mirror --commit
@@ -108,7 +108,7 @@ class Command(BaseCommand):
 
     help = (
         "Fetch avalanche bulletins for a date range. "
-        "--source is required; pass 'slf', 'euregio', 'meteofrance', or "
+        "--source is required; pass 'slf', 'albina', 'meteofrance', or "
         "any combination (case-insensitive). "
         "Start defaults to the latest bulletin's valid_from day per source, "
         "or settings.SEASON_START_DATE when the DB is empty. "
@@ -127,8 +127,8 @@ class Command(BaseCommand):
             help=(
                 "Provider(s) to fetch from. Accepts one or more of: "
                 f"{_choice_display} (case-insensitive). "
-                "Pass multiple values space-separated (``--source slf euregio``) "
-                "or repeat the flag (``--source slf --source euregio``). "
+                "Pass multiple values space-separated (``--source slf albina``) "
+                "or repeat the flag (``--source slf --source albina``). "
                 "Duplicates are silently deduplicated."
             ),
         )
@@ -182,7 +182,7 @@ class Command(BaseCommand):
                 "Fetch from the dev-only local mirror for every requested source "
                 "instead of the live API. Each source's mirror URL must be "
                 "configured in settings (SLF_API_LOCAL_MIRROR_URL, "
-                "EUREGIO_API_LOCAL_MIRROR_URL, "
+                "ALBINA_API_LOCAL_MIRROR_URL, "
                 "METEOFRANCE_API_LOCAL_MIRROR_URL). Only available in development."
             ),
         )
@@ -601,8 +601,8 @@ def _resolve_sources(options: dict[str, Any]) -> list[str]:
     Flatten, normalise, validate, and deduplicate the ``--source`` list-of-lists.
 
     ``action="append"`` with ``nargs="+"`` means ``options["source"]`` is
-    a list of lists, e.g. ``[["slf", "euregio"]]`` or
-    ``[["slf"], ["euregio"]]``. Flatten to a plain list, upper-case each
+    a list of lists, e.g. ``[["slf", "albina"]]`` or
+    ``[["slf"], ["albina"]]``. Flatten to a plain list, upper-case each
     value so the flag is case-insensitive (``--source meteofrance`` and
     ``--source METEOFRANCE`` both work), then validate against
     ``SOURCE_CHOICES`` and raise ``CommandError`` for unrecognised names.

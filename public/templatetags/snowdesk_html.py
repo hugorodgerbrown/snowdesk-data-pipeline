@@ -137,7 +137,7 @@ def tendency_has_comment(prose: dict | None) -> bool:
     """
     Return ``True`` when ``prose.tendency`` contains at least one non-empty comment.
 
-    EUREGIO/ALBINA bulletins ship a ``tendency`` list whose entries carry
+    ALBINA bulletins ship a ``tendency`` list whose entries carry
     ``highlights`` text but an empty ``comment``.  The Outlook panel renders
     from ``comment``, so it would otherwise show an empty body.  This filter
     lets the template fall back to the "No data supplied" placeholder when

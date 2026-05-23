@@ -1,7 +1,7 @@
-# bulletins/services/mf_archive_loader.py — Service for loading the
+# bulletins/services/meteofrance_archive_loader.py — Service for loading the
 # Météo-France BRA NDJSON archive into the Snowdesk database.
 #
-# Provides ``load_mf_archive(lines, *, commit, triggered_by)`` which is called
+# Provides ``load_meteofrance_archive(lines, *, commit, triggered_by)`` which is called
 # by both the Django admin upload view (SNOW-227) and the offline script
 # ``scripts/meteofrance-archive/load_archive.py``.
 #
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LoadResult:
-    """Summary counters returned by ``load_mf_archive``."""
+    """Summary counters returned by ``load_meteofrance_archive``."""
 
     total: int
     bad_shape: int
@@ -262,7 +262,7 @@ def _walk_lines(
     return counts
 
 
-def load_mf_archive(
+def load_meteofrance_archive(
     lines: Iterable[str],
     *,
     commit: bool,

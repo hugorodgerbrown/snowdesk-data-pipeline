@@ -251,8 +251,8 @@ class Bulletin(BaseModel):
         """Possible originating sources for a bulletin's render model."""
 
         SLF = "slf", "SLF (Switzerland)"
-        EUREGIO = "euregio", "EUREGIO (Austria/South Tyrol/Trentino)"
-        MF = "meteofrance", "Météo-France (France)"
+        ALBINA = "albina", "ALBINA (Austria/South Tyrol/Trentino)"
+        METEOFRANCE = "meteofrance", "Météo-France (France)"
 
     bulletin_id = models.CharField(max_length=255, unique=True, db_index=True)
     raw_data = models.JSONField(

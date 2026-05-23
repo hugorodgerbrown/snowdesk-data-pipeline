@@ -1,5 +1,5 @@
-# tests/bulletins/test_mf_archive_upload_admin.py — Tests for the MF archive
-# upload view on PipelineRunAdmin.
+# tests/bulletins/test_meteofrance_archive_upload_admin.py — Tests for the
+# Météo-France archive upload view on PipelineRunAdmin.
 #
 # Covers:
 #   - Happy-path POST with a mocked loader → success message + redirect.
@@ -20,10 +20,10 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.urls import reverse
 
-from bulletins.services.mf_archive_loader import LoadResult
+from bulletins.services.meteofrance_archive_loader import LoadResult
 from tests.factories import UserFactory
 
-UPLOAD_URL = reverse("admin:bulletins_pipelinerun_upload_mf_archive")
+UPLOAD_URL = reverse("admin:bulletins_pipelinerun_upload_meteofrance_archive")
 CHANGELIST_URL = reverse("admin:bulletins_pipelinerun_changelist")
 
 # A minimal valid NDJSON line used as the upload body in happy-path tests.
@@ -83,9 +83,9 @@ class TestUploadHappyPath:
     """POST with a valid archive calls the loader and shows a success message."""
 
     def test_calls_loader_with_commit_true(self, staff_client: Client) -> None:
-        """load_mf_archive is called with commit=True and triggered_by='admin upload'."""
+        """load_meteofrance_archive is called with commit=True and triggered_by='admin upload'."""
         with patch(
-            "bulletins.admin.load_mf_archive", return_value=_CLEAN_RESULT
+            "bulletins.admin.load_meteofrance_archive", return_value=_CLEAN_RESULT
         ) as mock_loader:
             staff_client.post(UPLOAD_URL, data={"archive": _upload_file()})
 
@@ -96,7 +96,9 @@ class TestUploadHappyPath:
 
     def test_redirects_to_changelist(self, staff_client: Client) -> None:
         """A successful POST redirects (302) to the PipelineRun changelist."""
-        with patch("bulletins.admin.load_mf_archive", return_value=_CLEAN_RESULT):
+        with patch(
+            "bulletins.admin.load_meteofrance_archive", return_value=_CLEAN_RESULT
+        ):
             response = staff_client.post(UPLOAD_URL, data={"archive": _upload_file()})
 
         assert response.status_code == 302
@@ -104,7 +106,9 @@ class TestUploadHappyPath:
 
     def test_success_message_level(self, staff_client: Client) -> None:
         """A clean result produces a SUCCESS-level admin message."""
-        with patch("bulletins.admin.load_mf_archive", return_value=_CLEAN_RESULT):
+        with patch(
+            "bulletins.admin.load_meteofrance_archive", return_value=_CLEAN_RESULT
+        ):
             response = staff_client.post(
                 UPLOAD_URL, data={"archive": _upload_file()}, follow=True
             )
@@ -115,7 +119,9 @@ class TestUploadHappyPath:
 
     def test_success_message_contains_summary(self, staff_client: Client) -> None:
         """The admin message body includes the loader summary text."""
-        with patch("bulletins.admin.load_mf_archive", return_value=_CLEAN_RESULT):
+        with patch(
+            "bulletins.admin.load_meteofrance_archive", return_value=_CLEAN_RESULT
+        ):
             response = staff_client.post(
                 UPLOAD_URL, data={"archive": _upload_file()}, follow=True
             )
@@ -145,7 +151,7 @@ class TestUploadWarningPath:
             failed=1,
             pipeline_run_id=2,
         )
-        with patch("bulletins.admin.load_mf_archive", return_value=result):
+        with patch("bulletins.admin.load_meteofrance_archive", return_value=result):
             response = staff_client.post(
                 UPLOAD_URL, data={"archive": _upload_file()}, follow=True
             )
@@ -165,7 +171,7 @@ class TestUploadWarningPath:
             failed=2,
             pipeline_run_id=3,
         )
-        with patch("bulletins.admin.load_mf_archive", return_value=result):
+        with patch("bulletins.admin.load_meteofrance_archive", return_value=result):
             response = staff_client.post(
                 UPLOAD_URL, data={"archive": _upload_file()}, follow=True
             )
@@ -185,7 +191,7 @@ class TestUploadErrorPath:
 
     def test_missing_file_shows_error(self, staff_client: Client) -> None:
         """A POST with no 'archive' field produces an ERROR-level message."""
-        with patch("bulletins.admin.load_mf_archive") as mock_loader:
+        with patch("bulletins.admin.load_meteofrance_archive") as mock_loader:
             response = staff_client.post(UPLOAD_URL, data={}, follow=True)
 
         mock_loader.assert_not_called()
@@ -194,8 +200,10 @@ class TestUploadErrorPath:
         assert all_messages[0].level == ERROR
 
     def test_loader_exception_shows_error(self, staff_client: Client) -> None:
-        """An unexpected exception from load_mf_archive surfaces as ERROR."""
-        with patch("bulletins.admin.load_mf_archive", side_effect=RuntimeError("boom")):
+        """An unexpected exception from load_meteofrance_archive surfaces as ERROR."""
+        with patch(
+            "bulletins.admin.load_meteofrance_archive", side_effect=RuntimeError("boom")
+        ):
             response = staff_client.post(
                 UPLOAD_URL, data={"archive": _upload_file()}, follow=True
             )
@@ -215,7 +223,7 @@ class TestUploadGetRequest:
 
     def test_get_redirects_to_changelist(self, staff_client: Client) -> None:
         """A GET to the upload URL redirects to the changelist."""
-        with patch("bulletins.admin.load_mf_archive") as mock_loader:
+        with patch("bulletins.admin.load_meteofrance_archive") as mock_loader:
             response = staff_client.get(UPLOAD_URL)
 
         mock_loader.assert_not_called()

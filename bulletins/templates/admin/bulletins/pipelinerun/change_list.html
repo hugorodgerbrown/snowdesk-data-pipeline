@@ -7,19 +7,19 @@
         /* Match Django admin's `.object-tools a` pill shape on the
            Upload button while keeping the lighter `.button` colour
            so it stays visually distinct from the dark "Add" pill. */
-        .object-tools form.upload-mf-archive-form {
+        .object-tools form.upload-meteofrance-archive-form {
             display: inline;
         }
-        .object-tools form.upload-mf-archive-form .upload-mf-archive-controls {
+        .object-tools form.upload-meteofrance-archive-form .upload-meteofrance-archive-controls {
             display: inline-flex;
             align-items: center;
             gap: 6px;
         }
-        .object-tools form.upload-mf-archive-form input[type='file'] {
+        .object-tools form.upload-meteofrance-archive-form input[type='file'] {
             font-size: 0.6875rem;
             font-family: inherit;
         }
-        .object-tools form.upload-mf-archive-form button {
+        .object-tools form.upload-meteofrance-archive-form button {
             box-sizing: border-box;
             /* Match the inline-block flow of `.object-tools a` so vertical
                padding renders the same. `line-height: inherit` is the key:
@@ -46,19 +46,19 @@
         <form
             method="post"
             enctype="multipart/form-data"
-            action="{% url 'admin:bulletins_pipelinerun_upload_mf_archive' %}"
-            class="upload-mf-archive-form"
+            action="{% url 'admin:bulletins_pipelinerun_upload_meteofrance_archive' %}"
+            class="upload-meteofrance-archive-form"
         >
             {% csrf_token %}
-            <span class="upload-mf-archive-controls">
+            <span class="upload-meteofrance-archive-controls">
                 <input
                     type="file"
                     name="archive"
                     accept=".ndjson, .json, .txt"
-                    data-testid="pipelinerun-upload-mf-archive-input"
+                    data-testid="pipelinerun-upload-meteofrance-archive-input"
                 >
-                <button type="submit" class="button" data-testid="pipelinerun-upload-mf-archive">
-                    {% trans "Upload MF archive" %}
+                <button type="submit" class="button" data-testid="pipelinerun-upload-meteofrance-archive">
+                    {% trans "Upload Météo-France archive" %}
                 </button>
             </span>
         </form>

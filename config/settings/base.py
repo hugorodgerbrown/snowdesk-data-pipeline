@@ -228,24 +228,23 @@ OPENMETEO_ARCHIVE_PATH = (
     BASE_DIR / "bulletins" / "local_mirrors" / "openmeteo_archive.ndjson"
 )
 
-# EUREGIO/ALBINA bulletin API. The CDN publishes per-date, per-region files
+# ALBINA bulletin API. The CDN publishes per-date, per-region files
 # at ``{base}/{date}/{date}_{region}_en_CAAMLv6.json``. Each file is a JSON
-# array of bulletins (same shape the SLF list API returns).
-EUREGIO_API_BASE_URL = config(
-    "EUREGIO_API_BASE_URL",
+# array of bulletins (same shape the SLF list API returns). Covers the
+# Tyrol / South Tyrol / Trentino EUREGIO area.
+ALBINA_API_BASE_URL = config(
+    "ALBINA_API_BASE_URL",
     default="https://static.avalanche.report/bulletins",
 )
 
-# On-disk archive of EUREGIO bulletins captured from the ALBINA CDN.
+# On-disk archive of ALBINA bulletins captured from the avalanche.report CDN.
 # NDJSON: one unwrapped CAAML record per line; deduped by ``bulletinID``.
-EUREGIO_ARCHIVE_PATH = (
-    BASE_DIR / "bulletins" / "local_mirrors" / "euregio_archive.ndjson"
-)
+ALBINA_ARCHIVE_PATH = BASE_DIR / "bulletins" / "local_mirrors" / "albina_archive.ndjson"
 
-# EUREGIO region identifiers covered by the fetcher. These map to the three
-# top-level ALBINA CDN paths: Tyrol (AT-07), South Tyrol (IT-32-BZ), and
-# Trentino (IT-32-TN).
-EUREGIO_REGIONS: tuple[str, ...] = ("AT-07", "IT-32-BZ", "IT-32-TN")
+# ALBINA region identifiers covered by the fetcher. These map to the three
+# top-level avalanche.report CDN paths: Tyrol (AT-07), South Tyrol (IT-32-BZ),
+# and Trentino (IT-32-TN).
+ALBINA_REGIONS: tuple[str, ...] = ("AT-07", "IT-32-BZ", "IT-32-TN")
 
 # MeteoFrance / DPBRA bulletin API.
 # Live endpoint:

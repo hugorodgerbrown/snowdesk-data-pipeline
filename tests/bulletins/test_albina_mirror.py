@@ -1,11 +1,11 @@
 """
-tests/bulletins/test_euregio_mirror.py — Tests for the EUREGIO dev mirror view.
+tests/bulletins/test_albina_mirror.py — Tests for the ALBINA dev mirror view.
 
-The mirror replays ``bulletins/local_mirrors/euregio_archive.ndjson`` with the
-same URL shape as the ALBINA CDN so that ``fetch_euregio_bulletins
+The mirror replays ``bulletins/local_mirrors/albina_archive.ndjson`` with the
+same URL shape as the ALBINA CDN so that ``fetch_albina_bulletins
 --source local-mirror`` can run end-to-end without network access.
 
-Tests use ``override_settings(EUREGIO_ARCHIVE_PATH=...)`` and a tmp_path
+Tests use ``override_settings(ALBINA_ARCHIVE_PATH=...)`` and a tmp_path
 fixture to isolate archive contents.
 """
 
@@ -28,7 +28,7 @@ def _make_bulletin(
     main_date: str,
     region_ids: list[str],
 ) -> dict[str, Any]:
-    """Build a minimal raw EUREGIO bulletin dict for archive use."""
+    """Build a minimal raw ALBINA bulletin dict for archive use."""
     return {
         "bulletinID": bulletin_id,
         "publicationTime": f"{main_date}T18:00:00Z",
@@ -52,8 +52,8 @@ def _write_archive(path: Path, bulletins: list[dict[str, Any]]) -> None:
 
 
 def _url(date_str: str, region: str) -> str:
-    """Build the EUREGIO mirror URL for a (date, region) pair."""
-    return f"/dev/euregio-mirror/{date_str}/{date_str}_{region}_en_CAAMLv6.json"
+    """Build the ALBINA mirror URL for a (date, region) pair."""
+    return f"/dev/albina-mirror/{date_str}/{date_str}_{region}_en_CAAMLv6.json"
 
 
 # ---------------------------------------------------------------------------
@@ -63,17 +63,17 @@ def _url(date_str: str, region: str) -> str:
 
 @pytest.mark.django_db
 class TestEuregioMirror:
-    """Tests for the euregio_mirror dev view."""
+    """Tests for the albina_mirror dev view."""
 
     def test_returns_matching_bulletins(self, tmp_path: Path) -> None:
         """Bulletins whose mainDate and region match the URL are returned."""
-        archive_path = tmp_path / "euregio.ndjson"
+        archive_path = tmp_path / "albina.ndjson"
         b1 = _make_bulletin("id-1", "2026-01-15", ["AT-07-01", "AT-07-02"])
         b2 = _make_bulletin("id-2", "2026-01-15", ["IT-32-BZ-01"])
         b3 = _make_bulletin("id-3", "2026-01-16", ["AT-07-01"])  # different date
         _write_archive(archive_path, [b1, b2, b3])
 
-        with override_settings(EUREGIO_ARCHIVE_PATH=archive_path):
+        with override_settings(ALBINA_ARCHIVE_PATH=archive_path):
             response = Client().get(_url("2026-01-15", "AT-07"))
 
         assert response.status_code == 200
@@ -83,11 +83,11 @@ class TestEuregioMirror:
 
     def test_returns_empty_list_when_no_match(self, tmp_path: Path) -> None:
         """An empty JSON array is returned when no bulletins match."""
-        archive_path = tmp_path / "euregio.ndjson"
+        archive_path = tmp_path / "albina.ndjson"
         b1 = _make_bulletin("id-1", "2026-01-15", ["AT-07-01"])
         _write_archive(archive_path, [b1])
 
-        with override_settings(EUREGIO_ARCHIVE_PATH=archive_path):
+        with override_settings(ALBINA_ARCHIVE_PATH=archive_path):
             response = Client().get(_url("2026-01-20", "AT-07"))
 
         assert response.status_code == 200
@@ -101,26 +101,26 @@ class TestEuregioMirror:
         calendar dates. The view validates the date and returns 400 for
         such inputs.
         """
-        archive_path = tmp_path / "euregio.ndjson"
+        archive_path = tmp_path / "albina.ndjson"
         _write_archive(archive_path, [])
 
-        with override_settings(EUREGIO_ARCHIVE_PATH=archive_path):
+        with override_settings(ALBINA_ARCHIVE_PATH=archive_path):
             # Month 13 is syntactically a date-string but semantically invalid.
             response = Client().get(
-                "/dev/euregio-mirror/2026-13-01/2026-13-01_AT-07_en_CAAMLv6.json"
+                "/dev/albina-mirror/2026-13-01/2026-13-01_AT-07_en_CAAMLv6.json"
             )
 
         assert response.status_code == 400
 
     def test_multiple_regions_matching_prefix(self, tmp_path: Path) -> None:
         """A bulletin covering multiple sub-regions of the requested prefix is returned."""
-        archive_path = tmp_path / "euregio.ndjson"
+        archive_path = tmp_path / "albina.ndjson"
         b1 = _make_bulletin(
             "id-1", "2026-01-15", ["IT-32-BZ-01", "IT-32-BZ-02", "IT-32-TN-01"]
         )
         _write_archive(archive_path, [b1])
 
-        with override_settings(EUREGIO_ARCHIVE_PATH=archive_path):
+        with override_settings(ALBINA_ARCHIVE_PATH=archive_path):
             response = Client().get(_url("2026-01-15", "IT-32-BZ"))
 
         assert response.status_code == 200
@@ -132,11 +132,11 @@ class TestEuregioMirror:
         self, tmp_path: Path
     ) -> None:
         """A bulletin for IT-32-TN is not returned when requesting AT-07."""
-        archive_path = tmp_path / "euregio.ndjson"
+        archive_path = tmp_path / "albina.ndjson"
         b1 = _make_bulletin("id-1", "2026-01-15", ["IT-32-TN-01"])
         _write_archive(archive_path, [b1])
 
-        with override_settings(EUREGIO_ARCHIVE_PATH=archive_path):
+        with override_settings(ALBINA_ARCHIVE_PATH=archive_path):
             response = Client().get(_url("2026-01-15", "AT-07"))
 
         assert response.status_code == 200
@@ -144,10 +144,10 @@ class TestEuregioMirror:
 
     def test_empty_archive_returns_empty_list(self, tmp_path: Path) -> None:
         """An empty archive returns an empty JSON array."""
-        archive_path = tmp_path / "euregio.ndjson"
+        archive_path = tmp_path / "albina.ndjson"
         _write_archive(archive_path, [])
 
-        with override_settings(EUREGIO_ARCHIVE_PATH=archive_path):
+        with override_settings(ALBINA_ARCHIVE_PATH=archive_path):
             response = Client().get(_url("2026-01-15", "AT-07"))
 
         assert response.status_code == 200
