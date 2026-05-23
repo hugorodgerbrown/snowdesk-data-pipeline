@@ -23,6 +23,7 @@ Covers:
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -30,7 +31,11 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from bulletins.models import Bulletin
-from bulletins.services.render_model import RENDER_MODEL_VERSION, RenderModelBuildError
+from bulletins.services.render_model import (
+    RENDER_MODEL_VERSION,
+    RenderModelBuildError,
+    build_render_model,
+)
 from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 # ---------------------------------------------------------------------------
@@ -150,7 +155,6 @@ class TestReformatUpgradesAllThreeFields:
 
         b.refresh_from_db()
         snowpack = b.raw_data["properties"]["snowpackStructure"]["comment"]
-        assert "<" in snowpack
         assert "<h2>" in snowpack or "<p>" in snowpack
 
     def test_activity_comment_becomes_html(self) -> None:
@@ -502,16 +506,12 @@ class TestReformatRenderModelBuildError:
 
         call_count = 0
 
-        from typing import Any as _Any
-
-        from bulletins.services.render_model import build_render_model as _real_build
-
-        def _fail_first(props: dict[str, _Any]) -> dict[str, _Any]:
+        def _fail_first(props: dict[str, Any]) -> dict[str, Any]:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
                 raise RenderModelBuildError("first bulletin fails")
-            return _real_build(props)
+            return build_render_model(props)
 
         with patch(
             "bulletins.management.commands.reformat_mf_comments.build_render_model",
