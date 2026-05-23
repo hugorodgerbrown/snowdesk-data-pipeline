@@ -1,25 +1,32 @@
 """
 tests/e2e/test_timelapse_popup.py — Playwright smoke tests for timelapse/popup interaction.
 
-Verifies the three behaviours introduced by SNOW-240:
+Verifies the plumbing introduced by SNOW-240:
 
-1. While timelapse playback is running (IS_PLAYING=true), ``snowdesk:date-changed``
-   events must NOT trigger ``/api/region/<id>/summary/`` requests.
-2. After stopping playback (IS_PLAYING=false), date-changed events no longer
-   suppress the popup refresh path.
-3. The play button click sets IS_PLAYING via ``snowdesk:timelapse-state`` and
-   the scrubber enters its 'playing' state.
+1. The ``snowdesk:date-changed`` and ``snowdesk:timelapse-state`` listeners are
+   registered at outer-IIFE scope, so they fire in offline headless environments
+   where ``map.on('load')`` never runs.
+2. The IS_PLAYING flag gates the ``refreshActivePopupForDate`` call path: events
+   during playback do not trigger ``/api/region/<id>/summary/`` requests.
+3. Both playback transitions (play → stop) complete cleanly without JS errors,
+   and the IS_PLAYING state machine behaves correctly across both edges.
+
+Note: in this headless context there is no active popup (the basemap never
+loads), so ``refreshActivePopupForDate`` returns early regardless of IS_PLAYING.
+The "no summary request" assertions guard against spurious network calls at the
+event-listener level.  The IS_PLAYING guard's effect when a popup IS open is
+covered by integration tests against a fully-loaded map.
 
 The tests use Playwright's ``page.route()`` to stub the season-ratings endpoint
 so the scrubber can enter its 'ready' state without real data.  The basemap
 tile service is not intercepted — MapLibre gracefully handles an offline style
-fetch (the 'load' event simply never fires), which means none of the
-``map.on('load')`` setup runs and there are no spurious JS errors.
+fetch (the 'load' event simply never fires).
 
-The events dispatched in these tests are the actual custom events the
-``timelapseInit`` IIFE fires; the ``document.addEventListener`` calls that
-handle them (in the main IIFE) are registered synchronously when the script
-loads, long before the map's own 'load' event.
+The events dispatched in these tests are synthetic ``CustomEvent`` dispatches
+that mirror what ``timelapseInit()``'s ``start()`` and ``stop()`` functions
+dispatch; the ``document.addEventListener`` calls that handle them are
+registered at outer-IIFE scope (not inside ``map.on('load')``), so they are
+active before the map's own 'load' event fires.
 """
 
 from __future__ import annotations
@@ -129,15 +136,19 @@ def test_date_changed_during_playback_skips_summary_fetch(
     page: Page,
     _load_test_data: None,
 ) -> None:
-    """``snowdesk:date-changed`` does not trigger a summary fetch during playback.
+    """``snowdesk:date-changed`` events fire without errors during playback.
 
     Sets IS_PLAYING to true via ``snowdesk:timelapse-state``, then fires
     ``snowdesk:date-changed`` events (simulating several timelapse frames) and
-    asserts that no ``/api/region/<id>/summary/`` requests are made.
+    asserts that no ``/api/region/<id>/summary/`` requests are made and no JS
+    errors occur.
 
-    This is the primary regression guard: before SNOW-240 every date-changed
-    event would call ``refreshActivePopupForDate`` even while the timelapse was
-    running, one API request per frame.
+    In this offline headless context there is no active popup (the map never
+    fully loads), so ``refreshActivePopupForDate`` would be a no-op regardless.
+    What this test guards is that the ``snowdesk:date-changed`` listener is
+    registered at outer-IIFE scope (firing before ``map.on('load')``), that the
+    IS_PLAYING flag gates the call path without error, and that no spurious
+    requests escape to the network.
     """
     _navigate_and_wait(page, live_server.url)
 
@@ -257,7 +268,7 @@ def test_timelapse_state_event_suppresses_summary_and_restores_after_stop(
     page: Page,
     _load_test_data: None,
 ) -> None:
-    """IS_PLAYING gates suppresses then restores the date-changed popup refresh.
+    """IS_PLAYING gates the date-changed popup refresh: suppressed during playback, restored after stop.
 
     Combined integration test: starts playback, fires date-changed (no request
     expected), stops playback, fires date-changed again (still no request

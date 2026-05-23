@@ -27,10 +27,11 @@ const FEATURE_BY_REGION_ID = {};
 // this file owns the button wiring; selectFeature reads this flag.
 let AUTOZOOM = false;
 
-// True while timelapse playback is running; set by timelapseInit() via the
-// snowdesk:timelapse-state event. The main IIFE reads this to suppress popup
-// interactions that would fire redundant /api/region/<id>/summary/ requests
-// on every frame advance.
+// True while timelapse playback is running. Set directly by timelapseInit()'s
+// start() and stop() functions; after each mutation those functions also
+// dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
+// clearTooltip(). The main IIFE reads IS_PLAYING to suppress redundant
+// /api/region/<id>/summary/ requests on every timelapse frame advance.
 let IS_PLAYING = false;
 
 // Resolved by the main IIFE once the MapLibre style has loaded and the
@@ -857,6 +858,51 @@ const clearRegionRepaint = () => {
     }
   });
 
+  // Most recent date the choropleth is showing — seeded from any ``?d=`` on
+  // the URL, then kept in sync by every ``snowdesk:date-changed`` event.
+  // Hoisted to outer-IIFE scope so the date-changed listener below can be
+  // registered synchronously (before the map's 'load' event fires), making
+  // it active in environments where the map never loads (e.g. Playwright
+  // offline headless tests).
+  let currentDisplayedDate = (() => {
+    const d = new URL(location.href).searchParams.get('d');
+    return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+  })();
+
+  // Forward references to map.on('load')-scoped functions.  Populated by the
+  // map-load callback after the full popup machinery is defined.  The defaults
+  // below are intentional no-ops so the listeners registered before map.on('load')
+  // can call through without a null-guard — in environments where the map never
+  // loads (e.g. Playwright offline headless), no popup is ever open so both
+  // functions return immediately, which is the correct observable behaviour.
+  let _clearTooltip = () => {};
+  let _refreshActivePopupForDate = async (_dateKey) => {};
+
+  // SNOW-47 / SNOW-174: keep currentDisplayedDate in sync and refresh the
+  // open popup when the scrubber commits a new date. If a popup is open,
+  // swap its HTML to reflect the new day's danger rating without closing and
+  // re-opening it. During timelapse playback the popup is suppressed, so skip
+  // the API call — just track the date.
+  //
+  // Registered at outer-IIFE scope (not inside map.on('load')) so this
+  // listener is active in offline headless test environments where MapLibre's
+  // 'load' event never fires.
+  document.addEventListener('snowdesk:date-changed', (e) => {
+    currentDisplayedDate = (e.detail && e.detail.date) || null;
+    if (!IS_PLAYING) _refreshActivePopupForDate(currentDisplayedDate);
+  });
+
+  // Dismiss the open popup at the very start of timelapse playback so
+  // per-frame /api/region/<id>/summary/ requests are not fired while the
+  // choropleth animates through the season.
+  //
+  // Registered at outer-IIFE scope (not inside map.on('load')) so this
+  // listener is active in offline headless test environments where MapLibre's
+  // 'load' event never fires.
+  document.addEventListener('snowdesk:timelapse-state', (e) => {
+    if (e.detail && e.detail.playing) _clearTooltip();
+  });
+
   map.on('load', async () => {
     // SNOW-235: Fetch only the choropleth-critical payloads at boot.
     // L1/L2/resorts overlay fetches have been removed from this
@@ -925,16 +971,6 @@ const clearRegionRepaint = () => {
     // Tracks the most recent inflight summary fetch so a slow tap-A
     // followed by a fast tap-B never lets A's response overwrite B's.
     let summarySeq = 0;
-    // Most recent date the choropleth is showing — seeded from any
-    // ``?d=`` on the URL, then kept in sync by every
-    // ``snowdesk:date-changed`` event (scrubber commit, timelapse frame).
-    // ``currentDisplayedDate`` is used only by the choropleth/scrubber
-    // path; the region tooltip is date-independent.
-    let currentDisplayedDate = (() => {
-      const d = new URL(location.href).searchParams.get('d');
-      return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
-    })();
-
     // The currently-open MapLibre Popup, or null when none is open.
     let activePopup = null;
 
@@ -1047,6 +1083,9 @@ const clearRegionRepaint = () => {
       }
       clearPopupDom();
     };
+    // Publish clearTooltip to the outer-IIFE forwarding variable so the
+    // listeners registered before map.on('load') can reach it.
+    _clearTooltip = clearTooltip;
 
     // Push or replace the URL hash to point at ``regionID``. First open
     // of a session pushes a single entry; subsequent region taps replace
@@ -1181,6 +1220,9 @@ const clearRegionRepaint = () => {
         if (activePopup) activePopup.setHTML(data.html);
       } catch (_err) { /* silently ignore refresh errors */ }
     };
+    // Publish to the outer-IIFE forwarding variable so the date-changed
+    // listener registered before map.on('load') can reach it.
+    _refreshActivePopupForDate = refreshActivePopupForDate;
 
     // Re-usable selection logic. Both the map click handler and the search
     // dropdown route through this so "make this region the active one" has
@@ -1659,23 +1701,6 @@ const clearRegionRepaint = () => {
       if (pillEl.contains(e.target)) return;
       if (resultsEl.contains(e.target)) return;
       collapseSearch();
-    });
-
-    // SNOW-47 / SNOW-174: keep currentDisplayedDate in sync and refresh
-    // the open popup when the scrubber commits a new date. If a popup is
-    // open, swap its HTML to reflect the new day's danger rating without
-    // closing and re-opening it. During timelapse playback the popup is
-    // suppressed, so skip the API call — just track the date.
-    document.addEventListener('snowdesk:date-changed', (e) => {
-      currentDisplayedDate = (e.detail && e.detail.date) || null;
-      if (!IS_PLAYING) refreshActivePopupForDate(currentDisplayedDate);
-    });
-
-    // Dismiss the open popup at the very start of timelapse playback so
-    // per-frame /api/region/<id>/summary/ requests are not fired while
-    // the choropleth animates through the season.
-    document.addEventListener('snowdesk:timelapse-state', (e) => {
-      if (e.detail && e.detail.playing) clearTooltip();
     });
 
     // SNOW-174: dismiss the popup on clicks that land outside both the
