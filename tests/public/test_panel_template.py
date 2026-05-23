@@ -3,13 +3,18 @@ tests/public/test_panel_template.py — Tests for bulletin-page render-model out
 
 Covers the rendered HTML output of the bulletin detail page for the
 error state (``render_model.version == 0``), trait header heading
-semantics, and per-problem ``danger_level_css`` enrichment.  Integration
-tests render through the Django test client so the full template-tag
-and context pipeline is exercised; the enrichment tests are pure unit
-tests against ``_enrich_render_model_problem``.
+semantics, per-problem ``danger_level_css`` enrichment, and
+view-level integration canaries for the adapter-based render model.
+Integration tests render through the Django test client so the full
+template-tag and context pipeline is exercised; the enrichment tests
+are pure unit tests against ``_enrich_render_model_problem``.
 """
 
+from __future__ import annotations
+
+import json
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -25,6 +30,8 @@ from tests.factories import (
     RegionBulletinFactory,
     UserFactory,
 )
+
+_FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 def _make_am_bulletin(region: MicroRegion, day: date, **kwargs: Any) -> Bulletin:
@@ -339,3 +346,83 @@ class TestEnrichRenderModelProblemDangerLevelCss:
         """An unrecognised danger_rating_value falls back to empty string."""
         result = self._enrich("extreme")
         assert result["danger_level_css"] == ""
+
+
+# ── View-level integration canaries ──────────────────────────────────────────
+
+
+def _wrap_feature(properties: dict[str, Any]) -> dict[str, Any]:
+    """Wrap a CAAML properties dict in a GeoJSON Feature envelope."""
+    return {"type": "Feature", "geometry": None, "properties": properties}
+
+
+@pytest.mark.django_db
+class TestSlfSubdivisionPlusCanary:
+    """
+    AM/PM drift canary for SLF bulletins with a 3+ (considerable-plus) rating.
+
+    A dangerRating whose ``customData.CH.subdivision`` is ``"plus"`` must
+    propagate through the adapter → render model → panel context so that
+    ``morning_subdivision`` and ``afternoon_subdivision`` are both ``"+"``
+    when the rating covers ``all_day``.  Any regression that accidentally
+    drops the subdivision on the ``danger.ratings`` projection path will
+    surface here.
+    """
+
+    def test_considerable_plus_subdivision_propagates_to_panel_context(
+        self,
+    ) -> None:
+        """morning_subdivision and afternoon_subdivision are '+' for 3+ rating."""
+        from public.views import _build_panel_context
+
+        fixture = json.loads(
+            (_FIXTURE_DIR / "sample_subdivision_3plus_day.json").read_text()
+        )
+        bulletin = BulletinFactory.create(
+            raw_data=fixture,
+            issued_at=datetime(2026, 2, 5, 15, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 2, 5, 15, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 2, 6, 15, 0, tzinfo=UTC),
+        )
+        ctx = _build_panel_context(bulletin)
+
+        assert ctx["morning_key"] == "considerable"
+        assert ctx["morning_subdivision"] == "+"
+        assert ctx["afternoon_key"] == "considerable"
+        assert ctx["afternoon_subdivision"] == "+"
+
+
+@pytest.mark.django_db
+class TestEuregioPanelContextCanary:
+    """
+    Integration canary: EUREGIO bulletin produces a well-formed panel context.
+
+    The adapter unit tests cover projection in isolation; this test exercises
+    the full path from raw EUREGIO bulletin JSON through
+    ``build_render_model`` → ``_build_panel_context`` and asserts that
+    ``problem_cards`` and ``day_character`` are non-empty.  A regression that
+    decouples the EUREGIO adapter from the view layer will surface here.
+    """
+
+    def test_euregio_panel_context_has_problem_cards_and_day_character(
+        self,
+    ) -> None:
+        """EUREGIO panel context populates problem_cards and day_character."""
+        from public.views import _build_panel_context
+
+        props = json.loads((_FIXTURE_DIR / "euregio_sample_bulletin.json").read_text())
+        bulletin = BulletinFactory.create(
+            raw_data=_wrap_feature(props),
+            issued_at=datetime(2025, 11, 28, 18, 6, 1, tzinfo=UTC),
+            valid_from=datetime(2025, 11, 28, 16, 0, tzinfo=UTC),
+            valid_to=datetime(2025, 11, 29, 16, 0, tzinfo=UTC),
+        )
+        ctx = _build_panel_context(bulletin)
+
+        assert ctx["problem_cards"], (
+            "Expected at least one problem card for EUREGIO bulletin"
+        )
+        day_char = ctx["day_character"]
+        # EUREGIO bulletins carry a tendency lead that overrides the computed
+        # label — day_character.explainer carries the forecaster-authored text.
+        assert day_char.explainer, "Expected non-empty day_character explainer"

@@ -2324,3 +2324,63 @@ class TestSubscribePanelStates:
         assert "/subscribe/remove-region/" in content
         # Should NOT show the email input (anonymous form).
         assert 'name="email"' not in content
+
+
+# ── _best_rating_from_rm_entries unit tests ───────────────────────────────────
+
+
+class TestBestRatingFromRmEntries:
+    """
+    Unit tests for the _best_rating_from_rm_entries helper.
+
+    This function is the core of _resolve_period_danger_from_rm.  The key
+    contract is that it returns None when no entry carries a recognised
+    danger key, so the caller can fall through to the traits fallback.
+    A tautological guard in the original implementation meant it never
+    returned None; these tests pin the corrected behaviour.
+    """
+
+    def _call(self, entries: list[dict[str, Any]]) -> tuple[str, str] | None:
+        """Call the helper under test."""
+        from public.views import _best_rating_from_rm_entries
+
+        return _best_rating_from_rm_entries(entries)
+
+    def test_returns_none_for_empty_list(self) -> None:
+        """An empty entry list returns None so the caller can use its fallback."""
+        assert self._call([]) is None
+
+    def test_returns_none_for_unrecognised_keys_only(self) -> None:
+        """Entries with only unrecognised keys return None, not a default 'low'."""
+        entries: list[dict[str, Any]] = [
+            {"period": "all_day", "key": "extreme", "subdivision": None},
+            {"period": "all_day", "key": "", "subdivision": None},
+        ]
+        assert self._call(entries) is None
+
+    def test_returns_highest_recognised_key(self) -> None:
+        """The highest recognised key wins when multiple entries are present."""
+        entries: list[dict[str, Any]] = [
+            {"period": "all_day", "key": "low", "subdivision": None},
+            {"period": "all_day", "key": "considerable", "subdivision": "+"},
+            {"period": "all_day", "key": "moderate", "subdivision": None},
+        ]
+        result = self._call(entries)
+        assert result == ("considerable", "+")
+
+    def test_unrecognised_key_is_ignored_when_recognised_present(self) -> None:
+        """Unrecognised keys are skipped; the best recognised key is returned."""
+        entries: list[dict[str, Any]] = [
+            {"period": "all_day", "key": "extreme", "subdivision": None},
+            {"period": "all_day", "key": "high", "subdivision": "-"},
+        ]
+        result = self._call(entries)
+        assert result == ("high", "-")
+
+    def test_subdivision_none_becomes_empty_string(self) -> None:
+        """A None subdivision is normalised to an empty string in the result."""
+        entries: list[dict[str, Any]] = [
+            {"period": "all_day", "key": "moderate", "subdivision": None}
+        ]
+        result = self._call(entries)
+        assert result == ("moderate", "")

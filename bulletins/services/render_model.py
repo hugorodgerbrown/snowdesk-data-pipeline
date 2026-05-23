@@ -90,7 +90,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol
 
 from django.utils.translation import gettext_lazy as _
 
@@ -444,7 +444,6 @@ def _filter_ratings_by_elevation(
 # ---------------------------------------------------------------------------
 
 
-@runtime_checkable
 class CustomDataAdapter(Protocol):
     """
     Protocol for source-specific bulletin field adapters.
@@ -593,6 +592,45 @@ class SlfAdapter:
         return _SUBDIVISION_MAP.get(raw_subdivision, None)
 
 
+def _synthesise_aggregation_from_problems(
+    properties: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """
+    Synthesise an aggregation list from ``avalancheProblems`` by (category, vtp).
+
+    Shared by EuregioAdapter and MeteoFranceAdapter which both lack a
+    ``customData`` aggregation block and derive the same grouping from their
+    problems list.
+
+    Args:
+        properties: The CAAML bulletin properties dict.
+
+    Returns:
+        An aggregation list in problem-encounter order with deduplicated entries.
+
+    """
+    problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
+    seen: dict[tuple[str, str], dict[str, Any]] = {}
+    order: list[tuple[str, str]] = []
+    for problem in problems:
+        pt: str = problem.get("problemType", "")
+        vtp: str = problem.get("validTimePeriod") or "all_day"
+        category: str = PROBLEM_TYPE_TO_CATEGORY.get(pt, "dry")
+        key = (category, vtp)
+        if key not in seen:
+            seen[key] = {
+                "category": category,
+                "validTimePeriod": vtp,
+                "problemTypes": [],
+                "title": None,
+            }
+            order.append(key)
+        entry = seen[key]
+        if pt not in entry["problemTypes"]:
+            entry["problemTypes"].append(pt)
+    return [seen[k] for k in order]
+
+
 class EuregioAdapter:
     """
     Adapter for EUREGIO (ALBINA) bulletins.
@@ -607,26 +645,7 @@ class EuregioAdapter:
 
     def resolve_aggregations(self, properties: dict[str, Any]) -> list[dict[str, Any]]:
         """Synthesise aggregation from avalancheProblems by (category, vtp)."""
-        problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
-        seen: dict[tuple[str, str], dict[str, Any]] = {}
-        order: list[tuple[str, str]] = []
-        for problem in problems:
-            pt: str = problem.get("problemType", "")
-            vtp: str = problem.get("validTimePeriod") or "all_day"
-            category: str = PROBLEM_TYPE_TO_CATEGORY.get(pt, "dry")
-            key = (category, vtp)
-            if key not in seen:
-                seen[key] = {
-                    "category": category,
-                    "validTimePeriod": vtp,
-                    "problemTypes": [],
-                    "title": None,
-                }
-                order.append(key)
-            entry = seen[key]
-            if pt not in entry["problemTypes"]:
-                entry["problemTypes"].append(pt)
-        return [seen[k] for k in order]
+        return _synthesise_aggregation_from_problems(properties)
 
     def resolve_problem_rating(
         self,
@@ -714,8 +733,7 @@ class MeteoFranceAdapter:
 
     def resolve_aggregations(self, properties: dict[str, Any]) -> list[dict[str, Any]]:
         """Synthesise aggregation from avalancheProblems by (category, vtp)."""
-        # Same algorithm as EuregioAdapter — share via delegation.
-        return EuregioAdapter().resolve_aggregations(properties)
+        return _synthesise_aggregation_from_problems(properties)
 
     def resolve_problem_rating(
         self,
