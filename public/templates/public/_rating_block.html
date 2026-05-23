@@ -13,9 +13,11 @@ Renders:
   1. Card header — danger-band colour strip carrying the EAWS hazard
      pictogram (encodes kind + level) alongside the problem name and an
      optional time chip.  No redundant textual level label.
-  2. Aspect / elevation row — only when the problem carries structured
-     aspects or elevation data.  aria-label uses SLF's coreZoneText when
-     present for screen readers.  Absent for prose-only problems.
+  2. Aspect / elevation row — two branches: (a) when either aspects or
+     elevation data are present, renders the aspect rose and elevation icon;
+     aria-label uses SLF's coreZoneText when available for screen readers.
+     (b) when both fields are absent, renders a "See description below"
+     fallback row pointing readers at the prose comment.
   3. Prose — the problem's comment field rendered in full, no truncation.
 {% endcomment %}
 {% load i18n static card_tags hazard_icons snowdesk_html snowdesk_time %}
