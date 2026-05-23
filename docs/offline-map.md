@@ -198,7 +198,7 @@ The SW classifies every fetch into one of three buckets:
   requested URL has never been visited (SNOW-118).
 
 - **`network`** — everything else: bulletin JSON
-  (`/api/region/<id>/summary/`), today-summaries, calendar partials,
+  (`/api/region/<id>/summary/`), ratings (`/api/ratings/`), calendar partials,
   resort feeds that change with the bulletin, and all third-party
   origins (MapLibre CDN, OpenFreeMap tiles). Strategy: **network only**
   — no `event.respondWith()` call, the SW is bypassed entirely. This

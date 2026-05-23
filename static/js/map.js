@@ -85,16 +85,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 };
 
-// Clear per-feature rating state, reverting the choropleth to no_rating
-// (unset feature-state). Retained for external callers; currently unused
-// since the timelapse leaves the last frame painted on stop.
-const clearRegionRepaint = () => {
-  if (!MAP) return;
-  for (const feature of Object.values(FEATURE_BY_REGION_ID)) {
-    MAP.removeFeatureState({ source: 'regions', id: feature.id }, 'rating');
-  }
-};
-
 (function () {
   'use strict';
 
@@ -798,12 +788,28 @@ const clearRegionRepaint = () => {
             const todayISO = new Date().toISOString().slice(0, 10);
             const paintDate = displayDate || todayISO;
             const frame = countryRatings[paintDate] || {};
-            for (const [regionID, ratingInt] of Object.entries(frame)) {
-              const feature = FEATURE_BY_REGION_ID[regionID];
-              if (feature) {
-                const rating = INT_TO_RATING[ratingInt] || 'no_rating';
-                MAP.setFeatureState({ source: 'regions', id: feature.id }, { rating });
+            // Mirror the paintTodayRatings guard: setFeatureState is a no-op
+            // if the source has not finished loading. Gate on isSourceLoaded
+            // and defer via a one-shot sourcedata listener if not yet ready.
+            const paintNewCountry = () => {
+              for (const [regionID, ratingInt] of Object.entries(frame)) {
+                const feature = FEATURE_BY_REGION_ID[regionID];
+                if (feature) {
+                  const rating = INT_TO_RATING[ratingInt] || 'no_rating';
+                  MAP.setFeatureState({ source: 'regions', id: feature.id }, { rating });
+                }
               }
+            };
+            if (MAP.isSourceLoaded('regions')) {
+              paintNewCountry();
+            } else {
+              const onSourceReady = (e) => {
+                if (e.sourceId === 'regions' && MAP.isSourceLoaded('regions')) {
+                  MAP.off('sourcedata', onSourceReady);
+                  paintNewCountry();
+                }
+              };
+              MAP.on('sourcedata', onSourceReady);
             }
           }
         }

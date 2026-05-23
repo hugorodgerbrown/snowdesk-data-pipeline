@@ -83,7 +83,7 @@ _VALID_GEOJSON_COUNTRIES: frozenset[str] = frozenset(COUNTRY_NAMES)
 # correctly and the session middleware cannot append Vary: Cookie.
 _GEOJSON_CACHE_MAX_AGE = 86400
 
-# Cache lifetime for dynamic-but-slow-moving map endpoints (today-summaries,
+# Cache lifetime for dynamic-but-slow-moving map endpoints (ratings,
 # resorts-by-region, resorts.geojson). Content only changes when a pipeline
 # run lands new bulletins or an operator edits a resort; 5 minutes bounds the
 # staleness while letting browsers and edge caches absorb the bulk of repeat
