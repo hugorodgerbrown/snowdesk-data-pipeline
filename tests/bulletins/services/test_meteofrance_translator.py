@@ -8,7 +8,7 @@ Covers:
   - MeteoFranceTranslationError for missing required elements and invalid values.
   - Internal helpers: _parse_local_to_utc, _parse_local_date, _parse_plus_one_day,
     _aspects_from_pente, _elevation_from_prose, _evolution_from_levels.
-  - _format_comment_as_html: empty input, paragraphs, headings, bullets, escaping.
+  - format_comment_as_html: empty input, paragraphs, headings, bullets, escaping.
   - End-to-end HTML output via parse_dpbra_xml against sample XML files.
   - Bleach allowlist sanity: formatter output survives snowdesk_html unchanged.
 
@@ -29,10 +29,10 @@ from bulletins.services.meteofrance_translator import (
     _aspects_from_pente,
     _elevation_from_prose,
     _evolution_from_levels,
-    _format_comment_as_html,
     _parse_local_date,
     _parse_local_to_utc,
     _parse_plus_one_day,
+    format_comment_as_html,
     parse_dpbra_xml,
 )
 
@@ -502,59 +502,59 @@ class TestParseSyntheticBulletin:
 
 
 # ---------------------------------------------------------------------------
-# _format_comment_as_html — direct unit tests
+# format_comment_as_html — direct unit tests
 # ---------------------------------------------------------------------------
 
 
 class TestFormatCommentAsHtml:
-    """_format_comment_as_html converts DPBRA plain-text prose to structural HTML."""
+    """format_comment_as_html converts DPBRA plain-text prose to structural HTML."""
 
     def test_empty_string_returns_empty(self) -> None:
         """An empty string returns an empty string."""
-        assert _format_comment_as_html("") == ""
+        assert format_comment_as_html("") == ""
 
     def test_whitespace_only_returns_empty(self) -> None:
         """Whitespace-only input returns an empty string."""
-        assert _format_comment_as_html("   \n  \n  ") == ""
+        assert format_comment_as_html("   \n  \n  ") == ""
 
     def test_single_paragraph_no_heading(self) -> None:
         """A plain prose line with no colon becomes a single <p>."""
-        result = _format_comment_as_html("La neige est stable.")
+        result = format_comment_as_html("La neige est stable.")
         assert result == "<p>La neige est stable.</p>"
 
     def test_label_inline_body_becomes_heading_and_paragraph(self) -> None:
         """'Label : inline body' produces <h2>Label</h2><p>body</p>."""
-        result = _format_comment_as_html("Enneigement : Bon à toutes altitudes.")
+        result = format_comment_as_html("Enneigement : Bon à toutes altitudes.")
         assert result == "<h2>Enneigement</h2><p>Bon à toutes altitudes.</p>"
 
     def test_label_body_on_next_line(self) -> None:
         r"""'Label :\nbody on next line' produces <h2>Label</h2><p>body</p>."""
-        result = _format_comment_as_html("Enneigement :\nBon à toutes altitudes.")
+        result = format_comment_as_html("Enneigement :\nBon à toutes altitudes.")
         assert result == "<h2>Enneigement</h2><p>Bon à toutes altitudes.</p>"
 
     def test_star_bullets_produce_ul(self) -> None:
         """Lines starting with '* ' become <ul><li> items."""
         text = "* Premier élément\n* Deuxième élément"
-        result = _format_comment_as_html(text)
+        result = format_comment_as_html(text)
         assert result == "<ul><li>Premier élément</li><li>Deuxième élément</li></ul>"
 
     def test_dash_bullets_produce_ul(self) -> None:
         """Lines starting with '- ' become <ul><li> items."""
         text = "- Premier élément\n- Deuxième élément"
-        result = _format_comment_as_html(text)
+        result = format_comment_as_html(text)
         assert result == "<ul><li>Premier élément</li><li>Deuxième élément</li></ul>"
 
     def test_mixed_prose_and_bullets(self) -> None:
         """Non-bullet lines become <p> and bullet lines become <ul><li>."""
         text = "Texte introductif.\n* Bullet un\n* Bullet deux"
-        result = _format_comment_as_html(text)
+        result = format_comment_as_html(text)
         assert "<p>Texte introductif.</p>" in result
         assert "<ul><li>Bullet un</li><li>Bullet deux</li></ul>" in result
 
     def test_two_heading_blocks(self) -> None:
         """Two blank-line-separated blocks each get their own <h2>."""
         text = "Section A :\nContenu A.\n\nSection B :\nContenu B."
-        result = _format_comment_as_html(text)
+        result = format_comment_as_html(text)
         assert "<h2>Section A</h2>" in result
         assert "<h2>Section B</h2>" in result
         assert "<p>Contenu A.</p>" in result
@@ -562,32 +562,32 @@ class TestFormatCommentAsHtml:
 
     def test_html_special_chars_escaped(self) -> None:
         """Characters < and & in prose are HTML-escaped."""
-        result = _format_comment_as_html("Altitude < 2000 m & au-dessus.")
+        result = format_comment_as_html("Altitude < 2000 m & au-dessus.")
         assert "&lt;" in result
         assert "&amp;" in result
         assert "<" not in result.replace("<p>", "").replace("</p>", "")
 
     def test_heading_text_escaped(self) -> None:
         """Special chars in the heading label are also HTML-escaped."""
-        result = _format_comment_as_html("Risque & neige : Contenu.")
+        result = format_comment_as_html("Risque & neige : Contenu.")
         assert "<h2>Risque &amp; neige</h2>" in result
 
     def test_label_over_50_chars_not_treated_as_heading(self) -> None:
         """A pre-colon portion longer than 50 chars falls back to a <p>."""
         long_label = "A" * 51
-        result = _format_comment_as_html(f"{long_label} : contenu")
+        result = format_comment_as_html(f"{long_label} : contenu")
         assert "<h2>" not in result
         assert "<p>" in result
 
     def test_empty_inline_body_omits_paragraph(self) -> None:
         """'Label :' with nothing after the colon emits only <h2>, no empty <p>."""
-        result = _format_comment_as_html("Enneigement :\nDétails sur l'enneigement.")
+        result = format_comment_as_html("Enneigement :\nDétails sur l'enneigement.")
         assert result.startswith("<h2>Enneigement</h2>")
         assert "<p>" in result
 
     def test_inline_body_after_colon_only_heading_no_empty_body(self) -> None:
         """'Label :' (colon only, nothing after) produces only the heading."""
-        result = _format_comment_as_html("Titre :")
+        result = format_comment_as_html("Titre :")
         assert result == "<h2>Titre</h2>"
 
 
@@ -642,7 +642,7 @@ class TestBleachAllowlistSanity:
     """Formatter output passes through snowdesk_html unchanged."""
 
     def test_formatter_output_survives_bleach(self) -> None:
-        """HTML produced by _format_comment_as_html is not stripped by bleach."""
+        """HTML produced by format_comment_as_html is not stripped by bleach."""
         from public.templatetags.snowdesk_html import snowdesk_html
 
         raw = (
@@ -652,6 +652,6 @@ class TestBleachAllowlistSanity:
             "État de la neige :\n"
             "La neige est stable en altitude."
         )
-        html_output = _format_comment_as_html(raw)
+        html_output = format_comment_as_html(raw)
         sanitised = snowdesk_html(html_output)
         assert str(sanitised) == html_output

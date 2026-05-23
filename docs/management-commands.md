@@ -76,6 +76,29 @@ incident that invalidates derived state:
 
 - `rebuild_render_models --commit` — after bumping `RENDER_MODEL_VERSION`.
   Re-runs the render-model derivation for every stale `Bulletin`.
+- `reformat_mf_comments --commit` — one-off retroactive formatter for FR bulletins
+  ingested before SNOW-207 added the HTML formatter (plain-text prose fields only;
+  already-HTML rows are skipped). Filters to `bulletin_id__startswith='FR'`.
+  Rebuilds render models and refreshes RegionDayRating for all touched rows.
+  Read-only by default; pass `--commit` to persist. Exits non-zero if any
+  render-model build or day-rating recompute fails.
+
+  ```bash
+  # Read-only walk — counts what would change, no DB writes.
+  poetry run python manage.py reformat_mf_comments
+
+  # Persist (run on Render after merge).
+  poetry run python manage.py reformat_mf_comments --commit
+
+  # Single bulletin (must start with 'FR').
+  poetry run python manage.py reformat_mf_comments --bulletin-id FR-11-2026-05-18 --commit
+
+  # Persist without refreshing day ratings.
+  poetry run python manage.py reformat_mf_comments --commit --skip-day-ratings
+  ```
+
+  Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500),
+  `--skip-day-ratings`.
 - `recompute_day_ratings --commit` — after a day-rating policy change
   (e.g. v5 headline-only switch). Re-derives every `RegionDayRating`.
 - `backfill_weather --start <YYYY-MM-DD> --end <YYYY-MM-DD> --commit` —

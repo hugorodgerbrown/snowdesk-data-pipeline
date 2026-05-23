@@ -427,7 +427,7 @@ def _format_body_lines(lines: list[str]) -> str:
     return "".join(parts)
 
 
-def _format_comment_as_html(text: str) -> str:
+def format_comment_as_html(text: str) -> str:
     """
     Convert Météo-France plain-text prose to structural HTML.
 
@@ -697,7 +697,7 @@ def _parse_tendency(
         {
             "tendencyType": _evolution_from_levels(risque1, risque_maxi_j2),
             "highlights": _elem_text(risque_j2_el),
-            "comment": _format_comment_as_html(_elem_text(commentaire_j2_el)),
+            "comment": format_comment_as_html(_elem_text(commentaire_j2_el)),
             "validTime": {
                 "startTime": j2_valid_from,
                 "endTime": j2_valid_to,
@@ -723,7 +723,7 @@ def _parse_snowpack_structure(root: Element) -> dict[str, str] | None:
     qualite_texte = qualite.find("TEXTE")
     if qualite_texte is None or not qualite_texte.text:
         return None
-    return {"comment": _format_comment_as_html(qualite_texte.text)}
+    return {"comment": format_comment_as_html(qualite_texte.text)}
 
 
 def _parse_avalanche_activity(
@@ -757,7 +757,7 @@ def _parse_avalanche_activity(
 
     return {
         "highlights": highlights,
-        "comment": _format_comment_as_html(activity_comment),
+        "comment": format_comment_as_html(activity_comment),
     }
 
 

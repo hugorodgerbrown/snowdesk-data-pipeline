@@ -47,6 +47,8 @@ from _pdf_extract import (
 )
 from _sat_mapping import sat_to_problem_type
 
+from bulletins.services.meteofrance_translator import format_comment_as_html
+
 logger = logging.getLogger(__name__)
 
 # Danger level name → integer mapping (EAWS scale 1–5, 0 = no rating).
@@ -563,7 +565,7 @@ def extract_tendency(page: "pdfplumber.page.Page") -> dict[str, object]:
     return {
         "dangerRating": _level_to_label(level),
         "tendencyType": tendency_label or "steady",
-        "comment": text,
+        "comment": format_comment_as_html(text),
     }
 
 
@@ -709,14 +711,16 @@ def parse_pdf(pdf_path: Path) -> dict[str, object] | None:
         "highlights": highlights,
         "avalancheActivity": {
             "highlights": highlights,
-            "comment": (
-                avalanche_activity["spontaneous"]
-                + "\n"
-                + avalanche_activity["triggered"]
-            ).strip(),
+            "comment": format_comment_as_html(
+                (
+                    avalanche_activity["spontaneous"]
+                    + "\n"
+                    + avalanche_activity["triggered"]
+                ).strip()
+            ),
         },
         "snowpackStructure": {
-            "comment": snowpack_comment,
+            "comment": format_comment_as_html(snowpack_comment),
         },
         "avalancheProblems": avalanche_problems,
         "tendency": [tendency] if tendency else [],
