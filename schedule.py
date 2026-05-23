@@ -50,7 +50,9 @@ logger = logging.getLogger(__name__)
 
 def _run_fetch_bulletins() -> None:
     """Invoke the ``fetch_bulletins`` management command for all sources."""
-    from django.core.management import call_command  # noqa: PLC0415
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
 
     logger.info("schedule: firing fetch_bulletins")
     call_command(
@@ -65,7 +67,9 @@ def _run_fetch_bulletins() -> None:
 
 def _run_fetch_weather() -> None:
     """Invoke the ``fetch_weather`` management command."""
-    from django.core.management import call_command  # noqa: PLC0415
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
 
     logger.info("schedule: firing fetch_weather")
     call_command("fetch_weather", "--commit")

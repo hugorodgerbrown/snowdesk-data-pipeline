@@ -44,6 +44,8 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Build the scheduler and start blocking execution."""
+        # Alias avoids a name collision if the PyPI ``schedule`` package is ever
+        # pulled in transitively alongside the repo-root ``schedule`` module.
         import schedule as schedule_module
 
         scheduler = schedule_module.build_scheduler()
