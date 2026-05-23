@@ -3,8 +3,8 @@
 # Documentation only — Blueprint auto-sync is NOT enabled. Changes to the
 # live deployment are still made via the Render dashboard; this file is the
 # checked-in record of that configuration so the production topology
-# (one web service, two cron jobs, one background worker, env-var wiring)
-# is discoverable from the repo.
+# (one web service, two background workers, env-var wiring) is discoverable
+# from the repo.
 #
 # Originally exported from Render on 2026-05-22. Corrections / additions
 # applied against the raw export:
@@ -14,6 +14,8 @@
 #     entry. The worker must also be created in the Render dashboard
 #     before subscription emails enqueue to django_tasks_db will be
 #     consumed in production.
+#   * snowdesk-scheduler (SNOW-238): replaced snowdesk-cron-bulletins and
+#     snowdesk-cron-weather with a single long-running APScheduler worker.
 #
 # Env vars marked `sync: false` must be set manually in the Render
 # dashboard — they are not auto-populated from a Blueprint import.
@@ -49,28 +51,14 @@ projects:
                 sync: false
               - fromGroup: Django App Settings
 
-          - type: cron
-            name: snowdesk-cron-bulletins
+          - type: worker
+            name: snowdesk-scheduler
             runtime: python
             repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
             plan: starter
             region: frankfurt
             buildCommand: ./build_headless.sh
-            startCommand: python manage.py fetch_bulletins --source slf euregio meteofrance --commit
-            schedule: "0,5 * * * *"
-            autoDeployTrigger: commit
-            envVars:
-              - fromGroup: Django App Settings
-
-          - type: cron
-            name: snowdesk-cron-weather
-            runtime: python
-            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
-            plan: starter
-            region: frankfurt
-            buildCommand: ./build_headless.sh
-            startCommand: python manage.py fetch_weather --commit
-            schedule: "0 0-18/6 * * *"
+            startCommand: python manage.py run_scheduler
             autoDeployTrigger: commit
             envVars:
               - fromGroup: Django App Settings
