@@ -42,15 +42,15 @@ can never linger in the cache.
 **Season scrubber and timelapse**: a horizontal scrubber sits at the
 bottom of the map. The thumb defaults to today's position within the
 Nov–May window; dragging recolours every region from the
-`/api/season-ratings/` payload to show how danger evolved on the
+`/api/ratings/?country=ch` payload to show how danger evolved on the
 selected date, and pressing the play button steps through the season as
 a timelapse. The drawer (when open) follows the scrubber via the
 `snowdesk:date-changed` event, fetching `/api/region/<id>/summary/?d=…`
-so the bulletin shown matches the scrubbed-to date. The season-ratings
-payload is fetched lazily on first interaction and cached for the
-session via `getSeasonRatings()` in `static/js/map.js` — first scrub
+so the bulletin shown matches the scrubbed-to date. The full-season
+payload is fetched lazily on first scrubber interaction and cached for
+the session via `getSeasonRatings()` in `static/js/map.js` — first scrub
 pays the round-trip; subsequent scrubs and timelapse playback render
-from the cache.
+from the in-memory cache.
 
 **Route ordering**: `/map/` is registered before `<str:region_id>/` in
 `public/urls.py`. Do not reorder these — Django matches URL patterns
@@ -62,20 +62,21 @@ appeared first.
 
 | URL | Name | Response |
 |-----|------|----------|
-| `GET /api/today-summaries/` | `api:today_summaries` | `{region_id: {rating, subdivision, problem, elevation, aspects, valid_from, valid_to, name}}` |
-| `GET /api/season-ratings/` | `api:season_ratings` | `{date_iso: {region_id: rating_int}}` — whole-season choropleth source for the scrubber + timelapse on `/map/`. Compact int encoding (`0=no_rating`, `1=low`, … `5=very_high`) keeps the payload small. |
+| `GET /api/ratings/` | `api:ratings` | `{date_iso: {region_id: rating_int}}` — unified ratings endpoint (SNOW-239). Accepts optional `?d=YYYY-MM-DD` (restrict to one date) and `?country=ch\|fr\|at\|it` (restrict by country). Cold open uses `?d=<today>&country=ch` (~2 KB); first scrubber interaction uses `?country=ch` (full CH season, ~40 KB). Compact int encoding: `0=no_rating, 1=low, 2=moderate, 3=considerable, 4=high, 5=very_high`. Server-side `cache.get_or_set` keyed on `(country, date)` keeps DB hits to one per cache window (5 min for single-date, 1 h for full-season). |
 | `GET /api/resorts-by-region/` | `api:resorts_by_region` | `{region_id: [resort_name, …]}` — alphabetical; regions without resorts omitted |
 | `GET /api/resorts.geojson` | `api:resorts_geojson` | GeoJSON FeatureCollection of geocoded resorts (Points; `[lon, lat]` per RFC 7946); properties `id`, `name`, `region_id`, `needs_review` |
 | `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary` (L4 fixture regions); each feature has `properties.id` + `properties.name` |
 | `GET /api/major-regions.geojson` | `api:major_regions_geojson` | GeoJSON FeatureCollection of L1 EAWS major regions (e.g. `CH-4`, `CH-5`) with `properties.id` + `properties.name`. |
 | `GET /api/sub-regions.geojson` | `api:sub_regions_geojson` | GeoJSON FeatureCollection of L2 EAWS sub-regions (e.g. `CH-41`, `CH-42`) with `properties.id` + `properties.name`. |
-| `GET /api/region/<region_id>/summary/` | `api:region_summary` | `{peek, expanded}` — pre-rendered HTML fragments for the map drawer. `peek` is the compact bottom-sheet card; `expanded` is the full bulletin detail. Honours `?d=YYYY-MM-DD` so the drawer can show any scrubbed-to date. |
+| `GET /api/region/<region_id>/summary/` | `api:region_summary` | `{html, level}` — `html` is the server-rendered MapLibre Popup snippet (danger-rating chip + geographic breadcrumb); `level` is the rating string the JS uses to stamp `data-level` on the popup container for the border colour. Honours `?d=YYYY-MM-DD` so the popup can show any scrubbed-to date; returns 400 on a malformed value. |
 
-`today-summaries` uses the same `_select_default_issue` helper as the bulletin
-page (morning-update-wins-over-previous-evening), so the map and bulletin views
-always agree on which issue to show. Regions with no covering bulletin today are
-absent from the response; the map fill layer treats absence as `no_rating`.
-Stale/errored render models (`version: 0`) resolve to `rating: "no_rating"`.
+The data flow on map load is: `map.js` fetches `?d=<today>&country=ch` and
+`regions.geojson?country=ch` in parallel. Once both resolve, it calls
+`map.setFeatureState({source: 'regions', id: numericFeatureId}, {rating})` for
+each region, so the choropleth fill layer reads exclusively from feature-state
+(no property-based fallback). Regions with no bulletin today are absent from the
+ratings response; their feature-state is left unset and the `match` expression
+defaults to `no_rating`.
 
 The shared top-nav partial used on the map and other public pages is
 documented separately in [`nav_implementation_spec.md`](nav_implementation_spec.md).

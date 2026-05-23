@@ -170,7 +170,7 @@ resorts, and a working CTA to the bulletin page.
 
 ### Scenario M3: Regions with no bulletin render as no_rating
 
-**Goal**: Verify regions absent from `/api/today-summaries/` show as grey
+**Goal**: Verify regions absent from `/api/ratings/` show as grey
 and the sheet reflects that.
 
 | Step | Action | Expected Result |

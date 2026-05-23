@@ -35,7 +35,7 @@ def baseline_path(tmp_path: Path) -> Iterator[Path]:
 def monitored_urls() -> Iterator[list[tuple[str, str]]]:
     """Restrict the monitored URL list to a minimal, always-available pair."""
     minimal = [("home", "/"), ("map", "/map/")]
-    with patch.object(cmd_module, "MONITORED_URLS", minimal):
+    with patch.object(cmd_module, "_build_monitored_urls", return_value=minimal):
         yield minimal
 
 

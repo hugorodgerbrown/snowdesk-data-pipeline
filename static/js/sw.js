@@ -24,7 +24,7 @@
  *
  *   - Everything else           (most /api/* endpoints, third-party
  *                                origins like maplibre + tiles)
- *     → network-only. Bulletin JSON, today-summaries, calendar
+ *     → network-only. Bulletin JSON, ratings (/api/ratings/), calendar
  *     partials, and map tiles must always reflect server-side
  *     freshness; cached avalanche ratings are dangerous.
  *

@@ -8,7 +8,7 @@
  *
  * Data flow at load time:
  *   1. Read endpoint URLs from the #map element's data-* attributes.
- *   2. Fetch regions GeoJSON, today's summaries, and resorts in parallel.
+ *   2. Fetch regions GeoJSON, today's ratings, and resorts in parallel.
  *   3. Merge the three into per-feature rating state so the fill layer
  *      can colour each region via a MapLibre ``match`` expression.
  *   4. Wire up click and region-popup interactions.
@@ -49,20 +49,24 @@ const formatDateLong = (dateKey) => {
   return `${SCRUBBER_MONTHS[parseInt(m, 10) - 1]} ${parseInt(d, 10)} ${y}`;
 };
 
-// Lazily-fetched, cached payload from /api/season-ratings/. Shape:
+// Lazily-fetched, cached payload from /api/ratings/?country=ch. Shape:
 // { date_iso: { region_id: rating_int } }. Both timelapse (SNOW-46) and
 // the scrubber (SNOW-47) consume the same dataset; sharing one fetch
 // keeps the payload off the wire twice.
-let SEASON_RATINGS_URL = null;
+// SNOW-239: RATINGS_URL replaces the legacy season-ratings and today-summaries
+// URLs. The base URL is set once from data-ratings-url; each consumer appends
+// its own query string (?d=...&country=... for cold-open, ?country=ch for the
+// full-season scrubber/timelapse cache).
+let RATINGS_URL = null;
 let SEASON_RATINGS_PROMISE = null;
 
 const getSeasonRatings = () => {
   if (SEASON_RATINGS_PROMISE !== null) return SEASON_RATINGS_PROMISE;
-  if (!SEASON_RATINGS_URL) {
-    return Promise.reject(new Error('season-ratings URL not set'));
+  if (!RATINGS_URL) {
+    return Promise.reject(new Error('ratings URL not set'));
   }
-  SEASON_RATINGS_PROMISE = fetch(SEASON_RATINGS_URL).then((resp) => {
-    if (!resp.ok) throw new Error('season-ratings fetch failed');
+  SEASON_RATINGS_PROMISE = fetch(RATINGS_URL + '?country=ch').then((resp) => {
+    if (!resp.ok) throw new Error('ratings fetch failed');
     return resp.json();
   });
   return SEASON_RATINGS_PROMISE;
@@ -81,15 +85,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   }
 };
 
-// Clear per-feature rating state, reverting the choropleth to the
-// property-based ``rating`` written at page load (today's bulletins).
-const clearRegionRepaint = () => {
-  if (!MAP) return;
-  for (const feature of Object.values(FEATURE_BY_REGION_ID)) {
-    MAP.removeFeatureState({ source: 'regions', id: feature.id }, 'rating');
-  }
-};
-
 (function () {
   'use strict';
 
@@ -102,17 +97,16 @@ const clearRegionRepaint = () => {
   const MAJOR_REGIONS_URL   = mapEl.dataset.majorRegionsUrl;
   const SUB_REGIONS_URL     = mapEl.dataset.subRegionsUrl;
   const RESORTS_GEOJSON_URL = mapEl.dataset.resortsGeojsonUrl;
-  const SUMMARIES_URL     = mapEl.dataset.summariesUrl;
   const RESORTS_URL       = mapEl.dataset.resortsUrl;
   // The summary URL carries the literal placeholder __REGION__ which is
   // substituted with the tapped region's region_id at fetch time. Server
   // renders this via {% url 'api:region_summary' '__REGION__' %} so the
   // route name stays the single source of truth.
   const REGION_SUMMARY_URL_TEMPLATE = mapEl.dataset.regionSummaryUrl;
-  // Hand the season-ratings URL to module scope so the timelapse and
+  // SNOW-239: Hand the ratings URL to module scope so the timelapse and
   // scrubber IIFEs (defined further down in this file) can share one
-  // fetch via getSeasonRatings().
-  SEASON_RATINGS_URL = mapEl.dataset.seasonRatingsUrl;
+  // full-season fetch via getSeasonRatings().
+  RATINGS_URL = mapEl.dataset.ratingsUrl;
 
   // SNOW-58: Basemap layer picker — resolve the active style URL.
   //
@@ -225,9 +219,7 @@ const clearRegionRepaint = () => {
     }
   }
 
-  const BULLETIN_SUMMARIES = {};
   const RESORTS_BY_REGION  = {};
-  const RATINGS            = {};
 
   const RATING_COLOURS = {
     low:          '#ccff66',
@@ -330,12 +322,11 @@ const clearRegionRepaint = () => {
 
     // Fill layer — the choropleth.
     //
-    // Colour resolution prefers a feature-state ``rating`` if one is set
-    // (used by the SNOW-46 timelapse to recolour regions per frame
-    // without re-uploading the source) and falls back to the
-    // property-based ``rating`` written at load time. Removing the
-    // feature-state on stop reverts to the property colour, i.e. today's
-    // bulletins.
+    // SNOW-239: colour is driven entirely via feature-state ``rating`` —
+    // the coalesce(feature-state, properties) fallback has been removed.
+    // Every region's rating is written via setFeatureState at boot and
+    // on every scrubber/timelapse frame; unset state resolves to null,
+    // which falls through the ``match`` arms to the default no_rating colour.
     map.addLayer({
       id: 'regions-fill',
       type: 'fill',
@@ -343,7 +334,7 @@ const clearRegionRepaint = () => {
       paint: {
         'fill-color': [
           'match',
-          ['coalesce', ['feature-state', 'rating'], ['get', 'rating']],
+          ['feature-state', 'rating'],
           'low',          RATING_COLOURS.low,
           'moderate',     RATING_COLOURS.moderate,
           'considerable', RATING_COLOURS.considerable,
@@ -725,7 +716,8 @@ const clearRegionRepaint = () => {
           f.id = startId + i;
           const regionID = f.properties.id;
           f.properties.regionID = regionID;
-          f.properties.rating = RATINGS[regionID] || 'no_rating';
+          // SNOW-239: No property-based rating. Choropleth colour is
+          // set exclusively via setFeatureState after ratings arrive.
           REGION_LOOKUP[f.id] = f.properties;
           FEATURE_BY_ID[f.id] = f;
           FEATURE_BY_REGION_ID[regionID] = f;
@@ -763,6 +755,65 @@ const clearRegionRepaint = () => {
       }
 
       loadedCountries.add(code);
+
+      // SNOW-239: Fetch the new country's ratings and merge them into the
+      // season cache so scrubber/timelapse frames immediately include it.
+      // Also paint the current visible date so new regions colour straight
+      // away without waiting for the next scrubber interaction.
+      if (RATINGS_URL) {
+        const countryRatings = await fetch(RATINGS_URL + '?country=' + code)
+          .then(r => { if (!r.ok) throw new Error('ratings fetch failed'); return r.json(); })
+          .catch(() => null);
+        if (countryRatings) {
+          // Merge into SEASON_RATINGS_PROMISE payload if it has resolved.
+          if (SEASON_RATINGS_PROMISE) {
+            SEASON_RATINGS_PROMISE.then((cache) => {
+              for (const [dateKey, regions] of Object.entries(countryRatings)) {
+                if (!cache[dateKey]) cache[dateKey] = {};
+                Object.assign(cache[dateKey], regions);
+              }
+            }).catch(() => {});
+          }
+          // Paint the currently-displayed date for the new country's regions.
+          // We use the display date from countryRatings directly rather than
+          // relying on the season cache promise completing first.
+          if (MAP) {
+            // Determine which date is currently being displayed. The
+            // currentDisplayedDate var lives in the inner map.on('load') scope,
+            // so we read from the URL as a safe cross-scope fallback.
+            const displayDate = (() => {
+              const d = new URL(location.href).searchParams.get('d');
+              return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+            })();
+            const todayISO = new Date().toISOString().slice(0, 10);
+            const paintDate = displayDate || todayISO;
+            const frame = countryRatings[paintDate] || {};
+            // Mirror the paintTodayRatings guard: setFeatureState is a no-op
+            // if the source has not finished loading. Gate on isSourceLoaded
+            // and defer via a one-shot sourcedata listener if not yet ready.
+            const paintNewCountry = () => {
+              for (const [regionID, ratingInt] of Object.entries(frame)) {
+                const feature = FEATURE_BY_REGION_ID[regionID];
+                if (feature) {
+                  const rating = INT_TO_RATING[ratingInt] || 'no_rating';
+                  MAP.setFeatureState({ source: 'regions', id: feature.id }, { rating });
+                }
+              }
+            };
+            if (MAP.isSourceLoaded('regions')) {
+              paintNewCountry();
+            } else {
+              const onSourceReady = (e) => {
+                if (e.sourceId === 'regions' && MAP.isSourceLoaded('regions')) {
+                  MAP.off('sourcedata', onSourceReady);
+                  paintNewCountry();
+                }
+              };
+              MAP.on('sourcedata', onSourceReady);
+            }
+          }
+        }
+      }
     } catch (err) {
       console.warn('[map] Failed to load country', upper, err);
       // Leave toggle visually on so the user can retry — don't reset countryState.
@@ -858,16 +909,25 @@ const clearRegionRepaint = () => {
     // toggle via ensureOverlayLoaded (see above). This trims ~123 KB
     // uncompressed from the critical path on every default-preference
     // first-load.
-    const [geojson, summaries, resorts] =
+    //
+    // SNOW-239: today-summaries replaced by a compact ratings fetch
+    // (?d=<today>&country=ch, ~2 KB). Choropleth is painted via
+    // setFeatureState — no more property-based rating on features.
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const [geojson, todayRatingsPayload, resorts] =
       await Promise.all([
         fetch(REGIONS_URL + '?country=ch').then(r => r.json()),
-        fetch(SUMMARIES_URL).then(r => r.json()),
+        RATINGS_URL
+          ? fetch(RATINGS_URL + '?d=' + todayISO + '&country=ch').then(r => {
+              if (!r.ok) throw new Error('ratings fetch failed');
+              return r.json();
+            }).catch(() => ({}))
+          : Promise.resolve({}),
         fetch(RESORTS_URL).then(r => r.json()),
       ]);
-    Object.assign(BULLETIN_SUMMARIES, summaries);
     Object.assign(RESORTS_BY_REGION, resorts);
-    // Derive RATINGS from summaries — single source of truth for the choropleth.
-    for (const [id, s] of Object.entries(summaries)) RATINGS[id] = s.rating;
+    // todayRatingsPayload shape: { "YYYY-MM-DD": { region_id: rating_int } }
+    const todayRatings = todayRatingsPayload[todayISO] || {};
 
     // Assign a numeric id to every feature and build the lookup.
     // MapLibre's feature-state API requires numeric ids; regionID is a string
@@ -878,7 +938,8 @@ const clearRegionRepaint = () => {
       // properties.regionID so the rest of the code has a stable name.
       const regionID = f.properties.id;
       f.properties.regionID = regionID;
-      f.properties.rating = RATINGS[regionID] || 'no_rating';
+      // SNOW-239: no property-based rating; colour set via setFeatureState
+      // below once the source is installed and the features are loadable.
       REGION_LOOKUP[i] = f.properties;
       FEATURE_BY_ID[i] = f;
       FEATURE_BY_REGION_ID[regionID] = f;
@@ -897,6 +958,33 @@ const clearRegionRepaint = () => {
     // SNOW-172: CH geometry is now loaded; record it and apply initial filter.
     loadedCountries.add('ch');
     applyCountryFilters();
+
+    // SNOW-239: Paint today's choropleth via setFeatureState.
+    // Gate on the 'data' event so setFeatureState calls stick —
+    // if ratings resolved before the source finished loading, the calls
+    // would silently no-op. The source emits 'data' with isSourceLoaded
+    // once all features are available; we register a one-shot listener
+    // that fires the paint loop and then removes itself.
+    const paintTodayRatings = () => {
+      for (const [regionID, ratingInt] of Object.entries(todayRatings)) {
+        const feature = FEATURE_BY_REGION_ID[regionID];
+        if (feature) {
+          const rating = INT_TO_RATING[ratingInt] || 'no_rating';
+          map.setFeatureState({ source: 'regions', id: feature.id }, { rating });
+        }
+      }
+    };
+    if (map.isSourceLoaded('regions')) {
+      paintTodayRatings();
+    } else {
+      const onSourceData = (e) => {
+        if (e.sourceId === 'regions' && map.isSourceLoaded('regions')) {
+          map.off('sourcedata', onSourceData);
+          paintTodayRatings();
+        }
+      };
+      map.on('sourcedata', onSourceData);
+    }
 
     // Restore any countries that were previously enabled in localStorage.
     for (const code of COUNTRY_KEYS) {

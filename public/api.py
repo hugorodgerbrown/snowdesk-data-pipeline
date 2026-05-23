@@ -4,10 +4,9 @@ public/api.py — JSON endpoints for the interactive map and share feature.
 Lightweight endpoints consumed by ``static/js/map.js`` to render the
 Swiss region choropleth and back the per-region tooltip:
 
-* ``/api/today-summaries/``                — per-region danger summary for today.
-* ``/api/season-ratings/``                 — ``{date: {region_id: rating_int}}``
-  for the entire stored dataset (consumed by the timelapse debug button and,
-  later, the season scrubber).
+* ``/api/ratings/``                        — ``{date_iso: {region_id: rating_int}}``
+  filtered by optional ``?d=YYYY-MM-DD`` and ``?country=ch|fr|at|it`` query params.
+  Replaces the legacy ``today-summaries`` and ``season-ratings`` endpoints (SNOW-239).
 * ``/api/resorts-by-region/``              — ``{region_id: [resort_name, ...]}``.
 * ``/api/resorts.geojson``                 — FeatureCollection of geocoded resorts.
 * ``/api/regions.geojson``                 — FeatureCollection of L4 region polygons.
@@ -34,11 +33,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 from datetime import date
 from typing import Any
 
 import waffle
+from django.core.cache import cache
 from django.db import IntegrityError
 from django.http import Http404, HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -50,7 +51,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
 from django_ratelimit.decorators import ratelimit
 
-from bulletins.models import Bulletin, BulletinShare, RegionBulletin, RegionDayRating
+from bulletins.models import Bulletin, BulletinShare, RegionDayRating
 from regions.models import (
     MajorRegion,
     MicroRegion,
@@ -59,10 +60,8 @@ from regions.models import (
 )
 
 from .views import (
-    _PROBLEM_LABELS,
     _resolve_region_for_bulletin,
     _select_bulletin_for_date,
-    _select_default_issue,
 )
 
 # ISO 3166-1 alpha-2 → English country name mapping. Used by the region
@@ -84,7 +83,7 @@ _VALID_GEOJSON_COUNTRIES: frozenset[str] = frozenset(COUNTRY_NAMES)
 # correctly and the session middleware cannot append Vary: Cookie.
 _GEOJSON_CACHE_MAX_AGE = 86400
 
-# Cache lifetime for dynamic-but-slow-moving map endpoints (today-summaries,
+# Cache lifetime for dynamic-but-slow-moving map endpoints (ratings,
 # resorts-by-region, resorts.geojson). Content only changes when a pipeline
 # run lands new bulletins or an operator edits a resort; 5 minutes bounds the
 # staleness while letting browsers and edge caches absorb the bulk of repeat
@@ -105,188 +104,7 @@ _SWISS_BBOX: tuple[float, float, float, float] = (5.9, 45.8, 10.5, 47.8)
 # Helpers
 # ---------------------------------------------------------------------------
 
-_ASPECT_JOIN = ", "
-
-
-def _format_elevation(elevation: dict[str, Any] | None) -> str:
-    """
-    Render a render_model ``elevation`` dict as a human-readable band.
-
-    The render model stores elevation as ``{lower, upper, treeline}``.
-    This returns strings like ``"above 2200 m"``, ``"below 1800 m"``,
-    ``"1200 m – 2400 m"``, or ``""`` when no bounds are set.
-
-    Args:
-        elevation: Render-model elevation dict, or ``None``.
-
-    Returns:
-        A concise display string (may be empty).
-
-    """
-    if not elevation:
-        return ""
-    lower = elevation.get("lower")
-    upper = elevation.get("upper")
-    if lower and upper:
-        return f"{lower} m – {upper} m"
-    if lower:
-        return f"above {lower} m"
-    if upper:
-        return f"below {upper} m"
-    if elevation.get("treeline"):
-        return "around the treeline"
-    return ""
-
-
-def _format_aspects(aspects: list[str] | None) -> str:
-    """
-    Render a render_model ``aspects`` list as a display string.
-
-    Eight aspects → ``"all aspects"``; otherwise a comma-joined list
-    preserving the input order.
-
-    Args:
-        aspects: Render-model aspects list, or ``None``.
-
-    Returns:
-        A comma-joined display string (may be empty).
-
-    """
-    if not aspects:
-        return ""
-    if len(aspects) >= 8:
-        return "all aspects"
-    return _ASPECT_JOIN.join(aspects)
-
-
-def _summary_for_bulletin(bulletin: Bulletin, region_name: str) -> dict[str, Any]:
-    """
-    Build a single-region summary dict from a bulletin's render_model.
-
-    Pulls the headline danger rating and the dominant (first) trait's
-    first problem for the dashboard sheet. The JS only displays
-    ``rating``/``subdivision`` in the current design, but the other
-    fields are populated so future sheet layouts can show them without
-    a round-trip change.
-
-    Args:
-        bulletin: The Bulletin to summarise.
-        region_name: Region display name at the time of this bulletin.
-
-    Returns:
-        A dict with ``rating``, ``subdivision``, ``problem``,
-        ``elevation``, ``aspects``, ``valid_from``, ``valid_to``,
-        and ``name`` keys.
-
-    """
-    rm = bulletin.render_model or {}
-    danger = rm.get("danger") or {}
-    rating = danger.get("key") or "no_rating"
-    subdivision = danger.get("subdivision")
-
-    problem_label: str = ""
-    elevation_text: str = ""
-    aspects_text: str = ""
-
-    traits = rm.get("traits") or []
-    if traits:
-        first_trait = traits[0]
-        problems = first_trait.get("problems") or []
-        if problems:
-            first_problem = problems[0]
-            ptype = first_problem.get("problem_type", "")
-            problem_label = _PROBLEM_LABELS.get(
-                ptype, ptype.replace("_", " ").capitalize()
-            )
-            elevation_text = _format_elevation(first_problem.get("elevation"))
-            aspects_text = _format_aspects(first_problem.get("aspects"))
-
-    return {
-        "rating": rating,
-        "subdivision": subdivision,
-        "problem": problem_label,
-        "elevation": elevation_text,
-        "aspects": aspects_text,
-        "valid_from": bulletin.valid_from.isoformat(),
-        "valid_to": bulletin.valid_to.isoformat(),
-        "name": region_name,
-    }
-
-
-@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
-@vary_on_headers("Accept-Encoding")
-def today_summaries(request: HttpRequest) -> JsonResponse:
-    """
-    Return per-region danger summaries for today.
-
-    Response shape::
-
-        {
-          "CH-4115": {
-            "rating": "considerable",
-            "subdivision": "plus",
-            "problem": "Persistent weak layers",
-            "elevation": "above 2200 m",
-            "aspects": "all aspects",
-            "valid_from": "2026-03-15T06:00:00+00:00",
-            "valid_to":   "2026-03-15T17:00:00+00:00",
-            "name":       "Martigny – Verbier"
-          },
-          ...
-        }
-
-    Regions with no covering bulletin today are simply absent from the
-    response — the map's fill layer falls back to ``no_rating`` colour.
-
-    Args:
-        request: The incoming HTTP request.
-
-    Returns:
-        A JsonResponse mapping region_id → summary dict.
-
-    """
-    today = timezone.localdate()
-
-    # Batch fetch: every RegionBulletin link whose bulletin touches today.
-    # One query, materialised in memory — we then run per-region selection
-    # logic (morning-vs-evening rules) on the grouped lists.
-    links = (
-        RegionBulletin.objects.filter(
-            bulletin__valid_from__date__lte=today,
-            bulletin__valid_to__date__gte=today,
-        )
-        .select_related("region", "bulletin")
-        .order_by("bulletin__valid_from")
-    )
-
-    issues_by_region: dict[str, list[Bulletin]] = {}
-    names_by_region: dict[str, str] = {}
-    for link in links:
-        region_id = link.region.region_id
-        issues_by_region.setdefault(region_id, []).append(link.bulletin)
-        # Always use the EAWS canonical name from MicroRegion.
-        # ``RegionBulletin.region_name_at_time`` carries the per-bulletin
-        # label SLF publishes alongside each ``regionID`` — those labels
-        # are not the EAWS canonical name (SLF labels CH-2133 "Stoos"
-        # whereas the EAWS reference calls it "Küssnacht - Arth"), so
-        # they produced visibly-wrong region labels on the map and
-        # bulletin page. The field is kept on the model as an
-        # ingestion-time audit trail but is no longer used for display.
-        names_by_region[region_id] = link.region.name
-
-    summaries: dict[str, dict[str, Any]] = {}
-    for region_id, issues in issues_by_region.items():
-        selected = _select_default_issue(issues, today)
-        if selected is None:
-            continue
-        summaries[region_id] = _summary_for_bulletin(
-            selected, names_by_region[region_id]
-        )
-
-    return JsonResponse(summaries)
-
-
-# Compact int encoding for the season-ratings choropleth. Order matches the
+# Compact int encoding for the ratings choropleth. Order matches the
 # danger scale so the value can also be used directly as a sort key. Promoted
 # from SNOW-45's perf spike harness.
 _RATING_TO_INT: dict[str, int] = {
@@ -299,30 +117,64 @@ _RATING_TO_INT: dict[str, int] = {
 }
 
 
+def _build_ratings_payload(
+    parsed_date: date | None,
+    country_param: str,
+) -> dict[str, dict[str, int]]:
+    """
+    Build the ``{date_iso: {region_id: rating_int}}`` payload from the DB.
+
+    Queries ``RegionDayRating`` filtered by the supplied date and/or
+    country, encodes each rating via ``_RATING_TO_INT``, and groups by
+    ISO date string. Called lazily from ``cache.get_or_set`` in the
+    ``ratings`` view so the full query only runs once per cache window.
+
+    Args:
+        parsed_date: If set, restrict to rows for this date only.
+        country_param: Uppercase ISO-2 country code, e.g. ``"CH"``. Pass
+            an empty string to include all countries.
+
+    Returns:
+        A dict mapping ISO date string to ``{region_id: rating_int}``.
+
+    """
+    qs = RegionDayRating.objects.values_list("date", "region__region_id", "max_rating")
+    if parsed_date:
+        qs = qs.filter(date=parsed_date)
+    if country_param:
+        qs = qs.filter(region__subregion__major__country=country_param)
+    qs = qs.order_by("date", "region__region_id")
+    payload: dict[str, dict[str, int]] = {}
+    for row_date, region_id, rating in qs:
+        payload.setdefault(row_date.isoformat(), {})[region_id] = _RATING_TO_INT[rating]
+    return payload
+
+
 @cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
 @vary_on_headers("Accept-Encoding")
-def season_ratings(request: HttpRequest) -> JsonResponse:
+def ratings(request: HttpRequest) -> JsonResponse:
     """
-    Return the whole-season bundle of per-region danger ratings.
+    Return a compact ``{date_iso: {region_id: rating_int}}`` ratings bundle.
 
-    Response shape::
+    Accepts optional query parameters:
 
-        {
-          "2026-01-15": {"CH-4115": 3, "CH-4116": 2, ...},
-          "2026-01-16": {"CH-4115": 4, ...},
-          ...
-        }
+    * ``?d=YYYY-MM-DD``          — restrict to a single date (cold-open path).
+    * ``?country=ch|fr|at|it``   — restrict to one country (case-insensitive).
 
-    Each rating is encoded as an int on the danger scale (0–5) via
-    ``_RATING_TO_INT`` to keep the payload small — the timelapse and
-    scrubber consumers only need the tile colour, not the prose summary.
-    Regions with no row for a given date are simply absent from that
-    date's inner dict.
+    Combining both parameters returns a single-key dict for that date and
+    country — the cold-open path uses ``?d=<today>&country=ch`` to fetch
+    ~2 KB instead of the full season payload.
 
-    The handler iterates ``.values_list`` to avoid instantiating model
-    objects; the JSON encoder still materialises the dict in memory but
-    that matches what a real ``WholeSeasonResponse`` would look like on
-    the wire.
+    Each rating int maps to the EAWS danger scale: 0=no_rating, 1=low,
+    2=moderate, 3=considerable, 4=high, 5=very_high.
+
+    Server-side ``cache.get_or_set`` keyed on ``(country, date)`` keeps DB
+    hits to one per cache window. The HTTP ``Cache-Control: public,
+    max-age=300`` header is applied by the ``@cache_control`` decorator.
+
+    Errors:
+        400 — unknown country code.
+        400 — malformed ``?d=`` date string.
 
     Args:
         request: The incoming HTTP request.
@@ -331,14 +183,38 @@ def season_ratings(request: HttpRequest) -> JsonResponse:
         A JsonResponse mapping ISO date → {region_id: rating_int}.
 
     """
-    rows = (
-        RegionDayRating.objects.all()
-        .values_list("date", "region__region_id", "max_rating")
-        .order_by("date", "region__region_id")
+    date_param = request.GET.get("d")
+    country_param = (request.GET.get("country") or "").upper()
+
+    if country_param and country_param not in _VALID_GEOJSON_COUNTRIES:
+        return JsonResponse({"error": "unknown country"}, status=400)
+
+    parsed_date: date | None = None
+    if date_param:
+        # Enforce the strict YYYY-MM-DD wire format. Python 3.11+
+        # accepts "YYYYMMDD" (no separators) via date.fromisoformat(),
+        # but we only accept hyphenated ISO dates from callers.
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_param):
+            return JsonResponse({"error": "malformed date"}, status=400)
+        try:
+            parsed_date = date.fromisoformat(date_param)
+        except ValueError:
+            return JsonResponse({"error": "malformed date"}, status=400)
+
+    cache_key = (
+        f"ratings:{country_param.lower() or 'all'}:"
+        f"{parsed_date.isoformat() if parsed_date else 'season'}"
     )
-    payload: dict[str, dict[str, int]] = {}
-    for row_date, region_id, rating in rows:
-        payload.setdefault(row_date.isoformat(), {})[region_id] = _RATING_TO_INT[rating]
+    # Use a longer TTL for full-season payloads (no single-date
+    # column moves intra-day) and the standard 5-minute TTL for
+    # single-date responses so today's column updates promptly.
+    ttl = 300 if parsed_date else 3600
+
+    payload = cache.get_or_set(
+        cache_key,
+        lambda: _build_ratings_payload(parsed_date, country_param),
+        timeout=ttl,
+    )
     return JsonResponse(payload)
 
 
