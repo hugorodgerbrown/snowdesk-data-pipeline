@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 from datetime import date
 from typing import Any
@@ -190,6 +191,11 @@ def ratings(request: HttpRequest) -> JsonResponse:
 
     parsed_date: date | None = None
     if date_param:
+        # Enforce the strict YYYY-MM-DD wire format. Python 3.11+
+        # accepts "YYYYMMDD" (no separators) via date.fromisoformat(),
+        # but we only accept hyphenated ISO dates from callers.
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_param):
+            return JsonResponse({"error": "malformed date"}, status=400)
         try:
             parsed_date = date.fromisoformat(date_param)
         except ValueError:

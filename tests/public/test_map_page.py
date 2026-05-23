@@ -37,15 +37,16 @@ def test_map_page_renders() -> None:
 @pytest.mark.django_db
 def test_map_page_injects_api_urls() -> None:
     """
-    The four API URLs resolve via ``{% url %}`` and are exposed to JS
-    through data-* attributes on the #map element. SNOW-78 added the
-    resorts-geojson URL alongside the regions/summaries/resorts trio.
+    The API URLs resolve via ``{% url %}`` and are exposed to JS through
+    data-* attributes on the #map element. SNOW-239 replaced the legacy
+    data-summaries-url + data-season-ratings-url with a single
+    data-ratings-url pointing at the unified /api/ratings/ endpoint.
     """
     client = Client()
     response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert f'data-regions-url="{reverse("api:regions_geojson")}"' in content
-    assert f'data-summaries-url="{reverse("api:today_summaries")}"' in content
+    assert f'data-ratings-url="{reverse("api:ratings")}"' in content
     assert f'data-resorts-url="{reverse("api:resorts_by_region")}"' in content
     assert f'data-resorts-geojson-url="{reverse("api:resorts_geojson")}"' in content
 
