@@ -5,6 +5,8 @@ run_scheduler management command.
 Covers:
   - ``call_command("run_scheduler")`` calls ``build_scheduler().start()``.
   - The command does not raise on SIGINT/KeyboardInterrupt.
+  - The command propagates non-KeyboardInterrupt exceptions so Render
+    crash-loops on a genuine startup failure.
 """
 
 from __future__ import annotations
@@ -17,7 +19,6 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from django.core.management import call_command
 
 
-@pytest.mark.django_db
 def test_run_scheduler_starts_scheduler() -> None:
     """run_scheduler builds the scheduler and calls start()."""
     mock_scheduler = mock.MagicMock(spec=BlockingScheduler)
@@ -38,7 +39,6 @@ def test_run_scheduler_starts_scheduler() -> None:
     mock_scheduler.start.assert_called_once_with()
 
 
-@pytest.mark.django_db
 def test_run_scheduler_handles_keyboard_interrupt() -> None:
     """run_scheduler exits cleanly when start() raises KeyboardInterrupt."""
     mock_scheduler = mock.MagicMock(spec=BlockingScheduler)
@@ -53,3 +53,18 @@ def test_run_scheduler_handles_keyboard_interrupt() -> None:
         call_command("run_scheduler", verbosity=0, stdout=StringIO())
 
     mock_scheduler.start.assert_called_once_with()
+
+
+def test_run_scheduler_propagates_startup_failure() -> None:
+    """run_scheduler propagates non-KeyboardInterrupt exceptions.
+
+    If build_scheduler() itself raises (e.g. misconfigured settings), the
+    exception must escape the command so Render sees a non-zero exit and
+    crash-loops the worker rather than silently swallowing the error.
+    """
+    with mock.patch(
+        "schedule.build_scheduler",
+        side_effect=RuntimeError("bad config"),
+    ):
+        with pytest.raises(RuntimeError, match="bad config"):
+            call_command("run_scheduler", verbosity=0, stdout=StringIO())
