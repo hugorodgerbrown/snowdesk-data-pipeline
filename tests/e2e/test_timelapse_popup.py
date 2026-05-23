@@ -1,37 +1,54 @@
 """
-tests/e2e/test_timelapse_popup.py — Playwright smoke tests for timelapse/popup interaction.
+tests/e2e/test_timelapse_popup.py — Playwright tests for timelapse/popup interaction.
 
 Verifies the plumbing introduced by SNOW-240:
 
 1. The ``snowdesk:date-changed`` and ``snowdesk:timelapse-state`` listeners are
    registered at outer-IIFE scope, so they fire in offline headless environments
    where ``map.on('load')`` never runs.
-2. The IS_PLAYING flag gates the ``refreshActivePopupForDate`` call path: events
-   during playback do not trigger ``/api/region/<id>/summary/`` requests.
+2. The IS_PLAYING flag genuinely gates the ``_refreshActivePopupForDate`` call
+   path: events during playback do not invoke the refresh function, and events
+   after stop do invoke it.  This is verified by:
+     a. Injecting a spy via ``window.__snowdesk_test.setRefreshFn()``.
+     b. Controlling IS_PLAYING directly via ``window.__snowdesk_test.setIsPlaying()``.
+   Both hooks are exposed only when ``window.__SNOWDESK_TEST_MODE__ = true`` was
+   set before navigation (via ``page.add_init_script``); they are entirely absent
+   in production.
 3. Both playback transitions (play → stop) complete cleanly without JS errors,
    and the IS_PLAYING state machine behaves correctly across both edges.
 
-Note: in this headless context there is no active popup (the basemap never
-loads), so ``refreshActivePopupForDate`` returns early regardless of IS_PLAYING.
-The "no summary request" assertions guard against spurious network calls at the
-event-listener level.  The IS_PLAYING guard's effect when a popup IS open is
-covered by integration tests against a fully-loaded map.
+Test-mode hook
+--------------
+``window.__SNOWDESK_TEST_MODE__ = true`` is set via ``page.add_init_script``
+before navigation so it is visible when ``map.js`` executes.  When the flag is
+present, ``map.js`` exposes ``window.__snowdesk_test`` with:
 
-The tests use Playwright's ``page.route()`` to stub the season-ratings endpoint
-so the scrubber can enter its 'ready' state without real data.  The basemap
-tile service is not intercepted — MapLibre gracefully handles an offline style
-fetch (the 'load' event simply never fires).
+- ``setRefreshFn(fn)`` — replaces the inner ``_refreshActivePopupForDate``
+  forwarding variable with a caller-supplied function.  The
+  ``snowdesk:date-changed`` listener calls through this variable, so injecting
+  a spy makes the IS_PLAYING guard observable without the basemap loading.
+- ``getIsPlaying()`` — returns the current value of the module-scope
+  ``IS_PLAYING`` variable.
+- ``setIsPlaying(bool)`` — sets ``IS_PLAYING`` directly, bypassing the
+  ``timelapseInit()`` start()/stop() functions (which require a loaded map
+  and populated sortedDates).  This lets the guard tests control state without
+  the basemap.
 
-The events dispatched in these tests are synthetic ``CustomEvent`` dispatches
-that mirror what ``timelapseInit()``'s ``start()`` and ``stop()`` functions
-dispatch; the ``document.addEventListener`` calls that handle them are
-registered at outer-IIFE scope (not inside ``map.on('load')``), so they are
-active before the map's own 'load' event fires.
+The hook is absent from production (no ``window.__SNOWDESK_TEST_MODE__``).
+
+Why ``setIsPlaying`` rather than dispatching ``snowdesk:timelapse-state``
+-------------------------------------------------------------------------
+``IS_PLAYING`` is set directly by ``timelapseInit()``'s ``start()`` and
+``stop()`` functions *before* they dispatch ``snowdesk:timelapse-state``.  The
+main IIFE's ``timelapse-state`` listener does NOT update ``IS_PLAYING`` — it
+only calls ``_clearTooltip()``.  So dispatching the event alone does not
+change IS_PLAYING in headless tests; ``setIsPlaying`` is the correct hook.
 """
 
 from __future__ import annotations
 
 import json
+from typing import cast
 
 from playwright.sync_api import Page, Route
 from pytest_django.live_server_helper import LiveServer
@@ -72,8 +89,7 @@ def _wait_for_scrubber_ready(page: Page, timeout: float = 15_000) -> None:
     """Block until the season scrubber enters 'ready' state.
 
     The scrubber's data-state attribute transitions from 'loading' to 'ready'
-    once the season-ratings fetch resolves.  When ready, the play button is
-    active and ``sortedDates`` is populated inside ``timelapseInit()``.
+    once the season-ratings fetch resolves.
     """
     page.wait_for_selector(
         "#season-scrubber[data-state='ready']",
@@ -84,10 +100,11 @@ def _wait_for_scrubber_ready(page: Page, timeout: float = 15_000) -> None:
 def _dispatch_timelapse_state(page: Page, *, playing: bool) -> None:
     """Dispatch ``snowdesk:timelapse-state`` with the given playing flag.
 
-    This mirrors what ``timelapseInit()``'s ``start()`` and ``stop()``
-    functions dispatch.  The main IIFE listens for this event and calls
-    ``clearTooltip()`` when ``playing`` is true, and sets ``IS_PLAYING``
-    which gates the ``snowdesk:date-changed`` popup-refresh path.
+    Note: this does NOT update IS_PLAYING — the real start()/stop() functions
+    set IS_PLAYING directly before dispatching the event.  Use
+    ``window.__snowdesk_test.setIsPlaying()`` to control IS_PLAYING in tests.
+    This helper is kept for the smoke tests that verify the listener fires
+    without errors.
     """
     page.evaluate(
         """(playing) => {
@@ -114,96 +131,209 @@ def _dispatch_date_changed(page: Page, date_key: str) -> None:
 
 
 def _navigate_and_wait(page: Page, live_server_url: str) -> None:
-    """Navigate to /map/ and wait for the scrubber to be ready.
-
-    This is the common setup for all timelapse tests: load the page, let the
-    season-ratings stub resolve so the scrubber transitions from 'loading' to
-    'ready', and then hand control back to the test body.
-    """
+    """Navigate to /map/ and wait for the scrubber to be ready."""
     _setup_routes(page, live_server_url)
     page.goto(f"{live_server_url}/map/")
     page.wait_for_load_state("domcontentloaded")
     _wait_for_scrubber_ready(page)
 
 
+def _install_refresh_spy(page: Page) -> None:
+    """Inject a spy into ``_refreshActivePopupForDate`` via the test hook.
+
+    The spy records each call by pushing the date argument onto
+    ``window.__refresh_calls``.  Requires ``window.__SNOWDESK_TEST_MODE__ = true``
+    to have been set before navigation.
+    """
+    page.evaluate("""() => {
+        window.__refresh_calls = [];
+        window.__snowdesk_test.setRefreshFn((dateKey) => {
+            window.__refresh_calls.push(dateKey);
+        });
+    }""")
+
+
+def _get_refresh_calls(page: Page) -> list[str]:
+    """Return the list of date keys passed to the spy since it was installed."""
+    return cast(list[str], page.evaluate("() => window.__refresh_calls"))
+
+
+def _assert_test_hook_present(page: Page) -> None:
+    """Assert that the test hook is exposed (fails fast if hook is missing)."""
+    has_hook: bool = page.evaluate(
+        "() => typeof window.__snowdesk_test !== 'undefined' "
+        "&& typeof window.__snowdesk_test.setRefreshFn === 'function'"
+    )
+    assert has_hook, (
+        "window.__snowdesk_test not set — did you add "
+        "page.add_init_script('window.__SNOWDESK_TEST_MODE__ = true;') "
+        "before navigating?"
+    )
+
+
 # ---------------------------------------------------------------------------
-# Tests
+# IS_PLAYING guard tests — these are the load-bearing tests.
+# Both fail immediately if the ``if (!IS_PLAYING)`` guard is removed from the
+# ``snowdesk:date-changed`` listener in map.js.
 # ---------------------------------------------------------------------------
 
 
-def test_date_changed_during_playback_skips_summary_fetch(
+def test_is_playing_guard_blocks_refresh_fn(
     live_server: LiveServer,
     page: Page,
     _load_test_data: None,
 ) -> None:
-    """``snowdesk:date-changed`` events fire without errors during playback.
+    """IS_PLAYING=true prevents the refresh fn from being called on date-changed.
 
-    Sets IS_PLAYING to true via ``snowdesk:timelapse-state``, then fires
-    ``snowdesk:date-changed`` events (simulating several timelapse frames) and
-    asserts that no ``/api/region/<id>/summary/`` requests are made and no JS
-    errors occur.
+    This test FAILS if the ``if (!IS_PLAYING)`` guard is removed from the
+    ``snowdesk:date-changed`` listener in ``map.js``.
 
-    In this offline headless context there is no active popup (the map never
-    fully loads), so ``refreshActivePopupForDate`` would be a no-op regardless.
-    What this test guards is that the ``snowdesk:date-changed`` listener is
-    registered at outer-IIFE scope (firing before ``map.on('load')``), that the
-    IS_PLAYING flag gates the call path without error, and that no spurious
-    requests escape to the network.
+    Sets ``window.__SNOWDESK_TEST_MODE__ = true`` before navigation so
+    ``map.js`` exposes ``window.__snowdesk_test``.  After load:
+
+    1. Installs a spy via ``setRefreshFn()`` — any call to the inner
+       ``_refreshActivePopupForDate`` is recorded.
+    2. Sets IS_PLAYING=true directly via ``setIsPlaying(true)`` (bypassing
+       start(), which requires a loaded map).
+    3. Fires ``snowdesk:date-changed`` and asserts the spy was NOT called.
     """
+    page.add_init_script("window.__SNOWDESK_TEST_MODE__ = true;")
     _navigate_and_wait(page, live_server.url)
+    _assert_test_hook_present(page)
+    _install_refresh_spy(page)
 
-    summary_requests: list[str] = []
-    page.on(
-        "request",
-        lambda req: (
-            summary_requests.append(req.url)
-            if "/api/region/" in req.url and "/summary/" in req.url
-            else None
-        ),
-    )
+    # Set IS_PLAYING directly — the timelapse-state event alone does not do this.
+    page.evaluate("() => window.__snowdesk_test.setIsPlaying(true)")
+    assert page.evaluate("() => window.__snowdesk_test.getIsPlaying()") is True
 
-    # Signal that playback has started — sets IS_PLAYING.
-    _dispatch_timelapse_state(page, playing=True)
-
-    # Simulate several frame advances.
+    # Fire several date-changed frames while playing.
     for date_key in ["2026-04-07", "2026-04-08"]:
         _dispatch_date_changed(page, date_key)
 
-    # Allow any async fetch a moment to fire — it should not.
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(200)
 
-    assert summary_requests == [], (
-        f"Expected no region summary requests during playback, got: {summary_requests}"
+    calls = _get_refresh_calls(page)
+    assert calls == [], (
+        f"IS_PLAYING guard failed: refresh fn was called {len(calls)} time(s) "
+        f"during playback with dates: {calls}"
     )
 
 
-def test_date_changed_after_stop_does_not_throw(
+def test_is_playing_guard_allows_refresh_fn_when_not_playing(
     live_server: LiveServer,
     page: Page,
     _load_test_data: None,
 ) -> None:
-    """After stopping playback IS_PLAYING is cleared; date-changed runs without error.
+    """IS_PLAYING=false allows the refresh fn to be called on date-changed.
 
-    Once ``snowdesk:timelapse-state { playing: false }`` clears IS_PLAYING,
-    the ``snowdesk:date-changed`` handler calls ``refreshActivePopupForDate``
-    again.  With no active popup open that function returns early (guards on
-    ``activePopup``), so no network request is made — but no JS error is raised
-    either.  This test confirms the guard is correctly lifted.
+    Positive counterpart to the blocking test: confirms the spy IS called when
+    IS_PLAYING is false, so together the two tests prove the guard has real
+    effect.
     """
+    page.add_init_script("window.__SNOWDESK_TEST_MODE__ = true;")
+    _navigate_and_wait(page, live_server.url)
+    _assert_test_hook_present(page)
+    _install_refresh_spy(page)
+
+    # IS_PLAYING defaults to false; confirm before proceeding.
+    assert page.evaluate("() => window.__snowdesk_test.getIsPlaying()") is False
+
+    # Fire a date-changed while NOT playing.
+    _dispatch_date_changed(page, "2026-04-08")
+
+    page.wait_for_timeout(200)
+
+    calls = _get_refresh_calls(page)
+    assert calls == ["2026-04-08"], (
+        f"Expected refresh fn called once with '2026-04-08', got: {calls}"
+    )
+
+
+def test_is_playing_guard_blocked_then_allowed_after_stop(
+    live_server: LiveServer,
+    page: Page,
+    _load_test_data: None,
+) -> None:
+    """IS_PLAYING gate correctly transitions: blocked while playing, open after stop.
+
+    Combined test: starts playback (spy not called), stops playback (spy called
+    on next date-changed).  Verifies the full play → stop lifecycle of the guard.
+
+    This test FAILS if the ``if (!IS_PLAYING)`` guard is removed, because the
+    spy would be called during the playback phase.
+    """
+    page.add_init_script("window.__SNOWDESK_TEST_MODE__ = true;")
+    _navigate_and_wait(page, live_server.url)
+    _assert_test_hook_present(page)
+    _install_refresh_spy(page)
+
+    # Simulate playback starting — guard should block the refresh fn.
+    page.evaluate("() => window.__snowdesk_test.setIsPlaying(true)")
+    _dispatch_date_changed(page, "2026-04-07")
+    page.wait_for_timeout(200)
+
+    calls_during_play = _get_refresh_calls(page)
+    assert calls_during_play == [], (
+        f"Refresh fn called during playback: {calls_during_play}"
+    )
+
+    # Simulate playback stopping — guard should now allow the refresh fn.
+    page.evaluate("() => window.__snowdesk_test.setIsPlaying(false)")
+    _dispatch_date_changed(page, "2026-04-08")
+    page.wait_for_timeout(200)
+
+    calls_after_stop = _get_refresh_calls(page)
+    assert calls_after_stop == ["2026-04-08"], (
+        f"Expected refresh fn called once after stop, got: {calls_after_stop}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Smoke tests — no test hook required, verify the listeners fire without errors.
+# ---------------------------------------------------------------------------
+
+
+def test_date_changed_during_playback_no_js_errors(
+    live_server: LiveServer,
+    page: Page,
+    _load_test_data: None,
+) -> None:
+    """``snowdesk:date-changed`` events during playback produce no JS errors.
+
+    Complements the spy-based guard tests: confirms the guard code path itself
+    does not throw when IS_PLAYING is true.  No test hook needed — just
+    dispatch events and check for errors.
+    """
+    _navigate_and_wait(page, live_server.url)
+
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
+
+    # Dispatch timelapse-state; note IS_PLAYING is not updated by this event
+    # in the main IIFE, but the test is only checking for absence of errors.
+    _dispatch_timelapse_state(page, playing=True)
+    for date_key in ["2026-04-07", "2026-04-08"]:
+        _dispatch_date_changed(page, date_key)
+
+    page.wait_for_timeout(400)
+
+    assert page_errors == [], f"JS errors during playback: {page_errors}"
+
+
+def test_date_changed_after_stop_no_js_errors(
+    live_server: LiveServer,
+    page: Page,
+    _load_test_data: None,
+) -> None:
+    """After dispatching timelapse-state{playing:false}, date-changed runs without error."""
     page_errors: list[str] = []
 
     _navigate_and_wait(page, live_server.url)
 
-    # Start collecting errors only after initial load so MapLibre basemap
-    # fetch failures (which are expected in the offline headless context) are
-    # not captured.
     page.on("pageerror", lambda err: page_errors.append(str(err)))
 
-    # Start then stop.
     _dispatch_timelapse_state(page, playing=True)
     _dispatch_timelapse_state(page, playing=False)
-
-    # Fire a date-changed — IS_PLAYING is false, path is open.
     _dispatch_date_changed(page, "2026-04-08")
 
     page.wait_for_timeout(400)
@@ -219,90 +349,30 @@ def test_timelapse_state_event_received_by_main_iife(
     """The main IIFE's snowdesk:timelapse-state listener executes without error.
 
     Verifies that the listener registered by the main IIFE actually fires when
-    the event is dispatched, and that the IS_PLAYING state machine transitions
-    are observable via subsequent date-changed behaviour.
-
-    We dispatch timelapse-state twice (play then stop) and confirm the listener
-    handle each transition cleanly (no JS errors).  The IS_PLAYING=true → no
-    fetch and IS_PLAYING=false → no error assertions provide the observable
-    evidence that the listener ran and modified the flag correctly.
+    the event is dispatched, and that the IS_PLAYING state machine is observable
+    via the test hook.
     """
+    page.add_init_script("window.__SNOWDESK_TEST_MODE__ = true;")
     page_errors: list[str] = []
 
     _navigate_and_wait(page, live_server.url)
 
-    # Start collecting errors only after initial load.
     page.on("pageerror", lambda err: page_errors.append(str(err)))
 
-    summary_requests: list[str] = []
-    page.on(
-        "request",
-        lambda req: (
-            summary_requests.append(req.url)
-            if "/api/region/" in req.url and "/summary/" in req.url
-            else None
-        ),
-    )
+    # IS_PLAYING defaults false.
+    assert page.evaluate("() => window.__snowdesk_test.getIsPlaying()") is False
 
-    # Dispatch playing:true — IS_PLAYING becomes true via the listener.
+    # Set IS_PLAYING true (as start() would before dispatching the event).
+    page.evaluate("() => window.__snowdesk_test.setIsPlaying(true)")
+    # Also dispatch the event so the main IIFE's listener runs.
     _dispatch_timelapse_state(page, playing=True)
-    _dispatch_date_changed(page, "2026-04-07")
-    page.wait_for_timeout(200)
 
-    # No summary request while playing.
-    assert summary_requests == [], "Summary fetch fired during playback"
+    assert page.evaluate("() => window.__snowdesk_test.getIsPlaying()") is True
     assert page_errors == [], f"JS errors on play: {page_errors}"
 
-    # Dispatch playing:false — IS_PLAYING becomes false via the listener.
+    # Simulate stop.
+    page.evaluate("() => window.__snowdesk_test.setIsPlaying(false)")
     _dispatch_timelapse_state(page, playing=False)
-    _dispatch_date_changed(page, "2026-04-08")
-    page.wait_for_timeout(200)
 
-    # No JS error after stop (activePopup is null so no fetch fires, but
-    # the important thing is no TypeError from the new listener code).
+    assert page.evaluate("() => window.__snowdesk_test.getIsPlaying()") is False
     assert page_errors == [], f"JS errors on stop: {page_errors}"
-
-
-def test_timelapse_state_event_suppresses_summary_and_restores_after_stop(
-    live_server: LiveServer,
-    page: Page,
-    _load_test_data: None,
-) -> None:
-    """IS_PLAYING gates the date-changed popup refresh: suppressed during playback, restored after stop.
-
-    Combined integration test: starts playback, fires date-changed (no request
-    expected), stops playback, fires date-changed again (still no request
-    because activePopup is null — but no error either).  Confirms the flag
-    state machine transitions correctly across both edges.
-    """
-    page_errors: list[str] = []
-
-    _navigate_and_wait(page, live_server.url)
-
-    page.on("pageerror", lambda err: page_errors.append(str(err)))
-
-    summary_requests: list[str] = []
-    page.on(
-        "request",
-        lambda req: (
-            summary_requests.append(req.url)
-            if "/api/region/" in req.url and "/summary/" in req.url
-            else None
-        ),
-    )
-
-    # Playback starts — IS_PLAYING becomes true.
-    _dispatch_timelapse_state(page, playing=True)
-    _dispatch_date_changed(page, "2026-04-07")
-
-    page.wait_for_timeout(200)
-    assert summary_requests == [], "Summary fetch fired during playback"
-
-    # Playback stops — IS_PLAYING becomes false.
-    _dispatch_timelapse_state(page, playing=False)
-    _dispatch_date_changed(page, "2026-04-08")
-
-    page.wait_for_timeout(200)
-    # No popup open so refreshActivePopupForDate still makes no request,
-    # but the key assertion is no JS error was raised.
-    assert page_errors == [], f"JS errors during play/stop cycle: {page_errors}"

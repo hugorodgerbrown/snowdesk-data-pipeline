@@ -878,6 +878,30 @@ const clearRegionRepaint = () => {
   let _clearTooltip = () => {};
   let _refreshActivePopupForDate = async (_dateKey) => {};
 
+  // SNOW-240: Test hook — active only when window.__SNOWDESK_TEST_MODE__ is
+  // set before the page JS runs (via Playwright's page.add_init_script).
+  // Exposes setRefreshFn() and setIsPlaying() so tests can inject a spy into
+  // the forwarding variable and control the IS_PLAYING flag directly, making
+  // the IS_PLAYING guard observable without needing the basemap to load or
+  // the timelapse start()/stop() functions to execute.
+  // In production (no test-mode flag) this entire block is dead and adds no
+  // closures, no globals, and no measurable overhead.
+  if (window.__SNOWDESK_TEST_MODE__) {
+    window.__snowdesk_test = {
+      // Replace _refreshActivePopupForDate with a caller-supplied function.
+      // The date-changed listener calls through this variable; injecting a
+      // spy here lets tests observe whether the IS_PLAYING guard allows or
+      // blocks the call.
+      setRefreshFn: (fn) => { _refreshActivePopupForDate = fn; },
+      // Read IS_PLAYING so tests can assert state-machine transitions.
+      getIsPlaying: () => IS_PLAYING,
+      // Set IS_PLAYING directly so tests can control the guard without
+      // invoking the timelapse start()/stop() functions (which require a
+      // loaded map and populated sortedDates).
+      setIsPlaying: (val) => { IS_PLAYING = val; },
+    };
+  }
+
   // SNOW-47 / SNOW-174: keep currentDisplayedDate in sync and refresh the
   // open popup when the scrubber commits a new date. If a popup is open,
   // swap its HTML to reflect the new day's danger rating without closing and
