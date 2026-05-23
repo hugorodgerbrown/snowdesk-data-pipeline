@@ -10,9 +10,12 @@
  * Strategies:
  *
  *   - Same-origin static shell  (CSS, JS, fonts, images, manifest,
- *                                /sw.js itself, the regions GeoJSON
- *                                feed which doesn't change between
- *                                deploys for a given session)
+ *                                /sw.js itself, the region/resort
+ *                                GeoJSON feeds which don't change
+ *                                between deploys, and /api/ratings/
+ *                                whose URL encodes the date window —
+ *                                see STATIC_PATHS below for the full
+ *                                list and the per-entry safety argument)
  *     → stale-while-revalidate.
  *
  *   - HTML navigations          → network-first with a per-page cache
@@ -24,9 +27,12 @@
  *
  *   - Everything else           (most /api/* endpoints, third-party
  *                                origins like maplibre + tiles)
- *     → network-only. Bulletin JSON, ratings (/api/ratings/), calendar
- *     partials, and map tiles must always reflect server-side
- *     freshness; cached avalanche ratings are dangerous.
+ *     → network-only. Bulletin JSON, calendar partials, and map tiles
+ *     must always reflect server-side freshness; cached avalanche
+ *     ratings are dangerous. Exception: /api/ratings/ gets
+ *     stale-while-revalidate because its URL encodes the (country,
+ *     date) window via query parameters — a stale entry can never be
+ *     served for the wrong day, since date rollover changes the URL.
  *
  * Cache version
  * -------------
@@ -50,7 +56,7 @@
 
 'use strict';
 
-const CACHE_VERSION = 'snowdesk-shell-v6';
+const CACHE_VERSION = 'snowdesk-shell-v7';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
@@ -79,13 +85,31 @@ const STATIC_SHELL_EXTENSIONS = new Set([
   '.webmanifest',
 ]);
 
-// Same-origin URL paths that are versioned-by-deploy and therefore
-// safe to serve stale-while-revalidate. All four region/resort geo
-// feeds are included — polygon and resort geometry changes only on
-// deploy, so a stale polygon never misleads the user about danger
-// (unlike a stale rating, which would). Any new entry must be
-// similarly safe to cache across a session.
+// Same-origin URL paths that are safe to serve stale-while-revalidate.
+// Two classes of entry:
+//
+//   Geo feeds — versioned-by-deploy. Polygon and resort geometry
+//   changes only on deploy, so a stale polygon never misleads the user
+//   about danger (unlike a stale rating, which would).
+//
+//   /api/ratings/ — safe for a different reason: its URL encodes the
+//   data window via ?d=YYYY-MM-DD and ?country= parameters, so each
+//   (country, date) variant cache-keys separately. Date rollover
+//   changes the URL, meaning a stale entry can never be returned for
+//   the wrong day. The cache rule is the same as for geo feeds; the
+//   safety argument is URL-encoded date window rather than
+//   deploy-versioned geometry.
+//
+// Note on Vary: the ratings view emits ``Vary: Accept-Encoding`` and
+// the Cache API honours Vary on match. In practice every request from
+// a given browser session carries the same Accept-Encoding header (the
+// UA sets it, not page JS), so cached entries hit reliably. A UA that
+// somehow rotated Accept-Encoding mid-session would just cache-miss
+// and re-fetch — not a correctness risk.
+//
+// Any new entry must be similarly safe to cache across a session.
 const STATIC_PATHS = new Set([
+  '/api/ratings/',
   '/api/regions.geojson',
   '/api/major-regions.geojson',
   '/api/sub-regions.geojson',
