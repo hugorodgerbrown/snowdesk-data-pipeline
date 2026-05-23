@@ -6,7 +6,7 @@ Covers:
   - --commit writes a JSON file to a tmp path containing the expected records.
   - The generated JSON deserialises with the expected record counts (tested
     against the region fixtures pre-loaded so MicroRegion rows exist).
-  - All Bulletin rows in the generated fixture have render_model_version == 4.
+  - All Bulletin rows in the generated fixture have render_model_version == RENDER_MODEL_VERSION.
   - The checked-in ``test_data.json`` fixture has the correct model counts.
   - After loading the checked-in fixture the canonical preview URL renders 200.
 
@@ -137,7 +137,7 @@ class TestBuildTestDataCommit:
             )
 
     def test_render_model_has_version_key(self, tmp_path: Path) -> None:
-        """Every Bulletin render_model dict has a 'version' key equal to 4."""
+        """Every Bulletin render_model dict has a 'version' key equal to RENDER_MODEL_VERSION."""
         output = tmp_path / "test_data.json"
         call_command("build_test_data", commit=True, output=str(output), verbosity=0)
         records = json.loads(output.read_text())
