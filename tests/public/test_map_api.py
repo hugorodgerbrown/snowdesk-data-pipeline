@@ -3,8 +3,8 @@ tests/public/test_map_api.py — Tests for the /api/ JSON endpoints.
 
 Covers the endpoints consumed by the /map/ page:
 
-* ``api:today_summaries``       — today's danger summaries per region.
-* ``api:season_ratings``        — whole-season ``{date: {region_id: int}}``.
+* ``api:ratings``               — unified ratings endpoint (SNOW-239).
+                                  Optional ?d=YYYY-MM-DD and ?country= filters.
 * ``api:resorts_by_region``     — resort list per region.
 * ``api:regions_geojson``       — FeatureCollection of L4 region polygons.
 * ``api:major_regions_geojson`` — FeatureCollection of L1 region polygons (SNOW-59).
@@ -18,308 +18,214 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
+from django.core.cache import cache
 from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
-from django.utils import timezone
 
-from bulletins.models import Bulletin, RegionDayRating
-from regions.models import MicroRegion
+from bulletins.models import RegionDayRating
 from tests.factories import (
-    BulletinFactory,
     MajorRegionFactory,
     MicroRegionFactory,
-    RegionBulletinFactory,
     RegionDayRatingFactory,
     ResortFactory,
     SubRegionFactory,
 )
 
 # ---------------------------------------------------------------------------
-# Helpers
+# ratings (SNOW-239)
 # ---------------------------------------------------------------------------
 
-
-def _today_window() -> tuple[datetime, datetime]:
-    """Return a (valid_from, valid_to) pair that covers today in UTC."""
-    today = timezone.localdate()
-    vf = datetime(today.year, today.month, today.day, 6, 0, tzinfo=UTC)
-    vt = datetime(today.year, today.month, today.day, 17, 0, tzinfo=UTC)
-    return vf, vt
+# Shared fixture data used across ratings tests.
+# CH: two regions, two dates. FR: one region, one date.
+_RATINGS_DAY_ONE = dt.date(2026, 1, 15)
+_RATINGS_DAY_TWO = dt.date(2026, 1, 16)
 
 
-def _render_model(
-    rating: str = "considerable",
-    subdivision: str | None = "plus",
-    problem_type: str = "persistent_weak_layers",
-    elevation: dict | None = None,
-    aspects: list[str] | None = None,
-) -> dict:
-    """Build a minimal v3 render_model dict shaped like the builder output."""
-    return {
-        "version": 3,
-        "danger": {
-            "key": rating,
-            "number": "3",
-            "subdivision": subdivision,
-        },
-        "traits": [
-            {
-                "category": "dry",
-                "time_period": "all_day",
-                "title": "Dry avalanches",
-                "geography": {"source": "problems"},
-                "problems": [
-                    {
-                        "problem_type": problem_type,
-                        "time_period": "all_day",
-                        "elevation": elevation
-                        or {
-                            "lower": 2200,
-                            "upper": None,
-                            "treeline": False,
-                        },
-                        "aspects": aspects
-                        or ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
-                        "comment_html": "",
-                        "core_zone_text": None,
-                        "danger_rating_value": rating,
-                    }
-                ],
-                "prose": None,
-                "danger_level": 3,
-            }
-        ],
-        "snowpack_structure": None,
-        "metadata": {
-            "publication_time": None,
-            "valid_from": None,
-            "valid_until": None,
-            "next_update": None,
-            "unscheduled": False,
-            "lang": "en",
-        },
-        "prose": {
-            "snowpack_structure": None,
-            "weather_review": None,
-            "weather_forecast": None,
-            "tendency": [],
-        },
-    }
-
-
-def _make_today_bulletin(
-    region: MicroRegion, render_model: dict, raw_data: dict | None = None
-) -> Bulletin:
-    """Create a bulletin valid today in ``region`` with the given render_model."""
-    vf, vt = _today_window()
-    extra = {"raw_data": raw_data} if raw_data is not None else {}
-    bulletin = BulletinFactory.create(
-        issued_at=vf - timedelta(minutes=30),
-        valid_from=vf,
-        valid_to=vt,
-        render_model=render_model,
-        render_model_version=render_model.get("version", 3),
-        **extra,
+def _make_ratings_fixture() -> None:
+    """Create RegionDayRating rows spanning CH and FR for two dates."""
+    ch_major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+    ch_sub = SubRegionFactory.create(prefix="CH-41", major=ch_major)
+    region_a = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=ch_sub
     )
-    RegionBulletinFactory.create(
-        bulletin=bulletin,
-        region=region,
-        region_name_at_time=region.name,
+    region_b = MicroRegionFactory.create(
+        region_id="CH-4116", slug="ch-4116", subregion=ch_sub
     )
-    return bulletin
+
+    fr_major = MajorRegionFactory.create(prefix="FR-1", country="FR")
+    fr_sub = SubRegionFactory.create(prefix="FR-1A", major=fr_major)
+    region_fr = MicroRegionFactory.create(
+        region_id="FR-01", slug="fr-01", subregion=fr_sub
+    )
+
+    RegionDayRatingFactory.create(
+        region=region_a,
+        date=_RATINGS_DAY_ONE,
+        max_rating=RegionDayRating.Rating.CONSIDERABLE,
+    )
+    RegionDayRatingFactory.create(
+        region=region_b,
+        date=_RATINGS_DAY_ONE,
+        max_rating=RegionDayRating.Rating.MODERATE,
+    )
+    RegionDayRatingFactory.create(
+        region=region_a,
+        date=_RATINGS_DAY_TWO,
+        max_rating=RegionDayRating.Rating.HIGH,
+    )
+    RegionDayRatingFactory.create(
+        region=region_fr,
+        date=_RATINGS_DAY_ONE,
+        max_rating=RegionDayRating.Rating.LOW,
+    )
 
 
-# ---------------------------------------------------------------------------
-# today-summaries
-# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def clear_ratings_cache() -> None:
+    """Ensure the ratings cache is clear before every test in this module."""
+    cache.clear()
 
 
 @pytest.mark.django_db
-def test_today_summaries_empty_when_no_bulletins() -> None:
-    """No bulletins → empty dict."""
+def test_ratings_empty_when_no_day_ratings() -> None:
+    """No RegionDayRating rows → empty dict."""
     client = Client()
-    response = client.get(reverse("api:today_summaries"))
+    response = client.get(reverse("api:ratings"))
     assert response.status_code == 200
     assert response.json() == {}
 
 
 @pytest.mark.django_db
-def test_today_summaries_returns_expected_shape() -> None:
-    """A single bulletin today produces a correctly-shaped summary."""
-    region = MicroRegionFactory.create(
-        region_id="CH-4115", name="Martigny – Verbier", slug="ch-4115"
-    )
-    _make_today_bulletin(region, _render_model())
-
-    client = Client()
-    response = client.get(reverse("api:today_summaries"))
+def test_ratings_no_filters_returns_all_countries_and_dates() -> None:
+    """No filters → full season, all countries, expected shape and ints."""
+    _make_ratings_fixture()
+    response = Client().get(reverse("api:ratings"))
     assert response.status_code == 200
     data = response.json()
 
-    assert "CH-4115" in data
-    summary = data["CH-4115"]
-    assert summary["rating"] == "considerable"
-    assert summary["subdivision"] == "plus"
-    assert summary["problem"] == "Persistent weak layers"
-    assert summary["elevation"] == "above 2200 m"
-    assert summary["aspects"] == "all aspects"
-    assert summary["name"] == "Martigny – Verbier"
-    # ISO-8601 timestamps with timezone offset.
-    assert "T" in summary["valid_from"]
-    assert "+" in summary["valid_from"] or summary["valid_from"].endswith("Z")
+    assert set(data.keys()) == {"2026-01-15", "2026-01-16"}
+    # Considerable=3, moderate=2, high=4, low=1 — see _RATING_TO_INT.
+    assert data["2026-01-15"]["CH-4115"] == 3
+    assert data["2026-01-15"]["CH-4116"] == 2
+    assert data["2026-01-15"]["FR-01"] == 1
+    assert data["2026-01-16"]["CH-4115"] == 4
+    assert "FR-01" not in data["2026-01-16"]
 
 
 @pytest.mark.django_db
-def test_today_summaries_skips_regions_without_bulletins() -> None:
-    """Regions whose only bulletin lies outside today's window are omitted."""
-    included_region = MicroRegionFactory.create(
-        region_id="CH-4115", name="Martigny", slug="ch-4115"
-    )
-    excluded_region = MicroRegionFactory.create(
-        region_id="CH-9999", name="Empty", slug="ch-9999"
-    )
-    _make_today_bulletin(included_region, _render_model())
-
-    # A bulletin from a week ago — should not appear in today's summaries.
-    vf = timezone.now() - timedelta(days=7)
-    vt = vf + timedelta(hours=9)
-    stale_bulletin = BulletinFactory.create(
-        issued_at=vf - timedelta(minutes=30),
-        valid_from=vf,
-        valid_to=vt,
-        render_model=_render_model(),
-        render_model_version=3,
-    )
-    RegionBulletinFactory.create(
-        bulletin=stale_bulletin,
-        region=excluded_region,
-        region_name_at_time=excluded_region.name,
-    )
-
-    client = Client()
-    data = client.get(reverse("api:today_summaries")).json()
-    assert "CH-4115" in data
-    assert "CH-9999" not in data
-
-
-@pytest.mark.django_db
-def test_today_summaries_elevation_below() -> None:
-    """An upper-bound-only elevation renders as ``below N m``."""
-    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    rm = _render_model(
-        elevation={"lower": None, "upper": 1800, "treeline": False},
-    )
-    _make_today_bulletin(region, rm)
-
-    client = Client()
-    summary = client.get(reverse("api:today_summaries")).json()["CH-4115"]
-    assert summary["elevation"] == "below 1800 m"
-
-
-@pytest.mark.django_db
-def test_today_summaries_partial_aspects() -> None:
-    """A subset of aspects renders as a comma-joined list."""
-    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    rm = _render_model(aspects=["N", "NE", "E", "NW"])
-    _make_today_bulletin(region, rm)
-
-    client = Client()
-    summary = client.get(reverse("api:today_summaries")).json()["CH-4115"]
-    assert summary["aspects"] == "N, NE, E, NW"
-
-
-@pytest.mark.django_db
-def test_today_summaries_prefers_morning_update_over_previous_evening() -> None:
-    """
-    When a region has two issues covering today — a previous-day evening
-    bulletin (valid from 17:00 yesterday) and a same-day morning update
-    (valid from 08:00 today) — the morning update wins for queries made
-    after it takes over, because it is the later refresh of the forecast.
-    """
-    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    now = timezone.now()
-    today = now.date()
-
-    # Previous-day evening issue, valid from 17:00 yesterday through 17:00 today.
-    evening_vf = datetime(
-        today.year, today.month, today.day, 17, 0, tzinfo=UTC
-    ) - timedelta(days=1)
-    evening_vt = datetime(today.year, today.month, today.day, 17, 0, tzinfo=UTC)
-    evening = BulletinFactory.create(
-        issued_at=evening_vf - timedelta(minutes=30),
-        valid_from=evening_vf,
-        valid_to=evening_vt,
-        render_model=_render_model(rating="moderate", subdivision=None),
-        render_model_version=3,
-    )
-    RegionBulletinFactory.create(
-        bulletin=evening,
-        region=region,
-        region_name_at_time=region.name,
-    )
-
-    # Same-day morning update, valid from 30 minutes ago through 17:00 today,
-    # so its window contains "now" regardless of when the test runs.
-    morning_vf = now - timedelta(minutes=30)
-    morning_vt = datetime(today.year, today.month, today.day, 17, 0, tzinfo=UTC)
-    # Guard: if the test happens to run after 17:00 UTC, push valid_to out.
-    if morning_vt <= now:
-        morning_vt = now + timedelta(hours=1)
-    morning = BulletinFactory.create(
-        issued_at=morning_vf - timedelta(minutes=30),
-        valid_from=morning_vf,
-        valid_to=morning_vt,
-        render_model=_render_model(rating="considerable", subdivision="plus"),
-        render_model_version=3,
-    )
-    RegionBulletinFactory.create(
-        bulletin=morning,
-        region=region,
-        region_name_at_time=region.name,
-    )
-
-    client = Client()
-    summary = client.get(reverse("api:today_summaries")).json()["CH-4115"]
-    # The morning update's rating wins — the selection helper picks the
-    # issue whose window contains ``now`` (the morning one).
-    assert summary["rating"] == "considerable"
-    assert summary["subdivision"] == "plus"
-
-
-@pytest.mark.django_db
-def test_today_summaries_handles_error_sentinel_render_model() -> None:
-    """
-    A bulletin stored with the validation-failure sentinel
-    (``{"version": 0, "error": ...}``) must not 500 the endpoint — the
-    summary degrades gracefully to ``no_rating`` with empty fields.
-    """
-    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    vf, vt = _today_window()
-    bulletin = BulletinFactory.create(
-        issued_at=vf - timedelta(minutes=30),
-        valid_from=vf,
-        valid_to=vt,
-        render_model={"version": 0, "error": "bad data", "error_type": "TypeError"},
-        render_model_version=0,
-    )
-    RegionBulletinFactory.create(
-        bulletin=bulletin,
-        region=region,
-        region_name_at_time=region.name,
-    )
-
-    client = Client()
-    response = client.get(reverse("api:today_summaries"))
+def test_ratings_date_filter_returns_single_key_dict() -> None:
+    """?d=YYYY-MM-DD → single-key dict for that date only."""
+    _make_ratings_fixture()
+    response = Client().get(reverse("api:ratings") + "?d=2026-01-15")
     assert response.status_code == 200
-    summary = response.json()["CH-4115"]
-    assert summary["rating"] == "no_rating"
-    assert summary["subdivision"] is None
-    assert summary["problem"] == ""
+    data = response.json()
+
+    assert set(data.keys()) == {"2026-01-15"}
+    assert data["2026-01-15"]["CH-4115"] == 3
+    assert data["2026-01-15"]["CH-4116"] == 2
+
+
+@pytest.mark.django_db
+def test_ratings_country_filter_returns_only_that_country() -> None:
+    """?country=ch → season filtered to CH regions only."""
+    _make_ratings_fixture()
+    response = Client().get(reverse("api:ratings") + "?country=ch")
+    assert response.status_code == 200
+    data = response.json()
+
+    # CH-4115 and CH-4116 present; FR-01 absent.
+    assert "2026-01-15" in data
+    assert "CH-4115" in data["2026-01-15"]
+    assert "CH-4116" in data["2026-01-15"]
+    assert "FR-01" not in data.get("2026-01-15", {})
+
+
+@pytest.mark.django_db
+def test_ratings_date_and_country_filter() -> None:
+    """?d=YYYY-MM-DD&country=ch → single-day, single-country."""
+    _make_ratings_fixture()
+    response = Client().get(reverse("api:ratings") + "?d=2026-01-15&country=ch")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert set(data.keys()) == {"2026-01-15"}
+    assert "CH-4115" in data["2026-01-15"]
+    assert "FR-01" not in data["2026-01-15"]
+
+
+@pytest.mark.django_db
+def test_ratings_rejects_unknown_country() -> None:
+    """An unknown ?country= code returns 400."""
+    response = Client().get(reverse("api:ratings") + "?country=zz")
+    assert response.status_code == 400
+    assert response.json()["error"] == "unknown country"
+
+
+@pytest.mark.django_db
+def test_ratings_rejects_malformed_date_string() -> None:
+    """A malformed ?d= value returns 400."""
+    for bad in ("not-a-date", "2026-13-99", "20260115", ""):
+        if bad == "":
+            # Empty string is treated as "no filter", not an error.
+            continue
+        response = Client().get(reverse("api:ratings") + f"?d={bad}")
+        assert response.status_code == 400, f"Expected 400 for ?d={bad!r}"
+        assert response.json()["error"] == "malformed date"
+
+
+@pytest.mark.django_db
+def test_ratings_country_filter_case_insensitive() -> None:
+    """?country=CH and ?country=ch are treated identically."""
+    _make_ratings_fixture()
+    r_lower = Client().get(reverse("api:ratings") + "?country=ch")
+    r_upper = Client().get(reverse("api:ratings") + "?country=CH")
+    assert r_lower.status_code == 200
+    assert r_upper.status_code == 200
+    assert r_lower.json() == r_upper.json()
+
+
+@pytest.mark.django_db
+def test_ratings_cache_hit_avoids_db_on_second_call() -> None:
+    """After the first call, the DB is not hit again for the same cache key."""
+    _make_ratings_fixture()
+    client = Client()
+    url = reverse("api:ratings") + "?d=2026-01-15&country=ch"
+
+    # First call — populates the cache.
+    resp1 = client.get(url)
+    assert resp1.status_code == 200
+
+    # Second call — should return from cache without hitting _build_ratings_payload.
+    with patch("public.api._build_ratings_payload") as mock_build:
+        resp2 = client.get(url)
+        assert resp2.status_code == 200
+        assert resp2.json() == resp1.json()
+        mock_build.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_ratings_cache_control_header() -> None:
+    """Cache-Control is public, max-age=300."""
+    response = Client().get(reverse("api:ratings"))
+    assert response.status_code == 200
+    cc = response.get("Cache-Control", "")
+    assert "public" in cc
+    assert "max-age=300" in cc
+
+
+@pytest.mark.django_db
+def test_ratings_vary_accept_encoding_not_cookie() -> None:
+    """Vary header includes Accept-Encoding but not Cookie."""
+    response = Client().get(reverse("api:ratings"))
+    assert response.status_code == 200
+    vary = response.get("Vary", "")
+    assert "Accept-Encoding" in vary
+    assert "Cookie" not in vary
 
 
 # ---------------------------------------------------------------------------
@@ -508,54 +414,6 @@ def test_sub_regions_geojson_returns_feature_collection() -> None:
     assert feature["properties"]["name_en"] == "Vorarlberg North"
     assert feature["properties"]["country"] == "AT"
     assert feature["geometry"] == boundary
-
-
-# ---------------------------------------------------------------------------
-# season-ratings
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_season_ratings_empty_when_no_day_ratings() -> None:
-    """No RegionDayRating rows → empty dict."""
-    client = Client()
-    response = client.get(reverse("api:season_ratings"))
-    assert response.status_code == 200
-    assert response.json() == {}
-
-
-@pytest.mark.django_db
-def test_season_ratings_returns_expected_shape() -> None:
-    """Top-level keys are ISO dates; inner dicts map region_id → rating int."""
-    region_a = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
-    region_b = MicroRegionFactory.create(region_id="CH-4116", slug="ch-4116")
-    day_one = dt.date(2026, 1, 15)
-    day_two = dt.date(2026, 1, 16)
-
-    RegionDayRatingFactory.create(
-        region=region_a,
-        date=day_one,
-        max_rating=RegionDayRating.Rating.CONSIDERABLE,
-    )
-    RegionDayRatingFactory.create(
-        region=region_b,
-        date=day_one,
-        max_rating=RegionDayRating.Rating.MODERATE,
-    )
-    RegionDayRatingFactory.create(
-        region=region_a,
-        date=day_two,
-        max_rating=RegionDayRating.Rating.HIGH,
-    )
-
-    response = Client().get(reverse("api:season_ratings"))
-    assert response.status_code == 200
-    data = response.json()
-
-    assert set(data.keys()) == {"2026-01-15", "2026-01-16"}
-    # Considerable=3, moderate=2, high=4 — see _RATING_TO_INT.
-    assert data["2026-01-15"] == {"CH-4115": 3, "CH-4116": 2}
-    assert data["2026-01-16"] == {"CH-4115": 4}
 
 
 # ---------------------------------------------------------------------------
@@ -903,8 +761,7 @@ def test_endpoints_return_json_content_type() -> None:
     """All map-page endpoints advertise application/json."""
     client = Client()
     for name in (
-        "api:today_summaries",
-        "api:season_ratings",
+        "api:ratings",
         "api:resorts_by_region",
     ):
         response = client.get(reverse(name))

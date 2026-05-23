@@ -3,7 +3,7 @@ public/api_urls.py — URL routing for the public JSON API.
 
 Mounted at ``/api/`` from ``config/urls.py``. Kept separate from
 ``public/urls.py`` so the page-serving routes and the JSON endpoints
-don't share a namespace — ``{% url "api:today_summaries" %}`` vs
+don't share a namespace — ``{% url "api:ratings" %}`` vs
 ``{% url "public:bulletin_date" %}``.
 """
 
@@ -16,8 +16,9 @@ app_name = "api"
 urlpatterns = [
     # Share-create endpoint (SNOW-217). POST only; returns a tokenised short URL.
     path("bulletins/share/", api.share_create, name="share_create"),
-    path("today-summaries/", api.today_summaries, name="today_summaries"),
-    path("season-ratings/", api.season_ratings, name="season_ratings"),
+    # SNOW-239: unified ratings endpoint. Replaces today-summaries + season-ratings.
+    # Accepts optional ?d=YYYY-MM-DD and ?country=ch|fr|at|it filters.
+    path("ratings/", api.ratings, name="ratings"),
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
     path("resorts.geojson", api.resorts_geojson, name="resorts_geojson"),
     path("regions.geojson", api.regions_geojson, name="regions_geojson"),
