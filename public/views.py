@@ -1019,7 +1019,7 @@ def map_view(request: HttpRequest) -> HttpResponse:
     Render the interactive region-choropleth map page.
 
     The page is a MapLibre GL JS client that fetches three JSON
-    endpoints (``/api/regions.geojson``, ``/api/today-summaries/``,
+    endpoints (``/api/regions.geojson``, ``/api/ratings/``,
     ``/api/resorts-by-region/``) and colours each region by today's
     danger rating. The map template is a standalone page today but the
     DOM is structured so it can be embedded inside the marketing

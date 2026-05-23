@@ -68,7 +68,7 @@ appeared first.
 | `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary` (L4 fixture regions); each feature has `properties.id` + `properties.name` |
 | `GET /api/major-regions.geojson` | `api:major_regions_geojson` | GeoJSON FeatureCollection of L1 EAWS major regions (e.g. `CH-4`, `CH-5`) with `properties.id` + `properties.name`. |
 | `GET /api/sub-regions.geojson` | `api:sub_regions_geojson` | GeoJSON FeatureCollection of L2 EAWS sub-regions (e.g. `CH-41`, `CH-42`) with `properties.id` + `properties.name`. |
-| `GET /api/region/<region_id>/summary/` | `api:region_summary` | `{peek, expanded}` — pre-rendered HTML fragments for the map drawer. `peek` is the compact bottom-sheet card; `expanded` is the full bulletin detail. Honours `?d=YYYY-MM-DD` so the drawer can show any scrubbed-to date. |
+| `GET /api/region/<region_id>/summary/` | `api:region_summary` | `{html, level}` — `html` is the server-rendered MapLibre Popup snippet (danger-rating chip + geographic breadcrumb); `level` is the rating string the JS uses to stamp `data-level` on the popup container for the border colour. Honours `?d=YYYY-MM-DD` so the popup can show any scrubbed-to date; returns 400 on a malformed value. |
 
 The data flow on map load is: `map.js` fetches `?d=<today>&country=ch` and
 `regions.geojson?country=ch` in parallel. Once both resolve, it calls
