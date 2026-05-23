@@ -347,7 +347,7 @@ def test_new_slug_index_page_renders_200_with_known_marker(
 class TestRatingBlockPanel:
     """Focused tests for the rating-block component panel."""
 
-    def test_all_seven_problem_types_appear_in_rendered_html(
+    def test_all_problem_type_variants_appear_in_rendered_html(
         self, htmx_staff_client: Client
     ) -> None:
         """Every EAWS problem type in RATING_BLOCK_VARIANTS appears in the output.
@@ -362,7 +362,7 @@ class TestRatingBlockPanel:
 
         active = response.context["active"]
         assert active.slug == "rating-block"
-        assert len(active.variants) == 7  # noqa: PLR2004 — seven is the spec
+        assert len(active.variants) == 8  # noqa: PLR2004 — eight is the spec
 
         # Gather all problem_type values from the fixtures.
         expected_problem_types = {
@@ -372,13 +372,17 @@ class TestRatingBlockPanel:
         # The danger-band carries a data-level attribute — confirm the template
         # rendered at least one card header.
         assert 'data-testid="rating-block"' in body
-        # Exactly 6 of the 7 variants render the aspect-elevation row — the
-        # prose-only card (empty aspects + empty elevation) must omit it.
+        # Exactly 6 of the 8 variants render the aspect-elevation row — the two
+        # prose-only cards (dry and wet) have empty aspects and elevation, so
+        # they render the fallback row instead.
         # The panel renders each variant twice (light + dark themes), so the
         # expected count is 6 structured cards × 2 theme passes = 12.
         assert body.count('data-testid="aspect-elevation-row"') == 12  # noqa: PLR2004
+        # The two prose-only variants both render the fallback row:
+        # 2 cards × 2 theme passes = 4.
+        assert body.count('data-testid="aspect-elevation-fallback"') == 4  # noqa: PLR2004
         # Verify the problem_type set is exactly the six we declared (the
-        # prose-only card re-uses new_snow, so the set collapses to 6).
+        # prose-only cards re-use new_snow and wet_snow, so the set collapses to 6).
         assert expected_problem_types == {
             "new_snow",
             "wind_slab",

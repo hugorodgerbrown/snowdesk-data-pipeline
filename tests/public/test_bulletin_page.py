@@ -413,10 +413,10 @@ class TestAspectElevationRow:
         content = response.content.decode()
         assert 'data-testid="aspect-elevation-row"' in content
 
-    def test_row_absent_when_problem_has_no_aspects_or_elevation(
+    def test_fallback_row_present_when_problem_has_no_aspects_or_elevation(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """No aspect/elevation row when the first problem has neither aspects nor elevation."""
+        """Fallback row shown when the first problem has neither aspects nor elevation."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems([_raw_problem_no_geo(problem_type="wet_snow")])
         _make_am_bulletin(region, day, raw_data=raw)
@@ -424,7 +424,24 @@ class TestAspectElevationRow:
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="aspect-elevation-row"' not in content
+        assert 'data-testid="aspect-elevation-fallback"' in content
+        assert "See description below" in content
+
+    def test_fallback_row_absent_when_aspects_present(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A wet-snow card with structured aspects shows the rose row, not the fallback."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_problems(
+            [_raw_problem(problem_type="wet_snow", aspects=["N", "NE"], elevation=None)]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="aspect-elevation-row"' in content
+        assert 'data-testid="aspect-elevation-fallback"' not in content
 
     def test_row_absent_when_aspects_empty_but_elevation_present(
         self, client: Client, region: MicroRegion
@@ -1049,16 +1066,16 @@ class TestRatingBlockGrouping:
         wind_idx = content.index("Wind slab", probs_start)
         assert wet_idx < wind_idx
 
-    def test_prose_only_problem_shows_no_aspect_elevation_row(
+    def test_prose_only_problem_shows_fallback_row(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """Problem with no aspects and no elevation → no aspect/elevation row."""
+        """Problem with no aspects and no elevation → fallback row with pointer to prose."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems([_raw_problem_no_geo(problem_type="wet_snow")])
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
         assert 'data-testid="rating-block"' in content
-        assert 'data-testid="aspect-elevation-row"' not in content
+        assert 'data-testid="aspect-elevation-fallback"' in content
 
     def test_problem_labels_appear_in_cards(
         self, client: Client, region: MicroRegion
