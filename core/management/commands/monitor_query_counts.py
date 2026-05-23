@@ -26,6 +26,7 @@ introducing a new page whose query count is worth watching.
 
 from __future__ import annotations
 
+import datetime
 import logging
 from argparse import ArgumentParser
 from pathlib import Path
@@ -39,6 +40,7 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 
 logger = logging.getLogger(__name__)
+
 
 # Each tuple is (name, url_path). Names must be unique, stable, and safe
 # for plain-text keys (no spaces). URLs are hit as-is; redirects are not
@@ -60,18 +62,27 @@ logger = logging.getLogger(__name__)
 #
 # The canonical historic URL below renders the full bulletin against
 # fixture data on both local and CI, so the count is stable.
-MONITORED_URLS: list[tuple[str, str]] = [
-    ("home", "/"),
-    ("map", "/map/"),
-    ("api_today_summaries", "/api/today-summaries/"),
-    ("api_resorts_by_region", "/api/resorts-by-region/"),
-    ("api_regions_geojson", "/api/regions.geojson?country=ch"),
-    # SNOW-79: ``api_offline_manifest_map`` was retired with the rest of
-    # the precache feature. The route 404s now and the 404 path runs ~4
-    # middleware queries — tracking that against a "0 queries" target
-    # would be monitoring the 404 handler, not a Snowdesk endpoint.
-    ("bulletin_historic", "/ch-4115/martigny-verbier/2026-04-02/"),
-]
+#
+# ``api_ratings`` uses today's date at command runtime so the cold-open
+# call shape (``?d=<today>&country=ch``) is exercised rather than the
+# full season payload path. The ``?d=`` filter keeps the query count
+# deterministic regardless of how much historical data is stored.
+def _build_monitored_urls() -> list[tuple[str, str]]:
+    """Return the list of ``(name, url_path)`` tuples to monitor."""
+    today = datetime.date.today().isoformat()
+    return [
+        ("home", "/"),
+        ("map", "/map/"),
+        ("api_ratings", f"/api/ratings/?d={today}&country=ch"),
+        ("api_resorts_by_region", "/api/resorts-by-region/"),
+        ("api_regions_geojson", "/api/regions.geojson?country=ch"),
+        # SNOW-79: ``api_offline_manifest_map`` was retired with the rest of
+        # the precache feature. The route 404s now and the 404 path runs ~4
+        # middleware queries — tracking that against a "0 queries" target
+        # would be monitoring the 404 handler, not a Snowdesk endpoint.
+        ("bulletin_historic", "/ch-4115/martigny-verbier/2026-04-02/"),
+    ]
+
 
 BASELINE_PATH = Path(settings.BASE_DIR) / "perf" / "query_counts.txt"
 
@@ -154,7 +165,7 @@ class Command(BaseCommand):
         # by ``CommonMiddleware`` under non-dev settings.
         client = Client(HTTP_HOST="localhost")
         results: dict[str, int] = {}
-        for name, url in MONITORED_URLS:
+        for name, url in _build_monitored_urls():
             # Clear cache so the count is for a cold request; otherwise
             # the second run in a row would see fewer queries than the
             # first, making the baseline order-sensitive.
