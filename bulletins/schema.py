@@ -65,6 +65,28 @@ class AvalancheProblemType(models.TextChoices):
     FAVOURABLE_SITUATION = "favourable_situation", _("Favourable situation")
 
 
+# Problem types driven by liquid water in the snowpack (melt, rain, warming).
+# The complement is the dry-snow regime (new snow, wind slab, persistent weak
+# layers). Stored as plain strings so membership tests against the plain-string
+# ``problem_type`` attribute are unambiguous.
+WET_PROBLEM_TYPES: frozenset[str] = frozenset(
+    {
+        AvalancheProblemType.WET_SNOW.value,
+        AvalancheProblemType.GLIDING_SNOW.value,
+    }
+)
+
+# Time periods that scope a problem to part of the day rather than all of it —
+# the qualifier issuing services use for problems that ramp up or ease with the
+# daily warming cycle.
+DIURNAL_TIME_PERIODS: frozenset[str] = frozenset(
+    {
+        ValidTimePeriod.EARLIER.value,
+        ValidTimePeriod.LATER.value,
+    }
+)
+
+
 # ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
@@ -134,6 +156,14 @@ class AvalancheProblem:
     ``problem_type`` is one of the values in :class:`AvalancheProblemType`.
     All other fields are optional and reflect what the issuing AWS chose
     to publish for the problem.
+
+    The two providers publish opposite ends of the EAWS model: SLF emits the
+    matrix *output* (``danger_rating_value``, ``comment``, and the ``"+"/"="/"-"``
+    sub-level in ``subdivision``); ALBINA emits the matrix *inputs*
+    (``avalanche_size``, ``frequency``, ``snowpack_stability``) plus the
+    ``avalanche_type`` axis (slab/loose/glide), which is orthogonal to
+    ``problem_type``. Any given field is None when the issuing service didn't
+    publish it.
     """
 
     problem_type: str
@@ -145,10 +175,17 @@ class AvalancheProblem:
     avalanche_size: int | None = None
     snowpack_stability: str | None = None
     frequency: str | None = None
+    # subdivision: SLF customData.CH ("minus"/"neutral"/"plus" — the 3-/3/3+ sub-level).
+    subdivision: str | None = None
+    # avalanche_type: ALBINA customData.ALBINA ("slab"/"loose"/"glide").
+    avalanche_type: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AvalancheProblem:
         """Build an AvalancheProblem from a single CAAML avalancheProblem dict."""
+        custom_data = data.get("customData") or {}
+        ch = custom_data.get("CH") or {}
+        albina = custom_data.get("ALBINA") or {}
         return cls(
             problem_type=data["problemType"],
             comment=data.get("comment"),
@@ -159,4 +196,27 @@ class AvalancheProblem:
             avalanche_size=data.get("avalancheSize"),
             snowpack_stability=data.get("snowpackStability"),
             frequency=data.get("frequency"),
+            subdivision=ch.get("subdivision"),
+            avalanche_type=albina.get("avalancheType"),
         )
+
+    @property
+    def is_wet(self) -> bool:
+        """
+        Whether this is a wet-snow regime problem.
+
+        True for ``wet_snow`` and ``gliding_snow`` — the problem types driven
+        by liquid water in the snowpack. The complement is the dry-snow regime.
+        """
+        return self.problem_type in WET_PROBLEM_TYPES
+
+    @property
+    def is_diurnal(self) -> bool:
+        """
+        Whether the problem is scoped to part of the day rather than all of it.
+
+        True when ``valid_time_period`` is ``earlier`` or ``later`` — the
+        qualifier that tracks the daily warming cycle (predominantly attached
+        to wet-snow problems). ``all_day`` and a missing period are both False.
+        """
+        return self.valid_time_period in DIURNAL_TIME_PERIODS
