@@ -118,9 +118,13 @@ class TestBulletinViewedEvent:
         # Authenticated distinct_id is subscriber PK as string.
         assert calls[0].args[1] == str(subscriber.pk)
 
-    def test_distinct_id_is_session_key_for_anon(
+    def test_distinct_id_is_non_empty_for_anon(
         self, region: MicroRegion, bulletin: Bulletin
     ) -> None:
+        # For anonymous users with no prior session, the distinct_id is a
+        # request-scoped "anon-<uuid>" string (avoids forcing a session DB
+        # write).  If a session cookie is already present the session key is
+        # used instead, but either way the value is non-empty.
         client = Client()
         url = _bulletin_url(region.region_id, region.slug, "2026-03-15")
         with (
@@ -131,7 +135,6 @@ class TestBulletinViewedEvent:
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
         assert len(calls) == 1
         distinct_id = calls[0].args[1]
-        # Anonymous distinct_id should be a non-empty Django session key.
         assert distinct_id and len(distinct_id) > 0
 
     def test_view_context_is_direct_by_default(

@@ -35,6 +35,7 @@ import hashlib
 import json
 import logging
 import random
+import uuid
 from typing import Any, cast
 
 import waffle
@@ -2288,8 +2289,11 @@ def _track_bulletin_viewed(
     ``_bulletin_detail_response`` requires no additional branch.
 
     The ``distinct_id`` is ``str(request.user.pk)`` for authenticated
-    visitors, or the Django session key for anonymous visitors (the session
-    is saved first so a key always exists).
+    visitors.  For anonymous visitors it is the existing Django session key
+    when one is already in the cookie (no DB query), or a request-scoped
+    ``anon-<uuid4>`` string when no session exists yet.  The UUID approach
+    avoids forcing a session-row INSERT on every anonymous pageview, which
+    would add 2–7 extra DB queries per request.
 
     Args:
         request: The incoming HTTP request.
@@ -2306,14 +2310,18 @@ def _track_bulletin_viewed(
     if request.user.is_authenticated:
         distinct_id = str(request.user.pk)
     else:
-        # Ensure the session has a key before reading it.
-        if not request.session.session_key:
-            request.session.save()
-        session_key = request.session.session_key
-        if not session_key:
-            # Safety: skip the event rather than emit with an empty distinct_id.
-            return
-        distinct_id = session_key
+        # For anonymous users, use the existing session key if one is already
+        # present in the cookie (the session was created by a prior request,
+        # so reading session_key is free).  When no session exists yet, mint a
+        # request-scoped UUID instead of calling session.save() — saving the
+        # session forces 2–7 extra DB queries (BEGIN/INSERT/COMMIT + the
+        # SessionMiddleware re-save on process_response).  The UUID is not
+        # stable across requests, but anonymous event attribution is
+        # approximate by nature; the per-session fidelity is acceptable.
+        if request.session.session_key:
+            distinct_id = request.session.session_key
+        else:
+            distinct_id = f"anon-{uuid.uuid4()}"
 
     # Danger level — read from the panel's danger_number (integer 1–5).
     danger_level: int | None = panel.get("danger_number")
