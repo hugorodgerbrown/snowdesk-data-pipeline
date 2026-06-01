@@ -1558,6 +1558,148 @@ class TestDayWindowsPanel:
 
 
 # ---------------------------------------------------------------------------
+# Test: Day Risk Profile elevation-band split (ALBINA)
+# ---------------------------------------------------------------------------
+
+
+class TestDayWindowsElevationSplit:
+    """
+    Unit tests for the elevation-band split applied to ALBINA's per-period
+    danger ratings by ``_day_windows_from_rm_ratings``.
+
+    ALBINA pairs every banded rating ("below X" + "above X" at the same
+    pivot); when the two bands disagree the day-windows panel should surface
+    both as separate rows with elevation captions. When they agree, the
+    split is suppressed because the elevation differentiation carries no
+    information. SLF is never affected because it publishes a single rating
+    per period.
+    """
+
+    def _rm_rating(
+        self,
+        key: str,
+        period: str = "all_day",
+        *,
+        lower: int | None = None,
+        upper: int | None = None,
+        treeline_side: str | None = None,
+    ) -> dict[str, Any]:
+        """Build a single projected ``danger.ratings`` entry."""
+        elevation: dict[str, Any] | None = None
+        if lower is not None or upper is not None or treeline_side is not None:
+            elevation = {
+                "lower": lower,
+                "upper": upper,
+                "treeline": treeline_side is not None,
+                "treeline_side": treeline_side,
+            }
+        return {
+            "period": period,
+            "key": key,
+            "subdivision": None,
+            "elevation": elevation,
+        }
+
+    def test_single_rating_per_period_unchanged(self) -> None:
+        """One rating in a period → one row with empty caption (SLF baseline)."""
+        from public.views import _day_windows_from_rm_ratings
+
+        rows = _day_windows_from_rm_ratings([self._rm_rating("moderate")])
+        assert len(rows) == 1
+        assert rows[0]["level_key"] == "moderate"
+        assert rows[0]["caption"] == ""
+
+    def test_matching_bands_collapse_to_single_row(self) -> None:
+        """Two band ratings with same level → one row, no elevation caption."""
+        from public.views import _day_windows_from_rm_ratings
+
+        rows = _day_windows_from_rm_ratings(
+            [
+                self._rm_rating("considerable", upper=2200),  # below 2200
+                self._rm_rating("considerable", lower=2200),  # above 2200
+            ]
+        )
+        assert len(rows) == 1
+        assert rows[0]["caption"] == ""
+
+    def test_differing_numeric_bands_emit_two_rows(self) -> None:
+        """Differing band levels with numeric pivot → two rows, ordered low→high."""
+        from public.views import _day_windows_from_rm_ratings
+
+        rows = _day_windows_from_rm_ratings(
+            [
+                self._rm_rating("considerable", lower=2200),  # above 2200 (upper band)
+                self._rm_rating("moderate", upper=2200),  # below 2200 (lower band)
+            ]
+        )
+        assert len(rows) == 2
+        # Lower band emitted first regardless of source order.
+        assert rows[0]["level_key"] == "moderate"
+        assert "2200" in rows[0]["caption"]
+        assert rows[1]["level_key"] == "considerable"
+        assert "2200" in rows[1]["caption"]
+        # Captions differ — the two bands carry distinct elevation wording.
+        assert rows[0]["caption"] != rows[1]["caption"]
+
+    def test_treeline_pivot_emits_distinct_captions(self) -> None:
+        """Treeline-pivoted bands produce 'below treeline' / 'above treeline'."""
+        from public.views import _day_windows_from_rm_ratings
+
+        rows = _day_windows_from_rm_ratings(
+            [
+                # "above treeline" — treeline was the lowerBound.
+                self._rm_rating("considerable", treeline_side="lower"),
+                # "below treeline" — treeline was the upperBound.
+                self._rm_rating("low", treeline_side="upper"),
+            ]
+        )
+        assert len(rows) == 2
+        assert rows[0]["level_key"] == "low"  # below treeline first
+        assert "treeline" in rows[0]["caption"]
+        assert rows[1]["level_key"] == "considerable"
+        assert "treeline" in rows[1]["caption"]
+        assert rows[0]["caption"] != rows[1]["caption"]
+
+    def test_albina_no_all_day_emits_per_period(self) -> None:
+        """No ``all_day`` rating → emit earlier then later, each potentially split."""
+        from public.views import _day_windows_from_rm_ratings
+
+        rows = _day_windows_from_rm_ratings(
+            [
+                self._rm_rating("low", period="earlier"),
+                self._rm_rating("moderate", period="later", upper=2200),
+                self._rm_rating("considerable", period="later", lower=2200),
+            ]
+        )
+        # 1 earlier row + 2 later band rows.
+        assert len(rows) == 3
+        assert rows[0]["type"] == "earlier"
+        assert rows[1]["type"] == "later"
+        assert rows[2]["type"] == "later"
+        # Later band rows are split with captions.
+        assert rows[1]["caption"] != ""
+        assert rows[2]["caption"] != ""
+
+    def test_all_day_split_with_later_overlay(self) -> None:
+        """A split all_day with a higher later overlay emits both, in order."""
+        from public.views import _day_windows_from_rm_ratings
+
+        rows = _day_windows_from_rm_ratings(
+            [
+                self._rm_rating("low", upper=2200),  # all_day, below 2200
+                self._rm_rating("moderate", lower=2200),  # all_day, above 2200
+                self._rm_rating("considerable", period="later"),
+            ]
+        )
+        # 2 all_day band rows + 1 later row (peak rank > all_day peak).
+        assert len(rows) == 3
+        assert rows[0]["type"] == "all_day"
+        assert rows[1]["type"] == "all_day"
+        assert rows[2]["type"] == "later"
+        assert rows[2]["caption"] == ""
+
+
+# ---------------------------------------------------------------------------
 # Test: bulletin page content — subregion names, day-risk panel
 # ---------------------------------------------------------------------------
 

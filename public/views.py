@@ -1607,41 +1607,100 @@ def _max_rating_per_period(
     return by_period
 
 
-def _max_rm_rating_per_period(
+def _group_rm_ratings_by_period(
     rm_ratings: list[dict[str, Any]],
-) -> dict[str, dict[str, Any]]:
-    """Group projected ``danger.ratings`` by ``period``, keeping the highest-rank.
+) -> dict[str, list[dict[str, Any]]]:
+    """Group projected ``danger.ratings`` by ``period``, preserving every entry.
 
-    Each entry in ``rm_ratings`` is a projected rating dict with ``period``,
-    ``key``, ``subdivision`` (display char or None), and ``elevation``. For
-    each period, the entry with the highest (band, subdivision) rank is kept
-    so that elevation-split ratings within a period collapse to the more
-    dangerous entry.
+    Unlike the older max-collapse, this keeps every rating in a period so
+    callers can emit per-elevation-band rows when ALBINA splits a period's
+    danger by elevation. Ratings whose ``key`` isn't a canonical EAWS level
+    are dropped (defensive — the projection should not emit them).
 
     Args:
         rm_ratings: The ``danger.ratings`` list from the render model.
 
     Returns:
-        Dict mapping ``period`` string to the highest-ranked projected rating
-        entry for that period.
+        Dict mapping ``period`` string to the ordered list of projected
+        rating entries for that period (source order preserved).
 
     """
-    by_period: dict[str, dict[str, Any]] = {}
+    by_period: dict[str, list[dict[str, Any]]] = {}
     for r in rm_ratings:
         period: str = r.get("period") or "all_day"
         level: str = r.get("key") or ""
         if level not in _DANGER_ORDER:
             continue
-        sub: str = r.get("subdivision") or ""
-        incumbent = by_period.get(period)
-        if incumbent is None:
-            by_period[period] = r
-            continue
-        inc_level: str = incumbent.get("key") or ""
-        inc_sub: str = incumbent.get("subdivision") or ""
-        if _rm_danger_rank(level, sub) > _rm_danger_rank(inc_level, inc_sub):
-            by_period[period] = r
+        by_period.setdefault(period, []).append(r)
     return by_period
+
+
+def _max_rm_rank_in(ratings: list[dict[str, Any]]) -> tuple[int, int]:
+    """Return the highest ``_rm_danger_rank`` across the given ratings."""
+    return max(
+        (
+            _rm_danger_rank(r.get("key") or "", r.get("subdivision") or "")
+            for r in ratings
+        ),
+        default=(0, 0),
+    )
+
+
+def _rm_elevation_caption(rm_elev: dict[str, Any] | None) -> str:
+    """Render a projected elevation dict as a short human caption.
+
+    Reconstructs the CAAML lower/upper bounds from the projection — including
+    putting the ``"treeline"`` token back on the bound it originally lived on
+    (recorded by ``_parse_elevation`` in ``treeline_side``) — then delegates
+    to :func:`_elevation_display` so the captions match the wording used in
+    the problem-card aspect/elevation row. Returns ``""`` when no bounds
+    survive (e.g. both bounds absent or older render models that predate the
+    ``treeline_side`` field).
+    """
+    if not rm_elev:
+        return ""
+    lower = rm_elev.get("lower")
+    upper = rm_elev.get("upper")
+    treeline_side = rm_elev.get("treeline_side")
+    caaml_lower: Any = lower
+    caaml_upper: Any = upper
+    if treeline_side == "lower":
+        caaml_lower = "treeline"
+    elif treeline_side == "upper":
+        caaml_upper = "treeline"
+    return _elevation_display(caaml_lower, caaml_upper)
+
+
+def _elevation_sort_key(rating: dict[str, Any]) -> tuple[int, int]:
+    """Sort projected ratings within a period so the lower band comes first.
+
+    ALBINA always pairs an ``upperBound="X"`` rating ("below X" — the lower
+    band) with a ``lowerBound="X"`` rating ("above X" — the upper band) at the
+    same pivot. After projection, only the numeric bound is preserved on each
+    side; for the treeline pivot the two ratings collapse to identical
+    numeric bounds and are distinguished by ``treeline_side``. The sort key
+    orders strictly: below-treeline < below-X < above-X < above-treeline.
+    """
+    elev = rating.get("elevation") or {}
+    lower = elev.get("lower")
+    upper = elev.get("upper")
+    treeline_side = elev.get("treeline_side")
+    # Treeline pivot: when "treeline" was the upperBound, the rating means
+    # "below treeline" (the lower band). When it was the lowerBound, "above
+    # treeline" (the upper band).
+    if treeline_side == "upper":
+        return (0, 0)
+    if treeline_side == "lower":
+        return (3, 0)
+    # Numeric pivot: upperBound-only → "below X" (lower band); lowerBound-only
+    # → "above X" (upper band). Use the bound value to keep adjacent pivots
+    # ordered relative to each other for the rare case where a single period
+    # mixes pivots.
+    if lower is None and upper is not None:
+        return (1, upper)
+    if lower is not None:
+        return (2, lower)
+    return (4, 0)
 
 
 def _day_window_row_from_rm(rm_rating: dict[str, Any]) -> dict[str, Any]:
@@ -1651,7 +1710,10 @@ def _day_window_row_from_rm(rm_rating: dict[str, Any]) -> dict[str, Any]:
         rm_rating: One entry from ``render_model["danger"]["ratings"]``.
 
     Returns:
-        A window row dict consumed by the day-windows panel partial.
+        A window row dict consumed by the day-windows panel partial. The
+        ``caption`` slot defaults to ``""`` and is populated by
+        :func:`_rows_for_period` only when a period emits multiple
+        elevation-band rows.
 
     """
     period: str = rm_rating.get("period") or "all_day"
@@ -1671,38 +1733,69 @@ def _day_window_row_from_rm(rm_rating: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _rows_for_period(
+    period_ratings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Emit one or more day-window rows for a single time period.
+
+    When every rating in the period resolves to the same (key, subdivision),
+    a single row is emitted with no caption — the elevation split is
+    informational only and would be noise. Otherwise one row is emitted per
+    rating, ordered low-elevation-band first, each carrying an elevation
+    caption (``"below 2200 m"``, ``"above treeline"`` …) so the user can see
+    which band each level applies to. This is the path ALBINA takes for
+    periods where the danger genuinely differs by elevation; SLF never splits
+    danger by elevation so it always falls into the single-row branch.
+    """
+    if not period_ratings:
+        return []
+    distinct = {
+        (r.get("key") or "", r.get("subdivision") or "") for r in period_ratings
+    }
+    if len(distinct) == 1:
+        # All band ratings agree — pick any (they encode the same level) and
+        # drop the elevation caption to avoid spurious differentiation.
+        return [_day_window_row_from_rm(period_ratings[0])]
+    rows: list[dict[str, Any]] = []
+    for r in sorted(period_ratings, key=_elevation_sort_key):
+        row = _day_window_row_from_rm(r)
+        row["caption"] = _rm_elevation_caption(r.get("elevation"))
+        rows.append(row)
+    return rows
+
+
 def _day_windows_from_rm_ratings(
     rm_ratings: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """
     Build day-window rows from the projected danger.ratings list.
 
-    SLF style: prefers ``all_day`` row plus ``later`` when the later rank is
-    strictly higher. ALBINA style: emits one row per period (earlier → later)
-    when no ``all_day`` entry is present.
-    """
-    by_period = _max_rm_rating_per_period(rm_ratings)
-    all_day_entry = by_period.get("all_day")
-    if all_day_entry is not None:
-        windows = [_day_window_row_from_rm(all_day_entry)]
-        later_entry = by_period.get("later")
-        if later_entry is not None:
-            later_rank = _rm_danger_rank(
-                later_entry.get("key") or "", later_entry.get("subdivision") or ""
-            )
-            ad_rank = _rm_danger_rank(
-                all_day_entry.get("key") or "",
-                all_day_entry.get("subdivision") or "",
-            )
-            if later_rank > ad_rank:
-                windows.append(_day_window_row_from_rm(later_entry))
-        return windows
+    SLF style: prefers ``all_day`` rows plus ``later`` overlay when the later
+    band's peak rank exceeds the all_day peak. ALBINA style: emits one row
+    per period (earlier → later) when no ``all_day`` entry is present.
 
-    # ALBINA-style: no all_day entry — one row per period, earlier → later.
-    period_order = ("earlier", "later")
-    return [
-        _day_window_row_from_rm(by_period[p]) for p in period_order if p in by_period
-    ]
+    For ALBINA specifically, a single period often carries two ratings split
+    by elevation band (one for each of "below X" and "above X" — sometimes
+    differing in danger level). When the two band ratings disagree, both
+    rows are emitted with elevation captions; when they agree, the row
+    collapses to one with no caption. SLF is never affected because it
+    publishes one rating per period.
+    """
+    by_period = _group_rm_ratings_by_period(rm_ratings)
+    all_day_list = by_period.get("all_day") or []
+    if all_day_list:
+        rows = _rows_for_period(all_day_list)
+        later_list = by_period.get("later") or []
+        if later_list and _max_rm_rank_in(later_list) > _max_rm_rank_in(all_day_list):
+            rows.extend(_rows_for_period(later_list))
+        return rows
+
+    # ALBINA-style: no all_day entry — earlier then later, each potentially
+    # split into multiple elevation-band rows.
+    fallback_rows: list[dict[str, Any]] = []
+    for p in ("earlier", "later"):
+        fallback_rows.extend(_rows_for_period(by_period.get(p) or []))
+    return fallback_rows
 
 
 def _day_windows_from_raw_ratings(bulletin: Bulletin) -> list[dict[str, Any]]:
@@ -2690,6 +2783,26 @@ _PROBLEM_LABELS: dict[str, Any] = {
 # the canonical schema definition.
 _TIME_PERIOD_LABELS: dict[str, str | Promise] = dict(ValidTimePeriod.choices)
 
+# Human labels for ALBINA's EAWS matrix axes. ALBINA publishes the matrix
+# *inputs* (size × frequency × snowpack stability) on every problem; SLF
+# publishes the output (per-problem danger rating + comment) instead and
+# carries none of these. ``frequency`` value ``"none"`` is treated as
+# "not reported" and never rendered — only the canonical EAWS triple
+# (few / some / many) produces a chip. ``snowpack_stability`` ``"good"``
+# never occurs in observed data (good stability = no problem) but is
+# included for completeness.
+_FREQUENCY_LABELS: dict[str, Promise] = {
+    "few": _("Few"),
+    "some": _("Some"),
+    "many": _("Many"),
+}
+_STABILITY_LABELS: dict[str, Promise] = {
+    "very_poor": _("Very poor snowpack"),
+    "poor": _("Poor snowpack"),
+    "fair": _("Fair snowpack"),
+    "good": _("Good snowpack"),
+}
+
 _DANGER_ORDER: tuple[str, ...] = (
     "low",
     "moderate",
@@ -3222,6 +3335,14 @@ def _problem_cards_from_render_model_traits(
             if plevel > max_danger_level:
                 max_danger_level = plevel
 
+        # EAWS matrix axes (ALBINA-only — None for SLF/MeteoFrance). Translated
+        # at projection time so the template renders strings directly. Frequency
+        # ``"none"`` is intentionally dropped — treated as "not reported".
+        frequency_raw: str | None = first.get("frequency") or None
+        stability_raw: str | None = first.get("snowpack_stability") or None
+        frequency_label: Promise | None = _FREQUENCY_LABELS.get(frequency_raw or "")
+        stability_label: Promise | None = _STABILITY_LABELS.get(stability_raw or "")
+
         cards.append(
             {
                 "category": category,
@@ -3238,6 +3359,10 @@ def _problem_cards_from_render_model_traits(
                 "hide_comment": False,
                 # v4: avalanche_type for slab/loose chip (may be None).
                 "avalanche_type": first.get("avalanche_type"),
+                # ALBINA EAWS matrix axes — None on SLF/MeteoFrance cards.
+                "avalanche_size": first.get("avalanche_size"),
+                "frequency_label": frequency_label,
+                "stability_label": stability_label,
             }
         )
     return cards

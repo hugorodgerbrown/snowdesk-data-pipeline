@@ -212,8 +212,14 @@ def _parse_elevation(
             ``upperBound`` keys.
 
     Returns:
-        Dict with ``lower`` (int|None), ``upper`` (int|None), and
-        ``treeline`` (bool) keys, or ``None`` when no bounds are present.
+        Dict with ``lower`` (int|None), ``upper`` (int|None),
+        ``treeline`` (bool), and ``treeline_side`` (``"lower"``, ``"upper"``,
+        or ``None``) keys, or ``None`` when no bounds are present.
+        ``treeline_side`` records which CAAML bound carried the ``"treeline"``
+        token so consumers can reconstruct distinct "above treeline" /
+        "below treeline" bands after projection — the otherwise-lossy step
+        that collapses both treeline-pivoted ratings to identical
+        ``lower=upper=None`` shape.
 
     """
     if not elevation:
@@ -235,15 +241,20 @@ def _parse_elevation(
             return int(s)
         return None
 
-    treeline = (
-        str(lower_raw).lower() == _TREELINE_TOKEN
-        or str(upper_raw).lower() == _TREELINE_TOKEN
-    )
+    lower_is_treeline = str(lower_raw).lower() == _TREELINE_TOKEN
+    upper_is_treeline = str(upper_raw).lower() == _TREELINE_TOKEN
+    treeline = lower_is_treeline or upper_is_treeline
+    treeline_side: str | None = None
+    if lower_is_treeline:
+        treeline_side = "lower"
+    elif upper_is_treeline:
+        treeline_side = "upper"
 
     return {
         "lower": _to_int(lower_raw),
         "upper": _to_int(upper_raw),
         "treeline": treeline,
+        "treeline_side": treeline_side,
     }
 
 

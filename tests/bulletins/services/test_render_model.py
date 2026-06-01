@@ -97,18 +97,27 @@ class TestParseElevation:
         assert result["treeline"] is False
 
     def test_treeline_lower(self) -> None:
-        """'treeline' token on lower bound sets treeline=True."""
+        """'treeline' token on lower bound sets treeline=True and side='lower'."""
         result = _parse_elevation({"lowerBound": "treeline"})
         assert result is not None
         assert result["treeline"] is True
         assert result["lower"] is None
+        assert result["treeline_side"] == "lower"
 
     def test_treeline_upper(self) -> None:
-        """'treeline' token on upper bound sets treeline=True."""
+        """'treeline' token on upper bound sets treeline=True and side='upper'."""
         result = _parse_elevation({"upperBound": "treeline"})
         assert result is not None
         assert result["treeline"] is True
         assert result["upper"] is None
+        assert result["treeline_side"] == "upper"
+
+    def test_treeline_side_none_when_no_treeline(self) -> None:
+        """Numeric-only bounds carry treeline_side=None."""
+        result = _parse_elevation({"lowerBound": "2200"})
+        assert result is not None
+        assert result["treeline"] is False
+        assert result["treeline_side"] is None
 
     def test_both_numeric(self) -> None:
         """Both bounds numeric returns both as ints."""
