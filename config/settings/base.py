@@ -87,6 +87,11 @@ MIDDLEWARE = [
     # because we don't expose a wafflejs endpoint (no JS-side flag checks
     # yet). See ``docs/feature-flags.md``.
     "waffle.middleware.WaffleMiddleware",
+    # PostHog request context middleware. Placed immediately after
+    # WaffleMiddleware so request.user is available for identity tagging.
+    # Short-circuits via POSTHOG_MW_REQUEST_FILTER when POSTHOG_API_KEY is
+    # empty so it is a guaranteed no-op in development and test runs.
+    "posthog.integrations.django.PosthogContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
@@ -188,13 +193,59 @@ AUTHENTICATION_BACKENDS = [
 # ---------------------------------------------------------------------------
 # Analytics (PostHog)
 # ---------------------------------------------------------------------------
-# Server-side event capture via the posthog-python client. The wrapper in
-# ``analytics/__init__.py`` is a no-op when this key is empty, so no events
-# are sent during local development or test runs unless the key is explicitly
-# populated. Set to the EU project key in production via the environment.
+# Server-side event capture via the posthog-python client and the official
+# PosthogContextMiddleware. The global posthog module-level client is
+# initialised in ``analytics/apps.py`` ``AppConfig.ready()``. The wrappers
+# in ``analytics/__init__.py`` are no-ops when POSTHOG_API_KEY is empty so
+# no events are sent during local development or test runs unless the key is
+# explicitly populated. Set to the EU project key in production via the
+# environment.
 
 POSTHOG_API_KEY = config("POSTHOG_API_KEY", default="")
 POSTHOG_HOST = config("POSTHOG_HOST", default="https://eu.i.posthog.com")
+
+# Capture unhandled view exceptions as PostHog events (default True). Set to
+# False to disable exception capture without removing the middleware.
+POSTHOG_MW_CAPTURE_EXCEPTIONS = config(
+    "POSTHOG_MW_CAPTURE_EXCEPTIONS", default=True, cast=bool
+)
+
+# Capture local-variable values from each frame of captured exception
+# tracebacks (default True). PostHog applies built-in mask/ignore patterns to
+# redact common credential names, but enabling this still ships frame-locals
+# to PostHog — review the privacy implications before flipping in a new
+# environment. Set to False to capture stack traces only.
+POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES = config(
+    "POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES", default=True, cast=bool
+)
+
+
+# Skip the middleware entirely when no API key is configured — avoids
+# per-request context and tag work in dev/test with no key.
+# The function is called at request time — importing django.conf.settings
+# inside it is safe and reads the live value so @override_settings works.
+def _posthog_request_filter(request: object) -> bool:
+    """Return True only when POSTHOG_API_KEY is non-empty.
+
+    Reads ``django.conf.settings`` at call time so that ``@override_settings``
+    in tests takes effect without capturing a stale module-level binding.
+    """
+    from django.conf import settings as _s  # noqa: PLC0415 — intentional late import
+
+    return bool((getattr(_s, "POSTHOG_API_KEY", "") or "").strip())
+
+
+POSTHOG_MW_REQUEST_FILTER = _posthog_request_filter
+
+
+# Strip ``email`` from the user-tag dict before PostHog sees it to honour
+# the PII invariant (email is never transmitted in event properties).
+def _posthog_tag_map(tags: dict[str, object]) -> dict[str, object]:
+    """Return ``tags`` with the ``email`` key removed."""
+    return {k: v for k, v in tags.items() if k != "email"}
+
+
+POSTHOG_MW_TAG_MAP = _posthog_tag_map
 
 # ---------------------------------------------------------------------------
 # Logging

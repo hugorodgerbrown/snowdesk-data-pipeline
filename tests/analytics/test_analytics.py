@@ -5,27 +5,20 @@ Covers:
   track()  — no-op when POSTHOG_API_KEY is unset; calls through when key is set;
              raises AnalyticsPIIError for each banned key.
   alias()  — no-op when key unset; calls through when key is set.
+  Settings callables — POSTHOG_MW_REQUEST_FILTER and POSTHOG_MW_TAG_MAP.
 """
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from typing import Any, Callable
+from unittest.mock import patch
 
 import pytest
-from django.test import override_settings
+from django.conf import settings
+from django.test import RequestFactory, override_settings
 
 import analytics
 from analytics.exceptions import AnalyticsPIIError
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _reset_client() -> None:
-    """Reset the module-level client singleton between tests."""
-    analytics._client = None
-
 
 # ---------------------------------------------------------------------------
 # track() — no-op when key is absent
@@ -35,22 +28,18 @@ def _reset_client() -> None:
 class TestTrackNoOp:
     """track() is a no-op when POSTHOG_API_KEY is empty."""
 
-    def setup_method(self) -> None:
-        """Reset client singleton before each test."""
-        _reset_client()
-
     @override_settings(POSTHOG_API_KEY="")
     def test_no_call_when_key_empty(self) -> None:
-        with patch("posthog.Posthog") as mock_cls:
+        with patch("posthog.capture") as mock_capture:
             analytics.track("test_event", "user-1")
-            mock_cls.assert_not_called()
+            mock_capture.assert_not_called()
 
     @override_settings(POSTHOG_API_KEY="  ")
     def test_no_call_when_key_whitespace(self) -> None:
         """Whitespace-only key is treated as absent."""
-        with patch("posthog.Posthog") as mock_cls:
+        with patch("posthog.capture") as mock_capture:
             analytics.track("test_event", "user-1")
-            mock_cls.assert_not_called()
+            mock_capture.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -59,20 +48,15 @@ class TestTrackNoOp:
 
 
 class TestTrackCallsThrough:
-    """track() calls posthog.Posthog.capture() when a key is configured."""
-
-    def setup_method(self) -> None:
-        """Reset client singleton before each test."""
-        _reset_client()
+    """track() calls posthog.capture() when a key is configured."""
 
     @override_settings(
         POSTHOG_API_KEY="test-key", POSTHOG_HOST="https://eu.posthog.com"
     )
     def test_capture_called_with_event_and_distinct_id(self) -> None:
-        mock_client = MagicMock()
-        with patch("posthog.Posthog", return_value=mock_client):
+        with patch("posthog.capture") as mock_capture:
             analytics.track("subscription_started", "abc-123")
-            mock_client.capture.assert_called_once_with(
+            mock_capture.assert_called_once_with(
                 event="subscription_started",
                 distinct_id="abc-123",
                 properties={},
@@ -82,14 +66,13 @@ class TestTrackCallsThrough:
         POSTHOG_API_KEY="test-key", POSTHOG_HOST="https://eu.posthog.com"
     )
     def test_capture_called_with_properties(self) -> None:
-        mock_client = MagicMock()
-        with patch("posthog.Posthog", return_value=mock_client):
+        with patch("posthog.capture") as mock_capture:
             analytics.track(
                 "region_added",
                 "user-42",
                 {"region_id": "CH-4115", "region_count_after": 2},
             )
-            mock_client.capture.assert_called_once_with(
+            mock_capture.assert_called_once_with(
                 event="region_added",
                 distinct_id="user-42",
                 properties={"region_id": "CH-4115", "region_count_after": 2},
@@ -100,9 +83,7 @@ class TestTrackCallsThrough:
     )
     def test_exception_from_client_does_not_propagate(self) -> None:
         """Errors from PostHog client are swallowed — analytics must not break requests."""
-        mock_client = MagicMock()
-        mock_client.capture.side_effect = RuntimeError("PostHog is down")
-        with patch("posthog.Posthog", return_value=mock_client):
+        with patch("posthog.capture", side_effect=RuntimeError("PostHog is down")):
             # Should not raise.
             analytics.track("test_event", "user-1")
 
@@ -114,10 +95,6 @@ class TestTrackCallsThrough:
 
 class TestTrackPIIRejection:
     """track() raises AnalyticsPIIError when properties contain PII keys."""
-
-    def setup_method(self) -> None:
-        """Reset client singleton before each test."""
-        _reset_client()
 
     @pytest.mark.parametrize("key", ["email", "ip", "token", "credential_id"])
     def test_raises_on_pii_key(self, key: str) -> None:
@@ -144,15 +121,11 @@ class TestTrackPIIRejection:
 class TestAliasNoOp:
     """alias() is a no-op when POSTHOG_API_KEY is empty."""
 
-    def setup_method(self) -> None:
-        """Reset client singleton before each test."""
-        _reset_client()
-
     @override_settings(POSTHOG_API_KEY="")
     def test_no_call_when_key_empty(self) -> None:
-        with patch("posthog.Posthog") as mock_cls:
+        with patch("posthog.alias") as mock_alias:
             analytics.alias("user-42", "anon-uuid-xyz")
-            mock_cls.assert_not_called()
+            mock_alias.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -161,20 +134,15 @@ class TestAliasNoOp:
 
 
 class TestAliasCallsThrough:
-    """alias() calls posthog.Posthog.alias() when a key is configured."""
-
-    def setup_method(self) -> None:
-        """Reset client singleton before each test."""
-        _reset_client()
+    """alias() calls posthog.alias() when a key is configured."""
 
     @override_settings(
         POSTHOG_API_KEY="test-key", POSTHOG_HOST="https://eu.posthog.com"
     )
     def test_alias_called_with_correct_args(self) -> None:
-        mock_client = MagicMock()
-        with patch("posthog.Posthog", return_value=mock_client):
+        with patch("posthog.alias") as mock_alias:
             analytics.alias("user-42", "anon-uuid-xyz")
-            mock_client.alias.assert_called_once_with(
+            mock_alias.assert_called_once_with(
                 previous_id="anon-uuid-xyz",
                 distinct_id="user-42",
             )
@@ -184,8 +152,77 @@ class TestAliasCallsThrough:
     )
     def test_exception_from_client_does_not_propagate(self) -> None:
         """Errors from PostHog alias call are swallowed."""
-        mock_client = MagicMock()
-        mock_client.alias.side_effect = RuntimeError("PostHog is down")
-        with patch("posthog.Posthog", return_value=mock_client):
+        with patch("posthog.alias", side_effect=RuntimeError("PostHog is down")):
             # Should not raise.
             analytics.alias("user-42", "anon-xyz")
+
+
+# ---------------------------------------------------------------------------
+# POSTHOG_MW_TAG_MAP — strips email from middleware tag dict
+# ---------------------------------------------------------------------------
+
+
+class TestPosthogMwTagMap:
+    """POSTHOG_MW_TAG_MAP callable strips the ``email`` key from tag dicts."""
+
+    def test_email_stripped_from_tags(self) -> None:
+        """email is removed to honour the PII invariant."""
+        tag_map: Callable[[dict[str, Any]], dict[str, Any]] = getattr(
+            settings, "POSTHOG_MW_TAG_MAP"
+        )
+        tags = {"email": "user@example.com", "id": "42", "is_staff": False}
+        result = tag_map(tags)
+        assert "email" not in result
+
+    def test_other_keys_retained(self) -> None:
+        """Non-PII keys pass through unchanged."""
+        tag_map: Callable[[dict[str, Any]], dict[str, Any]] = getattr(
+            settings, "POSTHOG_MW_TAG_MAP"
+        )
+        tags = {"email": "user@example.com", "id": "42", "is_staff": False}
+        result = tag_map(tags)
+        assert result == {"id": "42", "is_staff": False}
+
+    def test_empty_dict_is_safe(self) -> None:
+        """Calling with an empty dict returns an empty dict."""
+        tag_map: Callable[[dict[str, Any]], dict[str, Any]] = getattr(
+            settings, "POSTHOG_MW_TAG_MAP"
+        )
+        assert tag_map({}) == {}
+
+
+# ---------------------------------------------------------------------------
+# POSTHOG_MW_REQUEST_FILTER — short-circuits when API key is absent
+# ---------------------------------------------------------------------------
+
+
+class TestPosthogMwRequestFilter:
+    """POSTHOG_MW_REQUEST_FILTER returns False when the API key is empty."""
+
+    def _make_request(self) -> object:
+        """Build a minimal GET request object."""
+        return RequestFactory().get("/")
+
+    @override_settings(POSTHOG_API_KEY="")
+    def test_returns_false_when_key_empty(self) -> None:
+        """Middleware is bypassed when no key is configured."""
+        request_filter: Callable[[object], bool] = getattr(
+            settings, "POSTHOG_MW_REQUEST_FILTER"
+        )
+        assert request_filter(self._make_request()) is False
+
+    @override_settings(POSTHOG_API_KEY="  ")
+    def test_returns_false_when_key_whitespace(self) -> None:
+        """Whitespace-only key is treated as absent."""
+        request_filter: Callable[[object], bool] = getattr(
+            settings, "POSTHOG_MW_REQUEST_FILTER"
+        )
+        assert request_filter(self._make_request()) is False
+
+    @override_settings(POSTHOG_API_KEY="phc_real_key")
+    def test_returns_true_when_key_set(self) -> None:
+        """Middleware runs normally when a key is configured."""
+        request_filter: Callable[[object], bool] = getattr(
+            settings, "POSTHOG_MW_REQUEST_FILTER"
+        )
+        assert request_filter(self._make_request()) is True

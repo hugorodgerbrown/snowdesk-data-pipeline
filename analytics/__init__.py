@@ -19,14 +19,19 @@ keys (``email``, ``ip``, ``token``, ``credential_id``) are rejected at the
 call site by raising ``AnalyticsPIIError`` *before* any network call is
 attempted.
 
-Client initialisation is lazy (one ``posthog.Posthog`` instance per
-process, created on first call) so import-time errors do not affect startup.
+The global ``posthog`` module-level client is initialised in
+``analytics/apps.py`` ``AppConfig.ready()``; ``track()`` and ``alias()``
+call ``posthog.capture`` / ``posthog.alias`` directly so they share the
+same client as ``PosthogContextMiddleware`` without any singleton of their
+own.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import Any
+
+import posthog
 
 from analytics.exceptions import AnalyticsPIIError
 
@@ -35,44 +40,6 @@ logger = logging.getLogger(__name__)
 # Keys that must never appear in event properties — contain personally
 # identifiable information or credentials.
 _PII_KEYS: frozenset[str] = frozenset({"email", "ip", "token", "credential_id"})
-
-# Module-level singleton: populated lazily on first call to track() or alias().
-_client: Any = None
-
-
-def _get_client() -> Any:
-    """Return the lazily-initialised PostHog client, or None when disabled.
-
-    Reads ``settings.POSTHOG_API_KEY`` and ``settings.POSTHOG_HOST`` at
-    call time so that test overrides via ``@override_settings`` take effect.
-    Returns ``None`` when the key is absent or empty so callers can
-    short-circuit without any network activity.
-    """
-    global _client  # noqa: PLW0603 — intentional module-level singleton
-
-    from django.conf import settings  # local import to avoid import-time side effects
-
-    api_key: str = (getattr(settings, "POSTHOG_API_KEY", "") or "").strip()
-    if not api_key:
-        return None
-
-    if _client is None:
-        import posthog
-
-        host: str = getattr(settings, "POSTHOG_HOST", "https://eu.posthog.com")
-        # disable_geoip=False retains PostHog's server-side GeoIP enrichment
-        # (country/city from IP) while we strip the raw IP from the event
-        # properties ourselves — PII safeguard prevents the ip key reaching
-        # the payload, but PostHog can still derive geo from the inbound
-        # request header on its ingestion layer.
-        _client = posthog.Posthog(
-            project_api_key=api_key,
-            host=host,
-            disable_geoip=False,
-        )
-        logger.debug("PostHog client initialised (host=%s)", host)
-
-    return _client
 
 
 def _assert_no_pii(properties: dict[str, object]) -> None:
@@ -123,11 +90,13 @@ def track(
             ``properties`` contains a PII key.
 
     """
-    props = properties or {}
+    props: dict[str, Any] = properties or {}
     _assert_no_pii(props)
 
-    client = _get_client()
-    if client is None:
+    from django.conf import settings
+
+    api_key: str = (getattr(settings, "POSTHOG_API_KEY", "") or "").strip()
+    if not api_key:
         logger.debug(
             "analytics.track no-op (POSTHOG_API_KEY unset): event=%s distinct_id=%s",
             event,
@@ -136,7 +105,7 @@ def track(
         return
 
     try:
-        client.capture(event=event, distinct_id=distinct_id, properties=props)
+        posthog.capture(event=event, distinct_id=distinct_id, properties=props)
         logger.debug("analytics.track: event=%s distinct_id=%s", event, distinct_id)
     except Exception:  # noqa: BLE001 — analytics must never break requests
         logger.warning(
@@ -163,8 +132,10 @@ def alias(distinct_id: str, alias_id: str) -> None:
         alias_id: The temporary alias to merge (anonymous session UUID).
 
     """
-    client = _get_client()
-    if client is None:
+    from django.conf import settings
+
+    api_key: str = (getattr(settings, "POSTHOG_API_KEY", "") or "").strip()
+    if not api_key:
         logger.debug(
             "analytics.alias no-op (POSTHOG_API_KEY unset): distinct_id=%s alias_id=%s",
             distinct_id,
@@ -175,7 +146,7 @@ def alias(distinct_id: str, alias_id: str) -> None:
     try:
         # PostHog alias: previous_id is the alias we want to merge; distinct_id
         # is the canonical identity to merge it into.
-        client.alias(previous_id=alias_id, distinct_id=distinct_id)
+        posthog.alias(previous_id=alias_id, distinct_id=distinct_id)
         logger.debug(
             "analytics.alias: distinct_id=%s alias_id=%s", distinct_id, alias_id
         )
