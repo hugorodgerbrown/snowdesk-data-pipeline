@@ -12,10 +12,7 @@ redirect target is an SVG at a URL containing ``favicon``.
 
 from __future__ import annotations
 
-import pytest
 from django.test import Client
-
-pytestmark = pytest.mark.django_db
 
 
 def test_favicon_ico_returns_302() -> None:
@@ -36,3 +33,9 @@ def test_favicon_ico_redirects_to_svg() -> None:
     location = response["Location"]
     assert "favicon" in location
     assert location.endswith(".svg")
+
+
+def test_favicon_ico_has_cache_control_header() -> None:
+    """The redirect carries a one-day ``Cache-Control`` header."""
+    response = Client().get("/favicon.ico", follow=False)
+    assert response["Cache-Control"] == "public, max-age=86400"

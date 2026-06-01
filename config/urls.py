@@ -51,7 +51,7 @@ urlpatterns = [
     path("robots.txt", serve_robots, name="robots"),
     path("llms.txt", serve_llms_txt, name="llms_txt"),
     path("favicon.ico", serve_favicon, name="favicon_ico"),
-    path("favicon.ico/", serve_favicon),
+    path("favicon.ico/", serve_favicon, name="favicon_ico_slash"),
 ]
 
 # Dev-only routes must register BEFORE ``public.urls`` because that

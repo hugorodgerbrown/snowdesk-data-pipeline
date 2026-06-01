@@ -1364,8 +1364,15 @@ def serve_favicon(request: HttpRequest) -> HttpResponseRedirect:
     per-danger-level variants), so the legacy ``.ico`` path is wired up
     as a 302 redirect to the staticfiles URL — eliminating the 404 from
     server logs without generating an ``.ico`` binary.
+
+    The redirect carries ``Cache-Control: public, max-age=86400`` so that
+    CDNs and browsers cache it for one day — the SVG target is
+    content-hashed by staticfiles, so a one-day TTL is safe and avoids
+    an extra round-trip on every page load.
     """
-    return HttpResponseRedirect(static("favicon.svg"))
+    response = HttpResponseRedirect(static("favicon.svg"))
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
 
 
 def random_redirect(request: HttpRequest) -> HttpResponse:
