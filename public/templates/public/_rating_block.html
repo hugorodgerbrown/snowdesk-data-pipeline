@@ -7,7 +7,12 @@ Expects the following variables in scope:
             or _problem_cards_from_render_model_traits for ALBINA bulletins).
             Keys: problem_type, category, danger_level, label, time_period_label,
                   aspects, elevation, core_zone_text, comment_html,
-                  avalanche_type (optional — "slab", "loose", or None)
+                  avalanche_type (optional — "slab", "loose", or None),
+                  avalanche_size (optional int 1-5; ALBINA-only),
+                  frequency_label (optional translated Promise; ALBINA-only,
+                                   None when raw frequency was missing or
+                                   "none"),
+                  stability_label (optional translated Promise; ALBINA-only)
 
 Renders:
   1. Card header — danger-band colour strip carrying the EAWS hazard
@@ -16,7 +21,10 @@ Renders:
   2. Aspect / elevation row — only when the problem carries structured
      aspects or elevation data.  aria-label uses SLF's coreZoneText when
      present for screen readers.  Absent for prose-only problems.
-  3. Prose — the problem's comment field rendered in full, no truncation.
+  3. EAWS matrix row — only when any of size / frequency / stability is
+     present (ALBINA-only). One chip per axis. Skipped entirely for SLF
+     and MeteoFrance cards, whose source data carries none of these.
+  4. Prose — the problem's comment field rendered in full, no truncation.
 {% endcomment %}
 {% load i18n static card_tags hazard_icons snowdesk_html snowdesk_time %}
 
@@ -86,6 +94,28 @@ Renders:
                     {{ card.elevation|elevation_icon:20|safe }}
                     <span class="text-xs text-text-2">{{ card.elevation.display }}</span>
                 </div>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    {# ── EAWS matrix row — ALBINA-only ───────────────────────────────────── #}
+    {# size × frequency × snowpack stability — the EAWS matrix inputs that  #}
+    {# derive a danger rating. ALBINA publishes all three on every problem;  #}
+    {# SLF and MeteoFrance publish none, so the row collapses for them.     #}
+    {% if card.avalanche_size or card.frequency_label or card.stability_label %}
+        <div
+            class="flex items-center flex-wrap gap-2 px-4 py-2.5 border-b border-border bg-card"
+            data-testid="eaws-matrix-row"
+        >
+            {% if card.avalanche_size %}
+                {% blocktrans with size=card.avalanche_size asvar size_chip_text %}Size {{ size }}{% endblocktrans %}
+                {% include "includes/_chip.html" with text=size_chip_text data_testid="eaws-size-chip" %}
+            {% endif %}
+            {% if card.frequency_label %}
+                {% include "includes/_chip.html" with text=card.frequency_label data_testid="eaws-frequency-chip" %}
+            {% endif %}
+            {% if card.stability_label %}
+                {% include "includes/_chip.html" with text=card.stability_label data_testid="eaws-stability-chip" %}
             {% endif %}
         </div>
     {% endif %}

@@ -422,7 +422,100 @@ class TestAlbinaPanelContextCanary:
         assert ctx["problem_cards"], (
             "Expected at least one problem card for ALBINA bulletin"
         )
+        # The ALBINA sample carries avalancheSize=3, frequency="some",
+        # snowpackStability="poor" — assert these reach the card dict via
+        # _problem_cards_from_render_model_traits so the template can render
+        # the EAWS matrix row.
+        first_card = ctx["problem_cards"][0]
+        assert first_card["avalanche_size"] == 3
+        assert first_card["frequency_label"] is not None
+        assert first_card["stability_label"] is not None
         day_char = ctx["day_character"]
         # ALBINA bulletins carry a tendency lead that overrides the computed
         # label — day_character.explainer carries the forecaster-authored text.
         assert day_char.explainer, "Expected non-empty day_character explainer"
+
+
+# ── EAWS matrix fields on cards (ALBINA-only) ───────────────────────────────
+
+
+class TestProblemCardEawsFields:
+    """
+    Unit tests for the EAWS matrix fields surfaced on the problem-card dict by
+    ``_problem_cards_from_render_model_traits``. The matrix axes
+    (``avalanche_size``, ``frequency``, ``snowpack_stability``) are populated
+    on ALBINA bulletins and absent on SLF / MeteoFrance, so the template can
+    render the matrix row only when the source provides the inputs.
+    """
+
+    def _trait(self, **problem_overrides: Any) -> dict[str, Any]:
+        """Build a single-problem trait dict in the shape the builder expects."""
+        problem = {
+            "problem_type": "persistent_weak_layers",
+            "aspects": ["N"],
+            "elevation": {"lower": 2200, "upper": None, "treeline": False},
+            "comment_html": "",
+            "core_zone_text": "",
+            "danger_rating_value": "considerable",
+            "avalanche_type": None,
+            "avalanche_size": None,
+            "frequency": None,
+            "snowpack_stability": None,
+        }
+        problem.update(problem_overrides)
+        return {
+            "category": "dry",
+            "danger_level": 3,
+            "time_period": "all_day",
+            "problems": [problem],
+        }
+
+    def test_albina_eaws_fields_reach_card(self) -> None:
+        """All three EAWS axes are surfaced on the card with translated labels."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        cards = _problem_cards_from_render_model_traits(
+            [
+                self._trait(
+                    avalanche_size=2,
+                    frequency="some",
+                    snowpack_stability="poor",
+                )
+            ]
+        )
+        assert len(cards) == 1
+        card = cards[0]
+        assert card["avalanche_size"] == 2
+        # Labels are lazy Promise objects — stringify to compare.
+        assert str(card["frequency_label"]) == "Some"
+        assert str(card["stability_label"]) == "Poor snowpack"
+
+    def test_frequency_none_treated_as_not_reported(self) -> None:
+        """``frequency='none'`` collapses to label=None so the chip is suppressed."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        cards = _problem_cards_from_render_model_traits(
+            [self._trait(avalanche_size=2, frequency="none")]
+        )
+        assert cards[0]["frequency_label"] is None
+        # The size chip still renders — only the frequency axis is suppressed.
+        assert cards[0]["avalanche_size"] == 2
+
+    def test_slf_card_has_no_eaws_fields(self) -> None:
+        """SLF traits carry no EAWS inputs — all three card fields stay None."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        cards = _problem_cards_from_render_model_traits([self._trait()])
+        card = cards[0]
+        assert card["avalanche_size"] is None
+        assert card["frequency_label"] is None
+        assert card["stability_label"] is None
+
+    def test_unknown_stability_value_collapses_to_none(self) -> None:
+        """A stability value outside the canonical EAWS set produces no chip."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        cards = _problem_cards_from_render_model_traits(
+            [self._trait(snowpack_stability="catastrophic")]
+        )
+        assert cards[0]["stability_label"] is None

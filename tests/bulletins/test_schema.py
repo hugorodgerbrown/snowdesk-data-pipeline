@@ -159,6 +159,8 @@ class TestAvalancheProblem:
         assert problem.avalanche_size is None
         assert problem.snowpack_stability is None
         assert problem.frequency is None
+        assert problem.subdivision is None
+        assert problem.avalanche_type is None
 
     def test_from_dict_with_all_fields(self) -> None:
         """All optional fields are mapped from camelCase to snake_case."""
@@ -184,3 +186,74 @@ class TestAvalancheProblem:
         assert problem.avalanche_size == 2
         assert problem.snowpack_stability == "poor"
         assert problem.frequency == "some"
+
+    def test_from_dict_reads_slf_subdivision(self) -> None:
+        """subdivision is read from customData.CH (the SLF sub-level)."""
+        problem = AvalancheProblem.from_dict(
+            {
+                "problemType": "persistent_weak_layers",
+                "customData": {
+                    "CH": {
+                        "subdivision": "minus",
+                        "coreZoneText": "Danger level 2- above 2800m.",
+                    }
+                },
+            }
+        )
+        assert problem.subdivision == "minus"
+        assert problem.avalanche_type is None
+
+    def test_from_dict_reads_albina_avalanche_type(self) -> None:
+        """avalanche_type is read from customData.ALBINA (the orthogonal axis)."""
+        problem = AvalancheProblem.from_dict(
+            {
+                "problemType": "wet_snow",
+                "customData": {"ALBINA": {"avalancheType": "loose"}},
+            }
+        )
+        assert problem.avalanche_type == "loose"
+        assert problem.subdivision is None
+
+    def test_from_dict_tolerates_unknown_custom_data_namespace(self) -> None:
+        """A customData namespace from neither provider yields None for both."""
+        problem = AvalancheProblem.from_dict(
+            {
+                "problemType": "wind_slab",
+                "customData": {"LWD_Tyrol": {"dangerPatterns": ["dp1"]}},
+            }
+        )
+        assert problem.subdivision is None
+        assert problem.avalanche_type is None
+
+    def test_is_wet_true_for_wet_regime_problems(self) -> None:
+        """wet_snow and gliding_snow are the wet-snow regime problems."""
+        assert AvalancheProblem.from_dict({"problemType": "wet_snow"}).is_wet
+        assert AvalancheProblem.from_dict({"problemType": "gliding_snow"}).is_wet
+
+    def test_is_wet_false_for_dry_regime_problems(self) -> None:
+        """The dry-snow regime and the non-problem sentinels are not wet."""
+        for problem_type in (
+            "new_snow",
+            "wind_slab",
+            "persistent_weak_layers",
+            "no_distinct_avalanche_problem",
+        ):
+            problem = AvalancheProblem.from_dict({"problemType": problem_type})
+            assert not problem.is_wet
+
+    def test_is_diurnal_true_for_earlier_and_later(self) -> None:
+        """earlier and later both scope the problem to part of the day."""
+        for period in ("earlier", "later"):
+            problem = AvalancheProblem.from_dict(
+                {"problemType": "wet_snow", "validTimePeriod": period}
+            )
+            assert problem.is_diurnal
+
+    def test_is_diurnal_false_for_all_day_and_missing(self) -> None:
+        """all_day and an absent period are not diurnal."""
+        all_day = AvalancheProblem.from_dict(
+            {"problemType": "wet_snow", "validTimePeriod": "all_day"}
+        )
+        missing = AvalancheProblem.from_dict({"problemType": "wet_snow"})
+        assert not all_day.is_diurnal
+        assert not missing.is_diurnal
