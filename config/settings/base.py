@@ -213,14 +213,13 @@ POSTHOG_MW_CAPTURE_EXCEPTIONS = config(
 
 # Skip the middleware entirely when no API key is configured — avoids
 # per-request context and tag work in dev/test with no key.
-# The lambda is called at request time — importing django.conf.settings
+# The function is called at request time — importing django.conf.settings
 # inside it is safe and reads the live value so @override_settings works.
 def _posthog_request_filter(request: object) -> bool:
     """Return True only when POSTHOG_API_KEY is non-empty.
 
     Reads ``django.conf.settings`` at call time so that ``@override_settings``
-    in tests takes effect without the lambda capturing a stale module-level
-    binding.
+    in tests takes effect without capturing a stale module-level binding.
     """
     from django.conf import settings as _s  # noqa: PLC0415 — intentional late import
 
@@ -229,11 +228,15 @@ def _posthog_request_filter(request: object) -> bool:
 
 POSTHOG_MW_REQUEST_FILTER = _posthog_request_filter
 
+
 # Strip ``email`` from the user-tag dict before PostHog sees it to honour
 # the PII invariant (email is never transmitted in event properties).
-POSTHOG_MW_TAG_MAP = lambda tags: {  # noqa: E731 — intentional inline lambda; same rationale as POSTHOG_MW_REQUEST_FILTER above
-    k: v for k, v in tags.items() if k != "email"
-}
+def _posthog_tag_map(tags: dict[str, object]) -> dict[str, object]:
+    """Return ``tags`` with the ``email`` key removed."""
+    return {k: v for k, v in tags.items() if k != "email"}
+
+
+POSTHOG_MW_TAG_MAP = _posthog_tag_map
 
 # ---------------------------------------------------------------------------
 # Logging
