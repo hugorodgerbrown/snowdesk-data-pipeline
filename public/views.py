@@ -1222,6 +1222,135 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
     return response
 
 
+def serve_robots(request: HttpRequest) -> HttpResponse:
+    """
+    Serve ``/robots.txt`` from the site root.
+
+    Snowdesk publishes public-good avalanche-safety data, so the policy is
+    open by default (``Allow: /``) — crawlers and AI agents are welcome to
+    index the bulletin pages. Only functional, non-content, or token-bearing
+    paths are disallowed: the Django admin, the signed-token subscription
+    flow (whose links perform account actions), the staff-only resort-edit
+    API, the HTMX partial fragments (which 400 on a plain GET anyway), the
+    ephemeral share-redirect tokens, and the CSP report endpoint. The public
+    GeoJSON / ratings endpoints under ``/api/`` stay crawlable on purpose so
+    agents can find the structured data.
+
+    The ``Sitemap:`` line is an absolute URL built from
+    ``settings.SITE_BASE_URL`` (matching ``serve_manifest``) so it resolves
+    to the correct host per environment. A short ``Cache-Control`` keeps the
+    body fresh after a ``SITE_BASE_URL`` change without re-rendering on every
+    crawl.
+
+    Args:
+        request: The incoming HTTP request (unused — the body is origin-keyed
+            via ``SITE_BASE_URL``, not per-request).
+
+    Returns:
+        An ``HttpResponse`` with the ``text/plain`` robots body.
+
+    """
+    base = settings.SITE_BASE_URL.rstrip("/")
+    lines = [
+        "# Snowdesk — daily Swiss avalanche bulletins (SLF CAAML data).",
+        "# Public-good safety information: crawlers and AI agents are welcome.",
+        f"# Machine-readable site index: {base}/llms.txt",
+        "",
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /admin/",
+        "Disallow: /subscribe/",
+        "Disallow: /api/edit/",
+        "Disallow: /partials/",
+        "Disallow: /s/",
+        "Disallow: /csp/",
+        "",
+        f"Sitemap: {base}/sitemap.xml",
+        "",
+    ]
+    response = HttpResponse("\n".join(lines), content_type="text/plain; charset=utf-8")
+    response["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+def serve_llms_txt(request: HttpRequest) -> HttpResponse:
+    """
+    Serve ``/llms.txt`` — a machine-readable Markdown index of the site.
+
+    Follows the llmstxt.org convention: an H1 with the project name, a
+    blockquote summary, then ``##`` sections listing the canonical pages and
+    public JSON endpoints as ``[title](url): note`` links. This gives an LLM
+    or agent a single low-token entry point describing what the site offers
+    and where the structured data lives — complementing the page-level
+    schema.org JSON-LD and the XML sitemap.
+
+    All links are absolute URLs built from ``settings.SITE_BASE_URL`` (paths
+    resolved via ``reverse()`` so they survive route changes), matching
+    ``serve_manifest`` and ``serve_robots``.
+
+    Args:
+        request: The incoming HTTP request (unused — the body is origin-keyed
+            via ``SITE_BASE_URL``, not per-request).
+
+    Returns:
+        An ``HttpResponse`` with the ``text/markdown`` llms.txt body.
+
+    """
+    base = settings.SITE_BASE_URL.rstrip("/")
+
+    def link(name: str) -> str:
+        """Build an absolute URL for a named route under ``SITE_BASE_URL``."""
+        return f"{base}{reverse(name)}"
+
+    # Built line-by-line (rather than one triple-quoted block) so each source
+    # line stays within the 88-char limit while the rendered Markdown bullets
+    # remain single, unwrapped lines.
+    lines = [
+        "# Snowdesk",
+        "",
+        "> Daily Swiss avalanche bulletins from the SLF (WSL Institute for",
+        "> Snow and Avalanche Research), sourced from the public CAAML API and",
+        "> rendered per micro-region with danger ratings, avalanche problems,",
+        "> and weather context. Bulletin pages carry schema.org JSON-LD; the",
+        "> underlying data is licensed CC BY 4.0 by the SLF.",
+        "",
+        "## Pages",
+        "",
+        f"- [Home]({link('public:home')}): site overview and entry point.",
+        f"- [Avalanche map]({link('public:map')}): interactive choropleth of "
+        "current danger ratings by region.",
+        f"- [How to read a bulletin]({link('public:how_to_read_bulletin')}): "
+        "reference guide to the SLF danger scale, avalanche problems, and the "
+        "aspect/elevation rose.",
+        f"- [Example bulletin]({link('public:examples_random')}): a randomly "
+        "selected bulletin rendered in the canonical layout.",
+        "",
+        "## Data",
+        "",
+        f"- [Sitemap]({link('sitemap')}): XML sitemap of today's published "
+        "region bulletins.",
+        f"- [Region ratings (JSON)]({link('api:ratings')}): current danger "
+        "ratings; accepts ?d=YYYY-MM-DD and ?country=ch|fr|at|it.",
+        f"- [Regions (GeoJSON)]({link('api:regions_geojson')}): micro-region "
+        "boundary geometry.",
+        f"- [Resorts (GeoJSON)]({link('api:resorts_geojson')}): ski-resort "
+        "point locations.",
+        "",
+        "## Legal",
+        "",
+        f"- [Terms & SLF data licence]({link('public:terms')}): SLF CC BY 4.0 "
+        "attribution and Snowdesk liability disclaimer.",
+        f"- [Privacy]({link('public:privacy')}): how subscriber data is handled.",
+        f"- [Terms of service]({link('public:terms_of_service')}): conditions of use.",
+        f"- [Colophon]({link('public:colophon')}): technology credits and attribution.",
+        "",
+    ]
+    body = "\n".join(lines)
+    response = HttpResponse(body, content_type="text/markdown; charset=utf-8")
+    response["Cache-Control"] = "public, max-age=300"
+    return response
+
+
 def random_redirect(request: HttpRequest) -> HttpResponse:
     """
     Redirect ``/random/`` to ``/examples/random/`` (deprecated).
