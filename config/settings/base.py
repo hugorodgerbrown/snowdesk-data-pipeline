@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     "bulletins",
     "public",
     "subscriptions",
+    "analytics",
 ]
 
 MIDDLEWARE = [
@@ -183,6 +184,17 @@ AUTHENTICATION_BACKENDS = [
     # Standard Django password backend; used by the admin login form for staff.
     "django.contrib.auth.backends.ModelBackend",
 ]
+
+# ---------------------------------------------------------------------------
+# Analytics (PostHog)
+# ---------------------------------------------------------------------------
+# Server-side event capture via the posthog-python client. The wrapper in
+# ``analytics/__init__.py`` is a no-op when this key is empty, so no events
+# are sent during local development or test runs unless the key is explicitly
+# populated. Set to the EU project key in production via the environment.
+
+POSTHOG_API_KEY = config("POSTHOG_API_KEY", default="")
+POSTHOG_HOST = "https://eu.posthog.com"
 
 # ---------------------------------------------------------------------------
 # Logging

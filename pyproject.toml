@@ -33,6 +33,7 @@ pywebpush = "^2.3.0"
 django-tasks = "^0.12.0"
 django-tasks-db = "^0.12.0"
 apscheduler = "^3.10"
+posthog = "^7.16.3"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.15.13"
@@ -90,7 +91,7 @@ django_settings_module = "config.settings.development"
 DJANGO_SETTINGS_MODULE = "config.settings.development"
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "-n auto --cov=core --cov=bulletins --cov=regions --cov=public --cov=subscriptions --ignore=tests/e2e"
+addopts = "-n auto --cov=core --cov=bulletins --cov=regions --cov=public --cov=subscriptions --cov=analytics --ignore=tests/e2e"
 # pytest-django defaults to DEBUG=False at test time, which silently
 # drops URL-conf entries gated on ``if settings.DEBUG:`` (the dev-only
 # SLF mirror in config/urls.py, the scrubber-perf debug page in
@@ -100,7 +101,7 @@ addopts = "-n auto --cov=core --cov=bulletins --cov=regions --cov=public --cov=s
 django_debug_mode = "keep"
 
 [tool.coverage.run]
-source = ["core", "bulletins", "regions", "public", "subscriptions"]
+source = ["core", "bulletins", "regions", "public", "subscriptions", "analytics"]
 omit = ["bulletins/migrations/*", "regions/migrations/*", "public/migrations/*", "subscriptions/migrations/*", "config/*", "__init__.py"]
 
 [tool.coverage.report]
