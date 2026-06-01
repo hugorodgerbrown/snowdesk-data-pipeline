@@ -40,6 +40,7 @@ views_passkey.py, django.contrib.auth.login() establishes the session.
 from __future__ import annotations
 
 import logging
+import uuid
 
 from django.conf import settings
 from django.contrib.auth import login, logout
@@ -50,6 +51,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from django_ratelimit.core import get_usage
 from django_ratelimit.decorators import ratelimit
 
+import analytics
 from core.decorators import require_htmx
 from regions.models import MicroRegion
 
@@ -134,14 +136,60 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         return render(request, "subscriptions/sign_in.html", {"form": form})
 
     email: str = form.cleaned_data["email"]
-    Subscriber.objects.get_or_create(
+    subscriber, _ = Subscriber.objects.get_or_create(
         email=email,
         defaults={"status": Subscriber.Status.PENDING},
     )
     send_account_access_email(email, request=request)
     logger.info("Account-access email sent to %s via sign-in page", email)
 
+    analytics.track("sign_in_requested", str(subscriber.pk))
+
     return render(request, "subscriptions/manage_sent.html", {})
+
+
+# ---------------------------------------------------------------------------
+# Analytics helpers
+# ---------------------------------------------------------------------------
+
+
+def _track_subscription_started(request: HttpRequest, anon_id: str) -> None:
+    """Emit the ``subscription_started`` analytics event.
+
+    Derives the ``source`` from the UTM params stored in the session by the
+    bulletin page (``request.session["analytics_utm"]``), falling back to the
+    HTTP Referer host when no UTM data is present.
+
+    Args:
+        request: The current HTMX POST request.
+        anon_id: The session-scoped anonymous UUID used as ``distinct_id``.
+
+    """
+    utm: dict[str, str] = request.session.get("analytics_utm") or {}
+    utm_source: str = utm.get("utm_source", "")
+    utm_medium: str = utm.get("utm_medium", "")
+    utm_campaign: str = utm.get("utm_campaign", "")
+
+    if not utm_source:
+        # Fall back to the Referer host when no UTM source is present.
+        referer: str = request.META.get("HTTP_REFERER", "")
+        if referer:
+            try:
+                from urllib.parse import urlparse
+
+                utm_source = urlparse(referer).hostname or ""
+            except Exception:  # noqa: BLE001
+                utm_source = ""
+
+    props: dict[str, object] = {}
+    if utm_source:
+        props["source"] = utm_source
+    if utm_medium:
+        props["utm_medium"] = utm_medium
+    if utm_campaign:
+        props["utm_campaign"] = utm_campaign
+
+    analytics.track("subscription_started", anon_id, props)
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +278,13 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
         # Case A — new subscriber.
         logger.info("New subscriber created for %s (status=pending)", email)
         send_account_access_email(email, request=request)
+
+        # Emit subscription_started (Case A only — silent on Case B resend).
+        anon_id: str = request.session.setdefault(
+            "analytics_anon_id", str(uuid.uuid4())
+        )
+        _track_subscription_started(request, anon_id)
+
         return render(
             request,
             "subscriptions/partials/subscribe_success_access.html",
@@ -250,6 +305,15 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
         # Case C — active subscriber, new region added.
         logger.info("Active subscriber %s added new region %s", email, region.region_id)
         send_subscription_confirmation_email(email, region=region, request=request)
+        analytics.track(
+            "region_added",
+            str(subscriber.pk),
+            {
+                "region_id": region.region_id,
+                "source": "bulletin",
+                "region_count_after": subscriber.subscriptions.count(),
+            },
+        )
         return render(
             request,
             "subscriptions/partials/subscribe_success_added.html",
@@ -311,7 +375,16 @@ def _delete_subscription_with_cascade(
         subscriber.email,
         region.region_id,
     )
-    if not subscriber.subscriptions.exists():
+    region_count_after = subscriber.subscriptions.count()
+    analytics.track(
+        "region_removed",
+        str(subscriber.pk),
+        {
+            "region_id": region.region_id,
+            "region_count_after": region_count_after,
+        },
+    )
+    if region_count_after == 0:
         email = subscriber.email
         subscriber.delete()
         logout(request)
@@ -364,12 +437,24 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
             status=400,
         )
 
-    Subscription.objects.get_or_create(subscriber=subscriber, region=region)
+    _subscription, sub_created = Subscription.objects.get_or_create(
+        subscriber=subscriber, region=region
+    )
     logger.info(
         "Subscriber %s added region %s via bulletin page (idempotent)",
         subscriber.email,
         region_id,
     )
+    if sub_created:
+        analytics.track(
+            "region_added",
+            str(subscriber.pk),
+            {
+                "region_id": region.region_id,
+                "source": "bulletin",
+                "region_count_after": subscriber.subscriptions.count(),
+            },
+        )
     return render(
         request,
         "subscriptions/partials/subscribe_success_added.html",
@@ -498,6 +583,23 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
                 subscriber.confirmed_at = timezone.now()
                 subscriber.save(update_fields=["status", "confirmed_at", "updated_at"])
                 logger.info("Subscriber %s activated via account link", email)
+                # Emit subscription_confirmed and join the anonymous session
+                # identity to the now-authenticated subscriber PK.
+                hours_since: float = round(
+                    (timezone.now() - subscriber.created_at).total_seconds() / 3600,
+                    2,
+                )
+                analytics.track(
+                    "subscription_confirmed",
+                    str(subscriber.pk),
+                    {"hours_since_started": hours_since},
+                )
+                anon_id: str | None = request.session.get("analytics_anon_id")
+                if anon_id:
+                    analytics.alias(
+                        distinct_id=str(subscriber.pk),
+                        alias_id=anon_id,
+                    )
             login(request, subscriber, backend=_TOKEN_BACKEND)
             response = redirect(f"{_MANAGE_URL}?just_confirmed=1")
 
@@ -644,9 +746,17 @@ def delete_account(request: HttpRequest) -> HttpResponse:
         return HttpResponse(status=403)
 
     email = subscriber.email
+    # Capture account_age_days BEFORE deleting the subscriber row.
+    account_age_days = (timezone.now() - subscriber.created_at).days
+    distinct_id = str(subscriber.pk)
     subscriber.delete()
     logout(request)
     logger.info("Subscriber %s hard-deleted via delete_account", email)
+    analytics.track(
+        "unsubscribed",
+        distinct_id,
+        {"reason": "account_deleted", "account_age_days": account_age_days},
+    )
 
     response = HttpResponse(status=200)
     response["HX-Redirect"] = _UNSUBSCRIBE_DONE_URL
@@ -763,9 +873,23 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
         response["Referrer-Policy"] = "no-referrer"
         return response
 
+    # Capture distinct_id and account_age_days BEFORE any delete.
+    distinct_id = str(subscriber.pk)
+    account_age_days = (timezone.now() - subscriber.created_at).days
+
     # Delete the specific subscription.
+    # Note: we intentionally do NOT fire ``region_removed`` here.  The
+    # unsubscribe-link path fires only ``unsubscribed``; ``region_removed``
+    # is reserved for the in-app "remove a region" flow.  Firing both would
+    # double-count churn for subscribers who leave via the email link.
     Subscription.objects.filter(subscriber=subscriber, region=region).delete()
     logger.info("Subscriber %s unsubscribed from region %s", email, region_id)
+
+    analytics.track(
+        "unsubscribed",
+        distinct_id,
+        {"reason": "unsubscribe_link", "account_age_days": account_age_days},
+    )
 
     # If no subscriptions remain, hard-delete the subscriber.
     if not subscriber.subscriptions.exists():

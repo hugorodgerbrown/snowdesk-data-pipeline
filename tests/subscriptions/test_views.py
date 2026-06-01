@@ -3,6 +3,8 @@ tests/subscriptions/test_views.py — Tests for subscriptions views.
 
 Covers:
   subscribe_partial   — four-case matrix (A=new, B=pending, C=active+new-region,
+  analytics events    — subscription_started, subscription_confirmed, region_added,
+                        region_removed, unsubscribed (two sites).
                         D=active+already-subscribed); rate-limit 429; HTMX-only;
                         missing region_id rejected (400 form error);
                         unknown region_id returns 400 error fragment.
@@ -1552,3 +1554,343 @@ class TestRemoveRegionFromBulletin:
         ).exists()
         # Subscriber must not have been hard-deleted.
         assert Subscriber.objects.filter(pk=sub_pk).exists()
+
+
+# ---------------------------------------------------------------------------
+# Analytics event firing — subscription flow
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestAnalyticsSubscriptionStarted:
+    """analytics.track('subscription_started') fires on Case A only."""
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+        """Use in-memory email backend so mail.outbox is populated."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def test_case_a_fires_subscription_started(self) -> None:
+        region = MicroRegionFactory.create()
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "new@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "subscription_started"
+        ]
+        assert len(calls) == 1
+
+    def test_case_a_distinct_id_is_anon_uuid(self) -> None:
+        import re
+
+        region = MicroRegionFactory.create()
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "new2@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+        started_calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "subscription_started"
+        ]
+        assert len(started_calls) == 1
+        distinct_id = started_calls[0].args[1]
+        # Distinct ID should be a UUID string — not an email or numeric PK.
+        assert re.match(r"^[0-9a-f-]{36}$", distinct_id), (
+            f"Expected UUID, got {distinct_id!r}"
+        )
+
+    def test_case_b_does_not_fire_subscription_started(self) -> None:
+        region = MicroRegionFactory.create()
+        SubscriberFactory.create(
+            email="pending@example.com", status=Subscriber.Status.PENDING
+        )
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "pending@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "subscription_started"
+        ]
+        assert len(calls) == 0
+
+    def test_utm_params_included_from_session(self) -> None:
+        region = MicroRegionFactory.create()
+        client = Client()
+        session = client.session
+        session["analytics_utm"] = {
+            "utm_source": "newsletter",
+            "utm_medium": "email",
+            "utm_campaign": "winter-2026",
+        }
+        session.save()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "utm@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+        started_calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "subscription_started"
+        ]
+        assert len(started_calls) == 1
+        props = started_calls[0].args[2]
+        assert props.get("source") == "newsletter"
+        assert props.get("utm_medium") == "email"
+        assert props.get("utm_campaign") == "winter-2026"
+
+
+@pytest.mark.django_db
+class TestAnalyticsSubscriptionConfirmed:
+    """analytics.track('subscription_confirmed') fires when PENDING subscriber confirms."""
+
+    def test_fires_on_pending_confirmation(self) -> None:
+        subscriber = SubscriberFactory.create(status=Subscriber.Status.PENDING)
+        token = _valid_account_token(subscriber.email)
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.get(reverse("subscriptions:account", kwargs={"token": token}))
+        calls = [
+            c
+            for c in mock_track.call_args_list
+            if c.args[0] == "subscription_confirmed"
+        ]
+        assert len(calls) == 1
+        assert calls[0].args[1] == str(subscriber.pk)
+        props = calls[0].args[2]
+        assert "hours_since_started" in props
+
+    def test_does_not_fire_on_already_active(self) -> None:
+        subscriber = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
+        token = _valid_account_token(subscriber.email)
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.get(reverse("subscriptions:account", kwargs={"token": token}))
+        calls = [
+            c
+            for c in mock_track.call_args_list
+            if c.args[0] == "subscription_confirmed"
+        ]
+        assert len(calls) == 0
+
+    def test_alias_called_when_anon_id_in_session(self) -> None:
+        subscriber = SubscriberFactory.create(status=Subscriber.Status.PENDING)
+        token = _valid_account_token(subscriber.email)
+        client = Client()
+        session = client.session
+        session["analytics_anon_id"] = "anon-uuid-111"
+        session.save()
+        with patch("subscriptions.views.analytics.alias") as mock_alias:
+            client.get(reverse("subscriptions:account", kwargs={"token": token}))
+        mock_alias.assert_called_once_with(
+            distinct_id=str(subscriber.pk),
+            alias_id="anon-uuid-111",
+        )
+
+    def test_alias_not_called_without_anon_id(self) -> None:
+        subscriber = SubscriberFactory.create(status=Subscriber.Status.PENDING)
+        token = _valid_account_token(subscriber.email)
+        client = Client()
+        with patch("subscriptions.views.analytics.alias") as mock_alias:
+            client.get(reverse("subscriptions:account", kwargs={"token": token}))
+        mock_alias.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestAnalyticsRegionAdded:
+    """analytics.track('region_added') fires in add_region and subscribe Case C."""
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+        """Use in-memory email backend."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def test_fires_in_add_region(self) -> None:
+        subscriber = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
+        region = MicroRegionFactory.create()
+        client = _make_session_client(subscriber)
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse(
+                    "subscriptions:add_region",
+                    kwargs={"region_id": region.region_id},
+                ),
+                **_HTMX_HEADERS,
+            )
+        calls = [c for c in mock_track.call_args_list if c.args[0] == "region_added"]
+        assert len(calls) == 1
+        props = calls[0].args[2]
+        assert props["region_id"] == region.region_id
+        assert props["source"] == "bulletin"
+
+    def test_fires_in_subscribe_case_c(self) -> None:
+        subscriber = SubscriberFactory.create(
+            email="active@example.com", status=Subscriber.Status.ACTIVE
+        )
+        region = MicroRegionFactory.create()
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse("subscriptions:subscribe"),
+                data={"email": subscriber.email, "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+        calls = [c for c in mock_track.call_args_list if c.args[0] == "region_added"]
+        assert len(calls) == 1
+        props = calls[0].args[2]
+        assert props["region_id"] == region.region_id
+
+    def test_not_fired_on_duplicate_add(self) -> None:
+        subscriber = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
+        region = MicroRegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = _make_session_client(subscriber)
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse(
+                    "subscriptions:add_region",
+                    kwargs={"region_id": region.region_id},
+                ),
+                **_HTMX_HEADERS,
+            )
+        calls = [c for c in mock_track.call_args_list if c.args[0] == "region_added"]
+        assert len(calls) == 0
+
+
+@pytest.mark.django_db
+class TestAnalyticsRegionRemoved:
+    """analytics.track('region_removed') fires in _delete_subscription_with_cascade."""
+
+    def test_fires_on_remove_region(self) -> None:
+        subscriber = SubscriberFactory.create()
+        region_a = MicroRegionFactory.create()
+        region_b = MicroRegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region_a)
+        SubscriptionFactory.create(subscriber=subscriber, region=region_b)
+        client = _make_session_client(subscriber)
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse(
+                    "subscriptions:remove_region",
+                    kwargs={"region_id": region_a.region_id},
+                ),
+                **_HTMX_HEADERS,
+            )
+        calls = [c for c in mock_track.call_args_list if c.args[0] == "region_removed"]
+        assert len(calls) == 1
+        props = calls[0].args[2]
+        assert props["region_id"] == region_a.region_id
+        assert props["region_count_after"] == 1
+
+    def test_region_count_after_zero_on_last_region(self) -> None:
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        client = _make_session_client(subscriber)
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse(
+                    "subscriptions:remove_region",
+                    kwargs={"region_id": region.region_id},
+                ),
+                **_HTMX_HEADERS,
+            )
+        calls = [c for c in mock_track.call_args_list if c.args[0] == "region_removed"]
+        assert len(calls) == 1
+        props = calls[0].args[2]
+        assert props["region_count_after"] == 0
+
+
+@pytest.mark.django_db
+class TestAnalyticsUnsubscribed:
+    """analytics.track('unsubscribed') fires in delete_account and unsubscribe_view."""
+
+    def test_fires_in_delete_account(self) -> None:
+        subscriber = SubscriberFactory.create()
+        pk = str(subscriber.pk)
+        client = _make_session_client(subscriber)
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(reverse("subscriptions:delete_account"), **_HTMX_HEADERS)
+        calls = [c for c in mock_track.call_args_list if c.args[0] == "unsubscribed"]
+        assert len(calls) == 1
+        assert calls[0].args[1] == pk
+        props = calls[0].args[2]
+        assert props["reason"] == "account_deleted"
+        assert "account_age_days" in props
+
+    def test_fires_in_unsubscribe_view(self) -> None:
+        subscriber = SubscriberFactory.create()
+        region = MicroRegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        pk = str(subscriber.pk)
+        token = generate_unsubscribe_token(subscriber.email, region.region_id)
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(reverse("subscriptions:unsubscribe", kwargs={"token": token}))
+        calls = [c for c in mock_track.call_args_list if c.args[0] == "unsubscribed"]
+        assert len(calls) == 1
+        assert calls[0].args[1] == pk
+        props = calls[0].args[2]
+        assert props["reason"] == "unsubscribe_link"
+        assert "account_age_days" in props
+
+
+@pytest.mark.django_db
+class TestAnalyticsSignInRequested:
+    """analytics.track('sign_in_requested') fires when sign_in_view POST succeeds."""
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+        """Use in-memory email backend so mail.outbox is populated."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def test_fires_for_known_email(self) -> None:
+        """POST with a known email fires sign_in_requested with the existing PK."""
+        subscriber = SubscriberFactory.create(email="known@example.com")
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse("subscriptions:sign_in"),
+                data={"email": "known@example.com"},
+            )
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "sign_in_requested"
+        ]
+        assert len(calls) == 1
+        assert calls[0].args[1] == str(subscriber.pk)
+
+    def test_fires_for_unknown_email_after_subscriber_created(self) -> None:
+        """POST with a fresh email creates a Subscriber and fires sign_in_requested with the new PK."""
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse("subscriptions:sign_in"),
+                data={"email": "brandnew@example.com"},
+            )
+        new_subscriber = Subscriber.objects.get(email="brandnew@example.com")
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "sign_in_requested"
+        ]
+        assert len(calls) == 1
+        assert calls[0].args[1] == str(new_subscriber.pk)
+
+    def test_does_not_fire_on_invalid_email(self) -> None:
+        """POST with an invalid email re-renders the form and does not fire the event."""
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse("subscriptions:sign_in"),
+                data={"email": "not-valid"},
+            )
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "sign_in_requested"
+        ]
+        assert calls == []

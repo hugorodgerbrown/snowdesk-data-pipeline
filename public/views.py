@@ -35,6 +35,7 @@ import hashlib
 import json
 import logging
 import random
+import uuid
 from typing import Any, cast
 
 import waffle
@@ -66,6 +67,7 @@ from django.utils.translation import (
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition, require_POST
 
+import analytics
 from bulletins.models import (
     Bulletin,
     BulletinShare,
@@ -2251,6 +2253,97 @@ def _build_structured_data(
     return json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
 
 
+def _capture_utm_to_session(request: HttpRequest) -> None:
+    """Store UTM query parameters in the session from the bulletin page GET request.
+
+    The subscribe form is submitted via a separate HTMX POST and has no
+    direct access to the original GET query string.  Storing UTM params in
+    the session bridges the two requests so ``subscription_started`` events
+    carry attribution data.
+
+    Only updates when at least one UTM param is non-empty so subsequent
+    pageviews without UTM params do not clear previously-captured attribution.
+
+    Args:
+        request: The incoming GET request that may carry UTM params.
+
+    """
+    utm_params = {
+        k: request.GET.get(k, "") for k in ("utm_source", "utm_medium", "utm_campaign")
+    }
+    if any(utm_params.values()):
+        request.session["analytics_utm"] = utm_params
+
+
+def _track_bulletin_viewed(
+    request: HttpRequest,
+    region: MicroRegion,
+    bulletin: Bulletin,
+    panel: dict[str, Any],
+) -> None:
+    """Emit the ``bulletin_viewed`` analytics event.
+
+    Fires for every bulletin page load where a bulletin is selected
+    (non-empty-state) and the path is not under ``/examples/``.  The
+    ``/examples/`` guard lives here so the caller in
+    ``_bulletin_detail_response`` requires no additional branch.
+
+    The ``distinct_id`` is ``str(request.user.pk)`` for authenticated
+    visitors.  For anonymous visitors it is the existing Django session key
+    when one is already in the cookie (no DB query), or a request-scoped
+    ``anon-<uuid4>`` string when no session exists yet.  The UUID approach
+    avoids forcing a session-row INSERT on every anonymous pageview, which
+    would add 2–7 extra DB queries per request.
+
+    Args:
+        request: The incoming HTTP request.
+        region: The ``MicroRegion`` displayed on this page.
+        bulletin: The selected ``Bulletin`` being rendered.
+        panel: The panel context dict produced by ``_build_panel_context``.
+
+    """
+    # Guard: example pages are synthetic demos — do not fire analytics.
+    if request.path.startswith("/examples/"):
+        return
+
+    # Determine the distinct_id.
+    if request.user.is_authenticated:
+        distinct_id = str(request.user.pk)
+    else:
+        # For anonymous users, use the existing session key if one is already
+        # present in the cookie (the session was created by a prior request,
+        # so reading session_key is free).  When no session exists yet, mint a
+        # request-scoped UUID instead of calling session.save() — saving the
+        # session forces 2–7 extra DB queries (BEGIN/INSERT/COMMIT + the
+        # SessionMiddleware re-save on process_response).  The UUID is not
+        # stable across requests, but anonymous event attribution is
+        # approximate by nature; the per-session fidelity is acceptable.
+        if request.session.session_key:
+            distinct_id = request.session.session_key
+        else:
+            distinct_id = f"anon-{uuid.uuid4()}"
+
+    # Danger level — read from the panel's danger_number (integer 1–5).
+    danger_level: int | None = panel.get("danger_number")
+
+    # Days since the bulletin's valid_from date.
+    days_since_publish = (timezone.now().date() - bulletin.valid_from.date()).days
+
+    # View context: was this opened via an email link?
+    view_context = "email_link" if request.GET.get("ref") == "email" else "direct"
+
+    analytics.track(
+        "bulletin_viewed",
+        distinct_id,
+        {
+            "region_id": region.region_id,
+            "danger_level": danger_level,
+            "days_since_publish": days_since_publish,
+            "view_context": view_context,
+        },
+    )
+
+
 def _bulletin_detail_response(
     request: HttpRequest,
     region: MicroRegion,
@@ -2303,6 +2396,8 @@ def _bulletin_detail_response(
 
     """
     adjoining_regions = list(region.neighbours.all())
+
+    _capture_utm_to_session(request)
 
     # Warm the cache for future region_redirect lookups.
     cache.set(
@@ -2446,6 +2541,9 @@ def _bulletin_detail_response(
     bulletin_source_label, bulletin_source_url = BULLETIN_SOURCE_LINKS.get(
         source_key, ("", "")
     )
+
+    # Emit bulletin_viewed (no-ops silently on /examples/* paths).
+    _track_bulletin_viewed(request, region, selected, panel)
 
     context = {
         "region": region,
@@ -2674,6 +2772,17 @@ def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
         country_code=country_code,
         visitor_hash=visitor_hash,
     )
+
+    # Emit share_link_clicked alongside the BulletinShareClick DB record.
+    _distinct_id = (
+        str(request.user.pk)
+        if request.user.is_authenticated
+        else (request.session.session_key or f"anon-{uuid.uuid4()}")
+    )
+    _share_props: dict[str, object] = {"region_id": share.region.region_id}
+    if country_code:
+        _share_props["country_code"] = country_code
+    analytics.track("share_link_clicked", _distinct_id, _share_props)
 
     if share.bulletin is None:
         gone = HttpResponseGone(
