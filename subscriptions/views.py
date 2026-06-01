@@ -876,6 +876,10 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
     account_age_days = (timezone.now() - subscriber.created_at).days
 
     # Delete the specific subscription.
+    # Note: we intentionally do NOT fire ``region_removed`` here.  The
+    # unsubscribe-link path fires only ``unsubscribed``; ``region_removed``
+    # is reserved for the in-app "remove a region" flow.  Firing both would
+    # double-count churn for subscribers who leave via the email link.
     Subscription.objects.filter(subscriber=subscriber, region=region).delete()
     logger.info("Subscriber %s unsubscribed from region %s", email, region_id)
 

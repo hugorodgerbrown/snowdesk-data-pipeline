@@ -115,6 +115,10 @@ class TestTrackCallsThrough:
 class TestTrackPIIRejection:
     """track() raises AnalyticsPIIError when properties contain PII keys."""
 
+    def setup_method(self) -> None:
+        """Reset client singleton before each test."""
+        _reset_client()
+
     @pytest.mark.parametrize("key", ["email", "ip", "token", "credential_id"])
     def test_raises_on_pii_key(self, key: str) -> None:
         with pytest.raises(AnalyticsPIIError, match=key):
