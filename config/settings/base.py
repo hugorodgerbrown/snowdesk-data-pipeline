@@ -194,7 +194,7 @@ AUTHENTICATION_BACKENDS = [
 # populated. Set to the EU project key in production via the environment.
 
 POSTHOG_API_KEY = config("POSTHOG_API_KEY", default="")
-POSTHOG_HOST = "https://eu.posthog.com"
+POSTHOG_HOST = config("POSTHOG_HOST", default="https://eu.i.posthog.com")
 
 # ---------------------------------------------------------------------------
 # Logging

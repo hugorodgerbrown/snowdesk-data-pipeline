@@ -136,12 +136,14 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         return render(request, "subscriptions/sign_in.html", {"form": form})
 
     email: str = form.cleaned_data["email"]
-    Subscriber.objects.get_or_create(
+    subscriber, _ = Subscriber.objects.get_or_create(
         email=email,
         defaults={"status": Subscriber.Status.PENDING},
     )
     send_account_access_email(email, request=request)
     logger.info("Account-access email sent to %s via sign-in page", email)
+
+    analytics.track("sign_in_requested", str(subscriber.pk))
 
     return render(request, "subscriptions/manage_sent.html", {})
 

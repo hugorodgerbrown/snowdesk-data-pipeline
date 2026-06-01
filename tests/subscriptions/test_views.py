@@ -1841,3 +1841,56 @@ class TestAnalyticsUnsubscribed:
         props = calls[0].args[2]
         assert props["reason"] == "unsubscribe_link"
         assert "account_age_days" in props
+
+
+@pytest.mark.django_db
+class TestAnalyticsSignInRequested:
+    """analytics.track('sign_in_requested') fires when sign_in_view POST succeeds."""
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+        """Use in-memory email backend so mail.outbox is populated."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def test_fires_for_known_email(self) -> None:
+        """POST with a known email fires sign_in_requested with the existing PK."""
+        subscriber = SubscriberFactory.create(email="known@example.com")
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse("subscriptions:sign_in"),
+                data={"email": "known@example.com"},
+            )
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "sign_in_requested"
+        ]
+        assert len(calls) == 1
+        assert calls[0].args[1] == str(subscriber.pk)
+
+    def test_fires_for_unknown_email_after_subscriber_created(self) -> None:
+        """POST with a fresh email creates a Subscriber and fires sign_in_requested with the new PK."""
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse("subscriptions:sign_in"),
+                data={"email": "brandnew@example.com"},
+            )
+        new_subscriber = Subscriber.objects.get(email="brandnew@example.com")
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "sign_in_requested"
+        ]
+        assert len(calls) == 1
+        assert calls[0].args[1] == str(new_subscriber.pk)
+
+    def test_does_not_fire_on_invalid_email(self) -> None:
+        """POST with an invalid email re-renders the form and does not fire the event."""
+        client = Client()
+        with patch("subscriptions.views.analytics.track") as mock_track:
+            client.post(
+                reverse("subscriptions:sign_in"),
+                data={"email": "not-valid"},
+            )
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "sign_in_requested"
+        ]
+        assert calls == []

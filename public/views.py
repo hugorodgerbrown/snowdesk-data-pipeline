@@ -2773,6 +2773,17 @@ def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
         visitor_hash=visitor_hash,
     )
 
+    # Emit share_link_clicked alongside the BulletinShareClick DB record.
+    _distinct_id = (
+        str(request.user.pk)
+        if request.user.is_authenticated
+        else (request.session.session_key or f"anon-{uuid.uuid4()}")
+    )
+    _share_props: dict[str, object] = {"region_id": share.region.region_id}
+    if country_code:
+        _share_props["country_code"] = country_code
+    analytics.track("share_link_clicked", _distinct_id, _share_props)
+
     if share.bulletin is None:
         gone = HttpResponseGone(
             "<html><body><h1>410 Gone</h1>"

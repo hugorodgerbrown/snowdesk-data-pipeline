@@ -2,14 +2,16 @@
 tests/public/test_share_redirect.py — Tests for GET /s/<token>/ (share_redirect).
 
 Covers the 302 happy path, click row creation, Cache-Control header, 404 on
-unknown token, and 410 on null bulletin. Also verifies the 302 status code
-explicitly (not 301) and the visitor hash stability.
+unknown token, 410 on null bulletin, and the ``share_link_clicked`` analytics
+event. Also verifies the 302 status code explicitly (not 301) and the
+visitor hash stability.
 """
 
 from __future__ import annotations
 
 import hashlib
 from datetime import date
+from unittest.mock import patch
 
 import pytest
 from django.test import Client
@@ -214,3 +216,66 @@ class TestShareRedirect410:
         share = BulletinShareFactory.create(bulletin=None)
         response = client.get(_redirect_url(share.token))
         assert "no-store" in response.get("Cache-Control", "")
+
+
+# ---------------------------------------------------------------------------
+# Analytics — share_link_clicked
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestShareLinkClickedAnalytics:
+    """analytics.track('share_link_clicked') fires on every follow."""
+
+    def test_fires_on_successful_redirect(self, client: Client) -> None:
+        """Following a share link fires share_link_clicked with the region_id."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        share = BulletinShareFactory.create(region=region)
+
+        with patch("public.views.analytics.track") as mock_track:
+            client.get(_redirect_url(share.token))
+
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "share_link_clicked"
+        ]
+        assert len(calls) == 1
+        props = calls[0].args[2]
+        assert props["region_id"] == "CH-4115"
+
+    def test_fires_on_null_bulletin_410(self, client: Client) -> None:
+        """The event fires even when the bulletin has been deleted (410 path)."""
+        share = BulletinShareFactory.create(bulletin=None)
+
+        with patch("public.views.analytics.track") as mock_track:
+            client.get(_redirect_url(share.token))
+
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "share_link_clicked"
+        ]
+        assert len(calls) == 1
+
+    def test_not_fired_on_unknown_token(self, client: Client) -> None:
+        """A 404 on an unknown token must not fire the event."""
+        with patch("public.views.analytics.track") as mock_track:
+            client.get(_redirect_url("doesnotexist"))
+
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "share_link_clicked"
+        ]
+        assert calls == []
+
+    def test_anon_distinct_id_uses_session_key_or_uuid(self, client: Client) -> None:
+        """Anonymous follows use the existing session key or a request-scoped UUID."""
+        share = BulletinShareFactory.create()
+
+        with patch("public.views.analytics.track") as mock_track:
+            client.get(_redirect_url(share.token))
+
+        calls = [
+            c for c in mock_track.call_args_list if c.args[0] == "share_link_clicked"
+        ]
+        assert len(calls) == 1
+        distinct_id = calls[0].args[1]
+        # Either a Django session key (32-char hex-ish) or an anon-<uuid> string.
+        assert distinct_id, "distinct_id must be non-empty for anonymous visitors"
+        assert distinct_id.startswith("anon-") or len(distinct_id) >= 16
