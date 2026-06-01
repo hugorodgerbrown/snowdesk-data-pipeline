@@ -50,6 +50,14 @@ class AnalyticsConfig(AppConfig):
         # the inbound IP). The raw ``ip`` property is never included in
         # event payloads — enforced by _assert_no_pii in analytics/__init__.py.
         posthog.disable_geoip = False
+        # Frame-locals on captured exception tracebacks. PostHog's built-in
+        # mask/ignore patterns redact common credential names, but anything
+        # in scope at the crash frame is still shipped — gated on the
+        # POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES env var so it can be
+        # turned off per-environment if needed.
+        posthog.capture_exception_code_variables = getattr(
+            settings, "POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES", True
+        )
 
         if not api_key:
             posthog.disabled = True
