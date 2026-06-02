@@ -53,17 +53,42 @@ ARCHIVE="${WORK_DIR}/GeoLite2-City.tar.gz"
 
 echo "fetch-geoip-data: downloading GeoLite2-City from MaxMind…"
 
-if ! curl --fail --silent --show-error \
+# --location follows MaxMind's 302 to the CDN that serves the archive.
+# Without it curl writes the redirect-response body (empty / HTML stub) to
+# ${ARCHIVE} and exits 0, and tar then fails on a non-archive file.
+# -w surfaces the final HTTP status so build-log readers can diagnose 401s.
+HTTP_CODE="$(curl --location --silent --show-error \
         --user "${ACCOUNT_ID}:${LICENSE_KEY}" \
         --output "${ARCHIVE}" \
-        "${DOWNLOAD_URL}"; then
-    echo "fetch-geoip-data: curl failed" >&2
+        --write-out "%{http_code}" \
+        "${DOWNLOAD_URL}" || true)"
+
+_fallback_or_abort() {
+    # Called when the download is unusable. Reuses the existing on-disk
+    # database if present (Render persists the working directory between
+    # deploys on the same instance), otherwise aborts the build.
     if [[ -f "${DEST_FILE}" ]]; then
         echo "fetch-geoip-data: stale database already exists at ${DEST_FILE} — continuing with it" >&2
         exit 0
     fi
     echo "fetch-geoip-data: no existing database to fall back on — aborting" >&2
     exit 1
+}
+
+if [[ "${HTTP_CODE}" != "200" ]]; then
+    echo "fetch-geoip-data: download returned HTTP ${HTTP_CODE:-unknown}" >&2
+    _fallback_or_abort
+fi
+
+# Sanity-check the archive is actually gzip (magic bytes 1f 8b) before
+# handing it to tar. A passing HTTP 200 is not enough — a misconfigured
+# auth or proxy can still serve a plaintext error page with status 200.
+if [[ ! -s "${ARCHIVE}" ]] || ! gzip --test "${ARCHIVE}" >/dev/null 2>&1; then
+    BYTES="$(wc -c < "${ARCHIVE}" | tr -d ' ')"
+    FIRST="$(head -c 120 "${ARCHIVE}" 2>/dev/null | tr -d '\0' || true)"
+    echo "fetch-geoip-data: archive is not a valid gzip stream (${BYTES} bytes)" >&2
+    echo "fetch-geoip-data: first bytes: ${FIRST}" >&2
+    _fallback_or_abort
 fi
 
 # ---------------------------------------------------------------------------
