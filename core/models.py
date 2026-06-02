@@ -102,6 +102,9 @@ class RequestLogManager(models.Manager["RequestLog"]):
         if request.user.is_authenticated:
             subscriber = request.user
 
+        sec_purpose_raw = request.headers.get("Sec-Purpose", "")
+        sec_purpose = sec_purpose_raw[:64]
+
         return self.create(
             subscriber=subscriber,
             session_key=(request.session.session_key or ""),
@@ -118,6 +121,7 @@ class RequestLogManager(models.Manager["RequestLog"]):
             accuracy_radius_km=(geo.accuracy_radius_km if geo else None),
             accept_language=accept_language,
             language=language,
+            sec_purpose=sec_purpose,
         )
 
 
@@ -221,6 +225,14 @@ class RequestLog(BaseModel):
         help_text=(
             "MaxMind accuracy radius in kilometres. Null when not in the database."
         ),
+    )
+
+    # Misc request headers
+    sec_purpose = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Sec-Purpose header — non-empty for prefetch/prerender requests.",
     )
 
     # Locale fields

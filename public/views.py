@@ -2746,11 +2746,11 @@ def _bulletin_detail_render(
 def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     """Follow a share link: log the click and 302 to the canonical bulletin URL.
 
-    Looks up the ``BulletinShare`` by token (404 if missing). Extracts
-    client metadata from the request — IP from ``REMOTE_ADDR`` falling
-    back to the first ``X-Forwarded-For`` element (Render reverse-proxy),
-    user-agent, session key, Referer, Sec-Purpose, and GeoIP country code.
-    Writes a ``BulletinShareClick`` row with all metadata.
+    Looks up the ``BulletinShare`` by token (404 if missing). Delegates
+    request-context extraction to ``capture_request_log(request)``, which
+    creates a ``RequestLog`` row carrying IP, user-agent, session, Referer,
+    Sec-Purpose, geo fields, and language. The ``BulletinShareClick`` row
+    stores the ``RequestLog`` as a FK (``click.request``).
 
     Then:
     * If ``share.bulletin`` is None (the linked bulletin was deleted):

@@ -120,7 +120,7 @@ class TestShareRedirectClickTracking:
         assert click.request.referer == "https://example.com/some-page"
 
     def test_click_row_captures_sec_purpose(self, client: Client) -> None:
-        """Sec-Purpose: prefetch header is captured in the RequestLog."""
+        """Sec-Purpose: prefetch header is captured on the linked RequestLog."""
         share = BulletinShareFactory.create()
 
         client.get(
@@ -129,11 +129,7 @@ class TestShareRedirectClickTracking:
         )
 
         click = BulletinShareClick.objects.get(share=share)
-        # sec_purpose is stored on the RequestLog (generic request context).
-        # The RequestLog captures it via the standard header extraction.
-        # Note: sec_purpose was previously a dedicated column on
-        # BulletinShareClick; it is now available via click.request.
-        assert click.request is not None  # RequestLog FK is set
+        assert click.request.sec_purpose == "prefetch"
 
     def test_visitor_hash_is_deterministic(self, client: Client) -> None:
         """Two clicks from the same IP + UA produce the same visitor_hash."""

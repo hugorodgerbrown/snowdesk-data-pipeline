@@ -371,7 +371,14 @@ class TestSubscribePartialRequestLog:
 
         from bulletins.services.geoip import GeoLookup
 
-        fake_geo = GeoLookup("CH", "VS", "Sion", 46.0, 7.0, 50)
+        fake_geo = GeoLookup(
+            country="CH",
+            subdivision="VS",
+            city="Sion",
+            latitude=46.0,
+            longitude=7.0,
+            accuracy_radius_km=50,
+        )
         region = MicroRegionFactory.create()
         with patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo):
             Client().post(
@@ -390,7 +397,14 @@ class TestSubscribePartialRequestLog:
 
         from bulletins.services.geoip import GeoLookup
 
-        fake_geo = GeoLookup("DE", "", "Berlin", 52.5, 13.4, 100)
+        fake_geo = GeoLookup(
+            country="DE",
+            subdivision="",
+            city="Berlin",
+            latitude=52.5,
+            longitude=13.4,
+            accuracy_radius_km=100,
+        )
         region = MicroRegionFactory.create()
         with patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo):
             Client().post(
@@ -414,7 +428,14 @@ class TestSubscribePartialRequestLog:
         email = "returning@example.com"
 
         # First call (Case A: new subscriber).
-        geo_first = GeoLookup("CH", "", "", None, None, None)
+        geo_first = GeoLookup(
+            country="CH",
+            subdivision="",
+            city="",
+            latitude=None,
+            longitude=None,
+            accuracy_radius_km=None,
+        )
         with patch("bulletins.services.geoip.geo_lookup", return_value=geo_first):
             Client().post(
                 reverse("subscriptions:subscribe"),
@@ -425,7 +446,14 @@ class TestSubscribePartialRequestLog:
         original_request_id = Subscriber.objects.get(email=email).acquisition_request_id
 
         # Second call from a different IP / country (Case B: pending re-send).
-        geo_second = GeoLookup("FR", "", "", None, None, None)
+        geo_second = GeoLookup(
+            country="FR",
+            subdivision="",
+            city="",
+            latitude=None,
+            longitude=None,
+            accuracy_radius_km=None,
+        )
         with patch("bulletins.services.geoip.geo_lookup", return_value=geo_second):
             Client().post(
                 reverse("subscriptions:subscribe"),
@@ -443,7 +471,14 @@ class TestSubscribePartialRequestLog:
 
         from bulletins.services.geoip import GeoLookup
 
-        fake_geo = GeoLookup("AT", "", "", None, None, None)
+        fake_geo = GeoLookup(
+            country="AT",
+            subdivision="",
+            city="",
+            latitude=None,
+            longitude=None,
+            accuracy_radius_km=None,
+        )
         region = MicroRegionFactory.create()
         with (
             patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo),
@@ -501,7 +536,14 @@ class TestSignInViewRequestLog:
         from bulletins.services.geoip import GeoLookup
 
         SubscriberFactory.create(email="signin@example.com")
-        fake_geo = GeoLookup("IT", "", "", None, None, None)
+        fake_geo = GeoLookup(
+            country="IT",
+            subdivision="",
+            city="",
+            latitude=None,
+            longitude=None,
+            accuracy_radius_km=None,
+        )
         with (
             patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo),
             patch("subscriptions.views.analytics.track") as mock_track,

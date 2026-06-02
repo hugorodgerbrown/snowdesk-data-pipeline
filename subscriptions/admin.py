@@ -68,6 +68,7 @@ class SubscriberAdmin(UserAdmin):
         "created_at",
     ]
     list_filter = ["status", "is_staff", "is_superuser"]
+    list_select_related = ("acquisition_request",)
     search_fields = ["email"]
     ordering = ["-created_at"]
 
@@ -126,10 +127,10 @@ class SubscriptionAdmin(admin.ModelAdmin):
     """Admin view for Subscription."""
 
     list_display = ["subscriber", "region", "subscribed_via", "created_at"]
-    list_select_related = ["subscriber", "region"]
+    list_select_related = ["subscriber", "region", "subscribed_via"]
     search_fields = ["subscriber__email", "region__region_id"]
     readonly_fields = ["uuid", "created_at", "updated_at", "subscribed_via"]
-    raw_id_fields = ["subscribed_via"]
+    raw_id_fields = []  # subscribed_via is read-only, not editable here
 
 
 @admin.register(PasskeyCredential)

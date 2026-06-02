@@ -176,3 +176,26 @@ class TestCapture:
         with patch("bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert log.subscriber_id == subscriber.pk
+
+    def test_sec_purpose_captured(self, rf: RequestFactory) -> None:
+        """capture() stores the Sec-Purpose header on sec_purpose."""
+        request = _make_request(rf)
+        request.META["HTTP_SEC_PURPOSE"] = "prefetch"
+        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+            log = capture(request)
+        assert log.sec_purpose == "prefetch"
+
+    def test_sec_purpose_empty_when_header_absent(self, rf: RequestFactory) -> None:
+        """When Sec-Purpose is not sent, sec_purpose is an empty string."""
+        request = _make_request(rf)
+        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+            log = capture(request)
+        assert log.sec_purpose == ""
+
+    def test_sec_purpose_truncated_to_64(self, rf: RequestFactory) -> None:
+        """Values longer than 64 characters are truncated to fit the field."""
+        request = _make_request(rf)
+        request.META["HTTP_SEC_PURPOSE"] = "x" * 100
+        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+            log = capture(request)
+        assert len(log.sec_purpose) == 64

@@ -767,8 +767,8 @@ class BulletinShareClick(BaseModel):
     any party that doesn't already have the IP.
 
     No bot filtering is applied at write time. Filter on
-    ``request__user_agent`` patterns or ``request__sec_purpose`` at query
-    time.
+    ``request__user_agent`` patterns or ``request__sec_purpose`` (the
+    ``Sec-Purpose`` header stored on ``RequestLog``) at query time.
     """
 
     share = models.ForeignKey(
