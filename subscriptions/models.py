@@ -117,6 +117,17 @@ class Subscriber(AbstractBaseUser, PermissionsMixin):
 
     # Domain fields
     email = models.EmailField(unique=True, db_index=True)
+    acquisition_request = models.ForeignKey(
+        "core.RequestLog",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="acquired_subscribers",
+        help_text=(
+            "Request that first created this subscriber. "
+            "First-observation wins; never overwritten."
+        ),
+    )
     is_staff = models.BooleanField(default=False)
     status = models.CharField(
         max_length=16,
@@ -201,6 +212,17 @@ class Subscription(models.Model):
         "regions.MicroRegion",
         on_delete=models.CASCADE,
         related_name="subscriptions",
+    )
+    subscribed_via = models.ForeignKey(
+        "core.RequestLog",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="initiated_subscriptions",
+        help_text=(
+            "Request that created this subscription. "
+            "First-observation wins on the (subscriber, region) pair."
+        ),
     )
 
     objects: SubscriptionQuerySet = SubscriptionQuerySet.as_manager()  # type: ignore[assignment]

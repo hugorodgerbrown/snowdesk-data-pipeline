@@ -724,15 +724,11 @@ class BulletinShareClickInline(admin.TabularInline):
     model = BulletinShareClick
     extra = 0
     readonly_fields = [
-        "ip_address",
-        "user_agent",
-        "session_id",
-        "referer",
-        "sec_purpose",
-        "country_code",
+        "request",
         "visitor_hash",
         "created_at",
     ]
+    raw_id_fields = ["request"]
     can_delete = False
     verbose_name = "Click"
     verbose_name_plural = "Clicks"
@@ -786,23 +782,18 @@ class BulletinShareClickAdmin(admin.ModelAdmin):
     list_display = [
         "id",
         "share",
-        "ip_address",
-        "country_code",
-        "sec_purpose",
+        "request",
+        "visitor_hash",
         "created_at",
     ]
-    list_filter = ["country_code", "sec_purpose"]
-    search_fields = ["share__token", "ip_address", "visitor_hash"]
+    list_filter = ["request__country_code"]
+    search_fields = ["share__token", "visitor_hash", "request__ip_address"]
     readonly_fields = [
         "share",
-        "ip_address",
-        "user_agent",
-        "session_id",
-        "referer",
-        "sec_purpose",
-        "country_code",
+        "request",
         "visitor_hash",
         "created_at",
         "updated_at",
     ]
+    raw_id_fields = ["request"]
     ordering = ["-created_at"]

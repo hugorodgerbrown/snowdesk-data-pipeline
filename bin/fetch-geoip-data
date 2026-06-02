@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# bin/fetch-geoip-data — Download GeoLite2-City.mmdb from MaxMind.
+#
+# Downloads the MaxMind GeoLite2-City binary database and installs it at
+# data/geoip/GeoLite2-City.mmdb.  Idempotent — re-running replaces the file
+# with the latest build.
+#
+# Required environment variables:
+#   MAXMIND_ACCOUNT_ID   Your MaxMind account ID (numeric).
+#   MAXMIND_LICENSE_KEY  Your MaxMind licence key.
+#
+# Exit behaviour:
+#   - Credentials unset → log a warning and exit 0 (no-op; local dev without
+#     an account boots fine; geo fields will be empty).
+#   - curl fails AND a stale database already exists → log a warning and exit 0
+#     (Render reuses the previously-fetched file on the same instance).
+#   - curl fails AND no database exists → exit 1 (fresh install must succeed).
+#
+# Usage:
+#   ./bin/fetch-geoip-data
+#
+# Setup (one-time):
+#   1. Sign up for a free MaxMind account at https://www.maxmind.com/en/geolite2/signup
+#   2. Generate a licence key at https://www.maxmind.com/en/accounts/current/license-key
+#   3. Set MAXMIND_ACCOUNT_ID and MAXMIND_LICENSE_KEY in your .env or CI secrets.
+
+set -euo pipefail
+
+DEST_DIR="$(cd "$(dirname "$0")/../data/geoip" && pwd)"
+DEST_FILE="${DEST_DIR}/GeoLite2-City.mmdb"
+DOWNLOAD_URL="https://download.maxmind.com/geoip/databases/GeoLite2-City/download?suffix=tar.gz"
+
+# ---------------------------------------------------------------------------
+# Credential guard — no-op if credentials are absent
+# ---------------------------------------------------------------------------
+
+ACCOUNT_ID="${MAXMIND_ACCOUNT_ID:-}"
+LICENSE_KEY="${MAXMIND_LICENSE_KEY:-}"
+
+if [[ -z "${ACCOUNT_ID}" || -z "${LICENSE_KEY}" ]]; then
+    echo "fetch-geoip-data: MAXMIND_ACCOUNT_ID or MAXMIND_LICENSE_KEY is unset — skipping download" >&2
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Download
+# ---------------------------------------------------------------------------
+
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "${WORK_DIR}"' EXIT
+
+ARCHIVE="${WORK_DIR}/GeoLite2-City.tar.gz"
+
+echo "fetch-geoip-data: downloading GeoLite2-City from MaxMind…"
+
+if ! curl --fail --silent --show-error \
+        --user "${ACCOUNT_ID}:${LICENSE_KEY}" \
+        --output "${ARCHIVE}" \
+        "${DOWNLOAD_URL}"; then
+    echo "fetch-geoip-data: curl failed" >&2
+    if [[ -f "${DEST_FILE}" ]]; then
+        echo "fetch-geoip-data: stale database already exists at ${DEST_FILE} — continuing with it" >&2
+        exit 0
+    fi
+    echo "fetch-geoip-data: no existing database to fall back on — aborting" >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Extract
+# ---------------------------------------------------------------------------
+
+tar --extract \
+    --file="${ARCHIVE}" \
+    --directory="${WORK_DIR}" \
+    --wildcards \
+    --no-anchored \
+    "*.mmdb"
+
+# The tarball unpacks to GeoLite2-City_YYYYMMDD/GeoLite2-City.mmdb — find it.
+EXTRACTED_MMDB="$(find "${WORK_DIR}" -name "GeoLite2-City.mmdb" | head -1)"
+
+if [[ -z "${EXTRACTED_MMDB}" ]]; then
+    echo "fetch-geoip-data: GeoLite2-City.mmdb not found in archive" >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------------
+
+mkdir -p "${DEST_DIR}"
+cp "${EXTRACTED_MMDB}" "${DEST_FILE}"
+
+echo "fetch-geoip-data: installed GeoLite2-City.mmdb at ${DEST_FILE}"

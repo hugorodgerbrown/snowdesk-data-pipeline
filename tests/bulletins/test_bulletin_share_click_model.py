@@ -2,7 +2,8 @@
 tests/bulletins/test_bulletin_share_click_model.py — Tests for BulletinShareClick model.
 
 Covers factory creation, to_string(), Meta.ordering, and CASCADE behaviour
-when the parent BulletinShare is deleted.
+when the parent BulletinShare is deleted. Request context (IP, UA, country, etc.)
+is now accessed via click.request (a RequestLog FK), not inline fields.
 """
 
 from __future__ import annotations
@@ -10,7 +11,11 @@ from __future__ import annotations
 import pytest
 
 from bulletins.models import BulletinShare, BulletinShareClick
-from tests.factories import BulletinShareClickFactory, BulletinShareFactory
+from tests.factories import (
+    BulletinShareClickFactory,
+    BulletinShareFactory,
+    RequestLogFactory,
+)
 
 
 @pytest.mark.django_db
@@ -28,10 +33,16 @@ class TestBulletinShareClickFactory:
         click = BulletinShareClickFactory.create()
         assert click.share_id is not None
 
-    def test_default_country_code(self) -> None:
-        """Factory defaults country_code to 'CH'."""
+    def test_request_fk_is_populated(self) -> None:
+        """Factory wires the request FK by default."""
         click = BulletinShareClickFactory.create()
-        assert click.country_code == "CH"
+        assert click.request_id is not None
+
+    def test_request_country_code_via_fk(self) -> None:
+        """Country code is accessed via click.request.country_code."""
+        req_log = RequestLogFactory.create(country_code="CH")
+        click = BulletinShareClickFactory.create(request=req_log)
+        assert click.request.country_code == "CH"
 
 
 @pytest.mark.django_db
@@ -39,9 +50,10 @@ class TestBulletinShareClickToString:
     """to_string() and __str__ return the expected format."""
 
     def test_to_string_includes_token_and_country(self) -> None:
-        """to_string() embeds the share token and country_code."""
+        """to_string() embeds the share token and country_code from request."""
         share = BulletinShareFactory.create(token="xyz999")
-        click = BulletinShareClickFactory.create(share=share, country_code="CH")
+        req_log = RequestLogFactory.create(country_code="CH")
+        click = BulletinShareClickFactory.create(share=share, request=req_log)
         result = click.to_string()
         assert "xyz999" in result
         assert "CH" in result
