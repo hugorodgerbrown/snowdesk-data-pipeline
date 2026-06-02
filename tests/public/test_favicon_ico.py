@@ -12,7 +12,17 @@ redirect target is an SVG at a URL containing ``favicon``.
 
 from __future__ import annotations
 
+import pytest
 from django.test import Client
+
+# Every test in this module hits the live URL via Django's test client. The
+# request passes through the project middleware stack, and CSP's per-request
+# nonce setup touches the DB on a cold worker. Without ``django_db`` the
+# tests fail in CI under pytest-xdist whenever a worker hasn't already warmed
+# its cache from a prior test. Locally tests can pass without the mark
+# because xdist worker scheduling happens to share warm workers — relying on
+# that is flaky. Apply the mark module-wide.
+pytestmark = pytest.mark.django_db
 
 
 def test_favicon_ico_returns_302() -> None:
