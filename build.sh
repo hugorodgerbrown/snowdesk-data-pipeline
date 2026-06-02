@@ -14,6 +14,11 @@ poetry install --no-interaction --no-root --only main
 npm install
 npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 
+# GeoIP — download GeoLite2-City.mmdb from MaxMind.  No-ops when
+# MAXMIND_ACCOUNT_ID / MAXMIND_LICENSE_KEY are unset or when MaxMind is
+# temporarily unreachable and a stale DB already exists on disk.
+./bin/fetch-geoip-data
+
 python manage.py collectstatic --no-input
 python manage.py migrate
 

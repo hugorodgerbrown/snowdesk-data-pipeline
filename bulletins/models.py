@@ -757,21 +757,18 @@ class BulletinShareClickQuerySet(models.QuerySet["BulletinShareClick"]):
 class BulletinShareClick(BaseModel):
     """A single click (follow) of a BulletinShare short URL.
 
-    One row per visitor follow of a ``/s/<token>/`` link. Stores client
-    metadata — IP address, user-agent, session key, Referer header,
-    Sec-Purpose header (for prefetch detection), GeoIP-resolved country
-    code, and a short visitor hash — for analytics purposes.
+    One row per visitor follow of a ``/s/<token>/`` link. All request
+    context (IP, UA, session, Referer, Sec-Purpose, country) is stored on
+    the linked ``RequestLog`` row rather than inline.
 
     ``visitor_hash`` is the first 16 hex chars of
     ``sha256((ip + "|" + ua).encode()).hexdigest()``. It is a privacy-
     respecting pseudonymous identifier — not reversible to a real IP by
     any party that doesn't already have the IP.
 
-    ``sec_purpose`` captures the ``Sec-Purpose: prefetch`` header so
-    speculative prefetches can be filtered at query time.
-
-    No bot filtering is applied at write time. Filter on ``sec_purpose``
-    or ``user_agent`` patterns at query time.
+    No bot filtering is applied at write time. Filter on
+    ``request__user_agent`` patterns or ``request__sec_purpose`` (the
+    ``Sec-Purpose`` header stored on ``RequestLog``) at query time.
     """
 
     share = models.ForeignKey(
@@ -780,44 +777,11 @@ class BulletinShareClick(BaseModel):
         related_name="clicks",
         help_text="The share link that was followed.",
     )
-    ip_address = models.GenericIPAddressField(
-        null=True,
-        blank=True,
-        help_text="Client IP address (REMOTE_ADDR or first X-Forwarded-For element).",
-    )
-    user_agent = models.TextField(
-        blank=True,
-        default="",
-        help_text="HTTP_USER_AGENT from the click request.",
-    )
-    session_id = models.CharField(
-        max_length=64,
-        blank=True,
-        default="",
-        help_text="Session key at click time (empty when no session exists).",
-    )
-    referer = models.TextField(
-        blank=True,
-        default="",
-        help_text="HTTP Referer header at click time.",
-    )
-    sec_purpose = models.CharField(
-        max_length=64,
-        blank=True,
-        default="",
-        help_text=(
-            "Sec-Purpose header value (e.g. 'prefetch') for speculative-load "
-            "detection. Empty on regular navigations."
-        ),
-    )
-    country_code = models.CharField(
-        max_length=2,
-        blank=True,
-        default="",
-        help_text=(
-            "ISO 3166-1 alpha-2 country code resolved from ip_address via GeoIP. "
-            "Empty when the lookup fails or the IP is private."
-        ),
+    request = models.ForeignKey(
+        "core.RequestLog",
+        on_delete=models.PROTECT,
+        related_name="bulletin_share_clicks",
+        help_text="Request context captured when this link was followed.",
     )
     visitor_hash = models.CharField(
         max_length=16,
@@ -841,7 +805,7 @@ class BulletinShareClick(BaseModel):
 
         Format: ``BulletinShareClick(<share_token>, <country_code>)``
         """
-        return f"BulletinShareClick({self.share.token}, {self.country_code!r})"
+        return f"BulletinShareClick({self.share.token}, {self.request.country_code!r})"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""

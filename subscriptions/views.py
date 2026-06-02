@@ -53,6 +53,7 @@ from django_ratelimit.decorators import ratelimit
 
 import analytics
 from core.decorators import require_htmx
+from core.services.request_log import capture as capture_request_log
 from regions.models import MicroRegion
 
 from .forms import EmailForm, SubscribeForm
@@ -136,14 +137,25 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         return render(request, "subscriptions/sign_in.html", {"form": form})
 
     email: str = form.cleaned_data["email"]
-    subscriber, _ = Subscriber.objects.get_or_create(
+
+    # Capture request context before creating / fetching the subscriber so
+    # first-observation wins on acquisition_request.
+    req_log = capture_request_log(request)
+
+    subscriber, created = Subscriber.objects.get_or_create(
         email=email,
-        defaults={"status": Subscriber.Status.PENDING},
+        defaults={
+            "status": Subscriber.Status.PENDING,
+            "acquisition_request": req_log,
+        },
     )
     send_account_access_email(email, request=request)
     logger.info("Account-access email sent to %s via sign-in page", email)
 
-    analytics.track("sign_in_requested", str(subscriber.pk))
+    sign_in_props: dict[str, object] = {}
+    if req_log.country_code:
+        sign_in_props["country_code"] = req_log.country_code
+    analytics.track("sign_in_requested", str(subscriber.pk), sign_in_props)
 
     return render(request, "subscriptions/manage_sent.html", {})
 
@@ -153,7 +165,9 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
-def _track_subscription_started(request: HttpRequest, anon_id: str) -> None:
+def _track_subscription_started(
+    request: HttpRequest, anon_id: str, country_code: str = ""
+) -> None:
     """Emit the ``subscription_started`` analytics event.
 
     Derives the ``source`` from the UTM params stored in the session by the
@@ -163,6 +177,8 @@ def _track_subscription_started(request: HttpRequest, anon_id: str) -> None:
     Args:
         request: The current HTMX POST request.
         anon_id: The session-scoped anonymous UUID used as ``distinct_id``.
+        country_code: ISO 3166-1 alpha-2 country code resolved from the
+            client IP.  Included in props when non-empty.
 
     """
     utm: dict[str, str] = request.session.get("analytics_utm") or {}
@@ -188,6 +204,8 @@ def _track_subscription_started(request: HttpRequest, anon_id: str) -> None:
         props["utm_medium"] = utm_medium
     if utm_campaign:
         props["utm_campaign"] = utm_campaign
+    if country_code:
+        props["country_code"] = country_code
 
     analytics.track("subscription_started", anon_id, props)
 
@@ -264,14 +282,22 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
             status=400,
         )
 
+    # Capture request context once; first-observation wins on both FKs.
+    req_log = capture_request_log(request)
+
     subscriber, subscriber_created = Subscriber.objects.get_or_create(
         email=email,
-        defaults={"status": Subscriber.Status.PENDING},
+        defaults={
+            "status": Subscriber.Status.PENDING,
+            "acquisition_request": req_log,
+        },
     )
 
     # Persist the region subscription idempotently; capture whether it's new.
     _subscription, subscription_created = Subscription.objects.get_or_create(
-        subscriber=subscriber, region=region
+        subscriber=subscriber,
+        region=region,
+        defaults={"subscribed_via": req_log},
     )
 
     if subscriber_created:
@@ -283,7 +309,7 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
         anon_id: str = request.session.setdefault(
             "analytics_anon_id", str(uuid.uuid4())
         )
-        _track_subscription_started(request, anon_id)
+        _track_subscription_started(request, anon_id, country_code=req_log.country_code)
 
         return render(
             request,
@@ -305,14 +331,17 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
         # Case C — active subscriber, new region added.
         logger.info("Active subscriber %s added new region %s", email, region.region_id)
         send_subscription_confirmation_email(email, region=region, request=request)
+        region_added_props: dict[str, object] = {
+            "region_id": region.region_id,
+            "source": "bulletin",
+            "region_count_after": subscriber.subscriptions.count(),
+        }
+        if req_log.country_code:
+            region_added_props["country_code"] = req_log.country_code
         analytics.track(
             "region_added",
             str(subscriber.pk),
-            {
-                "region_id": region.region_id,
-                "source": "bulletin",
-                "region_count_after": subscriber.subscriptions.count(),
-            },
+            region_added_props,
         )
         return render(
             request,
@@ -437,8 +466,11 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
             status=400,
         )
 
+    req_log = capture_request_log(request)
     _subscription, sub_created = Subscription.objects.get_or_create(
-        subscriber=subscriber, region=region
+        subscriber=subscriber,
+        region=region,
+        defaults={"subscribed_via": req_log},
     )
     logger.info(
         "Subscriber %s added region %s via bulletin page (idempotent)",
@@ -446,14 +478,17 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
         region_id,
     )
     if sub_created:
+        region_added_props: dict[str, object] = {
+            "region_id": region.region_id,
+            "source": "bulletin",
+            "region_count_after": subscriber.subscriptions.count(),
+        }
+        if req_log.country_code:
+            region_added_props["country_code"] = req_log.country_code
         analytics.track(
             "region_added",
             str(subscriber.pk),
-            {
-                "region_id": region.region_id,
-                "source": "bulletin",
-                "region_count_after": subscriber.subscriptions.count(),
-            },
+            region_added_props,
         )
     return render(
         request,

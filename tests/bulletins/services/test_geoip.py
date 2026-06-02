@@ -1,8 +1,13 @@
 """
 tests/bulletins/services/test_geoip.py — Tests for bulletins.services.geoip.
 
-Covers the happy path (public IP), private/loopback addresses, malformed
-input, and missing-mmdb graceful degradation.
+Covers the happy path (public IP returning a GeoLookup), private/loopback
+addresses, malformed input, and missing-mmdb graceful degradation.
+
+Tests that require the actual GeoLite2-City.mmdb database file are marked
+``requires_geoip_db`` and are skipped automatically when the file is absent
+(i.e. the MaxMind credentials have not been configured and
+``bin/fetch-geoip-data`` has not been run locally).
 """
 
 from __future__ import annotations
@@ -10,10 +15,26 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from django.conf import settings as django_settings
 from pytest_django.fixtures import SettingsWrapper
 
 from bulletins.services import geoip as geoip_module
-from bulletins.services.geoip import country_code_for, reset_reader_for_testing
+from bulletins.services.geoip import GeoLookup, geo_lookup, reset_reader_for_testing
+
+# Marker: skip if the City DB doesn't exist locally.
+_GEOIP_DB_EXISTS = (
+    Path(django_settings.GEOIP_PATH).exists()
+    if getattr(django_settings, "GEOIP_PATH", None)
+    else False
+)
+
+requires_geoip_db = pytest.mark.skipif(
+    not _GEOIP_DB_EXISTS,
+    reason=(
+        "GeoLite2-City.mmdb not present — run ./bin/fetch-geoip-data with MaxMind "
+        "credentials to enable live geo lookup tests."
+    ),
+)
 
 
 @pytest.fixture(autouse=True)
@@ -22,59 +43,98 @@ def reset_geoip_reader() -> None:
     reset_reader_for_testing()
 
 
-class TestCountryCodeFor:
-    """Tests for country_code_for()."""
+class TestGeoLookupDataclass:
+    """Tests for the GeoLookup dataclass."""
 
-    def test_public_ip_returns_code(self) -> None:
+    def test_empty_classmethod_returns_blank_lookup(self) -> None:
+        """GeoLookup.empty() returns a fully-blank instance."""
+        empty = GeoLookup.empty()
+        assert empty.country == ""
+        assert empty.subdivision == ""
+        assert empty.city == ""
+        assert empty.latitude is None
+        assert empty.longitude is None
+        assert empty.accuracy_radius_km is None
+
+    def test_frozen(self) -> None:
+        """GeoLookup instances are immutable (frozen dataclass)."""
+        lookup = GeoLookup.empty()
+        with pytest.raises((AttributeError, TypeError)):
+            lookup.country = "CH"  # type: ignore[misc]
+
+
+class TestGeoLookup:
+    """Tests for geo_lookup()."""
+
+    @requires_geoip_db
+    def test_public_ip_returns_lookup_with_country(self) -> None:
         """8.8.8.8 is a Google DNS server; MaxMind maps it to the US."""
-        code = country_code_for("8.8.8.8")
-        assert len(code) == 2
-        assert code == code.upper()
+        result = geo_lookup("8.8.8.8")
+        assert result is not None
+        assert len(result.country) == 2
+        assert result.country == result.country.upper()
 
-    def test_loopback_returns_empty_string(self) -> None:
+    @requires_geoip_db
+    def test_public_ip_has_coordinates(self) -> None:
+        """A public IP lookup should include latitude and longitude."""
+        result = geo_lookup("8.8.8.8")
+        assert result is not None
+        assert result.latitude is not None
+        assert result.longitude is not None
+
+    @requires_geoip_db
+    def test_loopback_returns_none(self) -> None:
         """127.0.0.1 is a private address; GeoLite2 does not cover it."""
-        assert country_code_for("127.0.0.1") == ""
+        assert geo_lookup("127.0.0.1") is None
 
-    def test_rfc1918_returns_empty_string(self) -> None:
+    @requires_geoip_db
+    def test_rfc1918_returns_none(self) -> None:
         """192.168.x.x is a private range not covered by GeoLite2."""
-        assert country_code_for("192.168.1.1") == ""
+        assert geo_lookup("192.168.1.1") is None
 
-    def test_malformed_input_returns_empty_string(self) -> None:
-        """Non-IP strings must not raise; they return empty string."""
-        assert country_code_for("not-an-ip") == ""
-        assert country_code_for("") == ""
-        assert country_code_for("999.999.999.999") == ""
+    def test_malformed_input_returns_none(self) -> None:
+        """Non-IP strings must not raise; they return None.
 
-    def test_missing_mmdb_returns_empty_string(
+        This test intentionally passes even without the database —
+        malformed input is rejected before the reader is consulted when
+        the database is absent (the reader returns None, so the whole
+        chain returns None).
+        """
+        assert geo_lookup("not-an-ip") is None
+        assert geo_lookup("") is None
+        assert geo_lookup("999.999.999.999") is None
+
+    def test_missing_mmdb_returns_none(
         self, settings: SettingsWrapper, tmp_path: Path
     ) -> None:
-        """When GEOIP_PATH points to a non-existent file, return "" and log a warning."""
+        """When GEOIP_PATH points to a non-existent file, return None."""
         settings.GEOIP_PATH = tmp_path / "nonexistent.mmdb"
         reset_reader_for_testing()
-        result = country_code_for("8.8.8.8")
-        assert result == ""
+        result = geo_lookup("8.8.8.8")
+        assert result is None
 
-    def test_geoip_path_none_returns_empty_string(
-        self, settings: SettingsWrapper
-    ) -> None:
-        """When GEOIP_PATH is None/unset, return "" gracefully."""
+    def test_geoip_path_none_returns_none(self, settings: SettingsWrapper) -> None:
+        """When GEOIP_PATH is None/unset, return None gracefully."""
         settings.GEOIP_PATH = None
         reset_reader_for_testing()
-        result = country_code_for("8.8.8.8")
-        assert result == ""
+        result = geo_lookup("8.8.8.8")
+        assert result is None
 
+    @requires_geoip_db
     def test_reader_cached_after_first_call(self) -> None:
         """A second call should use the cached reader, not open the file again."""
-        code1 = country_code_for("8.8.8.8")
-        code2 = country_code_for("8.8.8.8")
-        assert code1 == code2
+        result1 = geo_lookup("8.8.8.8")
+        result2 = geo_lookup("8.8.8.8")
+        assert (result1 is None) == (result2 is None)
+        if result1 is not None and result2 is not None:
+            assert result1.country == result2.country
 
     def test_reset_reader_for_testing_clears_cache(
         self, settings: SettingsWrapper
     ) -> None:
         """reset_reader_for_testing() allows a fresh reader to be opened."""
         # First call populates the cache.
-        country_code_for("8.8.8.8")
+        geo_lookup("8.8.8.8")
         assert geoip_module._reader_initialised is True  # noqa: SLF001
         # Reset clears it.
         reset_reader_for_testing()

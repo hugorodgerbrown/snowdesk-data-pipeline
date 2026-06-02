@@ -78,7 +78,6 @@ from bulletins.models import (
     WeatherSnapshot,
 )
 from bulletins.schema import ValidTimePeriod
-from bulletins.services.geoip import country_code_for
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     DayCharacter,
@@ -93,6 +92,7 @@ from bulletins.services.weather_fetcher import (
     fetch_weather_for_region,
 )
 from core.decorators import require_htmx
+from core.services.request_log import capture as capture_request_log
 from core.utils import html_to_markdown
 from regions.models import MicroRegion
 from subscriptions.models import Subscription
@@ -2746,11 +2746,11 @@ def _bulletin_detail_render(
 def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     """Follow a share link: log the click and 302 to the canonical bulletin URL.
 
-    Looks up the ``BulletinShare`` by token (404 if missing). Extracts
-    client metadata from the request — IP from ``REMOTE_ADDR`` falling
-    back to the first ``X-Forwarded-For`` element (Render reverse-proxy),
-    user-agent, session key, Referer, Sec-Purpose, and GeoIP country code.
-    Writes a ``BulletinShareClick`` row with all metadata.
+    Looks up the ``BulletinShare`` by token (404 if missing). Delegates
+    request-context extraction to ``capture_request_log(request)``, which
+    creates a ``RequestLog`` row carrying IP, user-agent, session, Referer,
+    Sec-Purpose, geo fields, and language. The ``BulletinShareClick`` row
+    stores the ``RequestLog`` as a FK (``click.request``).
 
     Then:
     * If ``share.bulletin`` is None (the linked bulletin was deleted):
@@ -2770,30 +2770,22 @@ def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     """
     share = get_object_or_404(BulletinShare, token=token)
 
-    # Extract client metadata.
-    ip = request.META.get("REMOTE_ADDR", "")
-    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded_for:
-        # Take the leftmost (client) entry from the forwarded-for chain.
-        ip = forwarded_for.split(",")[0].strip()
+    # Capture request context into a RequestLog row.  This also resolves geo
+    # fields from the client IP via the GeoLite2-City database.
+    req_log = capture_request_log(request)
 
-    ua = request.META.get("HTTP_USER_AGENT", "")
-    session_id = request.session.session_key or ""
-    referer = request.headers.get("Referer", "")
-    sec_purpose = request.headers.get("Sec-Purpose", "")
-    country_code = country_code_for(ip)
+    # visitor_hash: pseudonymous de-dup key computed from IP + UA.
+    ip = req_log.ip_address or ""
+    ua = req_log.user_agent
     visitor_hash = hashlib.sha256(f"{ip}|{ua}".encode()).hexdigest()[:16]
 
     BulletinShareClick.objects.create(
         share=share,
-        ip_address=ip or None,
-        user_agent=ua,
-        session_id=session_id,
-        referer=referer,
-        sec_purpose=sec_purpose,
-        country_code=country_code,
+        request=req_log,
         visitor_hash=visitor_hash,
     )
+
+    country_code = req_log.country_code
 
     # Emit share_link_clicked alongside the BulletinShareClick DB record.
     _distinct_id = (

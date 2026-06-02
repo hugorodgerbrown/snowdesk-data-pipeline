@@ -352,6 +352,232 @@ class TestSubscribePartial:
 
 
 # ---------------------------------------------------------------------------
+# subscribe_partial — RequestLog wiring (SNOW-277)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSubscribePartialRequestLog:
+    """Tests for RequestLog capture and FK wiring in subscribe_partial."""
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+        """Use in-memory email backend."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def test_case_a_subscriber_gets_acquisition_request(self) -> None:
+        """New subscriber (Case A) has acquisition_request populated."""
+        from unittest.mock import patch
+
+        from bulletins.services.geoip import GeoLookup
+
+        fake_geo = GeoLookup(
+            country="CH",
+            subdivision="VS",
+            city="Sion",
+            latitude=46.0,
+            longitude=7.0,
+            accuracy_radius_km=50,
+        )
+        region = MicroRegionFactory.create()
+        with patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "newuser@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        subscriber = Subscriber.objects.get(email="newuser@example.com")
+        assert subscriber.acquisition_request is not None
+        assert subscriber.acquisition_request.country_code == "CH"
+
+    def test_case_a_subscription_gets_subscribed_via(self) -> None:
+        """New subscription (Case A) has subscribed_via populated."""
+        from unittest.mock import patch
+
+        from bulletins.services.geoip import GeoLookup
+
+        fake_geo = GeoLookup(
+            country="DE",
+            subdivision="",
+            city="Berlin",
+            latitude=52.5,
+            longitude=13.4,
+            accuracy_radius_km=100,
+        )
+        region = MicroRegionFactory.create()
+        with patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "newuser2@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        subscriber = Subscriber.objects.get(email="newuser2@example.com")
+        subscription = Subscription.objects.get(subscriber=subscriber, region=region)
+        assert subscription.subscribed_via is not None
+        assert subscription.subscribed_via.country_code == "DE"
+
+    def test_acquisition_request_first_observation_wins(self) -> None:
+        """Re-submitting does not overwrite acquisition_request on Subscriber."""
+        from unittest.mock import patch
+
+        from bulletins.services.geoip import GeoLookup
+
+        region = MicroRegionFactory.create()
+        email = "returning@example.com"
+
+        # First call (Case A: new subscriber).
+        geo_first = GeoLookup(
+            country="CH",
+            subdivision="",
+            city="",
+            latitude=None,
+            longitude=None,
+            accuracy_radius_km=None,
+        )
+        with patch("bulletins.services.geoip.geo_lookup", return_value=geo_first):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": email, "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        original_request_id = Subscriber.objects.get(email=email).acquisition_request_id
+
+        # Second call from a different IP / country (Case B: pending re-send).
+        geo_second = GeoLookup(
+            country="FR",
+            subdivision="",
+            city="",
+            latitude=None,
+            longitude=None,
+            accuracy_radius_km=None,
+        )
+        with patch("bulletins.services.geoip.geo_lookup", return_value=geo_second):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": email, "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        # acquisition_request unchanged.
+        sub = Subscriber.objects.get(email=email)
+        assert sub.acquisition_request_id == original_request_id
+
+    def test_subscription_started_event_includes_country_code(self) -> None:
+        """subscription_started props include country_code when non-empty (Case A)."""
+        from unittest.mock import patch
+
+        from bulletins.services.geoip import GeoLookup
+
+        fake_geo = GeoLookup(
+            country="AT",
+            subdivision="",
+            city="",
+            latitude=None,
+            longitude=None,
+            accuracy_radius_km=None,
+        )
+        region = MicroRegionFactory.create()
+        with (
+            patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo),
+            patch("subscriptions.views.analytics.track") as mock_track,
+        ):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "austria@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        calls = {c.args[0]: c for c in mock_track.call_args_list}
+        assert "subscription_started" in calls
+        props = calls["subscription_started"].args[2]
+        assert props.get("country_code") == "AT"
+
+    def test_subscription_started_omits_country_code_when_empty(self) -> None:
+        """subscription_started omits country_code when geo lookup returns None."""
+        from unittest.mock import patch
+
+        region = MicroRegionFactory.create()
+        with (
+            patch("bulletins.services.geoip.geo_lookup", return_value=None),
+            patch("subscriptions.views.analytics.track") as mock_track,
+        ):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "noip@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        calls = {c.args[0]: c for c in mock_track.call_args_list}
+        props = calls["subscription_started"].args[2]
+        assert "country_code" not in props
+
+
+# ---------------------------------------------------------------------------
+# sign_in_view — RequestLog wiring (SNOW-277)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSignInViewRequestLog:
+    """Tests for RequestLog capture in sign_in_view."""
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+        """Use in-memory email backend."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def test_sign_in_requested_includes_country_code(self) -> None:
+        """sign_in_requested event includes country_code when non-empty."""
+        from unittest.mock import patch
+
+        from bulletins.services.geoip import GeoLookup
+
+        SubscriberFactory.create(email="signin@example.com")
+        fake_geo = GeoLookup(
+            country="IT",
+            subdivision="",
+            city="",
+            latitude=None,
+            longitude=None,
+            accuracy_radius_km=None,
+        )
+        with (
+            patch("bulletins.services.geoip.geo_lookup", return_value=fake_geo),
+            patch("subscriptions.views.analytics.track") as mock_track,
+        ):
+            Client().post(
+                reverse("subscriptions:sign_in"),
+                data={"email": "signin@example.com"},
+            )
+
+        calls = {c.args[0]: c for c in mock_track.call_args_list}
+        assert "sign_in_requested" in calls
+        props = calls["sign_in_requested"].args[2]
+        assert props.get("country_code") == "IT"
+
+    def test_sign_in_requested_omits_country_code_when_empty(self) -> None:
+        """sign_in_requested omits country_code when geo lookup returns None."""
+        from unittest.mock import patch
+
+        SubscriberFactory.create(email="signin2@example.com")
+        with (
+            patch("bulletins.services.geoip.geo_lookup", return_value=None),
+            patch("subscriptions.views.analytics.track") as mock_track,
+        ):
+            Client().post(
+                reverse("subscriptions:sign_in"),
+                data={"email": "signin2@example.com"},
+            )
+
+        calls = {c.args[0]: c for c in mock_track.call_args_list}
+        props = calls["sign_in_requested"].args[2]
+        assert "country_code" not in props
+
+
+# ---------------------------------------------------------------------------
 # account_view
 # ---------------------------------------------------------------------------
 

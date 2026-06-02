@@ -59,14 +59,30 @@ class PasskeyCredentialInline(admin.TabularInline):
 class SubscriberAdmin(UserAdmin):
     """Admin view for Subscriber (custom user model)."""
 
-    list_display = ["email", "status", "is_staff", "confirmed_at", "created_at"]
+    list_display = [
+        "email",
+        "status",
+        "is_staff",
+        "confirmed_at",
+        "acquisition_country",
+        "created_at",
+    ]
     list_filter = ["status", "is_staff", "is_superuser"]
+    list_select_related = ("acquisition_request",)
     search_fields = ["email"]
     ordering = ["-created_at"]
 
+    @admin.display(description="Country (acquisition)")
+    def acquisition_country(self, obj: object) -> str:
+        """Return the country code from the acquisition RequestLog, or '-'."""
+        req = getattr(obj, "acquisition_request", None)
+        if req is not None:
+            return req.country_code or "—"
+        return "—"
+
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Subscription", {"fields": ("status", "confirmed_at")}),
+        ("Subscription", {"fields": ("status", "confirmed_at", "acquisition_request")}),
         (
             "Permissions",
             {
@@ -94,7 +110,15 @@ class SubscriberAdmin(UserAdmin):
         ),
     )
 
-    readonly_fields = ["uuid", "created_at", "updated_at", "last_login", "confirmed_at"]
+    readonly_fields = [
+        "uuid",
+        "created_at",
+        "updated_at",
+        "last_login",
+        "confirmed_at",
+        "acquisition_request",
+    ]
+    raw_id_fields = []  # acquisition_request is read-only, not editable here
     inlines = [SubscriptionInline, PasskeyCredentialInline]
 
 
@@ -102,10 +126,11 @@ class SubscriberAdmin(UserAdmin):
 class SubscriptionAdmin(admin.ModelAdmin):
     """Admin view for Subscription."""
 
-    list_display = ["subscriber", "region", "created_at"]
-    list_select_related = ["subscriber", "region"]
+    list_display = ["subscriber", "region", "subscribed_via", "created_at"]
+    list_select_related = ["subscriber", "region", "subscribed_via"]
     search_fields = ["subscriber__email", "region__region_id"]
-    readonly_fields = ["uuid", "created_at", "updated_at"]
+    readonly_fields = ["uuid", "created_at", "updated_at", "subscribed_via"]
+    raw_id_fields = []  # subscribed_via is read-only, not editable here
 
 
 @admin.register(PasskeyCredential)

@@ -27,6 +27,7 @@ from bulletins.models import (
     WeatherSnapshot,
 )
 from bulletins.services.day_rating import DAY_RATING_VERSION
+from core.models import RequestLog
 from regions.models import (
     MajorRegion,
     MicroRegion,
@@ -201,6 +202,31 @@ class WeatherSnapshotFactory(factory.django.DjangoModelFactory[WeatherSnapshot])
     )
 
 
+class RequestLogFactory(factory.django.DjangoModelFactory[RequestLog]):
+    """Factory for RequestLog instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = RequestLog
+
+    subscriber = None  # nullable — anonymous requests are the common case
+    session_key = factory.Sequence(lambda n: f"session-{n:04d}")
+    method = "POST"
+    path = "/"
+    referer = ""
+    user_agent = "Mozilla/5.0 (Test)"
+    ip_address = factory.Sequence(lambda n: f"203.0.113.{n % 255 + 1}")
+    country_code = ""
+    subdivision_code = ""
+    city = ""
+    latitude = None
+    longitude = None
+    accuracy_radius_km = None
+    accept_language = ""
+    language = ""
+
+
 class SubscriberFactory(factory.django.DjangoModelFactory[Subscriber]):
     """Factory for Subscriber instances."""
 
@@ -211,6 +237,7 @@ class SubscriberFactory(factory.django.DjangoModelFactory[Subscriber]):
 
     email = factory.Sequence(lambda n: f"subscriber{n}@example.com")
     status = Subscriber.Status.ACTIVE
+    acquisition_request = None  # nullable — not always set
 
 
 class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):
@@ -223,6 +250,7 @@ class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):
 
     subscriber = factory.SubFactory(SubscriberFactory)
     region = factory.SubFactory(MicroRegionFactory)
+    subscribed_via = None  # nullable — not always set
 
 
 class PasskeyCredentialFactory(factory.django.DjangoModelFactory[PasskeyCredential]):
@@ -267,12 +295,7 @@ class BulletinShareClickFactory(factory.django.DjangoModelFactory[BulletinShareC
         model = BulletinShareClick
 
     share = factory.SubFactory(BulletinShareFactory)
-    ip_address = "203.0.113.1"
-    user_agent = "Mozilla/5.0 (Test)"
-    session_id = ""
-    referer = ""
-    sec_purpose = ""
-    country_code = "CH"
+    request = factory.SubFactory(RequestLogFactory)
     visitor_hash = "abcdef1234567890"
 
 

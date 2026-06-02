@@ -1,10 +1,10 @@
 """
 tests/public/test_share_redirect.py — Tests for GET /s/<token>/ (share_redirect).
 
-Covers the 302 happy path, click row creation, Cache-Control header, 404 on
-unknown token, 410 on null bulletin, and the ``share_link_clicked`` analytics
-event. Also verifies the 302 status code explicitly (not 301) and the
-visitor hash stability.
+Covers the 302 happy path, click row creation (including RequestLog FK),
+Cache-Control header, 404 on unknown token, 410 on null bulletin, and the
+``share_link_clicked`` analytics event. Also verifies the 302 status code
+explicitly (not 301) and the visitor hash stability.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from django.test import Client
 from django.urls import reverse
 
 from bulletins.models import BulletinShareClick
+from core.models import RequestLog
 from tests.factories import (
     BulletinShareFactory,
     MicroRegionFactory,
@@ -85,18 +86,29 @@ class TestShareRedirectClickTracking:
 
         assert BulletinShareClick.objects.filter(share=share).count() == 1
 
+    def test_click_row_creates_request_log(self, client: Client) -> None:
+        """Following a share link creates one RequestLog linked to the click."""
+        share = BulletinShareFactory.create()
+        assert RequestLog.objects.count() == 0
+
+        client.get(_redirect_url(share.token))
+
+        assert RequestLog.objects.count() == 1
+        click = BulletinShareClick.objects.get(share=share)
+        assert click.request_id is not None
+
     def test_click_row_captures_user_agent(self, client: Client) -> None:
-        """The click row records the User-Agent header."""
+        """The click row's RequestLog records the User-Agent header."""
         share = BulletinShareFactory.create()
         ua = "TestBrowser/1.0"
 
         client.get(_redirect_url(share.token), HTTP_USER_AGENT=ua)
 
         click = BulletinShareClick.objects.get(share=share)
-        assert click.user_agent == ua
+        assert click.request.user_agent == ua
 
     def test_click_row_captures_referer(self, client: Client) -> None:
-        """The click row records the Referer header."""
+        """The click row's RequestLog records the Referer header."""
         share = BulletinShareFactory.create()
 
         client.get(
@@ -105,10 +117,10 @@ class TestShareRedirectClickTracking:
         )
 
         click = BulletinShareClick.objects.get(share=share)
-        assert click.referer == "https://example.com/some-page"
+        assert click.request.referer == "https://example.com/some-page"
 
     def test_click_row_captures_sec_purpose(self, client: Client) -> None:
-        """Sec-Purpose: prefetch header is captured and written to the row."""
+        """Sec-Purpose: prefetch header is captured on the linked RequestLog."""
         share = BulletinShareFactory.create()
 
         client.get(
@@ -117,7 +129,7 @@ class TestShareRedirectClickTracking:
         )
 
         click = BulletinShareClick.objects.get(share=share)
-        assert click.sec_purpose == "prefetch"
+        assert click.request.sec_purpose == "prefetch"
 
     def test_visitor_hash_is_deterministic(self, client: Client) -> None:
         """Two clicks from the same IP + UA produce the same visitor_hash."""
@@ -170,7 +182,8 @@ class TestShareRedirectClickTracking:
         )
 
         click = BulletinShareClick.objects.get(share=share)
-        assert str(click.ip_address) == forwarded_ip
+        # ip_address is now on the linked RequestLog, not directly on the click.
+        assert str(click.request.ip_address) == forwarded_ip
 
 
 # ---------------------------------------------------------------------------

@@ -182,6 +182,69 @@ class TestSubscriptionQuerySet:
 
 
 # ---------------------------------------------------------------------------
+# Subscriber and Subscription request_log FKs (SNOW-277)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSubscriberAcquisitionRequest:
+    """Subscriber.acquisition_request FK defaults to None."""
+
+    def test_acquisition_request_defaults_to_none(self) -> None:
+        """Factory-created Subscriber has acquisition_request=None."""
+        sub = SubscriberFactory.create()
+        assert sub.acquisition_request is None
+
+    def test_acquisition_request_can_be_set(self) -> None:
+        """acquisition_request can be set to a RequestLog instance."""
+        from tests.factories import RequestLogFactory
+
+        req_log = RequestLogFactory.create()
+        sub = SubscriberFactory.create(acquisition_request=req_log)
+        sub.refresh_from_db()
+        assert sub.acquisition_request_id == req_log.pk
+
+    def test_acquisition_request_set_null_on_log_delete(self) -> None:
+        """Deleting the RequestLog sets acquisition_request to None (SET_NULL)."""
+        from tests.factories import RequestLogFactory
+
+        req_log = RequestLogFactory.create()
+        sub = SubscriberFactory.create(acquisition_request=req_log)
+        req_log.delete()
+        sub.refresh_from_db()
+        assert sub.acquisition_request is None
+
+
+@pytest.mark.django_db
+class TestSubscriptionSubscribedVia:
+    """Subscription.subscribed_via FK defaults to None."""
+
+    def test_subscribed_via_defaults_to_none(self) -> None:
+        """Factory-created Subscription has subscribed_via=None."""
+        subscription = SubscriptionFactory.create()
+        assert subscription.subscribed_via is None
+
+    def test_subscribed_via_can_be_set(self) -> None:
+        """subscribed_via can be set to a RequestLog instance."""
+        from tests.factories import RequestLogFactory
+
+        req_log = RequestLogFactory.create()
+        subscription = SubscriptionFactory.create(subscribed_via=req_log)
+        subscription.refresh_from_db()
+        assert subscription.subscribed_via_id == req_log.pk
+
+    def test_subscribed_via_set_null_on_log_delete(self) -> None:
+        """Deleting the RequestLog sets subscribed_via to None (SET_NULL)."""
+        from tests.factories import RequestLogFactory
+
+        req_log = RequestLogFactory.create()
+        subscription = SubscriptionFactory.create(subscribed_via=req_log)
+        req_log.delete()
+        subscription.refresh_from_db()
+        assert subscription.subscribed_via is None
+
+
+# ---------------------------------------------------------------------------
 # PasskeyCredential
 # ---------------------------------------------------------------------------
 
