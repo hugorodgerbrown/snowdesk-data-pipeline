@@ -53,6 +53,7 @@ from django.http import (
     HttpResponseRedirect,
 )
 from django.shortcuts import get_object_or_404, redirect, render
+from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.cache import add_never_cache_headers, patch_cache_control
@@ -1350,6 +1351,27 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
     body = "\n".join(lines)
     response = HttpResponse(body, content_type="text/markdown; charset=utf-8")
     response["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+def serve_favicon(request: HttpRequest) -> HttpResponseRedirect:
+    """
+    Serve ``/favicon.ico`` by redirecting to the canonical SVG favicon.
+
+    Tools and crawlers (Lighthouse, browser prefetch, social-media
+    scrapers) request ``/favicon.ico`` unconditionally from the site
+    root. Snowdesk ships only SVG favicons (``favicon.svg`` plus
+    per-danger-level variants), so the legacy ``.ico`` path is wired up
+    as a 302 redirect to the staticfiles URL — eliminating the 404 from
+    server logs without generating an ``.ico`` binary.
+
+    The redirect carries ``Cache-Control: public, max-age=86400`` so that
+    CDNs and browsers cache it for one day — the SVG target is
+    content-hashed by staticfiles, so a one-day TTL is safe and avoids
+    an extra round-trip on every page load.
+    """
+    response = HttpResponseRedirect(static("favicon.svg"))
+    response["Cache-Control"] = "public, max-age=86400"
     return response
 
 

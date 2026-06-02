@@ -5,9 +5,9 @@ Mounts the Django admin, the subscriptions flow under /subscribe/, the JSON
 API under /api/, the django-csp-plus report endpoint under /csp/, and the
 public-facing bulletin site at the root.
 
-The ``/sw.js``, ``/manifest.webmanifest``, ``/robots.txt`` and ``/llms.txt``
-routes are registered before ``public.urls`` so the generic
-``<str:region_id>/`` pattern in public.urls does not swallow them.
+The ``/sw.js``, ``/manifest.webmanifest``, ``/robots.txt``, ``/llms.txt``
+and ``/favicon.ico`` routes are registered before ``public.urls`` so the
+generic ``<str:region_id>/`` pattern in public.urls does not swallow them.
 
 When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
 
@@ -33,7 +33,13 @@ from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path
 
 from public.sitemaps import BulletinSitemap
-from public.views import serve_llms_txt, serve_manifest, serve_robots, serve_sw
+from public.views import (
+    serve_favicon,
+    serve_llms_txt,
+    serve_manifest,
+    serve_robots,
+    serve_sw,
+)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -44,6 +50,8 @@ urlpatterns = [
     path("manifest.webmanifest", serve_manifest, name="web_manifest"),
     path("robots.txt", serve_robots, name="robots"),
     path("llms.txt", serve_llms_txt, name="llms_txt"),
+    path("favicon.ico", serve_favicon, name="favicon_ico"),
+    path("favicon.ico/", serve_favicon, name="favicon_ico_slash"),
 ]
 
 # Dev-only routes must register BEFORE ``public.urls`` because that
