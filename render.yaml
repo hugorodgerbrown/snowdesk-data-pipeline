@@ -61,6 +61,8 @@ projects:
             startCommand: python manage.py run_scheduler
             autoDeployTrigger: commit
             envVars:
+              - key: METEOFRANCE_API_KEY
+                sync: false
               - fromGroup: Django App Settings
 
           - type: worker

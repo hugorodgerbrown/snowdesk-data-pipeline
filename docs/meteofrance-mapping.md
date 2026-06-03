@@ -474,13 +474,16 @@ and `evolurisque` evolution arrows. Low-cost validation; high signal.
 1. ~~**Confirm `SAT_TO_EAWS` table.**~~ **Resolved.** The lookup in §5.4
    is verified against `guide-avalanche-2025-meteo-france.pdf` p.13.
    Empirically aligned with the 2026-05-18 sample for codes {2, 4, 6}.
-2. **Amendment behaviour.** Still open. The 2026-05-18 sample had zero
-   `@AMENDEMENT="true"` bulletins (0/35), and the avalanche guide doesn't
-   document the attribute (it's part of the API contract, not the reader
-   guide). Two paths: (a) request MF's DPBRA schema documentation via the
-   APIM portal, or (b) catch the first amended bulletin during SNOW-177b
-   shadow-mode ingestion — implementation must log `(@ID, @AMENDEMENT)`
-   so we can disambiguate when it occurs.
+2. **Amendment behaviour.** Unresolved pending live observation. The 2026-05-18
+   sample had zero `@AMENDEMENT="true"` bulletins (0/35), and the avalanche
+   guide doesn't document the attribute (it's part of the API contract, not
+   the reader guide). The implementation already logs `(@ID, @AMENDEMENT)` at
+   INFO level whenever `@AMENDEMENT="true"` is encountered (see
+   `bulletins/services/meteofrance_translator.py` `_parse_header`), so the
+   first amended bulletin in production will surface a log entry that lets us
+   decide on the amendment-suffix strategy. No further action until a live
+   example is observed. Track via the first amended-bulletin log entry in the
+   `snowdesk-scheduler` worker logs.
 3. ~~**Massif code scheme.**~~ **Resolved by SNOW-179.** All 35 massifs
    are already loaded as `MicroRegion` rows in
    `regions/fixtures/eaws_FR.json`, with `FR-NN` ↔ MF integer ID 1:1

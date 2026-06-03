@@ -369,6 +369,88 @@ class TestRunMeteofrance:
         assert Bulletin.objects.filter(bulletin_id="FR-01-2026-05-18").count() == 1
         assert run2.records_created == 0
 
+    @pytest.mark.django_db
+    def test_idempotency_second_commit_run_is_noop(self) -> None:
+        """Second --commit run with no --force produces records_updated=0 and records_created=0.
+
+        Regression test for SNOW-259: confirms that re-running the pipeline
+        over a day already in the DB leaves no new rows and no updates.
+        """
+        MicroRegionFactory.create(region_id="FR-01", name="Chablais")
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "massif-001.xml").write_bytes(_sample("massif-001.xml"))
+            # First run: creates the bulletin.
+            run_meteofrance_pipeline(
+                date(2026, 5, 18),
+                date(2026, 5, 18),
+                triggered_by="test",
+                dry_run=False,
+                massif_ids=(1,),
+                base_url=f"file://{tmp}",
+            )
+            # Second run: must be a no-op (no force).
+            run2 = run_meteofrance_pipeline(
+                date(2026, 5, 18),
+                date(2026, 5, 18),
+                triggered_by="test",
+                dry_run=False,
+                massif_ids=(1,),
+                base_url=f"file://{tmp}",
+            )
+
+        assert run2.records_created == 0
+        assert run2.records_updated == 0
+
+    @pytest.mark.django_db
+    def test_delegated_region_counted_separately_from_failures(self) -> None:
+        """Delegated massifs (e.g. massif 71 Andorre) do not increment records_failed.
+
+        Regression test for SNOW-259: a delegated-region skip must be a clean
+        skip, not a pipeline failure — so operator dashboards can distinguish
+        "expected delegations" from "unexpected errors".
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "massif-071.xml").write_bytes(_sample("massif-071.xml"))
+            run = run_meteofrance_pipeline(
+                date(2026, 5, 18),
+                date(2026, 5, 18),
+                triggered_by="test",
+                dry_run=False,
+                massif_ids=(71,),
+                base_url=f"file://{tmp}",
+            )
+
+        # The delegation is a clean skip — records_failed must be zero.
+        assert run.records_failed == 0
+
+    @pytest.mark.django_db
+    def test_local_mirror_produces_bulletins_without_http(self) -> None:
+        """The --local-mirror (file://) path loads XML fixtures with no HTTP calls.
+
+        Regression test for SNOW-259: verifies that pointing base_url at the
+        bundled research fixtures in docs/research/meteofrance/bulletins-2026-05-18/
+        produces a persisted bulletin and no network I/O.
+        """
+        MicroRegionFactory.create(region_id="FR-01", name="Chablais")
+        mirror_url = f"file://{_SAMPLE_DIR}"
+        with patch("bulletins.services.meteofrance_fetcher.requests.get") as mock_get:
+            run = run_meteofrance_pipeline(
+                date(2026, 5, 18),
+                date(2026, 5, 18),
+                triggered_by="test",
+                dry_run=False,
+                massif_ids=(1,),
+                base_url=mirror_url,
+            )
+
+        # No HTTP call should have been made.
+        mock_get.assert_not_called()
+
+        from bulletins.models import Bulletin
+
+        assert Bulletin.objects.filter(bulletin_id="FR-01-2026-05-18").exists()
+        assert run.records_created == 1
+
 
 # ---------------------------------------------------------------------------
 # latest_meteofrance_date
