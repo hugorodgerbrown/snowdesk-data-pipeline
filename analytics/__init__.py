@@ -14,7 +14,8 @@ Provides two callables consumed throughout the codebase:
       confirmation.  No-op under the same condition as ``track()``.
 
 Both functions are safe to call on every request path — analytics failures
-are caught, logged at WARNING, and never propagate to the caller.  PII
+are caught, logged via ``logger.exception`` (ERROR with traceback), and
+never propagate to the caller.  PII
 keys (``email``, ``ip``, ``token``, ``credential_id``) are rejected at the
 call site by raising ``AnalyticsPIIError`` *before* any network call is
 attempted.
