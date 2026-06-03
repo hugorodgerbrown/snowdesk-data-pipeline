@@ -2031,6 +2031,26 @@ class TestShareButtonSmoke:
         content = response.content.decode()
         assert "data-bulletin-share-button" not in content
 
+    def test_share_button_has_touch_target_padding(self, client: Client) -> None:
+        """The share button carries p-2.5 padding to meet the WCAG 2.5.5 44×44pt target.
+
+        The -m-2.5 negative margin offsets the padding so the visual footprint
+        of the 20×20 SVG icon is unchanged (SNOW-253).
+        """
+        region = MicroRegionFactory.create(
+            region_id="CH-4222", name="Zermatt", slug="zermatt"
+        )
+        day = date(2026, 4, 8)
+        _make_am_bulletin(region, day)
+        url = _url("ch-4222", "zermatt", "2026-04-08")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Verify the testid and both touch-target classes are present on the button.
+        assert 'data-testid="bulletin-share-button"' in content
+        assert "p-2.5" in content
+        assert "-m-2.5" in content
+
 
 # ---------------------------------------------------------------------------
 # Test: OpenGraph / Twitter card meta tags (SNOW-218)
