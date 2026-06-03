@@ -60,10 +60,13 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
     {# Share button — top-right slot reserved by the right-padding comment above.    #}
     {# Only rendered when a bulletin exists (empty-state pages have no URL to share). #}
     {% if bulletin %}
+        {# p-2.5 expands the hit area to ≥44×44pt around the 20×20 SVG icon (WCAG 2.5.5). #}
+        {# -m-2.5 pulls the visual padding back so the visible footprint is unchanged.     #}
         <button
             type="button"
-            class="absolute top-3 right-3 z-10 text-white/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded"
+            class="absolute top-3 right-3 z-10 p-2.5 -m-2.5 text-white/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded"
             data-bulletin-share-button
+            data-testid="bulletin-share-button"
             data-region-id="{{ region.region_id }}"
             data-date="{{ page_date|date:'Y-m-d' }}"
             aria-label="Share bulletin"

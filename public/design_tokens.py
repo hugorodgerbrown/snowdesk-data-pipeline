@@ -194,7 +194,7 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         ),
         kind="typescale",
         tokens=(
-            Token("--text-meta", "Meta label", "9px", None),
+            Token("--text-meta", "Meta label", "11px", None),
             Token("--text-chip", "Chip caption", "9.5px", None),
             Token("--text-caption", "Caption", "11px", None),
             Token("--text-summary", "Summary title", "13px", None),
@@ -222,7 +222,7 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         tokens=(
             Token("--color-text-1", "Primary", "#1a1916", "#edece8"),
             Token("--color-text-2", "Secondary", "#6b6860", "#a8a49c"),
-            Token("--color-text-3", "Tertiary", "#6e6b65", "#8a867e"),
+            Token("--color-text-3", "Tertiary", "#6e6b65", "#9a968e"),
         ),
     ),
     FoundationCategory(

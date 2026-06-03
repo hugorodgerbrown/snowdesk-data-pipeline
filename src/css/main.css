@@ -102,7 +102,10 @@
      text-base / text-sm / text-xs / text-lg stay on Tailwind's default
      ramp.  These tokens plug the gaps that were previously appearing as
      text-[Npx] / leading-[1.6] arbitraries in templates. */
-  --text-meta:     9px;     /* meta-cell uppercase mono label          */
+  --text-meta:     11px;    /* meta-cell uppercase mono label (was 9px — bumped to 11px
+                               so the WCAG AA 4.5:1 requirement applies at the text-3
+                               colour rather than having to chase near-black values for
+                               a 9px label that no standard classifies as large text)  */
   --text-chip:     9.5px;   /* aspect / elevation / hazard chip caption */
   --text-caption:  11px;    /* mono caption (callout diagnostics, nav
                                trigger, swatch / icon token labels)    */
@@ -117,10 +120,16 @@
   --color-card-subtle:  #fafaf8;   /* card footer, admin strip             */
   --color-tag:          #f5f3ef;   /* problem tag / inner chip background  */
 
-  /* Text ramp — warm neutrals */
+  /* Text ramp — warm neutrals.
+     WCAG AA audit (SNOW-253) — contrast ratios on light surfaces:
+       text-1 #1a1916 on bg-bg   #f2f0ec → 15.60:1   PASS
+       text-2 #6b6860 on bg-card #ffffff  →  5.56:1   PASS
+       text-3 #6e6b65 on bg-bg   #f2f0ec  →  4.67:1   PASS  (previously claimed; verified)
+       text-3 #6e6b65 on bg-tag  #f5f3ef  →  4.79:1   PASS
+       text-3 #6e6b65 on bg-card #ffffff  →  5.31:1   PASS  */
   --color-text-1:       #1a1916;   /* headings, primary labels             */
   --color-text-2:       #6b6860;   /* body, descriptions                   */
-  --color-text-3:       #6e6b65;   /* tertiary: dates, eyebrows, meta — 4.67:1 on --color-bg for WCAG AA */
+  --color-text-3:       #6e6b65;   /* tertiary: dates, eyebrows, meta — 4.67:1 on bg-bg; see dark override */
 
   /* Borders */
   --color-border:       rgba(0, 0, 0, 0.09);
@@ -178,7 +187,16 @@
   --color-eaws-high-tint:         #ffd9d9;
   --color-eaws-very-high-tint:    #1a0000;   /* inverted — white text on dark */
 
-  /* Readable text colours on tint backgrounds */
+  /* Readable text colours on tint backgrounds.
+     WCAG AA audit (SNOW-253) — contrast ratios for .danger-band own text on tints:
+       eaws-low-text          #3a5a00 on low-tint          #e8ffb8 →  7.35:1   PASS
+       eaws-moderate-text     #4d4500 on moderate-tint     #fff7b8 →  8.88:1   PASS
+       eaws-considerable-text #5c3000 on considerable-tint #ffe5c2 →  9.18:1   PASS
+       eaws-high-text         #6b0000 on high-tint         #ffd9d9 →  9.96:1   PASS
+       eaws-very-high-text    #ffffff on very-high-tint    #1a0000 → 20.12:1   PASS
+     Chips rendered inside .danger-band use bg-tag as their own opaque background;
+     see the component exception below for the cascade override that ensures chip
+     text contrast on bg-tag does not regress inside the band. */
   --color-eaws-low-text:          #3a5a00;
   --color-eaws-moderate-text:     #4d4500;
   --color-eaws-considerable-text: #5c3000;
@@ -271,10 +289,16 @@
   --color-card-subtle:  #23211f;
   --color-tag:          #302e2a;
 
-  /* Text ramp */
+  /* Text ramp.
+     WCAG AA audit (SNOW-253) — contrast ratios on dark surfaces:
+       text-3 #9a968e on bg-bg-dark     #1c1b19 → 5.84:1   PASS
+       text-3 #9a968e on bg-card-dark   #2a2825 → 4.99:1   PASS
+       text-3 #9a968e on bg-tag-dark    #302e2a → 4.60:1   PASS
+       text-3 #9a968e on bg-subtle-dark #23211f → 5.45:1   PASS
+     Previous value #8a867e failed on bg-card (4.05:1) and bg-tag (3.74:1). */
   --color-text-1:       #edece8;
   --color-text-2:       #a8a49c;
-  --color-text-3:       #8a867e;
+  --color-text-3:       #9a968e;   /* was #8a867e — brightened for WCAG AA (SNOW-253) */
 
   /* Borders */
   --color-border:       rgba(255, 255, 255, 0.09);
@@ -342,6 +366,17 @@
 .danger-band[data-level="considerable"] { color: var(--color-eaws-considerable-text); }
 .danger-band[data-level="high"]         { color: var(--color-eaws-high-text); }
 .danger-band[data-level="very_high"]    { color: var(--color-eaws-very-high-text); }
+
+/* Chip text inside .danger-band — cascade override (SNOW-253).
+   Chips (.font-mono.bg-tag) carry their own opaque bg-tag background, so the
+   tint underneath does not affect chip text contrast.  The relevant pair is
+   text-text-3 on bg-tag, which passes in light mode (4.79:1) and — after the
+   text-3 dark-mode bump to #9a968e — also passes in dark mode (4.60:1).
+   This override promotes chip text to text-text-2 inside any danger band as a
+   belt-and-suspenders measure so the chip copy reads distinctly from the band's
+   own body text even if text-3 is later adjusted.
+   Zero template changes required — the cascade selects any chip descendant. */
+.danger-band .bg-tag { color: var(--color-text-2); }
 
 /* Saturated EAWS accent stripe along the top edge of every danger band.
    The pale tint sits behind the text; the stripe gives the panel an
