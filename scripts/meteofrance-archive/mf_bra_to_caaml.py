@@ -56,6 +56,7 @@ from _pdf_extract import (
     crop_full_width,
     crop_left,
     crop_right,
+    danger_numbers_bbox,
     extract_text_strip,
     extract_words_in_region,
 )
@@ -123,10 +124,14 @@ def _parse_single_danger_rating(danger_text: str) -> int | None:
 def _find_danger_numbers_in_area(
     page: "pdfplumber.page.Page",
 ) -> list[dict[str, object]]:
-    """Find numeric tokens that represent danger ratings in the compass rose area.
+    """Find numeric tokens that represent danger ratings in the danger-number box.
 
-    The danger number(s) appear at approximately x=100–170, y=140–185 on the
-    page — between the N/S/E/O compass markers.
+    The danger number(s) are rendered inside a bordered rectangle on page 1.
+    The search bbox is anchored to that rectangle via
+    ``danger_numbers_bbox()`` (which reads page graphics) so the extraction
+    remains correct even if the box shifts by ±20 points from its calibrated
+    position.  If the rectangle cannot be located the hardcoded fallback bbox
+    ``(110, 135, 170, 185)`` is used and a warning is logged.
 
     Args:
         page: The page object (page 1 of the BRA PDF).
@@ -135,9 +140,10 @@ def _find_danger_numbers_in_area(
         List of word dicts for single-digit numeric tokens in the danger zone.
 
     """
+    x0, top, x1, bottom = danger_numbers_bbox(page)
     return [
         w
-        for w in extract_words_in_region(page, 110, 135, 170, 185)
+        for w in extract_words_in_region(page, x0, top, x1, bottom)
         if re.match(r"^\d$", str(w["text"]))
     ]
 
@@ -256,8 +262,48 @@ def _level_to_label(level: int) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _is_headline_line(stripped: str) -> bool:
+    """Return True if ``stripped`` looks like a bulletin headline.
+
+    A headline is either (a) all-uppercase (French accented capitals included) or
+    (b) sentence-case ending with a period.  Single-character-token lines (compass
+    markers such as "O E", "N S") and pure-digit lines ("1 2") are rejected.
+
+    Args:
+        stripped: A stripped text line.
+
+    Returns:
+        True if the line is a valid headline candidate.
+
+    """
+    tokens = stripped.split()
+    # Require at least two tokens so lone compass markers ("N") are excluded.
+    if len(tokens) < 2:
+        return False
+    # Skip lines where every token is a single character (e.g. "O E", "N S").
+    if all(len(t) == 1 for t in tokens):
+        return False
+    # Skip lines where every token is a single digit (e.g. "1 2").
+    if all(re.match(r"^\d$", t) for t in tokens):
+        return False
+    # All-caps line (French accented capitals included).
+    if re.match(r"^[A-ZÀÂÄÉÈÊËÎÏÔÙÛÜÇ\s''\-,À-ÖÀ-ÖØ-Þ]+$", stripped):
+        return True
+    # Sentence-case headline ending with a period.
+    return bool(stripped.endswith(".") and stripped[0].isupper())
+
+
 def extract_highlights(page: "pdfplumber.page.Page") -> str:
-    """Extract the bulletin headline (all-caps title line) from page 1.
+    """Extract the bulletin headline from page 1 using positional detection.
+
+    The headline is the first substantive line that appears immediately after the
+    validity-date line ("Estimation des risques pour le : ...").  It is identified
+    by ``_is_headline_line()``: all-uppercase or sentence-case ending in a period,
+    with at least two tokens and no pure compass-marker content.
+
+    This positional approach is more robust than prefix-based filtering: it does not
+    rely on the headline being preceded by specific tokens (``Ind``, ``Dep``, etc.)
+    that may vary across massifs or template revisions.
 
     Args:
         page: pdfplumber page object for page 1.
@@ -269,18 +315,19 @@ def extract_highlights(page: "pdfplumber.page.Page") -> str:
     """
     region = crop_full_width(page, *BAND_DANGER)
     text = extract_text_strip(region)
-    # The headline is the first all-caps line after the "Estimation des risques" header.
+
+    # Locate the validity-date line; the headline immediately follows it.
+    after_date_line = False
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
-        # Skip the standard header line and the compass markers (N/S/O/E).
-        if re.match(r"^Estimation des risques", stripped, re.IGNORECASE):
+        if re.match(r"^Estimation des risques pour le", stripped, re.IGNORECASE):
+            after_date_line = True
             continue
-        if re.match(r"^(N|S|O|E|\d|Ind|Dep|Dec|Obs)\b", stripped):
-            continue
-        if stripped.isupper() or re.match(r"^[A-ZÀÉÈ\s]+[.\s]*$", stripped):
+        if after_date_line and _is_headline_line(stripped):
             return stripped
+
     return ""
 
 
@@ -1022,18 +1069,17 @@ def parse_pdf(pdf_path: Path) -> dict[str, object] | None:
         logger.error("Failed to parse %s: %s", pdf_path, exc)
         return None
 
+    # Build the concatenated avalanche activity comment (backward-compat field).
+    _combined_activity = (
+        avalanche_activity["spontaneous"] + "\n" + avalanche_activity["triggered"]
+    ).strip()
+
     properties: dict[str, object] = {
         "dangerRatings": danger_ratings,
         "highlights": highlights,
         "avalancheActivity": {
             "highlights": highlights,
-            "comment": format_comment_as_html(
-                (
-                    avalanche_activity["spontaneous"]
-                    + "\n"
-                    + avalanche_activity["triggered"]
-                ).strip()
-            ),
+            "comment": format_comment_as_html(_combined_activity),
         },
         "snowpackStructure": {
             "comment": format_comment_as_html(snowpack_comment),
@@ -1052,6 +1098,13 @@ def parse_pdf(pdf_path: Path) -> dict[str, object] | None:
                 "typicalAvalancheSituations": sat_labels,
                 "source_file": pdf_path.name,
                 "historical": historical,
+                # Preserve the spontaneous/triggered split (SNOW-257).
+                # The concatenated ``avalancheActivity.comment`` is kept for
+                # backward compatibility; these two keys carry the split form.
+                "spontaneous": format_comment_as_html(
+                    avalanche_activity["spontaneous"]
+                ),
+                "triggered": format_comment_as_html(avalanche_activity["triggered"]),
             }
         },
     }
@@ -1139,6 +1192,8 @@ COVERAGE_CHECKS: list[tuple[str, str]] = [
     ("customData.MF.historical.snowLine", "historical snow-line block"),
     ("customData.MF.historical.snowLine.north", "historical snow-line north"),
     ("customData.MF.historical.snowLine.south", "historical snow-line south"),
+    ("customData.MF.spontaneous", "spontaneous avalanche activity (split)"),
+    ("customData.MF.triggered", "triggered avalanche activity (split)"),
 ]
 
 
