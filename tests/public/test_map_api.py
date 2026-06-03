@@ -12,6 +12,10 @@ Covers the endpoints consumed by the /map/ page:
 * ``api:region_summary``        — tooltip with danger-rating chip (?d= aware),
                                   English breadcrumb, date caption, and bulletin
                                   CTA (SNOW-174). Resort list removed.
+
+SNOW-252 — peak semantics:
+* ``api:ratings`` choropleth emits peak (max_rating) for two-period escalating days.
+* ``api:region_summary`` tooltip chip shows peak, not morning, on split days.
 """
 
 from __future__ import annotations
@@ -1234,3 +1238,82 @@ def test_region_summary_with_bulletin_renders_chip_and_link() -> None:
     # Fallback elements must not appear.
     assert "favicon.svg" not in html
     assert "No bulletin available" not in html
+
+
+# ---------------------------------------------------------------------------
+# SNOW-252 — peak semantics regression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_ratings_choropleth_emits_peak_for_split_day() -> None:
+    """
+    SNOW-252 regression: choropleth (api:ratings) emits the peak (max_rating)
+    for a two-period escalating day.
+
+    Fixture: morning=moderate (2), afternoon=considerable (3) → peak=3.
+    The choropleth must return 3, not 2.
+    """
+    ch_major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+    ch_sub = SubRegionFactory.create(prefix="CH-41", major=ch_major)
+    region = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=ch_sub
+    )
+    target_date = dt.date(2026, 3, 20)
+    # Split day: morning=moderate, afternoon=considerable.
+    RegionDayRatingFactory.create(
+        region=region,
+        date=target_date,
+        min_rating=RegionDayRating.Rating.MODERATE,
+        max_rating=RegionDayRating.Rating.CONSIDERABLE,
+    )
+
+    response = Client().get(reverse("api:ratings") + "?d=2026-03-20&country=ch")
+    assert response.status_code == 200
+    data = response.json()
+
+    # considerable = 3 in _RATING_TO_INT; peak, not morning (moderate=2).
+    assert data["2026-03-20"]["CH-4115"] == 3
+
+
+@pytest.mark.django_db
+def test_region_summary_tooltip_chip_shows_peak_on_split_day() -> None:
+    """
+    SNOW-252 regression: region_summary tooltip chip reflects max_rating (peak)
+    for a two-period escalating day, not the morning (min_rating) level.
+
+    Fixture: morning=moderate (2), afternoon=considerable (3) → chip shows 3.
+    """
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
+    sub = SubRegionFactory.create(
+        prefix="CH-41", major=major, name_native="Lower Valais"
+    )
+    region = MicroRegionFactory.create(
+        region_id="CH-4115", slug="ch-4115", subregion=sub
+    )
+    target_date = dt.date(2026, 3, 20)
+    # Split day: morning=moderate, afternoon=considerable.
+    RegionDayRatingFactory.create(
+        region=region,
+        date=target_date,
+        min_rating=RegionDayRating.Rating.MODERATE,
+        max_rating=RegionDayRating.Rating.CONSIDERABLE,
+    )
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-03-20"
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    # ``level`` key in the JSON response must be the peak (considerable).
+    assert data["level"] == "considerable"
+
+    html = data["html"]
+    # The chip data-level attribute must reflect the peak (considerable = 3).
+    assert 'data-level="considerable"' in html
+    # Digit 3 in the chip (considerable).
+    assert ">3<" in html
+    # Morning-only level (moderate = 2) must NOT appear as the chip's data-level.
+    assert 'data-level="moderate"' not in html

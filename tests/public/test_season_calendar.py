@@ -13,6 +13,10 @@ Covers:
   - ``is_selected`` always ``False`` from the builder (selection is client-side only).
   - Month-label boundaries align with the column where the month flips.
   - ``season_header`` returns the label dict or None.
+
+SNOW-252 — peak semantics:
+  - Calendar cell max_rating_key reflects the day's peak on split days.
+  - Two-period escalating day (morning=2, afternoon=3) → max_rating_key=considerable.
 """
 
 from __future__ import annotations
@@ -270,3 +274,79 @@ class TestSeasonHeader:
         result = season_header(today)
         assert result is not None
         assert "season_label" in result
+
+
+# ---------------------------------------------------------------------------
+# SNOW-252 — peak semantics regression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSeasonCalendarPeakSemantics:
+    """
+    Regression tests asserting that the season calendar always reflects the
+    day's peak (max_rating) rather than the morning (min_rating) level.
+
+    See docs/compressed-views-rating-rule.md for the canonical convention.
+    """
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_split_day_cell_max_rating_key_is_peak(self) -> None:
+        """
+        SNOW-252 canonical fixture: morning=moderate (2), afternoon=considerable (3).
+
+        The SeasonCell for that day must carry max_rating_key="considerable"
+        (the afternoon peak), not "moderate" (the morning level).
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        target = datetime.date(2025, 11, 4)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.MODERATE,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            source_bulletin=bulletin,
+        )
+
+        grid = build_season_grid(region, today=today)
+        cell = next(
+            c for col in grid.columns for c in col if c is not None and c.date == target
+        )
+
+        # max_rating_key must be the peak (considerable).
+        assert cell.max_rating_key == RegionDayRating.Rating.CONSIDERABLE
+        # min_rating_key carries the morning level.
+        assert cell.min_rating_key == RegionDayRating.Rating.MODERATE
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_split_day_cell_min_rating_key_is_not_peak(self) -> None:
+        """
+        Regression: min_rating_key and max_rating_key are distinct on split days.
+
+        If the implementation accidentally used min_rating as the displayed
+        value, the calendar would show the morning level (lower) instead of
+        the peak. Both must be present and differ.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        target = datetime.date(2025, 11, 4)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.LOW,
+            max_rating=RegionDayRating.Rating.HIGH,
+            source_bulletin=bulletin,
+        )
+
+        grid = build_season_grid(region, today=today)
+        cell = next(
+            c for col in grid.columns for c in col if c is not None and c.date == target
+        )
+
+        assert cell.max_rating_key == RegionDayRating.Rating.HIGH
+        assert cell.min_rating_key == RegionDayRating.Rating.LOW
+        # They must differ on a split day.
+        assert cell.max_rating_key != cell.min_rating_key

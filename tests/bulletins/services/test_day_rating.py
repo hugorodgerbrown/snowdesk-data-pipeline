@@ -24,6 +24,11 @@ Covers (v6 headline-only with afternoon-elevated split policy):
   - recompute_region_day: afternoon-elevated split produces min<max.
   - recompute_region_day: equal afternoon/morning stays headline-only.
   - recompute_region_day: later-only traits (no morning) stay headline-only.
+
+SNOW-252 — peak semantics:
+  - max_rating is the day's peak across all validTimePeriods (morning + afternoon).
+  - Two-period escalating day (morning=2, afternoon=3) → max_rating=3 (considerable).
+  - max_rating is NEVER the morning rating alone when afternoon is higher.
 """
 
 from __future__ import annotations
@@ -816,3 +821,109 @@ class TestUpsertBulletinSwallowsException:
 
         # upsert_bulletin should still return despite the exception (not re-raise).
         assert result is True  # created = True
+
+
+# ---------------------------------------------------------------------------
+# SNOW-252 — peak semantics regression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPeakSemantics:
+    """
+    Regression tests asserting that max_rating is always the day's peak
+    across all validTimePeriods (morning + afternoon + elevation bands).
+
+    The two-period escalating fixture (morning=2, afternoon=3 → peak=3) is
+    the canonical proof shape. See docs/compressed-views-rating-rule.md.
+    """
+
+    def test_two_period_escalating_day_max_rating_is_peak(self) -> None:
+        """
+        Two-period escalating day: morning=2 (moderate), afternoon=3 (considerable).
+
+        max_rating must be 3 (considerable — the afternoon peak).
+        min_rating must be 2 (moderate — the morning level).
+
+        This is the canonical SNOW-252 regression fixture.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        day = datetime.date(2026, 3, 20)
+        vf = datetime.datetime(2026, 3, 19, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 20, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[
+                _split_trait(2, "all_day", "dry"),  # morning: moderate
+                _split_trait(3, "later", "wet"),  # afternoon: considerable
+            ],
+            headline_key="considerable",
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        # Peak is the afternoon level — considerable.
+        assert rdr.max_rating == RegionDayRating.Rating.CONSIDERABLE
+        # Morning level is preserved in min_rating.
+        assert rdr.min_rating == RegionDayRating.Rating.MODERATE
+
+    def test_max_rating_is_never_morning_alone_when_afternoon_higher(self) -> None:
+        """
+        Regression: max_rating must not be capped at the morning level when the
+        afternoon is higher. This test would have caught any implementation that
+        took only all_day/earlier traits and ignored 'later' traits for max_rating.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4116")
+        day = datetime.date(2026, 3, 21)
+        vf = datetime.datetime(2026, 3, 20, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 21, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[
+                _split_trait(2, "earlier", "dry"),  # morning: moderate (2)
+                _split_trait(4, "later", "dry"),  # afternoon: high (4) — peak
+            ],
+            headline_key="high",
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        # max_rating is the afternoon peak, NOT the morning level.
+        assert rdr.max_rating == RegionDayRating.Rating.HIGH
+        # A morning-only implementation would have returned moderate here.
+        assert rdr.max_rating != RegionDayRating.Rating.MODERATE
+
+    def test_uniform_day_max_rating_equals_single_level(self) -> None:
+        """
+        When all traits share the same time period (all_day) there is no split;
+        max_rating equals the headline danger key.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4117")
+        day = datetime.date(2026, 3, 22)
+        vf = datetime.datetime(2026, 3, 21, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 22, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[
+                _split_trait(3, "all_day", "dry"),
+                _split_trait(3, "all_day", "wet"),
+            ],
+            headline_key="considerable",
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.max_rating == RegionDayRating.Rating.CONSIDERABLE
+        assert rdr.min_rating == RegionDayRating.Rating.CONSIDERABLE
