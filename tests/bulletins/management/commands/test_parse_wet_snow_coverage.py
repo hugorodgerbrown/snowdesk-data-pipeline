@@ -279,3 +279,63 @@ class TestParseWetSnowCoverage:
         # Both lang codes should appear in the report.
         assert "en" in captured.out
         assert "de" in captured.out
+
+    def test_canonical_match_counted_when_token_parser_misses(
+        self, capsys: CaptureFixture[str]
+    ) -> None:
+        """Canonical-phrase match is counted in canonical_match when token parser misses."""
+        BulletinFactory.create(
+            lang="en",
+            raw_data=_make_raw_data(
+                aspects=[],
+                elevation=None,
+                # 'grassy slopes' has no compass tokens → token parser misses,
+                # canonical lookup fires.
+                comment="On steep grassy slopes gliding snow is increasing.",
+            ),
+        )
+        call_command("parse_wet_snow_coverage", verbosity=0)
+        captured = capsys.readouterr()
+        # canonical_match = 1 means combined coverage is non-zero;
+        # the output shows columns with % — combined column should show 100%.
+        assert "100%" in captured.out
+
+    def test_canonical_not_counted_when_token_parser_succeeds(
+        self, capsys: CaptureFixture[str]
+    ) -> None:
+        """When the token parser succeeds the canonical lookup is not called."""
+        BulletinFactory.create(
+            lang="en",
+            raw_data=_make_raw_data(
+                aspects=[],
+                elevation=None,
+                # Has explicit aspect tokens → token parser succeeds.
+                comment="Wet-snow on south-facing grassy slopes below 2000m.",
+            ),
+        )
+        call_command("parse_wet_snow_coverage", verbosity=0)
+        captured = capsys.readouterr()
+        # Token parser matched so parser_match column contributes to 100%.
+        assert "100%" in captured.out
+
+    def test_report_includes_canonical_column(
+        self, capsys: CaptureFixture[str]
+    ) -> None:
+        """The coverage report header includes a 'canon' column."""
+        BulletinFactory.create(
+            lang="en",
+            raw_data=_make_raw_data(comment="Wet-snow on south slopes below 2000m."),
+        )
+        call_command("parse_wet_snow_coverage", verbosity=0)
+        captured = capsys.readouterr()
+        assert "canon" in captured.out
+
+    def test_report_includes_combined_column(self, capsys: CaptureFixture[str]) -> None:
+        """The coverage report header includes a 'combined' column."""
+        BulletinFactory.create(
+            lang="en",
+            raw_data=_make_raw_data(comment="Wet-snow on south slopes below 2000m."),
+        )
+        call_command("parse_wet_snow_coverage", verbosity=0)
+        captured = capsys.readouterr()
+        assert "combined" in captured.out

@@ -7,13 +7,16 @@ gliding-snow problems the command prints one summary line showing:
 
   wet_snow_total   — all wet-snow / gliding-snow problems encountered
   unstructured     — problems with no aspects AND no elevation in the JSON
-  parser_match     — unstructured problems where the prose parser returned
-                     a non-None ParsedScope
-  aspect_match     — parser matches that also contain at least one aspect
-  elevation_match  — parser matches that also contain a real elevation bound
+  parser_match     — unstructured problems where the token prose parser
+                     returned a non-None ParsedScope
+  canonical_match  — unstructured problems where the token parser missed
+                     but the canonical-phrase fallback (en_canonical.lookup)
+                     returned a non-None ParsedScope
+  aspect_match     — token-parser matches that also contain ≥1 aspect
+  elevation_match  — token-parser matches that also contain a real elevation
 
 The command reads ``raw_data`` (not ``render_model``) so the counts are
-independent of whether the render model has been rebuilt after the v6 bump.
+independent of whether the render model has been rebuilt after the v7 bump.
 
 Pure SELECT — no ``--commit`` flag; the command never writes to the database.
 
@@ -35,6 +38,7 @@ from django.core.management.base import BaseCommand
 import bulletins.services.prose.en  # noqa: F401 — registers the "en" parser
 from bulletins.models import Bulletin
 from bulletins.services.prose import parse_for
+from bulletins.services.prose.en_canonical import lookup as canonical_lookup
 from bulletins.services.render_model import WET_PROBLEM_TYPES
 
 logger = logging.getLogger(__name__)
@@ -52,6 +56,7 @@ class _Stats:
     wet_snow_total: int = 0
     unstructured: int = 0
     parser_match: int = 0
+    canonical_match: int = 0
     aspect_match: int = 0
     elevation_match: int = 0
 
@@ -178,7 +183,9 @@ class Command(BaseCommand):
         header = (
             f"{'lang':<6}  {'source':<12}  "
             f"{'total':>7}  {'unstruct':>8}  "
-            f"{'parsed':>7} {'(%)':>5}  "
+            f"{'token':>7} {'(%)':>5}  "
+            f"{'canon':>7} {'(%)':>5}  "
+            f"{'combined':>8} {'(%)':>5}  "
             f"{'aspect':>7} {'(%)':>5}  "
             f"{'elev':>6} {'(%)':>5}"
         )
@@ -186,14 +193,19 @@ class Command(BaseCommand):
         self.stdout.write("-" * len(header))
 
         for (lang, source), s in sorted(stats.items()):
-            parsed_pct = _pct(s.parser_match, s.unstructured)
+            token_pct = _pct(s.parser_match, s.unstructured)
+            canon_pct = _pct(s.canonical_match, s.unstructured)
+            combined = s.parser_match + s.canonical_match
+            combined_pct = _pct(combined, s.unstructured)
             aspect_pct = _pct(s.aspect_match, s.unstructured)
             elev_pct = _pct(s.elevation_match, s.unstructured)
 
             line = (
                 f"{lang:<6}  {source:<12}  "
                 f"{s.wet_snow_total:>7}  {s.unstructured:>8}  "
-                f"{s.parser_match:>7} {parsed_pct:>4}%  "
+                f"{s.parser_match:>7} {token_pct:>4}%  "
+                f"{s.canonical_match:>7} {canon_pct:>4}%  "
+                f"{combined:>8} {combined_pct:>4}%  "
                 f"{s.aspect_match:>7} {aspect_pct:>4}%  "
                 f"{s.elevation_match:>6} {elev_pct:>4}%"
             )
@@ -254,6 +266,11 @@ def _score_problem(
     """
     Score a single wet-snow problem against the prose parser and update stats.
 
+    Mirrors the two-stage enrichment pipeline in ``_build_problem``:
+    1. Token parser (``parse_for``) is tried first.
+    2. Canonical-phrase fallback (``canonical_lookup``) is tried only when
+       the token parser returns None.
+
     Args:
         problem: The raw CAAML avalanche problem dict.
         bulletin_lang: The bulletin's BCP-47 language code.
@@ -277,20 +294,25 @@ def _score_problem(
     if not comment_html.strip():
         return  # blank comment — parser cannot help
 
+    # Stage 1: token parser.
     parsed = parse_for(bulletin_lang, comment_html)
-    if parsed is None:
+    if parsed is not None:
+        bucket.parser_match += 1
+        if parsed.aspects:
+            bucket.aspect_match += 1
+        elev = parsed.elevation
+        if (
+            elev.get("lower") is not None
+            or elev.get("upper") is not None
+            or elev.get("treeline")
+        ):
+            bucket.elevation_match += 1
         return
 
-    bucket.parser_match += 1
-    if parsed.aspects:
-        bucket.aspect_match += 1
-    elev = parsed.elevation
-    if (
-        elev.get("lower") is not None
-        or elev.get("upper") is not None
-        or elev.get("treeline")
-    ):
-        bucket.elevation_match += 1
+    # Stage 2: canonical-phrase fallback.
+    canonical = canonical_lookup(comment_html)
+    if canonical is not None:
+        bucket.canonical_match += 1
 
 
 def _get_properties(raw_data: Any) -> dict[str, Any] | None:
