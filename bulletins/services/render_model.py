@@ -84,6 +84,18 @@ Version 5 changes:
   - Added per-problem named slots ``avalanche_size``, ``frequency``, and
     ``snowpack_stability``: populated from ALBINA raw problem fields;
     ``None`` for SLF and MeteoFrance.
+
+Version 6 changes:
+  - Wet-snow prose enrichment: when an SLF wet-snow or gliding-snow problem
+    has empty ``aspects`` and no ``elevation``, the per-problem ``comment``
+    field is passed to the language-keyed prose parser
+    (``bulletins.services.prose.parse_for``).  On a successful parse the
+    extracted ``aspects`` and ``elevation`` are merged into the built problem
+    dict so that the render model carries structured geography wherever the
+    prose grammar can recover it.  EAWS/ALBINA problems are never enriched
+    (their data is already structured).  The parser is removable: deleting
+    ``bulletins/services/prose/en.py`` silently falls back to the previous
+    empty-state behaviour.
 """
 
 from __future__ import annotations
@@ -95,7 +107,9 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from django.utils.translation import gettext_lazy as _
 
+import bulletins.services.prose.en  # noqa: F401 — registers "en" parser side-effect
 from bulletins.models import Bulletin
+from bulletins.services.prose import parse_for as _prose_parse_for
 
 if TYPE_CHECKING:
     # ``django_stubs_ext`` ships only with the typing toolchain; importing
@@ -111,7 +125,7 @@ logger = logging.getLogger(__name__)
 # Version
 # ---------------------------------------------------------------------------
 
-RENDER_MODEL_VERSION: int = 5
+RENDER_MODEL_VERSION: int = 6
 
 # ---------------------------------------------------------------------------
 # Constants — EAWS problem-type enum (openapi.json lines 670–683)
@@ -1072,15 +1086,24 @@ def _build_problem(
     problem: dict[str, Any],
     danger_ratings: list[dict[str, Any]],
     source: Bulletin.Source,
+    lang: str = "en",
 ) -> dict[str, Any]:
     """
     Convert a raw CAAML avalanche problem into the render model shape.
+
+    When the problem is a wet-snow or gliding-snow type, ``aspects`` is empty,
+    and ``elevation`` is absent in the raw data, the per-problem ``comment``
+    field is passed to the registered prose parser for ``lang``.  On a
+    successful parse the extracted aspects and elevation are merged into the
+    returned dict.  The enrichment is a no-op when no parser is registered
+    for the language, or when the parser finds no tokens.
 
     Args:
         problem: A single raw avalanche problem dict from CAAML.
         danger_ratings: Bulletin-level danger ratings (used for ALBINA
             and MeteoFrance to derive per-problem danger rating values).
         source: A ``Bulletin.Source`` member.
+        lang: BCP-47 language code for prose-parser dispatch (default ``"en"``).
 
     Returns:
         A rendered problem dict suitable for the render model.
@@ -1102,8 +1125,33 @@ def _build_problem(
     avalanche_type: str | None = adapter.resolve_problem_avalanche_type(problem)
     eaws_fields: dict[str, Any] = adapter.resolve_problem_eaws_fields(problem)
 
+    # Prose enrichment: for wet-snow/gliding-snow problems that lack structured
+    # geography, attempt to extract aspects and elevation from the comment text.
+    # Only applied when both aspects and elevation are absent so that bulletins
+    # that already carry structured data are never overwritten.
+    problem_type: str = problem.get("problemType", "")
+    if (
+        problem_type in WET_PROBLEM_TYPES
+        and not aspects
+        and elevation is None
+        and comment_html
+    ):
+        parsed = _prose_parse_for(lang, comment_html)
+        if parsed is not None:
+            aspects = parsed.aspects
+            # Only store elevation when the parsed dict carries real constraints
+            # (a bound or a treeline flag). An all-None unconstrained dict means
+            # no elevation phrase was found and should stay as None.
+            parsed_elev = parsed.elevation
+            if (
+                parsed_elev.get("lower") is not None
+                or parsed_elev.get("upper") is not None
+                or parsed_elev.get("treeline")
+            ):
+                elevation = parsed_elev
+
     return {
-        "problem_type": problem.get("problemType", ""),
+        "problem_type": problem_type,
         "time_period": problem.get("validTimePeriod", ""),
         "elevation": elevation,
         "aspects": aspects,
@@ -1255,6 +1303,7 @@ def _build_trait(
     problems_by_type: dict[str, dict[str, Any]],
     danger_ratings: list[dict[str, Any]],
     source: Bulletin.Source,
+    lang: str = "en",
 ) -> dict[str, Any]:
     """
     Build a single trait dict from an aggregation entry and a problem lookup.
@@ -1268,6 +1317,7 @@ def _build_trait(
         problems_by_type: Lookup dict mapping problemType → raw problem dict.
         danger_ratings: Bulletin-level danger ratings (passed to problem builder).
         source: A ``Bulletin.Source`` member.
+        lang: BCP-47 language code forwarded to the per-problem prose enrichment.
 
     Returns:
         A trait dict in the render model shape.
@@ -1295,7 +1345,9 @@ def _build_trait(
         )
         matched_raw.append(problems_by_type[pt])
 
-    built_problems = [_build_problem(p, danger_ratings, source) for p in matched_raw]
+    built_problems = [
+        _build_problem(p, danger_ratings, source, lang) for p in matched_raw
+    ]
 
     # Determine danger level as max across member problems.
     danger_level = 1
@@ -1342,6 +1394,7 @@ def _build_synthesised_traits(
     avalanche_problems: list[dict[str, Any]],
     ratings: list[dict[str, Any]],
     source: Bulletin.Source,
+    lang: str = "en",
 ) -> list[dict[str, Any]]:
     """
     Build traits for ALBINA and MeteoFrance bulletins using a per-(type, vtp) lookup.
@@ -1355,6 +1408,7 @@ def _build_synthesised_traits(
         avalanche_problems: The raw ``avalancheProblems`` list.
         ratings: Bulletin-level danger ratings.
         source: Either ``Bulletin.Source.ALBINA`` or ``Bulletin.Source.METEOFRANCE``.
+        lang: BCP-47 language code forwarded to the per-problem prose enrichment.
 
     Returns:
         Flat list of trait dicts in aggregation order.
@@ -1379,7 +1433,7 @@ def _build_synthesised_traits(
                     if ap.get("problemType") == pt:
                         entry_problems[pt] = ap
                         break
-        traits.append(_build_trait(entry, entry_problems, ratings, source))
+        traits.append(_build_trait(entry, entry_problems, ratings, source, lang))
     return traits
 
 
@@ -1389,6 +1443,7 @@ def _build_traits(
     ratings: list[dict[str, Any]],
     source: Bulletin.Source,
     bulletin_id: str,
+    lang: str = "en",
 ) -> list[dict[str, Any]]:
     """
     Build the complete traits list from aggregation entries and problems.
@@ -1405,6 +1460,7 @@ def _build_traits(
         ratings: Bulletin-level danger ratings.
         source: A ``Bulletin.Source`` member.
         bulletin_id: Used in warning log messages.
+        lang: BCP-47 language code forwarded to the per-problem prose enrichment.
 
     Returns:
         Flat list of trait dicts in aggregation order.
@@ -1414,7 +1470,7 @@ def _build_traits(
 
     if source in {Bulletin.Source.ALBINA, Bulletin.Source.METEOFRANCE}:
         traits = _build_synthesised_traits(
-            aggregation, avalanche_problems, ratings, source
+            aggregation, avalanche_problems, ratings, source, lang
         )
     else:
         # SLF: problem type uniquely identifies a problem row.
@@ -1422,7 +1478,7 @@ def _build_traits(
             p["problemType"]: p for p in avalanche_problems
         }
         for entry in aggregation:
-            traits.append(_build_trait(entry, problems_by_type, ratings, source))
+            traits.append(_build_trait(entry, problems_by_type, ratings, source, lang))
 
     if len(traits) > 2:
         logger.warning(
@@ -1634,9 +1690,12 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     # Both lists empty → quiet day, no traits.
     traits: list[dict[str, Any]] = []
 
+    # Extract lang early so prose enrichment uses the bulletin's own language.
+    lang: str = properties.get("lang") or "en"
+
     if aggregation:
         traits = _build_traits(
-            aggregation, avalanche_problems, ratings, source, bulletin_id
+            aggregation, avalanche_problems, ratings, source, bulletin_id, lang
         )
 
     prose = _build_prose(properties, source)
