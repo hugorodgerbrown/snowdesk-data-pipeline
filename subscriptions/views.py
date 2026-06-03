@@ -428,6 +428,8 @@ def _delete_subscription_with_cascade(
 # ---------------------------------------------------------------------------
 
 
+# @lowercase_region_id is outermost so it can 301-redirect mixed-case URLs before
+# @require_POST fires; the redirected GET will hit the correct POST endpoint afresh.
 @lowercase_region_id
 @require_POST
 @require_htmx
@@ -504,6 +506,8 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
+# @lowercase_region_id is outermost so it can 301-redirect mixed-case URLs before
+# @require_POST fires; the redirected GET will hit the correct POST endpoint afresh.
 @lowercase_region_id
 @require_POST
 @require_htmx
@@ -705,6 +709,8 @@ def manage_view(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
+# @lowercase_region_id is outermost so it can 301-redirect mixed-case URLs before
+# @require_POST fires; the redirected GET will hit the correct POST endpoint afresh.
 @lowercase_region_id
 @require_POST
 @require_htmx
