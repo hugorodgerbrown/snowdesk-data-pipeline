@@ -12,19 +12,24 @@ Expects the following variables in scope:
                   frequency_label (optional translated Promise; ALBINA-only,
                                    None when raw frequency was missing or
                                    "none"),
-                  stability_label (optional translated Promise; ALBINA-only)
+                  stability_label (optional translated Promise; ALBINA-only),
+                  context_tag_label (optional str; set by canonical wet-snow
+                                     phrase lookup — e.g. "Grassy slopes",
+                                     "Solar radiation"; None when absent)
 
 Renders:
   1. Card header — danger-band colour strip carrying the EAWS hazard
      pictogram (encodes kind + level) alongside the problem name and an
      optional time chip.  No redundant textual level label.
-  2. Aspect / elevation row — only when the problem carries structured
+  2. Context-tag row — only when context_tag_label is set (canonical
+     wet-snow phrase fallback).  A single chip above the aspect row.
+  3. Aspect / elevation row — only when the problem carries structured
      aspects or elevation data.  aria-label uses SLF's coreZoneText when
      present for screen readers.  Absent for prose-only problems.
-  3. EAWS matrix row — only when any of size / frequency / stability is
+  4. EAWS matrix row — only when any of size / frequency / stability is
      present (ALBINA-only). One chip per axis. Skipped entirely for SLF
      and MeteoFrance cards, whose source data carries none of these.
-  4. Prose — the problem's comment field rendered in full, no truncation.
+  5. Prose — the problem's comment field rendered in full, no truncation.
 {% endcomment %}
 {% load i18n static card_tags hazard_icons snowdesk_html snowdesk_time %}
 
@@ -64,6 +69,18 @@ Renders:
             {% endif %}
         </div>
     </div>
+
+    {# ── Context tag chip (canonical wet-snow phrase fallback) ─────────────── #}
+    {# Shown only when the canonical-phrase lookup supplied a context tag.   #}
+    {# Rendered above the aspect/elevation row as a small descriptive chip.  #}
+    {% if card.context_tag_label %}
+        <div
+            class="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-card"
+            data-testid="context-tag-row"
+        >
+            {% include "includes/_chip.html" with text=card.context_tag_label data_testid="context-tag-chip" %}
+        </div>
+    {% endif %}
 
     {# ── Aspect / elevation row ──────────────────────────────────────────── #}
     {# Shown only when the problem has structured aspects or elevation data. #}

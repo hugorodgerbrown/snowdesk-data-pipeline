@@ -3055,6 +3055,22 @@ _STABILITY_LABELS: dict[str, Promise] = {
     "good": _("Good snowpack"),
 }
 
+# Human-readable display labels for ``context_tag`` values set by the
+# canonical wet-snow phrase lookup (``en_canonical.lookup``).  British English
+# spellings; shown as a chip above the aspect/elevation row when present.
+_CONTEXT_TAG_LABELS: dict[str, str] = {
+    "grassy_slopes": "Grassy slopes",
+    "glide_cracks": "Glide cracks",
+    "solar_radiation": "Solar radiation",
+    "diurnal_cycle": "Diurnal cycle",
+    "daytime_warming": "Daytime warming",
+    "rain": "Rain",
+    "spring_conditions": "Spring conditions",
+    "light_snow_cover": "Light snow cover",
+    "saturated_snowpack": "Saturated snowpack",
+    "new_snow": "New snow",
+}
+
 _DANGER_ORDER: tuple[str, ...] = (
     "low",
     "moderate",
@@ -3595,6 +3611,14 @@ def _problem_cards_from_render_model_traits(
         frequency_label: Promise | None = _FREQUENCY_LABELS.get(frequency_raw or "")
         stability_label: Promise | None = _STABILITY_LABELS.get(stability_raw or "")
 
+        # v7: context_tag from canonical wet-snow phrase lookup.  Translated
+        # to a display label at projection time so the template renders a
+        # string directly.  None when no canonical match was found.
+        context_tag: str | None = first.get("context_tag") or None
+        context_tag_label: str | None = (
+            _CONTEXT_TAG_LABELS.get(context_tag) if context_tag else None
+        )
+
         cards.append(
             {
                 "category": category,
@@ -3615,6 +3639,8 @@ def _problem_cards_from_render_model_traits(
                 "avalanche_size": first.get("avalanche_size"),
                 "frequency_label": frequency_label,
                 "stability_label": stability_label,
+                # v7: context_tag label from canonical wet-snow phrase lookup.
+                "context_tag_label": context_tag_label,
             }
         )
     return cards

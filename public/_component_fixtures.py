@@ -991,6 +991,7 @@ def _make_rating_card(
     core_zone_text: str,
     comment_html: str = "",
     avalanche_type: str | None = None,
+    context_tag_label: str | None = None,
 ) -> dict[str, Any]:
     """Build one rating-block card dict in the shape ``_rating_block.html`` expects."""
     return {
@@ -1007,6 +1008,7 @@ def _make_rating_card(
         "hide_comment": False,
         "core_zone_text": core_zone_text,
         "avalanche_type": avalanche_type,
+        "context_tag_label": context_tag_label,
     }
 
 
@@ -1168,6 +1170,90 @@ RATING_BLOCK_VARIANTS: tuple[dict[str, Any], ...] = (
                     "an already weak snowpack. Exercise caution at all "
                     "elevations.</p>"
                 ),
+            ),
+        },
+    },
+    # ── SNOW-251: canonical-phrase context-tag chip variants ─────────────────
+    # Three representative wet-snow cards with a context_tag_label chip above
+    # the aspect/elevation row.
+    {
+        "caption": "Gliding snow · grassy slopes context tag",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="gliding_snow",
+                time_period="all_day",
+                aspects=["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+                elevation=_ElevationBounds(
+                    lower="1800",
+                    upper="2400",
+                    display="1800–2400m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Gliding snow",
+                time_period_label="",
+                core_zone_text="",
+                comment_html=(
+                    "<p>On steep grassy slopes gliding snow activity is "
+                    "increasing. Open glide cracks are visible.</p>"
+                ),
+                context_tag_label="Grassy slopes",
+            ),
+        },
+    },
+    {
+        "caption": "Wet snow · solar radiation context tag",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wet_snow",
+                time_period="later",
+                aspects=["S", "SE", "SW"],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="",
+                    display="",
+                    bound_type="",
+                ),
+                label="Wet snow",
+                time_period_label="Later",
+                core_zone_text="",
+                comment_html=(
+                    "<p>As a consequence of solar radiation loose snow "
+                    "avalanches are likely in the afternoon.</p>"
+                ),
+                context_tag_label="Solar radiation",
+            ),
+        },
+    },
+    {
+        "caption": "Wet snow · light snow cover context tag",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=1,
+                danger_level_key="low",
+                problem_type="wet_snow",
+                time_period="all_day",
+                aspects=["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="",
+                    display="",
+                    bound_type="",
+                ),
+                label="Wet snow",
+                time_period_label="",
+                core_zone_text="",
+                comment_html=(
+                    "<p>Only a little snow is lying at low elevations. "
+                    "Isolated wet releases remain possible.</p>"
+                ),
+                context_tag_label="Light snow cover",
             ),
         },
     },

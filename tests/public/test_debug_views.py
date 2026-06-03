@@ -347,7 +347,7 @@ def test_new_slug_index_page_renders_200_with_known_marker(
 class TestRatingBlockPanel:
     """Focused tests for the rating-block component panel."""
 
-    def test_all_seven_problem_types_appear_in_rendered_html(
+    def test_all_problem_types_appear_in_rendered_html(
         self, htmx_staff_client: Client
     ) -> None:
         """Every EAWS problem type in RATING_BLOCK_VARIANTS appears in the output.
@@ -356,13 +356,15 @@ class TestRatingBlockPanel:
         value directly, but the EAWS pictogram ``src`` attribute encodes it.
         The card ``label`` field is the more readable proxy — assert that
         instead, since it is rendered verbatim in the card header.
+
+        There are now 10 variants: 7 original + 3 context-tag (SNOW-251).
         """
         response = htmx_staff_client.get(_panel_url("rating-block"))
         assert response.status_code == 200
 
         active = response.context["active"]
         assert active.slug == "rating-block"
-        assert len(active.variants) == 7  # noqa: PLR2004 — seven is the spec
+        assert len(active.variants) == 10  # noqa: PLR2004 — 7 original + 3 context-tag
 
         # Gather all problem_type values from the fixtures.
         expected_problem_types = {
@@ -372,13 +374,17 @@ class TestRatingBlockPanel:
         # The danger-band carries a data-level attribute — confirm the template
         # rendered at least one card header.
         assert 'data-testid="rating-block"' in body
-        # Exactly 6 of the 7 variants render the aspect-elevation row — the
-        # prose-only card (empty aspects + empty elevation) must omit it.
+        # 9 of the 10 variants render the aspect-elevation row — only the
+        # prose-only card (empty aspects + empty elevation) omits it.
+        # The 3 new context-tag fixtures all carry aspects so they render it.
         # The panel renders each variant twice (light + dark themes), so the
-        # expected count is 6 structured cards × 2 theme passes = 12.
-        assert body.count('data-testid="aspect-elevation-row"') == 12  # noqa: PLR2004
+        # expected count is 9 structured cards × 2 theme passes = 18.
+        assert body.count('data-testid="aspect-elevation-row"') == 18  # noqa: PLR2004
+        # The 3 new context-tag variants render the context-tag row.
+        # Panel renders each twice → 3 × 2 = 6.
+        assert body.count('data-testid="context-tag-row"') == 6  # noqa: PLR2004
         # Verify the problem_type set is exactly the six we declared (the
-        # prose-only card re-uses new_snow, so the set collapses to 6).
+        # prose-only card and context-tag cards re-use wet_snow/gliding_snow).
         assert expected_problem_types == {
             "new_snow",
             "wind_slab",
