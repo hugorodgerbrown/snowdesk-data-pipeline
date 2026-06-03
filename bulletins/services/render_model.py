@@ -84,6 +84,13 @@ Version 5 changes:
   - Added per-problem named slots ``avalanche_size``, ``frequency``, and
     ``snowpack_stability``: populated from ALBINA raw problem fields;
     ``None`` for SLF and MeteoFrance.
+
+Also exposes ``compute_period_transition``, a pure function that inspects the
+``danger.ratings`` list in a render model and derives a ``PeriodTransition``
+dataclass describing whether the day escalates, de-escalates, is flat-but-split,
+or has no transition. Used by views to drive the hero chip and Day Risk Profile
+caption without any source-conditional branching — the partition type is derived
+from the ratings shape (temporal vs. elevation-banded) universally.
 """
 
 from __future__ import annotations
@@ -1836,3 +1843,241 @@ def compute_day_character(render_model: dict[str, Any]) -> DayCharacter:
 
     # Safe default
     return _DAY_CHARACTER["stable"]
+
+
+# ---------------------------------------------------------------------------
+# Period transition
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class PeriodTransition:
+    """
+    Describes how the avalanche danger changes across the day.
+
+    Derived from the ``danger.ratings`` list in the render model by
+    :func:`compute_period_transition`. Used by views to render the hero chip
+    and the Day Risk Profile caption.
+
+    Attributes:
+        direction: ``"rise"``, ``"fall"``, or ``"none"`` (flat-but-split).
+            ``"none"`` means the danger level is unchanged but a period
+            boundary exists (i.e. problem type changes across the day).
+        destination_key: CAAML danger key for the destination period, e.g.
+            ``"considerable"``. Same as the source key when ``direction="none"``.
+        destination_number: Display number string (``"1"``–``"5"``) for the
+            destination level.
+        destination_subdivision: Subdivision suffix (``"+"``, ``"-"``,
+            ``"="``), or ``""`` when absent.
+        partition_type: ``"temporal"`` when the split is morning/afternoon;
+            ``"elevation"`` when the split is by elevation band.
+        partition_label: Human-readable qualifier for the split, e.g.
+            ``"above 2600 m"`` for an elevation-banded bulletin or ``""``
+            for a temporal split. Provided only when ``partition_type``
+            is ``"elevation"`` and an elevation bound is available.
+        has_split: ``True`` when any temporal split exists (direction may be
+            ``"none"`` for flat-but-split). Used by templates to decide whether
+            to show the Day Risk Profile transition row at all.
+
+    """
+
+    direction: str
+    destination_key: str
+    destination_number: str
+    destination_subdivision: str
+    partition_type: str
+    partition_label: str
+    has_split: bool
+
+
+def _elevation_label_from_rm(rm_elev: dict[str, Any] | None) -> str:
+    """
+    Return a short elevation label from a projected render-model elevation dict.
+
+    E.g. ``{"lower": 2600, "upper": None, ...}`` → ``"above 2600 m"``.
+    Used by ``compute_period_transition`` to build the ``partition_label``
+    field on :class:`PeriodTransition`.
+
+    Args:
+        rm_elev: A projected ``danger.ratings[*].elevation`` dict, or ``None``.
+
+    Returns:
+        A human-readable string such as ``"above 2600 m"`` or ``""``.
+
+    """
+    if not rm_elev:
+        return ""
+    lower = rm_elev.get("lower")
+    upper = rm_elev.get("upper")
+    treeline = rm_elev.get("treeline")
+    treeline_side = rm_elev.get("treeline_side")
+    if treeline and treeline_side == "lower":
+        return "above treeline"
+    if treeline and treeline_side == "upper":
+        return "below treeline"
+    if lower is not None:
+        return f"above {lower} m"
+    if upper is not None:
+        return f"below {upper} m"
+    return ""
+
+
+def _danger_rank_pair(key: str, subdivision: str) -> tuple[int, int]:
+    """Return sortable rank for a ``(key, subdivision)`` pair.
+
+    Subdivision display chars ``"+"``, ``"="``, ``"-"`` map to offsets
+    ``(+1, 0, -1)``; absent / ``""`` maps to 0.
+
+    Args:
+        key: CAAML danger key string.
+        subdivision: Display character or ``""``.
+
+    Returns:
+        ``(band_index, subdivision_offset)`` tuple.
+
+    """
+    band = _DANGER_ORDER.index(key) if key in _DANGER_ORDER else 0
+    offset = {"+": 1, "=": 0, "-": -1}.get(subdivision, 0)
+    return (band, offset)
+
+
+def _best_rated(ratings: list[dict[str, Any]]) -> tuple[str, str]:
+    """Return ``(key, subdivision)`` for the highest-ranked rating in *ratings*.
+
+    Falls back to ``("low", "")`` when no recognisable key is found.
+
+    Args:
+        ratings: A non-empty list of projected danger rating dicts.
+
+    Returns:
+        ``(danger_key, subdivision_display_char)`` for the peak rating.
+
+    """
+    best_key = "low"
+    best_sub = ""
+    for r in ratings:
+        key = r.get("key") or "low"
+        sub = r.get("subdivision") or ""
+        if key not in _DANGER_ORDER:
+            continue
+        if _danger_rank_pair(key, sub) > _danger_rank_pair(best_key, best_sub):
+            best_key = key
+            best_sub = sub
+    return best_key, best_sub
+
+
+def _resolve_partition(
+    by_period: dict[str, list[dict[str, Any]]],
+) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]], str] | None:
+    """Resolve the partition type and source/destination rating groups.
+
+    Returns a 4-tuple ``(partition_type, source_ratings, dest_ratings,
+    partition_label)`` or ``None`` when no two-period split is detected.
+
+    Args:
+        by_period: Rating entries grouped by period string.
+
+    Returns:
+        ``(partition_type, source_ratings, dest_ratings, partition_label)``
+        or ``None`` when only one period is present.
+
+    """
+    all_day = by_period.get("all_day")
+    later = by_period.get("later")
+    earlier = by_period.get("earlier")
+
+    if all_day and later:
+        return "temporal", all_day, later, ""
+
+    if earlier and later:
+        has_elevation = any(r.get("elevation") for r in earlier + later)
+        if has_elevation:
+            dest_upper_band = max(
+                later,
+                key=lambda r: (r.get("elevation") or {}).get("lower") or 0,
+            )
+            partition_label = _elevation_label_from_rm(dest_upper_band.get("elevation"))
+            return "elevation", earlier, later, partition_label
+        return "temporal", earlier, later, ""
+
+    return None
+
+
+def compute_period_transition(render_model: dict[str, Any]) -> PeriodTransition | None:
+    """
+    Derive the period transition descriptor from a render model's danger ratings.
+
+    Inspects ``render_model["danger"]["ratings"]`` to determine whether the
+    day has a meaningful split between its first and second period, and if so
+    whether the danger level rises, falls, or stays the same (flat-but-split).
+
+    The function is source-neutral — it reads only from the projected
+    ``danger.ratings`` list, which is populated for all sources.  No
+    ``if source == "slf"`` branching appears here.
+
+    **Temporal split (SLF-style)**: a bulletin that carries both ``all_day``
+    and ``later`` ratings has a temporal partition.  The ``all_day`` rating
+    is the source period; the ``later`` rating is the destination.
+
+    **Elevation split (ALBINA/EUREGIO-style)**: a bulletin that carries
+    ``earlier`` + ``later`` ratings (no ``all_day``) may also carry
+    per-elevation-band ratings within each period.  The highest-ranked rating
+    for the earlier period is the source; the highest-ranked for the later
+    period is the destination.
+
+    Returns ``None`` when the render model has no usable ratings or the
+    ratings carry fewer than two distinct periods.
+
+    Args:
+        render_model: A render model dict as produced by
+            :func:`build_render_model`.
+
+    Returns:
+        A :class:`PeriodTransition` instance, or ``None`` when no split is
+        detected.
+
+    """
+    danger_info: dict[str, Any] = render_model.get("danger") or {}
+    rm_ratings: list[dict[str, Any]] = danger_info.get("ratings") or []
+    if not rm_ratings:
+        return None
+
+    # Group ratings by period.
+    by_period: dict[str, list[dict[str, Any]]] = {}
+    for r in rm_ratings:
+        period = r.get("period") or "all_day"
+        if r.get("key") not in _DANGER_ORDER:
+            continue
+        by_period.setdefault(period, []).append(r)
+
+    # Determine partition type and source/destination period groups.
+    partition = _resolve_partition(by_period)
+    if partition is None:
+        return None
+
+    partition_type, source_ratings, dest_ratings, partition_label = partition
+
+    src_key, src_sub = _best_rated(source_ratings)
+    dst_key, dst_sub = _best_rated(dest_ratings)
+
+    src_rank = _danger_rank_pair(src_key, src_sub)
+    dst_rank = _danger_rank_pair(dst_key, dst_sub)
+
+    if dst_rank > src_rank:
+        direction = "rise"
+    elif dst_rank < src_rank:
+        direction = "fall"
+    else:
+        direction = "none"
+
+    dst_number = _DANGER_NUMBER.get(dst_key, "1")
+
+    return PeriodTransition(
+        direction=direction,
+        destination_key=dst_key,
+        destination_number=dst_number,
+        destination_subdivision=dst_sub,
+        partition_type=partition_type,
+        partition_label=partition_label,
+        has_split=True,
+    )
