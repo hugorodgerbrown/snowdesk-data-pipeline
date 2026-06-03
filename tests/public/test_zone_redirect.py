@@ -23,7 +23,9 @@ from datetime import UTC, datetime
 
 import pytest
 from django.core.cache import cache
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -225,3 +227,49 @@ class TestCanonicalRenderWarmsCache:
 
         assert response.status_code == 200
         assert cache.get(cache_key) == "valais"
+
+
+# ---------------------------------------------------------------------------
+# Zero-query integration tests (SNOW-284)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestRouterRejectsProbes:
+    """Tight URL regex rejects scanner probes with zero DB queries."""
+
+    def test_scanner_probe_returns_404_with_zero_app_queries(
+        self, client: Client
+    ) -> None:
+        """``/wp-login/`` returns 404 at the URL routing layer without any application DB access.
+
+        The ``RegionIdConverter`` regex requires at least one digit after the
+        country prefix, so ``wp-login`` never matches — Django raises
+        ``Resolver404`` before any view or application-table DB lookup runs.
+        Only infrastructure middleware (e.g. CSP rule caching) may query the DB.
+        """
+        with CaptureQueriesContext(connection) as ctx:
+            response = client.get("/wp-login/")
+        assert response.status_code == 404
+        app_queries = [
+            q for q in ctx.captured_queries if "regions_microregion" in q["sql"]
+        ]
+        assert app_queries == [], f"Unexpected application queries: {app_queries}"
+
+    def test_mixed_case_region_id_redirects_to_lowercase_with_zero_app_queries(
+        self, client: Client
+    ) -> None:
+        """``/CH-4115/`` 301-redirects to ``/ch-4115/`` without any application DB access.
+
+        The ``@lowercase_region_id`` decorator short-circuits before the view
+        body runs, so no application-table DB queries are issued on the redirect
+        itself.  Only infrastructure middleware (e.g. CSP rule caching) may query.
+        """
+        with CaptureQueriesContext(connection) as ctx:
+            response = client.get("/CH-4115/")
+        assert response.status_code == 301
+        assert response["Location"] == "/ch-4115/"
+        app_queries = [
+            q for q in ctx.captured_queries if "regions_microregion" in q["sql"]
+        ]
+        assert app_queries == [], f"Unexpected application queries: {app_queries}"
