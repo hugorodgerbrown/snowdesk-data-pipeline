@@ -42,9 +42,17 @@ from _fr_prose import (
 from _massifs import slugify
 from _pdf_extract import (
     BAND_DANGER,
+    BAND_PAGE2_FRESH_SNOW,
+    BAND_PAGE2_FRESH_SNOW_XAXIS,
+    BAND_PAGE2_SNOW_LINE,
+    BAND_PAGE2_WIND_HISTORY,
     BAND_STABILITY,
     BAND_WEATHER_TEXT,
     BAND_WIND_TABLE,
+    PAGE2_SNOW_LINE_NORD_X_END,
+    PAGE2_SNOW_LINE_NORD_X_START,
+    PAGE2_SNOW_LINE_SUD_X_END,
+    PAGE2_SNOW_LINE_SUD_X_START,
     crop_full_width,
     crop_left,
     crop_right,
@@ -545,6 +553,271 @@ def extract_isotherm(page: "pdfplumber.page.Page") -> list[int | None]:
 
 
 # ---------------------------------------------------------------------------
+# Page-2 historical data extraction
+# ---------------------------------------------------------------------------
+
+
+def extract_page2_wind_history(
+    page2: "pdfplumber.page.Page",
+) -> dict[str, list[int]]:
+    """Extract the 7-day wind-history grid from page 2 of a BRA PDF.
+
+    Page 2 contains a 28-cell wind-speed grid (7 days × 4 time slots: 03h,
+    09h, 15h, 21h) for two altitude levels.  The values are listed in a
+    single text row per altitude, immediately followed by an "à Xm" label on
+    the next line.
+
+    Units: km/h (integer).
+
+    Args:
+        page2: pdfplumber page object for page 2.
+
+    Returns:
+        Dict keyed by altitude label (e.g. ``"2500m"``, ``"2000m"``,
+        ``"4000m"``), each mapping to a list of 28 integer wind speeds
+        (oldest day 03h first, newest day 21h last).  Returns ``{}`` if no
+        wind rows are found.
+
+    """
+    region = crop_full_width(page2, *BAND_PAGE2_WIND_HISTORY)
+    text = extract_text_strip(region)
+    if not text:
+        return {}
+
+    result: dict[str, list[int]] = {}
+    lines = text.splitlines()
+    pending_speeds: list[int] | None = None
+
+    for line in lines:
+        stripped = line.strip()
+        # Check for altitude label "à Xm" that follows a wind row.
+        alt_match = re.match(r"^à\s+(\d{3,5})\s*m\s*$", stripped, re.IGNORECASE)
+        if alt_match and pending_speeds is not None:
+            alt_label = f"{alt_match.group(1)}m"
+            result[alt_label] = pending_speeds
+            pending_speeds = None
+            continue
+
+        # Check for a wind-data row: "Vent (km/h) N N N N ..."
+        wind_match = re.match(r"Vent\s*\(km/h\)\s+(.+)", stripped, re.IGNORECASE)
+        if wind_match:
+            nums_str = wind_match.group(1)
+            speeds = [int(t) for t in nums_str.split() if re.match(r"^\d+$", t)]
+            if len(speeds) == 28:
+                pending_speeds = speeds
+            else:
+                logger.warning(
+                    "Wind row has %d values (expected 28): %r", len(speeds), stripped
+                )
+            continue
+
+    return result
+
+
+def _parse_cm_value_pairs(
+    words: list[dict[str, object]],
+) -> list[tuple[int, float]]:
+    """Scan a list of words for "N cm" pairs and return (value, centre-x) tuples.
+
+    Args:
+        words: Word dicts from pdfplumber, sorted left-to-right by x0.
+
+    Returns:
+        List of ``(integer_value, label_centre_x)`` tuples.
+
+    """
+    result: list[tuple[int, float]] = []
+    for i, w in enumerate(words):
+        if str(w["text"]) == "cm" and i > 0:
+            prev = words[i - 1]
+            try:
+                val = int(str(prev["text"]))
+                label_cx = (float(prev["x0"]) + float(w["x1"])) / 2.0
+                result.append((val, label_cx))
+            except ValueError:
+                pass
+    return result
+
+
+def _nearest_col_idx(cx: float, col_centres: list[float]) -> int:
+    """Return the index of the column centre nearest to ``cx``.
+
+    Args:
+        cx: X coordinate of the label centre.
+        col_centres: Ordered list of column centre x-coordinates.
+
+    Returns:
+        Zero-based index into ``col_centres``.
+
+    """
+    return min(range(len(col_centres)), key=lambda i: abs(cx - col_centres[i]))
+
+
+def extract_page2_fresh_snow(
+    page2: "pdfplumber.page.Page",
+) -> list[int]:
+    """Extract the 7-day fresh-snowfall series from page 2.
+
+    The fresh-snow bar chart labels each bar with its daily accumulation in
+    centimetres.  Bars with zero snowfall are sometimes unlabelled; the
+    extractor treats missing labels as 0 cm.
+
+    Units: cm (integer).
+
+    Args:
+        page2: pdfplumber page object for page 2.
+
+    Returns:
+        List of 7 integer cm values, one per day (oldest to newest).
+        Missing labels are filled with 0.
+
+    """
+    # Build day-column centres from the x-axis date labels.
+    xaxis_words = extract_words_in_region(
+        page2,
+        x0=35.0,
+        top=BAND_PAGE2_FRESH_SNOW_XAXIS[0],
+        x1=float(page2.width),
+        bottom=BAND_PAGE2_FRESH_SNOW_XAXIS[1],
+    )
+    date_cx: list[float] = []
+    for w in sorted(xaxis_words, key=lambda w: float(w["x0"])):
+        text = str(w["text"])
+        if re.match(r"^\d{2}/\d{2}$", text):
+            date_cx.append((float(w["x0"]) + float(w["x1"])) / 2.0)
+
+    if len(date_cx) != 7:
+        logger.warning(
+            "Fresh-snow x-axis: expected 7 date labels, found %d", len(date_cx)
+        )
+        return []
+
+    # Collect (value, label_cx) pairs from the chart area.
+    chart_words = extract_words_in_region(
+        page2,
+        x0=35.0,
+        top=BAND_PAGE2_FRESH_SNOW[0],
+        x1=float(page2.width),
+        bottom=BAND_PAGE2_FRESH_SNOW[1],
+    )
+    value_pairs = _parse_cm_value_pairs(
+        sorted(chart_words, key=lambda w: float(w["x0"]))
+    )
+
+    # Assign each labeled value to its nearest day column.
+    day_values: dict[int, int] = {}
+    for val, label_cx in value_pairs:
+        day_idx = _nearest_col_idx(label_cx, date_cx)
+        if day_idx not in day_values:
+            day_values[day_idx] = val
+
+    # Fill all 7 days, defaulting missing labels to 0.
+    return [day_values.get(i, 0) for i in range(7)]
+
+
+def _snow_line_col_centres(x_start: float, x_end: float, n: int = 7) -> list[float]:
+    """Return n evenly-spaced column centres within the given x range.
+
+    Args:
+        x_start: Left edge of the chart plot area.
+        x_end: Right edge of the chart plot area.
+        n: Number of day columns (default 7).
+
+    Returns:
+        List of n column-centre x-coordinates.
+
+    """
+    col_width = (x_end - x_start) / n
+    return [x_start + col_width * (i + 0.5) for i in range(n)]
+
+
+def _assign_snow_line_to_cols(
+    values_cx: list[tuple[int, float]],
+    col_centres: list[float],
+) -> list[int | None]:
+    """Assign elevation labels to the nearest column, returning min per column.
+
+    When multiple labels fall in the same column (e.g. upper and lower snow
+    cover bounds), the minimum (lowest elevation with snow) is kept.
+
+    Args:
+        values_cx: List of ``(elevation_m, label_centre_x)`` pairs.
+        col_centres: Ordered list of day-column centre x-coordinates.
+
+    Returns:
+        List of ``len(col_centres)`` items: integer metres or ``None``.
+
+    """
+    col_data: dict[int, list[int]] = {i: [] for i in range(len(col_centres))}
+    for val, cx in values_cx:
+        col_idx = _nearest_col_idx(cx, col_centres)
+        col_data[col_idx].append(val)
+    return [min(v) if v else None for v in col_data.values()]
+
+
+def extract_page2_snow_line(
+    page2: "pdfplumber.page.Page",
+) -> dict[str, list[int | None]]:
+    """Extract the 7-day snow-line elevation series from page 2.
+
+    Page 2 carries two side-by-side line charts showing the lowest elevation
+    with continuous snow cover ("Limite de l'enneigement") for north-facing
+    (Versant Nord) and south-facing (Versant Sud) aspects.
+
+    Each chart labels data points with their altitude in metres.  When a day's
+    value equals the previous day (i.e. the line is flat), the label is often
+    omitted; such days are returned as ``None``.
+
+    Units: metres (integer).
+
+    Args:
+        page2: pdfplumber page object for page 2.
+
+    Returns:
+        Dict with keys ``"north"`` and ``"south"``, each a list of 7 values
+        (``int`` metres or ``None`` when unlabelled).  Day 0 = oldest,
+        day 6 = most recent.
+
+    """
+    # Collect all numeric elevation labels in the snow-line chart band.
+    all_words = extract_words_in_region(
+        page2,
+        x0=PAGE2_SNOW_LINE_NORD_X_START,
+        top=BAND_PAGE2_SNOW_LINE[0],
+        x1=PAGE2_SNOW_LINE_SUD_X_END,
+        bottom=BAND_PAGE2_SNOW_LINE[1],
+    )
+
+    nord_pairs: list[tuple[int, float]] = []
+    sud_pairs: list[tuple[int, float]] = []
+
+    for w in all_words:
+        try:
+            val = int(str(w["text"]))
+        except ValueError:
+            continue
+        if val < 100:
+            continue  # Skip zero / tiny y-axis ticks.
+        cx = (float(w["x0"]) + float(w["x1"])) / 2.0
+        if PAGE2_SNOW_LINE_NORD_X_START <= cx <= PAGE2_SNOW_LINE_NORD_X_END:
+            nord_pairs.append((val, cx))
+        elif PAGE2_SNOW_LINE_SUD_X_START <= cx <= PAGE2_SNOW_LINE_SUD_X_END:
+            sud_pairs.append((val, cx))
+
+    nord_cols = _snow_line_col_centres(
+        PAGE2_SNOW_LINE_NORD_X_START, PAGE2_SNOW_LINE_NORD_X_END
+    )
+    sud_cols = _snow_line_col_centres(
+        PAGE2_SNOW_LINE_SUD_X_START, PAGE2_SNOW_LINE_SUD_X_END
+    )
+
+    return {
+        "north": _assign_snow_line_to_cols(nord_pairs, nord_cols),
+        "south": _assign_snow_line_to_cols(sud_pairs, sud_cols),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Tendency extraction
 # ---------------------------------------------------------------------------
 
@@ -723,6 +996,25 @@ def parse_pdf(pdf_path: Path) -> dict[str, object] | None:
             isotherm = extract_isotherm(page1)
             tendency = extract_tendency(page1)
 
+            # Page 2: 7-day historical data (wind speed grid, fresh snow, snow line).
+            # Single-page PDFs emit an empty dict so downstream code can
+            # always access historical without a key-existence check.
+            if len(pdf.pages) > 1:
+                page2 = pdf.pages[1]
+                try:
+                    historical: dict[str, object] = {
+                        "wind": extract_page2_wind_history(page2),
+                        "freshSnow": extract_page2_fresh_snow(page2),
+                        "snowLine": extract_page2_snow_line(page2),
+                    }
+                except Exception as exc2:  # noqa: BLE001
+                    logger.warning(
+                        "Page-2 extraction failed for %s: %s", pdf_path, exc2
+                    )
+                    historical = {}
+            else:
+                historical = {}
+
     except Exception as exc:  # noqa: BLE001 — pdfplumber raises a wide variety
         # of library-internal exceptions (PDFSyntaxError, struct.error, etc.)
         # depending on the PDF.  Catching broadly here keeps the batch parser
@@ -759,6 +1051,7 @@ def parse_pdf(pdf_path: Path) -> dict[str, object] | None:
                 "date": bulletin_date.isoformat(),
                 "typicalAvalancheSituations": sat_labels,
                 "source_file": pdf_path.name,
+                "historical": historical,
             }
         },
     }
@@ -840,6 +1133,12 @@ COVERAGE_CHECKS: list[tuple[str, str]] = [
     ("avalancheProblems[0].elevation", "elevation in primary problem"),
     ("avalancheProblems[0].avalancheSize", "avalanche size in primary problem"),
     ("avalancheProblems[0].frequency", "frequency in primary problem"),
+    ("customData.MF.historical", "historical block present"),
+    ("customData.MF.historical.wind", "historical wind grid"),
+    ("customData.MF.historical.freshSnow", "historical fresh-snow series"),
+    ("customData.MF.historical.snowLine", "historical snow-line block"),
+    ("customData.MF.historical.snowLine.north", "historical snow-line north"),
+    ("customData.MF.historical.snowLine.south", "historical snow-line south"),
 ]
 
 
