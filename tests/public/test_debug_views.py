@@ -362,7 +362,7 @@ class TestRatingBlockPanel:
 
         active = response.context["active"]
         assert active.slug == "rating-block"
-        assert len(active.variants) == 7  # noqa: PLR2004 — seven is the spec
+        assert len(active.variants) == 9  # noqa: PLR2004 — nine after SNOW-254 additions
 
         # Gather all problem_type values from the fixtures.
         expected_problem_types = {
@@ -372,11 +372,11 @@ class TestRatingBlockPanel:
         # The danger-band carries a data-level attribute — confirm the template
         # rendered at least one card header.
         assert 'data-testid="rating-block"' in body
-        # Exactly 6 of the 7 variants render the aspect-elevation row — the
+        # Exactly 8 of the 9 variants render the aspect-elevation row — the
         # prose-only card (empty aspects + empty elevation) must omit it.
         # The panel renders each variant twice (light + dark themes), so the
-        # expected count is 6 structured cards × 2 theme passes = 12.
-        assert body.count('data-testid="aspect-elevation-row"') == 12  # noqa: PLR2004
+        # expected count is 8 structured cards × 2 theme passes = 16.
+        assert body.count('data-testid="aspect-elevation-row"') == 16  # noqa: PLR2004
         # Verify the problem_type set is exactly the six we declared (the
         # prose-only card re-uses new_snow, so the set collapses to 6).
         assert expected_problem_types == {
