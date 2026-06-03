@@ -164,7 +164,7 @@ class PipelineRun(BaseModel):
         self.finished_at = timezone.now()
         self.error_message = str(error)
         self.save(update_fields=["status", "finished_at", "error_message"])
-        logger.error("PipelineRun %s failed: %s", self.pk, error, exc_info=True)
+        logger.exception("PipelineRun %s failed: %s", self.pk, error)
 
     @property
     def duration_seconds(self) -> float | None:

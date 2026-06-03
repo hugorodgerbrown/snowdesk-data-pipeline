@@ -312,9 +312,10 @@ def load_meteofrance_archive(
     try:
         counts = _walk_lines(lines, commit, run)
     except Exception as exc:
-        logger.exception("Fatal error during MF archive load: %s", exc)
         if run is not None:
             run.mark_failed(exc)
+        else:
+            logger.exception("Fatal error during MF archive load: %s", exc)
         raise
 
     if run is not None:

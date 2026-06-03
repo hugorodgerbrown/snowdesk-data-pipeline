@@ -14,7 +14,8 @@ Provides two callables consumed throughout the codebase:
       confirmation.  No-op under the same condition as ``track()``.
 
 Both functions are safe to call on every request path — analytics failures
-are caught, logged at WARNING, and never propagate to the caller.  PII
+are caught, logged via ``logger.exception`` (ERROR with traceback), and
+never propagate to the caller.  PII
 keys (``email``, ``ip``, ``token``, ``credential_id``) are rejected at the
 call site by raising ``AnalyticsPIIError`` *before* any network call is
 attempted.
@@ -73,7 +74,7 @@ def track(
     """Capture one named event to PostHog.
 
     No-op when ``settings.POSTHOG_API_KEY`` is unset or empty.  Any
-    exception raised by the PostHog client is caught and logged at WARNING
+    exception raised by the PostHog client is caught and logged at ERROR
     so analytics failures never break user-facing requests.
 
     Args:
@@ -108,11 +109,10 @@ def track(
         posthog.capture(event=event, distinct_id=distinct_id, properties=props)
         logger.debug("analytics.track: event=%s distinct_id=%s", event, distinct_id)
     except Exception:  # noqa: BLE001 — analytics must never break requests
-        logger.warning(
+        logger.exception(
             "analytics.track failed: event=%s distinct_id=%s",
             event,
             distinct_id,
-            exc_info=True,
         )
 
 
@@ -125,7 +125,7 @@ def alias(distinct_id: str, alias_id: str) -> None:
     subsequent authenticated events appear under a single user profile.
 
     No-op when ``settings.POSTHOG_API_KEY`` is unset or empty.  Exceptions
-    are caught and logged at WARNING.
+    are caught and logged at ERROR.
 
     Args:
         distinct_id: The canonical, permanent identifier (``str(subscriber.pk)``).
@@ -151,9 +151,8 @@ def alias(distinct_id: str, alias_id: str) -> None:
             "analytics.alias: distinct_id=%s alias_id=%s", distinct_id, alias_id
         )
     except Exception:  # noqa: BLE001 — analytics must never break requests
-        logger.warning(
+        logger.exception(
             "analytics.alias failed: distinct_id=%s alias_id=%s",
             distinct_id,
             alias_id,
-            exc_info=True,
         )

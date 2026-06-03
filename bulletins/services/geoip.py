@@ -114,9 +114,7 @@ def _get_reader() -> "geoip2.database.Reader | None":
             _reader = geoip2.database.Reader(str(geoip_path))
             logger.debug("geoip: opened %s", geoip_path)
         except Exception:
-            logger.warning(
-                "geoip: failed to open database at %s", geoip_path, exc_info=True
-            )
+            logger.exception("geoip: failed to open database at %s", geoip_path)
         _reader_initialised = True
         return _reader
 
