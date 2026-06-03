@@ -2526,3 +2526,244 @@ class TestBestRatingFromRmEntries:
         ]
         result = self._call(entries)
         assert result == ("moderate", "")
+
+
+# ── _normalise_danger_pattern unit tests (SNOW-254) ──────────────────────────
+
+
+class TestNormaliseDangerPattern:
+    """
+    Unit tests for the _normalise_danger_pattern helper.
+
+    The LWD_Tyrol ``dangerPatterns`` field stores patterns as ``"DP1"``–``"DP10"``
+    (sometimes lowercase). The helper must:
+    - Normalise to ``GM.N`` label form.
+    - Resolve the full English name as a tooltip.
+    - Handle unrecognised formats gracefully.
+    """
+
+    def _call(self, raw: str) -> dict[str, str]:
+        """Call the helper under test."""
+        from public.views import _normalise_danger_pattern
+
+        return _normalise_danger_pattern(raw)
+
+    def test_dp1_produces_gm1_label(self) -> None:
+        """``DP1`` normalises to label ``GM.1``."""
+        result = self._call("DP1")
+        assert result["label"] == "GM.1"
+
+    def test_dp10_produces_gm10_label(self) -> None:
+        """``DP10`` normalises to label ``GM.10``."""
+        result = self._call("DP10")
+        assert result["label"] == "GM.10"
+
+    def test_lowercase_dp_normalised(self) -> None:
+        """Lowercase ``dp1`` is accepted and normalises to ``GM.1``."""
+        result = self._call("dp1")
+        assert result["label"] == "GM.1"
+
+    def test_dp1_title_is_deep_persistent_weak_layer(self) -> None:
+        """``DP1`` maps to "Deep persistent weak layer"."""
+        result = self._call("DP1")
+        assert result["title"] == "Deep persistent weak layer"
+
+    def test_dp10_title_is_spring_scenario(self) -> None:
+        """``DP10`` maps to "Spring scenario"."""
+        result = self._call("DP10")
+        assert result["title"] == "Spring scenario"
+
+    def test_all_known_patterns_have_titles(self) -> None:
+        """All DP1–DP10 produce non-empty titles."""
+        for i in range(1, 11):
+            result = self._call(f"DP{i}")
+            assert result["title"], f"DP{i} produced empty title"
+
+    def test_gm_dot_form_accepted(self) -> None:
+        """``gm.1`` (already normalised) is also accepted."""
+        result = self._call("gm.1")
+        assert result["label"] == "GM.1"
+        assert result["title"] == "Deep persistent weak layer"
+
+    def test_unrecognised_pattern_returned_verbatim(self) -> None:
+        """Unrecognised patterns are returned verbatim with an empty title."""
+        result = self._call("XYZ99")
+        assert result["label"] == "XYZ99"
+        assert result["title"] == ""
+
+
+# ── _problem_cards_from_render_model_traits danger-pattern propagation (SNOW-254) ──
+
+
+class TestDangerPatternPropagation:
+    """
+    Unit tests asserting that bulletin-level danger patterns are threaded through
+    to every card produced by _problem_cards_from_render_model_traits.
+    """
+
+    def _minimal_trait(self, problem_type: str = "wind_slab") -> dict[str, Any]:
+        """Return the smallest valid trait dict for card building."""
+        return {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Dry avalanches",
+            "geography": {"source": "problems"},
+            "problems": [
+                {
+                    "problem_type": problem_type,
+                    "comment_html": "",
+                    "aspects": ["N"],
+                    "elevation": {"lower": 2000, "upper": None, "treeline": False},
+                    "time_period": "all_day",
+                    "core_zone_text": None,
+                    "danger_rating_value": "moderate",
+                    "avalanche_type": None,
+                    "avalanche_size": None,
+                    "frequency": None,
+                    "snowpack_stability": None,
+                }
+            ],
+            "prose": None,
+            "danger_level": 2,
+        }
+
+    def test_no_patterns_produces_empty_list_on_card(self) -> None:
+        """Calling with no danger_patterns leaves each card with an empty list."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        cards = _problem_cards_from_render_model_traits([self._minimal_trait()])
+        assert cards[0]["danger_patterns"] == []
+
+    def test_patterns_propagated_to_single_card(self) -> None:
+        """Danger patterns passed in are normalised and placed on the card."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        cards = _problem_cards_from_render_model_traits(
+            [self._minimal_trait()], danger_patterns=["DP1"]
+        )
+        assert len(cards[0]["danger_patterns"]) == 1
+        assert cards[0]["danger_patterns"][0]["label"] == "GM.1"
+        assert cards[0]["danger_patterns"][0]["title"] == "Deep persistent weak layer"
+
+    def test_patterns_propagated_to_all_cards(self) -> None:
+        """When multiple traits are built, all cards receive the same pattern list."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        traits = [
+            self._minimal_trait("wind_slab"),
+            self._minimal_trait("new_snow"),
+        ]
+        cards = _problem_cards_from_render_model_traits(
+            traits, danger_patterns=["DP6", "DP4"]
+        )
+        assert len(cards) == 2
+        for card in cards:
+            assert len(card["danger_patterns"]) == 2
+            assert card["danger_patterns"][0]["label"] == "GM.6"
+            assert card["danger_patterns"][1]["label"] == "GM.4"
+
+    def test_slf_card_has_empty_patterns(self) -> None:
+        """SLF cards built with no patterns carry an empty danger_patterns list."""
+        from public.views import _problem_cards_from_render_model_traits
+
+        cards = _problem_cards_from_render_model_traits(
+            [self._minimal_trait()], danger_patterns=[]
+        )
+        assert cards[0]["danger_patterns"] == []
+
+
+# ── _rating_block.html danger-pattern row (SNOW-254) — integration ──────────
+
+
+@pytest.mark.django_db()
+class TestDangerPatternRow:
+    """
+    Integration tests confirming that danger-pattern tags render in the
+    bulletin page HTML when the card carries patterns, and are absent for
+    SLF cards with an empty list.
+
+    Uses the module-level ``region`` fixture (region_id="CH-4115", name="Valais")
+    so canonical URL resolution produces ``/ch-4115/valais/<date>/``.
+    """
+
+    def _albina_trait(self) -> dict[str, Any]:
+        """Build a minimal ALBINA trait dict with EAWS matrix fields."""
+        return {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Dry avalanches",
+            "geography": {"source": "problems"},
+            "problems": [
+                {
+                    "problem_type": "wind_slab",
+                    "comment_html": "",
+                    "aspects": ["N", "NE"],
+                    "elevation": {"lower": 2200, "upper": None, "treeline": False},
+                    "time_period": "all_day",
+                    "core_zone_text": None,
+                    "danger_rating_value": "considerable",
+                    "avalanche_type": "slab",
+                    "avalanche_size": 3,
+                    "frequency": "some",
+                    "snowpack_stability": "poor",
+                }
+            ],
+            "prose": None,
+            "danger_level": 3,
+        }
+
+    def test_danger_pattern_row_present_when_patterns_populated(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """When cards carry danger patterns, the pattern row and GM.N tags render."""
+        day = date(2026, 4, 10)
+        rm = _render_model_with_traits([self._albina_trait()])
+        rm["source"] = "albina"
+        rm["danger_patterns"] = ["DP1", "DP6"]
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        url = _url("ch-4115", "valais", "2026-04-10")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="danger-pattern-row"' in content
+        assert 'data-testid="danger-pattern-tag"' in content
+        assert "GM.1" in content
+        assert "GM.6" in content
+
+    def test_danger_pattern_row_absent_for_slf_card(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """SLF cards with no danger patterns produce no pattern row in the HTML."""
+        day = date(2026, 4, 11)
+        trait: dict[str, Any] = {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Dry avalanches",
+            "geography": {"source": "problems"},
+            "problems": [_problem()],
+            "prose": None,
+            "danger_level": 2,
+        }
+        rm = _render_model_with_traits([trait])
+        rm["danger_patterns"] = []
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        url = _url("ch-4115", "valais", "2026-04-11")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="danger-pattern-row"' not in content
+
+    def test_eaws_matrix_row_renders_for_albina_card(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """ALBINA cards with size/frequency/stability render the EAWS matrix row."""
+        day = date(2026, 4, 12)
+        rm = _render_model_with_traits([self._albina_trait()])
+        rm["source"] = "albina"
+        rm["danger_patterns"] = []
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        url = _url("ch-4115", "valais", "2026-04-12")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="eaws-matrix-row"' in content
+        assert 'data-testid="eaws-size-chip"' in content
+        assert 'data-testid="eaws-frequency-chip"' in content
+        assert 'data-testid="eaws-stability-chip"' in content

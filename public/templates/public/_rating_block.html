@@ -12,7 +12,9 @@ Expects the following variables in scope:
                   frequency_label (optional translated Promise; ALBINA-only,
                                    None when raw frequency was missing or
                                    "none"),
-                  stability_label (optional translated Promise; ALBINA-only)
+                  stability_label (optional translated Promise; ALBINA-only),
+                  danger_patterns (list of {"label": "GM.1", "title": "..."};
+                                   ALBINA-only; empty list for SLF/MeteoFrance)
 
 Renders:
   1. Card header — danger-band colour strip carrying the EAWS hazard
@@ -24,7 +26,10 @@ Renders:
   3. EAWS matrix row — only when any of size / frequency / stability is
      present (ALBINA-only). One chip per axis. Skipped entirely for SLF
      and MeteoFrance cards, whose source data carries none of these.
-  4. Prose — the problem's comment field rendered in full, no truncation.
+  4. Danger pattern tags — small GM.N chips with full-name tooltips,
+     sourced from customData.LWD_Tyrol.dangerPatterns (ALBINA-only).
+     Absent for SLF and MeteoFrance cards.
+  5. Prose — the problem's comment field rendered in full, no truncation.
 {% endcomment %}
 {% load i18n static card_tags hazard_icons snowdesk_html snowdesk_time %}
 
@@ -117,6 +122,24 @@ Renders:
             {% if card.stability_label %}
                 {% include "includes/_chip.html" with text=card.stability_label data_testid="eaws-stability-chip" %}
             {% endif %}
+        </div>
+    {% endif %}
+
+    {# ── Danger pattern tags — ALBINA only ──────────────────────────────────── #}
+    {# GM.N chips with full-name tooltips. Sourced from                        #}
+    {# customData.LWD_Tyrol.dangerPatterns; absent for SLF and MeteoFrance.   #}
+    {% if card.danger_patterns %}
+        <div
+            class="flex items-center flex-wrap gap-2 px-4 py-2.5 border-b border-border bg-card"
+            data-testid="danger-pattern-row"
+        >
+            {% for pattern in card.danger_patterns %}
+                <span
+                    class="font-mono text-chip uppercase bg-tag text-text-3 border border-border px-2.5 py-[5px] rounded-pill shrink-0"
+                    title="{{ pattern.title }}"
+                    data-testid="danger-pattern-tag"
+                >{{ pattern.label }}</span>
+            {% endfor %}
         </div>
     {% endif %}
 
