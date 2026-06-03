@@ -229,7 +229,9 @@ class TestRegionExpandedAttribution:
         self, client: Client, region: MicroRegion
     ) -> None:
         """The region tooltip HTML does NOT embed an inline SLF attribution block."""
-        url = reverse("api:region_summary", kwargs={"region_id": region.region_id})
+        url = reverse(
+            "api:region_summary", kwargs={"region_id": region.region_id.lower()}
+        )
         response = client.get(url)
         assert response.status_code == 200
         payload = json.loads(response.content)

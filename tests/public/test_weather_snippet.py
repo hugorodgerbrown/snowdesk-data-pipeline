@@ -66,7 +66,7 @@ class TestFetchWeatherSnippetGuards:
         """Plain POST without HX-Request header is rejected with 400."""
         client = Client()
         region = MicroRegionFactory.create()
-        url = _weather_url(region.region_id, "2026-01-15")
+        url = _weather_url(region.region_id.lower(), "2026-01-15")
         response = client.post(url)
         assert response.status_code == 400
 
@@ -74,14 +74,14 @@ class TestFetchWeatherSnippetGuards:
         """HTMX GET is rejected with 405 (require_POST)."""
         client = Client()
         region = MicroRegionFactory.create()
-        url = _weather_url(region.region_id, "2026-01-15")
+        url = _weather_url(region.region_id.lower(), "2026-01-15")
         response = client.get(url, HTTP_HX_REQUEST="true")
         assert response.status_code == 405
 
     def test_unknown_region_returns_404(self) -> None:
         """Unknown region_id returns 404."""
         client = Client()
-        url = _weather_url("CH-NOTEXIST", "2026-01-15")
+        url = _weather_url("xx-9999", "2026-01-15")
         response = client.post(url, HTTP_HX_REQUEST="true")
         assert response.status_code == 404
 
@@ -89,7 +89,7 @@ class TestFetchWeatherSnippetGuards:
         """Non-ISO date string returns 400."""
         client = Client()
         region = MicroRegionFactory.create()
-        url = _weather_url(region.region_id, "not-a-date")
+        url = _weather_url(region.region_id.lower(), "not-a-date")
         response = client.post(url, HTTP_HX_REQUEST="true")
         assert response.status_code == 400
 
@@ -127,7 +127,7 @@ class TestFetchWeatherSnippetForecastPath:
         )
 
         client = Client()
-        url = _weather_url(region.region_id, today.isoformat())
+        url = _weather_url(region.region_id.lower(), today.isoformat())
         response = client.post(url, HTTP_HX_REQUEST="true")
 
         assert response.status_code == 200
@@ -158,7 +158,7 @@ class TestFetchWeatherSnippetForecastPath:
         )
 
         client = Client()
-        url = _weather_url(region.region_id, today.isoformat())
+        url = _weather_url(region.region_id.lower(), today.isoformat())
         response = client.post(url, HTTP_HX_REQUEST="true")
 
         assert response.status_code == 200
@@ -195,7 +195,7 @@ class TestFetchWeatherSnippetArchivePath:
         )
 
         client = Client()
-        url = _weather_url(region.region_id, past_date.isoformat())
+        url = _weather_url(region.region_id.lower(), past_date.isoformat())
         response = client.post(url, HTTP_HX_REQUEST="true")
 
         assert response.status_code == 200
@@ -220,7 +220,7 @@ class TestFetchWeatherSnippetArchivePath:
         )
 
         client = Client()
-        url = _weather_url(region.region_id, past_date.isoformat())
+        url = _weather_url(region.region_id.lower(), past_date.isoformat())
         response = client.post(url, HTTP_HX_REQUEST="true")
 
         assert response.status_code == 200
@@ -260,7 +260,7 @@ class TestFetchWeatherSnippetExistingSnapshot:
         )
 
         client = Client()
-        url = _weather_url(region.region_id, today.isoformat())
+        url = _weather_url(region.region_id.lower(), today.isoformat())
         response = client.post(url, HTTP_HX_REQUEST="true")
 
         assert response.status_code == 200
@@ -295,7 +295,7 @@ class TestFetchWeatherSnippetExistingSnapshot:
         )
 
         client = Client()
-        url = _weather_url(region.region_id, past_date.isoformat())
+        url = _weather_url(region.region_id.lower(), past_date.isoformat())
         response = client.post(url, HTTP_HX_REQUEST="true")
 
         assert response.status_code == 200
@@ -329,7 +329,7 @@ class TestFetchWeatherSnippetFailure:
         )
 
         client = Client()
-        url = _weather_url(region.region_id, today.isoformat())
+        url = _weather_url(region.region_id.lower(), today.isoformat())
         response = client.post(url, HTTP_HX_REQUEST="true")
 
         assert response.status_code == 200
@@ -353,7 +353,7 @@ class TestFetchWeatherSnippetFailure:
         )
 
         client = Client()
-        url = _weather_url(region.region_id, past_date.isoformat())
+        url = _weather_url(region.region_id.lower(), past_date.isoformat())
         response = client.post(url, HTTP_HX_REQUEST="true")
 
         assert response.status_code == 200
@@ -384,7 +384,7 @@ class TestFetchWeatherSnippetCsrf:
         )
 
         client = Client(enforce_csrf_checks=True)
-        url = _weather_url(region.region_id, today.isoformat())
+        url = _weather_url(region.region_id.lower(), today.isoformat())
         response = client.post(url, HTTP_HX_REQUEST="true")
 
         assert response.status_code == 403
@@ -412,7 +412,7 @@ class TestFetchWeatherSnippetCsrf:
         csrf_token = get_token(dummy_request)
         client.cookies["csrftoken"] = csrf_token
 
-        url = _weather_url(region.region_id, today.isoformat())
+        url = _weather_url(region.region_id.lower(), today.isoformat())
         response = client.post(
             url,
             HTTP_HX_REQUEST="true",
@@ -458,7 +458,7 @@ class TestBulletinDetailWeatherTrigger:
         return reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": region.region_id,
+                "region_id": region.region_id.lower(),
                 "slug": region.slug,
                 "date_str": target_date.isoformat(),
             },
@@ -481,7 +481,10 @@ class TestBulletinDetailWeatherTrigger:
         assert "hx-post" in content
         expected_snippet_url = reverse(
             "public:weather_snippet",
-            kwargs={"region_id": region.region_id, "date_str": today.isoformat()},
+            kwargs={
+                "region_id": region.region_id.lower(),
+                "date_str": today.isoformat(),
+            },
         )
         assert expected_snippet_url in content
 

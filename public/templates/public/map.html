@@ -44,10 +44,11 @@
         --- Footer hint (reintroduce only if SNOW-34 still wants it) ---
         <div class="hint" aria-hidden="true">{% trans "Pinch to zoom · tap a region" %}</div>
     {% endcomment %}
-    {# data-region-summary-url carries the literal placeholder __REGION__   #}
-    {# which static/js/map.js substitutes for the tapped region's region_id #}
-    {# at fetch time. Keeping the URL in {% url %} preserves a single      #}
-    {# source of truth for the route name.                                  #}
+    {# data-region-summary-url carries the literal placeholder XX-0000 which   #}
+    {# static/js/map.js substitutes for the tapped region's region_id at       #}
+    {# fetch time. Keeping the URL in {% url %} preserves a single source of   #}
+    {# truth for the route name. XX-0000 passes the RegionIdConverter regex     #}
+    {# (two-letter prefix + digit) while being an obviously non-existent ID.    #}
     {# SNOW-188: Hidden SVG sprite for country flags shown in the search   #}
     {# result badge. Extracted to a shared include (SNOW-162) so the      #}
     {# subscription manage page can reuse the same symbols without        #}
@@ -63,7 +64,7 @@
         data-ratings-url="{% url 'api:ratings' %}"
         data-resorts-url="{% url 'api:resorts_by_region' %}"
         data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
-        data-region-summary-url="{% url 'api:region_summary' '__REGION__' %}"
+        data-region-summary-url="{% url 'api:region_summary' 'XX-0000' %}"
         data-default-basemap-key="{{ default_basemap_key }}"
         data-season-end="{{ season_end|date:'Y-m-d' }}"
     >

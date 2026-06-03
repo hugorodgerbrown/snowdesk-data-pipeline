@@ -547,7 +547,7 @@ class TestBulletinDetailView:
         url = reverse(
             "public:bulletin_date",
             kwargs={
-                "region_id": "XX-9999",
+                "region_id": "xx-9999",
                 "slug": "nowhere",
                 "date_str": "2026-03-15",
             },

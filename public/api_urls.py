@@ -33,7 +33,7 @@ urlpatterns = [
         name="sub_regions_geojson",
     ),
     path(
-        "region/<str:region_id>/summary/",
+        "region/<region_id:region_id>/summary/",
         api.region_summary,
         name="region_summary",
     ),

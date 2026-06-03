@@ -17,16 +17,17 @@ URL structure:
                                                to the canonical form when the
                                                URL components don't match.
 
-All three forms are served by ``bulletin_detail``. Forms 1 and 2 default
-to today's date and render in place — they never redirect even when the
-URL casing or slug is non-canonical. Form 3 (with an explicit date) 302s
+All three forms are served by ``bulletin_detail``. The ``lowercase_region_id``
+decorator on ``bulletin_detail`` (and the other region-accepting views)
+301-redirects any mixed-case ``region_id`` to its canonical lowercase form
+before any view logic runs. Form 3 (with an explicit date) additionally 302s
 to the canonical form ``/<canonical_region_id>/<name_slug>/<date>/`` when
 the inbound path doesn't already match. Every render emits a
 ``<link rel="canonical">`` pointing at the form-3 canonical URL so SEO
 collapses all three forms into one indexed destination.
 
 The ``/map/``, ``/terms/`` and ``/examples/`` routes are registered before
-the generic ``<str:region_id>/<slug:slug>/`` pattern so Django's URL
+the generic ``<region_id:region_id>/<slug:slug>/`` pattern so Django's URL
 resolver matches the literal suffixes first.
 """
 
@@ -91,14 +92,14 @@ urlpatterns += [
     # Registered before the generic <str:region_id>/ pattern so "partials"
     # is never mistaken for a region ID.
     path(
-        "partials/weather/<str:region_id>/<str:date_str>/",
+        "partials/weather/<region_id:region_id>/<str:date_str>/",
         views.fetch_weather_snippet,
         name="weather_snippet",
     ),
     # Season calendar partial — HTMX-deferred heatmap grid (SNOW-170).
-    # Registered before the generic <str:region_id>/ pattern for the same reason.
+    # Registered before the generic <region_id:region_id>/ pattern for the same reason.
     path(
-        "partials/season/<str:region_id>/",
+        "partials/season/<region_id:region_id>/",
         views.season_calendar_partial,
         name="season_partial",
     ),
@@ -106,17 +107,17 @@ urlpatterns += [
     # Forms 1 + 2 default to today and render in place; form 3 redirects
     # to canonical when the URL components don't match.
     path(
-        "<str:region_id>/",
+        "<region_id:region_id>/",
         views.bulletin_detail,
         name="region_root",
     ),
     path(
-        "<str:region_id>/<slug:slug>/",
+        "<region_id:region_id>/<slug:slug>/",
         views.bulletin_detail,
         name="bulletin",
     ),
     path(
-        "<str:region_id>/<slug:slug>/<str:date_str>/",
+        "<region_id:region_id>/<slug:slug>/<str:date_str>/",
         views.bulletin_detail,
         name="bulletin_date",
     ),

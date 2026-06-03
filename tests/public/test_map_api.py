@@ -435,7 +435,7 @@ def test_region_summary_returns_html_for_known_region() -> None:
         subregion=sub,
     )
     client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    response = client.get(reverse("api:region_summary", args=["ch-4115"]))
     assert response.status_code == 200
     data = response.json()
     assert set(data.keys()) == {"html", "level"}
@@ -462,7 +462,7 @@ def test_region_summary_includes_geographic_breadcrumb() -> None:
         subregion=sub,
     )
     client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    response = client.get(reverse("api:region_summary", args=["ch-4115"]))
     assert response.status_code == 200
     html = response.json()["html"]
     # Country name is the English form from COUNTRY_NAMES, not the ISO code.
@@ -492,7 +492,7 @@ def test_region_summary_includes_geographic_breadcrumb() -> None:
 def test_region_summary_unknown_region_returns_404() -> None:
     """An unknown region_id returns 404."""
     client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-UNKNOWN"]))
+    response = client.get(reverse("api:region_summary", args=["xx-9999"]))
     assert response.status_code == 404
 
 
@@ -506,7 +506,7 @@ def test_region_summary_query_count() -> None:
     MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
     client = Client()
     with CaptureQueriesContext(connection) as ctx:
-        response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+        response = client.get(reverse("api:region_summary", args=["ch-4115"]))
     assert response.status_code == 200
     # Queries: region + subregion + major join (1), RegionDayRating lookup (1).
     # The resorts prefetch was dropped in SNOW-174 when the resort list was removed.
@@ -532,7 +532,7 @@ def test_region_summary_accepts_date_query_param() -> None:
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+        reverse("api:region_summary", args=["ch-4115"]) + "?d=2026-01-15"
     )
     assert response.status_code == 200
     html = response.json()["html"]
@@ -553,7 +553,7 @@ def test_region_summary_rejects_bad_date() -> None:
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=not-a-date"
+        reverse("api:region_summary", args=["ch-4115"]) + "?d=not-a-date"
     )
     assert response.status_code == 400
     assert response.json() == {"error": "bad_date"}
@@ -578,7 +578,7 @@ def test_region_summary_includes_headline_rating_chip() -> None:
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+        reverse("api:region_summary", args=["ch-4115"]) + "?d=2026-01-15"
     )
     assert response.status_code == 200
     html = response.json()["html"]
@@ -607,7 +607,7 @@ def test_region_summary_no_rating_shows_fallback_icon() -> None:
     client = Client()
     # Use a date far in the past where no rating exists.
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=2000-01-01"
+        reverse("api:region_summary", args=["ch-4115"]) + "?d=2000-01-01"
     )
     assert response.status_code == 200
     html = response.json()["html"]
@@ -642,7 +642,7 @@ def test_region_summary_breadcrumb_uses_english_names() -> None:
     )
 
     client = Client()
-    response = client.get(reverse("api:region_summary", args=["CH-4115"]))
+    response = client.get(reverse("api:region_summary", args=["ch-4115"]))
     assert response.status_code == 200
     html = response.json()["html"]
 
@@ -691,7 +691,7 @@ def test_region_summary_includes_level_key() -> None:
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+        reverse("api:region_summary", args=["ch-4115"]) + "?d=2026-01-15"
     )
     assert response.status_code == 200
     data = response.json()
@@ -710,7 +710,7 @@ def test_region_summary_level_key_falls_back_to_no_rating() -> None:
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=2000-01-01"
+        reverse("api:region_summary", args=["ch-4115"]) + "?d=2000-01-01"
     )
     assert response.status_code == 200
     assert response.json()["level"] == "no_rating"
@@ -735,7 +735,7 @@ def test_region_summary_cta_label_includes_date() -> None:
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+        reverse("api:region_summary", args=["ch-4115"]) + "?d=2026-01-15"
     )
     assert response.status_code == 200
     html = response.json()["html"]
@@ -1139,7 +1139,7 @@ def test_region_summary_no_bulletin_shows_favicon_icon() -> None:
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["FR-68"]) + "?d=2026-01-15"
+        reverse("api:region_summary", args=["fr-68"]) + "?d=2026-01-15"
     )
     assert response.status_code == 200
     html = response.json()["html"]
@@ -1167,7 +1167,7 @@ def test_region_summary_no_bulletin_shows_no_bulletin_text() -> None:
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["FR-68"]) + "?d=2026-01-15"
+        reverse("api:region_summary", args=["fr-68"]) + "?d=2026-01-15"
     )
     assert response.status_code == 200
     html = response.json()["html"]
@@ -1193,7 +1193,7 @@ def test_region_summary_no_bulletin_testid_present() -> None:
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["FR-68"]) + "?d=2026-01-15"
+        reverse("api:region_summary", args=["fr-68"]) + "?d=2026-01-15"
     )
     assert response.status_code == 200
     html = response.json()["html"]
@@ -1221,7 +1221,7 @@ def test_region_summary_with_bulletin_renders_chip_and_link() -> None:
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-01-15"
+        reverse("api:region_summary", args=["ch-4115"]) + "?d=2026-01-15"
     )
     assert response.status_code == 200
     html = response.json()["html"]

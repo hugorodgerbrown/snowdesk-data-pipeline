@@ -54,6 +54,7 @@ from django_ratelimit.decorators import ratelimit
 import analytics
 from core.decorators import require_htmx
 from core.services.request_log import capture as capture_request_log
+from public.decorators import lowercase_region_id
 from regions.models import MicroRegion
 
 from .forms import EmailForm, SubscribeForm
@@ -269,7 +270,7 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
 
     # Resolve the region — return a 400 error fragment if not found.
     try:
-        region = MicroRegion.objects.get(region_id=region_id)
+        region = MicroRegion.objects.get(region_id__iexact=region_id)
     except MicroRegion.DoesNotExist:
         logger.warning(
             "subscribe_partial: region_id %s not found in DB",
@@ -427,6 +428,9 @@ def _delete_subscription_with_cascade(
 # ---------------------------------------------------------------------------
 
 
+# @lowercase_region_id is outermost so it can 301-redirect mixed-case URLs before
+# @require_POST fires; the redirected GET will hit the correct POST endpoint afresh.
+@lowercase_region_id
 @require_POST
 @require_htmx
 @ratelimit(key="ip", rate="5/m", block=False)
@@ -456,7 +460,7 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
         return HttpResponse(status=403)
 
     try:
-        region = MicroRegion.objects.get(region_id=region_id)
+        region = MicroRegion.objects.get(region_id__iexact=region_id)
     except MicroRegion.DoesNotExist:
         logger.warning("add_region: region_id %s not found in DB", region_id)
         return render(
@@ -502,6 +506,9 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
+# @lowercase_region_id is outermost so it can 301-redirect mixed-case URLs before
+# @require_POST fires; the redirected GET will hit the correct POST endpoint afresh.
+@lowercase_region_id
 @require_POST
 @require_htmx
 @ratelimit(key="ip", rate="10/m", block=False)
@@ -535,7 +542,7 @@ def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpRes
         return HttpResponse(status=403)
 
     try:
-        region = MicroRegion.objects.get(region_id=region_id)
+        region = MicroRegion.objects.get(region_id__iexact=region_id)
     except MicroRegion.DoesNotExist:
         logger.warning(
             "remove_region_from_bulletin: region_id %s not found in DB", region_id
@@ -702,6 +709,9 @@ def manage_view(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
+# @lowercase_region_id is outermost so it can 301-redirect mixed-case URLs before
+# @require_POST fires; the redirected GET will hit the correct POST endpoint afresh.
+@lowercase_region_id
 @require_POST
 @require_htmx
 @ratelimit(key="ip", rate="10/m", block=False)
@@ -733,7 +743,7 @@ def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
     if subscriber is None:
         return HttpResponse(status=403)
 
-    region = get_object_or_404(MicroRegion, region_id=region_id)
+    region = get_object_or_404(MicroRegion, region_id__iexact=region_id)
     result = _delete_subscription_with_cascade(subscriber, region, request)
     if result is True:
         response = HttpResponse(status=200)
