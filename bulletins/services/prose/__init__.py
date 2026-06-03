@@ -57,10 +57,23 @@ class ParsedScope:
     ``_parse_elevation`` in ``render_model.py``:
     ``{"lower": int|None, "upper": int|None, "treeline": bool,
     "treeline_side": str|None}``.
+
+    ``context_tag`` is an optional snake_case keyword set by the canonical-phrase
+    lookup (``en_canonical.lookup``) to describe the primary hazard context —
+    e.g. ``"grassy_slopes"``, ``"solar_radiation"``.  Always ``None`` when the
+    match comes from the token parser.
+
+    ``meta_aspect`` is an optional string (``"sunny"`` | ``"shady"`` | ``None``)
+    indicating a broad aspect inference when no compass tokens are present in the
+    text — set only by the canonical-phrase lookup.  ``None`` when the token
+    parser found explicit compass tokens or when the canonical phrase carries no
+    aspect implication.
     """
 
     aspects: list[str]
     elevation: dict[str, object]
+    context_tag: str | None = None
+    meta_aspect: str | None = None
 
 
 # ---------------------------------------------------------------------------
