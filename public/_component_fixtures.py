@@ -105,14 +105,18 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
     """Build the weather-header variant matrix.
 
     Two entries per icon bucket (12 buckets × day/night = 24 entries),
-    plus the no-snapshot fallback at the end. Every bucket emits both
-    day and night — even ``cloudy``, which is the only bucket whose
-    *icon* is identical day vs night (it ships as a single ``cloudy.svg``
-    rather than ``cloudy-day.svg``/``cloudy-night.svg``). The
-    *background colour* still differs by time-of-day for cloudy
-    (``--color-weather-cloudy-day`` vs ``--color-weather-cloudy-night``),
-    so the bulletin page reads as a dark band on a cloudy night and a
-    pale band on a cloudy day — the library mirrors that.
+    plus a hero-badge level grid (all five EAWS levels × with/without
+    subdivision, single panel each), plus the no-snapshot fallback at
+    the end.
+
+    Every bucket emits both day and night — even ``cloudy``, which is
+    the only bucket whose *icon* is identical day vs night (it ships as
+    a single ``cloudy.svg`` rather than ``cloudy-day.svg``/
+    ``cloudy-night.svg``). The *background colour* still differs by
+    time-of-day for cloudy (``--color-weather-cloudy-day`` vs
+    ``--color-weather-cloudy-night``), so the bulletin page reads as a
+    dark band on a cloudy night and a pale band on a cloudy day — the
+    library mirrors that.
 
     Order follows ``WEATHER_ICON_BUCKETS`` so panels in the library
     appear in the same order designers see in the bucket vocabulary
@@ -123,6 +127,9 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
     today = datetime.date(2026, 2, 14)  # mid-season, deterministic
     region_name = "Bex-Villars"
     subregion_name = "Vaud Alps"
+
+    # Representative clear-day weather display for the badge-focused variants.
+    _clear_day = synthetic_weather_display(0, "day")
 
     entries: list[dict[str, Any]] = []
     for icon_bucket in WEATHER_ICON_BUCKETS:
@@ -137,9 +144,52 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
                         "region_name": region_name,
                         "subregion_name": subregion_name,
                         "page_date": today,
+                        # Default to moderate (2) so the badge is always
+                        # present — the bucket grid is for weather colours,
+                        # not for badge level variations.
+                        "morning_rating": {
+                            "level_key": "moderate",
+                            "level_number": "2",
+                            "subdivision": "",
+                        },
                     },
                 }
             )
+
+    # ---- Hero rating badge level grid (SNOW-246) -------------------------
+    # Five EAWS levels × {bare number, with subdivision} = 10 panels.
+    # Rendered against a fixed clear-day background so the badge fill
+    # colours are the visual focus. Subdivision only at level ≥ 2 per spec.
+    _badge_levels: tuple[tuple[str, str, str, str], ...] = (
+        ("low", "1", "", "Level 1 — no subdivision"),
+        ("moderate", "2", "", "Level 2 — no subdivision"),
+        ("moderate", "2", "-", "Level 2 — minus"),
+        ("moderate", "2", "+", "Level 2 — plus"),
+        ("considerable", "3", "", "Level 3 — no subdivision"),
+        ("considerable", "3", "-", "Level 3 — minus"),
+        ("considerable", "3", "+", "Level 3 — plus"),
+        ("high", "4", "", "Level 4 — no subdivision"),
+        ("high", "4", "-", "Level 4 — minus"),
+        ("very_high", "5", "", "Level 5 — black/red split"),
+    )
+    for level_key, level_number, subdivision, caption in _badge_levels:
+        entries.append(
+            {
+                "caption": f"Hero badge · {caption}",
+                "context": {
+                    "weather_display": _clear_day,
+                    "region_name": region_name,
+                    "subregion_name": subregion_name,
+                    "page_date": today,
+                    "morning_rating": {
+                        "level_key": level_key,
+                        "level_number": level_number,
+                        "subdivision": subdivision,
+                    },
+                },
+                "solo": True,
+            }
+        )
 
     # No-snapshot fallback — the partial's degraded path. Kept last so the
     # main matrix flows top-to-bottom in canonical bucket order before the
@@ -147,12 +197,13 @@ def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
     # two-column layout (no day/night counterpart to pair it with).
     entries.append(
         {
-            "caption": "No snapshot · fallback",
+            "caption": "No snapshot · fallback (no badge)",
             "context": {
                 "weather_display": None,
                 "region_name": region_name,
                 "subregion_name": subregion_name,
                 "page_date": today,
+                # morning_rating absent — badge must not render on empty-state pages.
             },
             "solo": True,
         }

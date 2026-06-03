@@ -2369,6 +2369,39 @@ def _track_bulletin_viewed(
     )
 
 
+def _build_morning_rating(panel: dict[str, Any]) -> dict[str, str] | None:
+    """
+    Project the morning danger level into a small context dict for the hero badge.
+
+    Reads ``morning_key``, ``morning_number``, and ``morning_subdivision`` from
+    the panel dict built by :func:`_build_panel_context`. Returns ``None`` when
+    the panel carries no usable morning rating (``"no_rating"`` key) so the
+    template can gate the badge on truthiness.
+
+    Subdivision is the display character (``"+"``, ``"-"``, ``"="``) already
+    resolved by the render-model adapter — SLF bulletins carry it from
+    ``customData.CH``; ALBINA and METEOFRANCE return ``""`` so the badge
+    renders the bare number without a suffix. No source-conditional branches
+    appear here or in the template.
+
+    Args:
+        panel: The panel context dict from :func:`_build_panel_context`.
+
+    Returns:
+        A dict with ``level_key``, ``level_number``, and ``subdivision`` keys,
+        or ``None`` when the morning rating is absent or ``"no_rating"``.
+
+    """
+    morning_key: str = panel.get("morning_key") or ""
+    if not morning_key or morning_key == "no_rating":
+        return None
+    return {
+        "level_key": morning_key,
+        "level_number": str(panel.get("morning_number") or ""),
+        "subdivision": str(panel.get("morning_subdivision") or ""),
+    }
+
+
 def _bulletin_detail_response(
     request: HttpRequest,
     region: MicroRegion,
@@ -2570,6 +2603,12 @@ def _bulletin_detail_response(
     # Emit bulletin_viewed (no-ops silently on /examples/* paths).
     _track_bulletin_viewed(request, region, selected, panel)
 
+    # Morning rating badge context (SNOW-246). Projected from the panel's
+    # render-model adapter — no source-conditional branches in the template.
+    # subdivision is already a display char ("+", "-", "=") or "" for sources
+    # that don't carry per-rating subdivision (ALBINA, METEOFRANCE).
+    morning_rating: dict[str, str] | None = _build_morning_rating(panel)
+
     context = {
         "region": region,
         "region_name": region_name,
@@ -2588,6 +2627,8 @@ def _bulletin_detail_response(
         # Masthead context.
         "day_windows": day_windows,
         "subregion_name": subregion_name,
+        # Hero rating badge — morning level + optional subdivision (SNOW-246).
+        "morning_rating": morning_rating,
         # Geographic neighbours — see SNOW-82.
         "adjoining_regions": adjoining_regions,
         # Weather-driven header — see SNOW-98.
