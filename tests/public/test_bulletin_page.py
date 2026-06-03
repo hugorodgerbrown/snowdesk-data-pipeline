@@ -2526,3 +2526,266 @@ class TestBestRatingFromRmEntries:
         ]
         result = self._call(entries)
         assert result == ("moderate", "")
+
+
+# ---------------------------------------------------------------------------
+# Test: hero rating badge (SNOW-246)
+# ---------------------------------------------------------------------------
+
+
+def _render_model_with_ratings(
+    key: str,
+    number: str,
+    subdivision: str | None,
+    period: str = "all_day",
+    source: str = "slf",
+) -> dict:
+    """Build a v5 render_model carrying a projected ``danger.ratings`` entry.
+
+    Used to drive the morning-rating badge tests without going through the
+    raw CAAML path — the projected ratings list is the primary source for
+    :func:`public.views._resolve_period_danger_from_rm`.
+    """
+    return {
+        "version": 5,
+        "source": source,
+        "danger": {
+            "key": key,
+            "number": number,
+            "subdivision": subdivision,
+            "ratings": [
+                {
+                    "period": period,
+                    "key": key,
+                    "subdivision": subdivision,
+                    "elevation": None,
+                }
+            ],
+        },
+        "danger_patterns": [],
+        "traits": [],
+        "snowpack_structure": None,
+        "metadata": {
+            "publication_time": "2026-03-15T06:00:00+00:00",
+            "valid_from": "2026-03-15T06:00:00+00:00",
+            "valid_until": "2026-03-15T15:00:00+00:00",
+            "next_update": "2026-03-15T15:00:00+00:00",
+            "unscheduled": False,
+            "lang": "en",
+        },
+        "prose": {
+            "snowpack_structure": None,
+            "weather_review": None,
+            "weather_forecast": None,
+            "tendency": [],
+            "avalanche_activity": {"highlights": "", "comment": ""},
+            "tendency_lead": None,
+        },
+    }
+
+
+def _make_region_with_subregion(
+    region_id: str = "CH-4115", name: str = "Valais", slug: str = "ch-4115"
+) -> "MicroRegion":
+    """Create a MicroRegion with the SubRegion/MajorRegion chain required by views."""
+    major = MajorRegionFactory.create()
+    sub = SubRegionFactory.create(major=major)
+    return MicroRegionFactory.create(
+        region_id=region_id, name=name, slug=slug, subregion=sub
+    )
+
+
+@pytest.mark.django_db
+class TestHeroRatingBadge:
+    """The bulletin hero card shows an EAWS-coloured rating badge (SNOW-246)."""
+
+    def _url(self, region_id: str = "ch-4115", date_str: str = "2026-03-15") -> str:
+        return reverse(
+            "public:bulletin_date",
+            kwargs={"region_id": region_id, "slug": "valais", "date_str": date_str},
+        )
+
+    def _make_bulletin(
+        self,
+        region: "MicroRegion",
+        key: str,
+        number: str,
+        subdivision: str | None = None,
+        source: str = "slf",
+    ) -> Bulletin:
+        """Create a bulletin with the given morning danger level."""
+        day = date(2026, 3, 15)
+        rm = _render_model_with_ratings(key, number, subdivision, source=source)
+        raw = _raw_data_with_ratings([{"mainValue": key, "validTimePeriod": "all_day"}])
+        # Inject the source customData key so _detect_source succeeds.
+        if source == "slf":
+            raw["properties"]["customData"] = {"CH": {}}
+        elif source == "albina":
+            raw["properties"]["customData"] = {"ALBINA": {}}
+        elif source == "meteofrance":
+            raw["properties"]["customData"] = {"MF": {}}
+        return _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=5, raw_data=raw
+        )
+
+    def test_badge_present_on_bulletin_page(self, client: Client) -> None:
+        """The ``data-testid="bulletin-hero-rating"`` badge renders on the hero card."""
+        region = _make_region_with_subregion()
+        self._make_bulletin(region, "moderate", "2")
+        response = client.get(self._url())
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="bulletin-hero-rating"' in content
+
+    def test_badge_shows_level_number(self, client: Client) -> None:
+        """The badge aria-label carries the correct numeric level."""
+        region = _make_region_with_subregion()
+        self._make_bulletin(region, "considerable", "3")
+        response = client.get(self._url())
+        content = response.content.decode()
+        # The aria-label on the badge encodes the level number.
+        assert 'aria-label="Danger level 3"' in content
+
+    def test_badge_level_key_data_attribute(self, client: Client) -> None:
+        """The badge carries the correct ``data-level`` attribute for CSS colouring."""
+        region = _make_region_with_subregion()
+        self._make_bulletin(region, "high", "4")
+        response = client.get(self._url())
+        content = response.content.decode()
+        assert 'data-level="high"' in content
+
+    def test_subdivision_rendered_for_slf(self, client: Client) -> None:
+        """SLF bulletins render the subdivision suffix on the badge (e.g. '3+')."""
+        region = _make_region_with_subregion()
+        day = date(2026, 3, 15)
+        # SLF: projected subdivision comes from customData.CH on dangerRatings.
+        rm = _render_model_with_ratings("considerable", "3", "+", source="slf")
+        raw: dict = {
+            "type": "Feature",
+            "geometry": None,
+            "properties": {
+                "dangerRatings": [
+                    {
+                        "mainValue": "considerable",
+                        "validTimePeriod": "all_day",
+                        "customData": {"CH": {"subdivision": "plus"}},
+                    }
+                ],
+                "customData": {"CH": {}},
+            },
+        }
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=5, raw_data=raw
+        )
+        response = client.get(self._url())
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Subdivision "+" must appear in the badge's aria-label.
+        assert 'aria-label="Danger level 3+"' in content
+
+    def test_subdivision_absent_for_albina(self, client: Client) -> None:
+        """ALBINA bulletins carry no subdivision — badge aria-label shows bare number."""
+        region = _make_region_with_subregion()
+        # ALBINA: subdivision is None per AlbinaAdapter.resolve_danger_rating_subdivision.
+        self._make_bulletin(
+            region, "considerable", "3", subdivision=None, source="albina"
+        )
+        response = client.get(self._url())
+        assert response.status_code == 200
+        content = response.content.decode()
+        # The aria-label on the badge must not carry a subdivision suffix.
+        # We check the aria-label value which is in the form "Danger level 3".
+        assert 'aria-label="Danger level 3"' in content
+        assert 'aria-label="Danger level 3+"' not in content
+        assert 'aria-label="Danger level 3-"' not in content
+        assert 'aria-label="Danger level 3="' not in content
+
+    def test_subdivision_absent_for_meteofrance(self, client: Client) -> None:
+        """METEOFRANCE bulletins carry no subdivision — badge aria-label shows bare number."""
+        region = _make_region_with_subregion()
+        self._make_bulletin(
+            region, "moderate", "2", subdivision=None, source="meteofrance"
+        )
+        response = client.get(self._url())
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'aria-label="Danger level 2"' in content
+        assert 'aria-label="Danger level 2+"' not in content
+        assert 'aria-label="Danger level 2-"' not in content
+        assert 'aria-label="Danger level 2="' not in content
+
+    def test_badge_absent_on_empty_state_page(self, client: Client) -> None:
+        """No bulletin → no hero badge (``morning_rating`` is None)."""
+        _make_region_with_subregion()
+        # No bulletin created — empty-state page.
+        response = client.get(self._url())
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="bulletin-hero-rating"' not in content
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _build_morning_rating helper
+# ---------------------------------------------------------------------------
+
+
+class TestBuildMorningRating:
+    """Unit tests for the ``_build_morning_rating`` view helper."""
+
+    def _call(self, panel: dict) -> dict | None:
+        from public.views import _build_morning_rating
+
+        return _build_morning_rating(panel)
+
+    def test_returns_none_when_no_morning_key(self) -> None:
+        """An empty panel dict returns None."""
+        assert self._call({}) is None
+
+    def test_returns_none_for_no_rating_key(self) -> None:
+        """morning_key == 'no_rating' returns None (badge hidden)."""
+        assert (
+            self._call(
+                {
+                    "morning_key": "no_rating",
+                    "morning_number": "0",
+                    "morning_subdivision": "",
+                }
+            )
+            is None
+        )
+
+    def test_returns_dict_for_valid_key(self) -> None:
+        """A valid morning_key produces the expected dict."""
+        result = self._call(
+            {
+                "morning_key": "considerable",
+                "morning_number": "3",
+                "morning_subdivision": "-",
+            }
+        )
+        assert result == {
+            "level_key": "considerable",
+            "level_number": "3",
+            "subdivision": "-",
+        }
+
+    def test_subdivision_none_normalised_to_empty_string(self) -> None:
+        """None subdivision is coerced to empty string so the template renders nothing."""
+        result = self._call(
+            {
+                "morning_key": "moderate",
+                "morning_number": "2",
+                "morning_subdivision": None,
+            }
+        )
+        assert result is not None
+        assert result["subdivision"] == ""
+
+    def test_returns_none_for_empty_morning_key(self) -> None:
+        """An empty string morning_key returns None."""
+        assert (
+            self._call(
+                {"morning_key": "", "morning_number": "0", "morning_subdivision": ""}
+            )
+            is None
+        )
