@@ -991,6 +991,10 @@ def _make_rating_card(
     core_zone_text: str,
     comment_html: str = "",
     avalanche_type: str | None = None,
+    avalanche_size: int | None = None,
+    frequency_label: str | None = None,
+    stability_label: str | None = None,
+    danger_patterns: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Build one rating-block card dict in the shape ``_rating_block.html`` expects."""
     return {
@@ -1007,6 +1011,10 @@ def _make_rating_card(
         "hide_comment": False,
         "core_zone_text": core_zone_text,
         "avalanche_type": avalanche_type,
+        "avalanche_size": avalanche_size,
+        "frequency_label": frequency_label,
+        "stability_label": stability_label,
+        "danger_patterns": danger_patterns or [],
     }
 
 
@@ -1167,6 +1175,63 @@ RATING_BLOCK_VARIANTS: tuple[dict[str, Any], ...] = (
                     "<p>Fresh snowfall overnight — additional loading on "
                     "an already weak snowpack. Exercise caution at all "
                     "elevations.</p>"
+                ),
+            ),
+        },
+    },
+    # ── SNOW-254: EUREGIO/ALBINA richer per-problem fields ──────────────────
+    {
+        "caption": "ALBINA — wind slab with EAWS matrix + danger patterns",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=3,
+                danger_level_key="considerable",
+                problem_type="wind_slab",
+                time_period="all_day",
+                aspects=["N", "NE", "NW"],
+                elevation=_ElevationBounds(
+                    lower="2200",
+                    upper="",
+                    display="above 2200m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Wind slab",
+                time_period_label="",
+                core_zone_text="",
+                avalanche_type="slab",
+                avalanche_size=3,
+                frequency_label="Some",
+                stability_label="Poor",
+                danger_patterns=[
+                    {"label": "GM.6", "title": "Loose snow and warming"},
+                    {"label": "GM.4", "title": "Cold, loose snow and wind"},
+                ],
+            ),
+        },
+    },
+    {
+        "caption": "SLF — persistent weak layers, no EAWS extras",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=3,
+                danger_level_key="considerable",
+                problem_type="persistent_weak_layers",
+                time_period="all_day",
+                aspects=["N", "NE", "E", "NW"],
+                elevation=_ElevationBounds(
+                    lower="2600",
+                    upper="",
+                    display="above 2600m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Persistent weak layers",
+                time_period_label="",
+                core_zone_text="N to E and NW aspects, above 2600m",
+                comment_html=(
+                    "<p>Persistent weak layers remain buried in the snowpack. "
+                    "Triggering is possible even from low additional loads.</p>"
                 ),
             ),
         },

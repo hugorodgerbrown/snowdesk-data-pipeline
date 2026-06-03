@@ -488,7 +488,7 @@ class TestProblemCardEawsFields:
         assert card["avalanche_size"] == 2
         # Labels are lazy Promise objects — stringify to compare.
         assert str(card["frequency_label"]) == "Some"
-        assert str(card["stability_label"]) == "Poor snowpack"
+        assert str(card["stability_label"]) == "Poor"
 
     def test_frequency_none_treated_as_not_reported(self) -> None:
         """``frequency='none'`` collapses to label=None so the chip is suppressed."""

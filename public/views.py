@@ -3055,10 +3055,27 @@ _FREQUENCY_LABELS: dict[str, Promise] = {
     "many": _("Many"),
 }
 _STABILITY_LABELS: dict[str, Promise] = {
-    "very_poor": _("Very poor snowpack"),
-    "poor": _("Poor snowpack"),
-    "fair": _("Fair snowpack"),
-    "good": _("Good snowpack"),
+    "very_poor": _("Very poor"),
+    "poor": _("Poor"),
+    "fair": _("Fair"),
+    "good": _("Good"),
+}
+
+# LWD Tyrolean danger-pattern names (gm.1–gm.10). Raw bulletin data uses
+# "DP1"–"DP10" (or "dp1"–"dp10") for these identifiers. The display label
+# is normalised to "GM.1"–"GM.10"; the tooltip carries the full English name.
+# Authoritative names follow the LWD_Tyrol convention.
+_DANGER_PATTERN_NAMES: dict[str, str] = {
+    "gm1": "Deep persistent weak layer",
+    "gm2": "Gliding snow",
+    "gm3": "Rain",
+    "gm4": "Cold, loose snow and wind",
+    "gm5": "Snowfall after a long cold period",
+    "gm6": "Loose snow and warming",
+    "gm7": "Snowpack-rain interface",
+    "gm8": "Persistent weak layer in old snow",
+    "gm9": "Wind-loaded snow on snowpack",
+    "gm10": "Spring scenario",
 }
 
 _DANGER_ORDER: tuple[str, ...] = (
@@ -3109,6 +3126,40 @@ _SUBDIVISION_SUFFIX: dict[str, str] = {
 # cover a given half of the day.
 _MORNING_PERIODS: frozenset[str] = frozenset({"all_day", "earlier"})
 _AFTERNOON_PERIODS: frozenset[str] = frozenset({"all_day", "later"})
+
+
+def _normalise_danger_pattern(raw: str) -> dict[str, str]:
+    """
+    Normalise a raw LWD danger-pattern identifier to a display label and tooltip.
+
+    LWD_Tyrol publishes patterns as ``"DP1"``–``"DP10"`` (sometimes lowercase
+    ``"dp1"``–``"dp10"``). The display label uses the ``GM.N`` form; the tooltip
+    carries the full English name from :data:`_DANGER_PATTERN_NAMES`.
+
+    Unknown patterns are rendered verbatim with no tooltip.
+
+    Args:
+        raw: The raw danger-pattern string from the render model.
+
+    Returns:
+        Dict with ``"label"`` (e.g. ``"GM.1"``) and ``"title"`` (full name or ``""``).
+
+    """
+    # Normalise: strip "DP"/"dp" prefix, leaving the numeric suffix.
+    normalised = raw.strip()
+    key_candidate = normalised.lower()
+    if key_candidate.startswith("dp"):
+        num = key_candidate[2:]
+        gm_key = f"gm{num}"
+        label = f"GM.{num}"
+    elif key_candidate.startswith("gm."):
+        num = key_candidate[3:]
+        gm_key = f"gm{num}"
+        label = f"GM.{num}"
+    else:
+        # Unrecognised format — render as-is.
+        return {"label": normalised, "title": ""}
+    return {"label": label, "title": _DANGER_PATTERN_NAMES.get(gm_key, "")}
 
 
 def _best_rating_from_rm_entries(
@@ -3512,6 +3563,7 @@ def build_problem_cards(
 
 def _resolve_problem_cards(
     traits: list[dict[str, Any]],
+    danger_patterns: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Resolve problem cards from render-model traits.
@@ -3524,16 +3576,21 @@ def _resolve_problem_cards(
 
     Args:
         traits: Enriched render-model traits list.
+        danger_patterns: Bulletin-level danger patterns list from the render
+            model (``render_model["danger_patterns"]``). Each card receives
+            the full list so the template can render pattern tags on every
+            card. ``None`` and ``[]`` are both treated as no patterns.
 
     Returns:
         Flat list of card dicts ready for ``_rating_block.html``.
 
     """
-    return _problem_cards_from_render_model_traits(traits)
+    return _problem_cards_from_render_model_traits(traits, danger_patterns or [])
 
 
 def _problem_cards_from_render_model_traits(
     traits: list[dict[str, Any]],
+    danger_patterns: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Build one problem card per render-model trait.
@@ -3550,11 +3607,20 @@ def _problem_cards_from_render_model_traits(
 
     Args:
         traits: Enriched render model traits list.
+        danger_patterns: Bulletin-level danger patterns (raw strings such as
+            ``"DP1"``). Each card receives the normalised list so the template
+            can render ``GM.N`` tags with tooltips. Pass ``None`` or ``[]`` for
+            bulletins that carry no patterns (SLF, MeteoFrance).
 
     Returns:
         Flat list of card dicts, one per trait, in trait order.
 
     """
+    # Normalise once; all cards in the bulletin share the same pattern set.
+    normalised_patterns: list[dict[str, str]] = [
+        _normalise_danger_pattern(p) for p in (danger_patterns or [])
+    ]
+
     cards: list[dict[str, Any]] = []
     for trait in traits:
         category: str = trait.get("category") or ""
@@ -3621,6 +3687,10 @@ def _problem_cards_from_render_model_traits(
                 "avalanche_size": first.get("avalanche_size"),
                 "frequency_label": frequency_label,
                 "stability_label": stability_label,
+                # Bulletin-level danger patterns (ALBINA only). Each entry is
+                # {"label": "GM.1", "title": "Deep persistent weak layer"}.
+                # Empty list for SLF and MeteoFrance bulletins.
+                "danger_patterns": normalised_patterns,
             }
         )
     return cards
@@ -3868,7 +3938,10 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     # render-model traits. The render model synthesises aggregation for all
     # sources and records traits in editorial (aggregation) order, so trait
     # ordering matches the previous SLF aggregation-driven ordering.
-    problem_cards = _resolve_problem_cards(traits)
+    # Bulletin-level danger patterns (ALBINA only; [] for SLF/MeteoFrance)
+    # are threaded through so each card can render GM.N annotation tags.
+    rm_danger_patterns: list[str] = raw_render_model.get("danger_patterns") or []
+    problem_cards = _resolve_problem_cards(traits, rm_danger_patterns)
 
     # Per-half danger resolution for the AM/PM split headline. Reads the
     # projected danger.ratings list from the render model — one entry per
