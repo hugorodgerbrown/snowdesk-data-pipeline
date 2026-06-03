@@ -246,3 +246,77 @@ class TestMontBlancCustomData:
         result = parsed_mont_blanc
         regions = result["properties"]["regions"]
         assert regions[0]["regionID"] == "FR-MONT-BLANC"
+
+
+class TestMontBlancSpontaneousTriggeredSplit:
+    """Verify customData.MF carries the spontaneous/triggered split (SNOW-257)."""
+
+    def test_spontaneous_key_present(self, parsed_mont_blanc: dict[str, Any]) -> None:
+        """customData.MF.spontaneous must be present."""
+        mf = parsed_mont_blanc["properties"]["customData"]["MF"]
+        assert "spontaneous" in mf
+
+    def test_triggered_key_present(self, parsed_mont_blanc: dict[str, Any]) -> None:
+        """customData.MF.triggered must be present."""
+        mf = parsed_mont_blanc["properties"]["customData"]["MF"]
+        assert "triggered" in mf
+
+    def test_spontaneous_non_empty(self, parsed_mont_blanc: dict[str, Any]) -> None:
+        """customData.MF.spontaneous must be non-empty for MONT-BLANC."""
+        mf = parsed_mont_blanc["properties"]["customData"]["MF"]
+        assert len(mf["spontaneous"]) > 0
+
+    def test_triggered_non_empty(self, parsed_mont_blanc: dict[str, Any]) -> None:
+        """customData.MF.triggered must be non-empty for MONT-BLANC."""
+        mf = parsed_mont_blanc["properties"]["customData"]["MF"]
+        assert len(mf["triggered"]) > 0
+
+    def test_spontaneous_contains_html(self, parsed_mont_blanc: dict[str, Any]) -> None:
+        """customData.MF.spontaneous must carry HTML markup."""
+        mf = parsed_mont_blanc["properties"]["customData"]["MF"]
+        html = mf["spontaneous"]
+        assert "<h2>" in html or "<p>" in html or "<li>" in html
+
+    def test_triggered_contains_html(self, parsed_mont_blanc: dict[str, Any]) -> None:
+        """customData.MF.triggered must carry HTML markup."""
+        mf = parsed_mont_blanc["properties"]["customData"]["MF"]
+        html = mf["triggered"]
+        assert "<h2>" in html or "<p>" in html or "<li>" in html
+
+    def test_spontaneous_differs_from_triggered(
+        self, parsed_mont_blanc: dict[str, Any]
+    ) -> None:
+        """The two split fields must differ — they originate from different sections."""
+        mf = parsed_mont_blanc["properties"]["customData"]["MF"]
+        assert mf["spontaneous"] != mf["triggered"]
+
+    def test_concatenated_comment_still_present(
+        self, parsed_mont_blanc: dict[str, Any]
+    ) -> None:
+        """avalancheActivity.comment backward-compat field must remain present."""
+        comment = parsed_mont_blanc["properties"]["avalancheActivity"]["comment"]
+        assert isinstance(comment, str)
+        assert len(comment) > 0
+
+
+class TestMontBlancHighlightDetection:
+    """Verify the positional highlight detection for MONT-BLANC (SNOW-257 refinement 1)."""
+
+    def test_headline_not_compass_marker(
+        self, parsed_mont_blanc: dict[str, Any]
+    ) -> None:
+        """Headline must not be a compass marker like 'N', 'O E', etc."""
+        hl = parsed_mont_blanc["properties"]["highlights"]
+        assert hl not in ("N", "S", "O", "E", "O E", "N S", "3600m")
+
+    def test_headline_not_danger_number(
+        self, parsed_mont_blanc: dict[str, Any]
+    ) -> None:
+        """Headline must not be a bare danger number."""
+        hl = parsed_mont_blanc["properties"]["highlights"]
+        assert not hl.strip().isdigit()
+
+    def test_headline_mentions_plaques(self, parsed_mont_blanc: dict[str, Any]) -> None:
+        """MONT-BLANC headline mentions wind-slab (PLAQUES)."""
+        hl = parsed_mont_blanc["properties"]["highlights"]
+        assert "PLAQUES" in hl.upper()
