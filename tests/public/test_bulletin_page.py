@@ -3524,3 +3524,133 @@ class TestBuildPeriodTransitionChip:
         result = self._call(pt)
         assert result is not None
         assert "L2+" in result["chip_text"]
+
+
+# ---------------------------------------------------------------------------
+# Test: type tags (dry/wet) carry distinct data-testid from time tags (SNOW-247)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestTypePillsVsTimePills:
+    """SNOW-247: dry/wet type tags carry ``data-testid="category-type-pill"``
+    while time-period tags carry ``data-testid="time-period-pill"``.
+
+    The two semantic axes (what category? / which time window?) must be
+    visually and structurally distinct so UI tooling (Playwright, screen
+    readers) can tell them apart without relying on content matching.
+    """
+
+    def test_dry_card_carries_category_type_pill(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A dry-category card renders a category-type-pill data-testid."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_problems(
+            [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="category-type-pill"' in content
+
+    def test_wet_card_carries_category_type_pill(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A wet-category card renders a category-type-pill data-testid."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_problems(
+            [_raw_problem(problem_type="wet_snow", danger_rating_value="moderate")]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="category-type-pill"' in content
+
+    def test_time_period_label_carries_time_period_pill(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A card with a non-empty time_period_label renders a time-period-pill testid."""
+        day = date(2026, 3, 15)
+        # A "later" time-period wet trait carries a time_period_label.
+        raw_data = {
+            "type": "Feature",
+            "geometry": None,
+            "properties": {
+                "dangerRatings": [
+                    _rating("moderate", "all_day"),
+                    _rating("considerable", "later"),
+                ],
+                "avalancheProblems": [
+                    _raw_problem(
+                        problem_type="wet_snow",
+                        danger_rating_value="considerable",
+                        valid_time_period="later",
+                    )
+                ],
+                "customData": {
+                    "CH": {
+                        "aggregation": [
+                            {
+                                "category": "wet",
+                                "validTimePeriod": "later",
+                                "problemTypes": ["wet_snow"],
+                            }
+                        ]
+                    }
+                },
+            },
+        }
+        _make_am_bulletin(region, day, raw_data=raw_data)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="time-period-pill"' in content
+
+    def test_category_type_pill_and_time_period_pill_are_distinct(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Type-tag and time-tag testids never clash on the same bulletin page."""
+        day = date(2026, 3, 15)
+        # Variable-day bulletin: dry all-day + wet later.
+        raw_data = {
+            "type": "Feature",
+            "geometry": None,
+            "properties": {
+                "dangerRatings": [
+                    _rating("moderate", "all_day"),
+                    _rating("considerable", "later"),
+                ],
+                "avalancheProblems": [
+                    _raw_problem(
+                        problem_type="wind_slab",
+                        danger_rating_value="moderate",
+                        valid_time_period="all_day",
+                    ),
+                    _raw_problem(
+                        problem_type="wet_snow",
+                        danger_rating_value="considerable",
+                        valid_time_period="later",
+                    ),
+                ],
+                "customData": {
+                    "CH": {
+                        "aggregation": [
+                            {
+                                "category": "dry",
+                                "validTimePeriod": "all_day",
+                                "problemTypes": ["wind_slab"],
+                            },
+                            {
+                                "category": "wet",
+                                "validTimePeriod": "later",
+                                "problemTypes": ["wet_snow"],
+                            },
+                        ]
+                    }
+                },
+            },
+        }
+        _make_am_bulletin(region, day, raw_data=raw_data)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        # Both axes render independently.
+        assert 'data-testid="category-type-pill"' in content
+        assert 'data-testid="time-period-pill"' in content
+        # The old undifferentiated "category-pill" testid must not appear.
+        assert 'data-testid="category-pill"' not in content

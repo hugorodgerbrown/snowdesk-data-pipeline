@@ -53,8 +53,14 @@ Renders:
                 {% endif %}
             {% endwith %}
             <span class="text-label font-semibold leading-tight flex-1 min-w-0">{{ card.label }}</span>
-            {% if card.category %}
-                {% include "includes/_chip.html" with text=card.category data_testid="category-pill" %}
+            {% if card.category == "dry" %}
+                {% trans "Dry" as category_chip_text %}
+                {% include "includes/_chip.html" with text=category_chip_text variant="type-dry" data_testid="category-type-pill" %}
+            {% elif card.category == "wet" %}
+                {% trans "Wet" as category_chip_text %}
+                {% include "includes/_chip.html" with text=category_chip_text variant="type-wet" data_testid="category-type-pill" %}
+            {% elif card.category %}
+                {% include "includes/_chip.html" with text=card.category data_testid="category-type-pill" %}
             {% endif %}
             {% if card.avalanche_type %}
                 {% if card.avalanche_type == "slab" %}
@@ -65,7 +71,7 @@ Renders:
                 {% include "includes/_chip.html" with text=avalanche_chip_text data_testid="avalanche-type-chip" %}
             {% endif %}
             {% if card.time_period_label %}
-                {% include "includes/_chip.html" with text=card.time_period_label %}
+                {% include "includes/_chip.html" with text=card.time_period_label variant="time" data_testid="time-period-pill" %}
             {% endif %}
         </div>
     </div>

@@ -580,24 +580,48 @@ BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
 
 CHIP_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "tint=strong (default) — category / time-period chip",
+        "caption": "Default — neutral filled (category label, EAWS matrix chips)",
         "context": {
             "text": "Wind slab",
             "data_testid": "category-pill",
         },
     },
     {
-        "caption": "tint=subtle — avalanche-type chip (Slab / Loose)",
+        "caption": "variant=type-dry — filled amber pill for dry-avalanche problems",
         "context": {
-            "text": "Slab",
-            "tint": "subtle",
-            "data_testid": "avalanche-type-chip",
+            "text": "Dry",
+            "variant": "type-dry",
+            "data_testid": "category-type-pill",
         },
     },
     {
-        "caption": "tint=strong — time-period chip (no testid)",
+        "caption": "variant=type-wet — filled cyan pill for wet-avalanche problems",
         "context": {
-            "text": "Afternoon",
+            "text": "Wet",
+            "variant": "type-wet",
+            "data_testid": "category-type-pill",
+        },
+    },
+    {
+        "caption": "variant=time — outlined ghost pill for time-period labels",
+        "context": {
+            "text": "All day",
+            "variant": "time",
+            "data_testid": "day-window-pill",
+        },
+    },
+    {
+        "caption": "variant=time · Later",
+        "context": {
+            "text": "Later",
+            "variant": "time",
+        },
+    },
+    {
+        "caption": "variant=time · Morning",
+        "context": {
+            "text": "Morning",
+            "variant": "time",
         },
     },
 )
