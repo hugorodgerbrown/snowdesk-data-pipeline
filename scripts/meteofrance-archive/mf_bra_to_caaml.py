@@ -33,6 +33,12 @@ from pathlib import Path
 
 import pdfplumber
 from _caaml import build_envelope
+from _fr_prose import (
+    extract_aspects,
+    extract_avalanche_size,
+    extract_elevation,
+    extract_frequency,
+)
 from _massifs import slugify
 from _pdf_extract import (
     BAND_DANGER,
@@ -388,19 +394,34 @@ def extract_sat_labels(page: "pdfplumber.page.Page") -> list[str]:
 
 
 def extract_avalanche_problems(page: "pdfplumber.page.Page") -> list[dict[str, object]]:
-    """Extract avalanche problems from SAT labels.
+    """Extract avalanche problems from SAT labels and stability prose.
 
-    Each SAT label maps to a CAAML avalanche problem type.  The structured
-    elevation/aspect detail is extracted from the narrative text (best-effort).
+    Each SAT label maps to a CAAML avalanche problem type.  Aspect,
+    elevation, size, and frequency are extracted from the combined stability
+    narrative (spontaneous + triggered activity text) and applied to every
+    problem equally — the BRA prose does not label paragraphs per problem.
+    When a bulletin has two problems, both receive the same prose-derived
+    fields; this is the correct best-effort interpretation of a single
+    undifferentiated prose block.
 
     Args:
         page: pdfplumber page object for page 1.
 
     Returns:
-        List of avalancheProblem dicts in CAAML 6.0 format.
+        List of avalancheProblem dicts in CAAML 6.0 format.  Each dict has
+        keys ``problemType``, ``satLabel``, ``order``, ``aspects``,
+        ``elevation``, ``avalancheSize``, and ``frequency``.
 
     """
     labels = extract_sat_labels(page)
+    activity = extract_avalanche_activity(page)
+    prose = (activity["spontaneous"] + "\n" + activity["triggered"]).strip()
+
+    aspects = extract_aspects(prose)
+    elevation = extract_elevation(prose) or {}
+    size = extract_avalanche_size(prose)
+    frequency = extract_frequency(prose)
+
     problems: list[dict[str, object]] = []
     seen_types: set[str | None] = set()
     for i, label in enumerate(labels):
@@ -408,15 +429,18 @@ def extract_avalanche_problems(page: "pdfplumber.page.Page") -> list[dict[str, o
         if problem_type in seen_types:
             continue
         seen_types.add(problem_type)
-        problems.append(
-            {
-                "problemType": problem_type or "no_distinct_avalanche_problem",
-                "satLabel": label,
-                "order": i + 1,
-                "aspects": [],
-                "elevation": {},
-            }
-        )
+        problem: dict[str, object] = {
+            "problemType": problem_type or "no_distinct_avalanche_problem",
+            "satLabel": label,
+            "order": i + 1,
+            "aspects": aspects,
+            "elevation": elevation,
+        }
+        if size is not None:
+            problem["avalancheSize"] = size
+        if frequency is not None:
+            problem["frequency"] = frequency
+        problems.append(problem)
     return problems
 
 
@@ -812,6 +836,10 @@ COVERAGE_CHECKS: list[tuple[str, str]] = [
     ("customData.MF.source_file", "source filename"),
     ("dangerRatings[0].elevation", "elevation in rating"),
     ("avalancheProblems[0].satLabel", "SAT label in problem"),
+    ("avalancheProblems[0].aspects", "aspects in primary problem"),
+    ("avalancheProblems[0].elevation", "elevation in primary problem"),
+    ("avalancheProblems[0].avalancheSize", "avalanche size in primary problem"),
+    ("avalancheProblems[0].frequency", "frequency in primary problem"),
 ]
 
 
