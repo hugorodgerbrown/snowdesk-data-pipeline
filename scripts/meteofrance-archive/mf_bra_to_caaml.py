@@ -12,8 +12,8 @@
 #   - Trailing None in last-day fresh snow: when the value is 0 the chart
 #     sometimes omits the label entirely.  The missing value is left as None
 #     rather than assumed to be 0.
-#   - The SAT→problem-type mapping is an initial reasonable set; the official
-#     MF alignment is a separate follow-up ticket.
+#   - The SAT→problem-type mapping is in _sat_mapping.py; see that module's
+#     docstring for citation details (SNOW-258).
 #   - Page 2 position-based chart parsing is sensitive to layout drift across
 #     massifs and seasons.  The --dry-run report helps spot regressions.
 #   - Wind direction is not present in the PDF (only wind speed is given).
@@ -484,8 +484,21 @@ def extract_avalanche_problems(page: "pdfplumber.page.Page") -> list[dict[str, o
         if problem_type in seen_types:
             continue
         seen_types.add(problem_type)
+        # sat_to_problem_type returns None for unknown labels (not in the
+        # mapping table) and for labels with no EAWS equivalent.  Both
+        # cases are preserved as a distinct CAAML problemType of
+        # "no_distinct_avalanche_problem" here — we do NOT silently default
+        # arbitrary unknown labels to no_distinct_avalanche_problem without
+        # a log warning so the caller has visibility of unrecognised labels.
+        if problem_type is None:
+            logger.warning(
+                "SAT label %r has no EAWS problem-type mapping; "
+                "using no_distinct_avalanche_problem",
+                label,
+            )
+            problem_type = "no_distinct_avalanche_problem"
         problem: dict[str, object] = {
-            "problemType": problem_type or "no_distinct_avalanche_problem",
+            "problemType": problem_type,
             "satLabel": label,
             "order": i + 1,
             "aspects": aspects,
