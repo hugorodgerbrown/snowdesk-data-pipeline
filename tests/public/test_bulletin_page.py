@@ -2789,3 +2789,477 @@ class TestBuildMorningRating:
             )
             is None
         )
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: compute_period_transition (SNOW-248)
+# ---------------------------------------------------------------------------
+
+
+class TestComputePeriodTransition:
+    """Unit tests for the ``compute_period_transition`` pure function.
+
+    Covers: all four SLF/EUREGIO patterns, plus the no-split and empty
+    cases that must return ``None``.
+    """
+
+    def _make_rm(self, ratings: list[dict]) -> dict:
+        """Wrap projected ratings in a minimal render model dict."""
+        return {
+            "danger": {
+                "key": "moderate",
+                "number": "2",
+                "subdivision": None,
+                "ratings": ratings,
+            },
+        }
+
+    def _rm_rating(
+        self,
+        key: str,
+        period: str = "all_day",
+        subdivision: str | None = None,
+        lower: int | None = None,
+        upper: int | None = None,
+    ) -> dict:
+        """Build a single projected danger rating dict."""
+        elevation = None
+        if lower is not None or upper is not None:
+            elevation = {
+                "lower": lower,
+                "upper": upper,
+                "treeline": False,
+                "treeline_side": None,
+            }
+        return {
+            "period": period,
+            "key": key,
+            "subdivision": subdivision,
+            "elevation": elevation,
+        }
+
+    def test_returns_none_for_no_ratings(self) -> None:
+        """An empty ratings list returns None."""
+        from bulletins.services.render_model import compute_period_transition
+
+        assert compute_period_transition(self._make_rm([])) is None
+
+    def test_returns_none_for_single_all_day_rating(self) -> None:
+        """A single all_day rating has no split — returns None."""
+        from bulletins.services.render_model import compute_period_transition
+
+        rm = self._make_rm([self._rm_rating("moderate")])
+        assert compute_period_transition(rm) is None
+
+    def test_slf_escalating_all_day_to_later(self) -> None:
+        """all_day moderate → later considerable: direction=rise, temporal."""
+        from bulletins.services.render_model import compute_period_transition
+
+        rm = self._make_rm(
+            [
+                self._rm_rating("moderate", "all_day"),
+                self._rm_rating("considerable", "later"),
+            ]
+        )
+        pt = compute_period_transition(rm)
+        assert pt is not None
+        assert pt.direction == "rise"
+        assert pt.destination_key == "considerable"
+        assert pt.destination_number == "3"
+        assert pt.partition_type == "temporal"
+        assert pt.partition_label == ""
+        assert pt.has_split is True
+
+    def test_slf_deescalating_all_day_to_later(self) -> None:
+        """all_day considerable → later moderate: direction=fall, temporal."""
+        from bulletins.services.render_model import compute_period_transition
+
+        rm = self._make_rm(
+            [
+                self._rm_rating("considerable", "all_day"),
+                self._rm_rating("moderate", "later"),
+            ]
+        )
+        pt = compute_period_transition(rm)
+        assert pt is not None
+        assert pt.direction == "fall"
+        assert pt.destination_key == "moderate"
+        assert pt.partition_type == "temporal"
+
+    def test_slf_flat_but_split_all_day_to_later(self) -> None:
+        """all_day considerable → later considerable: direction=none, temporal."""
+        from bulletins.services.render_model import compute_period_transition
+
+        rm = self._make_rm(
+            [
+                self._rm_rating("considerable", "all_day"),
+                self._rm_rating("considerable", "later"),
+            ]
+        )
+        pt = compute_period_transition(rm)
+        assert pt is not None
+        assert pt.direction == "none"
+        assert pt.destination_key == "considerable"
+        assert pt.partition_type == "temporal"
+        assert pt.has_split is True
+
+    def test_euregio_elevation_banded(self) -> None:
+        """ALBINA earlier/later with elevation bounds: partition_type=elevation."""
+        from bulletins.services.render_model import compute_period_transition
+
+        rm = self._make_rm(
+            [
+                self._rm_rating("low", "earlier"),
+                self._rm_rating("low", "later", upper=2600),  # below 2600
+                self._rm_rating("moderate", "later", lower=2600),  # above 2600
+            ]
+        )
+        pt = compute_period_transition(rm)
+        assert pt is not None
+        assert pt.direction == "rise"
+        assert pt.destination_key == "moderate"
+        assert pt.partition_type == "elevation"
+        assert "2600" in pt.partition_label
+        assert pt.has_split is True
+
+    def test_temporal_earlier_to_later_without_elevation(self) -> None:
+        """ALBINA earlier/later without elevation → temporal, not elevation."""
+        from bulletins.services.render_model import compute_period_transition
+
+        rm = self._make_rm(
+            [
+                self._rm_rating("low", "earlier"),
+                self._rm_rating("moderate", "later"),
+            ]
+        )
+        pt = compute_period_transition(rm)
+        assert pt is not None
+        assert pt.partition_type == "temporal"
+        assert pt.partition_label == ""
+
+    def test_subdivision_included_in_rank_comparison(self) -> None:
+        """Subdivision modifies the rank: moderate+ ranks above moderate."""
+        from bulletins.services.render_model import compute_period_transition
+
+        rm = self._make_rm(
+            [
+                self._rm_rating("moderate", "all_day"),
+                self._rm_rating("moderate", "later", subdivision="+"),
+            ]
+        )
+        pt = compute_period_transition(rm)
+        assert pt is not None
+        assert pt.direction == "rise"
+        assert pt.destination_subdivision == "+"
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: period_transition on the bulletin page (SNOW-248)
+# ---------------------------------------------------------------------------
+
+
+def _render_model_with_split_ratings(
+    source_key: str,
+    source_period: str,
+    dest_key: str,
+    dest_period: str,
+    source_source: str = "slf",
+) -> dict:
+    """Build a v5 render_model with two projected ratings (one split day)."""
+    return {
+        "version": 5,
+        "source": source_source,
+        "danger": {
+            "key": dest_key,
+            "number": str(
+                {"low": 1, "moderate": 2, "considerable": 3, "high": 4, "very_high": 5}[
+                    dest_key
+                ]
+            ),
+            "subdivision": None,
+            "ratings": [
+                {
+                    "period": source_period,
+                    "key": source_key,
+                    "subdivision": None,
+                    "elevation": None,
+                },
+                {
+                    "period": dest_period,
+                    "key": dest_key,
+                    "subdivision": None,
+                    "elevation": None,
+                },
+            ],
+        },
+        "danger_patterns": [],
+        "traits": [],
+        "snowpack_structure": None,
+        "metadata": {
+            "publication_time": "2026-03-15T06:00:00+00:00",
+            "valid_from": "2026-03-15T06:00:00+00:00",
+            "valid_until": "2026-03-15T15:00:00+00:00",
+            "next_update": "2026-03-15T15:00:00+00:00",
+            "unscheduled": False,
+            "lang": "en",
+        },
+        "prose": {
+            "snowpack_structure": None,
+            "weather_review": None,
+            "weather_forecast": None,
+            "tendency": [],
+            "avalanche_activity": {"highlights": "", "comment": ""},
+            "tendency_lead": None,
+        },
+    }
+
+
+@pytest.mark.django_db
+class TestPeriodTransitionBulletinPage:
+    """Integration tests for the period-transition chip and Day Risk Profile (SNOW-248)."""
+
+    def _url(self, date_str: str = "2026-03-15") -> str:
+        return reverse(
+            "public:bulletin_date",
+            kwargs={"region_id": "ch-4115", "slug": "valais", "date_str": date_str},
+        )
+
+    def _make_split_bulletin(
+        self,
+        region: "MicroRegion",
+        source_key: str,
+        source_period: str,
+        dest_key: str,
+        dest_period: str,
+        day: date = date(2026, 3, 15),
+    ) -> Bulletin:
+        """Create a bulletin with a temporal split in the projected ratings."""
+        rm = _render_model_with_split_ratings(
+            source_key, source_period, dest_key, dest_period
+        )
+        raw = _raw_data_with_ratings(
+            [
+                {"mainValue": source_key, "validTimePeriod": source_period},
+                {"mainValue": dest_key, "validTimePeriod": dest_period},
+            ]
+        )
+        raw["properties"]["customData"] = {"CH": {}}
+        return _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=5, raw_data=raw
+        )
+
+    def test_escalating_chip_renders_with_destination_colour(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """all_day moderate → later considerable: chip text 'rises to L3', data-level=considerable."""
+        self._make_split_bulletin(
+            region, "moderate", "all_day", "considerable", "later"
+        )
+        response = client.get(self._url())
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="period-transition-chip"' in content
+        assert 'data-level="considerable"' in content
+        assert "rises to L3" in content
+
+    def test_deescalating_chip_renders(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """all_day considerable → later moderate: chip text 'falls to L2'."""
+        self._make_split_bulletin(
+            region, "considerable", "all_day", "moderate", "later"
+        )
+        response = client.get(self._url())
+        content = response.content.decode()
+        assert 'data-testid="period-transition-chip"' in content
+        assert "falls to L2" in content
+
+    def test_flat_but_split_no_chip(self, client: Client, region: MicroRegion) -> None:
+        """all_day considerable → later considerable: no chip, but flat-split caption present."""
+        self._make_split_bulletin(
+            region, "considerable", "all_day", "considerable", "later"
+        )
+        response = client.get(self._url())
+        content = response.content.decode()
+        assert 'data-testid="period-transition-chip"' not in content
+        assert 'data-testid="day-risk-profile-flat-split-caption"' in content
+        assert "Problem type changes" in content
+
+    def test_transition_row_present_for_escalating(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Escalating split: transition row appears between all_day and later rows."""
+        self._make_split_bulletin(
+            region, "moderate", "all_day", "considerable", "later"
+        )
+        response = client.get(self._url())
+        content = response.content.decode()
+        assert 'data-testid="day-windows-transition-row"' in content
+        assert "As the day progresses" in content
+
+    def test_transition_row_present_for_flat_but_split(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Flat-but-split: transition row still appears (direction=none, has_split=True)."""
+        self._make_split_bulletin(
+            region, "considerable", "all_day", "considerable", "later"
+        )
+        response = client.get(self._url())
+        content = response.content.decode()
+        assert 'data-testid="day-windows-transition-row"' in content
+
+    def test_no_transition_row_for_all_day_only(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A single all_day rating: no transition row and no chip."""
+        day = date(2026, 3, 15)
+        rm = _render_model_with_ratings("moderate", "2", None)
+        raw = _raw_data_with_ratings(
+            [{"mainValue": "moderate", "validTimePeriod": "all_day"}]
+        )
+        raw["properties"]["customData"] = {"CH": {}}
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=5, raw_data=raw
+        )
+        response = client.get(self._url())
+        content = response.content.decode()
+        assert 'data-testid="period-transition-chip"' not in content
+        assert 'data-testid="day-windows-transition-row"' not in content
+
+    def test_transition_row_dom_order_between_period_rows(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Transition row appears between the first and second day-window rows in DOM order."""
+        self._make_split_bulletin(
+            region, "moderate", "all_day", "considerable", "later"
+        )
+        response = client.get(self._url())
+        content = response.content.decode()
+        first_row_idx = content.index('data-testid="day-window-row"')
+        transition_idx = content.index('data-testid="day-windows-transition-row"')
+        second_row_idx = content.index(
+            'data-testid="day-window-row"', first_row_idx + 1
+        )
+        assert first_row_idx < transition_idx < second_row_idx
+
+    def test_chip_absent_on_empty_state_page(self, client: Client) -> None:
+        """No bulletin → no period-transition chip (period_transition is None)."""
+        _make_region_with_subregion()
+        response = client.get(
+            reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "ch-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-15",
+                },
+            )
+        )
+        content = response.content.decode()
+        assert 'data-testid="period-transition-chip"' not in content
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _build_period_transition_chip helper (SNOW-248)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildPeriodTransitionChip:
+    """Unit tests for the ``_build_period_transition_chip`` view helper."""
+
+    def _call(self, pt: Any) -> dict | None:
+        from public.views import _build_period_transition_chip
+
+        return _build_period_transition_chip(pt)
+
+    def test_returns_none_for_none_input(self) -> None:
+        """None input returns None."""
+        assert self._call(None) is None
+
+    def test_returns_none_for_flat_but_split(self) -> None:
+        """direction='none' returns None (chip suppressed for flat-but-split)."""
+        from bulletins.services.render_model import PeriodTransition
+
+        pt = PeriodTransition(
+            direction="none",
+            destination_key="considerable",
+            destination_number="3",
+            destination_subdivision="",
+            partition_type="temporal",
+            partition_label="",
+            has_split=True,
+        )
+        assert self._call(pt) is None
+
+    def test_temporal_rise_chip_text(self) -> None:
+        """Temporal rise: chip_text is 'rises to L3'."""
+        from bulletins.services.render_model import PeriodTransition
+
+        pt = PeriodTransition(
+            direction="rise",
+            destination_key="considerable",
+            destination_number="3",
+            destination_subdivision="",
+            partition_type="temporal",
+            partition_label="",
+            has_split=True,
+        )
+        result = self._call(pt)
+        assert result is not None
+        assert result["level_key"] == "considerable"
+        assert result["direction"] == "rise"
+        assert "rises" in result["chip_text"]
+        assert "L3" in result["chip_text"]
+
+    def test_temporal_fall_chip_text(self) -> None:
+        """Temporal fall: chip_text is 'falls to L2'."""
+        from bulletins.services.render_model import PeriodTransition
+
+        pt = PeriodTransition(
+            direction="fall",
+            destination_key="moderate",
+            destination_number="2",
+            destination_subdivision="",
+            partition_type="temporal",
+            partition_label="",
+            has_split=True,
+        )
+        result = self._call(pt)
+        assert result is not None
+        assert "falls" in result["chip_text"]
+        assert "L2" in result["chip_text"]
+
+    def test_elevation_rise_includes_partition_label(self) -> None:
+        """Elevation rise with partition_label: chip text includes the label."""
+        from bulletins.services.render_model import PeriodTransition
+
+        pt = PeriodTransition(
+            direction="rise",
+            destination_key="moderate",
+            destination_number="2",
+            destination_subdivision="",
+            partition_type="elevation",
+            partition_label="above 2600 m",
+            has_split=True,
+        )
+        result = self._call(pt)
+        assert result is not None
+        assert "2600" in result["chip_text"]
+        assert "L2" in result["chip_text"]
+
+    def test_subdivision_included_in_label(self) -> None:
+        """Subdivision suffix is included in the chip text level label."""
+        from bulletins.services.render_model import PeriodTransition
+
+        pt = PeriodTransition(
+            direction="rise",
+            destination_key="moderate",
+            destination_number="2",
+            destination_subdivision="+",
+            partition_type="temporal",
+            partition_label="",
+            has_split=True,
+        )
+        result = self._call(pt)
+        assert result is not None
+        assert "L2+" in result["chip_text"]
