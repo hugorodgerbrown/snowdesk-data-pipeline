@@ -23,13 +23,9 @@ URL map
 /subscribe/webauthn/register-response/  passkey_reg_response   POST
 """
 
-from django.urls import path, register_converter
-
-from regions.converters import RegionIdConverter
+from django.urls import path
 
 from . import push_views, views, views_passkey
-
-register_converter(RegionIdConverter, "region_id")
 
 app_name = "subscriptions"
 
