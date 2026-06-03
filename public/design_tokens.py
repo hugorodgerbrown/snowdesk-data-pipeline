@@ -42,6 +42,7 @@ from public._component_fixtures import (
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
+    PERIOD_TRANSITION_VARIANTS,
     RATING_BLOCK_VARIANTS,
     REGION_TOOLTIP_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
@@ -654,6 +655,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/day_windows.html",
         variants=DAY_WINDOWS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="period-transition",
+        label="Period transition",
+        description=(
+            "Two-period day handling — hero badge + rise/fall chip in the "
+            "bulletin header, and the transition row between period rows in "
+            "the Day Risk Profile panel (SNOW-248). Four patterns: "
+            "SLF escalating, SLF de-escalating, SLF flat-but-split, and "
+            "EUREGIO elevation-banded."
+        ),
+        kind="components",
+        partial="includes/bulletin_header.html",
+        variants=PERIOD_TRANSITION_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

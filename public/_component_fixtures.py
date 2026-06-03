@@ -1381,6 +1381,232 @@ NO_DATA_SUPPLIED_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Period-transition chip (SNOW-248) ----------------------------------------
+# Four variants covering all three SLF patterns + the EUREGIO elevation-banded
+# variant. Rendered via ``bulletin_header.html`` so the chip sits in context
+# alongside the hero badge. Each variant also feeds ``day_windows.html`` so the
+# transition row between the period rows is visible in the same panel.
+#
+# Variant shape mirrors the context that ``_bulletin_detail_response`` builds:
+#   morning_rating           — hero badge (as in SNOW-246 variants)
+#   period_transition_chip   — the new chip (None for flat-but-split)
+#   period_transition        — PeriodTransition-like namespace for day_windows
+#   day_windows              — two-row list so the transition row appears
+
+
+def _make_period_transition(
+    direction: str,
+    destination_key: str,
+    destination_number: str,
+    destination_subdivision: str,
+    partition_type: str,
+    partition_label: str,
+) -> Any:
+    """Build a SimpleNamespace mimicking PeriodTransition for fixture use."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        direction=direction,
+        destination_key=destination_key,
+        destination_number=destination_number,
+        destination_subdivision=destination_subdivision,
+        partition_type=partition_type,
+        partition_label=partition_label,
+        has_split=True,
+    )
+
+
+def _make_transition_chip(
+    level_key: str,
+    chip_text: str,
+    direction: str,
+) -> dict[str, str]:
+    """Build a period-transition chip context dict for fixture use."""
+    return {
+        "level_key": level_key,
+        "chip_text": chip_text,
+        "direction": direction,
+    }
+
+
+def _build_period_transition_variants() -> tuple[dict[str, Any], ...]:
+    """Build the four period-transition variant fixtures (SNOW-248).
+
+    Returns:
+        Four variants:
+        1. SLF escalating (all_day moderate → later considerable).
+        2. SLF de-escalating (all_day considerable → later moderate).
+        3. SLF flat-but-split (same level, problem type changes).
+        4. EUREGIO elevation-banded (earlier lower / later upper bands).
+
+    """
+    today = datetime.date(2026, 2, 14)
+    region_name = "Bex-Villars"
+    subregion_name = "Vaud Alps"
+    _clear_day = synthetic_weather_display(0, "day")
+
+    def _dw(
+        period: str, level_key: str, pill_label: str, modifier: str = ""
+    ) -> dict[str, Any]:
+        """One day-window row dict."""
+        meta = _DAY_WINDOW_LEVEL_META[level_key]
+        return {
+            "type": period,
+            "level_key": level_key,
+            "level_css": level_key.replace("_", "-"),
+            "level_label": meta["label"],
+            "level_number": f"{meta['number']}{modifier}",
+            "caption": "",
+            "pill_label": pill_label,
+        }
+
+    # Variant 1 — SLF escalating: all_day moderate, rises to L3 in the afternoon.
+    slf_escalating_transition = _make_period_transition(
+        direction="rise",
+        destination_key="considerable",
+        destination_number="3",
+        destination_subdivision="",
+        partition_type="temporal",
+        partition_label="",
+    )
+    slf_escalating_chip = _make_transition_chip(
+        level_key="considerable",
+        chip_text="rises to L3",
+        direction="rise",
+    )
+
+    # Variant 2 — SLF de-escalating: all_day considerable, falls to L2 later.
+    slf_deescalating_transition = _make_period_transition(
+        direction="fall",
+        destination_key="moderate",
+        destination_number="2",
+        destination_subdivision="",
+        partition_type="temporal",
+        partition_label="",
+    )
+    slf_deescalating_chip = _make_transition_chip(
+        level_key="moderate",
+        chip_text="falls to L2",
+        direction="fall",
+    )
+
+    # Variant 3 — SLF flat-but-split: same level, problem type changes.
+    # No chip (direction="none"), but the Day Risk Profile shows a sub-caption.
+    slf_flat_split_transition = _make_period_transition(
+        direction="none",
+        destination_key="considerable",
+        destination_number="3",
+        destination_subdivision="",
+        partition_type="temporal",
+        partition_label="",
+    )
+
+    # Variant 4 — EUREGIO elevation-banded: lower band low, upper band moderate.
+    euregio_transition = _make_period_transition(
+        direction="rise",
+        destination_key="moderate",
+        destination_number="2",
+        destination_subdivision="",
+        partition_type="elevation",
+        partition_label="above 2600 m",
+    )
+    euregio_chip = _make_transition_chip(
+        level_key="moderate",
+        chip_text="rises above 2600 m to L2",
+        direction="rise",
+    )
+
+    return (
+        {
+            "caption": "SLF escalating · all-day → rises to L3",
+            "context": {
+                "weather_display": _clear_day,
+                "region_name": region_name,
+                "subregion_name": subregion_name,
+                "page_date": today,
+                "morning_rating": {
+                    "level_key": "moderate",
+                    "level_number": "2",
+                    "subdivision": "",
+                },
+                "period_transition_chip": slf_escalating_chip,
+                "period_transition": slf_escalating_transition,
+                "day_windows": [
+                    _dw("all_day", "moderate", "All day"),
+                    _dw("later", "considerable", "Later"),
+                ],
+            },
+        },
+        {
+            "caption": "SLF de-escalating · all-day → falls to L2",
+            "context": {
+                "weather_display": _clear_day,
+                "region_name": region_name,
+                "subregion_name": subregion_name,
+                "page_date": today,
+                "morning_rating": {
+                    "level_key": "considerable",
+                    "level_number": "3",
+                    "subdivision": "",
+                },
+                "period_transition_chip": slf_deescalating_chip,
+                "period_transition": slf_deescalating_transition,
+                "day_windows": [
+                    _dw("all_day", "considerable", "All day"),
+                    _dw("later", "moderate", "Later"),
+                ],
+            },
+        },
+        {
+            "caption": "SLF flat-but-split · no chip — problem type changes",
+            "solo": True,
+            "context": {
+                "weather_display": _clear_day,
+                "region_name": region_name,
+                "subregion_name": subregion_name,
+                "page_date": today,
+                "morning_rating": {
+                    "level_key": "considerable",
+                    "level_number": "3",
+                    "subdivision": "",
+                },
+                # No chip for flat-but-split — period_transition_chip is None.
+                "period_transition_chip": None,
+                "period_transition": slf_flat_split_transition,
+                "day_windows": [
+                    _dw("all_day", "considerable", "All day"),
+                    _dw("later", "considerable", "Later"),
+                ],
+            },
+        },
+        {
+            "caption": "EUREGIO elevation-banded · rises above 2600 m to L2",
+            "context": {
+                "weather_display": _clear_day,
+                "region_name": region_name,
+                "subregion_name": subregion_name,
+                "page_date": today,
+                "morning_rating": {
+                    "level_key": "low",
+                    "level_number": "1",
+                    "subdivision": "",
+                },
+                "period_transition_chip": euregio_chip,
+                "period_transition": euregio_transition,
+                "day_windows": [
+                    _dw("earlier", "low", "Earlier"),
+                    _dw("later", "moderate", "Later"),
+                ],
+            },
+        },
+    )
+
+
+PERIOD_TRANSITION_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_period_transition_variants()
+)
+
+
 # Season scrubber transport demo (SNOW-230). Each variant pins the static
 # thumb position at a different point in the season so the library shows
 # the pill at season start, mid-season, and season end. The buttons are
