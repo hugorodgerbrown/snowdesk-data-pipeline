@@ -117,10 +117,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const SUB_REGIONS_URL     = mapEl.dataset.subRegionsUrl;
   const RESORTS_GEOJSON_URL = mapEl.dataset.resortsGeojsonUrl;
   const RESORTS_URL       = mapEl.dataset.resortsUrl;
-  // The summary URL carries the literal placeholder __REGION__ which is
+  // The summary URL carries the literal placeholder XX-0000 which is
   // substituted with the tapped region's region_id at fetch time. Server
-  // renders this via {% url 'api:region_summary' '__REGION__' %} so the
-  // route name stays the single source of truth.
+  // renders this via {% url 'api:region_summary' 'XX-0000' %} so the
+  // route name stays the single source of truth. XX-0000 passes the
+  // RegionIdConverter regex while being an obviously non-existent ID.
   const REGION_SUMMARY_URL_TEMPLATE = mapEl.dataset.regionSummaryUrl;
   // SNOW-239: Hand the ratings URL to module scope so the timelapse and
   // scrubber IIFEs (defined further down in this file) can share one
@@ -1282,7 +1283,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!REGION_ID_RE.test(regionID)) return false;
       dismissActivePopupSilently();
       let url = REGION_SUMMARY_URL_TEMPLATE.replace(
-        '__REGION__', encodeURIComponent(regionID),
+        'XX-0000', encodeURIComponent(regionID),
       );
       if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
       const seq = ++summarySeq;
@@ -1356,7 +1357,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       const regionID = props.regionID;
       if (!REGION_ID_RE.test(regionID)) return;
       let url = REGION_SUMMARY_URL_TEMPLATE.replace(
-        '__REGION__', encodeURIComponent(regionID),
+        'XX-0000', encodeURIComponent(regionID),
       );
       if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
       try {
