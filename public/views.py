@@ -97,6 +97,7 @@ from core.utils import html_to_markdown
 from regions.models import MicroRegion
 from subscriptions.models import Subscription
 
+from .decorators import lowercase_region_id
 from .guidance import load_field_guidance
 from .season_calendar import build_season_grid, season_header
 
@@ -1580,12 +1581,14 @@ def _redirect_to_canonical(
 
 # ---------------------------------------------------------------------------
 # Forms 1 + 2 + 3 share ``bulletin_detail`` (see end of this section).
-# Forms 1 (``/<region_id>/``) and 2 (``/<region_id>/<slug>/``) render today's
-# bulletin in place at the inbound URL — they do NOT redirect. Only form 3
-# with non-canonical components (e.g. preserved-case region_id or stale
-# ``ch_4124``-style slug) redirects to the canonical form-3 URL. The page
-# always advertises the canonical form-3 URL via ``<link rel="canonical">``
-# regardless of which form the user landed on.
+# All three forms first pass through the ``@lowercase_region_id`` decorator,
+# which 301-redirects any mixed-case ``region_id`` (e.g. ``/CH-4115/``) to
+# the canonical lowercase form (``/ch-4115/``). Once the region_id is
+# lowercase, forms 1 and 2 render today's bulletin in place — they do NOT
+# redirect further. Only form 3 with additionally non-canonical components
+# (e.g. a stale ``ch_4124``-style slug) redirects to the canonical form-3
+# URL. The page always advertises the canonical form-3 URL via
+# ``<link rel="canonical">`` regardless of which form the user landed on.
 # ---------------------------------------------------------------------------
 
 
@@ -2570,7 +2573,7 @@ def _bulletin_detail_response(
     context = {
         "region": region,
         "region_name": region_name,
-        "region_id": region.region_id,
+        "region_id": region.region_id.lower(),
         "slug": slugify(region.name),
         "bulletin": selected,
         "panel": panel,
@@ -2644,6 +2647,7 @@ def _bulletin_detail_response(
     return response
 
 
+@lowercase_region_id
 def bulletin_detail(
     request: HttpRequest,
     region_id: str,
@@ -2818,6 +2822,7 @@ def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
+@lowercase_region_id
 @require_htmx
 @require_POST
 def fetch_weather_snippet(
@@ -2910,6 +2915,7 @@ def fetch_weather_snippet(
 # ---------------------------------------------------------------------------
 
 
+@lowercase_region_id
 @require_htmx
 def season_calendar_partial(request: HttpRequest, region_id: str) -> HttpResponse:
     """

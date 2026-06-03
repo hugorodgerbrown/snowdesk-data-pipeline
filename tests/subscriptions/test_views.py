@@ -1037,7 +1037,8 @@ class TestRemoveRegion:
         client = _make_session_client(subscriber)
         response = client.post(
             reverse(
-                "subscriptions:remove_region", kwargs={"region_id": region1.region_id}
+                "subscriptions:remove_region",
+                kwargs={"region_id": region1.region_id.lower()},
             ),
             **_HTMX_HEADERS,
         )
@@ -1059,7 +1060,8 @@ class TestRemoveRegion:
         client = _make_session_client(subscriber)
         client.post(
             reverse(
-                "subscriptions:remove_region", kwargs={"region_id": region.region_id}
+                "subscriptions:remove_region",
+                kwargs={"region_id": region.region_id.lower()},
             ),
             **_HTMX_HEADERS,
         )
@@ -1073,7 +1075,8 @@ class TestRemoveRegion:
         client = _make_session_client(subscriber)
         response = client.post(
             reverse(
-                "subscriptions:remove_region", kwargs={"region_id": region.region_id}
+                "subscriptions:remove_region",
+                kwargs={"region_id": region.region_id.lower()},
             ),
             **_HTMX_HEADERS,
         )
@@ -1086,7 +1089,8 @@ class TestRemoveRegion:
         client = Client()
         response = client.post(
             reverse(
-                "subscriptions:remove_region", kwargs={"region_id": region.region_id}
+                "subscriptions:remove_region",
+                kwargs={"region_id": region.region_id.lower()},
             ),
             **_HTMX_HEADERS,
         )
@@ -1100,7 +1104,8 @@ class TestRemoveRegion:
         client = _make_session_client(subscriber)
         response = client.post(
             reverse(
-                "subscriptions:remove_region", kwargs={"region_id": region.region_id}
+                "subscriptions:remove_region",
+                kwargs={"region_id": region.region_id.lower()},
             ),
         )
         assert response.status_code == 400
@@ -1109,14 +1114,14 @@ class TestRemoveRegion:
         """Exceeding rate limit returns 429."""
         rf = RequestFactory()
         request = rf.post(
-            reverse("subscriptions:remove_region", kwargs={"region_id": "CH-0001"}),
+            reverse("subscriptions:remove_region", kwargs={"region_id": "ch-0001"}),
         )
         request.htmx = True  # type: ignore[attr-defined]  # noqa: B010 — django-htmx attr
         request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr
 
         from subscriptions.views import remove_region
 
-        response = remove_region(request, region_id="CH-0001")
+        response = remove_region(request, region_id="ch-0001")
         assert response.status_code == 429
 
     def test_region_not_held_returns_200_and_does_not_delete_subscriber(self) -> None:
@@ -1137,7 +1142,8 @@ class TestRemoveRegion:
 
         response = client.post(
             reverse(
-                "subscriptions:remove_region", kwargs={"region_id": region_c.region_id}
+                "subscriptions:remove_region",
+                kwargs={"region_id": region_c.region_id.lower()},
             ),
             **_HTMX_HEADERS,
         )
@@ -1548,7 +1554,10 @@ class TestAddRegion:
         region = MicroRegionFactory.create()
         client = _make_session_client(subscriber)
         response = client.post(
-            reverse("subscriptions:add_region", kwargs={"region_id": region.region_id}),
+            reverse(
+                "subscriptions:add_region",
+                kwargs={"region_id": region.region_id.lower()},
+            ),
             **_HTMX_HEADERS,
         )
         assert response.status_code == 200
@@ -1562,7 +1571,10 @@ class TestAddRegion:
         region = MicroRegionFactory.create(name="Davos Region")
         client = _make_session_client(subscriber)
         response = client.post(
-            reverse("subscriptions:add_region", kwargs={"region_id": region.region_id}),
+            reverse(
+                "subscriptions:add_region",
+                kwargs={"region_id": region.region_id.lower()},
+            ),
             **_HTMX_HEADERS,
         )
         assert response.status_code == 200
@@ -1575,7 +1587,7 @@ class TestAddRegion:
         region = MicroRegionFactory.create()
         client = _make_session_client(subscriber)
         url = reverse(
-            "subscriptions:add_region", kwargs={"region_id": region.region_id}
+            "subscriptions:add_region", kwargs={"region_id": region.region_id.lower()}
         )
         client.post(url, **_HTMX_HEADERS)
         response = client.post(url, **_HTMX_HEADERS)
@@ -1591,7 +1603,10 @@ class TestAddRegion:
         region = MicroRegionFactory.create()
         client = Client()
         response = client.post(
-            reverse("subscriptions:add_region", kwargs={"region_id": region.region_id}),
+            reverse(
+                "subscriptions:add_region",
+                kwargs={"region_id": region.region_id.lower()},
+            ),
             **_HTMX_HEADERS,
         )
         assert response.status_code == 403
@@ -1602,7 +1617,10 @@ class TestAddRegion:
         region = MicroRegionFactory.create()
         client = _make_session_client(subscriber)
         response = client.post(
-            reverse("subscriptions:add_region", kwargs={"region_id": region.region_id}),
+            reverse(
+                "subscriptions:add_region",
+                kwargs={"region_id": region.region_id.lower()},
+            ),
         )
         assert response.status_code == 400
 
@@ -1610,14 +1628,14 @@ class TestAddRegion:
         """Exceeding rate limit returns 429."""
         rf = RequestFactory()
         request = rf.post(
-            reverse("subscriptions:add_region", kwargs={"region_id": "CH-0001"}),
+            reverse("subscriptions:add_region", kwargs={"region_id": "ch-0001"}),
         )
         request.htmx = True  # type: ignore[attr-defined]  # noqa: B010 — django-htmx attr
         request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr
 
         from subscriptions.views import add_region
 
-        response = add_region(request, region_id="CH-0001")
+        response = add_region(request, region_id="ch-0001")
         assert response.status_code == 429
 
     def test_unknown_region_returns_400(self) -> None:
@@ -1625,7 +1643,7 @@ class TestAddRegion:
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         response = client.post(
-            reverse("subscriptions:add_region", kwargs={"region_id": "CH-NOTEXIST"}),
+            reverse("subscriptions:add_region", kwargs={"region_id": "xx-9999"}),
             **_HTMX_HEADERS,
         )
         assert response.status_code == 400
@@ -1652,7 +1670,7 @@ class TestRemoveRegionFromBulletin:
         response = client.post(
             reverse(
                 "subscriptions:remove_region_from_bulletin",
-                kwargs={"region_id": region1.region_id},
+                kwargs={"region_id": region1.region_id.lower()},
             ),
             **_HTMX_HEADERS,
         )
@@ -1677,7 +1695,7 @@ class TestRemoveRegionFromBulletin:
         response = client.post(
             reverse(
                 "subscriptions:remove_region_from_bulletin",
-                kwargs={"region_id": region.region_id},
+                kwargs={"region_id": region.region_id.lower()},
             ),
             **_HTMX_HEADERS,
         )
@@ -1693,7 +1711,7 @@ class TestRemoveRegionFromBulletin:
         response = client.post(
             reverse(
                 "subscriptions:remove_region_from_bulletin",
-                kwargs={"region_id": region.region_id},
+                kwargs={"region_id": region.region_id.lower()},
             ),
             **_HTMX_HEADERS,
         )
@@ -1708,7 +1726,7 @@ class TestRemoveRegionFromBulletin:
         response = client.post(
             reverse(
                 "subscriptions:remove_region_from_bulletin",
-                kwargs={"region_id": region.region_id},
+                kwargs={"region_id": region.region_id.lower()},
             ),
         )
         assert response.status_code == 400
@@ -1719,7 +1737,7 @@ class TestRemoveRegionFromBulletin:
         request = rf.post(
             reverse(
                 "subscriptions:remove_region_from_bulletin",
-                kwargs={"region_id": "CH-0001"},
+                kwargs={"region_id": "ch-0001"},
             ),
         )
         request.htmx = True  # type: ignore[attr-defined]  # noqa: B010 — django-htmx attr
@@ -1727,7 +1745,7 @@ class TestRemoveRegionFromBulletin:
 
         from subscriptions.views import remove_region_from_bulletin
 
-        response = remove_region_from_bulletin(request, region_id="CH-0001")
+        response = remove_region_from_bulletin(request, region_id="ch-0001")
         assert response.status_code == 429
 
     def test_unknown_region_returns_400(self) -> None:
@@ -1737,7 +1755,7 @@ class TestRemoveRegionFromBulletin:
         response = client.post(
             reverse(
                 "subscriptions:remove_region_from_bulletin",
-                kwargs={"region_id": "CH-NOTEXIST"},
+                kwargs={"region_id": "xx-9999"},
             ),
             **_HTMX_HEADERS,
         )
@@ -1764,7 +1782,7 @@ class TestRemoveRegionFromBulletin:
         response = client.post(
             reverse(
                 "subscriptions:remove_region_from_bulletin",
-                kwargs={"region_id": region_c.region_id},
+                kwargs={"region_id": region_c.region_id.lower()},
             ),
             **_HTMX_HEADERS,
         )
@@ -1947,7 +1965,7 @@ class TestAnalyticsRegionAdded:
             client.post(
                 reverse(
                     "subscriptions:add_region",
-                    kwargs={"region_id": region.region_id},
+                    kwargs={"region_id": region.region_id.lower()},
                 ),
                 **_HTMX_HEADERS,
             )
@@ -1983,7 +2001,7 @@ class TestAnalyticsRegionAdded:
             client.post(
                 reverse(
                     "subscriptions:add_region",
-                    kwargs={"region_id": region.region_id},
+                    kwargs={"region_id": region.region_id.lower()},
                 ),
                 **_HTMX_HEADERS,
             )
@@ -2006,7 +2024,7 @@ class TestAnalyticsRegionRemoved:
             client.post(
                 reverse(
                     "subscriptions:remove_region",
-                    kwargs={"region_id": region_a.region_id},
+                    kwargs={"region_id": region_a.region_id.lower()},
                 ),
                 **_HTMX_HEADERS,
             )
@@ -2025,7 +2043,7 @@ class TestAnalyticsRegionRemoved:
             client.post(
                 reverse(
                     "subscriptions:remove_region",
-                    kwargs={"region_id": region.region_id},
+                    kwargs={"region_id": region.region_id.lower()},
                 ),
                 **_HTMX_HEADERS,
             )

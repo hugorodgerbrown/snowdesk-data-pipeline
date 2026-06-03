@@ -23,24 +23,32 @@ URL map
 /subscribe/webauthn/register-response/  passkey_reg_response   POST
 """
 
-from django.urls import path
+from django.urls import path, register_converter
+
+from regions.converters import RegionIdConverter
 
 from . import push_views, views, views_passkey
+
+register_converter(RegionIdConverter, "region_id")
 
 app_name = "subscriptions"
 
 urlpatterns = [
     path("", views.subscribe_partial, name="subscribe"),
-    path("add/<str:region_id>/", views.add_region, name="add_region"),
+    path("add/<region_id:region_id>/", views.add_region, name="add_region"),
     path(
-        "remove-region/<str:region_id>/",
+        "remove-region/<region_id:region_id>/",
         views.remove_region_from_bulletin,
         name="remove_region_from_bulletin",
     ),
     path("sign-in/", views.sign_in_view, name="sign_in"),
     path("account/<str:token>/", views.account_view, name="account"),
     path("manage/", views.manage_view, name="manage"),
-    path("manage/remove/<str:region_id>/", views.remove_region, name="remove_region"),
+    path(
+        "manage/remove/<region_id:region_id>/",
+        views.remove_region,
+        name="remove_region",
+    ),
     path("manage/delete/", views.delete_account, name="delete_account"),
     path("sign-out/", views.sign_out, name="sign_out"),
     path(

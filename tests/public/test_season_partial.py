@@ -56,14 +56,14 @@ class TestSeasonPartialGuards:
         """Plain GET without HX-Request header is rejected with 400."""
         client = Client()
         region = MicroRegionFactory.create()
-        url = _url(region.region_id)
+        url = _url(region.region_id.lower())
         response = client.get(url)
         assert response.status_code == 400
 
     def test_unknown_region_returns_404(self) -> None:
         """Unknown region_id returns 404."""
         client = Client()
-        url = _url("CH-NOTEXIST")
+        url = _url("xx-9999")
         response = client.get(url, HTTP_HX_REQUEST="true")
         assert response.status_code == 404
 
@@ -81,7 +81,7 @@ class TestSeasonPartialContent:
     def test_returns_grid_with_season_calendar_testid(self, client: Client) -> None:
         """HTMX GET returns a fragment with data-testid="season-calendar"."""
         region = MicroRegionFactory.create()
-        response = client.get(_url(region.region_id), HTTP_HX_REQUEST="true")
+        response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         assert b'data-testid="season-calendar"' in response.content
 
@@ -89,7 +89,7 @@ class TestSeasonPartialContent:
     def test_returns_today_cell_with_today_modifier(self, client: Client) -> None:
         """The cell for today carries the calendar-cell-today CSS modifier."""
         region = MicroRegionFactory.create()
-        response = client.get(_url(region.region_id), HTTP_HX_REQUEST="true")
+        response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         assert b"calendar-cell-today" in response.content
 
@@ -97,7 +97,7 @@ class TestSeasonPartialContent:
     def test_every_cell_carries_data_date_attribute(self, client: Client) -> None:
         """Every rendered cell anchor/div carries a data-date="YYYY-MM-DD" attribute."""
         region = MicroRegionFactory.create()
-        response = client.get(_url(region.region_id), HTTP_HX_REQUEST="true")
+        response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         content = response.content.decode()
         # At least one data-date attribute must be present.
@@ -113,7 +113,7 @@ class TestSeasonPartialContent:
     def test_calendar_cell_selected_absent(self, client: Client) -> None:
         """calendar-cell-selected is never in the partial — selection is client-side."""
         region = MicroRegionFactory.create()
-        response = client.get(_url(region.region_id), HTTP_HX_REQUEST="true")
+        response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         assert b"calendar-cell-selected" not in response.content
 
@@ -141,7 +141,7 @@ class TestSeasonPartialContent:
             max_rating=RegionDayRating.Rating.MODERATE,
             source_bulletin=bulletin,
         )
-        response = client.get(_url(region.region_id), HTTP_HX_REQUEST="true")
+        response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         # At least one cell with data-rating-min should be present.
         assert b"data-rating-min" in response.content
@@ -171,7 +171,7 @@ class TestSeasonPartialCache:
         so no DB queries are issued at all on the second call.
         """
         region = MicroRegionFactory.create()
-        url = _url(region.region_id)
+        url = _url(region.region_id.lower())
         # Prime the cache — first request populates the template fragment cache.
         response1 = client.get(url, HTTP_HX_REQUEST="true")
         assert response1.status_code == 200
@@ -194,7 +194,7 @@ class TestSeasonPartialCache:
         )
 
         # Prime the fragment cache via the partial endpoint.
-        url = _url(region.region_id)
+        url = _url(region.region_id.lower())
         response = client.get(url, HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         # The cache key should exist now (the view's cache.set() call stores it on a miss).

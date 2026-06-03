@@ -59,6 +59,7 @@ from regions.models import (
     SubRegion,
 )
 
+from .decorators import lowercase_region_id
 from .views import (
     _resolve_region_for_bulletin,
     _select_bulletin_for_date,
@@ -483,6 +484,7 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
     )
 
 
+@lowercase_region_id
 def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     """
     Return pre-rendered tooltip HTML for a region's MapLibre Popup.
