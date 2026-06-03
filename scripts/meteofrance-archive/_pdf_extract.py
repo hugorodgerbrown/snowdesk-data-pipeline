@@ -14,6 +14,23 @@
 #   360–510: Snow quality (left) / Weather summary + wind table (right)
 #   510–680: Snow depth chart (left) / Tendency (right)
 #   680–800: Historical snow depth bars
+#
+# Page 2 layout (approximate y-coordinates, A4 at 72 dpi):
+#   0–100:   Header (bulletin title, massif, date)
+#   100–215: Wind-history grid: 28 cells (7 days × 4 time slots) per altitude row
+#            Row 1 (higher altitude, e.g. 2500m / 4000m): y ≈ 140–165
+#            Label "à Xm": y ≈ 160–215
+#            Row 2 (lower altitude, e.g. 2000m): y ≈ 175–205
+#   215–355: Iso 0°C / rain-snow-line chart
+#   355–445: Fresh-snow bar chart (daily cm totals)
+#   445–510: Historical danger rating row
+#   510–660: Total snow-depth bar chart
+#   660–790: Snow-line elevation charts (Versant Nord left, Versant Sud right)
+#
+# Page-2 spatial constants are calibrated against the CHABLAIS and MONT-BLANC
+# fixtures (both A4, 594.96 × 841.92 pt).  The wind-history data grid spans
+# the full page width from x ≈ 50 to x ≈ 590.  The snow-line chart splits at
+# the horizontal page midpoint: Nord panel x ∈ [60, 265], Sud panel x ∈ [310, 570].
 """Column-aware pdfplumber crop helpers for BRA PDF parsing."""
 
 from __future__ import annotations
@@ -42,6 +59,44 @@ BAND_WEATHER_TEXT = (355.0, 435.0)
 # Wind table extends from iso/pluie-neige header down to below the second wind row.
 # Different massifs place the second wind row at different y-coordinates (up to ~535).
 BAND_WIND_TABLE = (435.0, 545.0)
+
+# ---------------------------------------------------------------------------
+# Page 2 band definitions
+# ---------------------------------------------------------------------------
+# All coordinates are (top_y, bottom_y) in page-2 coordinate space.
+# Calibrated against BRA.CHABLAIS.20260521140706.pdf and
+# BRA.MONT-BLANC.20260521140702.pdf (both 594.96 × 841.92 pt A4).
+
+# Wind-history grid: two altitude rows, each containing 28 speed values
+# (7 days × 4 time slots: 03h, 09h, 15h, 21h).  Each row's numeric values
+# sit at y ≈ 145–165 (row 1, higher altitude) and y ≈ 180–200 (row 2, lower
+# altitude).  The altitude label "à Xm" follows the row on the next text line.
+BAND_PAGE2_WIND_HISTORY = (130.0, 215.0)
+
+# Fresh-snow bar chart: daily cm totals.  The value labels ("N cm") appear
+# inside the chart area.  The x-axis date labels sit just below at y ≈ 342.
+BAND_PAGE2_FRESH_SNOW = (355.0, 445.0)
+# X-axis date-label band directly below the fresh-snow chart.
+BAND_PAGE2_FRESH_SNOW_XAXIS = (338.0, 352.0)
+
+# Snow-line elevation charts: two side-by-side panels.
+# Versant Nord (north aspect): x in [60, 265].
+# Versant Sud (south aspect): x in [310, 570].
+# Numeric elevation labels appear within the chart area.
+# The y-axis labels (fixed ticks such as 2400, 1800, 1200, 600, 0) sit at
+# x < 60 for Nord and at x < 310 or x > 510 for Sud.
+BAND_PAGE2_SNOW_LINE = (670.0, 765.0)
+# X-axis date-label band directly below both snow-line panels.
+BAND_PAGE2_SNOW_LINE_XAXIS = (769.0, 782.0)
+
+# Spatial split between Nord and Sud snow-line panels (x-coordinate).
+PAGE2_SNOW_LINE_SPLIT_X = 285.0
+# Plot area x bounds within the Nord panel (excludes fixed y-axis labels at x<60).
+PAGE2_SNOW_LINE_NORD_X_START = 60.0
+PAGE2_SNOW_LINE_NORD_X_END = 265.0
+# Plot area x bounds within the Sud panel (excludes y-axis labels at x<310).
+PAGE2_SNOW_LINE_SUD_X_START = 310.0
+PAGE2_SNOW_LINE_SUD_X_END = 570.0
 
 
 def crop_left(
