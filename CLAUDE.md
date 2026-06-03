@@ -356,6 +356,7 @@ Read these when working in the relevant area:
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
 | Weather-driven bulletin header (WMO buckets, is_day projection) | [`docs/weather-header.md`](docs/weather-header.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
+| Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |
 | PWA shell (service worker, manifest icons, cache strategy) | [`docs/offline-map.md`](docs/offline-map.md) |
 | Calendar and RegionDayRating | [`docs/calendar.md`](docs/calendar.md) |
 | Internationalisation | [`docs/i18n.md`](docs/i18n.md) |
