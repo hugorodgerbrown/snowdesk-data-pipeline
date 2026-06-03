@@ -115,11 +115,12 @@ PAGE2_SNOW_LINE_SUD_X_END = 570.0
 
 # The danger-number display box (a stroke-only rectangle on page 1) consistently
 # appears in the region x ∈ [90, 200], y ∈ [115, 195] in the two fixture PDFs.
-# These bounds are used by find_danger_box_centre() to locate the box.
-_DANGER_BOX_SEARCH_X0 = 90.0
-_DANGER_BOX_SEARCH_X1 = 200.0
-_DANGER_BOX_SEARCH_TOP = 115.0
-_DANGER_BOX_SEARCH_BOTTOM = 195.0
+# The search window is expanded by ±20 pt on every side to tolerate template drift
+# of up to 20 points (the acceptance criterion from SNOW-257).
+_DANGER_BOX_SEARCH_X0 = 70.0
+_DANGER_BOX_SEARCH_X1 = 220.0
+_DANGER_BOX_SEARCH_TOP = 95.0
+_DANGER_BOX_SEARCH_BOTTOM = 215.0
 # Minimum dimensions for the danger box (to exclude small artefacts).
 _DANGER_BOX_MIN_WIDTH = 40.0
 _DANGER_BOX_MIN_HEIGHT = 20.0
