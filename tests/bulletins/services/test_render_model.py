@@ -1070,11 +1070,11 @@ class TestComputeDayCharacterRoundTrip:
 
 
 class TestRenderModelVersion:
-    """Tests that RENDER_MODEL_VERSION and built version are both 6."""
+    """Tests that RENDER_MODEL_VERSION and built version are both 7."""
 
     def test_constant_is_current(self) -> None:
         """RENDER_MODEL_VERSION constant equals the current version."""
-        assert RENDER_MODEL_VERSION == 6
+        assert RENDER_MODEL_VERSION == 7
 
     def test_build_render_model_returns_current_version(self) -> None:
         """build_render_model returns a dict with the current version."""
@@ -1256,6 +1256,86 @@ class TestProseEnrichment:
         problem = rm["traits"][0]["problems"][0]
         # wind_slab is dry — prose enrichment must not fire.
         assert problem["aspects"] == []
+
+
+# ---------------------------------------------------------------------------
+# Version 7 — canonical-phrase fallback enrichment
+# ---------------------------------------------------------------------------
+
+
+class TestCanonicalEnrichment:
+    """Tests for version-7 canonical-phrase fallback in wet-snow problems."""
+
+    def test_canonical_context_tag_propagated(self) -> None:
+        """context_tag from canonical lookup is stored on the built problem."""
+        props = _make_wet_snow_props(
+            comment="On steep grassy slopes gliding snow activity is increasing."
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        assert problem["context_tag"] == "grassy_slopes"
+
+    def test_canonical_meta_aspect_propagated(self) -> None:
+        """meta_aspect from canonical lookup is stored on the built problem."""
+        props = _make_wet_snow_props(
+            comment="Solar radiation will trigger loose-snow avalanches today."
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        assert problem["meta_aspect"] == "sunny"
+
+    def test_canonical_aspects_propagated(self) -> None:
+        """Canonical aspects list is stored on the built problem."""
+        props = _make_wet_snow_props(comment="Rain is falling below the 1400m line.")
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        # Rain → all aspects.
+        assert set(problem["aspects"]) == {"N", "NE", "E", "SE", "S", "SW", "W", "NW"}
+        assert problem["context_tag"] == "rain"
+
+    def test_canonical_elevation_propagated(self) -> None:
+        """Canonical elevation is stored on the built problem."""
+        props = _make_wet_snow_props(comment="Rain is falling below the rain line.")
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        # Rain canonical → upper=1800.
+        assert problem["elevation"] is not None
+        assert problem["elevation"]["upper"] == 1800
+
+    def test_token_parser_result_takes_precedence(self) -> None:
+        """When the token parser succeeds, canonical lookup is not called."""
+        # This comment matches the token parser (south aspects, below 2000m)
+        # AND would match 'grassy slopes' — token parser must win.
+        props = _make_wet_snow_props(
+            comment="Wet-snow releases on south-facing grassy slopes below 2000m."
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        # Token parser extracted 'S' explicitly — canonical should not fire.
+        assert "S" in problem["aspects"]
+        # context_tag is only set by the canonical lookup, so must be None.
+        assert problem["context_tag"] is None
+
+    def test_no_canonical_match_leaves_context_tag_none(self) -> None:
+        """When neither parser nor canonical match, context_tag is None."""
+        props = _make_wet_snow_props(
+            comment="The snowpack is becoming unstable due to warming."
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        assert problem["context_tag"] is None
+        assert problem["meta_aspect"] is None
+
+    def test_token_parser_sets_context_tag_none(self) -> None:
+        """Token parser match leaves context_tag as None (it does not set it)."""
+        props = _make_wet_snow_props(
+            comment="Wet avalanches on south aspects below 2200m."
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        assert "S" in problem["aspects"]
+        assert problem["context_tag"] is None
+        assert problem["meta_aspect"] is None
 
 
 # ---------------------------------------------------------------------------

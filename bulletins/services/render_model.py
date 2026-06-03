@@ -96,6 +96,18 @@ Version 6 changes:
     (their data is already structured).  The parser is removable: deleting
     ``bulletins/services/prose/en.py`` silently falls back to the previous
     empty-state behaviour.
+
+Version 7 changes:
+  - Canonical-phrase fallback enrichment: after the token parser (v6) returns
+    ``None``, the per-problem comment is also passed to the canonical lookup
+    (``bulletins.services.prose.en_canonical.lookup``).  The canonical lookup
+    covers the top-10 most common spatially-unconstrained SLF wet-snow phrases
+    (e.g. "grassy slopes", "solar radiation", "rain") and returns a
+    ``ParsedScope`` with ``context_tag`` and optionally ``meta_aspect`` set.
+    Both fields are propagated into the built problem dict so that the render
+    model (and downstream templates) can display a human-readable context chip
+    above the aspect/elevation row.  The canonical lookup is independently
+    removable.
 """
 
 from __future__ import annotations
@@ -110,6 +122,7 @@ from django.utils.translation import gettext_lazy as _
 import bulletins.services.prose.en  # noqa: F401 — registers "en" parser side-effect
 from bulletins.models import Bulletin
 from bulletins.services.prose import parse_for as _prose_parse_for
+from bulletins.services.prose.en_canonical import lookup as _canonical_lookup
 
 if TYPE_CHECKING:
     # ``django_stubs_ext`` ships only with the typing toolchain; importing
@@ -125,7 +138,7 @@ logger = logging.getLogger(__name__)
 # Version
 # ---------------------------------------------------------------------------
 
-RENDER_MODEL_VERSION: int = 6
+RENDER_MODEL_VERSION: int = 7
 
 # ---------------------------------------------------------------------------
 # Constants — EAWS problem-type enum (openapi.json lines 670–683)
@@ -1129,7 +1142,16 @@ def _build_problem(
     # geography, attempt to extract aspects and elevation from the comment text.
     # Only applied when both aspects and elevation are absent so that bulletins
     # that already carry structured data are never overwritten.
+    #
+    # Two-stage pipeline:
+    #   Stage 1 (token parser) — extracts explicit compass codes and numeric
+    #     altitude bounds from the prose.  Returns None when no tokens found.
+    #   Stage 2 (canonical lookup) — recognises the top-10 most common
+    #     spatially-unconstrained SLF phrases and returns a ParsedScope with
+    #     context_tag / meta_aspect set.  Fired only when stage 1 misses.
     problem_type: str = problem.get("problemType", "")
+    context_tag: str | None = None
+    meta_aspect: str | None = None
     if (
         problem_type in WET_PROBLEM_TYPES
         and not aspects
@@ -1149,6 +1171,16 @@ def _build_problem(
                 or parsed_elev.get("treeline")
             ):
                 elevation = parsed_elev
+        else:
+            # Stage 2: canonical-phrase fallback.  Only called when the token
+            # parser returned None (i.e. no compass or altitude tokens were
+            # found in the comment text).
+            canonical = _canonical_lookup(comment_html)
+            if canonical is not None:
+                aspects = canonical.aspects
+                elevation = canonical.elevation
+                context_tag = canonical.context_tag
+                meta_aspect = canonical.meta_aspect
 
     return {
         "problem_type": problem_type,
@@ -1163,6 +1195,8 @@ def _build_problem(
         "avalanche_size": eaws_fields["avalanche_size"],
         "frequency": eaws_fields["frequency"],
         "snowpack_stability": eaws_fields["snowpack_stability"],
+        "context_tag": context_tag,
+        "meta_aspect": meta_aspect,
     }
 
 
