@@ -487,6 +487,35 @@
 .hero-rating-badge[data-level="very_high"]    { background: linear-gradient(135deg, #1a1916 50%, var(--color-eaws-very-high) 50%); }
 
 
+/* —— Period-transition chip ———————————————
+   Sits beside the hero rating badge in the bulletin header to signal that
+   the danger level rises or falls across the day (SNOW-248). The chip uses
+   the EAWS tint palette of the DESTINATION level so the colour communicates
+   the direction of change at a glance.
+
+   Layout: small rounded pill, monospace font to match the badge aesthetic.
+   Colour driven by data-level via attribute selectors — same pattern as
+   .hero-rating-badge and .danger-band.
+   ————————————————————————————————————————— */
+
+.period-transition-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-tag);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+.period-transition-chip[data-level="low"]          { background: var(--color-eaws-low-tint);          color: var(--color-eaws-low-text); }
+.period-transition-chip[data-level="moderate"]     { background: var(--color-eaws-moderate-tint);     color: var(--color-eaws-moderate-text); }
+.period-transition-chip[data-level="considerable"] { background: var(--color-eaws-considerable-tint); color: var(--color-eaws-considerable-text); }
+.period-transition-chip[data-level="high"]         { background: var(--color-eaws-high-tint);         color: var(--color-eaws-high-text); }
+.period-transition-chip[data-level="very_high"]    { background: var(--color-eaws-very-high-tint);    color: var(--color-eaws-very-high-text); }
+
+
 /* —— EAWS danger-level compact tile —————————
    A small coloured square that carries a danger
    level number (and optional subdivision suffix,
@@ -842,6 +871,27 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   font-weight: 400;
   margin-top: 2px;
   text-wrap: pretty;
+}
+
+/* —— Day-windows transition row (SNOW-248) ——
+   Appears between the first and second period
+   rows when a temporal or elevation split is
+   detected.  Styled as a subtle divider label
+   so it reads as a connector, not a data row.
+   ————————————————————————————————————————— */
+
+.dw-transition-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 14px;
+  border-top: 1px solid var(--color-border);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--color-card);
 }
 
 /* —— HTMX indicator —————————————————————————

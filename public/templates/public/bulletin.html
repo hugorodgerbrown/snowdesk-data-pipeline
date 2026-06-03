@@ -403,9 +403,23 @@ reachable via the SNOW-81 deep-link in the masthead.
                        One row per validTimePeriod (earlier / all_day /
                        later) summarising the day's hazard windows. The
                        rating blocks below carry the full per-trait detail.
+
+                       Flat-but-split: when period_transition.direction is
+                       "none" (danger level unchanged but problem type
+                       changes), a sub-caption appears below the heading.
                     {% endcomment %}
                     {% translate "Day Risk Profile" as day_risk_label %}
-                    {% include "includes/_eyebrow.html" with text=day_risk_label data_testid="day-risk-profile-heading" class_extra="mb-3" %}
+                    {% include "includes/_eyebrow.html" with text=day_risk_label data_testid="day-risk-profile-heading" class_extra="mb-1" %}
+                    {% if period_transition and period_transition.has_split and period_transition.direction == "none" %}
+                        <p
+                            class="text-xs text-text-3 mb-3"
+                            data-testid="day-risk-profile-flat-split-caption"
+                        >
+                            {% trans "Problem type changes as the day progresses" %}
+                        </p>
+                    {% else %}
+                        <div class="mb-3"></div>
+                    {% endif %}
                     {% include "includes/day_windows.html" %}
 
                     {% comment %}
