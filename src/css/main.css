@@ -150,6 +150,16 @@
   --color-status-info-bg:     #dbeafe;   /* blue-100  */
   --color-status-info-text:   #1e40af;   /* blue-800  */
 
+  /* Avalanche-type tag colours (dry / wet semantic tokens).
+     These are NOT EAWS level colours — they are semantic labels for the
+     dry / wet category axis on problem cards and day-windows pills.
+     They carry dark-mode overrides (unlike the EAWS scale) because the
+     warm neutral card surface changes in dark mode. */
+  --color-type-dry-bg:  oklch(75% 0.13 75);    /* warm amber/saffron — dry problems */
+  --color-type-dry-fg:  oklch(28% 0.06 75);    /* dark brown text on amber fill     */
+  --color-type-wet-bg:  oklch(70% 0.10 230);   /* slate-cyan blue — wet problems    */
+  --color-type-wet-fg:  oklch(20% 0.04 230);   /* deep slate text on cyan fill      */
+
   /* Info callout (day-character banner) */
   --color-callout-info-bg:      #ffffff;               /* card white                    */
   --color-callout-info-border:  rgba(0, 0, 0, 0.12);  /* slightly stronger than border */
@@ -330,6 +340,14 @@
   /* Misc interactive */
   --color-card-hover:     #353330;
   --color-ring-selected:  #60a5fa;
+
+  /* Avalanche-type tag colours — dark-mode overrides.
+     Slightly more saturated than light-mode so the filled pill stays
+     vivid against the darker card surface. */
+  --color-type-dry-bg:  oklch(65% 0.14 75);    /* warmer amber on dark card    */
+  --color-type-dry-fg:  oklch(95% 0.02 75);    /* near-white text on dark amber */
+  --color-type-wet-bg:  oklch(60% 0.12 230);   /* deeper cyan on dark card     */
+  --color-type-wet-fg:  oklch(95% 0.02 230);   /* near-white text on dark cyan */
 
   /* Floating overlays — inverted glass so pills read against dark
      basemaps / dark UI (SNOW-36). */

@@ -28,7 +28,7 @@ Required context:
                     <div class="dw-level">{{ w.level_label }}</div>
                     {% if w.caption %}<div class="dw-caption">{{ w.caption }}</div>{% endif %}
                 </div>
-                {% include "includes/_chip.html" with text=w.pill_label data_testid="day-window-pill" %}
+                {% include "includes/_chip.html" with text=w.pill_label variant="time" data_testid="day-window-pill" %}
             </div>
             {% if period_transition and period_transition.has_split %}
                 {% if not forloop.last %}

@@ -263,6 +263,43 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         ),
     ),
     FoundationCategory(
+        slug="type-tags",
+        label="Type tags",
+        description=(
+            "Semantic colour tokens for the dry / wet avalanche-category axis "
+            "(SNOW-247). Distinct from the EAWS scale — these are editorial "
+            "labels for problem category, not hazard level."
+        ),
+        kind="swatches",
+        swatch_columns=2,
+        tokens=(
+            Token(
+                "--color-type-dry-bg",
+                "Dry bg",
+                "oklch(75% 0.13 75)",
+                "oklch(65% 0.14 75)",
+            ),
+            Token(
+                "--color-type-dry-fg",
+                "Dry fg",
+                "oklch(28% 0.06 75)",
+                "oklch(95% 0.02 75)",
+            ),
+            Token(
+                "--color-type-wet-bg",
+                "Wet bg",
+                "oklch(70% 0.10 230)",
+                "oklch(60% 0.12 230)",
+            ),
+            Token(
+                "--color-type-wet-fg",
+                "Wet fg",
+                "oklch(20% 0.04 230)",
+                "oklch(95% 0.02 230)",
+            ),
+        ),
+    ),
+    FoundationCategory(
         slug="eaws",
         label="EAWS scale",
         description="Five-level danger scale (theme-invariant by EAWS spec).",
