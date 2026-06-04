@@ -63,6 +63,41 @@ class TestChablaisAvalancheProblems:
             result["properties"]["avalancheProblems"][0]["satLabel"] == "neige humide"
         )
 
+    def test_aspects_non_empty(self, parsed_chablais: dict[str, Any]) -> None:
+        """Aspects list must be non-empty: prose contains 'ubacs' and 'adrets'."""
+        aspects = parsed_chablais["properties"]["avalancheProblems"][0]["aspects"]
+        assert isinstance(aspects, list)
+        assert len(aspects) > 0
+
+    def test_aspects_include_ubac_side(self, parsed_chablais: dict[str, Any]) -> None:
+        """'En ubacs' in prose → N, NE, NW present."""
+        aspects = parsed_chablais["properties"]["avalancheProblems"][0]["aspects"]
+        assert "N" in aspects
+        assert "NE" in aspects
+        assert "NW" in aspects
+
+    def test_aspects_exclude_east(self, parsed_chablais: dict[str, Any]) -> None:
+        """'E' must not appear — 'est' in prose is the verb, not compass."""
+        aspects = parsed_chablais["properties"]["avalancheProblems"][0]["aspects"]
+        assert "E" not in aspects
+
+    def test_elevation_lower_bound(self, parsed_chablais: dict[str, Any]) -> None:
+        """'au-dessus de 2500 m' → elevation.lowerBound == 2500."""
+        elev = parsed_chablais["properties"]["avalancheProblems"][0]["elevation"]
+        assert elev.get("lowerBound") == 2500
+
+    def test_avalanche_size(self, parsed_chablais: dict[str, Any]) -> None:
+        """'Taille 1' in prose → avalancheSize == '1'."""
+        size = parsed_chablais["properties"]["avalancheProblems"][0].get(
+            "avalancheSize"
+        )
+        assert size == "1"
+
+    def test_frequency_absent(self, parsed_chablais: dict[str, Any]) -> None:
+        """No frequency word in CHABLAIS prose → frequency key absent."""
+        problem = parsed_chablais["properties"]["avalancheProblems"][0]
+        assert "frequency" not in problem
+
 
 class TestChablaisWeather:
     """Verify weather extraction."""

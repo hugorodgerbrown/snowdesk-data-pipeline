@@ -98,6 +98,55 @@ class TestMontBlancAvalancheProblems:
         assert "neige ventée" in sat
         assert "neige humide" in sat
 
+    def test_aspects_non_empty(self, parsed_mont_blanc: dict[str, Any]) -> None:
+        """Aspects list must be non-empty for both problems."""
+        problems = parsed_mont_blanc["properties"]["avalancheProblems"]
+        for p in problems:
+            assert isinstance(p["aspects"], list)
+            assert len(p["aspects"]) > 0
+
+    def test_aspects_include_ubac_side(self, parsed_mont_blanc: dict[str, Any]) -> None:
+        """Prose has 'ubacs' → N, NE, NW present in primary problem."""
+        aspects = parsed_mont_blanc["properties"]["avalancheProblems"][0]["aspects"]
+        assert "N" in aspects
+        assert "NE" in aspects
+        assert "NW" in aspects
+
+    def test_aspects_include_west(self, parsed_mont_blanc: dict[str, Any]) -> None:
+        """Triggered prose ends with 'Ouest' → W present in primary problem."""
+        aspects = parsed_mont_blanc["properties"]["avalancheProblems"][0]["aspects"]
+        assert "W" in aspects
+
+    def test_elevation_populated(self, parsed_mont_blanc: dict[str, Any]) -> None:
+        """Elevation dict must be non-empty.
+
+        MONT-BLANC prose has 'Entre 2700 m et 3600 m' (spontaneous, takes
+        priority) so the result is lowerBound=2700, upperBound=3600.
+        """
+        elev = parsed_mont_blanc["properties"]["avalancheProblems"][0]["elevation"]
+        assert isinstance(elev, dict)
+        assert len(elev) > 0
+        assert elev.get("lowerBound") == 2700
+        assert elev.get("upperBound") == 3600
+
+    def test_avalanche_size_higher_bound(
+        self, parsed_mont_blanc: dict[str, Any]
+    ) -> None:
+        """'Taille 1 rarement 2' → avalancheSize == '2' (higher bound)."""
+        size = parsed_mont_blanc["properties"]["avalancheProblems"][0].get(
+            "avalancheSize"
+        )
+        assert size == "2"
+
+    def test_both_problems_share_prose_fields(
+        self, parsed_mont_blanc: dict[str, Any]
+    ) -> None:
+        """Both problems receive the same aspects/elevation from shared prose."""
+        problems = parsed_mont_blanc["properties"]["avalancheProblems"]
+        assert len(problems) == 2
+        assert problems[0]["aspects"] == problems[1]["aspects"]
+        assert problems[0]["elevation"] == problems[1]["elevation"]
+
 
 class TestMontBlancWeather:
     """Verify weather extraction for MONT-BLANC."""
