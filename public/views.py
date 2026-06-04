@@ -81,9 +81,11 @@ from bulletins.schema import ValidTimePeriod
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     DayCharacter,
+    PeriodTransition,
     RenderModelBuildError,
     build_render_model,
     compute_day_character,
+    compute_period_transition,
 )
 from bulletins.services.weather_display import build_weather_display
 from bulletins.services.weather_fetcher import (
@@ -2369,6 +2371,101 @@ def _track_bulletin_viewed(
     )
 
 
+def _build_morning_rating(panel: dict[str, Any]) -> dict[str, str] | None:
+    """
+    Project the morning danger level into a small context dict for the hero badge.
+
+    Reads ``morning_key``, ``morning_number``, and ``morning_subdivision`` from
+    the panel dict built by :func:`_build_panel_context`. Returns ``None`` when
+    the panel carries no usable morning rating (``"no_rating"`` key) so the
+    template can gate the badge on truthiness.
+
+    Subdivision is the display character (``"+"``, ``"-"``, ``"="``) already
+    resolved by the render-model adapter — SLF bulletins carry it from
+    ``customData.CH``; ALBINA and METEOFRANCE return ``""`` so the badge
+    renders the bare number without a suffix. No source-conditional branches
+    appear here or in the template.
+
+    Args:
+        panel: The panel context dict from :func:`_build_panel_context`.
+
+    Returns:
+        A dict with ``level_key``, ``level_number``, and ``subdivision`` keys,
+        or ``None`` when the morning rating is absent or ``"no_rating"``.
+
+    """
+    morning_key: str = panel.get("morning_key") or ""
+    if not morning_key or morning_key == "no_rating":
+        return None
+    return {
+        "level_key": morning_key,
+        "level_number": str(panel.get("morning_number") or ""),
+        "subdivision": str(panel.get("morning_subdivision") or ""),
+    }
+
+
+def _build_period_transition_chip(
+    period_transition: PeriodTransition | None,
+) -> dict[str, str] | None:
+    """
+    Project a :class:`PeriodTransition` into a hero chip context dict.
+
+    Returns ``None`` when no transition exists or the direction is ``"none"``
+    (flat-but-split — the chip is suppressed and only the Day Risk Profile
+    caption surfaces the story).
+
+    The chip text is constructed from:
+    - The partition qualifier (temporal: blank; elevation: e.g. "above 2200 m").
+    - The direction verb ("rises" or "falls").
+    - The destination level number + subdivision.
+
+    Examples:
+      - Temporal escalation to L3:      ``"rises to L3"``
+      - Temporal de-escalation to L2:   ``"falls to L2"``
+      - Elevation rise above 2600 m:    ``"rises above 2600 m to L3"``
+      - Elevation fall below 1800 m:    ``"falls below 1800 m to L2"``
+
+    Args:
+        period_transition: A :class:`PeriodTransition` from
+            :func:`bulletins.services.render_model.compute_period_transition`,
+            or ``None``.
+
+    Returns:
+        A dict with ``level_key``, ``chip_text``, and ``direction`` keys for
+        template rendering, or ``None`` when the chip should not be shown.
+
+    """
+    if period_transition is None or period_transition.direction == "none":
+        return None
+
+    direction = period_transition.direction
+    verb = _gettext("rises") if direction == "rise" else _gettext("falls")
+    level_num = period_transition.destination_number
+    level_sub = period_transition.destination_subdivision or ""
+    label = f"L{level_num}{level_sub}"
+
+    partition_label = period_transition.partition_label
+    if partition_label:
+        # e.g. "rises above 2600 m to L3"
+        chip_text = _gettext("%(verb)s %(partition)s to %(label)s") % {
+            "verb": verb,
+            "partition": partition_label,
+            "label": label,
+        }
+    else:
+        # e.g. "rises to L3"
+        chip_text = _gettext("%(verb)s to %(label)s") % {
+            "verb": verb,
+            "label": label,
+        }
+
+    return {
+        "level_key": period_transition.destination_key,
+        "chip_text": chip_text,
+        "direction": direction,
+    }
+
+
 def _bulletin_detail_response(
     request: HttpRequest,
     region: MicroRegion,
@@ -2570,6 +2667,24 @@ def _bulletin_detail_response(
     # Emit bulletin_viewed (no-ops silently on /examples/* paths).
     _track_bulletin_viewed(request, region, selected, panel)
 
+    # Morning rating badge context (SNOW-246). Projected from the panel's
+    # render-model adapter — no source-conditional branches in the template.
+    # subdivision is already a display char ("+", "-", "=") or "" for sources
+    # that don't carry per-rating subdivision (ALBINA, METEOFRANCE).
+    morning_rating: dict[str, str] | None = _build_morning_rating(panel)
+
+    # Period transition — rise/fall/flat-but-split chip beside the hero badge
+    # (SNOW-248). Derived from the render model's danger.ratings list; source-
+    # neutral (no if source == "slf" branches). ``None`` on all-day bulletins.
+    raw_render_model: dict[str, Any] = panel.get("render_model") or {}
+    period_transition: PeriodTransition | None = compute_period_transition(
+        raw_render_model
+    )
+    # Hero chip: rise/fall only — flat-but-split (direction="none") is suppressed.
+    period_transition_chip: dict[str, str] | None = _build_period_transition_chip(
+        period_transition
+    )
+
     context = {
         "region": region,
         "region_name": region_name,
@@ -2588,6 +2703,12 @@ def _bulletin_detail_response(
         # Masthead context.
         "day_windows": day_windows,
         "subregion_name": subregion_name,
+        # Hero rating badge — morning level + optional subdivision (SNOW-246).
+        "morning_rating": morning_rating,
+        # Period transition chip — rise/fall beside the hero badge (SNOW-248).
+        # None on all-day or flat-but-split bulletins.
+        "period_transition": period_transition,
+        "period_transition_chip": period_transition_chip,
         # Geographic neighbours — see SNOW-82.
         "adjoining_regions": adjoining_regions,
         # Weather-driven header — see SNOW-98.
