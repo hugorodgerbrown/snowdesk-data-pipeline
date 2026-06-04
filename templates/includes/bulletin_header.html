@@ -22,18 +22,6 @@ Required context (added by ``public.views.bulletin_detail``):
                              Shape: ``{weather, bucket, is_day, time_of_day,
                              sunrise_local, sunset_local, icon_bucket,
                              condition_label, icon_filename}``.
-  morning_rating           — dict with keys ``level_key`` (EAWS key, e.g.
-                             ``"considerable"``), ``level_number`` (str, e.g.
-                             ``"3"``), and ``subdivision`` (``"+"``, ``"-"``,
-                             ``"="``, or empty string) projected by the view
-                             from the render-model adapter (SNOW-246).
-                             ``None`` on empty-state pages (no bulletin).
-  period_transition_chip   — dict with keys ``level_key`` (EAWS key of the
-                             destination level), ``chip_text`` (e.g.
-                             "rises to L3"), and ``direction`` (``"rise"`` or
-                             ``"fall"``). ``None`` when the day has no
-                             transition or is flat-but-split (SNOW-248).
-
 When ``weather_display`` is None the panel still renders so the page chrome
 stays consistent — the hero icon is omitted, the metadata strip drops the
 weather/sunrise lines, and the panel falls back to a neutral dark token via
@@ -120,32 +108,6 @@ weather/sunrise lines, and the panel falls back to a neutral dark token via
                 </p>
             {% endif %}
             <div class="flex items-center gap-2 flex-wrap">
-                {% if morning_rating %}
-                    {# EAWS-coloured hero badge — level number + optional subdivision  #}
-                    {# (e.g. "3", "2-", "4+"). Subdivision rendered only when provided  #}
-                    {# by the source adapter (SLF yes, ALBINA/METEOFRANCE no). Level 5   #}
-                    {# gets a black/red diagonal split via CSS on .hero-rating-badge.    #}
-                    {# Badge sits ABOVE the bg-black/50 overlay via the parent relative  #}
-                    {# z-10 context established on the flex row below.                   #}
-                    <span
-                        class="hero-rating-badge"
-                        data-level="{{ morning_rating.level_key }}"
-                        data-testid="bulletin-hero-rating"
-                        aria-label="Danger level {{ morning_rating.level_number }}{{ morning_rating.subdivision }}"
-                    >{{ morning_rating.level_number }}{{ morning_rating.subdivision }}</span>
-                    {% if period_transition_chip %}
-                        {# Rise/fall chip — EAWS colour of the DESTINATION level (SNOW-248). #}
-                        {# Suppressed for flat-but-split (no chip — Day Risk Profile carries  #}
-                        {# the story) and for all-day bulletins (no transition at all).       #}
-                        {# Colour driven by data-level via .period-transition-chip CSS rules. #}
-                        <span
-                            class="period-transition-chip"
-                            data-level="{{ period_transition_chip.level_key }}"
-                            data-testid="period-transition-chip"
-                            aria-label="{{ period_transition_chip.chip_text }}"
-                        >{{ period_transition_chip.chip_text }}</span>
-                    {% endif %}
-                {% endif %}
                 <h1
                     class="text-2xl font-bold leading-tight tracking-tight text-balance"
                     data-testid="bulletin-header-region"
