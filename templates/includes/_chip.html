@@ -10,10 +10,12 @@ Context:
   variant     — visual variant (optional, default blank = neutral filled):
                   ""           neutral filled: opaque ``bg-tag`` background with
                                ``text-text-3`` copy.  Original style.
-                  "type-dry"   amber filled pill for dry-avalanche category tags,
-                               includes a small snowflake icon.
-                  "type-wet"   slate-cyan filled pill for wet-avalanche category
-                               tags, includes a small water-drop icon.
+                  "type-dry"   ghost pill for dry-avalanche category tags (SNOW-286):
+                               transparent fill, 1 px ``border-border-strong``,
+                               ``text-text-2``, includes a small snowflake icon.
+                  "type-wet"   ghost pill for wet-avalanche category tags (SNOW-286):
+                               transparent fill, 1 px ``border-border-strong``,
+                               ``text-text-2``, includes a small water-drop icon.
                   "time"       outlined ghost pill for time-period labels
                                (All day / Morning / Afternoon / Earlier / Later);
                                transparent fill, 1 px border, ``text-text-2``.
@@ -21,8 +23,7 @@ Context:
 {% endcomment %}
 {% if variant == "type-dry" %}
     <span
-        class="inline-flex items-center gap-1 font-mono text-chip uppercase px-2.5 py-[5px] rounded-pill shrink-0"
-        style="background: var(--color-type-dry-bg); color: var(--color-type-dry-fg)"
+        class="inline-flex items-center gap-1 font-mono text-chip uppercase bg-transparent text-text-2 border border-border-strong px-2.5 py-[5px] rounded-pill shrink-0"
         {% if data_testid %}
             data-testid="{{ data_testid }}"
         {% endif %}
@@ -40,8 +41,7 @@ Context:
     </span>
 {% elif variant == "type-wet" %}
     <span
-        class="inline-flex items-center gap-1 font-mono text-chip uppercase px-2.5 py-[5px] rounded-pill shrink-0"
-        style="background: var(--color-type-wet-bg); color: var(--color-type-wet-fg)"
+        class="inline-flex items-center gap-1 font-mono text-chip uppercase bg-transparent text-text-2 border border-border-strong px-2.5 py-[5px] rounded-pill shrink-0"
         {% if data_testid %}
             data-testid="{{ data_testid }}"
         {% endif %}

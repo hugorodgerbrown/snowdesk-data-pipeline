@@ -11,13 +11,9 @@ Required context:
   day_windows       — list[dict] built by _build_day_windows() in views.py;
                       each entry carries type, level_key, level_css,
                       level_label, level_number, caption, pill_label.
-  period_transition — PeriodTransition dataclass or None (SNOW-248). When
-                      present and ``has_split`` is True, a transition row
-                      appears between the first and second period rows with
-                      caption "as the day progresses" (temporal) or the
-                      elevation label.  Flat-but-split (direction="none") also
-                      emits the transition row — the Day Risk Profile caption
-                      handles the problem-type-change story.
+  period_transition — PeriodTransition dataclass or None (SNOW-248). Used
+                      by the Day Risk Profile caption in bulletin.html;
+                      not consumed by this template directly.
 {% endcomment %}
 {% if day_windows %}
     <section class="dw-panel" aria-label="{% trans 'Avalanche conditions by window' %}" data-testid="day-windows-panel">
@@ -30,28 +26,6 @@ Required context:
                 </div>
                 {% include "includes/_chip.html" with text=w.pill_label variant="time" data_testid="day-window-pill" %}
             </div>
-            {% if period_transition and period_transition.has_split %}
-                {% if not forloop.last %}
-                    {# Transition row — between the first and second period rows when two    #}
-                    {# rows are emitted (escalating, de-escalating, EUREGIO elevation).      #}
-                    <div class="dw-transition-row" data-testid="day-windows-transition-row">
-                        {% if period_transition.partition_type == "elevation" and period_transition.partition_label %}
-                            {% blocktrans with label=period_transition.partition_label %}Higher
-                                {{ label }}{% endblocktrans %}
-                        {% else %}
-                            {% trans "As the day progresses" %}
-                        {% endif %}
-                    </div>
-                {% elif forloop.first and forloop.last %}
-                    {# Transition row after the sole row when the later period was suppressed  #}
-                    {# by the day-windows filter (flat-but-split: same level, different        #}
-                    {# problem type). The day_windows panel shows only one row but the         #}
-                    {# period_transition signals a split exists.                               #}
-                    <div class="dw-transition-row" data-testid="day-windows-transition-row">
-                        {% trans "As the day progresses" %}
-                    </div>
-                {% endif %}
-            {% endif %}
         {% endfor %}
     </section>
 {% endif %}
