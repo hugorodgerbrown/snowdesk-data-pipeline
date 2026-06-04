@@ -1070,17 +1070,192 @@ class TestComputeDayCharacterRoundTrip:
 
 
 class TestRenderModelVersion:
-    """Tests that RENDER_MODEL_VERSION and built version are both 5."""
+    """Tests that RENDER_MODEL_VERSION and built version are both 6."""
 
     def test_constant_is_current(self) -> None:
         """RENDER_MODEL_VERSION constant equals the current version."""
-        assert RENDER_MODEL_VERSION == 5
+        assert RENDER_MODEL_VERSION == 6
 
     def test_build_render_model_returns_current_version(self) -> None:
         """build_render_model returns a dict with the current version."""
         props = _load_sample("sample_variable_day.json")
         rm = build_render_model(props)
         assert rm["version"] == RENDER_MODEL_VERSION
+
+
+# ---------------------------------------------------------------------------
+# Version 6 — prose enrichment for wet-snow problems
+# ---------------------------------------------------------------------------
+
+
+def _make_wet_snow_props(
+    *,
+    comment: str,
+    aspects: list[str] | None = None,
+    elevation: dict[str, Any] | None = None,
+    lang: str = "en",
+    problem_type: str = "wet_snow",
+) -> dict[str, Any]:
+    """
+    Build minimal SLF bulletin properties with a single wet-snow problem.
+
+    Helper for version-6 prose-enrichment tests.
+
+    Args:
+        comment: The per-problem comment HTML string.
+        aspects: Raw aspects list for the problem (default empty → enrichment fires).
+        elevation: Raw elevation dict (default None → enrichment fires).
+        lang: Bulletin language code.
+        problem_type: EAWS problem type (default ``"wet_snow"``).
+
+    Returns:
+        A properties dict suitable for ``build_render_model``.
+
+    """
+    return {
+        "bulletinID": "test-wet-001",
+        "lang": lang,
+        "validTime": {
+            "startTime": "2026-03-10T15:00:00Z",
+            "endTime": "2026-03-11T15:00:00Z",
+        },
+        "dangerRatings": [{"mainValue": "moderate", "validTimePeriod": "all_day"}],
+        "avalancheProblems": [
+            {
+                "problemType": problem_type,
+                "comment": comment,
+                "dangerRatingValue": "moderate",
+                "validTimePeriod": "all_day",
+                "aspects": aspects if aspects is not None else [],
+                "elevation": elevation,
+            }
+        ],
+        "customData": {
+            "CH": {
+                "aggregation": [
+                    {
+                        "category": "wet",
+                        "validTimePeriod": "all_day",
+                        "problemTypes": [problem_type],
+                        "title": None,
+                    }
+                ]
+            }
+        },
+    }
+
+
+class TestProseEnrichment:
+    """Tests for version-6 prose enrichment of wet-snow/gliding-snow problems."""
+
+    def test_aspect_extracted_from_comment(self) -> None:
+        """Aspects from prose are stored on the built problem."""
+        props = _make_wet_snow_props(
+            comment="Wet-snow avalanches on south facing slopes below 2000m."
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        assert "S" in problem["aspects"]
+
+    def test_elevation_extracted_from_comment(self) -> None:
+        """Elevation from prose is stored on the built problem."""
+        props = _make_wet_snow_props(
+            comment="Wet-snow avalanches on south facing slopes below 2000m."
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        assert problem["elevation"] is not None
+        assert problem["elevation"]["upper"] == 2000
+
+    def test_structured_aspects_not_overwritten(self) -> None:
+        """Structured aspects in JSON are not replaced by prose enrichment."""
+        props = _make_wet_snow_props(
+            comment="Wet-snow avalanches on south facing slopes below 2000m.",
+            aspects=["N", "NE"],
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        assert problem["aspects"] == ["N", "NE"]
+
+    def test_structured_elevation_not_overwritten(self) -> None:
+        """Structured elevation in JSON is not replaced by prose enrichment."""
+        props = _make_wet_snow_props(
+            comment="Wet-snow releases on south slopes below 2000m.",
+            elevation={"lowerBound": "2200"},
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        # The structured lower bound must be preserved.
+        assert problem["elevation"]["lower"] == 2200
+
+    def test_gliding_snow_enriched(self) -> None:
+        """Gliding-snow problems are enriched just like wet-snow problems."""
+        props = _make_wet_snow_props(
+            comment="Gliding snow on north and east aspects above 1800m.",
+            problem_type="gliding_snow",
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        assert "N" in problem["aspects"] or "E" in problem["aspects"]
+
+    def test_no_match_leaves_aspects_empty(self) -> None:
+        """Comment with no parseable tokens leaves aspects empty."""
+        props = _make_wet_snow_props(
+            comment="Warming temperatures increase the danger."
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        assert problem["aspects"] == []
+        assert problem["elevation"] is None
+
+    def test_unknown_lang_no_enrichment(self) -> None:
+        """Unregistered language code leaves geography unchanged."""
+        props = _make_wet_snow_props(
+            comment="Nassschneelawinen an südexponierten Hängen unter 2000 m.",
+            lang="de",
+        )
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        assert problem["aspects"] == []
+        assert problem["elevation"] is None
+
+    def test_dry_problem_not_enriched(self) -> None:
+        """Dry problem types are not enriched even with parseable prose."""
+        props = {
+            "bulletinID": "test-dry-001",
+            "lang": "en",
+            "validTime": {
+                "startTime": "2026-03-10T15:00:00Z",
+                "endTime": "2026-03-11T15:00:00Z",
+            },
+            "dangerRatings": [{"mainValue": "moderate", "validTimePeriod": "all_day"}],
+            "avalancheProblems": [
+                {
+                    "problemType": "wind_slab",
+                    "comment": "Wind-slab avalanches on north slopes below 2400m.",
+                    "dangerRatingValue": "moderate",
+                    "validTimePeriod": "all_day",
+                    "aspects": [],
+                    "elevation": None,
+                }
+            ],
+            "customData": {
+                "CH": {
+                    "aggregation": [
+                        {
+                            "category": "dry",
+                            "validTimePeriod": "all_day",
+                            "problemTypes": ["wind_slab"],
+                            "title": None,
+                        }
+                    ]
+                }
+            },
+        }
+        rm = build_render_model(props)
+        problem = rm["traits"][0]["problems"][0]
+        # wind_slab is dry — prose enrichment must not fire.
+        assert problem["aspects"] == []
 
 
 # ---------------------------------------------------------------------------

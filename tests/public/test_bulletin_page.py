@@ -24,6 +24,7 @@ from django.utils.translation import override as language_override
 from pytest_django.fixtures import SettingsWrapper
 
 from bulletins.models import Bulletin
+from bulletins.services.render_model import RENDER_MODEL_VERSION
 from public.views import BULLETIN_SOURCE_LINKS
 from regions.models import MicroRegion
 from subscriptions.models import Subscriber
@@ -63,7 +64,7 @@ def _make_am_bulletin(region: MicroRegion, day: date, **kwargs: Any) -> Bulletin
 def _render_model_with_traits(
     traits: list, metadata: dict | None = None, prose: dict | None = None
 ) -> dict:
-    """Build a minimal v5 render_model dict for testing."""
+    """Build a minimal current-version render_model dict for testing."""
     default_prose: dict = {
         "snowpack_structure": "<p>The snowpack is generally stable.</p>",
         "weather_review": None,
@@ -74,14 +75,15 @@ def _render_model_with_traits(
     }
     # Merge caller-supplied prose over the default so callers don't need to
     # repeat keys they don't care about; always ensure avalanche_activity and
-    # tendency_lead are present so the v5 version check doesn't trigger a rebuild.
+    # tendency_lead are present so the current-version check doesn't trigger
+    # a rebuild.
     merged_prose = {**default_prose, **(prose or {})}
     if "avalanche_activity" not in merged_prose:
         merged_prose["avalanche_activity"] = {"highlights": "", "comment": ""}
     if "tendency_lead" not in merged_prose:
         merged_prose["tendency_lead"] = None
     return {
-        "version": 5,
+        "version": RENDER_MODEL_VERSION,
         "source": "slf",
         "danger": {
             "key": "moderate",
@@ -292,7 +294,11 @@ def simple_bulletin(region: MicroRegion) -> Bulletin:
     rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
     raw = _raw_data_with_problems([_raw_problem()])
     return _make_am_bulletin(
-        region, day, render_model=rm, render_model_version=5, raw_data=raw
+        region,
+        day,
+        render_model=rm,
+        render_model_version=RENDER_MODEL_VERSION,
+        raw_data=raw,
     )
 
 
@@ -344,7 +350,11 @@ def variable_bulletin(region: MicroRegion) -> Bulletin:
         },
     }
     return _make_am_bulletin(
-        region, day, render_model=rm, render_model_version=5, raw_data=raw_data
+        region,
+        day,
+        render_model=rm,
+        render_model_version=RENDER_MODEL_VERSION,
+        raw_data=raw_data,
     )
 
 
@@ -509,7 +519,9 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -531,7 +543,9 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -554,7 +568,9 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -576,7 +592,9 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -606,7 +624,9 @@ class TestSnowpackWeatherSection:
             [_dry_trait_problems([_problem()])],
             prose=prose,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -641,7 +661,9 @@ class TestMetadataStrip:
             [_dry_trait_problems([_problem()])],
             metadata=metadata,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -664,7 +686,9 @@ class TestMetadataStrip:
             [_dry_trait_problems([_problem()])],
             metadata=metadata,
         )
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -682,7 +706,9 @@ class TestMetadataStrip:
         day = date(2026, 3, 15)
         # _render_model_with_traits already defaults source to "slf".
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -700,7 +726,9 @@ class TestMetadataStrip:
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
         # Remove the source key to simulate a bulletin without a known source.
         rm.pop("source", None)
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
 
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
@@ -762,7 +790,7 @@ class TestNoBulletinPageFooter:
         day = date(2026, 3, 15)
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
         bulletin = _make_am_bulletin(
-            region, day, render_model=rm, render_model_version=5
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
         )
         other_region = MicroRegionFactory.create(name="Münstertal", slug="ch-4116")
         RegionBulletinFactory.create(
@@ -802,7 +830,7 @@ class TestRegionNameSource:
             valid_from=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
             valid_to=datetime(2026, 3, 15, 15, 0, tzinfo=UTC),
             render_model=rm,
-            render_model_version=5,
+            render_model_version=RENDER_MODEL_VERSION,
         )
         # SLF labels this region "Stoos" in its CAAML payload, but the
         # EAWS canonical name (loaded from the fixture into ``region.name``)
@@ -888,7 +916,7 @@ class TestDebuggingAids:
             region,
             day,
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
-            render_model_version=5,
+            render_model_version=RENDER_MODEL_VERSION,
             raw_data={"properties": {"bulletinID": "sentinel-uuid-12345"}},
         )
         url = _url("ch-4115", "valais", "2026-03-17")
@@ -929,7 +957,7 @@ class TestDebuggingAids:
             region,
             day,
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
-            render_model_version=5,
+            render_model_version=RENDER_MODEL_VERSION,
             raw_data={"properties": {"comment": "hostile </script><b>pwn</b>"}},
         )
         url = _url("ch-4115", "valais", "2026-03-18")
@@ -1866,7 +1894,9 @@ class TestDayCharacterEyebrow:
         }
         rm = _render_model_with_traits([trait])
         rm["danger"] = {"key": "considerable", "number": "3", "subdivision": None}
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
 
         url = _url("ch-4115", "valais", "2026-03-20")
         response = client.get(url)
@@ -2483,7 +2513,11 @@ class TestStructuredData:
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
         raw = _raw_data_with_problems([_raw_problem()])
         _make_am_bulletin(
-            tricky_region, day, render_model=rm, render_model_version=5, raw_data=raw
+            tricky_region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data=raw,
         )
 
         url = _url("ch-9999", "valais-script-test", "2026-03-15")
@@ -2820,7 +2854,9 @@ class TestDangerPatternRow:
         rm = _render_model_with_traits([self._albina_trait()])
         rm["source"] = "albina"
         rm["danger_patterns"] = ["DP1", "DP6"]
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
         url = _url("ch-4115", "valais", "2026-04-10")
         response = client.get(url)
         content = response.content.decode()
@@ -2845,7 +2881,9 @@ class TestDangerPatternRow:
         }
         rm = _render_model_with_traits([trait])
         rm["danger_patterns"] = []
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
         url = _url("ch-4115", "valais", "2026-04-11")
         response = client.get(url)
         content = response.content.decode()
@@ -2859,7 +2897,9 @@ class TestDangerPatternRow:
         rm = _render_model_with_traits([self._albina_trait()])
         rm["source"] = "albina"
         rm["danger_patterns"] = []
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
         url = _url("ch-4115", "valais", "2026-04-12")
         response = client.get(url)
         content = response.content.decode()
