@@ -1302,7 +1302,7 @@ def test_region_summary_tooltip_chip_shows_peak_on_split_day() -> None:
 
     client = Client()
     response = client.get(
-        reverse("api:region_summary", args=["CH-4115"]) + "?d=2026-03-20"
+        reverse("api:region_summary", args=["ch-4115"]) + "?d=2026-03-20"
     )
     assert response.status_code == 200
     data = response.json()
