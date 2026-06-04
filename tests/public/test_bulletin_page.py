@@ -1916,6 +1916,86 @@ class TestDayCharacterEyebrow:
 
 
 # ---------------------------------------------------------------------------
+# SNOW-249: bulletin headline (data-driven variant matrix)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestBulletinHeadline:
+    """Integration tests for the data-driven bulletin headline (SNOW-249)."""
+
+    def test_headline_element_present(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """bulletin.html renders an element with data-testid="bulletin-headline"."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="bulletin-headline"' in content
+
+    def test_headline_matches_slab_cell(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A moderate/slab bulletin renders cell-2 copy (not generic fallback)."""
+        day = date(2026, 3, 16)
+        rm = _render_model_with_traits(
+            [_dry_trait_problems([_problem(problem_type="wind_slab")])]
+        )
+        rm["danger"] = {
+            "key": "moderate",
+            "number": "2",
+            "subdivision": None,
+            "ratings": [],
+        }
+        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
+        url = _url("ch-4115", "valais", "2026-03-16")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bulletin-headline"' in content
+        # Cell 2 copy should be present.
+        assert "Heightened caution" in content
+        # The headline element must not contain the generic fallback prefix.
+        import re
+
+        headline_match = re.search(
+            r'data-testid="bulletin-headline"[^>]*>(.*?)</p>',
+            content,
+            re.DOTALL,
+        )
+        assert headline_match is not None
+        headline_text = headline_match.group(1).strip()
+        assert not headline_text.startswith("Danger level")
+
+    def test_generic_fallback_for_unmatched_cell(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """An ALBINA bulletin with no matching cell falls back to generic copy."""
+        day = date(2026, 3, 17)
+        rm = _render_model_with_traits(
+            [_dry_trait_problems([_problem(problem_type="cornices")])]
+        )
+        rm["source"] = "albina"
+        rm["danger"] = {
+            "key": "moderate",
+            "number": "2",
+            "subdivision": None,
+            "ratings": [],
+        }
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=5,
+        )
+        url = _url("ch-4115", "valais", "2026-03-17")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="bulletin-headline"' in content
+        assert "Danger level 2" in content
+
+
+# ---------------------------------------------------------------------------
 # SNOW-169: self-hosted asset smoke tests
 # ---------------------------------------------------------------------------
 

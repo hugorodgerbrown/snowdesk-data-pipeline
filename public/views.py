@@ -86,6 +86,7 @@ from bulletins.services.render_model import (
     build_render_model,
     compute_day_character,
     compute_period_transition,
+    derive_problem_family,
 )
 from bulletins.services.weather_display import build_weather_display
 from bulletins.services.weather_fetcher import (
@@ -101,6 +102,7 @@ from subscriptions.models import Subscription
 
 from .decorators import lowercase_region_id
 from .guidance import load_field_guidance
+from .headlines import headline_for
 from .season_calendar import build_season_grid, season_header
 
 logger = logging.getLogger(__name__)
@@ -2685,6 +2687,32 @@ def _bulletin_detail_response(
         period_transition
     )
 
+    # Bulletin headline (SNOW-249) — data-driven copy from the variant matrix.
+    # The five inputs are projected from the render model and the period transition.
+    rm_source: str = raw_render_model.get("source") or ""
+    rm_partition_type: str = (
+        period_transition.partition_type if period_transition is not None else "none"
+    )
+    _rm_danger_info: dict[str, Any] = raw_render_model.get("danger") or {}
+    rm_peak_number: str = _rm_danger_info.get("number") or "1"
+    rm_peak_subdivision: str = _rm_danger_info.get("subdivision") or ""
+    rm_peak_rating: str = (
+        f"{rm_peak_number}{rm_peak_subdivision}"
+        if rm_peak_subdivision
+        else rm_peak_number
+    )
+    rm_direction: str = (
+        period_transition.direction if period_transition is not None else "none"
+    )
+    rm_family: str = derive_problem_family(raw_render_model)
+    headline: str = headline_for(
+        rm_source,
+        rm_partition_type,
+        rm_peak_rating,
+        rm_direction,
+        rm_family,
+    )
+
     context = {
         "region": region,
         "region_name": region_name,
@@ -2740,6 +2768,8 @@ def _bulletin_detail_response(
         "structured_data_json": _build_structured_data(
             region, selected, panel, canonical_url
         ),
+        # Bulletin headline — data-driven variant copy (SNOW-249).
+        "headline": headline,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 

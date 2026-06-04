@@ -399,6 +399,21 @@ reachable via the SNOW-81 deep-link in the masthead.
                     {% endif %}
 
                     {% comment %}
+                       Bulletin headline — data-driven variant copy (SNOW-249).
+                       Computed by headline_for() in public/headlines.py from the
+                       (source, partition_type, peak_rating, direction, family) profile.
+                       Suppressed when no headline is available (empty state).
+                    {% endcomment %}
+                    {% if headline %}
+                        <p
+                            class="text-sm text-text-2 mb-4"
+                            data-testid="bulletin-headline"
+                        >
+                            {{ headline }}
+                        </p>
+                    {% endif %}
+
+                    {% comment %}
                        SECTION 2 — Day Risk Profile panel
                        One row per validTimePeriod (earlier / all_day /
                        later) summarising the day's hazard windows. The

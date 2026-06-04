@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from public._component_fixtures import (
+    BULLETIN_HEADLINE_VARIANTS,
     BUTTON_VARIANTS,
     CALLOUT_VARIANTS,
     CARD_VARIANTS,
@@ -748,6 +749,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/day_character_callout.html",
         variants=DAY_CHARACTER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="bulletin-headline",
+        label="Bulletin headline",
+        description=(
+            "Data-driven one-liner below the day-character callout. "
+            "Keyed on (source, partition_type, peak_rating, direction, "
+            "family); top-12 SLF cells get hand-authored copy, everything "
+            "else falls back to a generic danger-level phrase. "
+            "Carries data-testid='bulletin-headline'."
+        ),
+        kind="components",
+        partial="public/_bulletin_headline.html",
+        variants=BULLETIN_HEADLINE_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

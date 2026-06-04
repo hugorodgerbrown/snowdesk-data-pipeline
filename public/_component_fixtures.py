@@ -1731,3 +1731,44 @@ SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
 )
+
+
+# ── Bulletin headline (SNOW-249) ────────────────────────────────────────────
+# Four representative cells from the variant matrix — enough to review the
+# copy and verify the data-testid attribute is present without wiring all 12.
+
+BULLETIN_HEADLINE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Cell 4 — considerable, slab (most common SLF pattern)",
+        "context": {
+            "headline": (
+                "Reactive snowpack. Considerable danger — avoid wind-loaded steeps."
+            ),
+        },
+    },
+    {
+        "caption": "Cell 9 — temporal rise to considerable, wet snow",
+        "context": {
+            "headline": (
+                "Touchy morning, dangerous afternoon"
+                " — wet snow cycle developing as the day progresses."
+            ),
+        },
+    },
+    {
+        "caption": "Cell 6c — high danger 4+, road-high slab",
+        "context": {
+            "headline": (
+                "Widespread instability. High danger"
+                " — road and infrastructure exposure;"
+                " backcountry travel inadvisable."
+            ),
+        },
+    },
+    {
+        "caption": "Generic fallback — considerable, no matrix match",
+        "context": {
+            "headline": ("Danger level 3 considerable. Read the bulletin carefully."),
+        },
+    },
+)

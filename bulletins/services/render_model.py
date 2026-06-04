@@ -2003,6 +2003,61 @@ def _resolve_partition(
     return None
 
 
+def derive_problem_family(render_model: dict[str, Any]) -> str:
+    """
+    Derive a problem-family label from the dominant avalanche problem type.
+
+    Maps the dominant problem type across all traits to one of five family
+    tokens used by the headline matrix to select copy. The ``dominant`` type
+    is the first problem type encountered when iterating traits in aggregation
+    order (editorial priority order).
+
+    Family mapping:
+    - ``wind_slab``, ``new_snow`` → ``"slab"``
+    - ``persistent_weak_layers``, ``deep_persistent_weak_layers`` → ``"persistent"``
+    - ``wet_snow``, ``gliding_snow`` → ``"wet"``
+    - ``cornices``, ``favourable_situation``,
+      ``no_distinct_avalanche_problem`` → ``"other"``
+    - Two or more distinct families present → ``"mixed"``
+    - No problems in the bulletin → ``"other"`` (generic fallback)
+
+    Args:
+        render_model: A render model dict as produced by
+            :func:`build_render_model`.
+
+    Returns:
+        One of ``"slab"``, ``"persistent"``, ``"wet"``, ``"other"``, or
+        ``"mixed"``.
+
+    """
+    _PROBLEM_TO_FAMILY: dict[str, str] = {
+        "wind_slab": "slab",
+        "new_snow": "slab",
+        "persistent_weak_layers": "persistent",
+        "deep_persistent_weak_layers": "persistent",
+        "wet_snow": "wet",
+        "gliding_snow": "wet",
+        "cornices": "other",
+        "favourable_situation": "other",
+        "no_distinct_avalanche_problem": "other",
+    }
+
+    traits: list[dict[str, Any]] = render_model.get("traits") or []
+    families: set[str] = set()
+
+    for trait in traits:
+        for problem in trait.get("problems") or []:
+            pt: str = problem.get("problem_type") or ""
+            family = _PROBLEM_TO_FAMILY.get(pt, "other")
+            families.add(family)
+
+    if not families:
+        return "other"
+    if len(families) == 1:
+        return next(iter(families))
+    return "mixed"
+
+
 def compute_period_transition(render_model: dict[str, Any]) -> PeriodTransition | None:
     """
     Derive the period transition descriptor from a render model's danger ratings.
