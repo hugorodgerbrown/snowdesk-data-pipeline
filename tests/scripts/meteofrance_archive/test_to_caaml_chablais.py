@@ -240,3 +240,74 @@ class TestChablaiscustomData:
         result = parsed_chablais
         src = result["properties"]["customData"]["MF"]["source_file"]
         assert src == "BRA.CHABLAIS.20260521140706.pdf"
+
+
+class TestChablaisSpontaneousTriggeredSplit:
+    """Verify that customData.MF carries the spontaneous/triggered split (SNOW-257)."""
+
+    def test_spontaneous_key_present(self, parsed_chablais: dict[str, Any]) -> None:
+        """customData.MF.spontaneous must be present."""
+        mf = parsed_chablais["properties"]["customData"]["MF"]
+        assert "spontaneous" in mf
+
+    def test_triggered_key_present(self, parsed_chablais: dict[str, Any]) -> None:
+        """customData.MF.triggered must be present."""
+        mf = parsed_chablais["properties"]["customData"]["MF"]
+        assert "triggered" in mf
+
+    def test_spontaneous_is_non_empty(self, parsed_chablais: dict[str, Any]) -> None:
+        """customData.MF.spontaneous must be a non-empty string for CHABLAIS."""
+        mf = parsed_chablais["properties"]["customData"]["MF"]
+        assert isinstance(mf["spontaneous"], str)
+        assert len(mf["spontaneous"]) > 0
+
+    def test_triggered_is_non_empty(self, parsed_chablais: dict[str, Any]) -> None:
+        """customData.MF.triggered must be a non-empty string for CHABLAIS."""
+        mf = parsed_chablais["properties"]["customData"]["MF"]
+        assert isinstance(mf["triggered"], str)
+        assert len(mf["triggered"]) > 0
+
+    def test_spontaneous_contains_html(self, parsed_chablais: dict[str, Any]) -> None:
+        """customData.MF.spontaneous must carry HTML markup."""
+        mf = parsed_chablais["properties"]["customData"]["MF"]
+        html = mf["spontaneous"]
+        assert "<h2>" in html or "<p>" in html or "<li>" in html
+
+    def test_triggered_contains_html(self, parsed_chablais: dict[str, Any]) -> None:
+        """customData.MF.triggered must carry HTML markup."""
+        mf = parsed_chablais["properties"]["customData"]["MF"]
+        html = mf["triggered"]
+        assert "<h2>" in html or "<p>" in html or "<li>" in html
+
+    def test_spontaneous_differs_from_triggered(
+        self, parsed_chablais: dict[str, Any]
+    ) -> None:
+        """The two split fields must differ — they come from different source sections."""
+        mf = parsed_chablais["properties"]["customData"]["MF"]
+        assert mf["spontaneous"] != mf["triggered"]
+
+    def test_concatenated_comment_still_present(
+        self, parsed_chablais: dict[str, Any]
+    ) -> None:
+        """avalancheActivity.comment (backward-compat field) must still be present."""
+        comment = parsed_chablais["properties"]["avalancheActivity"]["comment"]
+        assert isinstance(comment, str)
+        assert len(comment) > 0
+
+
+class TestChablaisHighlightDetection:
+    """Verify the positional highlight detection (SNOW-257 refinement 1)."""
+
+    def test_headline_not_compass_marker(self, parsed_chablais: dict[str, Any]) -> None:
+        """Headline must not be a bare compass marker (N, S, O, E)."""
+        hl = parsed_chablais["properties"]["highlights"]
+        assert hl not in ("N", "S", "O", "E", "O E", "N S")
+
+    def test_headline_not_pure_digits(self, parsed_chablais: dict[str, Any]) -> None:
+        """Headline must not be a bare danger-level number."""
+        hl = parsed_chablais["properties"]["highlights"]
+        assert not hl.strip().isdigit()
+
+    def test_headline_contains_manteau(self, parsed_chablais: dict[str, Any]) -> None:
+        """CHABLAIS headline contains 'MANTEAU' (all-caps style confirmed)."""
+        assert "MANTEAU" in parsed_chablais["properties"]["highlights"].upper()
