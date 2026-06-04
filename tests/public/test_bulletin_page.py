@@ -1946,86 +1946,6 @@ class TestDayCharacterEyebrow:
 
 
 # ---------------------------------------------------------------------------
-# SNOW-249: bulletin headline (data-driven variant matrix)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestBulletinHeadline:
-    """Integration tests for the data-driven bulletin headline (SNOW-249)."""
-
-    def test_headline_element_present(
-        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
-    ) -> None:
-        """bulletin.html renders an element with data-testid="bulletin-headline"."""
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="bulletin-headline"' in content
-
-    def test_headline_matches_slab_cell(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """A moderate/slab bulletin renders cell-2 copy (not generic fallback)."""
-        day = date(2026, 3, 16)
-        rm = _render_model_with_traits(
-            [_dry_trait_problems([_problem(problem_type="wind_slab")])]
-        )
-        rm["danger"] = {
-            "key": "moderate",
-            "number": "2",
-            "subdivision": None,
-            "ratings": [],
-        }
-        _make_am_bulletin(region, day, render_model=rm, render_model_version=5)
-        url = _url("ch-4115", "valais", "2026-03-16")
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="bulletin-headline"' in content
-        # Cell 2 copy should be present.
-        assert "Heightened caution" in content
-        # The headline element must not contain the generic fallback prefix.
-        import re
-
-        headline_match = re.search(
-            r'data-testid="bulletin-headline"[^>]*>(.*?)</p>',
-            content,
-            re.DOTALL,
-        )
-        assert headline_match is not None
-        headline_text = headline_match.group(1).strip()
-        assert not headline_text.startswith("Danger level")
-
-    def test_generic_fallback_for_unmatched_cell(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """An ALBINA bulletin with no matching cell falls back to generic copy."""
-        day = date(2026, 3, 17)
-        rm = _render_model_with_traits(
-            [_dry_trait_problems([_problem(problem_type="cornices")])]
-        )
-        rm["source"] = "albina"
-        rm["danger"] = {
-            "key": "moderate",
-            "number": "2",
-            "subdivision": None,
-            "ratings": [],
-        }
-        _make_am_bulletin(
-            region,
-            day,
-            render_model=rm,
-            render_model_version=5,
-        )
-        url = _url("ch-4115", "valais", "2026-03-17")
-        response = client.get(url)
-        content = response.content.decode()
-        assert 'data-testid="bulletin-headline"' in content
-        assert "Danger level 2" in content
-
-
-# ---------------------------------------------------------------------------
 # SNOW-169: self-hosted asset smoke tests
 # ---------------------------------------------------------------------------
 
@@ -2978,122 +2898,13 @@ def _make_region_with_subregion(
 
 @pytest.mark.django_db
 class TestHeroRatingBadge:
-    """The bulletin hero card shows an EAWS-coloured rating badge (SNOW-246)."""
+    """The hero rating badge is removed from the bulletin page (SNOW-286)."""
 
     def _url(self, region_id: str = "ch-4115", date_str: str = "2026-03-15") -> str:
         return reverse(
             "public:bulletin_date",
             kwargs={"region_id": region_id, "slug": "valais", "date_str": date_str},
         )
-
-    def _make_bulletin(
-        self,
-        region: "MicroRegion",
-        key: str,
-        number: str,
-        subdivision: str | None = None,
-        source: str = "slf",
-    ) -> Bulletin:
-        """Create a bulletin with the given morning danger level."""
-        day = date(2026, 3, 15)
-        rm = _render_model_with_ratings(key, number, subdivision, source=source)
-        raw = _raw_data_with_ratings([{"mainValue": key, "validTimePeriod": "all_day"}])
-        # Inject the source customData key so _detect_source succeeds.
-        if source == "slf":
-            raw["properties"]["customData"] = {"CH": {}}
-        elif source == "albina":
-            raw["properties"]["customData"] = {"ALBINA": {}}
-        elif source == "meteofrance":
-            raw["properties"]["customData"] = {"MF": {}}
-        return _make_am_bulletin(
-            region, day, render_model=rm, render_model_version=5, raw_data=raw
-        )
-
-    def test_badge_present_on_bulletin_page(self, client: Client) -> None:
-        """The ``data-testid="bulletin-hero-rating"`` badge renders on the hero card."""
-        region = _make_region_with_subregion()
-        self._make_bulletin(region, "moderate", "2")
-        response = client.get(self._url())
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="bulletin-hero-rating"' in content
-
-    def test_badge_shows_level_number(self, client: Client) -> None:
-        """The badge aria-label carries the correct numeric level."""
-        region = _make_region_with_subregion()
-        self._make_bulletin(region, "considerable", "3")
-        response = client.get(self._url())
-        content = response.content.decode()
-        # The aria-label on the badge encodes the level number.
-        assert 'aria-label="Danger level 3"' in content
-
-    def test_badge_level_key_data_attribute(self, client: Client) -> None:
-        """The badge carries the correct ``data-level`` attribute for CSS colouring."""
-        region = _make_region_with_subregion()
-        self._make_bulletin(region, "high", "4")
-        response = client.get(self._url())
-        content = response.content.decode()
-        assert 'data-level="high"' in content
-
-    def test_subdivision_rendered_for_slf(self, client: Client) -> None:
-        """SLF bulletins render the subdivision suffix on the badge (e.g. '3+')."""
-        region = _make_region_with_subregion()
-        day = date(2026, 3, 15)
-        # SLF: projected subdivision comes from customData.CH on dangerRatings.
-        rm = _render_model_with_ratings("considerable", "3", "+", source="slf")
-        raw: dict = {
-            "type": "Feature",
-            "geometry": None,
-            "properties": {
-                "dangerRatings": [
-                    {
-                        "mainValue": "considerable",
-                        "validTimePeriod": "all_day",
-                        "customData": {"CH": {"subdivision": "plus"}},
-                    }
-                ],
-                "customData": {"CH": {}},
-            },
-        }
-        _make_am_bulletin(
-            region, day, render_model=rm, render_model_version=5, raw_data=raw
-        )
-        response = client.get(self._url())
-        assert response.status_code == 200
-        content = response.content.decode()
-        # Subdivision "+" must appear in the badge's aria-label.
-        assert 'aria-label="Danger level 3+"' in content
-
-    def test_subdivision_absent_for_albina(self, client: Client) -> None:
-        """ALBINA bulletins carry no subdivision — badge aria-label shows bare number."""
-        region = _make_region_with_subregion()
-        # ALBINA: subdivision is None per AlbinaAdapter.resolve_danger_rating_subdivision.
-        self._make_bulletin(
-            region, "considerable", "3", subdivision=None, source="albina"
-        )
-        response = client.get(self._url())
-        assert response.status_code == 200
-        content = response.content.decode()
-        # The aria-label on the badge must not carry a subdivision suffix.
-        # We check the aria-label value which is in the form "Danger level 3".
-        assert 'aria-label="Danger level 3"' in content
-        assert 'aria-label="Danger level 3+"' not in content
-        assert 'aria-label="Danger level 3-"' not in content
-        assert 'aria-label="Danger level 3="' not in content
-
-    def test_subdivision_absent_for_meteofrance(self, client: Client) -> None:
-        """METEOFRANCE bulletins carry no subdivision — badge aria-label shows bare number."""
-        region = _make_region_with_subregion()
-        self._make_bulletin(
-            region, "moderate", "2", subdivision=None, source="meteofrance"
-        )
-        response = client.get(self._url())
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'aria-label="Danger level 2"' in content
-        assert 'aria-label="Danger level 2+"' not in content
-        assert 'aria-label="Danger level 2-"' not in content
-        assert 'aria-label="Danger level 2="' not in content
 
     def test_badge_absent_on_empty_state_page(self, client: Client) -> None:
         """No bulletin → no hero badge (``morning_rating`` is None)."""
@@ -3429,32 +3240,6 @@ class TestPeriodTransitionBulletinPage:
             region, day, render_model=rm, render_model_version=5, raw_data=raw
         )
 
-    def test_escalating_chip_renders_with_destination_colour(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """all_day moderate → later considerable: chip text 'rises to L3', data-level=considerable."""
-        self._make_split_bulletin(
-            region, "moderate", "all_day", "considerable", "later"
-        )
-        response = client.get(self._url())
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="period-transition-chip"' in content
-        assert 'data-level="considerable"' in content
-        assert "rises to L3" in content
-
-    def test_deescalating_chip_renders(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """all_day considerable → later moderate: chip text 'falls to L2'."""
-        self._make_split_bulletin(
-            region, "considerable", "all_day", "moderate", "later"
-        )
-        response = client.get(self._url())
-        content = response.content.decode()
-        assert 'data-testid="period-transition-chip"' in content
-        assert "falls to L2" in content
-
     def test_flat_but_split_no_chip(self, client: Client, region: MicroRegion) -> None:
         """all_day considerable → later considerable: no chip, but flat-split caption present."""
         self._make_split_bulletin(
@@ -3465,29 +3250,6 @@ class TestPeriodTransitionBulletinPage:
         assert 'data-testid="period-transition-chip"' not in content
         assert 'data-testid="day-risk-profile-flat-split-caption"' in content
         assert "Problem type changes" in content
-
-    def test_transition_row_present_for_escalating(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """Escalating split: transition row appears between all_day and later rows."""
-        self._make_split_bulletin(
-            region, "moderate", "all_day", "considerable", "later"
-        )
-        response = client.get(self._url())
-        content = response.content.decode()
-        assert 'data-testid="day-windows-transition-row"' in content
-        assert "As the day progresses" in content
-
-    def test_transition_row_present_for_flat_but_split(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """Flat-but-split: transition row still appears (direction=none, has_split=True)."""
-        self._make_split_bulletin(
-            region, "considerable", "all_day", "considerable", "later"
-        )
-        response = client.get(self._url())
-        content = response.content.decode()
-        assert 'data-testid="day-windows-transition-row"' in content
 
     def test_no_transition_row_for_all_day_only(
         self, client: Client, region: MicroRegion
@@ -3506,22 +3268,6 @@ class TestPeriodTransitionBulletinPage:
         content = response.content.decode()
         assert 'data-testid="period-transition-chip"' not in content
         assert 'data-testid="day-windows-transition-row"' not in content
-
-    def test_transition_row_dom_order_between_period_rows(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """Transition row appears between the first and second day-window rows in DOM order."""
-        self._make_split_bulletin(
-            region, "moderate", "all_day", "considerable", "later"
-        )
-        response = client.get(self._url())
-        content = response.content.decode()
-        first_row_idx = content.index('data-testid="day-window-row"')
-        transition_idx = content.index('data-testid="day-windows-transition-row"')
-        second_row_idx = content.index(
-            'data-testid="day-window-row"', first_row_idx + 1
-        )
-        assert first_row_idx < transition_idx < second_row_idx
 
     def test_chip_absent_on_empty_state_page(self, client: Client) -> None:
         """No bulletin → no period-transition chip (period_transition is None)."""
