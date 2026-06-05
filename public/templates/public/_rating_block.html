@@ -7,6 +7,12 @@ Expects the following variables in scope:
             or _problem_cards_from_render_model_traits for ALBINA bulletins).
             Keys: problem_type, category, danger_level, label, time_period_label,
                   aspects, elevation, core_zone_text, comment_html,
+                  panel_title (optional — editorial heading for SLF split-day
+                               panels, e.g. "Dry avalanches, whole day"; empty
+                               for ALBINA and MeteoFrance cards),
+                  subdivision (optional — per-period suffix appended to the
+                               danger level number, e.g. "-", "=", "+"; empty
+                               when not available),
                   avalanche_type (optional — "slab", "loose", or None),
                   avalanche_size (optional int 1-5; ALBINA-only),
                   frequency_label (optional translated Promise; ALBINA-only,
@@ -17,6 +23,11 @@ Expects the following variables in scope:
                                    ALBINA-only; empty list for SLF/MeteoFrance)
 
 Renders:
+  0. Editorial panel title — only when card.panel_title is non-empty. Renders
+     as a compact heading above the danger band for SLF split-day panels
+     (e.g. "Dry avalanches, whole day" / "Wet-snow avalanches, as the day
+     progresses"). ALBINA and MeteoFrance cards have no panel_title, so this
+     row is absent for them.
   1. Card header — danger-band colour strip carrying the EAWS hazard
      pictogram (encodes kind + level) alongside the problem name and an
      optional time chip.  No redundant textual level label.
@@ -38,6 +49,17 @@ Renders:
     class="rating-block bg-card border border-border rounded-card overflow-hidden mb-4 last:mb-0"
     data-testid="rating-block"
 >
+    {# ── Editorial panel title (SLF split-day panels only) ───────────────── #}
+    {# Shown only when card.panel_title is non-empty. For ALBINA and          #}
+    {# MeteoFrance cards panel_title is always empty so this row is absent.   #}
+    {% if card.panel_title %}
+        <div
+            class="px-4 py-2 border-b border-border bg-card text-xs font-semibold text-text-2 tracking-wide"
+            data-testid="panel-title"
+        >
+            {{ card.panel_title }}
+        </div>
+    {% endif %}
     {# ── Card header: danger-band carries kind + level colour; pictogram   #}
     {# encodes the same visually so no textual label is needed.             #}
     <div class="danger-band px-4 py-3 border-b border-border" data-level="{{ card.danger_level|danger_level_key }}">

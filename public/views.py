@@ -1946,7 +1946,10 @@ def _day_windows_from_rm_ratings(
     if all_day_list:
         rows = _rows_for_period(all_day_list)
         later_list = by_period.get("later") or []
-        if later_list and _max_rm_rank_in(later_list) > _max_rm_rank_in(all_day_list):
+        # Always include the later period when present — flat-but-split days
+        # (same level AM/PM but different problem mix) deserve two rows just
+        # as escalating days do.  The old strictly-greater gate is dropped.
+        if later_list:
             rows.extend(_rows_for_period(later_list))
         return rows
 
@@ -1990,11 +1993,11 @@ def _day_windows_from_raw_ratings(bulletin: Bulletin) -> list[dict[str, Any]]:
     if all_day_rating is not None:
         windows = [_day_window_row(all_day_rating)]
         later_rating = by_period_raw.get("later")
+        # Always include the later period when present — flat-but-split days
+        # (same level AM/PM but different problem mix) deserve two rows just
+        # as escalating days do.  The old strictly-greater gate is dropped.
         if later_rating is not None:
-            _, later_level, later_sub = _parse_danger_rating(later_rating)
-            _, ad_level, ad_sub = _parse_danger_rating(all_day_rating)
-            if _danger_rank(later_level, later_sub) > _danger_rank(ad_level, ad_sub):
-                windows.append(_day_window_row(later_rating))
+            windows.append(_day_window_row(later_rating))
         return windows
 
     # ALBINA-style: one row per period, ordered earlier → later.
@@ -2017,10 +2020,10 @@ def _build_day_windows(
     v4 bulletins that predate this projection).
 
     SLF editorial style: always one ``all_day`` rating, optionally a
-    ``later`` overlay when the day deteriorates. Emits one row for the
-    ``all_day`` rating; emits the ``later`` overlay only when its rank
-    is strictly higher than ``all_day`` — equal or lower implies no
-    change, so the overlay would be noise.
+    ``later`` overlay when the problem mix changes. Emits one row for the
+    ``all_day`` rating; emits the ``later`` overlay whenever present —
+    flat-but-split days (same danger level, different problem mix AM/PM)
+    deserve two rows just as escalating days do (SNOW-291).
 
     ALBINA / ALBINA style: no ``all_day``; ratings split by
     ``validTimePeriod`` (and often by elevation within a period). When
@@ -3601,6 +3604,7 @@ def _problem_card(raw_p: dict[str, Any], category: str) -> dict[str, Any]:
 def _problem_cards_from_aggregation(
     aggregation: list[dict[str, Any]],
     problem_index: dict[str, dict[str, Any]],
+    danger_ratings: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Build one card per aggregation entry.
 
@@ -3625,11 +3629,15 @@ def _problem_cards_from_aggregation(
         aggregation: The ``customData.CH.aggregation`` list.
         problem_index: ``{problemType: raw_problem}`` built from
             ``avalancheProblems``.
+        danger_ratings: Projected ``danger.ratings`` list from the render
+            model. Used to look up the per-period subdivision suffix for each
+            card (SNOW-291). ``None`` and ``[]`` produce empty subdivisions.
 
     Returns:
         Flat list of card dicts in aggregation order, one per entry.
 
     """
+    resolved_ratings: list[dict[str, Any]] = danger_ratings or []
     cards: list[dict[str, Any]] = []
     for i, agg_entry in enumerate(aggregation):
         category: str | None = agg_entry.get("category")
@@ -3669,6 +3677,13 @@ def _problem_cards_from_aggregation(
             card["danger_level"] = max_level
             card["danger_level_key"] = _DANGER_ORDER[max_level - 1].replace("_", "-")
 
+        # SNOW-291: add panel_title, time_period, and subdivision to match
+        # the shape emitted by _problem_cards_from_render_model_traits.
+        agg_time_period: str = agg_entry.get("validTimePeriod") or "all_day"
+        card["panel_title"] = agg_entry.get("title") or ""
+        card["time_period"] = agg_time_period
+        card["subdivision"] = _subdivision_for_period(agg_time_period, resolved_ratings)
+
         cards.append(card)
     return cards
 
@@ -3676,6 +3691,7 @@ def _problem_cards_from_aggregation(
 def build_problem_cards(
     raw_problems: list[dict[str, Any]],
     aggregation: list[dict[str, Any]],
+    danger_ratings: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Build one flat presentation card per aggregation entry, in aggregation order.
@@ -3689,6 +3705,9 @@ def build_problem_cards(
     Args:
         raw_problems: The CAAML ``avalancheProblems`` array.
         aggregation: The ``customData.CH.aggregation`` array.
+        danger_ratings: Projected ``danger.ratings`` list from the render
+            model. Forwarded to ``_problem_cards_from_aggregation`` for
+            per-period subdivision lookup (SNOW-291).
 
     Returns:
         List of flat card dicts in aggregation order, or empty list on error.
@@ -3706,7 +3725,7 @@ def build_problem_cards(
         return []
     index = {p["problemType"]: p for p in raw_problems if p.get("problemType")}
     try:
-        return _problem_cards_from_aggregation(aggregation, index)
+        return _problem_cards_from_aggregation(aggregation, index, danger_ratings)
     except ValueError:
         logger.exception("build_problem_cards: unexpected aggregation schema")
         return []
@@ -3715,6 +3734,7 @@ def build_problem_cards(
 def _resolve_problem_cards(
     traits: list[dict[str, Any]],
     danger_patterns: list[str] | None = None,
+    danger_ratings: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Resolve problem cards from render-model traits.
@@ -3731,17 +3751,51 @@ def _resolve_problem_cards(
             model (``render_model["danger_patterns"]``). Each card receives
             the full list so the template can render pattern tags on every
             card. ``None`` and ``[]`` are both treated as no patterns.
+        danger_ratings: Projected ``danger.ratings`` list from the render
+            model. Used to look up the per-period subdivision suffix for
+            each card (SNOW-291). ``None`` and ``[]`` produce empty
+            subdivision strings on all cards.
 
     Returns:
         Flat list of card dicts ready for ``_rating_block.html``.
 
     """
-    return _problem_cards_from_render_model_traits(traits, danger_patterns or [])
+    return _problem_cards_from_render_model_traits(
+        traits, danger_patterns or [], danger_ratings or []
+    )
+
+
+def _subdivision_for_period(period: str, danger_ratings: list[dict[str, Any]]) -> str:
+    """
+    Return the subdivision suffix for the given time period from danger.ratings.
+
+    Scans the projected ``danger.ratings`` list for an entry whose ``period``
+    matches the requested period token. Returns the first match's
+    ``subdivision`` string (e.g. ``"-"``, ``"="``, ``"+"``) or ``""`` when no
+    match is found.
+
+    This is a best-effort lookup: the trait and the rating use the same
+    ``time_period`` / ``period`` token (``"all_day"``, ``"earlier"``,
+    ``"later"``), so a direct equality match is sufficient.
+
+    Args:
+        period: The trait's ``time_period`` token.
+        danger_ratings: Projected ``danger.ratings`` list from the render model.
+
+    Returns:
+        Subdivision suffix string, or empty string when none is found.
+
+    """
+    for r in danger_ratings:
+        if r.get("period") == period:
+            return r.get("subdivision") or ""
+    return ""
 
 
 def _problem_cards_from_render_model_traits(
     traits: list[dict[str, Any]],
     danger_patterns: list[str] | None = None,
+    danger_ratings: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Build one problem card per render-model trait.
@@ -3762,6 +3816,9 @@ def _problem_cards_from_render_model_traits(
             ``"DP1"``). Each card receives the normalised list so the template
             can render ``GM.N`` tags with tooltips. Pass ``None`` or ``[]`` for
             bulletins that carry no patterns (SLF, MeteoFrance).
+        danger_ratings: Projected ``danger.ratings`` list from the render model.
+            Used to look up the per-period subdivision suffix for each card
+            (SNOW-291). ``None`` and ``[]`` produce empty subdivision strings.
 
     Returns:
         Flat list of card dicts, one per trait, in trait order.
@@ -3771,6 +3828,7 @@ def _problem_cards_from_render_model_traits(
     normalised_patterns: list[dict[str, str]] = [
         _normalise_danger_pattern(p) for p in (danger_patterns or [])
     ]
+    resolved_ratings: list[dict[str, Any]] = danger_ratings or []
 
     cards: list[dict[str, Any]] = []
     for trait in traits:
@@ -3818,6 +3876,11 @@ def _problem_cards_from_render_model_traits(
         frequency_label: Promise | None = _FREQUENCY_LABELS.get(frequency_raw or "")
         stability_label: Promise | None = _STABILITY_LABELS.get(stability_raw or "")
 
+        # SNOW-291: editorial panel title from the trait and per-period
+        # subdivision suffix from the projected danger.ratings list.
+        panel_title: str = trait.get("title") or ""
+        subdivision: str = _subdivision_for_period(time_period, resolved_ratings)
+
         cards.append(
             {
                 "category": category,
@@ -3827,6 +3890,9 @@ def _problem_cards_from_render_model_traits(
                 ),
                 "label": label,
                 "time_period_label": time_period_label,
+                "time_period": time_period,
+                "panel_title": panel_title,
+                "subdivision": subdivision,
                 "aspects": first.get("aspects") or [],
                 "elevation": first.get("elevation"),
                 "comment_html": first.get("comment_html") or "",
@@ -4085,20 +4151,24 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
 
     traits: list[dict[str, Any]] = render_model.get("traits") or []
 
+    # Per-half danger resolution for the AM/PM split headline. Reads the
+    # projected danger.ratings list from the render model — one entry per
+    # CAAML dangerRating with period, key, subdivision, and elevation.
+    # Primary source is the projected list; traits are the fallback.
+    # Also threaded into problem cards so each card can resolve its
+    # per-period subdivision suffix (SNOW-291).
+    rm_ratings: list[dict[str, Any]] = rm_danger.get("ratings") or []
+
     # Problem cards: both SLF and ALBINA bulletins are now served from
     # render-model traits. The render model synthesises aggregation for all
     # sources and records traits in editorial (aggregation) order, so trait
     # ordering matches the previous SLF aggregation-driven ordering.
     # Bulletin-level danger patterns (ALBINA only; [] for SLF/MeteoFrance)
     # are threaded through so each card can render GM.N annotation tags.
+    # danger.ratings are passed so each card can carry panel_title and
+    # subdivision (SNOW-291).
     rm_danger_patterns: list[str] = raw_render_model.get("danger_patterns") or []
-    problem_cards = _resolve_problem_cards(traits, rm_danger_patterns)
-
-    # Per-half danger resolution for the AM/PM split headline. Reads the
-    # projected danger.ratings list from the render model — one entry per
-    # CAAML dangerRating with period, key, subdivision, and elevation.
-    # Primary source is the projected list; traits are the fallback.
-    rm_ratings: list[dict[str, Any]] = rm_danger.get("ratings") or []
+    problem_cards = _resolve_problem_cards(traits, rm_danger_patterns, rm_ratings)
     morning_key, morning_subdivision = _resolve_period_danger_from_rm(
         rm_ratings, traits, _MORNING_PERIODS
     )

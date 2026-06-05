@@ -1419,10 +1419,16 @@ class TestDayWindowsPanel:
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 2
 
-    def test_cross_category_later_down_suppressed(
+    def test_cross_category_later_down_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day considerable minus + later moderate (cross-band lower) → 1 row (suppressed)."""
+        """all_day considerable minus + later moderate (cross-band lower) → 2 rows (SNOW-291).
+
+        The strictly-greater gate has been dropped: any later period is now
+        always shown, including when the afternoon level is lower than the
+        morning level.  The flat-but-split case (same level, different problem
+        mix) is the primary motivation, but the same logic applies here.
+        """
         day = date(2026, 3, 27)
         raw = _raw_data_with_ratings(
             [
@@ -1435,7 +1441,7 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-03-27")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
     # ------------------------------------------------------------------
     # later_ filter — within-category sublevel shift (always shown)
@@ -1468,10 +1474,14 @@ class TestDayWindowsPanel:
         panel_html = content[panel_start:panel_end]
         assert ">3<" in panel_html
 
-    def test_within_category_later_down_suppressed(
+    def test_within_category_later_down_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day moderate plus + later moderate minus (within-band lower) → 1 row (suppressed)."""
+        """all_day moderate plus + later moderate minus (within-band lower) → 2 rows (SNOW-291).
+
+        The strictly-greater gate has been dropped: any later period is always
+        shown regardless of whether the afternoon subdivision is lower.
+        """
         day = date(2026, 3, 29)
         raw = _raw_data_with_ratings(
             [
@@ -1484,16 +1494,20 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-03-29")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
     # ------------------------------------------------------------------
     # later_ filter — same-band no-op (filtered)
     # ------------------------------------------------------------------
 
-    def test_same_band_noop_considerable_filtered(
+    def test_same_band_noop_considerable_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day considerable neutral + later considerable → 1 row (later filtered)."""
+        """all_day considerable neutral + later considerable → 2 rows (SNOW-291).
+
+        The strictly-greater gate is dropped: flat-but-split days (same level
+        AM/PM, different problem mix) now show two rows.
+        """
         day = date(2026, 3, 30)
         raw = _raw_data_with_ratings(
             [
@@ -1506,12 +1520,16 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-03-30")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
-    def test_same_band_noop_moderate_filtered(
+    def test_same_band_noop_moderate_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day moderate neutral + later moderate → 1 row (later filtered)."""
+        """all_day moderate neutral + later moderate → 2 rows (SNOW-291).
+
+        The strictly-greater gate is dropped: flat-but-split days now show two
+        rows even when the danger level does not change between AM and PM.
+        """
         day = date(2026, 3, 31)
         raw = _raw_data_with_ratings(
             [
@@ -1524,16 +1542,19 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-03-31")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
     # ------------------------------------------------------------------
     # later_ filter — cross-band lower (always suppressed)
     # ------------------------------------------------------------------
 
-    def test_cross_band_lower_considerable_to_moderate_suppressed(
+    def test_cross_band_lower_considerable_to_moderate_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day considerable + later moderate (lower band) → 1 row."""
+        """all_day considerable + later moderate (lower band) → 2 rows (SNOW-291).
+
+        The strictly-greater gate is dropped: later periods are always shown.
+        """
         day = date(2026, 4, 1)
         raw = _raw_data_with_ratings(
             [
@@ -1546,12 +1567,16 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-04-01")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
-    def test_same_band_plus_blocks_plain_later(
+    def test_same_band_plus_blocks_plain_later_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day moderate plus + later moderate plain (lower sub) → 1 row."""
+        """all_day moderate plus + later moderate plain → 2 rows (SNOW-291).
+
+        The strictly-greater gate is dropped: later periods are always shown
+        even when the afternoon subdivision is lower.
+        """
         day = date(2026, 4, 2)
         raw = _raw_data_with_ratings(
             [
@@ -1564,7 +1589,7 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-04-02")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
     def test_same_band_minus_to_plain_shows_two_rows(
         self, client: Client, region: MicroRegion
