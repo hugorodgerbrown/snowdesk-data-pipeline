@@ -3520,3 +3520,267 @@ class TestTypePillsVsTimePills:
         assert 'data-testid="time-period-pill"' in content
         # The old undifferentiated "category-pill" testid must not appear.
         assert 'data-testid="category-pill"' not in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-292 — ALBINA elevation-band headings
+# ---------------------------------------------------------------------------
+
+
+def _albina_render_model_with_bands(
+    traits: list,
+) -> dict:
+    """Build a current-version ALBINA render_model dict with band_id traits."""
+    return {
+        "version": RENDER_MODEL_VERSION,
+        "source": "albina",
+        "danger": {
+            "key": "considerable",
+            "number": "3",
+            "subdivision": None,
+            "ratings": [],
+        },
+        "danger_patterns": [],
+        "traits": traits,
+        "snowpack_structure": None,
+        "metadata": {
+            "publication_time": "2026-03-15T06:00:00+00:00",
+            "valid_from": "2026-03-15T06:00:00+00:00",
+            "valid_until": "2026-03-15T15:00:00+00:00",
+            "next_update": None,
+            "unscheduled": False,
+            "lang": "en",
+        },
+        "prose": {
+            "snowpack_structure": "<p>Weak layers.</p>",
+            "weather_review": None,
+            "weather_forecast": None,
+            "tendency": [],
+            "avalanche_activity": {
+                "highlights": "Persistent weak layers remain the main danger.",
+                "comment": "<p>Avalanche danger is considerable above 2200 m.</p>",
+            },
+            "tendency_lead": None,
+        },
+    }
+
+
+def _albina_trait(
+    band_id: str,
+    elevation: dict | None,
+    time_period: str = "all_day",
+    category: str = "dry",
+    danger_level: int = 3,
+) -> dict:
+    """Build a minimal ALBINA-style trait with band_id and elevation."""
+    return {
+        "category": category,
+        "time_period": time_period,
+        "title": f"{category.capitalize()} avalanches",
+        "geography": {"source": "problems"},
+        "problems": [
+            {
+                "problem_type": "persistent_weak_layers",
+                "time_period": time_period,
+                "elevation": elevation,
+                "aspects": ["N", "NE", "E"],
+                "comment_html": "",
+                "core_zone_text": None,
+                "danger_rating_value": "considerable",
+                "avalanche_type": None,
+                "extras": {},
+                "avalanche_size": 3,
+                "frequency": "some",
+                "snowpack_stability": "poor",
+            }
+        ],
+        "prose": None,
+        "danger_level": danger_level,
+        "band_id": band_id,
+        "elevation": elevation,
+    }
+
+
+@pytest.mark.django_db
+class TestAlbinaBandHeadings:
+    """Tests for ALBINA elevation-band headings on the bulletin page (SNOW-292)."""
+
+    @pytest.fixture
+    def region(self) -> MicroRegion:
+        """Return a region suitable for ALBINA bulletin tests."""
+        major = MajorRegionFactory.create(prefix="AT-7")
+        sub = SubRegionFactory.create(prefix="AT-71", major=major)
+        return MicroRegionFactory.create(
+            region_id="at-07-23-02",
+            subregion=sub,
+        )
+
+    def test_elevation_only_bulletin_renders_two_band_headings(
+        self,
+        client: Client,
+        region: MicroRegion,
+    ) -> None:
+        """ALBINA bulletin with 2-band elevation split renders 2 band-heading elements."""
+        day = date(2026, 3, 15)
+        above_elev = {
+            "lower": 2200,
+            "upper": None,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        below_elev = {
+            "lower": None,
+            "upper": 2200,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        traits = [
+            _albina_trait("above-2200", above_elev, danger_level=3),
+            _albina_trait("below-2200", below_elev, danger_level=1),
+        ]
+        rm = _albina_render_model_with_bands(traits)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "at-07-23-02",
+                "slug": region.name_slug,
+                "date_str": "2026-03-15",
+            },
+        )
+        content = client.get(url).content.decode()
+        # Two band headings should appear.
+        heading_count = content.count('data-testid="band-heading"')
+        assert heading_count == 2, f"Expected 2 band headings, got {heading_count}"
+
+    def test_band_heading_text_correct(
+        self,
+        client: Client,
+        region: MicroRegion,
+    ) -> None:
+        """Band headings show 'Above N m' and 'Below N m' labels."""
+        day = date(2026, 3, 15)
+        above_elev = {
+            "lower": 2200,
+            "upper": None,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        below_elev = {
+            "lower": None,
+            "upper": 2200,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        traits = [
+            _albina_trait("above-2200", above_elev, danger_level=3),
+            _albina_trait("below-2200", below_elev, danger_level=1),
+        ]
+        rm = _albina_render_model_with_bands(traits)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "at-07-23-02",
+                "slug": region.name_slug,
+                "date_str": "2026-03-15",
+            },
+        )
+        content = client.get(url).content.decode()
+        assert "Above 2200 m" in content
+        assert "Below 2200 m" in content
+
+    def test_slf_bulletin_has_no_band_headings(
+        self,
+        client: Client,
+    ) -> None:
+        """SLF bulletin renders zero band-heading elements."""
+        day = date(2026, 3, 15)
+        major = MajorRegionFactory.create(prefix="CH-4")
+        sub = SubRegionFactory.create(prefix="CH-41", major=major)
+        region = MicroRegionFactory.create(region_id="ch-4115", subregion=sub)
+        traits = [
+            {
+                "category": "dry",
+                "time_period": "all_day",
+                "title": "Dry avalanches",
+                "geography": {"source": "problems"},
+                "problems": [_problem()],
+                "prose": None,
+                "danger_level": 2,
+                "band_id": None,
+                "elevation": None,
+            }
+        ]
+        rm = _render_model_with_traits(traits)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="band-heading"' not in content
+
+    def test_constant_danger_albina_no_band_headings(
+        self,
+        client: Client,
+        region: MicroRegion,
+    ) -> None:
+        """ALBINA constant-danger bulletin (single trait, no band_id) has no band headings."""
+        day = date(2026, 3, 15)
+        traits: list[dict] = [
+            {
+                "category": "dry",
+                "time_period": "all_day",
+                "title": "Dry avalanches",
+                "geography": {"source": "problems"},
+                "problems": [
+                    {
+                        "problem_type": "persistent_weak_layers",
+                        "time_period": "all_day",
+                        "elevation": None,
+                        "aspects": ["N"],
+                        "comment_html": "",
+                        "core_zone_text": None,
+                        "danger_rating_value": "considerable",
+                        "avalanche_type": None,
+                        "extras": {},
+                        "avalanche_size": 2,
+                        "frequency": "some",
+                        "snowpack_stability": "poor",
+                    }
+                ],
+                "prose": None,
+                "danger_level": 3,
+                "band_id": None,
+                "elevation": None,
+            }
+        ]
+        rm = _albina_render_model_with_bands(traits)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "at-07-23-02",
+                "slug": region.name_slug,
+                "date_str": "2026-03-15",
+            },
+        )
+        content = client.get(url).content.decode()
+        assert 'data-testid="band-heading"' not in content

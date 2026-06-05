@@ -83,6 +83,7 @@ from bulletins.services.render_model import (
     DayCharacter,
     PeriodTransition,
     RenderModelBuildError,
+    _band_label_for_elevation,
     build_render_model,
     compute_day_character,
     compute_period_transition,
@@ -3739,6 +3740,296 @@ def _resolve_problem_cards(
     return _problem_cards_from_render_model_traits(traits, danger_patterns or [])
 
 
+_TIME_PERIOD_ORDER: dict[str, int] = {"earlier": 0, "all_day": 1, "later": 2}
+
+
+def _band_sort_key(band_id: str | None) -> int:
+    """
+    Return a sort key so the high-elevation band sorts before the low band.
+
+    Bands with a numeric lower bound (``"above-{N}"``) sort by descending
+    lower bound — the highest lower bound (highest band) comes first.
+    Treeline bands sort: above-treeline → above-treeline (0), below-treeline
+    (1), all-elevations (2). Unknown slugs fall after all-elevations.
+
+    Args:
+        band_id: The band ID slug, or None.
+
+    Returns:
+        An integer sort key (lower = rendered first).
+
+    """
+    if band_id is None or band_id == "all-elevations":
+        return 10_000_000  # sort after any real band
+    if band_id == "above-treeline":
+        return -1
+    if band_id == "below-treeline":
+        return 0
+    if band_id.startswith("above-"):
+        try:
+            return -int(band_id[6:])  # descending: higher pivot first
+        except ValueError:
+            pass
+    if band_id.startswith("below-"):
+        try:
+            return int(band_id[6:])
+        except ValueError:
+            pass
+    return 5_000_000
+
+
+def _pivot_label(band_elevation: dict[str, Any] | None) -> str:
+    """
+    Return the pivot value string for a band's elevation (e.g. "2500 m").
+
+    Used to build the pivot-migration sub-header when the band's earlier and
+    later pivots differ.
+
+    Args:
+        band_elevation: A parsed elevation dict from the render model, or None.
+
+    Returns:
+        A human-readable pivot string (e.g. ``"2500 m"`` or ``"treeline"``).
+
+    """
+    if not band_elevation:
+        return ""
+    treeline: bool = band_elevation.get("treeline", False)
+    if treeline:
+        return _gettext("treeline")
+    lower: int | None = band_elevation.get("lower")
+    upper: int | None = band_elevation.get("upper")
+    pivot = lower if lower is not None else upper
+    if pivot is not None:
+        return f"{pivot} m"
+    return ""
+
+
+def _build_band_time_subheader(
+    earlier_pivot: str,
+    later_pivot: str,
+) -> str:
+    """
+    Build the pivot-migration prose sub-header, or empty string when unchanged.
+
+    Returns a localised string of the form
+    "Wet line at {earlier_pivot} earlier, {later_pivot} later"
+    only when the two pivots differ.  When they are the same (or either is
+    blank) an empty string is returned so the template hides the sub-header.
+
+    Args:
+        earlier_pivot: Pivot label for the earlier period (e.g. ``"2500 m"``).
+        later_pivot: Pivot label for the later period (e.g. ``"2800 m"``).
+
+    Returns:
+        Localised sub-header string, or empty string.
+
+    """
+    if not earlier_pivot or not later_pivot or earlier_pivot == later_pivot:
+        return ""
+    return _gettext("Wet line at %(earlier)s earlier, %(later)s later") % {
+        "earlier": earlier_pivot,
+        "later": later_pivot,
+    }
+
+
+def _build_single_trait_card(
+    trait: dict[str, Any],
+    normalised_patterns: list[dict[str, str]],
+) -> dict[str, Any] | None:
+    """
+    Build a single problem card dict from an enriched render-model trait.
+
+    Returns ``None`` when the trait carries no problems (skip silently).
+
+    Args:
+        trait: An enriched trait dict from the render model.
+        normalised_patterns: Pre-normalised danger-pattern list shared by all
+            cards in the same bulletin (computed once by the caller).
+
+    Returns:
+        A card dict, or ``None`` when the trait has no problems.
+
+    """
+    category: str = trait.get("category") or ""
+    danger_level: int = trait.get("danger_level") or 1
+    time_period: str = trait.get("time_period") or "all_day"
+    time_period_label: str | Promise = _TIME_PERIOD_LABELS.get(time_period, "")
+    problems: list[dict[str, Any]] = trait.get("problems") or []
+    if not problems:
+        return None
+    first = problems[0]
+    problem_labels = [
+        str(
+            _PROBLEM_LABELS.get(
+                p.get("problem_type", ""),
+                p.get("problem_type", "").replace("_", " ").capitalize(),
+            )
+        )
+        for p in problems
+    ]
+    label = " + ".join(problem_labels) if problem_labels else (trait.get("title") or "")
+    max_danger_level = danger_level
+    for p in problems:
+        drv: str = p.get("danger_rating_value") or ""
+        plevel = _DANGER_RATING_INT.get(drv, 0)
+        if plevel > max_danger_level:
+            max_danger_level = plevel
+    frequency_raw: str | None = first.get("frequency") or None
+    stability_raw: str | None = first.get("snowpack_stability") or None
+    frequency_label: Promise | None = _FREQUENCY_LABELS.get(frequency_raw or "")
+    stability_label: Promise | None = _STABILITY_LABELS.get(stability_raw or "")
+    return {
+        "category": category,
+        "danger_level": max_danger_level,
+        "danger_level_key": _DANGER_ORDER[max(max_danger_level, 1) - 1].replace(
+            "_", "-"
+        ),
+        "label": label,
+        "time_period_label": time_period_label,
+        "aspects": first.get("aspects") or [],
+        "elevation": first.get("elevation"),
+        "comment_html": first.get("comment_html") or "",
+        "core_zone_text": first.get("core_zone_text") or "",
+        "hide_comment": False,
+        "avalanche_type": first.get("avalanche_type"),
+        "avalanche_size": first.get("avalanche_size"),
+        "frequency_label": frequency_label,
+        "stability_label": stability_label,
+        "danger_patterns": normalised_patterns,
+    }
+
+
+def _cards_for_band(
+    bid: str,
+    band_traits_list: list[dict[str, Any]],
+    band_label_str: str,
+    subheader: str,
+    normalised_patterns: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """
+    Build the card list for a single ALBINA elevation band.
+
+    Stamps ``band_id``, and (on the first card only) ``band_label`` and
+    optionally ``time_subheader``.
+
+    Args:
+        bid: The band ID slug.
+        band_traits_list: Traits belonging to this band (already sorted).
+        band_label_str: Human-readable label for the band (e.g. "Above 2200 m").
+        subheader: Pivot-migration sub-header or empty string.
+        normalised_patterns: Pre-normalised danger patterns shared by all cards.
+
+    Returns:
+        List of card dicts for this band.
+
+    """
+    cards: list[dict[str, Any]] = []
+    is_first = True
+    for trait in band_traits_list:
+        card = _build_single_trait_card(trait, normalised_patterns)
+        if card is None:
+            continue
+        card["band_id"] = bid
+        if is_first:
+            card["band_label"] = band_label_str
+            if subheader:
+                card["time_subheader"] = subheader
+            is_first = False
+        cards.append(card)
+    return cards
+
+
+def _build_albina_band_cards(
+    traits: list[dict[str, Any]],
+    normalised_patterns: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """
+    Build the ordered card list for an ALBINA bulletin with elevation bands.
+
+    Groups traits by ``band_id``, sorts bands high-elevation-first, sorts
+    within each band by time period (earlier → all_day → later), and stamps
+    ``band_label`` and (when pivot migrates) ``time_subheader`` on the first
+    card of each band.
+
+    Args:
+        traits: Enriched ALBINA traits list (all carry ``band_id``).
+        normalised_patterns: Pre-normalised danger patterns shared by all cards.
+
+    Returns:
+        Flat list of card dicts in presentation order.
+
+    """
+    band_order: list[str] = []
+    band_traits: dict[str, list[dict[str, Any]]] = {}
+    band_elevations: dict[str, dict[str, Any] | None] = {}
+    for trait in traits:
+        bid: str = trait.get("band_id") or "all-elevations"
+        if bid not in band_traits:
+            band_order.append(bid)
+            band_traits[bid] = []
+            band_elevations[bid] = trait.get("elevation")
+        band_traits[bid].append(trait)
+
+    band_order.sort(key=_band_sort_key)
+    for bid in band_order:
+        band_traits[bid].sort(
+            key=lambda t: _TIME_PERIOD_ORDER.get(t.get("time_period") or "all_day", 1)
+        )
+
+    band_subheaders = _build_band_subheaders(band_order, band_traits, band_elevations)
+
+    cards: list[dict[str, Any]] = []
+    for bid in band_order:
+        band_label_str = _band_label_for_elevation(band_elevations.get(bid))
+        cards.extend(
+            _cards_for_band(
+                bid,
+                band_traits[bid],
+                band_label_str,
+                band_subheaders.get(bid, ""),
+                normalised_patterns,
+            )
+        )
+    return cards
+
+
+def _build_band_subheaders(
+    band_order: list[str],
+    band_traits: dict[str, list[dict[str, Any]]],
+    band_elevations: dict[str, dict[str, Any] | None],
+) -> dict[str, str]:
+    """
+    Build the pivot-migration sub-header string for each band.
+
+    Returns a dict mapping ``band_id → sub-header string``.  The sub-header
+    is non-empty only when a band has both ``earlier`` and ``later`` traits
+    whose elevation pivots differ.
+
+    Args:
+        band_order: Ordered list of band ID slugs.
+        band_traits: Mapping of band_id → traits list.
+        band_elevations: Mapping of band_id → parsed elevation dict.
+
+    Returns:
+        Dict of ``band_id → sub-header string`` (empty string when unchanged).
+
+    """
+    result: dict[str, str] = {}
+    for bid in band_order:
+        band_elevation = band_elevations.get(bid)
+        by_period: dict[str, str] = {}
+        for t in band_traits[bid]:
+            period = t.get("time_period") or "all_day"
+            pivot = _pivot_label(band_elevation)
+            if pivot:
+                by_period[period] = pivot
+        result[bid] = _build_band_time_subheader(
+            by_period.get("earlier", ""), by_period.get("later", "")
+        )
+    return result
+
+
 def _problem_cards_from_render_model_traits(
     traits: list[dict[str, Any]],
     danger_patterns: list[str] | None = None,
@@ -3756,6 +4047,14 @@ def _problem_cards_from_render_model_traits(
     spatial data (aspects / elevation) — ALBINA aggregation entries always
     contain a single problem type per time-period group.
 
+    For ALBINA bulletins the traits carry ``band_id`` and ``elevation`` keys
+    (set in v7 of the render model).  This function groups those traits by
+    band, sorts bands high-first, and sets ``band_label`` and (when the
+    pivot migrates) ``time_subheader`` only on the **first card of each band**
+    so the template renders one heading per band without forloop logic.
+    SLF and MeteoFrance traits never carry ``band_id`` so the existing flat
+    layout is unchanged for those sources.
+
     Args:
         traits: Enriched render model traits list.
         danger_patterns: Bulletin-level danger patterns (raw strings such as
@@ -3767,84 +4066,17 @@ def _problem_cards_from_render_model_traits(
         Flat list of card dicts, one per trait, in trait order.
 
     """
-    # Normalise once; all cards in the bulletin share the same pattern set.
     normalised_patterns: list[dict[str, str]] = [
         _normalise_danger_pattern(p) for p in (danger_patterns or [])
     ]
-
-    cards: list[dict[str, Any]] = []
-    for trait in traits:
-        category: str = trait.get("category") or ""
-        danger_level: int = trait.get("danger_level") or 1
-        time_period: str = trait.get("time_period") or "all_day"
-        time_period_label: str | Promise = _TIME_PERIOD_LABELS.get(time_period, "")
-        problems: list[dict[str, Any]] = trait.get("problems") or []
-        if not problems:
-            continue
-        # Use the first problem for spatial data.
-        first = problems[0]
-
-        # Derive the card label from individual problem type labels rather than
-        # the trait's editorial title. For a single-problem trait the label is
-        # the problem type label (e.g. "Wind slab"); for a multi-problem trait
-        # labels are joined with " + " (e.g. "Wet snow + Gliding snow"). This
-        # matches the presentation produced by the old SLF aggregation path.
-        problem_labels = [
-            str(
-                _PROBLEM_LABELS.get(
-                    p.get("problem_type", ""),
-                    p.get("problem_type", "").replace("_", " ").capitalize(),
-                )
-            )
-            for p in problems
+    is_albina = any(t.get("band_id") for t in traits)
+    if not is_albina:
+        return [
+            c
+            for c in (_build_single_trait_card(t, normalised_patterns) for t in traits)
+            if c is not None
         ]
-        label = (
-            " + ".join(problem_labels) if problem_labels else (trait.get("title") or "")
-        )
-
-        # Danger level is the maximum across all problems in this trait.
-        max_danger_level = danger_level
-        for p in problems:
-            drv: str = p.get("danger_rating_value") or ""
-            plevel = _DANGER_RATING_INT.get(drv, 0)
-            if plevel > max_danger_level:
-                max_danger_level = plevel
-
-        # EAWS matrix axes (ALBINA-only — None for SLF/MeteoFrance). Translated
-        # at projection time so the template renders strings directly. Frequency
-        # ``"none"`` is intentionally dropped — treated as "not reported".
-        frequency_raw: str | None = first.get("frequency") or None
-        stability_raw: str | None = first.get("snowpack_stability") or None
-        frequency_label: Promise | None = _FREQUENCY_LABELS.get(frequency_raw or "")
-        stability_label: Promise | None = _STABILITY_LABELS.get(stability_raw or "")
-
-        cards.append(
-            {
-                "category": category,
-                "danger_level": max_danger_level,
-                "danger_level_key": _DANGER_ORDER[max(max_danger_level, 1) - 1].replace(
-                    "_", "-"
-                ),
-                "label": label,
-                "time_period_label": time_period_label,
-                "aspects": first.get("aspects") or [],
-                "elevation": first.get("elevation"),
-                "comment_html": first.get("comment_html") or "",
-                "core_zone_text": first.get("core_zone_text") or "",
-                "hide_comment": False,
-                # v4: avalanche_type for slab/loose chip (may be None).
-                "avalanche_type": first.get("avalanche_type"),
-                # ALBINA EAWS matrix axes — None on SLF/MeteoFrance cards.
-                "avalanche_size": first.get("avalanche_size"),
-                "frequency_label": frequency_label,
-                "stability_label": stability_label,
-                # Bulletin-level danger patterns (ALBINA only). Each entry is
-                # {"label": "GM.1", "title": "Deep persistent weak layer"}.
-                # Empty list for SLF and MeteoFrance bulletins.
-                "danger_patterns": normalised_patterns,
-            }
-        )
-    return cards
+    return _build_albina_band_cards(traits, normalised_patterns)
 
 
 def _enrich_render_model_problem(

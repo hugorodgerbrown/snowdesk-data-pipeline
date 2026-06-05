@@ -33,6 +33,26 @@ Renders:
 {% endcomment %}
 {% load i18n static card_tags hazard_icons snowdesk_html snowdesk_time %}
 
+{# ── ALBINA elevation-band heading ────────────────────────────────────────── #}
+{# Emitted only on the first card of each band group. SLF and MeteoFrance    #}
+{# cards never carry band_label, so these blocks are no-ops for them.        #}
+{% if card.band_label %}
+    <h3
+        class="text-label font-semibold text-text-1 mt-4 mb-1 px-1"
+        data-testid="band-heading"
+    >
+        {{ card.band_label }}
+    </h3>
+{% endif %}
+{% if card.time_subheader %}
+    <p
+        class="text-xs text-text-2 mb-2 px-1"
+        data-testid="band-time-subheader"
+    >
+        {{ card.time_subheader }}
+    </p>
+{% endif %}
+
 {# ── Problem card ───────────────────────────────────────────────────────── #}
 <div
     class="rating-block bg-card border border-border rounded-card overflow-hidden mb-4 last:mb-0"
