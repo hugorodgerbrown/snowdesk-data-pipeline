@@ -97,6 +97,17 @@ Version 6 changes:
     ``bulletins/services/prose/en.py`` silently falls back to the previous
     empty-state behaviour.
 
+Version 7 changes:
+  - ALBINA elevation-band grouping: ``AlbinaAdapter.resolve_aggregations``
+    now calls the new ``_synthesise_aggregation_from_albina_problems`` helper
+    which keys on ``(band_id, category, vtp)`` instead of ``(category, vtp)``.
+    Each aggregation entry carries the resolved ``elevation`` dict and a
+    ``band_id`` slug so downstream consumers (day_rating, views) can derive
+    band labels without re-reading raw CAAML.  MeteoFrance continues to use
+    the old ``_synthesise_aggregation_from_problems`` (no elevation split).
+    Two new helpers support this: ``_band_id_for_problem`` and
+    ``_band_label_for_elevation``.
+
 Also exposes ``compute_period_transition``, a pure function that inspects the
 ``danger.ratings`` list in a render model and derives a ``PeriodTransition``
 dataclass describing whether the day escalates, de-escalates, is flat-but-split,
@@ -132,7 +143,7 @@ logger = logging.getLogger(__name__)
 # Version
 # ---------------------------------------------------------------------------
 
-RENDER_MODEL_VERSION: int = 6
+RENDER_MODEL_VERSION: int = 7
 
 # ---------------------------------------------------------------------------
 # Constants — EAWS problem-type enum (openapi.json lines 670–683)
@@ -664,6 +675,159 @@ def _synthesise_aggregation_from_problems(
     return [seen[k] for k in order]
 
 
+def _band_id_for_problem(problem: dict[str, Any]) -> str:
+    """
+    Derive a stable band identifier slug from an ALBINA problem's elevation.
+
+    Used by ``_synthesise_aggregation_from_albina_problems`` to group problems
+    that share the same elevation band, regardless of category or time period.
+    The slug is safe for use as a data attribute value.
+
+    Rules:
+      - No elevation → ``"all-elevations"``
+      - Treeline pivot, lower bound is treeline → ``"above-treeline"`` (above band)
+        or ``"below-treeline"`` (below band, upper bound is treeline).
+      - Numeric lower bound only → ``"above-{lower}"`` (above band).
+      - Numeric upper bound only → ``"below-{upper}"`` (below band).
+      - Both numeric → ``"{lower}-to-{upper}"`` (narrow band — rare).
+
+    Args:
+        problem: A single raw CAAML avalanche problem dict.
+
+    Returns:
+        A hyphenated slug string identifying the elevation band.
+
+    """
+    elevation: dict[str, Any] | None = problem.get("elevation") or None
+    if not elevation:
+        return "all-elevations"
+
+    lower_raw = elevation.get("lowerBound")
+    upper_raw = elevation.get("upperBound")
+
+    lower_is_treeline = str(lower_raw or "").lower() == _TREELINE_TOKEN
+    upper_is_treeline = str(upper_raw or "").lower() == _TREELINE_TOKEN
+
+    if lower_is_treeline:
+        return "above-treeline"
+    if upper_is_treeline:
+        return "below-treeline"
+
+    lower_int = _to_int_safe(lower_raw)
+    upper_int = _to_int_safe(upper_raw)
+
+    if lower_int is not None and upper_int is not None:
+        return f"{lower_int}-to-{upper_int}"
+    if lower_int is not None:
+        return f"above-{lower_int}"
+    if upper_int is not None:
+        return f"below-{upper_int}"
+    return "all-elevations"
+
+
+def _band_label_for_elevation(elevation: dict[str, Any] | None) -> str:
+    """
+    Build a human-readable band label from a parsed elevation dict.
+
+    Consumes the shape produced by ``_parse_elevation``:
+    ``{"lower": int|None, "upper": int|None, "treeline": bool,
+       "treeline_side": "lower"|"upper"|None}``.
+
+    Rules:
+      - ``None`` → ``"All elevations"``
+      - treeline, lower bound is treeline (``treeline_side == "lower"``) →
+        ``"Above treeline"``
+      - treeline, upper bound is treeline (``treeline_side == "upper"``) →
+        ``"Below treeline"``
+      - numeric lower only → ``"Above {lower} m"``
+      - numeric upper only → ``"Below {upper} m"``
+      - both numeric → ``"{lower}–{upper} m"``
+
+    Args:
+        elevation: Parsed elevation dict from ``_parse_elevation``, or ``None``.
+
+    Returns:
+        A human-readable band label string.
+
+    """
+    if not elevation:
+        return "All elevations"
+
+    treeline: bool = elevation.get("treeline", False)
+    treeline_side: str | None = elevation.get("treeline_side")
+
+    if treeline:
+        if treeline_side == "lower":
+            return "Above treeline"
+        return "Below treeline"
+
+    lower: int | None = elevation.get("lower")
+    upper: int | None = elevation.get("upper")
+
+    if lower is not None and upper is not None:
+        return f"{lower}–{upper} m"
+    if lower is not None:
+        return f"Above {lower} m"
+    if upper is not None:
+        return f"Below {upper} m"
+    return "All elevations"
+
+
+def _synthesise_aggregation_from_albina_problems(
+    properties: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """
+    Synthesise an ALBINA aggregation list keyed on (band_id, category, vtp).
+
+    ALBINA bulletins split danger by elevation band — each problem carries an
+    ``elevation`` field that identifies the band (e.g. ``lowerBound: "2200"``).
+    This synthesiser keys on ``(band_id, category, vtp)`` so that a bulletin
+    with an elevation split produces one aggregation entry per band per
+    (category, period), instead of collapsing both bands into one entry.
+
+    Unlike ``_synthesise_aggregation_from_problems`` (which is shared with
+    MeteoFrance and keys on ``(category, vtp)`` only), this function also
+    carries the parsed ``elevation`` dict and ``band_id`` string forward on
+    each entry so that downstream consumers (day_rating, views) can derive
+    band labels without re-reading the raw CAAML.
+
+    The MeteoFrance adapter continues to call the shared function.
+
+    Args:
+        properties: The CAAML bulletin properties dict.
+
+    Returns:
+        An aggregation list in problem-encounter order with entries deduplicated
+        by ``(band_id, category, vtp)`` and enriched with ``elevation`` and
+        ``band_id`` keys.
+
+    """
+    problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
+    seen: dict[tuple[str, str, str], dict[str, Any]] = {}
+    order: list[tuple[str, str, str]] = []
+    for problem in problems:
+        pt: str = problem.get("problemType", "")
+        vtp: str = problem.get("validTimePeriod") or "all_day"
+        category: str = PROBLEM_TYPE_TO_CATEGORY.get(pt, "dry")
+        band_id: str = _band_id_for_problem(problem)
+        key = (band_id, category, vtp)
+        if key not in seen:
+            parsed_elevation = _parse_elevation(problem.get("elevation") or None)
+            seen[key] = {
+                "category": category,
+                "validTimePeriod": vtp,
+                "problemTypes": [],
+                "title": None,
+                "band_id": band_id,
+                "elevation": parsed_elevation,
+            }
+            order.append(key)
+        entry = seen[key]
+        if pt not in entry["problemTypes"]:
+            entry["problemTypes"].append(pt)
+    return [seen[k] for k in order]
+
+
 class AlbinaAdapter:
     """
     Adapter for ALBINA (ALBINA) bulletins.
@@ -677,8 +841,8 @@ class AlbinaAdapter:
     """
 
     def resolve_aggregations(self, properties: dict[str, Any]) -> list[dict[str, Any]]:
-        """Synthesise aggregation from avalancheProblems by (category, vtp)."""
-        return _synthesise_aggregation_from_problems(properties)
+        """Synthesise aggregation from avalancheProblems by (band, category, vtp)."""
+        return _synthesise_aggregation_from_albina_problems(properties)
 
     def resolve_problem_rating(
         self,
@@ -1380,6 +1544,11 @@ def _build_trait(
     else:
         geography_source = "problems"
 
+    # ALBINA entries carry band_id and elevation from the synthesised aggregation.
+    # SLF and MeteoFrance entries never set these keys, so .get() returns None.
+    band_id: str | None = aggregation_entry.get("band_id") or None
+    band_elevation: dict[str, Any] | None = aggregation_entry.get("elevation") or None
+
     return {
         "category": category,
         "time_period": time_period,
@@ -1388,6 +1557,8 @@ def _build_trait(
         "problems": built_problems,
         "prose": prose,
         "danger_level": danger_level,
+        "band_id": band_id,
+        "elevation": band_elevation,
     }
 
 

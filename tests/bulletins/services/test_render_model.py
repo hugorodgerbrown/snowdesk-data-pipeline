@@ -29,6 +29,8 @@ from bulletins.services.meteofrance_translator import parse_dpbra_xml
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
+    _band_id_for_problem,
+    _band_label_for_elevation,
     _build_metadata,
     _build_prose,
     _detect_source,
@@ -40,6 +42,7 @@ from bulletins.services.render_model import (
     _resolve_danger_patterns,
     _resolve_problem_extras,
     _resolve_problem_rating,
+    _synthesise_aggregation_from_albina_problems,
     build_render_model,
     compute_day_character,
 )
@@ -1070,11 +1073,11 @@ class TestComputeDayCharacterRoundTrip:
 
 
 class TestRenderModelVersion:
-    """Tests that RENDER_MODEL_VERSION and built version are both 6."""
+    """Tests that RENDER_MODEL_VERSION and built version are both 7."""
 
     def test_constant_is_current(self) -> None:
         """RENDER_MODEL_VERSION constant equals the current version."""
-        assert RENDER_MODEL_VERSION == 6
+        assert RENDER_MODEL_VERSION == 7
 
     def test_build_render_model_returns_current_version(self) -> None:
         """build_render_model returns a dict with the current version."""
@@ -3019,3 +3022,197 @@ class TestPerProblemEawsFields:
                     assert "snowpack_stability" in problem, (
                         f"missing snowpack_stability in {filename or 'albina'}"
                     )
+
+
+# ---------------------------------------------------------------------------
+# Version 7 — ALBINA elevation-band grouping
+# ---------------------------------------------------------------------------
+
+
+class TestBandIdForProblem:
+    """Tests for _band_id_for_problem."""
+
+    def test_no_elevation_returns_all_elevations(self) -> None:
+        """Problem with no elevation field returns 'all-elevations'."""
+        assert _band_id_for_problem({}) == "all-elevations"
+
+    def test_treeline_lower_bound(self) -> None:
+        """lowerBound='treeline' returns 'above-treeline'."""
+        problem = {"elevation": {"lowerBound": "treeline"}}
+        assert _band_id_for_problem(problem) == "above-treeline"
+
+    def test_treeline_upper_bound(self) -> None:
+        """upperBound='treeline' returns 'below-treeline'."""
+        problem = {"elevation": {"upperBound": "treeline"}}
+        assert _band_id_for_problem(problem) == "below-treeline"
+
+    def test_numeric_lower_only(self) -> None:
+        """Numeric lower bound only returns 'above-{lower}'."""
+        problem = {"elevation": {"lowerBound": "2200"}}
+        assert _band_id_for_problem(problem) == "above-2200"
+
+    def test_numeric_upper_only(self) -> None:
+        """Numeric upper bound only returns 'below-{upper}'."""
+        problem = {"elevation": {"upperBound": "2200"}}
+        assert _band_id_for_problem(problem) == "below-2200"
+
+    def test_both_numeric_bounds(self) -> None:
+        """Both numeric bounds returns '{lower}-to-{upper}'."""
+        problem = {"elevation": {"lowerBound": "1800", "upperBound": "2400"}}
+        assert _band_id_for_problem(problem) == "1800-to-2400"
+
+
+class TestBandLabelForElevation:
+    """Tests for _band_label_for_elevation."""
+
+    def test_none_returns_all_elevations(self) -> None:
+        """None elevation returns 'All elevations'."""
+        assert _band_label_for_elevation(None) == "All elevations"
+
+    def test_treeline_lower_side(self) -> None:
+        """treeline_side='lower' returns 'Above treeline'."""
+        elev = {
+            "treeline": True,
+            "treeline_side": "lower",
+            "lower": None,
+            "upper": None,
+        }
+        assert _band_label_for_elevation(elev) == "Above treeline"
+
+    def test_treeline_upper_side(self) -> None:
+        """treeline_side='upper' returns 'Below treeline'."""
+        elev = {
+            "treeline": True,
+            "treeline_side": "upper",
+            "lower": None,
+            "upper": None,
+        }
+        assert _band_label_for_elevation(elev) == "Below treeline"
+
+    def test_numeric_lower_only(self) -> None:
+        """Numeric lower bound only returns 'Above {lower} m'."""
+        elev = {"treeline": False, "treeline_side": None, "lower": 2200, "upper": None}
+        assert _band_label_for_elevation(elev) == "Above 2200 m"
+
+    def test_numeric_upper_only(self) -> None:
+        """Numeric upper bound only returns 'Below {upper} m'."""
+        elev = {"treeline": False, "treeline_side": None, "lower": None, "upper": 2200}
+        assert _band_label_for_elevation(elev) == "Below 2200 m"
+
+    def test_both_numeric(self) -> None:
+        """Both numeric bounds returns '{lower}–{upper} m'."""
+        elev = {"treeline": False, "treeline_side": None, "lower": 1800, "upper": 2400}
+        assert _band_label_for_elevation(elev) == "1800–2400 m"
+
+
+class TestSynthesiseAggregationFromAlbinaProblems:
+    """Tests for _synthesise_aggregation_from_albina_problems."""
+
+    def test_single_problem_no_elevation(self) -> None:
+        """Single problem with no elevation → one entry with band_id='all-elevations'."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {"problemType": "wind_slab", "validTimePeriod": "all_day"}
+            ]
+        }
+        result = _synthesise_aggregation_from_albina_problems(props)
+        assert len(result) == 1
+        assert result[0]["band_id"] == "all-elevations"
+        assert result[0]["elevation"] is None
+
+    def test_elevation_split_produces_two_entries(self) -> None:
+        """Two problems with different elevation bands produce two entries."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "persistent_weak_layers",
+                    "validTimePeriod": "all_day",
+                    "elevation": {"lowerBound": "2200"},
+                },
+                {
+                    "problemType": "wet_snow",
+                    "validTimePeriod": "all_day",
+                    "elevation": {"upperBound": "2200"},
+                },
+            ]
+        }
+        result = _synthesise_aggregation_from_albina_problems(props)
+        assert len(result) == 2
+        band_ids = {e["band_id"] for e in result}
+        assert band_ids == {"above-2200", "below-2200"}
+
+    def test_elevation_carried_on_entry(self) -> None:
+        """Band entry carries the parsed elevation dict."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wind_slab",
+                    "validTimePeriod": "all_day",
+                    "elevation": {"lowerBound": "2200"},
+                }
+            ]
+        }
+        result = _synthesise_aggregation_from_albina_problems(props)
+        assert result[0]["elevation"] is not None
+        assert result[0]["elevation"]["lower"] == 2200
+
+    def test_four_way_split_elevation_and_time(self) -> None:
+        """Problems split by both elevation and time produce four entries."""
+        props: dict[str, Any] = {
+            "avalancheProblems": [
+                {
+                    "problemType": "wet_snow",
+                    "validTimePeriod": "earlier",
+                    "elevation": {"lowerBound": "2500"},
+                },
+                {
+                    "problemType": "wet_snow",
+                    "validTimePeriod": "earlier",
+                    "elevation": {"upperBound": "2500"},
+                },
+                {
+                    "problemType": "wet_snow",
+                    "validTimePeriod": "later",
+                    "elevation": {"lowerBound": "2800"},
+                },
+                {
+                    "problemType": "wet_snow",
+                    "validTimePeriod": "later",
+                    "elevation": {"upperBound": "2800"},
+                },
+            ]
+        }
+        result = _synthesise_aggregation_from_albina_problems(props)
+        assert len(result) == 4
+        keys = {(e["band_id"], e["validTimePeriod"]) for e in result}
+        assert ("above-2500", "earlier") in keys
+        assert ("below-2500", "earlier") in keys
+        assert ("above-2800", "later") in keys
+        assert ("below-2800", "later") in keys
+
+    def test_albina_sample_bulletin_produces_two_traits_with_band_ids(self) -> None:
+        """ALBINA sample bulletin (2200m split) produces 2 traits with band_id set."""
+        props = _load_albina_bulletin()
+        rm = build_render_model(props)
+        traits = rm["traits"]
+        # Sample has one problem above 2200m and one implicit below (from dangerRatings).
+        # The aggregation keys on elevation: above-2200 and all-elevations (no upper bound
+        # problem in this fixture — only lowerBound: "2200" problem).
+        assert len(traits) >= 1
+        for trait in traits:
+            assert "band_id" in trait
+            assert trait["band_id"] is not None
+
+    def test_slf_traits_have_no_band_id(self) -> None:
+        """SLF traits carry band_id=None (SLF uses the shared aggregation path)."""
+        props = _load_sample("sample_variable_day.json")
+        rm = build_render_model(props)
+        for trait in rm["traits"]:
+            assert trait["band_id"] is None
+
+    def test_mf_traits_have_no_band_id(self) -> None:
+        """MeteoFrance traits carry band_id=None (MF uses the shared aggregation path)."""
+        props = _load_mf_bulletin("massif-001.xml")
+        rm = build_render_model(props)
+        for trait in rm["traits"]:
+            assert trait["band_id"] is None
