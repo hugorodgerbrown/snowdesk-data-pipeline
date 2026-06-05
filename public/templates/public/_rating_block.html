@@ -10,9 +10,11 @@ Expects the following variables in scope:
                   panel_title (optional — editorial heading for SLF split-day
                                panels, e.g. "Dry avalanches, whole day"; empty
                                for ALBINA and MeteoFrance cards),
-                  subdivision (optional — per-period suffix appended to the
-                               danger level number, e.g. "-", "=", "+"; empty
-                               when not available),
+                  subdivision (optional — per-period suffix display char,
+                               e.g. "-", "=", "+"; empty when not available),
+                  level_number (optional — danger integer + subdivision suffix,
+                                e.g. "2-", "2", "2+"; empty string for ALBINA
+                                and MeteoFrance cards that carry no subdivision),
                   avalanche_type (optional — "slab", "loose", or None),
                   avalanche_size (optional int 1-5; ALBINA-only),
                   frequency_label (optional translated Promise; ALBINA-only,
@@ -29,8 +31,9 @@ Renders:
      progresses"). ALBINA and MeteoFrance cards have no panel_title, so this
      row is absent for them.
   1. Card header — danger-band colour strip carrying the EAWS hazard
-     pictogram (encodes kind + level) alongside the problem name and an
-     optional time chip.  No redundant textual level label.
+     pictogram (encodes kind + level) alongside the problem name, an
+     optional level-number chip (``card.level_number``, e.g. "2-"), and
+     an optional time chip.
   2. Aspect / elevation row — only when the problem carries structured
      aspects or elevation data.  aria-label uses SLF's coreZoneText when
      present for screen readers.  Absent for prose-only problems.
@@ -91,6 +94,12 @@ Renders:
                     {% trans "Loose" as avalanche_chip_text %}
                 {% endif %}
                 {% include "includes/_chip.html" with text=avalanche_chip_text data_testid="avalanche-type-chip" %}
+            {% endif %}
+            {% if card.level_number %}
+                <span
+                    class="font-mono text-chip bg-tag text-text-3 border border-border px-2.5 py-[5px] rounded-pill shrink-0"
+                    data-testid="level-number-chip"
+                >{{ card.level_number }}</span>
             {% endif %}
             {% if card.time_period_label %}
                 {% include "includes/_chip.html" with text=card.time_period_label variant="time" data_testid="time-period-pill" %}

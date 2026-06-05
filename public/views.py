@@ -1930,9 +1930,12 @@ def _day_windows_from_rm_ratings(
     """
     Build day-window rows from the projected danger.ratings list.
 
-    SLF style: prefers ``all_day`` rows plus ``later`` overlay when the later
-    band's peak rank exceeds the all_day peak. ALBINA style: emits one row
-    per period (earlier → later) when no ``all_day`` entry is present.
+    SLF style: emits ``all_day`` rows and, when a ``later`` period is also
+    present, always appends it — regardless of whether the afternoon level
+    equals, exceeds, or is lower than the morning level. This covers
+    flat-but-split days (same level AM/PM, different problem mix) as well as
+    escalating and de-escalating cases. ALBINA style: emits one row per period
+    (earlier → later) when no ``all_day`` entry is present.
 
     For ALBINA specifically, a single period often carries two ratings split
     by elevation band (one for each of "below X" and "above X" — sometimes
@@ -3677,12 +3680,16 @@ def _problem_cards_from_aggregation(
             card["danger_level"] = max_level
             card["danger_level_key"] = _DANGER_ORDER[max_level - 1].replace("_", "-")
 
-        # SNOW-291: add panel_title, time_period, and subdivision to match
-        # the shape emitted by _problem_cards_from_render_model_traits.
+        # SNOW-291: add panel_title, time_period, subdivision, and level_number
+        # to match the shape emitted by _problem_cards_from_render_model_traits.
         agg_time_period: str = agg_entry.get("validTimePeriod") or "all_day"
         card["panel_title"] = agg_entry.get("title") or ""
         card["time_period"] = agg_time_period
-        card["subdivision"] = _subdivision_for_period(agg_time_period, resolved_ratings)
+        agg_subdivision: str = _subdivision_for_period(
+            agg_time_period, resolved_ratings
+        )
+        card["subdivision"] = agg_subdivision
+        card["level_number"] = f"{card['danger_level']}{agg_subdivision}"
 
         cards.append(card)
     return cards
@@ -3880,6 +3887,9 @@ def _problem_cards_from_render_model_traits(
         # subdivision suffix from the projected danger.ratings list.
         panel_title: str = trait.get("title") or ""
         subdivision: str = _subdivision_for_period(time_period, resolved_ratings)
+        # level_number combines the danger integer with the subdivision suffix
+        # (e.g. "2-", "2", "2+") — matches the day_windows level_number pattern.
+        level_number: str = f"{max_danger_level}{subdivision}"
 
         cards.append(
             {
@@ -3893,6 +3903,7 @@ def _problem_cards_from_render_model_traits(
                 "time_period": time_period,
                 "panel_title": panel_title,
                 "subdivision": subdivision,
+                "level_number": level_number,
                 "aspects": first.get("aspects") or [],
                 "elevation": first.get("elevation"),
                 "comment_html": first.get("comment_html") or "",

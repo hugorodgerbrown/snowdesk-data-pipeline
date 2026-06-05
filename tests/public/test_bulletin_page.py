@@ -3708,10 +3708,11 @@ class TestSnow291FlatButSplit:
         self, client: Client, region: MicroRegion
     ) -> None:
         """
-        Subdivision suffix from danger.ratings is threaded into each panel card.
+        Subdivision suffix from danger.ratings is threaded into each panel card
+        and rendered as a visible level-number chip in the rating block.
 
-        Canonical case: all_day rating has subdivision="-" → card carries
-        ``subdivision="-"``.  The template renders it in the label area.
+        Canonical case: all_day rating has subdivision="-" → level_number="2-"
+        → the chip ``data-testid="level-number-chip"`` contains "2-" in the HTML.
         """
         day = date(2026, 5, 10)
         rm = _flat_split_render_model(
@@ -3730,6 +3731,9 @@ class TestSnow291FlatButSplit:
 
         url = _url("ch-4115", "valais", "2026-05-10")
         response = client.get(url)
-        # Request the panel context directly via the view to assert the card dict.
-        # We verify via HTML that the page renders without error (200).
         assert response.status_code == 200
+        content = response.content.decode()
+        # The dry card's level_number chip must carry the subdivision suffix "2-".
+        assert "2-" in content
+        # At least one level-number chip must appear (for the all_day card).
+        assert 'data-testid="level-number-chip"' in content
