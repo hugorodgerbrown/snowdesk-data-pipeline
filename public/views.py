@@ -3225,6 +3225,19 @@ _STABILITY_LABELS: dict[str, Promise] = {
     "good": _("Good"),
 }
 
+# EAWS destructive avalanche size scale (1–5). ALBINA publishes an integer
+# size on every avalanche problem; SLF and MeteoFrance publish none. The
+# labels follow the standard EAWS size vocabulary (Small → Large → Very
+# large → Extremely large). Size 3 = "Large" matches what avalanche.report
+# renders for the same field.
+_AVALANCHE_SIZE_LABELS: dict[int, Promise] = {
+    1: _("Small"),
+    2: _("Medium"),
+    3: _("Large"),
+    4: _("Very large"),
+    5: _("Extremely large"),
+}
+
 # LWD Tyrolean danger-pattern names (gm.1–gm.10). Raw bulletin data uses
 # "DP1"–"DP10" (or "dp1"–"dp10") for these identifiers. The display label
 # is normalised to "GM.1"–"GM.10"; the tooltip carries the full English name.
@@ -3891,6 +3904,12 @@ def _build_single_trait_card(
     stability_raw: str | None = first.get("snowpack_stability") or None
     frequency_label: Promise | None = _FREQUENCY_LABELS.get(frequency_raw or "")
     stability_label: Promise | None = _STABILITY_LABELS.get(stability_raw or "")
+    avalanche_size_raw: int | None = first.get("avalanche_size")
+    avalanche_size_label: Promise | None = (
+        _AVALANCHE_SIZE_LABELS.get(avalanche_size_raw)
+        if avalanche_size_raw is not None
+        else None
+    )
     return {
         "category": category,
         "danger_level": max_danger_level,
@@ -3905,7 +3924,8 @@ def _build_single_trait_card(
         "core_zone_text": first.get("core_zone_text") or "",
         "hide_comment": False,
         "avalanche_type": first.get("avalanche_type"),
-        "avalanche_size": first.get("avalanche_size"),
+        "avalanche_size": avalanche_size_raw,
+        "avalanche_size_label": avalanche_size_label,
         "frequency_label": frequency_label,
         "stability_label": stability_label,
         "danger_patterns": normalised_patterns,
