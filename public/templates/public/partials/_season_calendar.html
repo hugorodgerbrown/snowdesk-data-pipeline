@@ -49,9 +49,27 @@
                                 data-date="{{ cell.date|date:'Y-m-d' }}"
                                 data-rating-min="{{ cell.min_rating_key }}"
                                 data-rating-max="{{ cell.max_rating_key }}"
+                                {% if cell.source %}
+                                    data-source="{{ cell.source }}"
+                                {% endif %}
+                                {% if cell.band_mode %}
+                                    data-band-mode="{{ cell.band_mode }}"
+                                {% endif %}
                                 title="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
                                 aria-label="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
-                            >{{ cell.date|date:'j' }}</a>
+                            >
+                                {% if cell.bands %}
+                                    {% for band in cell.bands %}
+                                        <span
+                                            class="calendar-band"
+                                            data-band-id="{{ band.band_id }}"
+                                            data-band-rating="{{ band.rating_key }}"
+                                            data-band-period="{{ band.time_period }}"
+                                        ></span>
+                                    {% endfor %}
+                                {% endif %}
+                                {{ cell.date|date:'j' }}
+                            </a>
                         </div>
                     {% else %}
                         <div
@@ -63,9 +81,25 @@
                                 data-date="{{ cell.date|date:'Y-m-d' }}"
                                 data-rating-min="{{ cell.min_rating_key }}"
                                 data-rating-max="{{ cell.max_rating_key }}"
+                                {% if cell.source %}
+                                    data-source="{{ cell.source }}"
+                                {% endif %}
+                                {% if cell.band_mode %}
+                                    data-band-mode="{{ cell.band_mode }}"
+                                {% endif %}
                                 title="{{ cell.date|date:'D j N' }}"
                                 aria-label="{{ cell.date|date:'D j N' }}"
                             >
+                                {% if cell.bands %}
+                                    {% for band in cell.bands %}
+                                        <span
+                                            class="calendar-band"
+                                            data-band-id="{{ band.band_id }}"
+                                            data-band-rating="{{ band.rating_key }}"
+                                            data-band-period="{{ band.time_period }}"
+                                        ></span>
+                                    {% endfor %}
+                                {% endif %}
                                 {{ cell.date|date:'j' }}
                             </div>
                         </div>
