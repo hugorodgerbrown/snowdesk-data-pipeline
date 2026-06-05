@@ -231,7 +231,11 @@ _DAY_WINDOW_LEVEL_META: dict[str, dict[str, str]] = {
 
 
 def _make_window(
-    period: str, level_key: str, pill_label: str, modifier: str = ""
+    period: str,
+    level_key: str,
+    pill_label: str,
+    modifier: str = "",
+    caption: str = "",
 ) -> dict[str, Any]:
     """Build one day-window row dict for the component-library fixture."""
     meta = _DAY_WINDOW_LEVEL_META[level_key]
@@ -241,7 +245,7 @@ def _make_window(
         "level_css": level_key.replace("_", "-"),
         "level_label": meta["label"],
         "level_number": f"{meta['number']}{modifier}",
-        "caption": "",
+        "caption": caption,
         "pill_label": pill_label,
     }
 
@@ -249,7 +253,7 @@ def _make_window(
 def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
     """Build the day-windows variant matrix.
 
-    Four stacked variants:
+    Five stacked variants:
 
     * **All-day, level grid** — five synthetic ``all_day`` rows stepping
       ``low → very_high`` so tile + label contrast is reviewable across
@@ -261,6 +265,9 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
       the most common two-row shape in the bulletin sample.
     * **Within-category later** — ``all_day`` considerable−  + ``later``
       considerable (badge differential shows the intra-band rise).
+    * **MF elevation split** — two ``all_day`` rows with distinct danger
+      levels and elevation captions, representing Météo-France style
+      "low below 2500 m / moderate above 2500 m" bulletins (SNOW-293).
     """
     all_day_grid = [
         _make_window("all_day", "low", "All day"),
@@ -280,6 +287,11 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
         _make_window("all_day", "considerable", "All day", modifier="-"),
         _make_window("later", "considerable", "Later"),
     ]
+    # Météo-France style: two all_day rows split by elevation band.
+    mf_elevation_split = [
+        _make_window("all_day", "low", "All day", caption="below 2500 m"),
+        _make_window("all_day", "moderate", "All day", caption="above 2500 m"),
+    ]
     return (
         {
             "caption": "All day · five EAWS levels",
@@ -296,6 +308,10 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
         {
             "caption": "Within-category later · considerable− → considerable",
             "context": {"day_windows": within_category},
+        },
+        {
+            "caption": "MF elevation split · low below 2500 m / moderate above 2500 m",
+            "context": {"day_windows": mf_elevation_split},
         },
     )
 
