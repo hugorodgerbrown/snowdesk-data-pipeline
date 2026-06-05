@@ -1,7 +1,7 @@
 """
 tests/bulletins/services/test_day_rating.py — Tests for the day_rating service.
 
-Covers (v6 headline-only with afternoon-elevated split policy):
+Covers (v8 elevation-band split + AM/PM split + ALBINA bands policy):
   - _target_day: morning/evening/boundary rules.
   - Single bulletin, two traits (dry=1, wet=3) → min=max=headline_key (considerable).
   - Single bulletin, single trait (dry=3) → min=max=considerable (stable).
@@ -29,6 +29,13 @@ SNOW-252 — peak semantics:
   - max_rating is the day's peak across all validTimePeriods (morning + afternoon).
   - Two-period escalating day (morning=2, afternoon=3) → max_rating=3 (considerable).
   - max_rating is NEVER the morning rating alone when afternoon is higher.
+
+SNOW-293 — elevation-band split (Météo-France):
+  - Two all_day ratings, different keys → min = lower band, max = upper band.
+  - Two all_day ratings, same key → headline-only (no spurious split).
+  - Elevation split present AND afternoon-elevated traits → elevation split wins.
+  - No danger.ratings in render_model → existing fallback preserved.
+  - Empty traits with band split → still picks up the split.
 """
 
 from __future__ import annotations
@@ -42,6 +49,7 @@ import pytest
 from bulletins.models import Bulletin, RegionDayRating
 from bulletins.services.day_rating import (
     DAY_RATING_VERSION,
+    _detect_elevation_band_split,
     _derive_albina_bands,
     _elevation_to_band_id,
     _resolve_am_pm_keys,
@@ -88,7 +96,8 @@ def _make_bulletin_for_region(
         headline_subdivision: Raw CH subdivision string (e.g. "plus") or None.
         render_model_version: Override; defaults to RENDER_MODEL_VERSION.
         source: Bulletin source string ("slf", "albina", "meteofrance").
-        danger_ratings: Optional per-rating list for render_model["danger"]["ratings"].
+        danger_ratings: Optional list of per-rating dicts for
+                        render_model["danger"]["ratings"]. Defaults to empty list.
 
     Returns:
         The created Bulletin.
@@ -98,6 +107,8 @@ def _make_bulletin_for_region(
         render_model_version = RENDER_MODEL_VERSION
     if traits is None:
         traits = []
+    if danger_ratings is None:
+        danger_ratings = []
 
     render_model = {
         "version": render_model_version,
@@ -1322,7 +1333,6 @@ class TestAmPmPersistence:
         day = datetime.date(2026, 4, 10)
         vf = datetime.datetime(2026, 4, 9, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 4, 10, 17, 0, tzinfo=UTC)
-
         _make_bulletin_for_region(
             region,
             vf,
@@ -1412,3 +1422,355 @@ class TestAmPmPersistence:
         rdr = RegionDayRating.objects.get(region=region, date=day)
         assert rdr.am_rating is None
         assert rdr.pm_rating is None
+
+
+# ---------------------------------------------------------------------------
+# SNOW-293 — elevation-band split (Météo-France style)
+# ---------------------------------------------------------------------------
+
+
+def _mf_rating(
+    key: str, period: str = "all_day", elevation: dict | None = None
+) -> dict:
+    """
+    Build a single projected ``danger.ratings`` entry for MF-style tests.
+
+    Args:
+        key: Danger key string (e.g. "low", "moderate").
+        period: Validity time period, defaults to "all_day".
+        elevation: Optional projected elevation dict.
+
+    Returns:
+        A dict shaped like one entry in render_model["danger"]["ratings"].
+
+    """
+    return {
+        "period": period,
+        "key": key,
+        "subdivision": None,
+        "elevation": elevation,
+    }
+
+
+class TestDetectElevationBandSplit:
+    """Unit tests for _detect_elevation_band_split() — no DB required."""
+
+    def test_two_all_day_different_keys_returns_min_max(self) -> None:
+        """Two all_day ratings with different keys → (lower_key, higher_key)."""
+        result = _detect_elevation_band_split(
+            [
+                _mf_rating("low"),
+                _mf_rating("moderate"),
+            ]
+        )
+        assert result == ("low", "moderate")
+
+    def test_two_all_day_same_key_returns_none(self) -> None:
+        """Two all_day ratings with the same key → no split (None)."""
+        result = _detect_elevation_band_split(
+            [
+                _mf_rating("considerable"),
+                _mf_rating("considerable"),
+            ]
+        )
+        assert result is None
+
+    def test_single_all_day_returns_none(self) -> None:
+        """Only one all_day entry → cannot split → None."""
+        result = _detect_elevation_band_split([_mf_rating("moderate")])
+        assert result is None
+
+    def test_empty_list_returns_none(self) -> None:
+        """Empty ratings list → None (no data to inspect)."""
+        result = _detect_elevation_band_split([])
+        assert result is None
+
+    def test_non_all_day_entries_ignored(self) -> None:
+        """Only 'later' entries — zero all_day entries → None."""
+        result = _detect_elevation_band_split(
+            [
+                _mf_rating("low", period="later"),
+                _mf_rating("considerable", period="later"),
+            ]
+        )
+        assert result is None
+
+    def test_mixed_periods_all_day_wins(self) -> None:
+        """Two all_day + one later with different keys → split detected from all_day pair."""
+        result = _detect_elevation_band_split(
+            [
+                _mf_rating("low"),
+                _mf_rating("moderate"),
+                _mf_rating("considerable", period="later"),
+            ]
+        )
+        assert result == ("low", "moderate")
+
+    def test_three_all_day_returns_min_max(self) -> None:
+        """Three all_day ratings → min is the lowest, max is the highest."""
+        result = _detect_elevation_band_split(
+            [
+                _mf_rating("low"),
+                _mf_rating("considerable"),
+                _mf_rating("moderate"),
+            ]
+        )
+        assert result == ("low", "considerable")
+
+    def test_rank_order_used_not_insertion_order(self) -> None:
+        """Min/max are determined by EAWS rank, not the order entries appear."""
+        result = _detect_elevation_band_split(
+            [
+                _mf_rating("high"),
+                _mf_rating("low"),
+            ]
+        )
+        assert result == ("low", "high")
+
+
+class TestResolveMinMaxKeysElevationBand:
+    """Unit tests for _resolve_min_max_keys() with the new elevation-band path."""
+
+    def test_elevation_split_takes_precedence_over_afternoon(self) -> None:
+        """
+        When rm_ratings carries a band split AND afternoon traits are elevated,
+        the elevation-band split wins (elevation split has higher precedence).
+
+        Elevation split: low below / moderate above.
+        Afternoon-elevated: morning=2, afternoon=3 (considerable).
+        Expected: min=low, max=moderate (elevation split wins).
+        """
+        rm_ratings = [_mf_rating("low"), _mf_rating("moderate")]
+        min_key, min_sub, max_key, max_sub = _resolve_min_max_keys(
+            morning_levels=[2],  # moderate
+            afternoon_levels=[3],  # considerable — would win without elevation
+            headline_key="considerable",
+            headline_subdivision="",
+            rm_ratings=rm_ratings,
+        )
+        assert min_key == "low"
+        assert max_key == "moderate"
+
+    def test_no_rm_ratings_falls_through_to_afternoon_split(self) -> None:
+        """When rm_ratings is None, the afternoon-elevated split still works."""
+        min_key, _, max_key, _ = _resolve_min_max_keys(
+            morning_levels=[2],
+            afternoon_levels=[3],
+            headline_key="considerable",
+            headline_subdivision="",
+            rm_ratings=None,
+        )
+        assert min_key == "moderate"
+        assert max_key == "considerable"
+
+    def test_empty_rm_ratings_falls_through_to_afternoon_split(self) -> None:
+        """When rm_ratings is an empty list, the afternoon-elevated split still works."""
+        min_key, _, max_key, _ = _resolve_min_max_keys(
+            morning_levels=[2],
+            afternoon_levels=[3],
+            headline_key="considerable",
+            headline_subdivision="",
+            rm_ratings=[],
+        )
+        assert min_key == "moderate"
+        assert max_key == "considerable"
+
+    def test_same_key_band_falls_through_to_headline(self) -> None:
+        """Band ratings with identical keys → no elevation split → headline-only."""
+        rm_ratings = [_mf_rating("moderate"), _mf_rating("moderate")]
+        min_key, _, max_key, _ = _resolve_min_max_keys(
+            morning_levels=[2],
+            afternoon_levels=[],
+            headline_key="moderate",
+            headline_subdivision="",
+            rm_ratings=rm_ratings,
+        )
+        assert min_key == "moderate"
+        assert max_key == "moderate"
+
+    def test_band_split_subdivision_mirrors_headline(self) -> None:
+        """Both subdivision fields mirror the headline when the band split fires."""
+        rm_ratings = [_mf_rating("low"), _mf_rating("considerable")]
+        _, min_sub, _, max_sub = _resolve_min_max_keys(
+            morning_levels=[3],
+            afternoon_levels=[],
+            headline_key="considerable",
+            headline_subdivision="+",
+            rm_ratings=rm_ratings,
+        )
+        assert min_sub == "+"
+        assert max_sub == "+"
+
+
+@pytest.mark.django_db
+class TestMFElevationBandSplitIntegration:
+    """
+    Integration tests for the Météo-France elevation-band split through
+    recompute_region_day() — verifies the end-to-end calendar tile path.
+    """
+
+    def test_two_all_day_different_keys_produces_split(self) -> None:
+        """
+        MF-style: two all_day danger.ratings with different keys (low below,
+        moderate above) → min=low, max=moderate.
+
+        This is the canonical SNOW-293 regression fixture: before the fix
+        both min and max were set to the headline key (moderate), causing
+        a solid calendar tile instead of the diagonal split.
+        """
+        region = MicroRegionFactory.create(region_id="FR-38-1")
+        day = datetime.date(2026, 3, 15)
+        vf = datetime.datetime(2026, 3, 14, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 15, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[_trait(2, "wet")],
+            headline_key="moderate",
+            danger_ratings=[
+                _mf_rating(
+                    "low", elevation={"lower": None, "upper": 2500, "treeline": False}
+                ),
+                _mf_rating(
+                    "moderate",
+                    elevation={"lower": 2500, "upper": None, "treeline": False},
+                ),
+            ],
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.min_rating == RegionDayRating.Rating.LOW
+        assert rdr.max_rating == RegionDayRating.Rating.MODERATE
+
+    def test_two_all_day_same_key_stays_headline(self) -> None:
+        """Two all_day ratings with the same key → headline-only (no spurious split)."""
+        region = MicroRegionFactory.create(region_id="FR-38-2")
+        day = datetime.date(2026, 3, 16)
+        vf = datetime.datetime(2026, 3, 15, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 16, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[_trait(3, "dry")],
+            headline_key="considerable",
+            danger_ratings=[
+                _mf_rating("considerable"),
+                _mf_rating("considerable"),
+            ],
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.min_rating == RegionDayRating.Rating.CONSIDERABLE
+        assert rdr.max_rating == RegionDayRating.Rating.CONSIDERABLE
+
+    def test_elevation_split_wins_over_afternoon_elevated_traits(self) -> None:
+        """
+        Elevation split takes precedence over the afternoon-elevated split.
+        Band split: low below / moderate above (from danger.ratings).
+        Afternoon traits: all_day=moderate(2), later=considerable(3).
+        Expected: elevation split wins → min=low, max=moderate.
+        """
+        region = MicroRegionFactory.create(region_id="FR-38-3")
+        day = datetime.date(2026, 3, 17)
+        vf = datetime.datetime(2026, 3, 16, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 17, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[
+                _split_trait(2, "all_day", "wet"),
+                _split_trait(3, "later", "wet"),
+            ],
+            headline_key="moderate",
+            danger_ratings=[
+                _mf_rating("low"),
+                _mf_rating("moderate"),
+            ],
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        # Elevation split wins — NOT the afternoon-elevated split.
+        assert rdr.min_rating == RegionDayRating.Rating.LOW
+        assert rdr.max_rating == RegionDayRating.Rating.MODERATE
+
+    def test_no_danger_ratings_field_falls_back_to_trait_split(self) -> None:
+        """
+        When danger.ratings is absent (older render models < v5), the
+        afternoon-elevated trait split still operates correctly.
+        """
+        region = MicroRegionFactory.create(region_id="FR-38-4")
+        day = datetime.date(2026, 3, 18)
+        vf = datetime.datetime(2026, 3, 17, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 18, 17, 0, tzinfo=UTC)
+
+        # Build a bulletin without 'ratings' in danger block (pre-v5 shape).
+        render_model: dict = {
+            "version": RENDER_MODEL_VERSION,
+            "danger": {
+                "key": "considerable",
+                "subdivision": None,
+                "number": 3,
+                # No 'ratings' key at all.
+            },
+            "traits": [
+                _split_trait(2, "all_day", "dry"),
+                _split_trait(3, "later", "wet"),
+            ],
+        }
+        bulletin = BulletinFactory.create(
+            issued_at=vf,
+            valid_from=vf,
+            valid_to=vt,
+            render_model=render_model,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin, region=region, region_name_at_time=region.name
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        # No band split → afternoon-elevated trait split fires.
+        assert rdr.min_rating == RegionDayRating.Rating.MODERATE
+        assert rdr.max_rating == RegionDayRating.Rating.CONSIDERABLE
+
+    def test_empty_traits_with_band_split_uses_split(self) -> None:
+        """
+        Quiet day (empty traits) with an elevation-band split in danger.ratings
+        → the band split is still picked up from danger.ratings.
+        """
+        region = MicroRegionFactory.create(region_id="FR-38-5")
+        day = datetime.date(2026, 3, 19)
+        vf = datetime.datetime(2026, 3, 18, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 19, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[],
+            headline_key="moderate",
+            danger_ratings=[
+                _mf_rating("low"),
+                _mf_rating("moderate"),
+            ],
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.min_rating == RegionDayRating.Rating.LOW
+        assert rdr.max_rating == RegionDayRating.Rating.MODERATE
