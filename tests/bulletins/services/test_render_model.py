@@ -2420,6 +2420,84 @@ class TestBuildRenderModelMeteoFranceEndToEnd:
 
 
 # ---------------------------------------------------------------------------
+# Version 5 — danger.ratings projection for MF elevation bands (SNOW-293)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveDangerMFElevationBands:
+    """
+    Tests asserting that an MF CAAML dangerRatings list with two elevation-band
+    entries projects correctly to two ``danger.ratings`` entries in the render
+    model (SNOW-293).
+    """
+
+    def _mf_band_ratings(self) -> list[dict[str, Any]]:
+        """Build a two-entry MF dangerRatings list with elevation bounds."""
+        return [
+            {
+                "mainValue": "low",
+                "validTimePeriod": "all_day",
+                "elevation": {"upperBound": "2400"},
+                "customData": {"MF": {}},
+            },
+            {
+                "mainValue": "moderate",
+                "validTimePeriod": "all_day",
+                "elevation": {"lowerBound": "2400"},
+                "customData": {"MF": {}},
+            },
+        ]
+
+    def test_two_band_entries_produce_two_ratings(self) -> None:
+        """Two MF band entries → two entries in danger.ratings."""
+        result = _resolve_danger(self._mf_band_ratings(), Bulletin.Source.METEOFRANCE)
+        assert len(result["ratings"]) == 2
+
+    def test_band_entries_have_correct_keys(self) -> None:
+        """Each danger.ratings entry carries the correct key from mainValue."""
+        result = _resolve_danger(self._mf_band_ratings(), Bulletin.Source.METEOFRANCE)
+        keys = {r["key"] for r in result["ratings"]}
+        assert keys == {"low", "moderate"}
+
+    def test_band_entries_period_is_all_day(self) -> None:
+        """Both entries in danger.ratings carry period='all_day'."""
+        result = _resolve_danger(self._mf_band_ratings(), Bulletin.Source.METEOFRANCE)
+        for r in result["ratings"]:
+            assert r["period"] == "all_day"
+
+    def test_band_entries_carry_elevation_dicts(self) -> None:
+        """Each entry in danger.ratings has a parsed elevation dict."""
+        result = _resolve_danger(self._mf_band_ratings(), Bulletin.Source.METEOFRANCE)
+        elevations = [r["elevation"] for r in result["ratings"]]
+        assert all(e is not None for e in elevations)
+
+    def test_low_entry_has_upper_bound_2400(self) -> None:
+        """The 'low' band (below 2400 m) has elevation.upper=2400 and lower=None."""
+        result = _resolve_danger(self._mf_band_ratings(), Bulletin.Source.METEOFRANCE)
+        low_entry = next(r for r in result["ratings"] if r["key"] == "low")
+        assert low_entry["elevation"]["upper"] == 2400
+        assert low_entry["elevation"]["lower"] is None
+
+    def test_moderate_entry_has_lower_bound_2400(self) -> None:
+        """The 'moderate' band (above 2400 m) has elevation.lower=2400 and upper=None."""
+        result = _resolve_danger(self._mf_band_ratings(), Bulletin.Source.METEOFRANCE)
+        moderate_entry = next(r for r in result["ratings"] if r["key"] == "moderate")
+        assert moderate_entry["elevation"]["lower"] == 2400
+        assert moderate_entry["elevation"]["upper"] is None
+
+    def test_headline_key_is_highest_band(self) -> None:
+        """The headline danger.key is the highest of the two band values."""
+        result = _resolve_danger(self._mf_band_ratings(), Bulletin.Source.METEOFRANCE)
+        assert result["key"] == "moderate"
+
+    def test_mf_subdivision_is_none(self) -> None:
+        """METEOFRANCE entries always carry subdivision=None (no CH.subdivision)."""
+        result = _resolve_danger(self._mf_band_ratings(), Bulletin.Source.METEOFRANCE)
+        for r in result["ratings"]:
+            assert r["subdivision"] is None
+
+
+# ---------------------------------------------------------------------------
 # Version 5 — SlfAdapter unit tests
 # ---------------------------------------------------------------------------
 
