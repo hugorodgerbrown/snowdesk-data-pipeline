@@ -44,6 +44,7 @@ from public._component_fixtures import (
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
     PERIOD_TRANSITION_VARIANTS,
+    RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
     REGION_TOOLTIP_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
@@ -874,6 +875,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/_rating_block.html",
         variants=RATING_BLOCK_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="rating-block-albina-bands",
+        label="Rating block — ALBINA band headings",
+        description=(
+            "ALBINA elevation-band section headings injected above the first card of "
+            "each band group (SNOW-292). The band_label field renders as "
+            "data-testid='band-heading'; the optional time_subheader (pivot migration) "
+            "renders as data-testid='band-time-subheader'. SLF and MF cards never "
+            "carry these fields and are unaffected."
+        ),
+        kind="components",
+        partial="public/_rating_block.html",
+        variants=RATING_BLOCK_ALBINA_BAND_VARIANTS,
         panel_layout="two-col",
     ),
     FoundationCategory(
