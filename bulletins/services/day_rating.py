@@ -5,7 +5,7 @@ Maintains the RegionDayRating denormalisation table. Each row stores both the
 minimum and maximum danger ratings (within one chosen bulletin) for a single
 (region, calendar day) pair.
 
-Aggregation policy (v6 — headline-only with afternoon-elevated split):
+Aggregation policy (v7 — headline-only with afternoon-elevated split + AM/PM):
   - For day X, pick the single bulletin that was most recently published by
     ~10am on day X:
     - Morning-of-X (valid_from.date() == X, hour < 12) takes priority.
@@ -29,6 +29,19 @@ Aggregation policy (v6 — headline-only with afternoon-elevated split):
       are set to the bulletin's headline ``render_model["danger"]["key"]``
       (the CAAML aggregate). This keeps the heatmap tile in sync with the
       Day Risk Profile panel, which also shows the headline rating (SNOW-138).
+  - AM/PM split fields (SNOW-291):
+    - ``am_rating`` / ``pm_rating`` are populated whenever both
+      ``morning_levels`` AND ``afternoon_levels`` are non-empty, regardless of
+      whether the afternoon level is higher than the morning level.  They
+      encode the problem-mix split for flat-but-split days (same level, two
+      distinct problem categories) in addition to the escalating case.
+    - ``am_rating = key of max(morning_levels)``,
+      ``pm_rating = key of max(afternoon_levels)``.
+    - Both fields stay ``None`` (uniform day) when the bulletin has no
+      ``later`` traits, preserving the single-colour calendar tile for those
+      rows.
+    - Subdivision for both AM and PM mirrors the headline bulletin subdivision
+      (same simplification as ``min/max_subdivision``).
   - Bulletins with an empty traits list (quiet day) use the headline key path
     (debug log).
   - Bulletins with a completely malformed render_model (empty dict or missing
@@ -65,7 +78,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DAY_RATING_VERSION: int = 6
+DAY_RATING_VERSION: int = 7
 
 # Map trait danger_level int (1–5) to rating key string.
 _DANGER_LEVEL_TO_KEY: dict[int, str] = {
@@ -183,6 +196,45 @@ def _resolve_min_max_keys(
     return headline_key, headline_subdivision, headline_key, headline_subdivision
 
 
+def _resolve_am_pm_keys(
+    morning_levels: list[int],
+    afternoon_levels: list[int],
+    headline_subdivision: str,
+) -> tuple[str | None, str, str | None, str]:
+    """
+    Resolve the AM/PM rating keys and subdivisions for the time-split calendar tile.
+
+    AM/PM are populated whenever both ``morning_levels`` AND ``afternoon_levels``
+    are non-empty — regardless of whether the afternoon level is strictly higher
+    than the morning level.  This captures flat-but-split days (same danger
+    level, different problem mix) in addition to the escalating case (SNOW-291).
+
+    When either list is empty (uniform day, no time split), both fields stay
+    ``None``/``""`` so the calendar tile stays a single-colour circle.
+
+    Subdivision for both halves mirrors the headline bulletin subdivision
+    (same simplification as the existing min/max path).
+
+    Args:
+        morning_levels: Danger-level ints from ``all_day`` / ``earlier`` traits.
+        afternoon_levels: Danger-level ints from ``later`` traits.
+        headline_subdivision: The subdivision suffix from the render model.
+
+    Returns:
+        A ``(am_key, am_subdivision, pm_key, pm_subdivision)`` tuple.
+        ``am_key`` and ``pm_key`` are ``None`` when either list is empty.
+
+    """
+    if morning_levels and afternoon_levels:
+        return (
+            _DANGER_LEVEL_TO_KEY[max(morning_levels)],
+            headline_subdivision,
+            _DANGER_LEVEL_TO_KEY[max(afternoon_levels)],
+            headline_subdivision,
+        )
+    return None, "", None, ""
+
+
 def recompute_region_day(
     region: "MicroRegion",
     day: date,
@@ -234,6 +286,12 @@ def recompute_region_day(
     # This drops the evening-of-X bulletin (valid_from.date() == day, hour >= 12)
     # whose target is actually day+1.
     candidates = [b for b in pre_candidates if _target_day(b) == day]
+
+    # AM/PM split fields (SNOW-291): always start as None (uniform day).
+    am_key: str | None = None
+    am_subdivision: str = ""
+    pm_key: str | None = None
+    pm_subdivision: str = ""
 
     if not candidates:
         min_key: str = no_rating
@@ -307,6 +365,14 @@ def recompute_region_day(
                         headline_subdivision,
                     )
                 )
+                # Resolve AM/PM split keys — populated whenever both morning
+                # and afternoon levels are present, regardless of relative
+                # magnitude (SNOW-291 flat-but-split support).
+                am_key, am_subdivision, pm_key, pm_subdivision = _resolve_am_pm_keys(
+                    morning_levels,
+                    afternoon_levels,
+                    headline_subdivision,
+                )
                 source_bulletin = chosen
 
     if not commit:
@@ -327,16 +393,22 @@ def recompute_region_day(
             "min_subdivision": min_subdivision,
             "max_rating": max_key,
             "max_subdivision": max_subdivision,
+            "am_rating": am_key,
+            "am_subdivision": am_subdivision,
+            "pm_rating": pm_key,
+            "pm_subdivision": pm_subdivision,
             "source_bulletin": source_bulletin,
             "version": DAY_RATING_VERSION,
         },
     )
     logger.debug(
-        "RegionDayRating upserted: region=%s date=%s min=%s max=%s",
+        "RegionDayRating upserted: region=%s date=%s min=%s max=%s am=%s pm=%s",
         region.region_id,
         day,
         min_key,
         max_key,
+        am_key,
+        pm_key,
     )
 
 
