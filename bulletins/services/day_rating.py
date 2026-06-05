@@ -60,7 +60,7 @@ from django.utils import timezone
 from bulletins.models import Bulletin
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
-    _band_label_for_elevation as _band_label,
+    band_label_for_elevation as _band_label,
 )
 
 if TYPE_CHECKING:
@@ -195,6 +195,17 @@ def _derive_albina_bands(render_model: dict) -> list[dict] | None:
     ratings already reflect the per-band split, so one band entry is emitted
     per distinct ``(band_id, period)`` pair.
 
+    The returned list is sorted into a deterministic canonical order matching
+    the CSS grid expectation:
+      - Primary:   time period — ``earlier`` (0) → ``all_day`` (1) → ``later`` (2)
+      - Secondary: elevation band — high band first (``above-*`` / ``above-treeline``),
+                   low band second (``below-*`` / ``below-treeline``)
+
+    This canonical order is required so the 2×2 CSS grid renders quadrants in
+    the correct positions regardless of the order the source CAAML lists ratings.
+    Without sorting, a CAAML file that lists ``later`` ratings before ``earlier``
+    ones would silently swap the grid quadrants.
+
     Returns ``None`` when the render model carries no ratings, or when no
     rating has an elevation (constant-danger ALBINA bulletin).
 
@@ -202,7 +213,7 @@ def _derive_albina_bands(render_model: dict) -> list[dict] | None:
         render_model: A render model dict for an ALBINA bulletin.
 
     Returns:
-        A list of band dicts or ``None``.
+        A sorted list of band dicts or ``None``.
 
     """
     ratings: list[dict] = (render_model.get("danger") or {}).get("ratings") or []
@@ -234,7 +245,30 @@ def _derive_albina_bands(render_model: dict) -> list[dict] | None:
             }
         )
 
-    return bands if bands else None
+    if not bands:
+        return None
+
+    # Sort bands into canonical order so the CSS grid quadrants are always correct.
+    # Time-period order: earlier (0) < all_day (1) < later (2).
+    _PERIOD_ORDER: dict[str, int] = {"earlier": 0, "all_day": 1, "later": 2}
+
+    # Band order within a period: high band (has lower bound) before low band
+    # (has upper bound).  Bands beginning with "above" sort before "below".
+    # Unknown slugs fall last (sort value 2).
+    def _band_sort_key(band: dict) -> tuple[int, int]:
+        """Return a (period_order, band_order) sort tuple for a band dict."""
+        period_val = _PERIOD_ORDER.get(band.get("time_period") or "all_day", 1)
+        bid = band.get("band_id") or ""
+        if bid.startswith("above"):
+            band_val = 0
+        elif bid.startswith("below"):
+            band_val = 1
+        else:
+            band_val = 2
+        return (period_val, band_val)
+
+    bands.sort(key=_band_sort_key)
+    return bands
 
 
 def _elevation_to_band_id(elevation: dict | None) -> str:

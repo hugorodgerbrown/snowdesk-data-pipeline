@@ -803,7 +803,10 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     width: 100%;
 }
 
-/* elevation-time: 2×2 grid — earlier-high | earlier-low / later-high | later-low */
+/* elevation-time: 2×2 grid — earlier-high | earlier-low / later-high | later-low
+   Band order is guaranteed by _derive_albina_bands in bulletins/services/day_rating.py:
+   primary sort is time period (earlier → all_day → later), secondary is band height
+   (above-* before below-*).  Do not reorder band spans in the template. */
 [data-source="albina"][data-band-mode="elevation-time"] {
     display: grid;
     grid-template-columns: 1fr 1fr;

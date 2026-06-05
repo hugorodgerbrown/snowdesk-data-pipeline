@@ -166,6 +166,10 @@ class RegionDayRatingFactory(factory.django.DjangoModelFactory[RegionDayRating])
 
     Defaults ``min_rating`` to the same value as ``max_rating`` (uniform day)
     so existing tests that only set one field continue to work without change.
+
+    ``source`` defaults to the model's blank default (empty string).
+    ``bands`` defaults to the model's null default (None, meaning no
+    elevation-band breakdown — the ALBINA-only field).
     """
 
     class Meta:
@@ -181,6 +185,8 @@ class RegionDayRatingFactory(factory.django.DjangoModelFactory[RegionDayRating])
     max_subdivision = ""
     source_bulletin = None
     version = DAY_RATING_VERSION
+    source = ""
+    bands = None
 
 
 class WeatherSnapshotFactory(factory.django.DjangoModelFactory[WeatherSnapshot]):

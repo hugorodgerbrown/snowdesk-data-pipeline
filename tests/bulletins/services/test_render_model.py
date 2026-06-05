@@ -29,8 +29,6 @@ from bulletins.services.meteofrance_translator import parse_dpbra_xml
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
-    _band_id_for_problem,
-    _band_label_for_elevation,
     _build_metadata,
     _build_prose,
     _detect_source,
@@ -43,6 +41,8 @@ from bulletins.services.render_model import (
     _resolve_problem_extras,
     _resolve_problem_rating,
     _synthesise_aggregation_from_albina_problems,
+    band_id_for_problem,
+    band_label_for_elevation,
     build_render_model,
     compute_day_character,
 )
@@ -3030,44 +3030,44 @@ class TestPerProblemEawsFields:
 
 
 class TestBandIdForProblem:
-    """Tests for _band_id_for_problem."""
+    """Tests for band_id_for_problem."""
 
     def test_no_elevation_returns_all_elevations(self) -> None:
         """Problem with no elevation field returns 'all-elevations'."""
-        assert _band_id_for_problem({}) == "all-elevations"
+        assert band_id_for_problem({}) == "all-elevations"
 
     def test_treeline_lower_bound(self) -> None:
         """lowerBound='treeline' returns 'above-treeline'."""
         problem = {"elevation": {"lowerBound": "treeline"}}
-        assert _band_id_for_problem(problem) == "above-treeline"
+        assert band_id_for_problem(problem) == "above-treeline"
 
     def test_treeline_upper_bound(self) -> None:
         """upperBound='treeline' returns 'below-treeline'."""
         problem = {"elevation": {"upperBound": "treeline"}}
-        assert _band_id_for_problem(problem) == "below-treeline"
+        assert band_id_for_problem(problem) == "below-treeline"
 
     def test_numeric_lower_only(self) -> None:
         """Numeric lower bound only returns 'above-{lower}'."""
         problem = {"elevation": {"lowerBound": "2200"}}
-        assert _band_id_for_problem(problem) == "above-2200"
+        assert band_id_for_problem(problem) == "above-2200"
 
     def test_numeric_upper_only(self) -> None:
         """Numeric upper bound only returns 'below-{upper}'."""
         problem = {"elevation": {"upperBound": "2200"}}
-        assert _band_id_for_problem(problem) == "below-2200"
+        assert band_id_for_problem(problem) == "below-2200"
 
     def test_both_numeric_bounds(self) -> None:
         """Both numeric bounds returns '{lower}-to-{upper}'."""
         problem = {"elevation": {"lowerBound": "1800", "upperBound": "2400"}}
-        assert _band_id_for_problem(problem) == "1800-to-2400"
+        assert band_id_for_problem(problem) == "1800-to-2400"
 
 
 class TestBandLabelForElevation:
-    """Tests for _band_label_for_elevation."""
+    """Tests for band_label_for_elevation."""
 
     def test_none_returns_all_elevations(self) -> None:
         """None elevation returns 'All elevations'."""
-        assert _band_label_for_elevation(None) == "All elevations"
+        assert band_label_for_elevation(None) == "All elevations"
 
     def test_treeline_lower_side(self) -> None:
         """treeline_side='lower' returns 'Above treeline'."""
@@ -3077,7 +3077,7 @@ class TestBandLabelForElevation:
             "lower": None,
             "upper": None,
         }
-        assert _band_label_for_elevation(elev) == "Above treeline"
+        assert band_label_for_elevation(elev) == "Above treeline"
 
     def test_treeline_upper_side(self) -> None:
         """treeline_side='upper' returns 'Below treeline'."""
@@ -3087,22 +3087,22 @@ class TestBandLabelForElevation:
             "lower": None,
             "upper": None,
         }
-        assert _band_label_for_elevation(elev) == "Below treeline"
+        assert band_label_for_elevation(elev) == "Below treeline"
 
     def test_numeric_lower_only(self) -> None:
         """Numeric lower bound only returns 'Above {lower} m'."""
         elev = {"treeline": False, "treeline_side": None, "lower": 2200, "upper": None}
-        assert _band_label_for_elevation(elev) == "Above 2200 m"
+        assert band_label_for_elevation(elev) == "Above 2200 m"
 
     def test_numeric_upper_only(self) -> None:
         """Numeric upper bound only returns 'Below {upper} m'."""
         elev = {"treeline": False, "treeline_side": None, "lower": None, "upper": 2200}
-        assert _band_label_for_elevation(elev) == "Below 2200 m"
+        assert band_label_for_elevation(elev) == "Below 2200 m"
 
     def test_both_numeric(self) -> None:
         """Both numeric bounds returns '{lower}–{upper} m'."""
         elev = {"treeline": False, "treeline_side": None, "lower": 1800, "upper": 2400}
-        assert _band_label_for_elevation(elev) == "1800–2400 m"
+        assert band_label_for_elevation(elev) == "1800–2400 m"
 
 
 class TestSynthesiseAggregationFromAlbinaProblems:
@@ -3190,15 +3190,18 @@ class TestSynthesiseAggregationFromAlbinaProblems:
         assert ("above-2800", "later") in keys
         assert ("below-2800", "later") in keys
 
-    def test_albina_sample_bulletin_produces_two_traits_with_band_ids(self) -> None:
-        """ALBINA sample bulletin (2200m split) produces 2 traits with band_id set."""
+    def test_albina_sample_bulletin_produces_one_trait_with_band_id(self) -> None:
+        """ALBINA sample bulletin (2200m split) produces exactly 1 trait with band_id set.
+
+        The sample fixture has a single avalanche problem with lowerBound="2200",
+        so the ALBINA aggregation path produces one entry (above-2200, all_day).
+        The dangerRating for below-2200 carries no avalanche problem, so no
+        second trait is emitted.
+        """
         props = _load_albina_bulletin()
         rm = build_render_model(props)
         traits = rm["traits"]
-        # Sample has one problem above 2200m and one implicit below (from dangerRatings).
-        # The aggregation keys on elevation: above-2200 and all-elevations (no upper bound
-        # problem in this fixture — only lowerBound: "2200" problem).
-        assert len(traits) >= 1
+        assert len(traits) == 1
         for trait in traits:
             assert "band_id" in trait
             assert trait["band_id"] is not None
@@ -3216,3 +3219,44 @@ class TestSynthesiseAggregationFromAlbinaProblems:
         rm = build_render_model(props)
         for trait in rm["traits"]:
             assert trait["band_id"] is None
+
+
+class TestSlfAggregationSnapshot:
+    """Snapshot guard for the shared SLF aggregation path.
+
+    The ``_synthesise_aggregation_from_problems`` function is shared between
+    SLF and MeteoFrance.  This snapshot test pins the full aggregation structure
+    produced by the sample_variable_day fixture so that any accidental regression
+    (e.g. band_id leaking into the SLF path) is caught immediately.
+    """
+
+    def test_slf_variable_day_aggregation_structure(self) -> None:
+        """SLF variable-day fixture produces the canonical two-trait aggregation.
+
+        Full-structure snapshot: category, time_period, band_id, and
+        problemTypes for each trait.  The SLF path must never populate band_id.
+        """
+        props = _load_sample("sample_variable_day.json")
+        rm = build_render_model(props)
+        traits = rm["traits"]
+
+        # Exactly two traits in a fixed, deterministic order.
+        assert len(traits) == 2
+
+        dry = traits[0]
+        assert dry["category"] == "dry"
+        assert dry["time_period"] == "all_day"
+        assert dry["band_id"] is None
+        # SLF dry trait carries no_distinct_avalanche_problem in this fixture.
+        assert any(
+            p["problem_type"] == "no_distinct_avalanche_problem"
+            for p in dry["problems"]
+        )
+
+        wet = traits[1]
+        assert wet["category"] == "wet"
+        assert wet["time_period"] == "later"
+        assert wet["band_id"] is None
+        wet_types = {p["problem_type"] for p in wet["problems"]}
+        assert "wet_snow" in wet_types
+        assert "gliding_snow" in wet_types

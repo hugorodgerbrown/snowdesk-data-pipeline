@@ -119,7 +119,7 @@ class SeasonCell:
         periods = {b.get("time_period", "all_day") for b in self.bands}
         if len(self.bands) == 2 and len(periods) == 1:
             return "elevation-only"
-        if len(self.bands) == 4 and len(periods) == 2:  # noqa: PLR2004
+        if len(self.bands) == 4 and len(periods) == 2:  # noqa: PLR2004 — 4 bands / 2 periods are the fixed shape of the ALBINA 2×2 grid; these are domain constants, not magic numbers
             return "elevation-time"
         return ""
 

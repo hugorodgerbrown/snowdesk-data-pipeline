@@ -214,3 +214,144 @@ class TestSeasonPartialCache:
 
         # The cache key should have been deleted.
         assert cache.get(cache_key) is None
+
+
+# ---------------------------------------------------------------------------
+# SNOW-292 — ALBINA elevation-band HTML rendering in the calendar partial
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestAlbinaCalendarTileRendering:
+    """
+    Assert that ALBINA calendar tiles carry the expected HTML attributes and
+    band sub-divs in the rendered season_calendar_partial response.
+
+    Regression guard: SLF and MF cells must NOT carry ``data-band-mode``.
+    """
+
+    @override_settings(SEASON_START_DATE=_SEASON_START)
+    def test_albina_elevation_only_cell_attributes(self, client: Client) -> None:
+        """Elevation-only ALBINA cell has data-source='albina' and data-band-mode='elevation-only'."""
+        region = MicroRegionFactory.create(region_id="at-9901")
+        target = datetime.date(2025, 11, 4)
+        bulletin = BulletinFactory.create()
+        bands = [
+            {
+                "band_id": "above-2200",
+                "label": "Above 2200 m",
+                "rating_key": "considerable",
+                "time_period": "all_day",
+            },
+            {
+                "band_id": "below-2200",
+                "label": "Below 2200 m",
+                "rating_key": "low",
+                "time_period": "all_day",
+            },
+        ]
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.LOW,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            source_bulletin=bulletin,
+            source="albina",
+            bands=bands,
+        )
+        response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert 'data-source="albina"' in html
+        assert 'data-band-mode="elevation-only"' in html
+        # Two calendar-band spans for the two elevation bands.
+        assert html.count('class="calendar-band"') == 2
+
+    @override_settings(SEASON_START_DATE=_SEASON_START)
+    def test_albina_elevation_time_cell_attributes(self, client: Client) -> None:
+        """2×2 ALBINA cell has data-source='albina' and data-band-mode='elevation-time'."""
+        region = MicroRegionFactory.create(region_id="at-9902")
+        target = datetime.date(2025, 11, 4)
+        bulletin = BulletinFactory.create()
+        bands = [
+            {
+                "band_id": "above-2500",
+                "label": "Above 2500 m",
+                "rating_key": "considerable",
+                "time_period": "earlier",
+            },
+            {
+                "band_id": "below-2500",
+                "label": "Below 2500 m",
+                "rating_key": "low",
+                "time_period": "earlier",
+            },
+            {
+                "band_id": "above-2800",
+                "label": "Above 2800 m",
+                "rating_key": "high",
+                "time_period": "later",
+            },
+            {
+                "band_id": "below-2800",
+                "label": "Below 2800 m",
+                "rating_key": "moderate",
+                "time_period": "later",
+            },
+        ]
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.LOW,
+            max_rating=RegionDayRating.Rating.HIGH,
+            source_bulletin=bulletin,
+            source="albina",
+            bands=bands,
+        )
+        response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert 'data-source="albina"' in html
+        assert 'data-band-mode="elevation-time"' in html
+        # Four calendar-band spans for the 2×2 grid.
+        assert html.count('class="calendar-band"') == 4
+
+    @override_settings(SEASON_START_DATE=_SEASON_START)
+    def test_slf_cell_has_no_band_mode(self, client: Client) -> None:
+        """SLF cell does not carry data-band-mode (regression guard)."""
+        region = MicroRegionFactory.create(region_id="ch-9901")
+        target = datetime.date(2025, 11, 4)
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.MODERATE,
+            max_rating=RegionDayRating.Rating.MODERATE,
+            source_bulletin=bulletin,
+            source="slf",
+            bands=None,
+        )
+        response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert "data-band-mode=" not in html
+
+    @override_settings(SEASON_START_DATE=_SEASON_START)
+    def test_mf_cell_has_no_band_mode(self, client: Client) -> None:
+        """MeteoFrance cell does not carry data-band-mode (regression guard)."""
+        region = MicroRegionFactory.create(region_id="fr-9901")
+        target = datetime.date(2025, 11, 4)
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.LOW,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            source_bulletin=bulletin,
+            source="meteofrance",
+            bands=None,
+        )
+        response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert "data-band-mode=" not in html

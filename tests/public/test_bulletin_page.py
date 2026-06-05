@@ -3737,7 +3737,13 @@ class TestAlbinaBandHeadings:
         client: Client,
         region: MicroRegion,
     ) -> None:
-        """ALBINA constant-danger bulletin (single trait, no band_id) has no band headings."""
+        """ALBINA constant-danger bulletin (band_id='all-elevations') has no band headings.
+
+        Production constant-danger ALBINA bulletins have no elevation on their
+        problems, so band_id_for_problem returns "all-elevations" (not None).
+        This test uses that real production sentinel and asserts no band heading
+        is rendered (the "all-elevations" sentinel is not a real elevation split).
+        """
         day = date(2026, 3, 15)
         traits: list[dict] = [
             {
@@ -3763,7 +3769,7 @@ class TestAlbinaBandHeadings:
                 ],
                 "prose": None,
                 "danger_level": 3,
-                "band_id": None,
+                "band_id": "all-elevations",
                 "elevation": None,
             }
         ]
@@ -3784,3 +3790,76 @@ class TestAlbinaBandHeadings:
         )
         content = client.get(url).content.decode()
         assert 'data-testid="band-heading"' not in content
+
+    def test_two_by_two_bulletin_renders_band_time_subheader(
+        self,
+        client: Client,
+        region: MicroRegion,
+    ) -> None:
+        """2×2 ALBINA bulletin (migrating wet line) renders the pivot sub-header.
+
+        The f628 case: wet line at 2500 m earlier, 2800 m later.  Four distinct
+        band_ids (above-2500/earlier, below-2500/earlier, above-2800/later,
+        below-2800/later) — the sub-header must still appear even though no
+        single band_id has both earlier and later traits.
+        """
+        day = date(2026, 4, 15)
+        earlier_above_elev = {
+            "lower": 2500,
+            "upper": None,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        earlier_below_elev = {
+            "lower": None,
+            "upper": 2500,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        later_above_elev = {
+            "lower": 2800,
+            "upper": None,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        later_below_elev = {
+            "lower": None,
+            "upper": 2800,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        traits = [
+            _albina_trait(
+                "above-2500", earlier_above_elev, time_period="earlier", danger_level=4
+            ),
+            _albina_trait(
+                "below-2500", earlier_below_elev, time_period="earlier", danger_level=2
+            ),
+            _albina_trait(
+                "above-2800", later_above_elev, time_period="later", danger_level=4
+            ),
+            _albina_trait(
+                "below-2800", later_below_elev, time_period="later", danger_level=3
+            ),
+        ]
+        rm = _albina_render_model_with_bands(traits)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "at-07-23-02",
+                "slug": region.name_slug,
+                "date_str": "2026-04-15",
+            },
+        )
+        content = client.get(url).content.decode()
+        assert 'data-testid="band-time-subheader"' in content, (
+            "Expected pivot sub-header for migrating wet line"
+        )
+        assert "2500 m" in content
+        assert "2800 m" in content

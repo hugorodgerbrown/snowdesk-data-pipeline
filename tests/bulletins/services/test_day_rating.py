@@ -1052,6 +1052,74 @@ class TestDeriveAlbinaBands:
         assert band["rating_key"] == "moderate"
         assert band["time_period"] == "all_day"
 
+    def test_two_by_two_bands_sorted_canonical_order(self) -> None:
+        """2×2 ratings arrive in scrambled order and come out in canonical order.
+
+        Canonical order: earlier-high, earlier-low, later-high, later-low.
+        The CSS grid depends on this; incorrect order silently swaps quadrants.
+        This fixture intentionally lists ratings in the wrong order to confirm
+        the sort is applied rather than relying on source-data ordering.
+        """
+        rm: dict = {
+            "danger": {
+                "ratings": [
+                    # Deliberately scrambled: later first, low band first.
+                    {
+                        "period": "later",
+                        "key": "moderate",
+                        "elevation": {
+                            "lower": None,
+                            "upper": 2800,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                    {
+                        "period": "later",
+                        "key": "high",
+                        "elevation": {
+                            "lower": 2800,
+                            "upper": None,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                    {
+                        "period": "earlier",
+                        "key": "low",
+                        "elevation": {
+                            "lower": None,
+                            "upper": 2500,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                    {
+                        "period": "earlier",
+                        "key": "considerable",
+                        "elevation": {
+                            "lower": 2500,
+                            "upper": None,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                ]
+            }
+        }
+        bands = _derive_albina_bands(rm)
+        assert bands is not None
+        assert len(bands) == 4
+        # Canonical order: earlier-high, earlier-low, later-high, later-low.
+        assert bands[0]["band_id"] == "above-2500"
+        assert bands[0]["time_period"] == "earlier"
+        assert bands[1]["band_id"] == "below-2500"
+        assert bands[1]["time_period"] == "earlier"
+        assert bands[2]["band_id"] == "above-2800"
+        assert bands[2]["time_period"] == "later"
+        assert bands[3]["band_id"] == "below-2800"
+        assert bands[3]["time_period"] == "later"
+
 
 @pytest.mark.django_db
 class TestRecomputeRegionDaySourceAndBands:
@@ -1089,7 +1157,7 @@ class TestRecomputeRegionDaySourceAndBands:
             region,
             vf,
             vt,
-            source="albina",
+            source=Bulletin.Source.ALBINA,
             danger_ratings=[
                 {
                     "period": "all_day",
@@ -1115,7 +1183,7 @@ class TestRecomputeRegionDaySourceAndBands:
         )
         recompute_region_day(region, day, commit=True)
         rdr = RegionDayRating.objects.get(region=region, date=day)
-        assert rdr.source == "albina"
+        assert rdr.source == Bulletin.Source.ALBINA
 
     def test_albina_bulletin_sets_bands(self) -> None:
         """ALBINA bulletin with elevation split populates bands on the row."""
@@ -1127,7 +1195,7 @@ class TestRecomputeRegionDaySourceAndBands:
             region,
             vf,
             vt,
-            source="albina",
+            source=Bulletin.Source.ALBINA,
             danger_ratings=[
                 {
                     "period": "all_day",

@@ -105,8 +105,8 @@ Version 7 changes:
     ``band_id`` slug so downstream consumers (day_rating, views) can derive
     band labels without re-reading raw CAAML.  MeteoFrance continues to use
     the old ``_synthesise_aggregation_from_problems`` (no elevation split).
-    Two new helpers support this: ``_band_id_for_problem`` and
-    ``_band_label_for_elevation``.
+    Two new helpers support this: ``band_id_for_problem`` and
+    ``band_label_for_elevation``.
 
 Also exposes ``compute_period_transition``, a pure function that inspects the
 ``danger.ratings`` list in a render model and derives a ``PeriodTransition``
@@ -675,7 +675,7 @@ def _synthesise_aggregation_from_problems(
     return [seen[k] for k in order]
 
 
-def _band_id_for_problem(problem: dict[str, Any]) -> str:
+def band_id_for_problem(problem: dict[str, Any]) -> str:
     """
     Derive a stable band identifier slug from an ALBINA problem's elevation.
 
@@ -725,7 +725,7 @@ def _band_id_for_problem(problem: dict[str, Any]) -> str:
     return "all-elevations"
 
 
-def _band_label_for_elevation(elevation: dict[str, Any] | None) -> str:
+def band_label_for_elevation(elevation: dict[str, Any] | None) -> str:
     """
     Build a human-readable band label from a parsed elevation dict.
 
@@ -809,7 +809,7 @@ def _synthesise_aggregation_from_albina_problems(
         pt: str = problem.get("problemType", "")
         vtp: str = problem.get("validTimePeriod") or "all_day"
         category: str = PROBLEM_TYPE_TO_CATEGORY.get(pt, "dry")
-        band_id: str = _band_id_for_problem(problem)
+        band_id: str = band_id_for_problem(problem)
         key = (band_id, category, vtp)
         if key not in seen:
             parsed_elevation = _parse_elevation(problem.get("elevation") or None)

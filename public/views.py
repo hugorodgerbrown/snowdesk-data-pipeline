@@ -83,7 +83,7 @@ from bulletins.services.render_model import (
     DayCharacter,
     PeriodTransition,
     RenderModelBuildError,
-    _band_label_for_elevation,
+    band_label_for_elevation,
     build_render_model,
     compute_day_character,
     compute_period_transition,
@@ -3981,7 +3981,7 @@ def _build_albina_band_cards(
 
     cards: list[dict[str, Any]] = []
     for bid in band_order:
-        band_label_str = _band_label_for_elevation(band_elevations.get(bid))
+        band_label_str = band_label_for_elevation(band_elevations.get(bid))
         cards.extend(
             _cards_for_band(
                 bid,
@@ -4000,33 +4000,50 @@ def _build_band_subheaders(
     band_elevations: dict[str, dict[str, Any] | None],
 ) -> dict[str, str]:
     """
-    Build the pivot-migration sub-header string for each band.
+    Build the pivot-migration sub-header string for the first band.
 
-    Returns a dict mapping ``band_id → sub-header string``.  The sub-header
-    is non-empty only when a band has both ``earlier`` and ``later`` traits
-    whose elevation pivots differ.
+    In a 2×2 ALBINA bulletin the pivot itself migrates through the day (e.g.
+    wet line at 2500 m earlier, 2800 m later).  The four traits carry FOUR
+    DISTINCT band_ids — ``above-2500/earlier``, ``below-2500/earlier``,
+    ``above-2800/later``, ``below-2800/later`` — so looking for a single band
+    that has both ``earlier`` and ``later`` traits never matches.
+
+    The correct approach is bulletin-level: gather the pivot (numeric or
+    treeline label) associated with each time period by scanning ALL traits,
+    then emit one sub-header attached only to the first band in ``band_order``
+    (so it appears once, above the earliest card group).
 
     Args:
-        band_order: Ordered list of band ID slugs.
+        band_order: Ordered list of band ID slugs (high-first).
         band_traits: Mapping of band_id → traits list.
         band_elevations: Mapping of band_id → parsed elevation dict.
 
     Returns:
-        Dict of ``band_id → sub-header string`` (empty string when unchanged).
+        Dict of ``band_id → sub-header string`` (empty for all but the first
+        band when pivots differ across periods; empty everywhere otherwise).
 
     """
-    result: dict[str, str] = {}
+    # Collect one pivot label per time-period across all bands.
+    period_pivot: dict[str, str] = {}
     for bid in band_order:
-        band_elevation = band_elevations.get(bid)
-        by_period: dict[str, str] = {}
+        elevation = band_elevations.get(bid)
+        if not elevation:
+            continue
         for t in band_traits[bid]:
             period = t.get("time_period") or "all_day"
-            pivot = _pivot_label(band_elevation)
-            if pivot:
-                by_period[period] = pivot
-        result[bid] = _build_band_time_subheader(
-            by_period.get("earlier", ""), by_period.get("later", "")
-        )
+            if period not in period_pivot:
+                label = _pivot_label(elevation)
+                if label:
+                    period_pivot[period] = label
+
+    subheader = _build_band_time_subheader(
+        period_pivot.get("earlier", ""), period_pivot.get("later", "")
+    )
+
+    # Attach the sub-header to the first band only; all others stay empty.
+    result: dict[str, str] = {bid: "" for bid in band_order}
+    if subheader and band_order:
+        result[band_order[0]] = subheader
     return result
 
 
@@ -4069,7 +4086,13 @@ def _problem_cards_from_render_model_traits(
     normalised_patterns: list[dict[str, str]] = [
         _normalise_danger_pattern(p) for p in (danger_patterns or [])
     ]
-    is_albina = any(t.get("band_id") for t in traits)
+    # Route to band layout only when at least one trait carries a real
+    # elevation-specific band_id.  Constant-danger ALBINA bulletins store
+    # band_id="all-elevations" (truthy but not a real split) — exclude that
+    # sentinel so the flat card path handles them, producing no band headings.
+    is_albina = any(
+        t.get("band_id") and t.get("band_id") != "all-elevations" for t in traits
+    )
     if not is_albina:
         return [
             c
