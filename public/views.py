@@ -3952,6 +3952,23 @@ def _cards_for_band(
     return cards
 
 
+def _peak_danger_for_band(band_traits_list: list[dict[str, Any]]) -> int:
+    """
+    Return the maximum ``danger_level`` across all traits in an elevation band.
+
+    Used as the primary sort key when ordering bands by descending danger so the
+    highest-risk band card group leads the presentation.
+
+    Args:
+        band_traits_list: All traits belonging to a single band.
+
+    Returns:
+        The maximum ``danger_level`` integer found, or 0 when the list is empty.
+
+    """
+    return max((t.get("danger_level") or 0 for t in band_traits_list), default=0)
+
+
 def _build_albina_band_cards(
     traits: list[dict[str, Any]],
     normalised_patterns: list[dict[str, str]],
@@ -3959,10 +3976,12 @@ def _build_albina_band_cards(
     """
     Build the ordered card list for an ALBINA bulletin with elevation bands.
 
-    Groups traits by ``band_id``, sorts bands high-elevation-first, sorts
-    within each band by time period (earlier → all_day → later), and stamps
-    ``band_label`` and (when pivot migrates) ``time_subheader`` on the first
-    card of each band.
+    Groups traits by ``band_id``, sorts bands by **descending peak danger**
+    (so the most hazardous band renders first), breaking ties with
+    ``_band_sort_key`` (highest elevation wins within equal-danger bands).
+    Sorts within each band by time period (earlier → all_day → later), and
+    stamps ``band_label`` and (when pivot migrates) ``time_subheader`` on the
+    first card of each band.
 
     Args:
         traits: Enriched ALBINA traits list (all carry ``band_id``).
@@ -3983,7 +4002,12 @@ def _build_albina_band_cards(
             band_elevations[bid] = trait.get("elevation")
         band_traits[bid].append(trait)
 
-    band_order.sort(key=_band_sort_key)
+    # Primary sort: descending peak danger (higher danger renders first).
+    # Tie-break: _band_sort_key so equal-danger bands still render
+    # high-elevation-first (matching the calendar's "high on top" convention).
+    band_order.sort(
+        key=lambda bid: (-_peak_danger_for_band(band_traits[bid]), _band_sort_key(bid))
+    )
     for bid in band_order:
         band_traits[bid].sort(
             key=lambda t: _TIME_PERIOD_ORDER.get(t.get("time_period") or "all_day", 1)
