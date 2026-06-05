@@ -2853,6 +2853,28 @@ class TestDangerPatternRow:
         assert 'data-testid="eaws-frequency-chip"' in content
         assert 'data-testid="eaws-stability-chip"' in content
 
+    def test_albina_card_has_no_level_number_chip(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """ALBINA cards carry no subdivision → level_number is empty → chip absent.
+
+        SNOW-291 scope: the level-number chip is SLF-only.  ALBINA bulletins
+        have no subdivision data so the chip must not appear in their rendered
+        rating blocks.
+        """
+        day = date(2026, 4, 13)
+        rm = _render_model_with_traits([self._albina_trait()])
+        rm["source"] = "albina"
+        rm["danger_patterns"] = []
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
+        url = _url("ch-4115", "valais", "2026-04-13")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="level-number-chip"' not in content
+
 
 # ---------------------------------------------------------------------------
 # Test: hero rating badge (SNOW-246)

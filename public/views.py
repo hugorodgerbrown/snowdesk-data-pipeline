@@ -3689,7 +3689,9 @@ def _problem_cards_from_aggregation(
             agg_time_period, resolved_ratings
         )
         card["subdivision"] = agg_subdivision
-        card["level_number"] = f"{card['danger_level']}{agg_subdivision}"
+        card["level_number"] = (
+            f"{card['danger_level']}{agg_subdivision}" if agg_subdivision else ""
+        )
 
         cards.append(card)
     return cards
@@ -3888,8 +3890,9 @@ def _problem_cards_from_render_model_traits(
         panel_title: str = trait.get("title") or ""
         subdivision: str = _subdivision_for_period(time_period, resolved_ratings)
         # level_number combines the danger integer with the subdivision suffix
-        # (e.g. "2-", "2", "2+") — matches the day_windows level_number pattern.
-        level_number: str = f"{max_danger_level}{subdivision}"
+        # (e.g. "2-", "2=", "2+") — only set when the card carries a subdivision
+        # (SLF). Empty for ALBINA and MeteoFrance cards so the chip is suppressed.
+        level_number: str = f"{max_danger_level}{subdivision}" if subdivision else ""
 
         cards.append(
             {
