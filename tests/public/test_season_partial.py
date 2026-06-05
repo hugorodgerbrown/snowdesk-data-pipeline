@@ -26,7 +26,7 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from bulletins.models import RegionDayRating
+from bulletins.models import Bulletin, RegionDayRating
 from bulletins.services.day_rating import apply_bulletin_day_ratings
 from tests.factories import (
     BulletinFactory,
@@ -256,7 +256,7 @@ class TestAlbinaCalendarTileRendering:
             min_rating=RegionDayRating.Rating.LOW,
             max_rating=RegionDayRating.Rating.CONSIDERABLE,
             source_bulletin=bulletin,
-            source="albina",
+            source=Bulletin.Source.ALBINA,
             bands=bands,
         )
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
@@ -305,7 +305,7 @@ class TestAlbinaCalendarTileRendering:
             min_rating=RegionDayRating.Rating.LOW,
             max_rating=RegionDayRating.Rating.HIGH,
             source_bulletin=bulletin,
-            source="albina",
+            source=Bulletin.Source.ALBINA,
             bands=bands,
         )
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
@@ -328,7 +328,7 @@ class TestAlbinaCalendarTileRendering:
             min_rating=RegionDayRating.Rating.MODERATE,
             max_rating=RegionDayRating.Rating.MODERATE,
             source_bulletin=bulletin,
-            source="slf",
+            source=Bulletin.Source.SLF,
             bands=None,
         )
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
@@ -348,7 +348,7 @@ class TestAlbinaCalendarTileRendering:
             min_rating=RegionDayRating.Rating.LOW,
             max_rating=RegionDayRating.Rating.CONSIDERABLE,
             source_bulletin=bulletin,
-            source="meteofrance",
+            source=Bulletin.Source.METEOFRANCE,
             bands=None,
         )
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")

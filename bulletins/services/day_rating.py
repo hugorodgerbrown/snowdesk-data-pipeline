@@ -225,7 +225,7 @@ def _derive_albina_bands(render_model: dict) -> list[dict] | None:
 
     for rating in ratings:
         elevation = rating.get("elevation")
-        # Build a synthetic problem-like dict to reuse _band_id_for_problem.
+        # Build a synthetic problem-like dict to reuse band_id_for_problem.
         # The elevation shape from _parse_elevation uses lower/upper ints and
         # treeline bool — we need to reconstruct the raw CAAML shape.
         band_id = _elevation_to_band_id(elevation)
@@ -276,7 +276,7 @@ def _elevation_to_band_id(elevation: dict | None) -> str:
     Derive a band_id slug from a parsed elevation dict (render model format).
 
     The render model elevation shape uses int ``lower``/``upper`` and a
-    bool ``treeline`` flag.  This mirrors the logic in ``_band_id_for_problem``
+    bool ``treeline`` flag.  This mirrors the logic in ``band_id_for_problem``
     but operates on the already-parsed elevation dict rather than raw CAAML.
 
     Args:
