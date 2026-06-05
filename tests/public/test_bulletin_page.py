@@ -4007,3 +4007,411 @@ class TestAlbinaBandHeadings:
         # The masthead headline must still be Considerable (level 3) — suppression
         # must not alter the headline danger computed outside this function.
         assert ">Considerable<" in content
+
+
+# ---------------------------------------------------------------------------
+# Test: ALBINA band-card ordering by descending peak danger (SNOW-292)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestAlbinaBandCardOrder:
+    """
+    Tests that ALBINA elevation-band cards are ordered by descending peak
+    danger level so the highest-risk band renders first.
+
+    Covers the reference bulletin shape: considerable below 2400 m (the
+    day's headline hazard) should render BEFORE moderate above 2400 m.
+    Equal-danger bands fall back to elevation-descending order.
+    """
+
+    @pytest.fixture
+    def region(self) -> MicroRegion:
+        """Return an ALBINA-type region."""
+        major = MajorRegionFactory.create(prefix="AT-7")
+        sub = SubRegionFactory.create(prefix="AT-71", major=major)
+        return MicroRegionFactory.create(region_id="at-07-15", subregion=sub)
+
+    def _make_bulletin_with_bands(
+        self,
+        region: MicroRegion,
+        day: date,
+        *,
+        above_danger: int,
+        below_danger: int,
+        pivot: int = 2400,
+    ) -> None:
+        """Create an ALBINA bulletin with above/below bands at given danger levels."""
+        above_elev = {
+            "lower": pivot,
+            "upper": None,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        below_elev = {
+            "lower": None,
+            "upper": pivot,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        traits = [
+            _albina_trait(f"above-{pivot}", above_elev, danger_level=above_danger),
+            _albina_trait(f"below-{pivot}", below_elev, danger_level=below_danger),
+        ]
+        rm = _albina_render_model_with_bands(traits)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+
+    def test_below_band_renders_first_when_higher_danger(
+        self,
+        client: Client,
+        region: MicroRegion,
+    ) -> None:
+        """When below-band has higher danger than above-band, it renders first.
+
+        Mirrors the reference bulletin fcb5ffe4 (AT-07-15, 2026-04-10):
+        considerable below 2400 m, moderate above 2400 m.  The considerable
+        card must appear before the moderate card in the rendered HTML.
+        """
+        day = date(2026, 4, 10)
+        # considerable below 2400 (danger_level=3), moderate above 2400 (danger_level=2)
+        self._make_bulletin_with_bands(
+            region, day, above_danger=2, below_danger=3, pivot=2400
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "at-07-15",
+                "slug": region.name_slug,
+                "date_str": "2026-04-10",
+            },
+        )
+        content = client.get(url).content.decode()
+
+        # Extract the positions of the two band headings.
+        below_pos = content.find("Below 2400 m")
+        above_pos = content.find("Above 2400 m")
+        assert below_pos != -1, "Below 2400 m heading not found"
+        assert above_pos != -1, "Above 2400 m heading not found"
+        assert below_pos < above_pos, (
+            f"Expected 'Below 2400 m' (considerable) before 'Above 2400 m' (moderate), "
+            f"but found positions {below_pos} and {above_pos}"
+        )
+
+    def test_above_band_renders_first_when_higher_danger(
+        self,
+        client: Client,
+        region: MicroRegion,
+    ) -> None:
+        """When above-band has higher danger, it still renders first."""
+        day = date(2026, 4, 11)
+        # high above (danger=4), moderate below (danger=2)
+        self._make_bulletin_with_bands(
+            region, day, above_danger=4, below_danger=2, pivot=2200
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "at-07-15",
+                "slug": region.name_slug,
+                "date_str": "2026-04-11",
+            },
+        )
+        content = client.get(url).content.decode()
+
+        above_pos = content.find("Above 2200 m")
+        below_pos = content.find("Below 2200 m")
+        assert above_pos != -1, "Above 2200 m heading not found"
+        assert below_pos != -1, "Below 2200 m heading not found"
+        assert above_pos < below_pos, (
+            f"Expected 'Above 2200 m' (high) before 'Below 2200 m' (moderate), "
+            f"but found positions {above_pos} and {below_pos}"
+        )
+
+    def test_equal_danger_falls_back_to_elevation_order(
+        self,
+        client: Client,
+        region: MicroRegion,
+    ) -> None:
+        """When both bands share the same danger level, above renders before below."""
+        day = date(2026, 4, 12)
+        # Both considerable (danger=3) — elevation tie-break should apply.
+        self._make_bulletin_with_bands(
+            region, day, above_danger=3, below_danger=3, pivot=2600
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "at-07-15",
+                "slug": region.name_slug,
+                "date_str": "2026-04-12",
+            },
+        )
+        content = client.get(url).content.decode()
+
+        above_pos = content.find("Above 2600 m")
+        below_pos = content.find("Below 2600 m")
+        assert above_pos != -1, "Above 2600 m heading not found"
+        assert below_pos != -1, "Below 2600 m heading not found"
+        assert above_pos < below_pos, (
+            "Equal-danger bands should fall back to elevation-descending order "
+            f"(above before below), but found above={above_pos}, below={below_pos}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test: avalanche size rendered as EAWS word (SNOW-292)
+# ---------------------------------------------------------------------------
+
+
+class TestAvalancheSizeLabel:
+    """
+    Unit tests for ALBINA avalanche-size chip rendering the EAWS word
+    instead of the bare integer.
+    """
+
+    def _card_from_trait(self, avalanche_size: int | None) -> dict:
+        """Build a card dict from a trait with the given avalanche_size."""
+        from public.views import _build_single_trait_card
+
+        trait = {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Dry avalanches",
+            "geography": {"source": "problems"},
+            "problems": [
+                {
+                    "problem_type": "wind_slab",
+                    "comment_html": "",
+                    "aspects": ["N"],
+                    "elevation": {"lower": 2200, "upper": None, "treeline": False},
+                    "time_period": "all_day",
+                    "core_zone_text": None,
+                    "danger_rating_value": "considerable",
+                    "avalanche_type": "slab",
+                    "avalanche_size": avalanche_size,
+                    "frequency": "some",
+                    "snowpack_stability": "poor",
+                }
+            ],
+            "prose": None,
+            "danger_level": 3,
+        }
+        card = _build_single_trait_card(trait, [])
+        assert card is not None
+        return card
+
+    def test_size_3_produces_large_label(self) -> None:
+        """avalanche_size=3 maps to the EAWS word 'Large'."""
+        card = self._card_from_trait(3)
+        assert str(card["avalanche_size_label"]) == "Large"
+
+    def test_size_1_produces_small_label(self) -> None:
+        """avalanche_size=1 maps to 'Small'."""
+        card = self._card_from_trait(1)
+        assert str(card["avalanche_size_label"]) == "Small"
+
+    def test_size_5_produces_extremely_large_label(self) -> None:
+        """avalanche_size=5 maps to 'Extremely large'."""
+        card = self._card_from_trait(5)
+        assert str(card["avalanche_size_label"]) == "Extremely large"
+
+    def test_no_size_produces_none_label(self) -> None:
+        """avalanche_size=None leaves avalanche_size_label as None."""
+        card = self._card_from_trait(None)
+        assert card["avalanche_size_label"] is None
+
+
+@pytest.mark.django_db
+class TestAvalancheSizeChipText:
+    """
+    Integration test that the size chip in the rendered HTML shows the EAWS
+    word rather than 'Size N'.
+
+    Uses the module-level ``region`` fixture (region_id="CH-4115", name="Valais")
+    so canonical URL resolution produces ``/ch-4115/valais/<date>/``.
+    """
+
+    def _albina_trait(self) -> dict:
+        """Build a minimal ALBINA trait with avalanche_size=3."""
+        return {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Dry avalanches",
+            "geography": {"source": "problems"},
+            "problems": [
+                {
+                    "problem_type": "wind_slab",
+                    "comment_html": "",
+                    "aspects": ["N", "NE"],
+                    "elevation": {"lower": 2200, "upper": None, "treeline": False},
+                    "time_period": "all_day",
+                    "core_zone_text": None,
+                    "danger_rating_value": "considerable",
+                    "avalanche_type": "slab",
+                    "avalanche_size": 3,
+                    "frequency": "some",
+                    "snowpack_stability": "poor",
+                }
+            ],
+            "prose": None,
+            "danger_level": 3,
+        }
+
+    def test_size_chip_renders_large_not_size_3(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """The EAWS size chip renders 'Large' for avalanche_size=3, not 'Size 3'."""
+        day = date(2026, 4, 20)
+        rm = _render_model_with_traits([self._albina_trait()])
+        rm["source"] = "albina"
+        rm["danger_patterns"] = []
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
+        url = _url("ch-4115", "valais", "2026-04-20")
+        content = client.get(url).content.decode()
+        assert 'data-testid="eaws-size-chip"' in content
+        assert "Large" in content
+        assert "Size 3" not in content
+
+
+# ---------------------------------------------------------------------------
+# Test: day-character callout — no leading period when label is empty (SNOW-292)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestDayCharacterNoLeadingPeriod:
+    """
+    Tests that the day-character callout does not emit a leading '.' when
+    the DayCharacter label is empty (ALBINA tendency-lead path).
+    """
+
+    @pytest.fixture
+    def region(self) -> MicroRegion:
+        """Return an ALBINA-type region."""
+        major = MajorRegionFactory.create(prefix="AT-7")
+        sub = SubRegionFactory.create(prefix="AT-72", major=major)
+        return MicroRegionFactory.create(region_id="at-07-22", subregion=sub)
+
+    def test_albina_tendency_lead_has_no_leading_period(
+        self,
+        client: Client,
+        region: MicroRegion,
+    ) -> None:
+        """ALBINA bulletins using tendency_lead produce no stray leading period.
+
+        When _resolve_day_lead returns DayCharacter(label="", explainer=<text>),
+        the callout must not render ". <text>" — the period must be absent.
+        """
+        day = date(2026, 4, 15)
+        rm = _render_model_with_traits(
+            [
+                {
+                    "category": "wet",
+                    "time_period": "all_day",
+                    "title": "Wet avalanches",
+                    "geography": {"source": "problems"},
+                    "problems": [
+                        {
+                            "problem_type": "wet_snow",
+                            "comment_html": "",
+                            "aspects": ["S", "SW"],
+                            "elevation": None,
+                            "time_period": "all_day",
+                            "core_zone_text": None,
+                            "danger_rating_value": "moderate",
+                            "avalanche_type": None,
+                            "avalanche_size": None,
+                            "frequency": None,
+                            "snowpack_stability": None,
+                        }
+                    ],
+                    "prose": None,
+                    "danger_level": 2,
+                }
+            ],
+            prose={"tendency_lead": "Increase in danger during the day."},
+        )
+        rm["source"] = "albina"
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "at-07-22",
+                "slug": region.name_slug,
+                "date_str": "2026-04-15",
+            },
+        )
+        content = client.get(url).content.decode()
+
+        # The explainer text should appear.
+        assert "Increase in danger during the day." in content
+
+        # The callout must not start with a bare period.
+        assert ". Increase in danger" not in content
+        assert 'data-testid="day-character-label"' not in content
+
+    def test_slf_bulletin_still_renders_label_and_period(
+        self,
+        client: Client,
+    ) -> None:
+        """SLF bulletins with a non-empty label still render '<label>.' before explainer."""
+        day = date(2026, 3, 15)
+        major = MajorRegionFactory.create(prefix="CH-4")
+        sub = SubRegionFactory.create(prefix="CH-41", major=major)
+        region = MicroRegionFactory.create(region_id="ch-4116", subregion=sub)
+        # danger=2 + wind_slab → Manageable day (non-empty label)
+        trait = {
+            "category": "dry",
+            "time_period": "all_day",
+            "title": "Wind slab",
+            "geography": {"source": "problems"},
+            "problems": [
+                {
+                    "problem_type": "wind_slab",
+                    "comment_html": "",
+                    "aspects": ["N"],
+                    "elevation": {"lower": 2200, "upper": None, "treeline": False},
+                    "time_period": "all_day",
+                    "core_zone_text": None,
+                    "danger_rating_value": "moderate",
+                    "avalanche_type": None,
+                    "avalanche_size": None,
+                    "frequency": None,
+                    "snowpack_stability": None,
+                }
+            ],
+            "prose": None,
+            "danger_level": 2,
+        }
+        rm = _render_model_with_traits([trait])
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        content = client.get(
+            reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "ch-4116",
+                    "slug": region.name_slug,
+                    "date_str": "2026-03-15",
+                },
+            )
+        ).content.decode()
+        # Label element must be present and followed by a period.
+        assert 'data-testid="day-character-label"' in content
+        assert "Manageable day." in content
