@@ -1917,37 +1917,6 @@ class TestMFElevationBandSplitBulletinPage:
         )
         return bulletin
 
-    def test_day_risk_panel_has_two_rows(self, client: Client) -> None:
-        """The Day Risk Profile panel renders two rows for an elevation-band split."""
-        from public.views import _day_windows_from_rm_ratings
-
-        rm_ratings = [
-            {
-                "period": "all_day",
-                "key": "low",
-                "subdivision": None,
-                "elevation": {
-                    "lower": None,
-                    "upper": 2400,
-                    "treeline": False,
-                    "treeline_side": None,
-                },
-            },
-            {
-                "period": "all_day",
-                "key": "moderate",
-                "subdivision": None,
-                "elevation": {
-                    "lower": 2400,
-                    "upper": None,
-                    "treeline": False,
-                    "treeline_side": None,
-                },
-            },
-        ]
-        rows = _day_windows_from_rm_ratings(rm_ratings)
-        assert len(rows) == 2
-
     def test_day_risk_panel_row_level_keys(self) -> None:
         """Two-row MF panel has 'low' (lower band) and 'moderate' (upper band)."""
         from public.views import _day_windows_from_rm_ratings

@@ -1707,15 +1707,15 @@ class TestMFElevationBandSplitIntegration:
 
     def test_no_danger_ratings_field_falls_back_to_trait_split(self) -> None:
         """
-        When danger.ratings is absent (older render models < v5), the
-        afternoon-elevated trait split still operates correctly.
+        When danger.ratings is absent, the afternoon-elevated trait split
+        still operates correctly.
         """
         region = MicroRegionFactory.create(region_id="FR-38-4")
         day = datetime.date(2026, 3, 18)
         vf = datetime.datetime(2026, 3, 17, 17, 0, tzinfo=UTC)
         vt = datetime.datetime(2026, 3, 18, 17, 0, tzinfo=UTC)
 
-        # Build a bulletin without 'ratings' in danger block (pre-v5 shape).
+        # Build a bulletin without 'ratings' in the danger block.
         render_model: dict = {
             "version": RENDER_MODEL_VERSION,
             "danger": {
