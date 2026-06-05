@@ -1907,9 +1907,21 @@ def _rows_for_period(
     which band each level applies to. This is the path ALBINA takes for
     periods where the danger genuinely differs by elevation; SLF never splits
     danger by elevation so it always falls into the single-row branch.
+
+    Suppression rule: when a period mixes banded ratings (those carrying a
+    truthy ``elevation``) with unbanded ones (no ``elevation``), the unbanded
+    ratings are discarded before any further processing. The banded pair
+    already partitions the whole mountain (e.g. "below 2400 m" + "above
+    2400 m"), so the extra unbanded entry is logically redundant and
+    unplaceable on the elevation axis. When the period contains ONLY unbanded
+    ratings (SLF all_day; constant-danger ALBINA) they are kept unchanged.
     """
     if not period_ratings:
         return []
+    has_banded = any(r.get("elevation") for r in period_ratings)
+    has_unbanded = any(not r.get("elevation") for r in period_ratings)
+    if has_banded and has_unbanded:
+        period_ratings = [r for r in period_ratings if r.get("elevation")]
     distinct = {
         (r.get("key") or "", r.get("subdivision") or "") for r in period_ratings
     }

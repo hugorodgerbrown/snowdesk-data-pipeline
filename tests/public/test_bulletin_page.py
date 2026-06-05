@@ -1726,6 +1726,61 @@ class TestDayWindowsElevationSplit:
         assert rows[2]["type"] == "later"
         assert rows[2]["caption"] == ""
 
+    # ------------------------------------------------------------------
+    # Suppression of stray unbanded ratings (SNOW-292)
+    # ------------------------------------------------------------------
+
+    def test_unbanded_suppressed_when_banded_present(self) -> None:
+        """Stray unbanded rating is dropped when banded ratings co-exist in same period.
+
+        ALBINA can emit a triple like [considerable/below-2400, moderate/above-2400,
+        low/no-elevation]. The banded pair already partitions the whole mountain; the
+        unbanded 'low' is redundant and must be suppressed so only 2 rows render.
+        """
+        from public.views import _day_windows_from_rm_ratings
+
+        rows = _day_windows_from_rm_ratings(
+            [
+                self._rm_rating("considerable", upper=2400),  # below 2400
+                self._rm_rating("moderate", lower=2400),  # above 2400
+                self._rm_rating("low"),  # no elevation — stray unbanded
+            ]
+        )
+        assert len(rows) == 2
+        keys = [r["level_key"] for r in rows]
+        assert "considerable" in keys
+        assert "moderate" in keys
+        assert "low" not in keys
+        # Both surviving rows carry elevation captions.
+        for row in rows:
+            assert row["caption"] != ""
+
+    def test_only_unbanded_rating_kept_unchanged(self) -> None:
+        """When the period has no banded ratings, an unbanded rating is kept as-is.
+
+        SLF all_day regression: a single unbanded rating must not be suppressed.
+        """
+        from public.views import _day_windows_from_rm_ratings
+
+        rows = _day_windows_from_rm_ratings([self._rm_rating("moderate")])
+        assert len(rows) == 1
+        assert rows[0]["level_key"] == "moderate"
+
+    def test_banded_only_kept_unchanged(self) -> None:
+        """Two banded ratings with no unbanded entry are not affected by the rule."""
+        from public.views import _day_windows_from_rm_ratings
+
+        rows = _day_windows_from_rm_ratings(
+            [
+                self._rm_rating("considerable", lower=2200),  # above 2200
+                self._rm_rating("moderate", upper=2200),  # below 2200
+            ]
+        )
+        assert len(rows) == 2
+        keys = [r["level_key"] for r in rows]
+        assert "considerable" in keys
+        assert "moderate" in keys
+
 
 # ---------------------------------------------------------------------------
 # Test: bulletin page content — subregion names, day-risk panel
@@ -3863,3 +3918,92 @@ class TestAlbinaBandHeadings:
         )
         assert "2500 m" in content
         assert "2800 m" in content
+
+    def test_stray_unbanded_rating_suppressed_in_day_windows(
+        self,
+        client: Client,
+        region: MicroRegion,
+    ) -> None:
+        """ALBINA 3-rating shape (banded×2 + stray unbanded) renders 2 day-window rows.
+
+        Some ALBINA bulletins include a redundant unbanded rating alongside the
+        two banded ones. The day-windows panel must suppress the unbanded entry and
+        show only the two banded rows. The masthead headline must still reflect the
+        maximum across all ratings (considerable, level 3).
+        """
+        day = date(2026, 4, 10)
+        above_elev = {
+            "lower": 2400,
+            "upper": None,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        below_elev = {
+            "lower": None,
+            "upper": 2400,
+            "treeline": False,
+            "treeline_side": None,
+        }
+        traits = [
+            _albina_trait("above-2400", above_elev, danger_level=2),
+            _albina_trait("below-2400", below_elev, danger_level=3),
+        ]
+        rm = _albina_render_model_with_bands(traits)
+        # Inject the 3-rating danger shape: banded×2 + stray unbanded, matching
+        # the real-world ALBINA pattern documented in SNOW-292.
+        rm["danger"] = {
+            "key": "considerable",
+            "number": "3",
+            "subdivision": None,
+            "ratings": [
+                {
+                    "period": "all_day",
+                    "key": "considerable",
+                    "subdivision": None,
+                    "elevation": below_elev,  # below 2400 m
+                },
+                {
+                    "period": "all_day",
+                    "key": "moderate",
+                    "subdivision": None,
+                    "elevation": above_elev,  # above 2400 m
+                },
+                {
+                    "period": "all_day",
+                    "key": "low",
+                    "subdivision": None,
+                    "elevation": None,  # stray unbanded — must be suppressed
+                },
+            ],
+        }
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "at-07-23-02",
+                "slug": region.name_slug,
+                "date_str": "2026-04-10",
+            },
+        )
+        content = client.get(url).content.decode()
+
+        # Only the two banded rows must appear; the stray 'low' is suppressed.
+        row_count = content.count('data-testid="day-window-row"')
+        assert row_count == 2, f"Expected 2 day-window rows, got {row_count}"
+
+        # Extract the day-windows panel section for targeted assertions.
+        panel_start = content.index('data-testid="day-windows-panel"')
+        panel_end = content.index('data-testid="avalanche-problems-heading"')
+        panel_html = content[panel_start:panel_end]
+
+        # No low/level-1 tile must appear inside the panel.
+        assert "lv-low" not in panel_html, "Suppressed 'low' rating leaked into panel"
+
+        # The masthead headline must still be Considerable (level 3) — suppression
+        # must not alter the headline danger computed outside this function.
+        assert ">Considerable<" in content or ">3<" in content
