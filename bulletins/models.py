@@ -548,6 +548,26 @@ class RegionDayRating(BaseModel):
         db_index=True,
         help_text="DAY_RATING_VERSION at the time this row was computed.",
     )
+    source = models.CharField(
+        max_length=16,
+        choices=Bulletin.Source.choices,
+        blank=True,
+        default="",
+        help_text=(
+            "Originating bulletin source (e.g. 'slf', 'albina', 'meteofrance'). "
+            "Blank for no-rating rows where source_bulletin is None."
+        ),
+    )
+    bands = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text=(
+            "Elevation-band breakdown for ALBINA bulletins. Each entry is "
+            "{'band_id': str, 'label': str, 'rating_key': str, 'time_period': str}. "
+            "None for SLF, MeteoFrance, and no-rating rows."
+        ),
+    )
 
     objects = RegionDayRatingQuerySet.as_manager()
 

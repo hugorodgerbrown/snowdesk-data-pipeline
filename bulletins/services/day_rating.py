@@ -57,15 +57,18 @@ from django.core.cache import cache
 from django.core.cache.utils import make_template_fragment_key
 from django.utils import timezone
 
-from bulletins.services.render_model import RENDER_MODEL_VERSION
+from bulletins.models import Bulletin
+from bulletins.services.render_model import (
+    RENDER_MODEL_VERSION,
+    _band_label_for_elevation as _band_label,
+)
 
 if TYPE_CHECKING:
-    from bulletins.models import Bulletin
     from regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
-DAY_RATING_VERSION: int = 6
+DAY_RATING_VERSION: int = 7
 
 # Map trait danger_level int (1–5) to rating key string.
 _DANGER_LEVEL_TO_KEY: dict[int, str] = {
@@ -183,6 +186,149 @@ def _resolve_min_max_keys(
     return headline_key, headline_subdivision, headline_key, headline_subdivision
 
 
+def _derive_albina_bands(render_model: dict) -> list[dict] | None:
+    """
+    Derive the elevation-band breakdown list from an ALBINA render model.
+
+    Reads ``render_model["danger"]["ratings"]`` — each rating carries a
+    ``period``, ``key``, and ``elevation`` dict.  For ALBINA bulletins the
+    ratings already reflect the per-band split, so one band entry is emitted
+    per distinct ``(band_id, period)`` pair.
+
+    Returns ``None`` when the render model carries no ratings, or when no
+    rating has an elevation (constant-danger ALBINA bulletin).
+
+    Args:
+        render_model: A render model dict for an ALBINA bulletin.
+
+    Returns:
+        A list of band dicts or ``None``.
+
+    """
+    ratings: list[dict] = (render_model.get("danger") or {}).get("ratings") or []
+    if not ratings:
+        return None
+
+    bands: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    for rating in ratings:
+        elevation = rating.get("elevation")
+        # Build a synthetic problem-like dict to reuse _band_id_for_problem.
+        # The elevation shape from _parse_elevation uses lower/upper ints and
+        # treeline bool — we need to reconstruct the raw CAAML shape.
+        band_id = _elevation_to_band_id(elevation)
+        period: str = rating.get("period") or "all_day"
+        key = (band_id, period)
+        if key in seen:
+            continue
+        seen.add(key)
+        label = _band_label(elevation)
+        rating_key: str = rating.get("key") or "low"
+        bands.append(
+            {
+                "band_id": band_id,
+                "label": label,
+                "rating_key": rating_key,
+                "time_period": period,
+            }
+        )
+
+    return bands if bands else None
+
+
+def _elevation_to_band_id(elevation: dict | None) -> str:
+    """
+    Derive a band_id slug from a parsed elevation dict (render model format).
+
+    The render model elevation shape uses int ``lower``/``upper`` and a
+    bool ``treeline`` flag.  This mirrors the logic in ``_band_id_for_problem``
+    but operates on the already-parsed elevation dict rather than raw CAAML.
+
+    Args:
+        elevation: Parsed elevation dict with ``lower``, ``upper``,
+            ``treeline``, and ``treeline_side`` keys, or ``None``.
+
+    Returns:
+        A hyphenated slug string identifying the elevation band.
+
+    """
+    if not elevation:
+        return "all-elevations"
+
+    treeline: bool = elevation.get("treeline", False)
+    treeline_side: str | None = elevation.get("treeline_side")
+
+    if treeline:
+        if treeline_side == "lower":
+            return "above-treeline"
+        return "below-treeline"
+
+    lower: int | None = elevation.get("lower")
+    upper: int | None = elevation.get("upper")
+
+    if lower is not None and upper is not None:
+        return f"{lower}-to-{upper}"
+    if lower is not None:
+        return f"above-{lower}"
+    if upper is not None:
+        return f"below-{upper}"
+    return "all-elevations"
+
+
+def _compute_min_max_from_traits(
+    traits: list,
+    headline_key: str,
+    headline_subdivision: str,
+    bulletin_id: str,
+    no_rating: str,
+) -> tuple[str, str, str, str, bool]:
+    """
+    Scan traits and resolve min/max rating keys and subdivisions.
+
+    Iterates the trait list, buckets valid levels into morning/afternoon,
+    then delegates to ``_resolve_min_max_keys``.  Returns a 5-tuple of
+    ``(min_key, min_sub, max_key, max_sub, has_valid_trait)``.
+
+    Args:
+        traits: The ``render_model["traits"]`` list.
+        headline_key: The bulletin's aggregate danger key (fallback).
+        headline_subdivision: The bulletin's aggregate subdivision (fallback).
+        bulletin_id: Used only in debug log messages.
+        no_rating: The ``no_rating`` sentinel string from ``RegionDayRating.Rating``.
+
+    Returns:
+        A 5-tuple where the last element is ``True`` when at least one trait
+        carried a valid ``danger_level`` integer.
+
+    """
+    morning_levels: list[int] = []
+    afternoon_levels: list[int] = []
+    has_valid_trait = False
+    for trait in traits:
+        raw_level = trait.get("danger_level")
+        if not isinstance(raw_level, int) or raw_level not in _DANGER_LEVEL_TO_KEY:
+            logger.debug(
+                "Bulletin %s trait has missing/invalid danger_level %r; skipping.",
+                bulletin_id,
+                raw_level,
+            )
+            continue
+        has_valid_trait = True
+        if trait.get("time_period", "all_day") == "later":
+            afternoon_levels.append(raw_level)
+        else:
+            morning_levels.append(raw_level)
+
+    if not has_valid_trait:
+        return no_rating, "", no_rating, "", False
+
+    min_key, min_sub, max_key, max_sub = _resolve_min_max_keys(
+        morning_levels, afternoon_levels, headline_key, headline_subdivision
+    )
+    return min_key, min_sub, max_key, max_sub, True
+
+
 def recompute_region_day(
     region: "MicroRegion",
     day: date,
@@ -215,8 +361,7 @@ def recompute_region_day(
                 When False, log what would be written without touching the DB.
 
     """
-    # Avoid circular import — models is always available at call time.
-    from bulletins.models import Bulletin, RegionDayRating
+    from bulletins.models import RegionDayRating
 
     no_rating = RegionDayRating.Rating.NO_RATING
 
@@ -235,6 +380,9 @@ def recompute_region_day(
     # whose target is actually day+1.
     candidates = [b for b in pre_candidates if _target_day(b) == day]
 
+    source_str: str = ""
+    bands: list[dict] | None = None
+
     if not candidates:
         min_key: str = no_rating
         min_subdivision: str = ""
@@ -250,6 +398,9 @@ def recompute_region_day(
         headline_key, headline_subdivision = _extract_headline_from_render_model(rm)
         traits: list = rm.get("traits") or []
 
+        # Always copy source from the chosen bulletin's render model.
+        source_str = str(rm.get("source") or "")
+
         if not traits:
             # Quiet day: no traits — fall back to headline danger key.
             logger.debug(
@@ -263,51 +414,25 @@ def recompute_region_day(
             max_subdivision = headline_subdivision
             source_bulletin = chosen
         else:
-            # Verify the bulletin has at least one valid trait danger_level.
-            # Also collect morning (all_day/earlier) and afternoon (later)
-            # levels so we can detect an afternoon-elevated split.
-            has_valid_trait = False
-            morning_levels: list[int] = []
-            afternoon_levels: list[int] = []
-            for trait in traits:
-                raw_level = trait.get("danger_level")
-                if (
-                    not isinstance(raw_level, int)
-                    or raw_level not in _DANGER_LEVEL_TO_KEY
-                ):
-                    logger.debug(
-                        "Bulletin %s trait has missing/invalid danger_level"
-                        " %r; skipping.",
-                        chosen.bulletin_id,
-                        raw_level,
-                    )
-                    continue
-                has_valid_trait = True
-                time_period = trait.get("time_period", "all_day")
-                if time_period == "later":
-                    afternoon_levels.append(raw_level)
-                else:  # "all_day" or "earlier"
-                    morning_levels.append(raw_level)
-
-            if not has_valid_trait:
-                # All trait levels were invalid — no usable data.
+            min_key, min_subdivision, max_key, max_subdivision, has_valid = (
+                _compute_min_max_from_traits(
+                    traits,
+                    headline_key,
+                    headline_subdivision,
+                    chosen.bulletin_id,
+                    no_rating,
+                )
+            )
+            source_bulletin = chosen if has_valid else None
+            if not has_valid:
                 min_key = no_rating
                 min_subdivision = ""
                 max_key = no_rating
                 max_subdivision = ""
-                source_bulletin = None
-            else:
-                # Resolve min/max keys — split when afternoon is elevated,
-                # otherwise headline-only (SNOW-138).
-                min_key, min_subdivision, max_key, max_subdivision = (
-                    _resolve_min_max_keys(
-                        morning_levels,
-                        afternoon_levels,
-                        headline_key,
-                        headline_subdivision,
-                    )
-                )
-                source_bulletin = chosen
+
+        # Derive bands for ALBINA bulletins.
+        if source_str == Bulletin.Source.ALBINA:
+            bands = _derive_albina_bands(rm)
 
     if not commit:
         logger.info(
@@ -329,14 +454,17 @@ def recompute_region_day(
             "max_subdivision": max_subdivision,
             "source_bulletin": source_bulletin,
             "version": DAY_RATING_VERSION,
+            "source": source_str,
+            "bands": bands,
         },
     )
     logger.debug(
-        "RegionDayRating upserted: region=%s date=%s min=%s max=%s",
+        "RegionDayRating upserted: region=%s date=%s min=%s max=%s source=%s",
         region.region_id,
         day,
         min_key,
         max_key,
+        source_str,
     )
 
 
