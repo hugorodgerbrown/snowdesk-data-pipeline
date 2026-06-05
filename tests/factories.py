@@ -166,6 +166,8 @@ class RegionDayRatingFactory(factory.django.DjangoModelFactory[RegionDayRating])
 
     Defaults ``min_rating`` to the same value as ``max_rating`` (uniform day)
     so existing tests that only set one field continue to work without change.
+    ``am_rating`` and ``pm_rating`` default to ``None`` (no time split), mirroring
+    the model defaults.
     """
 
     class Meta:
@@ -179,6 +181,10 @@ class RegionDayRatingFactory(factory.django.DjangoModelFactory[RegionDayRating])
     min_subdivision = ""
     max_rating = RegionDayRating.Rating.LOW
     max_subdivision = ""
+    am_rating = None
+    am_subdivision = ""
+    pm_rating = None
+    pm_subdivision = ""
     source_bulletin = None
     version = DAY_RATING_VERSION
 
