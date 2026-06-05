@@ -43,15 +43,31 @@
                             class="season-cell-wrap"
                             data-month-parity="{{ cell.month_parity }}"
                         >
-                            <a
-                                href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
-                                class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
-                                data-date="{{ cell.date|date:'Y-m-d' }}"
-                                data-rating-min="{{ cell.min_rating_key }}"
-                                data-rating-max="{{ cell.max_rating_key }}"
-                                title="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
-                                aria-label="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
-                            >{{ cell.date|date:'j' }}</a>
+                            {% if cell.is_time_split %}
+                                {# SNOW-291: vertical AM/PM split tile — left half AM, right half PM. #}
+                                <a
+                                    href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
+                                    class="rounded-full calendar-cell calendar-cell-time-split{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
+                                    data-date="{{ cell.date|date:'Y-m-d' }}"
+                                    data-shape="time-split"
+                                    data-rating-am="{{ cell.am_rating_key }}"
+                                    data-rating-pm="{{ cell.pm_rating_key }}"
+                                    data-rating-min="{{ cell.min_rating_key }}"
+                                    data-rating-max="{{ cell.max_rating_key }}"
+                                    title="{{ cell.date|date:'D j N' }}: {{ cell.am_rating_key|title }} AM · {{ cell.pm_rating_key|title }} PM"
+                                    aria-label="{{ cell.date|date:'D j N' }}: {{ cell.am_rating_key|title }} AM · {{ cell.pm_rating_key|title }} PM"
+                                >{{ cell.date|date:'j' }}</a>
+                            {% else %}
+                                <a
+                                    href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
+                                    class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
+                                    data-date="{{ cell.date|date:'Y-m-d' }}"
+                                    data-rating-min="{{ cell.min_rating_key }}"
+                                    data-rating-max="{{ cell.max_rating_key }}"
+                                    title="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
+                                    aria-label="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
+                                >{{ cell.date|date:'j' }}</a>
+                            {% endif %}
                         </div>
                     {% else %}
                         <div

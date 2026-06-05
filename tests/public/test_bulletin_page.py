@@ -1419,10 +1419,16 @@ class TestDayWindowsPanel:
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 2
 
-    def test_cross_category_later_down_suppressed(
+    def test_cross_category_later_down_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day considerable minus + later moderate (cross-band lower) → 1 row (suppressed)."""
+        """all_day considerable minus + later moderate (cross-band lower) → 2 rows (SNOW-291).
+
+        The strictly-greater gate has been dropped: any later period is now
+        always shown, including when the afternoon level is lower than the
+        morning level.  The flat-but-split case (same level, different problem
+        mix) is the primary motivation, but the same logic applies here.
+        """
         day = date(2026, 3, 27)
         raw = _raw_data_with_ratings(
             [
@@ -1435,7 +1441,7 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-03-27")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
     # ------------------------------------------------------------------
     # later_ filter — within-category sublevel shift (always shown)
@@ -1468,10 +1474,14 @@ class TestDayWindowsPanel:
         panel_html = content[panel_start:panel_end]
         assert ">3<" in panel_html
 
-    def test_within_category_later_down_suppressed(
+    def test_within_category_later_down_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day moderate plus + later moderate minus (within-band lower) → 1 row (suppressed)."""
+        """all_day moderate plus + later moderate minus (within-band lower) → 2 rows (SNOW-291).
+
+        The strictly-greater gate has been dropped: any later period is always
+        shown regardless of whether the afternoon subdivision is lower.
+        """
         day = date(2026, 3, 29)
         raw = _raw_data_with_ratings(
             [
@@ -1484,16 +1494,20 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-03-29")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
     # ------------------------------------------------------------------
     # later_ filter — same-band no-op (filtered)
     # ------------------------------------------------------------------
 
-    def test_same_band_noop_considerable_filtered(
+    def test_same_band_noop_considerable_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day considerable neutral + later considerable → 1 row (later filtered)."""
+        """all_day considerable neutral + later considerable → 2 rows (SNOW-291).
+
+        The strictly-greater gate is dropped: flat-but-split days (same level
+        AM/PM, different problem mix) now show two rows.
+        """
         day = date(2026, 3, 30)
         raw = _raw_data_with_ratings(
             [
@@ -1506,12 +1520,16 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-03-30")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
-    def test_same_band_noop_moderate_filtered(
+    def test_same_band_noop_moderate_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day moderate neutral + later moderate → 1 row (later filtered)."""
+        """all_day moderate neutral + later moderate → 2 rows (SNOW-291).
+
+        The strictly-greater gate is dropped: flat-but-split days now show two
+        rows even when the danger level does not change between AM and PM.
+        """
         day = date(2026, 3, 31)
         raw = _raw_data_with_ratings(
             [
@@ -1524,16 +1542,19 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-03-31")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
     # ------------------------------------------------------------------
     # later_ filter — cross-band lower (always suppressed)
     # ------------------------------------------------------------------
 
-    def test_cross_band_lower_considerable_to_moderate_suppressed(
+    def test_cross_band_lower_considerable_to_moderate_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day considerable + later moderate (lower band) → 1 row."""
+        """all_day considerable + later moderate (lower band) → 2 rows (SNOW-291).
+
+        The strictly-greater gate is dropped: later periods are always shown.
+        """
         day = date(2026, 4, 1)
         raw = _raw_data_with_ratings(
             [
@@ -1546,12 +1567,16 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-04-01")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
-    def test_same_band_plus_blocks_plain_later(
+    def test_same_band_plus_blocks_plain_later_shows_two_rows(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day moderate plus + later moderate plain (lower sub) → 1 row."""
+        """all_day moderate plus + later moderate plain → 2 rows (SNOW-291).
+
+        The strictly-greater gate is dropped: later periods are always shown
+        even when the afternoon subdivision is lower.
+        """
         day = date(2026, 4, 2)
         raw = _raw_data_with_ratings(
             [
@@ -1564,7 +1589,7 @@ class TestDayWindowsPanel:
         url = _url("ch-4115", "valais", "2026-04-02")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 1
+        assert content.count('data-testid="day-window-row"') == 2
 
     def test_same_band_minus_to_plain_shows_two_rows(
         self, client: Client, region: MicroRegion
@@ -2828,6 +2853,28 @@ class TestDangerPatternRow:
         assert 'data-testid="eaws-frequency-chip"' in content
         assert 'data-testid="eaws-stability-chip"' in content
 
+    def test_albina_card_has_no_level_number_chip(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """ALBINA cards carry no subdivision → level_number is empty → chip absent.
+
+        SNOW-291 scope: the level-number chip is SLF-only.  ALBINA bulletins
+        have no subdivision data so the chip must not appear in their rendered
+        rating blocks.
+        """
+        day = date(2026, 4, 13)
+        rm = _render_model_with_traits([self._albina_trait()])
+        rm["source"] = "albina"
+        rm["danger_patterns"] = []
+        _make_am_bulletin(
+            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
+        url = _url("ch-4115", "valais", "2026-04-13")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="level-number-chip"' not in content
+
 
 # ---------------------------------------------------------------------------
 # Test: hero rating badge (SNOW-246)
@@ -3520,3 +3567,195 @@ class TestTypePillsVsTimePills:
         assert 'data-testid="time-period-pill"' in content
         # The old undifferentiated "category-pill" testid must not appear.
         assert 'data-testid="category-pill"' not in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-291 — flat-but-split: two dw-row entries + editorial panel titles
+# ---------------------------------------------------------------------------
+
+
+def _flat_split_render_model(
+    dry_title: str = "Dry avalanches, whole day",
+    wet_title: str = "Wet-snow avalanches, as the day progresses",
+    dry_level: int = 2,
+    wet_level: int = 2,
+    dry_subdivision: str | None = None,
+    wet_subdivision: str | None = None,
+) -> dict:
+    """Build a render model for a flat-but-split day with SLF editorial titles.
+
+    The canonical SNOW-291 fixture: moderate (2-) dry all day, moderate (2)
+    wet as the day progresses. The ``danger.ratings`` list carries the
+    per-period subdivision suffix so panel cards can resolve it.
+    """
+    dry_rating: dict = {
+        "period": "all_day",
+        "key": "moderate",
+        "subdivision": dry_subdivision or "",
+        "elevation": None,
+    }
+    wet_rating: dict = {
+        "period": "later",
+        "key": "moderate",
+        "subdivision": wet_subdivision or "",
+        "elevation": None,
+    }
+    dry_trait = {
+        "category": "dry",
+        "time_period": "all_day",
+        "title": dry_title,
+        "geography": {"source": "problems"},
+        "problems": [
+            {
+                "problem_type": "wind_slab",
+                "comment_html": "<p>Dry slab comment.</p>",
+                "aspects": ["N", "NE"],
+                "elevation": {"lower": 2200, "upper": None, "treeline": False},
+                "time_period": "all_day",
+                "core_zone_text": None,
+                "danger_rating_value": "moderate",
+            }
+        ],
+        "prose": None,
+        "danger_level": dry_level,
+    }
+    wet_trait = {
+        "category": "wet",
+        "time_period": "later",
+        "title": wet_title,
+        "geography": {"source": "problems"},
+        "problems": [
+            {
+                "problem_type": "wet_snow",
+                "comment_html": "<p>Wet snow comment.</p>",
+                "aspects": ["S", "SW", "SE"],
+                "elevation": {"lower": None, "upper": 2400, "treeline": False},
+                "time_period": "later",
+                "core_zone_text": None,
+                "danger_rating_value": "moderate",
+            }
+        ],
+        "prose": None,
+        "danger_level": wet_level,
+    }
+    rm = _render_model_with_traits([dry_trait, wet_trait])
+    rm["danger"]["ratings"] = [dry_rating, wet_rating]
+    return rm
+
+
+@pytest.mark.django_db
+class TestSnow291FlatButSplit:
+    """
+    SNOW-291 — flat-but-split day: two rating panels with editorial titles.
+
+    Canonical fixture: CH-4115, moderate (2) dry whole day + moderate (2)
+    wet-snow as the day progresses. Same danger level, different problem mix.
+    """
+
+    def test_flat_split_renders_two_day_window_rows(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Flat-but-split bulletin renders two dw-row entries on the Day Risk Profile."""
+        day = date(2026, 5, 7)
+        rm = _flat_split_render_model()
+        raw = _raw_data_with_ratings(
+            [_rating("moderate", "all_day"), _rating("moderate", "later")]
+        )
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data=raw,
+        )
+        url = _url("ch-4115", "valais", "2026-05-07")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 2
+
+    def test_flat_split_renders_two_rating_blocks(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Flat-but-split bulletin renders two rating-block panels."""
+        day = date(2026, 5, 8)
+        rm = _flat_split_render_model()
+        raw = _raw_data_with_ratings(
+            [_rating("moderate", "all_day"), _rating("moderate", "later")]
+        )
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data=raw,
+        )
+
+        url = _url("ch-4115", "valais", "2026-05-08")
+        response = client.get(url)
+        content = response.content.decode()
+        assert content.count('data-testid="rating-block"') == 2
+
+    def test_flat_split_renders_editorial_panel_titles(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Both rating-block panels render their editorial title as panel-title rows."""
+        day = date(2026, 5, 9)
+        dry_title = "Dry avalanches, whole day"
+        wet_title = "Wet-snow avalanches, as the day progresses"
+        rm = _flat_split_render_model(
+            dry_title=dry_title,
+            wet_title=wet_title,
+        )
+        raw = _raw_data_with_ratings(
+            [_rating("moderate", "all_day"), _rating("moderate", "later")]
+        )
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data=raw,
+        )
+
+        url = _url("ch-4115", "valais", "2026-05-09")
+        response = client.get(url)
+        content = response.content.decode()
+        # Both editorial titles must appear in the output.
+        assert dry_title in content
+        assert wet_title in content
+        # Two panel-title rows.
+        assert content.count('data-testid="panel-title"') == 2
+
+    def test_flat_split_carries_subdivision_suffix_in_card(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """
+        Subdivision suffix from danger.ratings is threaded into each panel card
+        and rendered as a visible level-number chip in the rating block.
+
+        Canonical case: all_day rating has subdivision="-" → level_number="2-"
+        → the chip ``data-testid="level-number-chip"`` contains "2-" in the HTML.
+        """
+        day = date(2026, 5, 10)
+        rm = _flat_split_render_model(
+            dry_subdivision="-",
+        )
+        raw = _raw_data_with_ratings(
+            [_rating("moderate", "all_day", "minus"), _rating("moderate", "later")]
+        )
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data=raw,
+        )
+
+        url = _url("ch-4115", "valais", "2026-05-10")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        # The dry card's level_number chip must carry the subdivision suffix "2-".
+        assert "2-" in content
+        # At least one level-number chip must appear (for the all_day card).
+        assert 'data-testid="level-number-chip"' in content

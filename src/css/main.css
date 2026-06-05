@@ -684,6 +684,53 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 .calendar-cell[data-rating-min="considerable"][data-rating-max="very_high"]  { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-considerable) 180deg, var(--color-eaws-very-high) 180deg); color: var(--color-eaws-very-high-fg); }
 .calendar-cell[data-rating-min="high"][data-rating-max="very_high"]          { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-high) 180deg, var(--color-eaws-very-high) 180deg); color: var(--color-eaws-very-high-fg); }
 
+/* —— AM/PM vertical-split calendar tile (SNOW-291) ——————————————
+   Used when a day carries two distinct problem periods (flat-but-split
+   or escalating). The tile is divided vertically: left half = AM colour,
+   right half = PM colour.
+
+   Implementation uses a linear-gradient hard-stop at 50% (left→right),
+   pulling colours from the same EAWS token set as the existing diagonal
+   fills above.  The ::before pseudo-element paints the gradient so the
+   rounded-full clip on the parent always produces clean half-circle edges.
+
+   Selector: [data-shape="time-split"] plus [data-rating-am] / [data-rating-pm]
+   attribute pairs.  Specificity matches the diagonal-fill rules so the
+   cascade behaves identically.
+
+   All possible (am, pm) combinations are enumerated below.  The text
+   colour follows the PM (right/dominant) rating fg token for legibility.
+   ————————————————————————————————————————— */
+
+/* Single AM colour (PM rating absent or same as AM — fallback) */
+.calendar-cell[data-shape="time-split"][data-rating-am="low"][data-rating-pm="low"]             { --cell-bg: var(--color-eaws-low); color: var(--color-eaws-low-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="moderate"][data-rating-pm="moderate"]   { --cell-bg: var(--color-eaws-moderate); color: var(--color-eaws-moderate-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="considerable"][data-rating-pm="considerable"] { --cell-bg: var(--color-eaws-considerable); color: var(--color-eaws-considerable-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="high"][data-rating-pm="high"]           { --cell-bg: var(--color-eaws-high); color: var(--color-eaws-high-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="very_high"][data-rating-pm="very_high"] { --cell-bg: var(--color-eaws-very-high); color: var(--color-eaws-very-high-fg); }
+
+/* Mixed AM/PM pairs — vertical left/right split using hard-stop linear-gradient */
+.calendar-cell[data-shape="time-split"][data-rating-am="low"][data-rating-pm="moderate"]           { --cell-bg: linear-gradient(to right, var(--color-eaws-low) 50%, var(--color-eaws-moderate) 50%); color: var(--color-eaws-moderate-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="low"][data-rating-pm="considerable"]        { --cell-bg: linear-gradient(to right, var(--color-eaws-low) 50%, var(--color-eaws-considerable) 50%); color: var(--color-eaws-considerable-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="low"][data-rating-pm="high"]                { --cell-bg: linear-gradient(to right, var(--color-eaws-low) 50%, var(--color-eaws-high) 50%); color: var(--color-eaws-high-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="low"][data-rating-pm="very_high"]           { --cell-bg: linear-gradient(to right, var(--color-eaws-low) 50%, var(--color-eaws-very-high) 50%); color: var(--color-eaws-very-high-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="moderate"][data-rating-pm="low"]            { --cell-bg: linear-gradient(to right, var(--color-eaws-moderate) 50%, var(--color-eaws-low) 50%); color: var(--color-eaws-low-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="moderate"][data-rating-pm="considerable"]   { --cell-bg: linear-gradient(to right, var(--color-eaws-moderate) 50%, var(--color-eaws-considerable) 50%); color: var(--color-eaws-considerable-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="moderate"][data-rating-pm="high"]           { --cell-bg: linear-gradient(to right, var(--color-eaws-moderate) 50%, var(--color-eaws-high) 50%); color: var(--color-eaws-high-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="moderate"][data-rating-pm="very_high"]      { --cell-bg: linear-gradient(to right, var(--color-eaws-moderate) 50%, var(--color-eaws-very-high) 50%); color: var(--color-eaws-very-high-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="considerable"][data-rating-pm="low"]        { --cell-bg: linear-gradient(to right, var(--color-eaws-considerable) 50%, var(--color-eaws-low) 50%); color: var(--color-eaws-low-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="considerable"][data-rating-pm="moderate"]   { --cell-bg: linear-gradient(to right, var(--color-eaws-considerable) 50%, var(--color-eaws-moderate) 50%); color: var(--color-eaws-moderate-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="considerable"][data-rating-pm="high"]       { --cell-bg: linear-gradient(to right, var(--color-eaws-considerable) 50%, var(--color-eaws-high) 50%); color: var(--color-eaws-high-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="considerable"][data-rating-pm="very_high"]  { --cell-bg: linear-gradient(to right, var(--color-eaws-considerable) 50%, var(--color-eaws-very-high) 50%); color: var(--color-eaws-very-high-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="high"][data-rating-pm="low"]                { --cell-bg: linear-gradient(to right, var(--color-eaws-high) 50%, var(--color-eaws-low) 50%); color: var(--color-eaws-low-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="high"][data-rating-pm="moderate"]           { --cell-bg: linear-gradient(to right, var(--color-eaws-high) 50%, var(--color-eaws-moderate) 50%); color: var(--color-eaws-moderate-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="high"][data-rating-pm="considerable"]       { --cell-bg: linear-gradient(to right, var(--color-eaws-high) 50%, var(--color-eaws-considerable) 50%); color: var(--color-eaws-considerable-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="high"][data-rating-pm="very_high"]          { --cell-bg: linear-gradient(to right, var(--color-eaws-high) 50%, var(--color-eaws-very-high) 50%); color: var(--color-eaws-very-high-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="very_high"][data-rating-pm="low"]           { --cell-bg: linear-gradient(to right, var(--color-eaws-very-high) 50%, var(--color-eaws-low) 50%); color: var(--color-eaws-low-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="very_high"][data-rating-pm="moderate"]      { --cell-bg: linear-gradient(to right, var(--color-eaws-very-high) 50%, var(--color-eaws-moderate) 50%); color: var(--color-eaws-moderate-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="very_high"][data-rating-pm="considerable"]  { --cell-bg: linear-gradient(to right, var(--color-eaws-very-high) 50%, var(--color-eaws-considerable) 50%); color: var(--color-eaws-considerable-fg); }
+.calendar-cell[data-shape="time-split"][data-rating-am="very_high"][data-rating-pm="high"]          { --cell-bg: linear-gradient(to right, var(--color-eaws-very-high) 50%, var(--color-eaws-high) 50%); color: var(--color-eaws-high-fg); }
+
 /* —— Season heatmap sheet (SNOW-117) ————————————————————————————
    The season heatmap renders inside a slide-down sheet (not inline).
    Tiles are 24×24 px circles carrying the day-of-month number, framed

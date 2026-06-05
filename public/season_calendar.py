@@ -77,6 +77,13 @@ class SeasonCell:
     dated month is 0). The template paints a subtle backdrop on cells
     where ``month_parity == 1`` so the month boundary is visible at
     the exact day, even when it falls mid-column.
+
+    SNOW-291 AM/PM split: ``am_rating_key`` and ``pm_rating_key`` are
+    non-empty only on days where the bulletin carries both a morning and an
+    afternoon period.  The ``is_time_split`` property returns ``True`` when
+    both are present, letting the template render a vertical left/right split
+    instead of the existing diagonal min/max fill.  Uniform days (no later
+    period) always have both fields as empty strings.
     """
 
     date: datetime.date
@@ -87,6 +94,15 @@ class SeasonCell:
     is_today: bool = False
     is_selected: bool = False
     month_parity: int = 0
+    am_rating_key: str = ""
+    am_subdivision: str = ""
+    pm_rating_key: str = ""
+    pm_subdivision: str = ""
+
+    @property
+    def is_time_split(self) -> bool:
+        """Return True when both AM and PM rating keys are non-empty."""
+        return bool(self.am_rating_key and self.pm_rating_key)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -161,11 +177,19 @@ def build_season_grid(
             min_key = RegionDayRating.Rating.NO_RATING
             max_key = RegionDayRating.Rating.NO_RATING
             subdivision = ""
+            am_rating_key = ""
+            am_subdivision = ""
+            pm_rating_key = ""
+            pm_subdivision = ""
             has_bulletin = False
         else:
             min_key = rdr.min_rating
             max_key = rdr.max_rating
             subdivision = rdr.max_subdivision
+            am_rating_key = rdr.am_rating or ""
+            am_subdivision = rdr.am_subdivision or ""
+            pm_rating_key = rdr.pm_rating or ""
+            pm_subdivision = rdr.pm_subdivision or ""
             has_bulletin = (
                 rdr.source_bulletin_id is not None
                 and max_key != RegionDayRating.Rating.NO_RATING
@@ -180,6 +204,10 @@ def build_season_grid(
                 has_bulletin=has_bulletin,
                 is_today=is_today,
                 month_parity=month_parity,
+                am_rating_key=am_rating_key,
+                am_subdivision=am_subdivision,
+                pm_rating_key=pm_rating_key,
+                pm_subdivision=pm_subdivision,
             )
         )
         prev_month = cursor.month

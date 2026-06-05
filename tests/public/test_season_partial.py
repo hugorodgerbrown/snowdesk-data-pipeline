@@ -214,3 +214,105 @@ class TestSeasonPartialCache:
 
         # The cache key should have been deleted.
         assert cache.get(cache_key) is None
+
+
+# ---------------------------------------------------------------------------
+# SNOW-291 — time-split tile rendering
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSeasonPartialTimeSplit:
+    """Tests for the AM/PM vertical-split tile rendered by the partial."""
+
+    @override_settings(SEASON_START_DATE=_SEASON_START)
+    def test_time_split_cell_renders_data_shape_attribute(self, client: Client) -> None:
+        """A RegionDayRating with am/pm set renders data-shape="time-split"."""
+        region = MicroRegionFactory.create()
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create(
+            valid_from=datetime.datetime(2025, 11, 4, 6, 0, tzinfo=UTC),
+            valid_to=datetime.datetime(2025, 11, 4, 15, 0, tzinfo=UTC),
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=region)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2025, 11, 4),
+            min_rating=RegionDayRating.Rating.MODERATE,
+            max_rating=RegionDayRating.Rating.MODERATE,
+            am_rating=RegionDayRating.Rating.MODERATE,
+            pm_rating=RegionDayRating.Rating.MODERATE,
+            source_bulletin=bulletin,
+        )
+
+        from unittest.mock import patch
+
+        with patch("django.utils.timezone.localdate", return_value=today):
+            response = client.get(
+                _url(region.region_id.lower()), HTTP_HX_REQUEST="true"
+            )
+
+        assert response.status_code == 200
+        assert b'data-shape="time-split"' in response.content
+
+    @override_settings(SEASON_START_DATE=_SEASON_START)
+    def test_time_split_cell_tooltip_names_both_periods(self, client: Client) -> None:
+        """The tooltip for a time-split cell mentions both AM and PM."""
+        region = MicroRegionFactory.create()
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create(
+            valid_from=datetime.datetime(2025, 11, 4, 6, 0, tzinfo=UTC),
+            valid_to=datetime.datetime(2025, 11, 4, 15, 0, tzinfo=UTC),
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=region)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2025, 11, 4),
+            min_rating=RegionDayRating.Rating.MODERATE,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            am_rating=RegionDayRating.Rating.MODERATE,
+            pm_rating=RegionDayRating.Rating.CONSIDERABLE,
+            source_bulletin=bulletin,
+        )
+
+        from unittest.mock import patch
+
+        with patch("django.utils.timezone.localdate", return_value=today):
+            response = client.get(
+                _url(region.region_id.lower()), HTTP_HX_REQUEST="true"
+            )
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Both AM and PM rating names must appear in the title/aria-label.
+        assert "AM" in content
+        assert "PM" in content
+
+    @override_settings(SEASON_START_DATE=_SEASON_START)
+    def test_uniform_cell_does_not_render_data_shape(self, client: Client) -> None:
+        """A uniform (non-split) day does not carry data-shape="time-split"."""
+        region = MicroRegionFactory.create()
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create(
+            valid_from=datetime.datetime(2025, 11, 4, 6, 0, tzinfo=UTC),
+            valid_to=datetime.datetime(2025, 11, 4, 15, 0, tzinfo=UTC),
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=region)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2025, 11, 4),
+            min_rating=RegionDayRating.Rating.CONSIDERABLE,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            # No am_rating / pm_rating — uniform day.
+            source_bulletin=bulletin,
+        )
+
+        from unittest.mock import patch
+
+        with patch("django.utils.timezone.localdate", return_value=today):
+            response = client.get(
+                _url(region.region_id.lower()), HTTP_HX_REQUEST="true"
+            )
+
+        assert response.status_code == 200
+        assert b'data-shape="time-split"' not in response.content
