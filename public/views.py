@@ -4070,7 +4070,8 @@ def _build_band_subheaders(
     (so it appears once, above the earliest card group).
 
     Args:
-        band_order: Ordered list of band ID slugs (high-first).
+        band_order: Ordered list of band ID slugs (danger-descending,
+            elevation-descending on ties).
         band_traits: Mapping of band_id → traits list.
         band_elevations: Mapping of band_id → parsed elevation dict.
 
