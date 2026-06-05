@@ -4006,4 +4006,4 @@ class TestAlbinaBandHeadings:
 
         # The masthead headline must still be Considerable (level 3) — suppression
         # must not alter the headline danger computed outside this function.
-        assert ">Considerable<" in content or ">3<" in content
+        assert ">Considerable<" in content
