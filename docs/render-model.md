@@ -3,7 +3,13 @@
 Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest time so templates contain no derivation logic.
 
 **Shape**: `{ version, danger, traits[], fallback_key_message, snowpack_structure, metadata, prose }`.
-- `danger` — `{ key, number, subdivision }` resolved from `dangerRatings`.
+- `danger` — `{ key, number, subdivision, ratings[] }` resolved from `dangerRatings`.
+  - `ratings[]` — one entry per CAAML `dangerRating` that had a valid `mainValue`. Each entry shape: `{ period, key, subdivision, elevation }`.
+    - `period` — `"all_day"`, `"earlier"`, or `"later"` (from `validTimePeriod`).
+    - `key` — EAWS danger key string (`"low"` … `"very_high"`).
+    - `subdivision` — SLF only: `"+"`, `"="`, `"-"`, or `None`. Always `None` for ALBINA and MeteoFrance.
+    - `elevation` — projected elevation dict `{ lower, upper, treeline, treeline_side }` or `None` when the rating has no elevation bounds. `lower`/`upper` are integers or `None`; `treeline_side` records which CAAML bound carried the `"treeline"` token (`"lower"` = above treeline, `"upper"` = below treeline, or `None`).
+  - **Elevation-band split** (MeteoFrance): when two or more entries share `period="all_day"` but carry distinct `key` values, the bulletin uses a Météo-France style elevation split. The Day Risk Profile panel (`_day_windows_from_rm_ratings` in `public/views.py`) renders these as two separate rows with elevation captions. The calendar tile layer (`day_rating.py`) derives `min_rating`/`max_rating` from the lowest and highest band keys (v7 policy, precedence 1).
 - `traits[]` — one entry per `customData.CH.aggregation` entry; each has `{ category, time_period, title, geography, problems[], prose, danger_level }`.
   - Trait and problem ordering is taken verbatim from SLF's aggregation.
   - `category` is `"dry"` or `"wet"`, sourced directly from SLF's aggregation — not inferred.
