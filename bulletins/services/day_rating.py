@@ -5,7 +5,7 @@ Maintains the RegionDayRating denormalisation table. Each row stores both the
 minimum and maximum danger ratings (within one chosen bulletin) for a single
 (region, calendar day) pair.
 
-Aggregation policy (v6 — headline-only with afternoon-elevated split):
+Aggregation policy (v7 — headline-only with afternoon-elevated split + AM/PM):
   - For day X, pick the single bulletin that was most recently published by
     ~10am on day X:
     - Morning-of-X (valid_from.date() == X, hour < 12) takes priority.
@@ -29,6 +29,19 @@ Aggregation policy (v6 — headline-only with afternoon-elevated split):
       are set to the bulletin's headline ``render_model["danger"]["key"]``
       (the CAAML aggregate). This keeps the heatmap tile in sync with the
       Day Risk Profile panel, which also shows the headline rating (SNOW-138).
+  - AM/PM split fields (SNOW-291):
+    - ``am_rating`` / ``pm_rating`` are populated whenever both
+      ``morning_levels`` AND ``afternoon_levels`` are non-empty, regardless of
+      whether the afternoon level is higher than the morning level.  They
+      encode the problem-mix split for flat-but-split days (same level, two
+      distinct problem categories) in addition to the escalating case.
+    - ``am_rating = key of max(morning_levels)``,
+      ``pm_rating = key of max(afternoon_levels)``.
+    - Both fields stay ``None`` (uniform day) when the bulletin has no
+      ``later`` traits, preserving the single-colour calendar tile for those
+      rows.
+    - Subdivision for both AM and PM mirrors the headline bulletin subdivision
+      (same simplification as ``min/max_subdivision``).
   - Bulletins with an empty traits list (quiet day) use the headline key path
     (debug log).
   - Bulletins with a completely malformed render_model (empty dict or missing
@@ -186,6 +199,45 @@ def _resolve_min_max_keys(
     return headline_key, headline_subdivision, headline_key, headline_subdivision
 
 
+def _resolve_am_pm_keys(
+    morning_levels: list[int],
+    afternoon_levels: list[int],
+    headline_subdivision: str,
+) -> tuple[str | None, str, str | None, str]:
+    """
+    Resolve the AM/PM rating keys and subdivisions for the time-split calendar tile.
+
+    AM/PM are populated whenever both ``morning_levels`` AND ``afternoon_levels``
+    are non-empty — regardless of whether the afternoon level is strictly higher
+    than the morning level.  This captures flat-but-split days (same danger
+    level, different problem mix) in addition to the escalating case (SNOW-291).
+
+    When either list is empty (uniform day, no time split), both fields stay
+    ``None``/``""`` so the calendar tile stays a single-colour circle.
+
+    Subdivision for both halves mirrors the headline bulletin subdivision
+    (same simplification as the existing min/max path).
+
+    Args:
+        morning_levels: Danger-level ints from ``all_day`` / ``earlier`` traits.
+        afternoon_levels: Danger-level ints from ``later`` traits.
+        headline_subdivision: The subdivision suffix from the render model.
+
+    Returns:
+        A ``(am_key, am_subdivision, pm_key, pm_subdivision)`` tuple.
+        ``am_key`` and ``pm_key`` are ``None`` when either list is empty.
+
+    """
+    if morning_levels and afternoon_levels:
+        return (
+            _DANGER_LEVEL_TO_KEY[max(morning_levels)],
+            headline_subdivision,
+            _DANGER_LEVEL_TO_KEY[max(afternoon_levels)],
+            headline_subdivision,
+        )
+    return None, "", None, ""
+
+
 def _derive_albina_bands(render_model: dict) -> list[dict] | None:
     """
     Derive the elevation-band breakdown list from an ALBINA render model.
@@ -316,13 +368,15 @@ def _compute_min_max_from_traits(
     headline_subdivision: str,
     bulletin_id: str,
     no_rating: str,
-) -> tuple[str, str, str, str, bool]:
+) -> tuple[str, str, str, str, str | None, str, str | None, str, bool]:
     """
-    Scan traits and resolve min/max rating keys and subdivisions.
+    Scan traits and resolve min/max + AM/PM rating keys and subdivisions.
 
     Iterates the trait list, buckets valid levels into morning/afternoon,
-    then delegates to ``_resolve_min_max_keys``.  Returns a 5-tuple of
-    ``(min_key, min_sub, max_key, max_sub, has_valid_trait)``.
+    then delegates to ``_resolve_min_max_keys`` (escalating-split min/max) and
+    ``_resolve_am_pm_keys`` (flat-but-split AM/PM).  Returns a 9-tuple of
+    ``(min_key, min_sub, max_key, max_sub, am_key, am_sub, pm_key, pm_sub,
+    has_valid_trait)``.
 
     Args:
         traits: The ``render_model["traits"]`` list.
@@ -332,8 +386,9 @@ def _compute_min_max_from_traits(
         no_rating: The ``no_rating`` sentinel string from ``RegionDayRating.Rating``.
 
     Returns:
-        A 5-tuple where the last element is ``True`` when at least one trait
-        carried a valid ``danger_level`` integer.
+        A 9-tuple where the last element is ``True`` when at least one trait
+        carried a valid ``danger_level`` integer.  The AM/PM keys are ``None``
+        on uniform days (no afternoon split).
 
     """
     morning_levels: list[int] = []
@@ -355,12 +410,15 @@ def _compute_min_max_from_traits(
             morning_levels.append(raw_level)
 
     if not has_valid_trait:
-        return no_rating, "", no_rating, "", False
+        return no_rating, "", no_rating, "", None, "", None, "", False
 
     min_key, min_sub, max_key, max_sub = _resolve_min_max_keys(
         morning_levels, afternoon_levels, headline_key, headline_subdivision
     )
-    return min_key, min_sub, max_key, max_sub, True
+    am_key, am_sub, pm_key, pm_sub = _resolve_am_pm_keys(
+        morning_levels, afternoon_levels, headline_subdivision
+    )
+    return min_key, min_sub, max_key, max_sub, am_key, am_sub, pm_key, pm_sub, True
 
 
 def recompute_region_day(
@@ -414,8 +472,14 @@ def recompute_region_day(
     # whose target is actually day+1.
     candidates = [b for b in pre_candidates if _target_day(b) == day]
 
+    # Source/bands (SNOW-292): blank/None unless the chosen bulletin is ALBINA.
     source_str: str = ""
     bands: list[dict] | None = None
+    # AM/PM split fields (SNOW-291): always start as None (uniform day).
+    am_key: str | None = None
+    am_subdivision: str = ""
+    pm_key: str | None = None
+    pm_subdivision: str = ""
 
     if not candidates:
         min_key: str = no_rating
@@ -448,14 +512,22 @@ def recompute_region_day(
             max_subdivision = headline_subdivision
             source_bulletin = chosen
         else:
-            min_key, min_subdivision, max_key, max_subdivision, has_valid = (
-                _compute_min_max_from_traits(
-                    traits,
-                    headline_key,
-                    headline_subdivision,
-                    chosen.bulletin_id,
-                    no_rating,
-                )
+            (
+                min_key,
+                min_subdivision,
+                max_key,
+                max_subdivision,
+                am_key,
+                am_subdivision,
+                pm_key,
+                pm_subdivision,
+                has_valid,
+            ) = _compute_min_max_from_traits(
+                traits,
+                headline_key,
+                headline_subdivision,
+                chosen.bulletin_id,
+                no_rating,
             )
             source_bulletin = chosen if has_valid else None
             if not has_valid:
@@ -463,6 +535,10 @@ def recompute_region_day(
                 min_subdivision = ""
                 max_key = no_rating
                 max_subdivision = ""
+                am_key = None
+                am_subdivision = ""
+                pm_key = None
+                pm_subdivision = ""
 
         # Derive bands for ALBINA bulletins.
         if source_str == Bulletin.Source.ALBINA:
@@ -486,6 +562,10 @@ def recompute_region_day(
             "min_subdivision": min_subdivision,
             "max_rating": max_key,
             "max_subdivision": max_subdivision,
+            "am_rating": am_key,
+            "am_subdivision": am_subdivision,
+            "pm_rating": pm_key,
+            "pm_subdivision": pm_subdivision,
             "source_bulletin": source_bulletin,
             "version": DAY_RATING_VERSION,
             "source": source_str,
@@ -493,11 +573,14 @@ def recompute_region_day(
         },
     )
     logger.debug(
-        "RegionDayRating upserted: region=%s date=%s min=%s max=%s source=%s",
+        "RegionDayRating upserted: region=%s date=%s min=%s max=%s "
+        "am=%s pm=%s source=%s",
         region.region_id,
         day,
         min_key,
         max_key,
+        am_key,
+        pm_key,
         source_str,
     )
 

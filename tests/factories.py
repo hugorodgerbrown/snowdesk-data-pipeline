@@ -170,6 +170,9 @@ class RegionDayRatingFactory(factory.django.DjangoModelFactory[RegionDayRating])
     ``source`` defaults to the model's blank default (empty string).
     ``bands`` defaults to the model's null default (None, meaning no
     elevation-band breakdown — the ALBINA-only field).
+
+    ``am_rating`` and ``pm_rating`` default to ``None`` (no time split), mirroring
+    the model defaults.
     """
 
     class Meta:
@@ -183,6 +186,10 @@ class RegionDayRatingFactory(factory.django.DjangoModelFactory[RegionDayRating])
     min_subdivision = ""
     max_rating = RegionDayRating.Rating.LOW
     max_subdivision = ""
+    am_rating = None
+    am_subdivision = ""
+    pm_rating = None
+    pm_subdivision = ""
     source_bulletin = None
     version = DAY_RATING_VERSION
     source = ""

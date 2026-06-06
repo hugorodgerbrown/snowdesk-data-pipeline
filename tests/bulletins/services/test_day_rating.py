@@ -44,6 +44,7 @@ from bulletins.services.day_rating import (
     DAY_RATING_VERSION,
     _derive_albina_bands,
     _elevation_to_band_id,
+    _resolve_am_pm_keys,
     _resolve_min_max_keys,
     _target_day,
     apply_bulletin_day_ratings,
@@ -1235,3 +1236,179 @@ class TestRecomputeRegionDaySourceAndBands:
         rdr = RegionDayRating.objects.get(region=region, date=day)
         assert rdr.source == ""
         assert rdr.bands is None
+
+
+# ---------------------------------------------------------------------------
+# SNOW-291 — _resolve_am_pm_keys (unit — no DB)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveAmPmKeys:
+    """Unit tests for _resolve_am_pm_keys() — no DB required."""
+
+    def test_populated_when_both_periods_present(self) -> None:
+        """Both morning and afternoon levels → am/pm keys are non-None."""
+        am, am_sub, pm, pm_sub = _resolve_am_pm_keys(
+            morning_levels=[2],
+            afternoon_levels=[3],
+            headline_subdivision="+",
+        )
+        assert am == "moderate"
+        assert pm == "considerable"
+        # Both subdivisions mirror headline.
+        assert am_sub == "+"
+        assert pm_sub == "+"
+
+    def test_both_none_when_no_afternoon(self) -> None:
+        """No afternoon levels → am and pm are both None."""
+        am, am_sub, pm, pm_sub = _resolve_am_pm_keys(
+            morning_levels=[3],
+            afternoon_levels=[],
+            headline_subdivision="",
+        )
+        assert am is None
+        assert pm is None
+        assert am_sub == ""
+        assert pm_sub == ""
+
+    def test_both_none_when_no_morning(self) -> None:
+        """No morning levels → am and pm are both None."""
+        am, am_sub, pm, pm_sub = _resolve_am_pm_keys(
+            morning_levels=[],
+            afternoon_levels=[3],
+            headline_subdivision="",
+        )
+        assert am is None
+        assert pm is None
+
+    def test_flat_split_produces_equal_am_pm(self) -> None:
+        """Same level morning and afternoon → am == pm (flat-but-split support)."""
+        am, _, pm, _ = _resolve_am_pm_keys(
+            morning_levels=[2],
+            afternoon_levels=[2],
+            headline_subdivision="",
+        )
+        assert am == "moderate"
+        assert pm == "moderate"
+
+    def test_uses_max_of_each_bucket(self) -> None:
+        """Multiple levels in each bucket — uses max(), not first."""
+        am, _, pm, _ = _resolve_am_pm_keys(
+            morning_levels=[1, 2],
+            afternoon_levels=[3, 4],
+            headline_subdivision="",
+        )
+        assert am == "moderate"  # max of [1, 2] = 2
+        assert pm == "high"  # max of [3, 4] = 4
+
+
+# ---------------------------------------------------------------------------
+# SNOW-291 — AM/PM persistence in recompute_region_day
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestAmPmPersistence:
+    """Tests for AM/PM field population in recompute_region_day (SNOW-291)."""
+
+    def test_flat_but_split_populates_both_am_pm_equal(self) -> None:
+        """
+        Flat-but-split day: dry all_day=moderate (2) + wet later=moderate (2).
+
+        am_rating == pm_rating == moderate (equal levels, different problem mix).
+        Both must be non-null — the key SNOW-291 case.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4118")
+        day = datetime.date(2026, 4, 10)
+        vf = datetime.datetime(2026, 4, 9, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 4, 10, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[
+                _split_trait(2, "all_day", "dry"),
+                _split_trait(2, "later", "wet"),
+            ],
+            headline_key="moderate",
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        # Both AM and PM must be non-null on a flat-but-split day.
+        assert rdr.am_rating == RegionDayRating.Rating.MODERATE
+        assert rdr.pm_rating == RegionDayRating.Rating.MODERATE
+        # min/max stay headline-only (afternoon not strictly higher).
+        assert rdr.min_rating == RegionDayRating.Rating.MODERATE
+        assert rdr.max_rating == RegionDayRating.Rating.MODERATE
+
+    def test_escalating_populates_am_lower_pm_higher(self) -> None:
+        """
+        Escalating day: all_day=moderate (2) + later=considerable (3).
+
+        am_rating=moderate, pm_rating=considerable.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4119")
+        day = datetime.date(2026, 4, 11)
+        vf = datetime.datetime(2026, 4, 10, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 4, 11, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[
+                _split_trait(2, "all_day", "dry"),
+                _split_trait(3, "later", "wet"),
+            ],
+            headline_key="considerable",
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.am_rating == RegionDayRating.Rating.MODERATE
+        assert rdr.pm_rating == RegionDayRating.Rating.CONSIDERABLE
+
+    def test_uniform_day_leaves_am_pm_null(self) -> None:
+        """
+        Uniform day: only all_day traits, no later period.
+
+        am_rating and pm_rating must both stay null.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4120")
+        day = datetime.date(2026, 4, 12)
+        vf = datetime.datetime(2026, 4, 11, 17, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 4, 12, 17, 0, tzinfo=UTC)
+
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            traits=[
+                _split_trait(3, "all_day", "dry"),
+                _split_trait(3, "all_day", "wet"),
+            ],
+            headline_key="considerable",
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.am_rating is None
+        assert rdr.pm_rating is None
+        assert rdr.am_subdivision == ""
+        assert rdr.pm_subdivision == ""
+
+    def test_no_bulletin_leaves_am_pm_null(self) -> None:
+        """No qualifying bulletin → am_rating and pm_rating stay null."""
+        region = MicroRegionFactory.create(region_id="CH-4121")
+        day = datetime.date(2026, 4, 13)
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.am_rating is None
+        assert rdr.pm_rating is None

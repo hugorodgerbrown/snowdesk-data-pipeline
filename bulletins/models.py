@@ -535,6 +535,42 @@ class RegionDayRating(BaseModel):
             "Subdivision suffix ('+', '-', '=') from the source bulletin, or blank."
         ),
     )
+    # SNOW-291: AM/PM split fields — populated only when the bulletin carries
+    # both a morning (all_day/earlier) and an afternoon (later) period.  Both
+    # are null when the day has no time split (uniform day), keeping the
+    # existing min/max diagonal-tile behaviour unchanged for those rows.
+    am_rating = models.CharField(
+        max_length=16,
+        choices=Rating.choices,
+        null=True,
+        blank=True,
+        help_text=(
+            "Danger rating for the morning (all_day/earlier) period on split "
+            "days. Null on uniform days."
+        ),
+    )
+    am_subdivision = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        help_text=("Subdivision suffix for the AM period, or blank."),
+    )
+    pm_rating = models.CharField(
+        max_length=16,
+        choices=Rating.choices,
+        null=True,
+        blank=True,
+        help_text=(
+            "Danger rating for the afternoon (later) period on split days. "
+            "Null on uniform days."
+        ),
+    )
+    pm_subdivision = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        help_text=("Subdivision suffix for the PM period, or blank."),
+    )
     source_bulletin = models.ForeignKey(
         Bulletin,
         null=True,

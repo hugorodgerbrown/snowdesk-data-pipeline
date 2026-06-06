@@ -92,6 +92,13 @@ class SeasonCell:
       (horizontal split, low band bottom, high band top).
     * 4 entries with 2 distinct ``time_period`` values →
       ``"elevation-time"`` (2×2 grid).
+
+    SNOW-291 AM/PM split: ``am_rating_key`` and ``pm_rating_key`` are
+    non-empty only on days where the bulletin carries both a morning and an
+    afternoon period.  The ``is_time_split`` property returns ``True`` when
+    both are present, letting the template render a vertical left/right split
+    instead of the existing diagonal min/max fill.  Uniform days (no later
+    period) always have both fields as empty strings.
     """
 
     date: datetime.date
@@ -104,6 +111,10 @@ class SeasonCell:
     month_parity: int = 0
     source: str = ""
     bands: list[dict] | None = None
+    am_rating_key: str = ""
+    am_subdivision: str = ""
+    pm_rating_key: str = ""
+    pm_subdivision: str = ""
 
     @property
     def band_mode(self) -> str:
@@ -122,6 +133,11 @@ class SeasonCell:
         if len(self.bands) == 4 and len(periods) == 2:  # noqa: PLR2004 — 4 bands / 2 periods are the fixed shape of the ALBINA 2×2 grid; these are domain constants, not magic numbers
             return "elevation-time"
         return ""
+
+    @property
+    def is_time_split(self) -> bool:
+        """Return True when both AM and PM rating keys are non-empty."""
+        return bool(self.am_rating_key and self.pm_rating_key)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -196,6 +212,10 @@ def build_season_grid(
             min_key = RegionDayRating.Rating.NO_RATING
             max_key = RegionDayRating.Rating.NO_RATING
             subdivision = ""
+            am_rating_key = ""
+            am_subdivision = ""
+            pm_rating_key = ""
+            pm_subdivision = ""
             has_bulletin = False
             source = ""
             bands: list[dict] | None = None
@@ -203,6 +223,10 @@ def build_season_grid(
             min_key = rdr.min_rating
             max_key = rdr.max_rating
             subdivision = rdr.max_subdivision
+            am_rating_key = rdr.am_rating or ""
+            am_subdivision = rdr.am_subdivision or ""
+            pm_rating_key = rdr.pm_rating or ""
+            pm_subdivision = rdr.pm_subdivision or ""
             has_bulletin = (
                 rdr.source_bulletin_id is not None
                 and max_key != RegionDayRating.Rating.NO_RATING
@@ -221,6 +245,10 @@ def build_season_grid(
                 month_parity=month_parity,
                 source=source,
                 bands=bands,
+                am_rating_key=am_rating_key,
+                am_subdivision=am_subdivision,
+                pm_rating_key=pm_rating_key,
+                pm_subdivision=pm_subdivision,
             )
         )
         prev_month = cursor.month

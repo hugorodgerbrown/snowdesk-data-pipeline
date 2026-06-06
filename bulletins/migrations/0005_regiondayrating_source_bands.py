@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("bulletins", "0003_bulletinshareclick_request_log"),
+        ("bulletins", "0004_region_day_rating_am_pm"),
     ]
 
     operations = [

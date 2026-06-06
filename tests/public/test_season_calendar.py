@@ -522,3 +522,96 @@ class TestSeasonCellSourceAndBands:
             c for col in grid.columns for c in col if c is not None and c.date == target
         )
         assert cell.band_mode == ""
+
+
+# ---------------------------------------------------------------------------
+# SNOW-291 — AM/PM time-split cell
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSeasonCalendarTimeSplit:
+    """Tests for the AM/PM time-split SeasonCell behaviour (SNOW-291)."""
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_time_split_cell_is_time_split_true(self) -> None:
+        """
+        A RegionDayRating row with both am_rating and pm_rating populated
+        produces a SeasonCell where is_time_split == True.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        target = datetime.date(2025, 11, 4)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.MODERATE,
+            max_rating=RegionDayRating.Rating.MODERATE,
+            am_rating=RegionDayRating.Rating.MODERATE,
+            pm_rating=RegionDayRating.Rating.MODERATE,
+            source_bulletin=bulletin,
+        )
+
+        grid = build_season_grid(region, today=today)
+        cell = next(
+            c for col in grid.columns for c in col if c is not None and c.date == target
+        )
+
+        assert cell.is_time_split is True
+        assert cell.am_rating_key == RegionDayRating.Rating.MODERATE
+        assert cell.pm_rating_key == RegionDayRating.Rating.MODERATE
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_uniform_cell_is_time_split_false(self) -> None:
+        """A RegionDayRating row without am/pm ratings produces is_time_split == False."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        target = datetime.date(2025, 11, 4)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.CONSIDERABLE,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            # No am_rating / pm_rating set — defaults to None.
+            source_bulletin=bulletin,
+        )
+
+        grid = build_season_grid(region, today=today)
+        cell = next(
+            c for col in grid.columns for c in col if c is not None and c.date == target
+        )
+
+        assert cell.is_time_split is False
+        assert cell.am_rating_key == ""
+        assert cell.pm_rating_key == ""
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_time_split_escalating_carries_correct_keys(self) -> None:
+        """
+        Escalating split: am=moderate, pm=considerable → keys are set correctly
+        and is_time_split is True.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        target = datetime.date(2025, 11, 4)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.MODERATE,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            am_rating=RegionDayRating.Rating.MODERATE,
+            pm_rating=RegionDayRating.Rating.CONSIDERABLE,
+            source_bulletin=bulletin,
+        )
+
+        grid = build_season_grid(region, today=today)
+        cell = next(
+            c for col in grid.columns for c in col if c is not None and c.date == target
+        )
+
+        assert cell.is_time_split is True
+        assert cell.am_rating_key == RegionDayRating.Rating.MODERATE
+        assert cell.pm_rating_key == RegionDayRating.Rating.CONSIDERABLE

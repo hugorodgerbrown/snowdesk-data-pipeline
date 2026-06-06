@@ -308,8 +308,16 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
 
     Constructs a synthetic 13-week SeasonGrid (Nov 2025 – Jan 2026) with
     hand-picked cells covering every cell state: no-rating, all five EAWS
-    solid levels, split pairs (afternoon-elevated), today, and selected.
+    solid levels, split pairs (afternoon-elevated), time-split AM/PM pairs
+    (SNOW-291), today, and selected.
     No database access — purely synthetic fixture data.
+
+    Schedule entries can be:
+    - A string key: ``"L"``, ``"M"``, ``"C"``, ``"H"``, ``"VH"``, ``"nr"``
+      (uniform day — min == max).
+    - A 2-tuple ``(min_key, max_key)`` for the diagonal-split (afternoon-elevated).
+    - A 4-tuple ``(min_key, max_key, am_key, pm_key)`` for the vertical AM/PM
+      time-split tile (SNOW-291).
     """
     from public.season_calendar import SeasonCell, SeasonGrid
 
@@ -327,9 +335,10 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
     # Nov 3 2025 is a Monday — zero leading padding.
     _start = datetime.date(2025, 11, 3)
 
-    # 13 weeks × 7 days.  Each entry is a short-code string (solid cell) or
-    # a (min, max) tuple (split / afternoon-elevated cell).
-    _schedule: list[str | tuple[str, str]] = [
+    # 13 weeks × 7 days.  Each entry is a short-code string (solid cell),
+    # a (min, max) 2-tuple (diagonal split / afternoon-elevated cell), or
+    # a (min, max, am, pm) 4-tuple for the AM/PM time-split tile (SNOW-291).
+    _schedule: list[str | tuple[str, ...]] = [
         # Week 1  Nov 3–9    no data yet
         "nr",
         "nr",
@@ -378,11 +387,11 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
         "VH",
         "H",
         "C",
-        # Week 7  Dec 15–21  split cells (afternoon-elevated days)
+        # Week 7  Dec 15–21  diagonal + AM/PM time-split (SNOW-291)
         ("L", "M"),
         ("L", "C"),
-        ("M", "C"),
-        ("M", "H"),
+        ("M", "C", "M", "M"),  # flat-but-split: M AM + M PM (SNOW-291)
+        ("M", "H", "M", "H"),  # escalating time-split: M AM + H PM (SNOW-291)
         ("C", "H"),
         "C",
         "M",
@@ -446,9 +455,15 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
             month_parity = 1 - month_parity
         prev_month = d.month
 
+        am_key = ""
+        pm_key = ""
         if isinstance(entry, tuple):
             min_key = _KEY[entry[0]]
             max_key = _KEY[entry[1]]
+            if len(entry) == 4:
+                # 4-tuple: AM/PM time-split (SNOW-291)
+                am_key = _KEY[entry[2]]
+                pm_key = _KEY[entry[3]]
         else:
             min_key = max_key = _KEY[entry]
 
@@ -463,6 +478,8 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
                 is_today=d == _today,
                 is_selected=d == _selected and d != _today,
                 month_parity=month_parity,
+                am_rating_key=am_key,
+                pm_rating_key=pm_key,
             )
         )
 
@@ -1146,6 +1163,8 @@ def _make_rating_card(
     time_period_label: str,
     core_zone_text: str,
     comment_html: str = "",
+    panel_title: str = "",
+    subdivision: str = "",
     avalanche_type: str | None = None,
     avalanche_size: int | None = None,
     frequency_label: str | None = None,
@@ -1159,6 +1178,8 @@ def _make_rating_card(
         "danger_level_key": danger_level_key,
         "problem_type": problem_type,
         "time_period": time_period,
+        "panel_title": panel_title,
+        "subdivision": subdivision,
         "aspects": aspects,
         "elevation": elevation,
         "comment_html": comment_html,
@@ -1388,6 +1409,87 @@ RATING_BLOCK_VARIANTS: tuple[dict[str, Any], ...] = (
                 comment_html=(
                     "<p>Persistent weak layers remain buried in the snowpack. "
                     "Triggering is possible even from low additional loads.</p>"
+                ),
+            ),
+        },
+    },
+    # SNOW-291 — SLF split-day variants: editorial panel_title + subdivision
+    {
+        "caption": "SLF split-day — constant (dry, panel title, no subdivision)",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wind_slab",
+                time_period="all_day",
+                aspects=["N", "NE", "NW"],
+                elevation=_ElevationBounds(
+                    lower="2200",
+                    upper="",
+                    display="above 2200m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Wind slab",
+                time_period_label="",
+                core_zone_text="N to NW aspects, above 2200m",
+                panel_title="Dry avalanches, whole day",
+                subdivision="",
+                comment_html=(
+                    "<p>Wind slabs on north-facing slopes remain easily triggered.</p>"
+                ),
+            ),
+        },
+    },
+    {
+        "caption": "SLF split-day — escalating-temporal (dry 2-, whole day)",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wind_slab",
+                time_period="all_day",
+                aspects=["N", "NE", "E"],
+                elevation=_ElevationBounds(
+                    lower="2400",
+                    upper="",
+                    display="above 2400m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Wind slab",
+                time_period_label="",
+                core_zone_text="N to E aspects, above 2400m",
+                panel_title="Dry avalanches, whole day",
+                subdivision="-",
+                comment_html="<p>Fresh wind slabs at altitude on shaded slopes.</p>",
+            ),
+        },
+    },
+    {
+        "caption": "SLF split-day — flat-temporal (wet 2, as the day progresses)",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wet_snow",
+                time_period="later",
+                aspects=["S", "SW", "SE", "W", "E"],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="2400",
+                    display="below 2400m",
+                    bound_type=_ELEVATION_UPPER,
+                ),
+                label="Wet snow",
+                time_period_label="Afternoon",
+                core_zone_text="S to W aspects, below 2400m",
+                panel_title="Wet-snow avalanches, as the day progresses",
+                subdivision="",
+                comment_html=(
+                    "<p>As temperatures rise, wet-snow slides become "
+                    "more frequent on sunny slopes.</p>"
                 ),
             ),
         },
