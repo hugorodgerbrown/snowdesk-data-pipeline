@@ -353,6 +353,178 @@ class TestSeasonCalendarPeakSemantics:
 
 
 # ---------------------------------------------------------------------------
+# SNOW-292 — source and bands on SeasonCell
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSeasonCellSourceAndBands:
+    """Tests for source and bands fields added to SeasonCell in SNOW-292."""
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_slf_cell_source_is_slf(self) -> None:
+        """SLF RegionDayRating row propagates source='slf' to SeasonCell."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        target = datetime.date(2025, 11, 4)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.LOW,
+            max_rating=RegionDayRating.Rating.LOW,
+            source_bulletin=bulletin,
+            source="slf",
+        )
+        grid = build_season_grid(region, today=today)
+        cell = next(
+            c for col in grid.columns for c in col if c is not None and c.date == target
+        )
+        assert cell.source == "slf"
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_slf_cell_bands_is_none(self) -> None:
+        """SLF cell has bands=None."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        target = datetime.date(2025, 11, 4)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.LOW,
+            max_rating=RegionDayRating.Rating.LOW,
+            source_bulletin=bulletin,
+            source="slf",
+            bands=None,
+        )
+        grid = build_season_grid(region, today=today)
+        cell = next(
+            c for col in grid.columns for c in col if c is not None and c.date == target
+        )
+        assert cell.bands is None
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_albina_cell_band_mode_elevation_only(self) -> None:
+        """ALBINA cell with 2 same-period bands has band_mode='elevation-only'."""
+        region = MicroRegionFactory.create(region_id="AT-4115")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        target = datetime.date(2025, 11, 4)
+        bands = [
+            {
+                "band_id": "above-2200",
+                "label": "Above 2200 m",
+                "rating_key": "considerable",
+                "time_period": "all_day",
+            },
+            {
+                "band_id": "below-2200",
+                "label": "Below 2200 m",
+                "rating_key": "low",
+                "time_period": "all_day",
+            },
+        ]
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.LOW,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            source_bulletin=bulletin,
+            source="albina",
+            bands=bands,
+        )
+        grid = build_season_grid(region, today=today)
+        cell = next(
+            c for col in grid.columns for c in col if c is not None and c.date == target
+        )
+        assert cell.source == "albina"
+        assert cell.band_mode == "elevation-only"
+        assert cell.bands is not None
+        assert len(cell.bands) == 2
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_albina_cell_band_mode_elevation_time(self) -> None:
+        """ALBINA cell with 4 bands across 2 periods has band_mode='elevation-time'."""
+        region = MicroRegionFactory.create(region_id="AT-4116")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        target = datetime.date(2025, 11, 4)
+        bands = [
+            {
+                "band_id": "above-2500",
+                "label": "Above 2500 m",
+                "rating_key": "considerable",
+                "time_period": "earlier",
+            },
+            {
+                "band_id": "below-2500",
+                "label": "Below 2500 m",
+                "rating_key": "low",
+                "time_period": "earlier",
+            },
+            {
+                "band_id": "above-2800",
+                "label": "Above 2800 m",
+                "rating_key": "high",
+                "time_period": "later",
+            },
+            {
+                "band_id": "below-2800",
+                "label": "Below 2800 m",
+                "rating_key": "moderate",
+                "time_period": "later",
+            },
+        ]
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.LOW,
+            max_rating=RegionDayRating.Rating.HIGH,
+            source_bulletin=bulletin,
+            source="albina",
+            bands=bands,
+        )
+        grid = build_season_grid(region, today=today)
+        cell = next(
+            c for col in grid.columns for c in col if c is not None and c.date == target
+        )
+        assert cell.band_mode == "elevation-time"
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_no_rating_cell_has_empty_source(self) -> None:
+        """No-rating cell (no RegionDayRating row) has source='' and bands=None."""
+        region = MicroRegionFactory.create(region_id="CH-4117")
+        today = datetime.date(2025, 11, 5)
+        grid = build_season_grid(region, today=today)
+        any_cell = next(c for col in grid.columns for c in col if c is not None)
+        assert any_cell.source == ""
+        assert any_cell.bands is None
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_slf_cell_band_mode_is_empty(self) -> None:
+        """SLF cell never carries a band_mode (returns empty string)."""
+        region = MicroRegionFactory.create(region_id="CH-4118")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        target = datetime.date(2025, 11, 4)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            min_rating=RegionDayRating.Rating.MODERATE,
+            max_rating=RegionDayRating.Rating.MODERATE,
+            source_bulletin=bulletin,
+            source="slf",
+            bands=None,
+        )
+        grid = build_season_grid(region, today=today)
+        cell = next(
+            c for col in grid.columns for c in col if c is not None and c.date == target
+        )
+        assert cell.band_mode == ""
+
+
+# ---------------------------------------------------------------------------
 # SNOW-291 — AM/PM time-split cell
 # ---------------------------------------------------------------------------
 

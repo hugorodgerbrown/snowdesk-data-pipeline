@@ -805,6 +805,77 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     background: rgba(255, 255, 255, 0.06);
 }
 
+/* —— ALBINA elevation-band calendar tiles (SNOW-292) ——————————————
+   Two rendering modes driven by data-source="albina" + data-band-mode:
+
+   elevation-only  — 2 elevation bands, same time period (all_day or
+                     both earlier/later).  The tile is split horizontally:
+                     high band on top, low band below.  The linear-gradient
+                     reads the per-band rating colours from .calendar-band
+                     child spans via sibling-count selectors, but since CSS
+                     can't directly read sibling data-attributes we use the
+                     ::before pseudo layer (set by the main data-rating rules)
+                     as the low-band colour and inject the high-band colour
+                     via a second gradient layer.
+
+   elevation-time  — 4 entries: 2 bands × 2 time periods.  Rendered as a
+                     2×2 CSS grid sub-cells inside the tile.  Each quadrant
+                     is one .calendar-band span.
+
+   The .calendar-band spans are absolutely positioned inside the tile.
+   The main calendar-cell ::before layer (data-rating-min/max fill) is
+   suppressed for ALBINA split tiles — the band spans handle colouring.
+   ————————————————————————————————————————— */
+.calendar-band {
+    display: none; /* hidden by default; shown only inside ALBINA band-mode tiles */
+}
+
+/* elevation-only: horizontal split — high band top, low band bottom.
+   Two .calendar-band spans; first = high band (above N m), second = low band.
+   We use a top/bottom absolute layout: first span fills the top half,
+   second fills the bottom half.  Each carries data-band-rating which we
+   map to its EAWS colour via attribute selectors below.                 */
+[data-source="albina"][data-band-mode="elevation-only"] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0; /* suppress default flex centering */
+    align-items: stretch;
+    justify-content: stretch;
+    font-size: 0; /* hide the date number inside band-mode cells */
+}
+[data-source="albina"][data-band-mode="elevation-only"] .calendar-band {
+    display: block;
+    flex: 1;
+    width: 100%;
+}
+
+/* elevation-time: 2×2 grid — earlier-high | earlier-low / later-high | later-low
+   Band order is guaranteed by _derive_albina_bands in bulletins/services/day_rating.py:
+   primary sort is time period (earlier → all_day → later), secondary is band height
+   (above-* before below-*).  Do not reorder band spans in the template. */
+[data-source="albina"][data-band-mode="elevation-time"] {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    overflow: hidden;
+    padding: 0;
+    font-size: 0;
+}
+[data-source="albina"][data-band-mode="elevation-time"] .calendar-band {
+    display: block;
+}
+
+/* Band rating colours — map data-band-rating to the EAWS colour tokens.
+   These override the --cell-bg variable used by the ::before fill; for
+   ALBINA split tiles we let the band spans carry the colour directly. */
+.calendar-band[data-band-rating="low"]          { background: var(--color-eaws-low); }
+.calendar-band[data-band-rating="moderate"]      { background: var(--color-eaws-moderate); }
+.calendar-band[data-band-rating="considerable"]  { background: var(--color-eaws-considerable); }
+.calendar-band[data-band-rating="high"]          { background: var(--color-eaws-high); }
+.calendar-band[data-band-rating="very_high"]     { background: var(--color-eaws-very-high); }
+.calendar-band[data-band-rating="no_rating"]     { background: transparent; }
+
 /* —— Season heatmap sheet primitive (SNOW-117) ——————————————————
    Slide-down full-width panel anchored to the top of the viewport.
    Toggled by the [data-season-sheet] state attribute set by the

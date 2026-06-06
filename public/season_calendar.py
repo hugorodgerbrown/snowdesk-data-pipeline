@@ -78,6 +78,21 @@ class SeasonCell:
     where ``month_parity == 1`` so the month boundary is visible at
     the exact day, even when it falls mid-column.
 
+    ``source`` is the bulletin source string (e.g. ``"albina"``, ``"slf"``)
+    copied from ``RegionDayRating.source``.  Empty string when no rating row
+    exists.
+
+    ``bands`` is the ALBINA elevation-band list from ``RegionDayRating.bands``,
+    or ``None`` for SLF, MeteoFrance, and no-rating cells.  When present, each
+    entry is ``{"band_id": str, "label": str, "rating_key": str,
+    "time_period": str}``.  The template uses ``bands`` to select the tile
+    rendering mode:
+
+    * 2 entries sharing the same ``time_period`` → ``"elevation-only"``
+      (horizontal split, low band bottom, high band top).
+    * 4 entries with 2 distinct ``time_period`` values →
+      ``"elevation-time"`` (2×2 grid).
+
     SNOW-291 AM/PM split: ``am_rating_key`` and ``pm_rating_key`` are
     non-empty only on days where the bulletin carries both a morning and an
     afternoon period.  The ``is_time_split`` property returns ``True`` when
@@ -94,10 +109,30 @@ class SeasonCell:
     is_today: bool = False
     is_selected: bool = False
     month_parity: int = 0
+    source: str = ""
+    bands: list[dict] | None = None
     am_rating_key: str = ""
     am_subdivision: str = ""
     pm_rating_key: str = ""
     pm_subdivision: str = ""
+
+    @property
+    def band_mode(self) -> str:
+        """
+        Return the tile rendering mode derived from the bands list.
+
+        Returns ``"elevation-only"`` when bands has 2 entries sharing a single
+        time_period, ``"elevation-time"`` when bands has 4 entries across 2
+        distinct periods, and ``""`` for all other cases (SLF, MF, no-rating).
+        """
+        if not self.bands:
+            return ""
+        periods = {b.get("time_period", "all_day") for b in self.bands}
+        if len(self.bands) == 2 and len(periods) == 1:
+            return "elevation-only"
+        if len(self.bands) == 4 and len(periods) == 2:  # noqa: PLR2004 — 4 bands / 2 periods are the fixed shape of the ALBINA 2×2 grid; these are domain constants, not magic numbers
+            return "elevation-time"
+        return ""
 
     @property
     def is_time_split(self) -> bool:
@@ -182,6 +217,8 @@ def build_season_grid(
             pm_rating_key = ""
             pm_subdivision = ""
             has_bulletin = False
+            source = ""
+            bands: list[dict] | None = None
         else:
             min_key = rdr.min_rating
             max_key = rdr.max_rating
@@ -194,6 +231,8 @@ def build_season_grid(
                 rdr.source_bulletin_id is not None
                 and max_key != RegionDayRating.Rating.NO_RATING
             )
+            source = rdr.source or ""
+            bands = rdr.bands
         is_today = cursor == today
         cells.append(
             SeasonCell(
@@ -204,6 +243,8 @@ def build_season_grid(
                 has_bulletin=has_bulletin,
                 is_today=is_today,
                 month_parity=month_parity,
+                source=source,
+                bands=bands,
                 am_rating_key=am_rating_key,
                 am_subdivision=am_subdivision,
                 pm_rating_key=pm_rating_key,

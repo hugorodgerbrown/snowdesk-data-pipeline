@@ -514,10 +514,91 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
             month_labels.append("")
 
     grid = SeasonGrid(columns=columns, month_labels=month_labels, season_label="25/26")
+
+    # ---- ALBINA elevation-only (2-band, all_day) — one synthetic cell ----
+    _albina_eo_bands = [
+        {
+            "band_id": "above-2200",
+            "label": "Above 2200 m",
+            "rating_key": "considerable",
+            "time_period": "all_day",
+        },
+        {
+            "band_id": "below-2200",
+            "label": "Below 2200 m",
+            "rating_key": "low",
+            "time_period": "all_day",
+        },
+    ]
+    _albina_eo_cell = SeasonCell(
+        date=datetime.date(2026, 1, 7),
+        min_rating_key="low",
+        max_rating_key="considerable",
+        subdivision="",
+        has_bulletin=True,
+        source="albina",
+        bands=_albina_eo_bands,
+    )
+    _albina_eo_grid = SeasonGrid(
+        columns=[(_albina_eo_cell, None, None, None, None, None, None)],
+        month_labels=["Jan"],
+        season_label="25/26",
+    )
+
+    # ---- ALBINA 2×2 (4-band: earlier+later × 2 elevation bands) -----------
+    _albina_2x2_bands = [
+        {
+            "band_id": "above-2500",
+            "label": "Above 2500 m",
+            "rating_key": "considerable",
+            "time_period": "earlier",
+        },
+        {
+            "band_id": "below-2500",
+            "label": "Below 2500 m",
+            "rating_key": "low",
+            "time_period": "earlier",
+        },
+        {
+            "band_id": "above-2800",
+            "label": "Above 2800 m",
+            "rating_key": "high",
+            "time_period": "later",
+        },
+        {
+            "band_id": "below-2800",
+            "label": "Below 2800 m",
+            "rating_key": "moderate",
+            "time_period": "later",
+        },
+    ]
+    _albina_2x2_cell = SeasonCell(
+        date=datetime.date(2026, 1, 8),
+        min_rating_key="low",
+        max_rating_key="high",
+        subdivision="",
+        has_bulletin=True,
+        source="albina",
+        bands=_albina_2x2_bands,
+    )
+    _albina_2x2_grid = SeasonGrid(
+        columns=[(_albina_2x2_cell, None, None, None, None, None, None)],
+        month_labels=["Jan"],
+        season_label="25/26",
+    )
+
     return (
         {
             "caption": "Full season — all cell states",
             "context": {"season_calendar": grid},
+        },
+        {
+            "caption": "ALBINA · elevation-only (2-band horizontal split)",
+            "context": {"season_calendar": _albina_eo_grid},
+        },
+        {
+            "caption": "ALBINA · elevation-time (2×2 four-quadrant grid)",
+            "context": {"season_calendar": _albina_2x2_grid},
         },
     )
 
@@ -1871,6 +1952,104 @@ BULLETIN_HEADLINE_VARIANTS: tuple[dict[str, Any], ...] = (
         "caption": "Generic fallback — considerable, no matrix match",
         "context": {
             "headline": ("Danger level 3 considerable. Read the bulletin carefully."),
+        },
+    },
+)
+
+
+# ALBINA band-heading rating-block variants (SNOW-292) -----------------------
+# Exercises the new band_label and time_subheader fields on the card dict.
+# These are set only on the first card of each ALBINA elevation band and are
+# rendered by _rating_block.html above the card via data-testid="band-heading"
+# and data-testid="band-time-subheader" elements.
+
+RATING_BLOCK_ALBINA_BAND_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "ALBINA · above-2200m band heading (first card in band)",
+        "context": {
+            "card": {
+                **_make_rating_card(
+                    category="dry",
+                    danger_level=3,
+                    danger_level_key="considerable",
+                    problem_type="persistent_weak_layers",
+                    time_period="all_day",
+                    aspects=["N", "NE", "E", "NW", "W"],
+                    elevation=_ElevationBounds(
+                        lower="2200",
+                        upper="",
+                        display="above 2200m",
+                        bound_type=_ELEVATION_LOWER,
+                    ),
+                    label="Persistent weak layers",
+                    time_period_label="",
+                    core_zone_text="N to W aspects, above 2200m",
+                    avalanche_size=3,
+                    frequency_label="Some",
+                    stability_label="Poor",
+                ),
+                "band_id": "above-2200",
+                "band_label": "Above 2200 m",
+            },
+        },
+    },
+    {
+        "caption": "ALBINA · below-2200m band heading (second band, first card)",
+        "context": {
+            "card": {
+                **_make_rating_card(
+                    category="dry",
+                    danger_level=1,
+                    danger_level_key="low",
+                    problem_type="persistent_weak_layers",
+                    time_period="all_day",
+                    aspects=["N", "NE", "E"],
+                    elevation=_ElevationBounds(
+                        lower="",
+                        upper="2200",
+                        display="below 2200m",
+                        bound_type=_ELEVATION_UPPER,
+                    ),
+                    label="Persistent weak layers",
+                    time_period_label="",
+                    core_zone_text="N to E aspects, below 2200m",
+                    avalanche_size=1,
+                    frequency_label="Few",
+                    stability_label="Fair",
+                ),
+                "band_id": "below-2200",
+                "band_label": "Below 2200 m",
+            },
+        },
+    },
+    {
+        "caption": "ALBINA · band heading + pivot-migration subheader",
+        "context": {
+            "card": {
+                **_make_rating_card(
+                    category="wet",
+                    danger_level=3,
+                    danger_level_key="considerable",
+                    problem_type="wet_snow",
+                    time_period="earlier",
+                    aspects=["E", "SE", "S", "SW", "W"],
+                    elevation=_ElevationBounds(
+                        lower="2500",
+                        upper="",
+                        display="above 2500m",
+                        bound_type=_ELEVATION_LOWER,
+                    ),
+                    label="Wet snow",
+                    time_period_label="Earlier",
+                    core_zone_text="Solar aspects, above 2500m",
+                    avalanche_size=3,
+                    frequency_label="Some",
+                    stability_label="Poor",
+                ),
+                "band_id": "above-2500",
+                "band_label": "Above 2500 m",
+                "time_subheader": "Wet line at 2500 m earlier, 2800 m later",
+            },
         },
     },
 )

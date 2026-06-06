@@ -17,6 +17,8 @@ Expects the following variables in scope:
                                 and MeteoFrance cards that carry no subdivision),
                   avalanche_type (optional — "slab", "loose", or None),
                   avalanche_size (optional int 1-5; ALBINA-only),
+                  avalanche_size_label (optional translated Promise; ALBINA-only —
+                                        the EAWS word for the size, e.g. "Large"),
                   frequency_label (optional translated Promise; ALBINA-only,
                                    None when raw frequency was missing or
                                    "none"),
@@ -46,6 +48,26 @@ Renders:
   5. Prose — the problem's comment field rendered in full, no truncation.
 {% endcomment %}
 {% load i18n static card_tags hazard_icons snowdesk_html snowdesk_time %}
+
+{# ── ALBINA elevation-band heading ────────────────────────────────────────── #}
+{# Emitted only on the first card of each band group. SLF and MeteoFrance    #}
+{# cards never carry band_label, so these blocks are no-ops for them.        #}
+{% if card.band_label %}
+    <h3
+        class="text-label font-semibold text-text-1 mt-4 mb-1 px-1"
+        data-testid="band-heading"
+    >
+        {{ card.band_label }}
+    </h3>
+{% endif %}
+{% if card.time_subheader %}
+    <p
+        class="text-xs text-text-2 mb-2 px-1"
+        data-testid="band-time-subheader"
+    >
+        {{ card.time_subheader }}
+    </p>
+{% endif %}
 
 {# ── Problem card ───────────────────────────────────────────────────────── #}
 <div
@@ -149,9 +171,8 @@ Renders:
             class="flex items-center flex-wrap gap-2 px-4 py-2.5 border-b border-border bg-card"
             data-testid="eaws-matrix-row"
         >
-            {% if card.avalanche_size %}
-                {% blocktrans with size=card.avalanche_size asvar size_chip_text %}Size {{ size }}{% endblocktrans %}
-                {% include "includes/_chip.html" with text=size_chip_text data_testid="eaws-size-chip" %}
+            {% if card.avalanche_size_label %}
+                {% include "includes/_chip.html" with text=card.avalanche_size_label data_testid="eaws-size-chip" %}
             {% endif %}
             {% if card.frequency_label %}
                 {% include "includes/_chip.html" with text=card.frequency_label data_testid="eaws-frequency-chip" %}

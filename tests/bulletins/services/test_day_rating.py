@@ -42,6 +42,8 @@ import pytest
 from bulletins.models import Bulletin, RegionDayRating
 from bulletins.services.day_rating import (
     DAY_RATING_VERSION,
+    _derive_albina_bands,
+    _elevation_to_band_id,
     _resolve_am_pm_keys,
     _resolve_min_max_keys,
     _target_day,
@@ -70,6 +72,8 @@ def _make_bulletin_for_region(
     headline_key: str = "low",
     headline_subdivision: str | None = None,
     render_model_version: int | None = None,
+    source: str = "slf",
+    danger_ratings: list | None = None,
 ) -> Bulletin:
     """
     Create a Bulletin linked to a region with explicit traits and headline danger.
@@ -83,6 +87,8 @@ def _make_bulletin_for_region(
         headline_key: The aggregate danger key (render_model["danger"]["key"]).
         headline_subdivision: Raw CH subdivision string (e.g. "plus") or None.
         render_model_version: Override; defaults to RENDER_MODEL_VERSION.
+        source: Bulletin source string ("slf", "albina", "meteofrance").
+        danger_ratings: Optional per-rating list for render_model["danger"]["ratings"].
 
     Returns:
         The created Bulletin.
@@ -95,10 +101,12 @@ def _make_bulletin_for_region(
 
     render_model = {
         "version": render_model_version,
+        "source": source,
         "danger": {
             "key": headline_key,
             "subdivision": headline_subdivision,
             "number": 1,
+            "ratings": danger_ratings or [],
         },
         "traits": traits,
     }
@@ -928,6 +936,306 @@ class TestPeakSemantics:
         rdr = RegionDayRating.objects.get(region=region, date=day)
         assert rdr.max_rating == RegionDayRating.Rating.CONSIDERABLE
         assert rdr.min_rating == RegionDayRating.Rating.CONSIDERABLE
+
+
+# ---------------------------------------------------------------------------
+# Version 7 — source and bands fields
+# ---------------------------------------------------------------------------
+
+
+class TestElevationToBandId:
+    """Unit tests for _elevation_to_band_id (no DB)."""
+
+    def test_none_returns_all_elevations(self) -> None:
+        """None elevation returns 'all-elevations'."""
+        assert _elevation_to_band_id(None) == "all-elevations"
+
+    def test_treeline_lower(self) -> None:
+        """treeline_side='lower' returns 'above-treeline'."""
+        elev = {
+            "treeline": True,
+            "treeline_side": "lower",
+            "lower": None,
+            "upper": None,
+        }
+        assert _elevation_to_band_id(elev) == "above-treeline"
+
+    def test_treeline_upper(self) -> None:
+        """treeline_side='upper' returns 'below-treeline'."""
+        elev = {
+            "treeline": True,
+            "treeline_side": "upper",
+            "lower": None,
+            "upper": None,
+        }
+        assert _elevation_to_band_id(elev) == "below-treeline"
+
+    def test_numeric_lower_only(self) -> None:
+        """Numeric lower only returns 'above-{lower}'."""
+        elev = {"treeline": False, "treeline_side": None, "lower": 2200, "upper": None}
+        assert _elevation_to_band_id(elev) == "above-2200"
+
+    def test_numeric_upper_only(self) -> None:
+        """Numeric upper only returns 'below-{upper}'."""
+        elev = {"treeline": False, "treeline_side": None, "lower": None, "upper": 2200}
+        assert _elevation_to_band_id(elev) == "below-2200"
+
+
+class TestDeriveAlbinaBands:
+    """Unit tests for _derive_albina_bands (no DB)."""
+
+    def test_no_ratings_returns_none(self) -> None:
+        """Render model with empty ratings list returns None."""
+        rm: dict = {"danger": {"ratings": []}}
+        result = _derive_albina_bands(rm)
+        assert result == [] or result is None
+
+    def test_elevation_split_produces_two_bands(self) -> None:
+        """Two ratings with different elevations produce two band entries."""
+        rm: dict = {
+            "danger": {
+                "ratings": [
+                    {
+                        "period": "all_day",
+                        "key": "considerable",
+                        "elevation": {
+                            "lower": 2200,
+                            "upper": None,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                    {
+                        "period": "all_day",
+                        "key": "low",
+                        "elevation": {
+                            "lower": None,
+                            "upper": 2200,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                ]
+            }
+        }
+        bands = _derive_albina_bands(rm)
+        assert bands is not None
+        assert len(bands) == 2
+        band_ids = {b["band_id"] for b in bands}
+        assert "above-2200" in band_ids
+        assert "below-2200" in band_ids
+
+    def test_band_entry_has_required_keys(self) -> None:
+        """Each band entry has band_id, label, rating_key, and time_period."""
+        rm: dict = {
+            "danger": {
+                "ratings": [
+                    {
+                        "period": "all_day",
+                        "key": "moderate",
+                        "elevation": {
+                            "lower": 2200,
+                            "upper": None,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                ]
+            }
+        }
+        bands = _derive_albina_bands(rm)
+        assert bands
+        band = bands[0]
+        assert "band_id" in band
+        assert "label" in band
+        assert "rating_key" in band
+        assert "time_period" in band
+        assert band["rating_key"] == "moderate"
+        assert band["time_period"] == "all_day"
+
+    def test_two_by_two_bands_sorted_canonical_order(self) -> None:
+        """2×2 ratings arrive in scrambled order and come out in canonical order.
+
+        Canonical order: earlier-high, earlier-low, later-high, later-low.
+        The CSS grid depends on this; incorrect order silently swaps quadrants.
+        This fixture intentionally lists ratings in the wrong order to confirm
+        the sort is applied rather than relying on source-data ordering.
+        """
+        rm: dict = {
+            "danger": {
+                "ratings": [
+                    # Deliberately scrambled: later first, low band first.
+                    {
+                        "period": "later",
+                        "key": "moderate",
+                        "elevation": {
+                            "lower": None,
+                            "upper": 2800,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                    {
+                        "period": "later",
+                        "key": "high",
+                        "elevation": {
+                            "lower": 2800,
+                            "upper": None,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                    {
+                        "period": "earlier",
+                        "key": "low",
+                        "elevation": {
+                            "lower": None,
+                            "upper": 2500,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                    {
+                        "period": "earlier",
+                        "key": "considerable",
+                        "elevation": {
+                            "lower": 2500,
+                            "upper": None,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                ]
+            }
+        }
+        bands = _derive_albina_bands(rm)
+        assert bands is not None
+        assert len(bands) == 4
+        # Canonical order: earlier-high, earlier-low, later-high, later-low.
+        assert bands[0]["band_id"] == "above-2500"
+        assert bands[0]["time_period"] == "earlier"
+        assert bands[1]["band_id"] == "below-2500"
+        assert bands[1]["time_period"] == "earlier"
+        assert bands[2]["band_id"] == "above-2800"
+        assert bands[2]["time_period"] == "later"
+        assert bands[3]["band_id"] == "below-2800"
+        assert bands[3]["time_period"] == "later"
+
+
+@pytest.mark.django_db
+class TestRecomputeRegionDaySourceAndBands:
+    """Tests for the source and bands fields added in v7."""
+
+    def test_slf_bulletin_sets_source(self) -> None:
+        """SLF bulletin populates source='slf' on the RegionDayRating row."""
+        region = MicroRegionFactory.create(region_id="CH-4120")
+        day = datetime.date(2026, 4, 10)
+        vf = datetime.datetime(2026, 4, 10, 7, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 4, 11, 0, 0, tzinfo=UTC)
+        _make_bulletin_for_region(region, vf, vt, source="slf")
+        recompute_region_day(region, day, commit=True)
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.source == "slf"
+
+    def test_slf_bulletin_has_null_bands(self) -> None:
+        """SLF bulletin leaves bands=None on the RegionDayRating row."""
+        region = MicroRegionFactory.create(region_id="CH-4121")
+        day = datetime.date(2026, 4, 11)
+        vf = datetime.datetime(2026, 4, 11, 7, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 4, 12, 0, 0, tzinfo=UTC)
+        _make_bulletin_for_region(region, vf, vt, source="slf")
+        recompute_region_day(region, day, commit=True)
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.bands is None
+
+    def test_albina_bulletin_sets_source(self) -> None:
+        """ALBINA bulletin populates source='albina' on the RegionDayRating row."""
+        region = MicroRegionFactory.create(region_id="AT-4122")
+        day = datetime.date(2026, 4, 12)
+        vf = datetime.datetime(2026, 4, 12, 7, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 4, 13, 0, 0, tzinfo=UTC)
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            source=Bulletin.Source.ALBINA,
+            danger_ratings=[
+                {
+                    "period": "all_day",
+                    "key": "considerable",
+                    "elevation": {
+                        "lower": 2200,
+                        "upper": None,
+                        "treeline": False,
+                        "treeline_side": None,
+                    },
+                },
+                {
+                    "period": "all_day",
+                    "key": "low",
+                    "elevation": {
+                        "lower": None,
+                        "upper": 2200,
+                        "treeline": False,
+                        "treeline_side": None,
+                    },
+                },
+            ],
+        )
+        recompute_region_day(region, day, commit=True)
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.source == Bulletin.Source.ALBINA
+
+    def test_albina_bulletin_sets_bands(self) -> None:
+        """ALBINA bulletin with elevation split populates bands on the row."""
+        region = MicroRegionFactory.create(region_id="AT-4123")
+        day = datetime.date(2026, 4, 13)
+        vf = datetime.datetime(2026, 4, 13, 7, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 4, 14, 0, 0, tzinfo=UTC)
+        _make_bulletin_for_region(
+            region,
+            vf,
+            vt,
+            source=Bulletin.Source.ALBINA,
+            danger_ratings=[
+                {
+                    "period": "all_day",
+                    "key": "considerable",
+                    "elevation": {
+                        "lower": 2200,
+                        "upper": None,
+                        "treeline": False,
+                        "treeline_side": None,
+                    },
+                },
+                {
+                    "period": "all_day",
+                    "key": "low",
+                    "elevation": {
+                        "lower": None,
+                        "upper": 2200,
+                        "treeline": False,
+                        "treeline_side": None,
+                    },
+                },
+            ],
+        )
+        recompute_region_day(region, day, commit=True)
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.bands is not None
+        assert len(rdr.bands) == 2
+        band_ids = {b["band_id"] for b in rdr.bands}
+        assert "above-2200" in band_ids
+        assert "below-2200" in band_ids
+
+    def test_no_candidate_sets_blank_source(self) -> None:
+        """When no qualifying bulletin exists, source is blank string."""
+        region = MicroRegionFactory.create(region_id="CH-4124")
+        day = datetime.date(2026, 4, 14)
+        recompute_region_day(region, day, commit=True)
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.source == ""
+        assert rdr.bands is None
 
 
 # ---------------------------------------------------------------------------

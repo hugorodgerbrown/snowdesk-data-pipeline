@@ -43,7 +43,7 @@
                             class="season-cell-wrap"
                             data-month-parity="{{ cell.month_parity }}"
                         >
-                            {% if cell.is_time_split %}
+                            {% if cell.is_time_split and not cell.band_mode %}
                                 {# SNOW-291: vertical AM/PM split tile — left half AM, right half PM. #}
                                 <a
                                     href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
@@ -58,15 +58,34 @@
                                     aria-label="{{ cell.date|date:'D j N' }}: {{ cell.am_rating_key|title }} AM · {{ cell.pm_rating_key|title }} PM"
                                 >{{ cell.date|date:'j' }}</a>
                             {% else %}
+                                {# SNOW-292: band-aware tile (ALBINA elevation bands) — also the plain single-rating case. #}
                                 <a
                                     href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
                                     class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
                                     data-date="{{ cell.date|date:'Y-m-d' }}"
                                     data-rating-min="{{ cell.min_rating_key }}"
                                     data-rating-max="{{ cell.max_rating_key }}"
+                                    {% if cell.source %}
+                                        data-source="{{ cell.source }}"
+                                    {% endif %}
+                                    {% if cell.band_mode %}
+                                        data-band-mode="{{ cell.band_mode }}"
+                                    {% endif %}
                                     title="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
                                     aria-label="{{ cell.date|date:'D j N' }}: {{ cell.max_rating_key|title }}"
-                                >{{ cell.date|date:'j' }}</a>
+                                >
+                                    {% if cell.bands %}
+                                        {% for band in cell.bands %}
+                                            <span
+                                                class="calendar-band"
+                                                data-band-id="{{ band.band_id }}"
+                                                data-band-rating="{{ band.rating_key }}"
+                                                data-band-period="{{ band.time_period }}"
+                                            ></span>
+                                        {% endfor %}
+                                    {% endif %}
+                                    {{ cell.date|date:'j' }}
+                                </a>
                             {% endif %}
                         </div>
                     {% else %}
@@ -79,9 +98,25 @@
                                 data-date="{{ cell.date|date:'Y-m-d' }}"
                                 data-rating-min="{{ cell.min_rating_key }}"
                                 data-rating-max="{{ cell.max_rating_key }}"
+                                {% if cell.source %}
+                                    data-source="{{ cell.source }}"
+                                {% endif %}
+                                {% if cell.band_mode %}
+                                    data-band-mode="{{ cell.band_mode }}"
+                                {% endif %}
                                 title="{{ cell.date|date:'D j N' }}"
                                 aria-label="{{ cell.date|date:'D j N' }}"
                             >
+                                {% if cell.bands %}
+                                    {% for band in cell.bands %}
+                                        <span
+                                            class="calendar-band"
+                                            data-band-id="{{ band.band_id }}"
+                                            data-band-rating="{{ band.rating_key }}"
+                                            data-band-period="{{ band.time_period }}"
+                                        ></span>
+                                    {% endfor %}
+                                {% endif %}
                                 {{ cell.date|date:'j' }}
                             </div>
                         </div>
