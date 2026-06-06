@@ -101,8 +101,8 @@ incident that invalidates derived state:
 
   Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500),
   `--skip-day-ratings`.
-- `recompute_day_ratings --commit` — after a day-rating policy change
-  (e.g. v5 headline-only switch). Re-derives every `RegionDayRating`.
+- `recompute_day_ratings --commit` — after a `DAY_RATING_VERSION` bump or
+  any day-rating policy change. Re-derives every `RegionDayRating`.
 - `backfill_weather --start <YYYY-MM-DD> --end <YYYY-MM-DD> --commit` —
   to fill a historical gap (e.g. after adding a new region, or
   recovering from an outage longer than a day).

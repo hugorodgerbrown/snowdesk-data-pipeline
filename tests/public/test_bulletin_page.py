@@ -1808,6 +1808,198 @@ class TestDayWindowsElevationSplit:
 
 
 # ---------------------------------------------------------------------------
+# Test: MF elevation-band split — full-page render (SNOW-293)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestMFElevationBandSplitBulletinPage:
+    """
+    Full-render test for Météo-France bulletins with an elevation-band split.
+
+    Builds a factory MF bulletin whose ``danger.ratings`` list carries two
+    ``all_day`` entries with different keys (low below 2400 m / moderate above
+    2400 m), renders the bulletin page, and asserts that the Day Risk Profile
+    panel shows two rows with the expected ``level_key``s and elevation
+    captions.
+    """
+
+    def _make_mf_band_split_bulletin(self, region: MicroRegion) -> Bulletin:
+        """
+        Create a morning MF bulletin with two all_day elevation-band ratings.
+
+        Returns:
+            A Bulletin with render_model containing two danger.ratings entries
+            for distinct elevation bands (low below / moderate above 2400 m)
+            and two ``all_day`` traits at the same levels.
+
+        """
+        day = date(2026, 3, 15)
+        vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
+        vt = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
+
+        rm = {
+            "version": RENDER_MODEL_VERSION,
+            "source": "meteofrance",
+            "danger": {
+                "key": "moderate",
+                "number": "2",
+                "subdivision": None,
+                "ratings": [
+                    {
+                        "period": "all_day",
+                        "key": "low",
+                        "subdivision": None,
+                        "elevation": {
+                            "lower": None,
+                            "upper": 2400,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                    {
+                        "period": "all_day",
+                        "key": "moderate",
+                        "subdivision": None,
+                        "elevation": {
+                            "lower": 2400,
+                            "upper": None,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                ],
+            },
+            "danger_patterns": [],
+            "traits": [
+                {
+                    "category": "wet",
+                    "time_period": "all_day",
+                    "title": "Wet avalanches",
+                    "geography": {"source": "problems"},
+                    "problems": [],
+                    "prose": None,
+                    "danger_level": 2,
+                }
+            ],
+            "snowpack_structure": None,
+            "metadata": {
+                "publication_time": "2026-03-15T06:00:00+00:00",
+                "valid_from": "2026-03-15T06:00:00+00:00",
+                "valid_until": "2026-03-15T15:00:00+00:00",
+                "next_update": None,
+                "unscheduled": False,
+                "lang": "fr",
+            },
+            "prose": {
+                "snowpack_structure": None,
+                "weather_review": None,
+                "weather_forecast": None,
+                "tendency": [],
+                "avalanche_activity": {
+                    "highlights": "Risque de plaques.",
+                    "comment": "",
+                },
+                "tendency_lead": None,
+            },
+        }
+        bulletin = BulletinFactory.create(
+            issued_at=vf - timedelta(minutes=30),
+            valid_from=vf,
+            valid_to=vt,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin,
+            region=region,
+            region_name_at_time=region.name,
+        )
+        return bulletin
+
+    def test_day_risk_panel_row_level_keys(self) -> None:
+        """Two-row MF panel has 'low' (lower band) and 'moderate' (upper band)."""
+        from public.views import _day_windows_from_rm_ratings
+
+        rm_ratings = [
+            {
+                "period": "all_day",
+                "key": "low",
+                "subdivision": None,
+                "elevation": {
+                    "lower": None,
+                    "upper": 2400,
+                    "treeline": False,
+                    "treeline_side": None,
+                },
+            },
+            {
+                "period": "all_day",
+                "key": "moderate",
+                "subdivision": None,
+                "elevation": {
+                    "lower": 2400,
+                    "upper": None,
+                    "treeline": False,
+                    "treeline_side": None,
+                },
+            },
+        ]
+        rows = _day_windows_from_rm_ratings(rm_ratings)
+        # Lower band first (sorted by elevation), upper band second.
+        assert rows[0]["level_key"] == "low"
+        assert rows[1]["level_key"] == "moderate"
+
+    def test_day_risk_panel_elevation_captions(self) -> None:
+        """Both rows carry non-empty elevation captions with '2400' in them."""
+        from public.views import _day_windows_from_rm_ratings
+
+        rm_ratings = [
+            {
+                "period": "all_day",
+                "key": "low",
+                "subdivision": None,
+                "elevation": {
+                    "lower": None,
+                    "upper": 2400,
+                    "treeline": False,
+                    "treeline_side": None,
+                },
+            },
+            {
+                "period": "all_day",
+                "key": "moderate",
+                "subdivision": None,
+                "elevation": {
+                    "lower": 2400,
+                    "upper": None,
+                    "treeline": False,
+                    "treeline_side": None,
+                },
+            },
+        ]
+        rows = _day_windows_from_rm_ratings(rm_ratings)
+        # Both rows should carry elevation captions.
+        assert "2400" in rows[0]["caption"]
+        assert "2400" in rows[1]["caption"]
+        # Captions differ — "below 2400 m" vs "above 2400 m".
+        assert rows[0]["caption"] != rows[1]["caption"]
+
+    def test_full_page_renders_day_windows_panel(self, client: Client) -> None:
+        """Full-page render of an MF bulletin includes the day-windows panel."""
+        # MicroRegionFactory auto-creates a linked SubRegion (via subregion
+        # SubFactory), so no manual SubRegion creation is needed.
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        self._make_mf_band_split_bulletin(region)
+        url = _url("ch-4115", region.slug, "2026-03-15")
+        # follow=True handles any slug-canonicalisation redirect.
+        response = client.get(url, follow=True)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="day-windows-panel"' in content
+
+
+# ---------------------------------------------------------------------------
 # Test: bulletin page content — subregion names, day-risk panel
 # ---------------------------------------------------------------------------
 

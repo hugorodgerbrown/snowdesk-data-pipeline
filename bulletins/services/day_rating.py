@@ -5,7 +5,7 @@ Maintains the RegionDayRating denormalisation table. Each row stores both the
 minimum and maximum danger ratings (within one chosen bulletin) for a single
 (region, calendar day) pair.
 
-Aggregation policy (v7 — headline-only with afternoon-elevated split + AM/PM):
+Aggregation policy (v8 — elevation-band split + afternoon-elevated split + AM/PM):
   - For day X, pick the single bulletin that was most recently published by
     ~10am on day X:
     - Morning-of-X (valid_from.date() == X, hour < 12) takes priority.
@@ -17,18 +17,29 @@ Aggregation policy (v7 — headline-only with afternoon-elevated split + AM/PM):
     with the latest ``valid_from``.  Because morning-of-X has a later
     ``valid_from`` than prior-evening-of-(X-1), this naturally implements
     the morning-wins / prior-evening-fallback convention.
-  - Split logic (afternoon-elevated):
-    - During the trait loop, collect ``morning_levels`` from traits with
-      ``time_period in ("all_day", "earlier")`` and ``afternoon_levels`` from
-      traits with ``time_period == "later"``.
-    - If both lists are non-empty and ``max(afternoon_levels) > max(morning_levels)``,
-      produce a split: ``min_rating = key of max(morning_levels)``,
-      ``max_rating = key of max(afternoon_levels)``.
-    - Otherwise (no ``later`` traits, or afternoon max not higher than morning
-      max), fall back to headline-only: both ``min_rating`` and ``max_rating``
-      are set to the bulletin's headline ``render_model["danger"]["key"]``
-      (the CAAML aggregate). This keeps the heatmap tile in sync with the
-      Day Risk Profile panel, which also shows the headline rating (SNOW-138).
+  - Min/max split logic — checked in this precedence order:
+
+    1. **Elevation-band split (SNOW-293)**: if
+       ``render_model["danger"]["ratings"]`` contains two or more entries
+       with ``period="all_day"`` and at least two distinct ``key`` values,
+       the day carries an elevation-band split (Météo-France style).
+       ``min_rating`` = key of the lowest-ranked band (sorted by
+       ``_DANGER_KEY_RANK``); ``max_rating`` = key of the highest-ranked
+       band. Subdivisions mirror the headline.
+
+    2. **Time-period split (afternoon-elevated)**: during the trait loop,
+       collect ``morning_levels`` from traits with
+       ``time_period in ("all_day", "earlier")`` and ``afternoon_levels``
+       from traits with ``time_period == "later"``. If both lists are
+       non-empty and ``max(afternoon_levels) > max(morning_levels)``,
+       produce a split: ``min_rating = key of max(morning_levels)``,
+       ``max_rating = key of max(afternoon_levels)``.
+
+    3. **Fallback (headline-only)**: both ``min_rating`` and ``max_rating``
+       are set to the bulletin's headline ``render_model["danger"]["key"]``
+       (the CAAML aggregate). This keeps the heatmap tile in sync with the
+       Day Risk Profile panel, which also shows the headline rating (SNOW-138).
+
   - AM/PM split fields (SNOW-291):
     - ``am_rating`` / ``pm_rating`` are populated whenever both
       ``morning_levels`` AND ``afternoon_levels`` are non-empty, regardless of
@@ -42,8 +53,13 @@ Aggregation policy (v7 — headline-only with afternoon-elevated split + AM/PM):
       rows.
     - Subdivision for both AM and PM mirrors the headline bulletin subdivision
       (same simplification as ``min/max_subdivision``).
-  - Bulletins with an empty traits list (quiet day) use the headline key path
-    (debug log).
+    - The AM/PM time split is independent of the elevation-band split — the
+      two encode orthogonal structure (time of day vs band) and either, both,
+      or neither may apply to a single bulletin.
+  - Bulletins with an empty traits list (quiet day) still benefit from the
+    elevation-band split check (step 1) because it reads ``danger.ratings``,
+    not ``traits``. AM/PM stays ``None`` on quiet days because the time split
+    is purely trait-driven.
   - Bulletins with a completely malformed render_model (empty dict or missing
     both ``danger`` and ``traits``) → write ``no_rating``.
   - Traits with missing or non-integer ``danger_level`` are skipped (debug log).
@@ -81,7 +97,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DAY_RATING_VERSION: int = 7
+DAY_RATING_VERSION: int = 8
 
 # Map trait danger_level int (1–5) to rating key string.
 _DANGER_LEVEL_TO_KEY: dict[int, str] = {
@@ -92,6 +108,10 @@ _DANGER_LEVEL_TO_KEY: dict[int, str] = {
     5: "very_high",
 }
 
+# Rank order for danger key strings (low=1 … very_high=5).
+# Used to sort elevation-band ratings from weakest to strongest.
+_DANGER_KEY_RANK: dict[str, int] = {v: k for k, v in _DANGER_LEVEL_TO_KEY.items()}
+
 # Map CAAML customData.CH.subdivision strings to the suffix stored in
 # RegionDayRating.max_subdivision / min_subdivision.
 _SUBDIVISION_SUFFIX: dict[str, str] = {
@@ -99,6 +119,40 @@ _SUBDIVISION_SUFFIX: dict[str, str] = {
     "neutral": "=",
     "plus": "+",
 }
+
+
+def _detect_elevation_band_split(
+    rm_ratings: list[dict],
+) -> tuple[str, str] | None:
+    """
+    Detect an all-day elevation-band split from ``danger.ratings`` entries.
+
+    Returns ``(min_key, max_key)`` when two or more ``all_day`` entries carry
+    at least two distinct ``key`` values (Météo-France style elevation split).
+    Returns ``None`` when no split is detected (single key, no ``all_day``
+    entries, or the ``rm_ratings`` list is absent / empty).
+
+    Args:
+        rm_ratings: The ``danger.ratings`` list from the render model.
+
+    Returns:
+        ``(min_key, max_key)`` tuple or ``None``.
+
+    """
+    all_day_entries = [
+        r for r in rm_ratings if (r.get("period") or "all_day") == "all_day"
+    ]
+    if len(all_day_entries) < 2:
+        return None
+    keys: set[str] = {
+        k
+        for r in all_day_entries
+        if (k := r.get("key")) is not None and k in _DANGER_KEY_RANK
+    }
+    if len(keys) < 2:
+        return None
+    ranked = sorted(keys, key=lambda k: _DANGER_KEY_RANK[k])
+    return ranked[0], ranked[-1]
 
 
 def _target_day(bulletin: "Bulletin") -> datetime.date:
@@ -163,28 +217,50 @@ def _resolve_min_max_keys(
     afternoon_levels: list[int],
     headline_key: str,
     headline_subdivision: str,
+    rm_ratings: list[dict] | None = None,
 ) -> tuple[str, str, str, str]:
     """
-    Resolve the min/max rating keys and subdivisions from trait-level buckets.
+    Resolve the min/max rating keys and subdivisions.
 
-    When afternoon traits are strictly more dangerous than morning/all-day
-    traits, produce a split: ``min`` = morning max, ``max`` = afternoon max.
-    Otherwise fall back to headline-only so the heatmap tile stays in sync with
-    the Day Risk Profile panel (SNOW-138).
+    Checks in this precedence order:
+
+    1. **Elevation-band split**: when ``rm_ratings`` carries two or more
+       ``all_day`` entries with distinct ``key`` values (Météo-France style),
+       return ``min`` = lowest-band key, ``max`` = highest-band key.
+       This takes precedence over the time-period split.
+
+    2. **Time-period split**: when afternoon traits are strictly more dangerous
+       than morning/all-day traits, produce a split: ``min`` = morning max,
+       ``max`` = afternoon max.
+
+    3. **Fallback**: headline-only, so the heatmap tile stays in sync with the
+       Day Risk Profile panel (SNOW-138).
 
     Both subdivision fields always mirror the headline bulletin subdivision
-    because the trait list does not carry per-period subdivision data.
+    because neither the trait list nor the ``danger.ratings`` entries carry
+    per-period subdivision data.
 
     Args:
         morning_levels: Danger-level ints from ``all_day`` / ``earlier`` traits.
         afternoon_levels: Danger-level ints from ``later`` traits.
         headline_key: The pre-computed aggregate key from the render model.
         headline_subdivision: The subdivision suffix from the render model.
+        rm_ratings: The ``danger.ratings`` list from the render model, or
+            ``None`` / empty to skip the elevation-band check (defensive
+            for older render models that predate the field).
 
     Returns:
         A ``(min_key, min_subdivision, max_key, max_subdivision)`` tuple.
 
     """
+    # 1. Elevation-band split (highest precedence — Météo-France style).
+    if rm_ratings:
+        band_split = _detect_elevation_band_split(rm_ratings)
+        if band_split is not None:
+            min_key, max_key = band_split
+            return min_key, headline_subdivision, max_key, headline_subdivision
+
+    # 2. Time-period split (afternoon-elevated).
     if (
         morning_levels
         and afternoon_levels
@@ -196,6 +272,8 @@ def _resolve_min_max_keys(
             _DANGER_LEVEL_TO_KEY[max(afternoon_levels)],
             headline_subdivision,
         )
+
+    # 3. Fallback: headline-only.
     return headline_key, headline_subdivision, headline_key, headline_subdivision
 
 
@@ -368,13 +446,15 @@ def _compute_min_max_from_traits(
     headline_subdivision: str,
     bulletin_id: str,
     no_rating: str,
+    rm_ratings: list[dict] | None = None,
 ) -> tuple[str, str, str, str, str | None, str, str | None, str, bool]:
     """
     Scan traits and resolve min/max + AM/PM rating keys and subdivisions.
 
     Iterates the trait list, buckets valid levels into morning/afternoon,
-    then delegates to ``_resolve_min_max_keys`` (escalating-split min/max) and
-    ``_resolve_am_pm_keys`` (flat-but-split AM/PM).  Returns a 9-tuple of
+    then delegates to ``_resolve_min_max_keys`` (which applies the v8
+    precedence chain: elevation-band split → afternoon-elevated → headline)
+    and ``_resolve_am_pm_keys`` (flat-but-split AM/PM).  Returns a 9-tuple of
     ``(min_key, min_sub, max_key, max_sub, am_key, am_sub, pm_key, pm_sub,
     has_valid_trait)``.
 
@@ -384,6 +464,9 @@ def _compute_min_max_from_traits(
         headline_subdivision: The bulletin's aggregate subdivision (fallback).
         bulletin_id: Used only in debug log messages.
         no_rating: The ``no_rating`` sentinel string from ``RegionDayRating.Rating``.
+        rm_ratings: The ``danger.ratings`` list from the render model, used by
+            ``_resolve_min_max_keys`` to detect an all-day elevation-band split.
+            Pass ``None`` / empty to skip the elevation-band check.
 
     Returns:
         A 9-tuple where the last element is ``True`` when at least one trait
@@ -413,7 +496,11 @@ def _compute_min_max_from_traits(
         return no_rating, "", no_rating, "", None, "", None, "", False
 
     min_key, min_sub, max_key, max_sub = _resolve_min_max_keys(
-        morning_levels, afternoon_levels, headline_key, headline_subdivision
+        morning_levels,
+        afternoon_levels,
+        headline_key,
+        headline_subdivision,
+        rm_ratings=rm_ratings,
     )
     am_key, am_sub, pm_key, pm_sub = _resolve_am_pm_keys(
         morning_levels, afternoon_levels, headline_subdivision
@@ -439,9 +526,11 @@ def recompute_region_day(
     prior-evening candidates; a Python post-filter via ``_target_day``
     then drops any evening-of-day bulletin (whose target is day+1).
 
-    Sets both ``min_rating`` and ``max_rating`` to the bulletin's headline
-    ``render_model["danger"]["key"]``.  Bulletins with an empty traits list
-    (quiet day) use the same headline key path.
+    Sets ``min_rating`` / ``max_rating`` using the v8 policy: elevation-band
+    split from ``danger.ratings`` (precedence 1), afternoon-elevated trait
+    split (precedence 2), or headline-only fallback (precedence 3).
+    Quiet-day bulletins (empty traits) still check for an elevation-band
+    split before falling back to the headline.
 
     Writes ``no_rating`` when no qualifying bulletin exists or when the
     chosen bulletin's render_model is entirely malformed.
@@ -495,20 +584,33 @@ def recompute_region_day(
         rm = chosen.render_model or {}
         headline_key, headline_subdivision = _extract_headline_from_render_model(rm)
         traits: list = rm.get("traits") or []
+        rm_ratings: list[dict] = (rm.get("danger") or {}).get("ratings") or []
 
         # Always copy source from the chosen bulletin's render model.
         source_str = str(rm.get("source") or "")
 
         if not traits:
-            # Quiet day: no traits — fall back to headline danger key.
-            logger.debug(
-                "Bulletin %s has empty traits; using headline danger key %r.",
-                chosen.bulletin_id,
-                headline_key,
-            )
-            min_key = headline_key
+            # Quiet day: check for an elevation-band split first; otherwise
+            # fall back to the headline danger key.
+            band_split = _detect_elevation_band_split(rm_ratings)
+            if band_split is not None:
+                min_key, max_key = band_split
+                logger.debug(
+                    "Bulletin %s has empty traits but elevation-band split"
+                    " (%r → %r); using band split.",
+                    chosen.bulletin_id,
+                    min_key,
+                    max_key,
+                )
+            else:
+                logger.debug(
+                    "Bulletin %s has empty traits; using headline danger key %r.",
+                    chosen.bulletin_id,
+                    headline_key,
+                )
+                min_key = headline_key
+                max_key = headline_key
             min_subdivision = headline_subdivision
-            max_key = headline_key
             max_subdivision = headline_subdivision
             source_bulletin = chosen
         else:
@@ -528,6 +630,7 @@ def recompute_region_day(
                 headline_subdivision,
                 chosen.bulletin_id,
                 no_rating,
+                rm_ratings=rm_ratings,
             )
             source_bulletin = chosen if has_valid else None
             if not has_valid:

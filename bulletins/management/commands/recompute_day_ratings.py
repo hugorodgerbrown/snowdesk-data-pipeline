@@ -1,9 +1,8 @@
 r"""
 bulletins/management/commands/recompute_day_ratings.py — Management command.
 
-Re-derives every ``RegionDayRating`` row under the current v5 headline-only
-policy: both ``min_rating`` and ``max_rating`` are set to the bulletin's
-headline ``render_model["danger"]["key"]``.
+Re-derives every ``RegionDayRating`` row under the current v7 policy:
+elevation-band split → afternoon-elevated split → headline fallback.
 
 Intended as a post-deployment step after a day-rating policy change.  Iterates
 every distinct (region, date) pair present in the ``RegionDayRating`` table and
@@ -45,8 +44,9 @@ class Command(BaseCommand):
     """Re-derive RegionDayRating rows under the current day-rating policy."""
 
     help = (
-        "Re-derive every RegionDayRating row under the current v5 headline-only "
-        "policy. Read-only unless --commit is passed. "
+        "Re-derive every RegionDayRating row under the current v7 policy "
+        "(elevation-band split → afternoon-elevated split → headline fallback). "
+        "Read-only unless --commit is passed. "
         "Use --start-date / --end-date to restrict to a date window."
     )
 
