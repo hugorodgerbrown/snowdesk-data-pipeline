@@ -49,8 +49,8 @@ import pytest
 from bulletins.models import Bulletin, RegionDayRating
 from bulletins.services.day_rating import (
     DAY_RATING_VERSION,
-    _detect_elevation_band_split,
     _derive_albina_bands,
+    _detect_elevation_band_split,
     _elevation_to_band_id,
     _resolve_am_pm_keys,
     _resolve_min_max_keys,
