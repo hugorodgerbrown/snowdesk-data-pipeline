@@ -1,0 +1,447 @@
+{
+  "bulletinID": "e292ca8f-17b5-4a11-92bc-dd406d2eed2a",
+  "lang": "en",
+  "validTime": {
+    "startTime": "2025-10-31T16:00:00Z",
+    "endTime": "2025-11-01T16:00:00Z"
+  },
+  "nextUpdate": "2025-11-01T16:00:00Z",
+  "unscheduled": false,
+  "regions": [
+    {
+      "regionID": "CH-7231",
+      "name": "Münstertal"
+    },
+    {
+      "regionID": "CH-1246",
+      "name": "Gadmertal"
+    },
+    {
+      "regionID": "CH-7111",
+      "name": "Corvatsch"
+    },
+    {
+      "regionID": "CH-5215",
+      "name": "Val Sumvitg"
+    },
+    {
+      "regionID": "CH-1312",
+      "name": "Monthey-Val d'Illiez"
+    },
+    {
+      "regionID": "CH-4222",
+      "name": "Zermatt"
+    },
+    {
+      "regionID": "CH-1245",
+      "name": "Guttannen"
+    },
+    {
+      "regionID": "CH-7123",
+      "name": "Sur Tasna"
+    },
+    {
+      "regionID": "CH-2134",
+      "name": "Bisistal"
+    },
+    {
+      "regionID": "CH-3113",
+      "name": "Glarus Süd-Sernftal"
+    },
+    {
+      "regionID": "CH-4223",
+      "name": "Saas Fee"
+    },
+    {
+      "regionID": "CH-4214",
+      "name": "Riederalp"
+    },
+    {
+      "regionID": "CH-7122",
+      "name": "östliche Silvretta"
+    },
+    {
+      "regionID": "CH-7124",
+      "name": "Val Suot"
+    },
+    {
+      "regionID": "CH-4111",
+      "name": "Emosson"
+    },
+    {
+      "regionID": "CH-5111",
+      "name": "nördliches Prättigau"
+    },
+    {
+      "regionID": "CH-6113",
+      "name": "Bleniotal"
+    },
+    {
+      "regionID": "CH-1247",
+      "name": "Grimselpass"
+    },
+    {
+      "regionID": "CH-4225",
+      "name": "Mattmark"
+    },
+    {
+      "regionID": "CH-5113",
+      "name": "westliche Silvretta"
+    },
+    {
+      "regionID": "CH-1223",
+      "name": "Wildhorn"
+    },
+    {
+      "regionID": "CH-1232",
+      "name": "Blüemlisalp"
+    },
+    {
+      "regionID": "CH-3114",
+      "name": "Glarus Mitte"
+    },
+    {
+      "regionID": "CH-5223",
+      "name": "Rheinwald"
+    },
+    {
+      "regionID": "CH-4124",
+      "name": "Val d'Anniviers"
+    },
+    {
+      "regionID": "CH-7121",
+      "name": "Samnaun"
+    },
+    {
+      "regionID": "CH-5123",
+      "name": "Davos"
+    },
+    {
+      "regionID": "CH-5234",
+      "name": "Bivio"
+    },
+    {
+      "regionID": "CH-7126",
+      "name": "Val S-charl"
+    },
+    {
+      "regionID": "CH-6112",
+      "name": "obere Leventina"
+    },
+    {
+      "regionID": "CH-4244",
+      "name": "südliches Obergoms"
+    },
+    {
+      "regionID": "CH-6122",
+      "name": "Riviera"
+    },
+    {
+      "regionID": "CH-4231",
+      "name": "nördliches Simplon Gebiet"
+    },
+    {
+      "regionID": "CH-5112",
+      "name": "südliches Prättigau"
+    },
+    {
+      "regionID": "CH-2211",
+      "name": "Schächental"
+    },
+    {
+      "regionID": "CH-4241",
+      "name": "Reckingen"
+    },
+    {
+      "regionID": "CH-6211",
+      "name": "alto Moesano"
+    },
+    {
+      "regionID": "CH-5233",
+      "name": "Avers"
+    },
+    {
+      "regionID": "CH-5222",
+      "name": "Schams"
+    },
+    {
+      "regionID": "CH-5124",
+      "name": "Flims"
+    },
+    {
+      "regionID": "CH-5232",
+      "name": "Savognin"
+    },
+    {
+      "regionID": "CH-4224",
+      "name": "Monte Rosa"
+    },
+    {
+      "regionID": "CH-4121",
+      "name": "Montana"
+    },
+    {
+      "regionID": "CH-1243",
+      "name": "Schreckhorn"
+    },
+    {
+      "regionID": "CH-4215",
+      "name": "Leuk"
+    },
+    {
+      "regionID": "CH-3112",
+      "name": "Glarus Süd-Grosstal"
+    },
+    {
+      "regionID": "CH-4115",
+      "name": "Martigny-Verbier"
+    },
+    {
+      "regionID": "CH-1227",
+      "name": "Engstligen"
+    },
+    {
+      "regionID": "CH-4243",
+      "name": "nördliches Obergoms"
+    },
+    {
+      "regionID": "CH-4125",
+      "name": "Mountet"
+    },
+    {
+      "regionID": "CH-4116",
+      "name": "Haut Val de Bagnes"
+    },
+    {
+      "regionID": "CH-7222",
+      "name": "unteres Puschlav"
+    },
+    {
+      "regionID": "CH-1225",
+      "name": "Iffigen"
+    },
+    {
+      "regionID": "CH-4242",
+      "name": "Binntal"
+    },
+    {
+      "regionID": "CH-4114",
+      "name": "Conthey-Fully"
+    },
+    {
+      "regionID": "CH-1114",
+      "name": "Bex-Villars"
+    },
+    {
+      "regionID": "CH-4213",
+      "name": "Konkordia Gebiet"
+    },
+    {
+      "regionID": "CH-7211",
+      "name": "Bergell"
+    },
+    {
+      "regionID": "CH-2122",
+      "name": "Engelberg"
+    },
+    {
+      "regionID": "CH-5216",
+      "name": "Zervreila"
+    },
+    {
+      "regionID": "CH-4221",
+      "name": "untere Vispertäler"
+    },
+    {
+      "regionID": "CH-5122",
+      "name": "Schanfigg"
+    },
+    {
+      "regionID": "CH-6115",
+      "name": "untere Leventina"
+    },
+    {
+      "regionID": "CH-5221",
+      "name": "Domleschg - Lenzerheide"
+    },
+    {
+      "regionID": "CH-4232",
+      "name": "südliches Simplon Gebiet"
+    },
+    {
+      "regionID": "CH-5121",
+      "name": "Calanda"
+    },
+    {
+      "regionID": "CH-6111",
+      "name": "Bedrettotal"
+    },
+    {
+      "regionID": "CH-4211",
+      "name": "Leukerbad - Lötschental"
+    },
+    {
+      "regionID": "CH-7112",
+      "name": "Bernina"
+    },
+    {
+      "regionID": "CH-1234",
+      "name": "Jungfrau - Schilthorn"
+    },
+    {
+      "regionID": "CH-4113",
+      "name": "Val d'Entremont-Val Ferret"
+    },
+    {
+      "regionID": "CH-7125",
+      "name": "Val dal Spöl"
+    },
+    {
+      "regionID": "CH-7113",
+      "name": "Zuoz"
+    },
+    {
+      "regionID": "CH-2223",
+      "name": "nördliches Urseren"
+    },
+    {
+      "regionID": "CH-6212",
+      "name": "basso Moesano"
+    },
+    {
+      "regionID": "CH-7115",
+      "name": "Val Chamuera"
+    },
+    {
+      "regionID": "CH-4122",
+      "name": "Val d'Hérens"
+    },
+    {
+      "regionID": "CH-5214",
+      "name": "Obersaxen - Safiental"
+    },
+    {
+      "regionID": "CH-5231",
+      "name": "Albulatal"
+    },
+    {
+      "regionID": "CH-4112",
+      "name": "Génépi"
+    },
+    {
+      "regionID": "CH-3224",
+      "name": "Sarganserland"
+    },
+    {
+      "regionID": "CH-4123",
+      "name": "Arolla"
+    },
+    {
+      "regionID": "CH-2221",
+      "name": "Meiental"
+    },
+    {
+      "regionID": "CH-7114",
+      "name": "St. Moritz"
+    },
+    {
+      "regionID": "CH-7221",
+      "name": "oberes Puschlav"
+    },
+    {
+      "regionID": "CH-5212",
+      "name": "südliches Tujetsch"
+    },
+    {
+      "regionID": "CH-2222",
+      "name": "Maderanertal"
+    },
+    {
+      "regionID": "CH-5211",
+      "name": "nördliches Tujetsch"
+    },
+    {
+      "regionID": "CH-4212",
+      "name": "Turtmanntal"
+    },
+    {
+      "regionID": "CH-2224",
+      "name": "südliches Urseren"
+    },
+    {
+      "regionID": "CH-2212",
+      "name": "Uri Rot Stock"
+    },
+    {
+      "regionID": "CH-6121",
+      "name": "untere Maggiatäler"
+    },
+    {
+      "regionID": "CH-6114",
+      "name": "obere Maggiatäler"
+    }
+  ],
+  "dangerRatings": [
+    {
+      "mainValue": "moderate",
+      "validTimePeriod": "all_day",
+      "customData": {
+        "CH": {
+          "subdivision": "minus"
+        }
+      }
+    }
+  ],
+  "avalancheProblems": [
+    {
+      "problemType": "persistent_weak_layers",
+      "comment": "Avalanches can in isolated cases be released in the old snowpack and reach medium size. The older wind slabs are in individual cases still prone to triggering. <br/> In addition gliding avalanches are possible, in particular on steep sunny slopes. Backcountry touring calls for careful route selection. <br/> The Avalanche Warning Service currently has only a small amount of information that has been collected in the field, so that the avalanche danger should be investigated especially thoroughly in the relevant locality.",
+      "dangerRatingValue": "moderate",
+      "validTimePeriod": "all_day",
+      "elevation": {
+        "lowerBound": "2800"
+      },
+      "aspects": [
+        "N",
+        "NE",
+        "E",
+        "W",
+        "NW"
+      ],
+      "customData": {
+        "CH": {
+          "subdivision": "minus",
+          "coreZoneText": "Danger level \"moderate\" (2-) in west to north to east facing aspects above 2800m."
+        }
+      }
+    }
+  ],
+  "customData": {
+    "CH": {
+      "aggregation": [
+        {
+          "category": "dry",
+          "validTimePeriod": "all_day",
+          "problemTypes": [
+            "persistent_weak_layers"
+          ]
+        }
+      ]
+    }
+  },
+  "publicationTime": "2025-10-31T14:48:17.117167514Z",
+  "weatherForecast": {
+    "comment": "<h1>Weather forecast to Saturday</h1><p>In the north, it will be partly sunny in the early morning, becoming increasingly cloudy as the day progresses. Cloud cover will be very heavy in the south.</p><h2>New snow</h2><p>-</p><h2 contenteditable=\"false\">Temperature</h2><p>At midday at 2000 m around +10 °C in the north and +6 °C in the south.</p><h2>Wind</h2><p>Moderate to strong in the west and in the high Alpine regions in general, elsewhere light to moderate from the southwest</p>"
+  },
+  "weatherReview": {
+    "comment": "<h1>Weather review for Friday</h1><p>It was quite sunny in the west and north, while elsewhere it was often cloudy.</p><h2>New snow</h2><p>-</p><h2 contenteditable=\"false\">Temperature</h2><p>In the middle of the day at 2000 m at +8 °C in the north and +6 °C in the south</p><h2>Wind</h2><p>Light to moderate, with strong southerly winds at high altitudes in some localities</p>"
+  },
+  "snowpackStructure": {
+    "comment": "<h1 contenteditable=\"false\">Snowpack</h1><p>This week’s new snow and snow drift accumulations are now mostly well consolidated. In the high Alpine regions, the more recently formed wind slabs are still prone to triggering in some cases. Isolated avalanches may be triggered in the old snowpack. This affects those slopes where there was already snow before the precipitation in the second half of October: northern slopes above approximately 2800 m and in the high Alpine regions in general.</p><p>Gliding avalanches are still possible on steep grassy slopes; these may be medium sized in the west and north.</p>"
+  },
+  "tendency": [
+    {
+      "comment": "<h1>Outlook</h1><p>There will be widespread precipitation on Sunday. The snowfall level will drop from 2600 m to 2400 m in the south and 1800 m in the north. A widespread 10 to 20 cm of snow will fall at high altitudes. Up to 40 cm of snow is possible on the highest peaks on the Main Alpine Ridge from the Lukmanier Pass to the Bernina Pass and to the south of it. The avalanche danger will increase in these areas in particular.</p><p>Overnight to Monday, some snow will continue to fall in the north. During the day, there will be frequent sunny periods. The avalanche danger will decrease.</p>"
+    }
+  ]
+}
