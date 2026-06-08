@@ -1,0 +1,112 @@
+{
+  "bulletinID": "FR-02-2026-05-18",
+  "lang": "fr",
+  "validTime": {
+    "startTime": "2026-05-17T14:00:00Z",
+    "endTime": "2026-05-18T16:00:00Z"
+  },
+  "publicationTime": "2026-05-17T14:02:00Z",
+  "unscheduled": false,
+  "regions": [
+    {
+      "regionID": "FR-02",
+      "name": "Aravis"
+    }
+  ],
+  "dangerRatings": [
+    {
+      "mainValue": "low",
+      "elevation": {
+        "upperBound": "2400"
+      },
+      "validTimePeriod": "all_day"
+    },
+    {
+      "mainValue": "moderate",
+      "elevation": {
+        "lowerBound": "2400"
+      },
+      "validTimePeriod": "all_day"
+    }
+  ],
+  "avalancheProblems": [
+    {
+      "problemType": "wet_snow",
+      "aspects": [
+        "N",
+        "NE",
+        "E",
+        "NW"
+      ],
+      "validTimePeriod": "all_day",
+      "elevation": {
+        "lowerBound": "2400"
+      }
+    }
+  ],
+  "avalancheActivity": {
+    "highlights": "Départs spontanés : Neige humide au fil du réchauffement diurne.",
+    "comment": "<h2>Déclenchements provoqués</h2><ul><li>De la neige récente peut couler sous les skis à toutes altitudes. De plus en plus facile au fil du réchauffement diurne. Taille 1 (petite) à 2 (moyenne).</li><li>Au-dessus de 2400 m en larges versants Nord et Est : rares plaques à vent. Formées par le vent d&#x27;Ouest à Nord dans la neige récente au moment des chutes de neige. Taille 1 (petite).</li></ul><p>Observables : fissures sous les skis, accumulation de neige récente, vaguelettes en surface ...</p><h2>Départs spontanés</h2><ul><li>Quelques départs ponctuels de neige récente au fil du réchauffement diurne. Principalement dans les pentes raides et vers les rochers. Taille 1 (petite) à 2 (moyenne).</li></ul>"
+  },
+  "tendency": [
+    {
+      "tendencyType": "steady",
+      "highlights": "Indice de risque faible",
+      "comment": "<p>La stabilisation du manteau neigeux continu, la neige récente se tasse. Mardi, le ciel se couvre progressivement en journée. Les températures sont en légère hausse.</p>",
+      "validTime": {
+        "startTime": "2026-05-18T22:00:00Z",
+        "endTime": "2026-05-19T22:00:00Z"
+      }
+    }
+  ],
+  "customData": {
+    "MF": {
+      "mfInternalId": 2,
+      "amendment": false,
+      "rawLocalTimes": {
+        "issuedAt": "2026-05-17T16:00:00",
+        "validTo": "2026-05-18T18:00:00",
+        "publishedAt": "2026-05-17T16:02:00"
+      },
+      "images": {
+        "danger": "montagne_risques_2.png",
+        "aspectRose": "rose_pentes_2.png"
+      },
+      "snowCover": {
+        "date": "2026-05-17T00:00:00",
+        "snowLineNorthM": 1500,
+        "snowLineSouthM": 1600,
+        "depthsCm": [
+          {
+            "altitudeM": 1000,
+            "north": 0,
+            "south": 0
+          },
+          {
+            "altitudeM": 1500,
+            "north": 5,
+            "south": 0
+          },
+          {
+            "altitudeM": 2000,
+            "north": 70,
+            "south": 25
+          }
+        ]
+      },
+      "j2Outlook": {
+        "maxDanger": 1,
+        "date": "2026-05-19T00:00:00",
+        "label": "Indice de risque faible",
+        "comment": "La stabilisation du manteau neigeux continu, la neige récente se tasse. Mardi, le ciel se couvre progressivement en journée. Les températures sont en légère hausse."
+      },
+      "redundantProse": {
+        "accidentel": "Neige humide sous les skis.",
+        "naturel": "Neige humide au fil du réchauffement diurne."
+      }
+    }
+  },
+  "snowpackStructure": {
+    "comment": "<h2>Enneigement</h2><p>Pour la saison, l’enneigement est bon à toutes altitudes.</p><p>Trace de neige récente au sol à partir de 1600/1700 m en début de matinée.</p><p>Rares sous-couches sous 2000 m en nord et 2300 m en sud.</p><h2>Qualité de la neige ce lundi</h2><ul><li>En dessous de 2000/2300 m : trace à 20 cm de neige récente sans sous-couche (elle repose localement sur quelques névés). La neige récente est déjà tassée et légèrement humide en surface. Faible regel nocturne.</li><li>Au-dessus de 2000/2300 m : 20/40 cm de neige récente sur un fond dur. Elle est densifiée et alourdie en surface. Faible regel le matin.</li></ul>"
+  }
+}
