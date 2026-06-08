@@ -18,8 +18,22 @@ structural variant.  They exist to:
 | Label | Short name | What makes it that variant |
 |---|---|---|
 | **A** | single-level / single-problem | One danger rating covering all elevations; one active problem type. |
-| **B** | elevation-band split | Two danger ratings, each applying to a different elevation band (no time split). |
-| **C** | split-day + multi-problem | Danger ratings differ across `all_day`/`earlier`/`later` periods *and* at least two distinct avalanche problem types are present. |
+| **B** | structurally enhanced single rating | A single rating that carries additional structure indicating heightened complexity — but not two fully independent ratings with separate elevation bands. |
+| **C** | complex — split + multi-problem | Bulletin complexity expressed through both a structural split (time-period or elevation) *and* at least two distinct avalanche problem types. |
+
+### Source-specific expression of variants
+
+Each upstream source uses its own schema idioms to represent the same real-world
+complexity.  The abstract labels above map onto source-specific signals as follows:
+
+| Variant | SLF | ALBINA | Météo-France |
+|---|---|---|---|
+| **B** | One `dangerRating` with `customData.CH.subdivision: plus` — the rating sits at the upper boundary of its band (approaching the next level).  No second rating with a separate elevation range. | Two `dangerRating` entries with different `elevation` bounds and the same `validTimePeriod`. | Two `dangerRating` entries: `RISQUE1` below `ALTITUDE` and `RISQUE2` above — an explicit altitude-split in the XML. |
+| **C** | `dangerRatings` that differ between `earlier` and `later` `validTimePeriod` values, plus two distinct `problemType` values across the `avalancheProblems` list. | `dangerRatings` that differ between `earlier` and `later` `validTimePeriod` values, plus two distinct `problemType` values across the `avalancheProblems` list. | `RISQUE1` ≠ `RISQUE2` (elevation split) *plus* both `SAT1` and `SAT2` set (two distinct problem types).  DPBRA does not use time-period splits — MF expresses C-equivalent complexity via elevation + multi-problem rather than time + multi-problem. |
+
+**Practical consequence:** when reading or writing parser code, do not assume
+"variant C = time split".  For MF bulletins, the equivalent structural complexity
+is expressed entirely through elevation bands and problem-type slots.
 
 ---
 
@@ -47,7 +61,7 @@ tests/sentinels/
       source.pdf     ← PDF published by Météo-France
       README.md
     B-elevation-band-split/   (same shape)
-    C-split-day-multi-problem/   (same shape)
+    C-elevation-split-multi-problem/   (elevation + multi-problem; MF has no time splits)
 ```
 
 ---

@@ -21,6 +21,6 @@ output.
 
 ## PDF note
 
-`donneespubliques.meteofrance.fr` is being decommissioned. If `source.pdf` is
-absent, it means the download URL returned non-200 at the time of the implementation.
-The PDF URL above is the canonical reference.
+PDF fetched at implementation time from the URL above; that URL is the canonical
+source if re-download is needed.  Note that `donneespubliques.meteofrance.fr` is
+being decommissioned — the download may eventually become unavailable.

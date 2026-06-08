@@ -20,3 +20,5 @@ renders bulletins as PDFs client-side only; no stable archive PDF URL exists.
 
 `source.pdf` is absent from this sentinel directory.  Spot-check via
 `https://avalanche.report/bulletin?date=2025-11-29&region=AT-07&lang=en`.
+The URL uses `2025-11-29` (the `customData.ALBINA.mainDate`), which is the display
+date; the bulletin's `validTime.startTime` is the previous afternoon (2025-11-28T16:00Z).
