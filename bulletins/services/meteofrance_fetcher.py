@@ -32,7 +32,7 @@ import logging
 import os
 import time
 from collections.abc import Callable
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -538,8 +538,6 @@ def _persist_bulletin(
     """
     pdf_url = ""
     if pdf_session is not None:
-        from datetime import datetime
-
         regions = raw.get("regions") or []
         massif_name: str = regions[0].get("name", "") if regions else ""
         start_time_str: str = (raw.get("validTime") or {}).get("startTime", "")
