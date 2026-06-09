@@ -2,13 +2,17 @@
 bulletins/management/commands/backfill_pdf_urls.py — backfill_pdf_urls command.
 
 Back-fills the ``Bulletin.pdf_url`` field for all rows where it is currently
-empty.  Dispatches to the appropriate per-source URL helper based on
-``bulletin.render_model["source"]``:
+empty.  Dispatches to the appropriate per-source URL helper.  Source is
+derived from ``bulletin.raw_data["properties"]["customData"]`` via
+``render_model.detect_source()`` — **not** from ``render_model["source"]`` —
+so that rows with stale ``render_model`` values (e.g. ``"euregio"`` written
+by older pipeline versions) are still dispatched correctly.
 
-  * ``"slf"``       → ``_slf_pdf_url(raw)``
-  * ``"albina"``    → ``_albina_pdf_url(raw, region)`` — region taken from the
-                       first raw ``regions`` entry's ``regionID`` prefix
-  * ``"meteofrance"`` → ``_meteofrance_pdf_url(massif_name, valid_date, session)``
+  * SLF       → ``_slf_pdf_url(raw)``
+  * ALBINA    → ``_albina_pdf_url(raw, region)`` — region taken from the
+                  first raw ``regions`` entry's ``regionID`` prefix
+  * METEOFRANCE → ``_meteofrance_pdf_url(massif_name, valid_date, session)``
+                   massif_name read from ``customData["MF"]["massif"]``
 
 Safe by default — read-only unless ``--commit`` is passed (CLAUDE.md Option A).
 Idempotent — rows with an existing ``pdf_url`` are skipped unconditionally.
@@ -37,6 +41,7 @@ from bulletins.services.meteofrance_fetcher import (
     _MF_USER_AGENT,
     _meteofrance_pdf_url,
 )
+from bulletins.services.render_model import RenderModelBuildError, detect_source
 from bulletins.services.slf_fetcher import _slf_pdf_url
 
 logger = logging.getLogger(__name__)
@@ -126,15 +131,25 @@ def _process_one(
 ) -> str:
     """Derive the pdf_url for one bulletin and update counts in-place.
 
+    Source is derived from ``customData`` keys via ``detect_source()`` rather
+    than from ``render_model["source"]``.  This ensures rows with stale
+    ``render_model`` values (e.g. legacy ``"euregio"`` written by older
+    pipeline versions) are dispatched correctly.
+
     Returns the derived URL string (may be ``""`` on failure or unknown source).
     """
-    source: str = (
-        bulletin.render_model.get("source", "") if bulletin.render_model else ""
-    )
     raw = (bulletin.raw_data or {}).get("properties", {})
 
+    # Detect source from customData — robust against stale render_model values.
+    source_slug: str
     try:
-        pdf_url = _derive_pdf_url(bulletin, source, raw, mf_session, mf_call_count)
+        source_enum = detect_source(raw)
+        source_slug = source_enum.value
+    except RenderModelBuildError:
+        source_slug = ""
+
+    try:
+        pdf_url = _derive_pdf_url(bulletin, source_slug, raw, mf_session, mf_call_count)
     except Exception as exc:
         logger.exception(
             "backfill_pdf_urls: error deriving URL for bulletin %s: %s",
@@ -144,8 +159,8 @@ def _process_one(
         counts["error"] += 1
         return ""
 
-    if source in ("slf", "albina", "meteofrance"):
-        counts[source] += 1
+    if source_slug in ("slf", "albina", "meteofrance"):
+        counts[source_slug] += 1
     else:
         counts["unknown"] += 1
 
@@ -174,11 +189,11 @@ def _process_queryset(
     mf_call_count = 0
 
     for bulletin in qs.iterator():
-        is_mf = (
-            bulletin.render_model.get("source") == "meteofrance"
-            if bulletin.render_model
-            else False
-        )
+        raw_props = (bulletin.raw_data or {}).get("properties", {})
+        try:
+            is_mf = detect_source(raw_props) == Bulletin.Source.METEOFRANCE
+        except RenderModelBuildError:
+            is_mf = False
         pdf_url = _process_one(bulletin, mf_session, mf_call_count, counts)
         if is_mf:
             mf_call_count += 1
@@ -213,8 +228,8 @@ def _derive_pdf_url(
 
     Args:
         bulletin: The Bulletin instance (used for issued_at and region info).
-        source: The ``render_model["source"]`` string (``"slf"``, ``"albina"``,
-            or ``"meteofrance"``).
+        source: The detected source slug (``"slf"``, ``"albina"``, or
+            ``"meteofrance"``), derived from ``customData`` keys.
         raw: The inner CAAML properties dict from ``bulletin.raw_data["properties"]``.
         mf_session: Shared ``requests.Session`` for Météo-France index calls.
         mf_call_count: How many Météo-France index calls have been made so far;
@@ -236,8 +251,12 @@ def _derive_pdf_url(
     if source == "meteofrance":
         if mf_call_count > 0:
             time.sleep(_MF_RATE_LIMIT_S)
-        regions = raw.get("regions") or []
-        massif_name = regions[0].get("name", "") if regions else ""
+        # Read the canonical upstream slug from customData.MF.massif (e.g.
+        # "VANOISE"), not regions[0]["name"] which is the title-case display
+        # name (e.g. "Vanoise") and does not match the MF index endpoint.
+        massif_name: str = (
+            raw.get("customData", {}).get("MF", {}).get("massif", "") or ""
+        )
         valid_date = bulletin.valid_from.date()
         return _meteofrance_pdf_url(massif_name, valid_date, mf_session)
 

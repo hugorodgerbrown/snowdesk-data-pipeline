@@ -38,6 +38,8 @@ def _make_slf_bulletin(**kwargs: Any) -> Bulletin:
         "regions": [{"regionID": "CH-4115", "name": "Martigny"}],
         "dangerRatings": [],
         "avalancheProblems": [],
+        # customData.CH is the source marker for SLF bulletins.
+        "customData": {"CH": {"aggregation": []}},
     }
     return BulletinFactory.create(
         bulletin_id=kwargs.get("bulletin_id", "slf-001"),
@@ -65,6 +67,8 @@ def _make_albina_bulletin(**kwargs: Any) -> Bulletin:
         "regions": [{"regionID": "AT-07-01", "name": "Allgäu Alps East"}],
         "dangerRatings": [],
         "avalancheProblems": [],
+        # customData.ALBINA is the source marker for ALBINA bulletins.
+        "customData": {"ALBINA": {"mainDate": "2026-01-15"}},
     }
     return BulletinFactory.create(
         bulletin_id=kwargs.get("bulletin_id", "albina-001"),
@@ -80,7 +84,12 @@ def _make_albina_bulletin(**kwargs: Any) -> Bulletin:
 
 
 def _make_mf_bulletin(**kwargs: Any) -> Bulletin:
-    """Create a Météo-France Bulletin with a minimal render_model and raw_data."""
+    """Create a Météo-France Bulletin with a minimal render_model and raw_data.
+
+    ``customData.MF.massif`` carries the canonical upper-case slug used by the
+    MF index endpoint.  ``regions[0].name`` intentionally uses the title-case
+    display form (``"Chablais"``) to exercise the fix for the massif-slug bug.
+    """
     raw_props: dict[str, Any] = {
         "bulletinID": kwargs.get("bulletin_id", "mf-001"),
         "validTime": {
@@ -88,9 +97,12 @@ def _make_mf_bulletin(**kwargs: Any) -> Bulletin:
             "endTime": "2026-01-16T09:00:00Z",
         },
         "lang": "fr",
-        "regions": [{"regionID": "FR-01", "name": "CHABLAIS"}],
+        # name is title-case display text — NOT the slug.
+        "regions": [{"regionID": "FR-01", "name": "Chablais"}],
         "dangerRatings": [],
         "avalancheProblems": [],
+        # customData.MF.massif is the canonical upper-case slug.
+        "customData": {"MF": {"massif": "CHABLAIS", "massif_id": "1"}},
     }
     return BulletinFactory.create(
         bulletin_id=kwargs.get("bulletin_id", "mf-001"),
@@ -220,6 +232,105 @@ class TestBackfillPdfUrlsIdempotency:
         call_command("backfill_pdf_urls", commit=True)
         b.refresh_from_db()
         assert b.pdf_url == first_url
+
+
+@pytest.mark.django_db
+class TestBackfillPdfUrlsRegressions:
+    """Regression tests for source-detection and massif-slug bugs."""
+
+    def test_stale_euregio_render_model_dispatches_to_albina(self) -> None:
+        """A row whose render_model.source is the legacy 'euregio' value is
+        dispatched to ALBINA when customData.ALBINA is present.
+
+        Regression for SNOW-295 Bug 3: old pipeline versions wrote 'euregio'
+        instead of 'albina'.  The backfill must use customData as the
+        discriminator, not render_model["source"].
+        """
+        raw_props: dict[str, Any] = {
+            "bulletinID": "albina-euregio-001",
+            "publicationTime": "2026-01-15T18:00:00Z",
+            "validTime": {
+                "startTime": "2026-01-15T16:00:00Z",
+                "endTime": "2026-01-16T16:00:00Z",
+            },
+            "lang": "en",
+            "regions": [{"regionID": "AT-07-01", "name": "Allgäu Alps East"}],
+            "dangerRatings": [],
+            "avalancheProblems": [],
+            # customData.ALBINA present → source is ALBINA regardless of
+            # what render_model["source"] says.
+            "customData": {"ALBINA": {"mainDate": "2026-01-15"}},
+        }
+        BulletinFactory.create(
+            bulletin_id="albina-euregio-001",
+            raw_data={"type": "Feature", "geometry": None, "properties": raw_props},
+            # Stale legacy value — the bug that triggered SNOW-295.
+            render_model={"source": "euregio", "version": 3},
+            render_model_version=3,
+            issued_at=datetime(2026, 1, 15, 18, 0, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 1, 15, 16, 0, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 1, 16, 16, 0, 0, tzinfo=UTC),
+            pdf_url="",
+        )
+        call_command("backfill_pdf_urls", commit=True)
+        b = Bulletin.objects.get(bulletin_id="albina-euregio-001")
+        # Must have been dispatched to ALBINA and produced a non-empty URL.
+        assert b.pdf_url != ""
+        assert "api.avalanche.report" in b.pdf_url
+
+    def test_mf_uses_custom_data_massif_slug_not_region_name(self) -> None:
+        """The MF index lookup uses the upper-case slug from customData.MF.massif,
+        not the title-case display name from regions[0].name.
+
+        Regression for SNOW-295 Bug 2: the backfill was reading
+        regions[0]["name"] (e.g. "Vanoise") instead of
+        customData.MF.massif (e.g. "VANOISE"), causing zero index matches.
+        """
+        raw_props: dict[str, Any] = {
+            "bulletinID": "mf-slug-test",
+            "validTime": {
+                "startTime": "2026-01-15T09:00:00Z",
+                "endTime": "2026-01-16T09:00:00Z",
+            },
+            "lang": "fr",
+            # Title-case display name — must NOT be used as the index key.
+            "regions": [{"regionID": "FR-07", "name": "Vanoise"}],
+            "dangerRatings": [],
+            "avalancheProblems": [],
+            # Upper-case slug — the index key used by the MF endpoint.
+            "customData": {"MF": {"massif": "VANOISE", "massif_id": "7"}},
+        }
+        BulletinFactory.create(
+            bulletin_id="mf-slug-test",
+            raw_data={"type": "Feature", "geometry": None, "properties": raw_props},
+            render_model={"source": "meteofrance", "version": 4},
+            render_model_version=4,
+            issued_at=datetime(2026, 1, 15, 9, 0, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 1, 15, 9, 0, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 1, 16, 9, 0, 0, tzinfo=UTC),
+            pdf_url="",
+        )
+
+        # The index returns an entry keyed on the upper-case slug "VANOISE".
+        index_payload = [{"massif": "VANOISE", "heures": ["20260115100000"]}]
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.ok = True
+        mock_resp.json.return_value = index_payload
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_resp
+        mock_session.headers = {}
+
+        with patch(
+            "bulletins.management.commands.backfill_pdf_urls.requests.Session",
+            return_value=mock_session,
+        ):
+            call_command("backfill_pdf_urls", commit=True)
+
+        b = Bulletin.objects.get(bulletin_id="mf-slug-test")
+        # URL must contain the upper-case slug, not the title-case display name.
+        assert "BRA.VANOISE.20260115100000.pdf" in b.pdf_url
 
 
 class TestAlbinaCdnRegion:
