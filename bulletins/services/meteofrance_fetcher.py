@@ -53,6 +53,106 @@ logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 30  # seconds
 _ONE_DAY = timedelta(days=1)
 
+_MF_ARCHIVE_BASE = "https://donneespubliques.meteofrance.fr/donnees_libres/Pdf/BRA"
+_MF_USER_AGENT = "snowdesk/1.0 (contact@snowdesk.app)"
+
+
+def _fetch_mf_index(
+    valid_date: date,
+    session: requests.Session,
+) -> list[dict[str, Any]] | None:
+    """
+    Fetch the Météo-France BRA daily index for ``valid_date``.
+
+    Returns the parsed JSON list on success, ``None`` on any error (network,
+    non-200/404, parse failure).  A 404 response is treated as "no bulletins
+    that day" and is not logged at warning level.
+
+    Args:
+        valid_date: The bulletin date — used to build ``bra.YYYYMMDD.json``.
+        session: A shared ``requests.Session`` for connection reuse.
+
+    Returns:
+        A list of ``{"massif": …, "heures": […]}`` dicts, or ``None`` on any
+        error.
+
+    """
+    index_url = f"{_MF_ARCHIVE_BASE}/bra.{valid_date:%Y%m%d}.json"
+    try:
+        resp = session.get(index_url, timeout=REQUEST_TIMEOUT)
+    except requests.RequestException as exc:
+        logger.info("_fetch_mf_index: network error fetching %s: %s", index_url, exc)
+        return None
+
+    if resp.status_code == 404:
+        return None  # off-season gap; caller treats None as "no URL"
+
+    if not resp.ok:
+        logger.info(
+            "_fetch_mf_index: unexpected status %d for %s", resp.status_code, index_url
+        )
+        return None
+
+    try:
+        result: list[dict[str, Any]] = resp.json()
+        return result
+    except Exception as exc:
+        logger.info("_fetch_mf_index: could not parse index JSON: %s", exc)
+        return None
+
+
+def _meteofrance_pdf_url(
+    massif_name: str,
+    valid_date: date,
+    session: requests.Session,
+) -> str:
+    """
+    Resolve the Météo-France BRA archive PDF URL for a given massif and date.
+
+    Fails open: any network error, non-200 response (other than 404), missing
+    massif, or empty ``heures`` list returns ``""`` and logs at INFO level —
+    the upstream portal is being decommissioned, so failures must not break
+    ingest.
+
+    Args:
+        massif_name: Upper-case massif slug as stored in the raw bulletin's
+            ``regions[0]["name"]`` field (e.g. ``"CHABLAIS"``).
+        valid_date: The bulletin's validity date — used to build the
+            ``bra.YYYYMMDD.json`` index URL.
+        session: A ``requests.Session`` shared across the pipeline run for
+            connection reuse.
+
+    Returns:
+        The direct PDF URL, or ``""`` when unavailable.
+
+    """
+    if not massif_name:
+        logger.info("_meteofrance_pdf_url: empty massif_name — returning empty")
+        return ""
+
+    index = _fetch_mf_index(valid_date, session)
+    if index is None:
+        return ""
+
+    for entry in index:
+        if entry.get("massif") != massif_name:
+            continue
+        heures: list[str] = entry.get("heures") or []
+        if not heures:
+            logger.info(
+                "_meteofrance_pdf_url: massif %s found but heures is empty", massif_name
+            )
+            return ""
+        latest = sorted(heures)[-1]
+        return f"{_MF_ARCHIVE_BASE}/BRA.{massif_name}.{latest}.pdf"
+
+    logger.info(
+        "_meteofrance_pdf_url: massif %s not found in index for %s",
+        massif_name,
+        valid_date,
+    )
+    return ""
+
 
 # ---------------------------------------------------------------------------
 # HTTP / local-mirror fetcher
@@ -215,6 +315,10 @@ def run_meteofrance_pipeline(
     }
     request_count = 0
 
+    # One shared session for PDF index lookups — connection reuse across massifs.
+    pdf_session = requests.Session()
+    pdf_session.headers["User-Agent"] = _MF_USER_AGENT
+
     try:
         logger.info(
             "MeteoFrance pipeline run %s: %d massifs force=%s dry_run=%s",
@@ -236,6 +340,7 @@ def run_meteofrance_pipeline(
                 dry_run=dry_run,
                 force=force,
                 on_fetched=on_fetched,
+                pdf_session=pdf_session,
             )
             counts[outcome] += 1
             request_count += 1
@@ -296,6 +401,7 @@ def _process_massif(
     dry_run: bool,
     force: bool,
     on_fetched: Callable[[dict[str, Any]], None] | None,
+    pdf_session: requests.Session | None = None,
 ) -> str:
     """
     Fetch, translate, and optionally persist one massif bulletin.
@@ -311,6 +417,8 @@ def _process_massif(
         dry_run: When ``True``, log and count without writing.
         force: When ``True``, upsert even if the bulletin already exists.
         on_fetched: Optional callback called for each translated dict.
+        pdf_session: Optional ``requests.Session`` used to resolve the
+            archive PDF URL.  When ``None``, the PDF URL is left empty.
 
     """
     fetch_result = _fetch_xml(massif_id, run, base_url, api_key)
@@ -336,7 +444,7 @@ def _process_massif(
         logger.debug("Skipping existing MeteoFrance bulletin %s", bulletin_id)
         return "skipped"
 
-    return _persist_bulletin(massif_id, run, raw, bulletin_id)
+    return _persist_bulletin(massif_id, run, raw, bulletin_id, pdf_session=pdf_session)
 
 
 def _fetch_xml(
@@ -409,6 +517,8 @@ def _persist_bulletin(
     run: PipelineRun,
     raw: dict[str, Any],
     bulletin_id: str,
+    *,
+    pdf_session: requests.Session | None = None,
 ) -> str:
     """
     Upsert a translated bulletin dict and return an outcome tag.
@@ -421,10 +531,33 @@ def _persist_bulletin(
         run: The active ``PipelineRun`` instance (updated on failure).
         raw: The translated CAAML dict to persist.
         bulletin_id: The ``bulletinID`` string (for error logging).
+        pdf_session: Optional ``requests.Session`` for resolving the archive
+            PDF URL via ``_meteofrance_pdf_url``.  When ``None``, pdf_url
+            is left empty.
 
     """
+    pdf_url = ""
+    if pdf_session is not None:
+        from datetime import datetime
+
+        regions = raw.get("regions") or []
+        massif_name: str = regions[0].get("name", "") if regions else ""
+        start_time_str: str = (raw.get("validTime") or {}).get("startTime", "")
+        if massif_name and start_time_str:
+            try:
+                valid_date = datetime.fromisoformat(
+                    start_time_str.replace("Z", "+00:00")
+                ).date()
+                pdf_url = _meteofrance_pdf_url(massif_name, valid_date, pdf_session)
+            except Exception as exc:
+                logger.info(
+                    "_persist_bulletin: could not resolve pdf_url for %s: %s",
+                    bulletin_id,
+                    exc,
+                )
+
     try:
-        created = upsert_bulletin(raw, run)
+        created = upsert_bulletin(raw, run, pdf_url=pdf_url)
     except UnknownRegionError as exc:
         logger.exception(
             "Unknown region for MeteoFrance massif %d bulletin %s: %s",

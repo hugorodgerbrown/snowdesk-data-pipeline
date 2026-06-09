@@ -11,6 +11,8 @@ Covers:
     lifecycle.
   - latest_meteofrance_date: returns None when DB empty, latest date otherwise.
   - meteofrance_stash_writer: merge, dedup, sort, atomic write.
+  - _meteofrance_pdf_url: 200-with-match, 200-without-match, 404, network
+    error, empty massif — all return "" or correct URL.
 
 DB tests use MicroRegionFactory to seed the regions referenced by test XMLs
 (FR-01 = Chablais). HTTP calls are mocked via unittest.mock.patch.
@@ -29,6 +31,7 @@ import requests
 from django.test import override_settings
 
 from bulletins.services.meteofrance_fetcher import (
+    _meteofrance_pdf_url,
     _read_local_mirror,
     _resolve_base_url,
     fetch_meteofrance_bulletin,
@@ -603,3 +606,98 @@ class TestMeteofranceStashWriter:
             count = meteofrance_stash_writer(records, path)
 
             assert count == 5
+
+
+# ---------------------------------------------------------------------------
+# _meteofrance_pdf_url
+# ---------------------------------------------------------------------------
+
+
+def _make_index_response(entries: list[dict]) -> MagicMock:
+    """Build a mock session.get() response returning a JSON index list."""
+    mock = MagicMock()
+    mock.status_code = 200
+    mock.ok = True
+    mock.json.return_value = entries
+    mock.raise_for_status.return_value = None
+    return mock
+
+
+def _make_session(get_return: MagicMock) -> MagicMock:
+    """Build a mock requests.Session whose get() returns get_return."""
+    session = MagicMock(spec=requests.Session)
+    session.get.return_value = get_return
+    return session
+
+
+class TestMeteofrancePdfUrl:
+    """Tests for _meteofrance_pdf_url (network calls fully mocked)."""
+
+    def test_returns_url_when_massif_matches(self) -> None:
+        """Returns the PDF URL when the massif is found and heures is non-empty."""
+        index = [
+            {"massif": "CHABLAIS", "heures": ["20260115100000"]},
+            {"massif": "MONT-BLANC", "heures": ["20260115100000"]},
+        ]
+        session = _make_session(_make_index_response(index))
+        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
+        assert result == (
+            "https://donneespubliques.meteofrance.fr/donnees_libres/Pdf/BRA/"
+            "BRA.CHABLAIS.20260115100000.pdf"
+        )
+
+    def test_picks_latest_heures_when_multiple(self) -> None:
+        """When a massif has multiple heures, the last (sorted) entry is used."""
+        index = [
+            {"massif": "MONT-BLANC", "heures": ["20260115100000", "20260115153000"]},
+        ]
+        session = _make_session(_make_index_response(index))
+        result = _meteofrance_pdf_url("MONT-BLANC", date(2026, 1, 15), session)
+        assert "20260115153000" in result
+        assert "20260115100000" not in result
+
+    def test_returns_empty_when_massif_not_in_index(self) -> None:
+        """Returns '' when the massif is absent from the index."""
+        index = [{"massif": "BELLEDONNE", "heures": ["20260115100000"]}]
+        session = _make_session(_make_index_response(index))
+        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
+        assert result == ""
+
+    def test_returns_empty_on_404(self) -> None:
+        """Returns '' when the index endpoint returns 404 (off-season)."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_resp.ok = False
+        session = _make_session(mock_resp)
+        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
+        assert result == ""
+
+    def test_returns_empty_on_network_error(self) -> None:
+        """Returns '' when a network-level exception is raised (fail-open)."""
+        session = MagicMock(spec=requests.Session)
+        session.get.side_effect = requests.RequestException("timeout")
+        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
+        assert result == ""
+
+    def test_returns_empty_for_empty_massif_name(self) -> None:
+        """Returns '' immediately when massif_name is empty."""
+        session = MagicMock(spec=requests.Session)
+        result = _meteofrance_pdf_url("", date(2026, 1, 15), session)
+        assert result == ""
+        session.get.assert_not_called()
+
+    def test_returns_empty_when_heures_is_empty_list(self) -> None:
+        """Returns '' when the massif exists but heures is an empty list."""
+        index = [{"massif": "CHABLAIS", "heures": []}]
+        session = _make_session(_make_index_response(index))
+        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
+        assert result == ""
+
+    def test_returns_empty_on_non_200_non_404(self) -> None:
+        """Returns '' on an unexpected 5xx response (fail-open)."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 503
+        mock_resp.ok = False
+        session = _make_session(mock_resp)
+        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
+        assert result == ""
