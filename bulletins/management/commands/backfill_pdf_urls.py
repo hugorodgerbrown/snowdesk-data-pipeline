@@ -28,6 +28,7 @@ from argparse import ArgumentParser
 from typing import Any
 
 import requests
+from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from bulletins.models import Bulletin
@@ -42,6 +43,36 @@ logger = logging.getLogger(__name__)
 
 _MF_RATE_LIMIT_S = 0.2
 _BATCH_SIZE = 500
+
+
+def _albina_cdn_region(micro_region_id: str) -> str:
+    """
+    Derive the ALBINA CDN slot code from a micro-region ID.
+
+    ALBINA CDN region codes (``settings.ALBINA_REGIONS``) are coarse-grained
+    slots like ``"AT-07"`` or ``"IT-32-BZ"``.  The raw ``regionID`` values
+    stored in bulletin payloads are micro-region identifiers such as
+    ``"AT-07-02-02"`` or ``"IT-32-BZ-03"``.  This function maps from the
+    micro-region granularity back to the CDN slot by checking whether the
+    micro-region ID starts with each known slot prefix (longest first, to
+    avoid ``"IT-32-BZ"`` being swallowed by a hypothetical ``"IT-32"``).
+
+    Falls back to ``"EUREGIO"`` when no known prefix matches — the multi-region
+    report is a safer default than forwarding a malformed CDN code.
+
+    Args:
+        micro_region_id: A raw ``regionID`` string from an ALBINA bulletin.
+
+    Returns:
+        The matching ALBINA CDN region code, or ``"EUREGIO"`` if none match.
+
+    """
+    # Sort by descending length so more-specific prefixes are checked first.
+    candidates = sorted(settings.ALBINA_REGIONS, key=len, reverse=True)
+    for code in candidates:
+        if micro_region_id.startswith(code):
+            return code
+    return "EUREGIO"
 
 
 class Command(BaseCommand):
@@ -198,7 +229,8 @@ def _derive_pdf_url(
 
     if source == "albina":
         regions = raw.get("regions") or []
-        region = regions[0].get("regionID", "") if regions else ""
+        micro_region_id = regions[0].get("regionID", "") if regions else ""
+        region = _albina_cdn_region(micro_region_id)
         return _albina_pdf_url(raw, region)
 
     if source == "meteofrance":

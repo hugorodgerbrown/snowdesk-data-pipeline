@@ -20,6 +20,7 @@ import pytest
 import requests
 from django.core.management import call_command
 
+from bulletins.management.commands.backfill_pdf_urls import _albina_cdn_region
 from bulletins.models import Bulletin
 from tests.factories import BulletinFactory
 
@@ -137,12 +138,20 @@ class TestBackfillPdfUrlsCommit:
         assert "Bulletin_2026-03-15_17-00_en.pdf" in b.pdf_url
 
     def test_albina_url_populated(self) -> None:
-        """ALBINA bulletins get a correctly-derived pdf_url on --commit."""
+        """ALBINA bulletins get a correctly-derived pdf_url on --commit.
+
+        The raw regionID is a micro-region (``AT-07-01``); the stored URL must
+        contain the CDN slot code (``AT-07``) and not the raw micro-region ID.
+        The ``&`` anchor ensures ``region=AT-07`` is not a false-positive match
+        for ``region=AT-07-01`` or any other micro-region variant.
+        """
         _make_albina_bulletin()
         call_command("backfill_pdf_urls", commit=True)
         b = Bulletin.objects.get(bulletin_id="albina-001")
         assert "api.avalanche.report" in b.pdf_url
-        assert "region=AT-07" in b.pdf_url
+        # Exact CDN slot code — anchored by the following '&' to rule out
+        # false positives from micro-region IDs like AT-07-01.
+        assert "region=AT-07&" in b.pdf_url
 
     def test_meteofrance_url_populated(self) -> None:
         """MF bulletins get a pdf_url when the index call succeeds."""
@@ -211,3 +220,35 @@ class TestBackfillPdfUrlsIdempotency:
         call_command("backfill_pdf_urls", commit=True)
         b.refresh_from_db()
         assert b.pdf_url == first_url
+
+
+class TestAlbinaCdnRegion:
+    """Unit tests for the _albina_cdn_region prefix-extraction helper."""
+
+    def test_at07_micro_region(self) -> None:
+        """AT-07-* micro-region maps to the AT-07 CDN slot."""
+        assert _albina_cdn_region("AT-07-02-02") == "AT-07"
+
+    def test_at07_first_level_micro_region(self) -> None:
+        """AT-07-01 (one dash level below the slot) maps to AT-07."""
+        assert _albina_cdn_region("AT-07-01") == "AT-07"
+
+    def test_it32bz_micro_region(self) -> None:
+        """IT-32-BZ-* micro-region maps to the IT-32-BZ CDN slot."""
+        assert _albina_cdn_region("IT-32-BZ-03") == "IT-32-BZ"
+
+    def test_it32tn_micro_region(self) -> None:
+        """IT-32-TN-* micro-region maps to the IT-32-TN CDN slot."""
+        assert _albina_cdn_region("IT-32-TN-06") == "IT-32-TN"
+
+    def test_exact_cdn_code_passthrough(self) -> None:
+        """An exact CDN slot code maps to itself."""
+        assert _albina_cdn_region("AT-07") == "AT-07"
+
+    def test_unknown_region_falls_back_to_euregio(self) -> None:
+        """A region ID that matches no known prefix falls back to EUREGIO."""
+        assert _albina_cdn_region("SI-01-02") == "EUREGIO"
+
+    def test_empty_string_falls_back_to_euregio(self) -> None:
+        """An empty region ID falls back to EUREGIO."""
+        assert _albina_cdn_region("") == "EUREGIO"
