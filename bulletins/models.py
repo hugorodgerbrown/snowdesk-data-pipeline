@@ -281,6 +281,16 @@ class Bulletin(BaseModel):
     next_update = models.DateTimeField(null=True, blank=True)
     lang = models.CharField(max_length=8, default="en")
     unscheduled = models.BooleanField(default=False)
+    pdf_url = models.URLField(
+        blank=True,
+        default="",
+        max_length=500,
+        help_text=(
+            "URL of the source bulletin PDF (SLF / ALBINA / Météo-France). "
+            "Populated by upsert_bulletin at ingest time and back-filled by "
+            "the backfill_pdf_urls management command."
+        ),
+    )
     regions: models.ManyToManyField = models.ManyToManyField(
         "regions.MicroRegion",
         through="RegionBulletin",
