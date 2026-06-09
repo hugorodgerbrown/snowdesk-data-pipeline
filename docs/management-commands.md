@@ -103,6 +103,25 @@ incident that invalidates derived state:
   `--skip-day-ratings`.
 - `recompute_day_ratings --commit` — after a `DAY_RATING_VERSION` bump or
   any day-rating policy change. Re-derives every `RegionDayRating`.
+- `backfill_pdf_urls --commit` — populate `Bulletin.pdf_url` for rows
+  where it is currently empty. Dispatches by `render_model["source"]`
+  to the correct per-provider URL helper (SLF / ALBINA / Météo-France).
+  Read-only by default; pass `--commit` to persist. Idempotent — rows
+  with an existing `pdf_url` are skipped unconditionally. For Météo-France
+  rows the command hits the archive index endpoint (one call per bulletin)
+  with a 0.2 s polite delay between requests; the endpoint is being
+  decommissioned so failures fail open (empty URL, no abort).
+
+  ```bash
+  # Dry-run — counts what would be populated, no DB writes.
+  poetry run python manage.py backfill_pdf_urls
+
+  # Persist (run on Render after deploying SNOW-295).
+  poetry run python manage.py backfill_pdf_urls --commit
+  ```
+
+  Flags: `--commit`.
+
 - `backfill_weather --start <YYYY-MM-DD> --end <YYYY-MM-DD> --commit` —
   to fill a historical gap (e.g. after adding a new region, or
   recovering from an outage longer than a day).
