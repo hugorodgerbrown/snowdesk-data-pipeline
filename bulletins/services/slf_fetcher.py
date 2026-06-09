@@ -1,5 +1,5 @@
 """
-bulletins/services/data_fetcher.py — Fetching and persisting SLF bulletins.
+bulletins/services/slf_fetcher.py — Fetching and persisting SLF bulletins.
 
 Contains pure-ish functions that:
   1. Fetch a page of bulletins from the SLF CAAML list API (fetch_bulletin_page).
@@ -12,6 +12,11 @@ Also defines the ``BulletinSource`` registry used by the unified
 latest-date function, settings keys, and archive-writer adapter so the
 command can iterate over requested sources without owning any
 provider-specific logic.
+
+Note: ``upsert_bulletin``, ``UnknownRegionError``, and ``_get_region`` are
+shared helpers also imported by ``albina_fetcher`` and ``meteofrance_fetcher``.
+Extracting them into a dedicated ``persistence.py`` module is a separate
+cleanup ticket (not in scope here).
 
 The SLF API returns bulletins in reverse chronological order and is
 paginated by offset/limit — it does not support filtering by date. The

@@ -25,7 +25,7 @@ regions/         Geographic reference data — MicroRegion / MajorRegion /
                  audit_resort_regions)
 bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
                  PipelineRun, RegionDayRating, WeatherSnapshot, the ingestion
-                 services (data_fetcher / render_model / day_rating /
+                 services (slf_fetcher / render_model / day_rating /
                  slf_archive / openmeteo_archive / weather_fetcher /
                  weather_display), the dev-only SLF / Open-Meteo mirror
                  endpoints, and the bulletin and weather management commands
@@ -84,12 +84,12 @@ Every module starts with a docstring block whose first line names the
 file and gives a one-line purpose, followed by a short description of
 what the module contains and why. See
 [bulletins/models.py](bulletins/models.py) or
-[bulletins/services/data_fetcher.py](bulletins/services/data_fetcher.py)
+[bulletins/services/slf_fetcher.py](bulletins/services/slf_fetcher.py)
 for the canonical shape:
 
 ```python
 """
-bulletins/services/data_fetcher.py — Fetching and persisting SLF bulletins.
+bulletins/services/slf_fetcher.py — Fetching and persisting SLF bulletins.
 
 Contains pure-ish functions that:
   1. Fetch a page of bulletins from the SLF CAAML API (fetch_bulletin_page).
@@ -172,7 +172,7 @@ Contains pure-ish functions that:
 - Max cyclomatic complexity is 8 (`max-complexity = 8`). If you hit
   `C901`, **refactor** — don't `# noqa` it. The extracted-helper pattern
   in `_process_bulletin` / `run_pipeline` in
-  [bulletins/services/data_fetcher.py](bulletins/services/data_fetcher.py)
+  [bulletins/services/slf_fetcher.py](bulletins/services/slf_fetcher.py)
   is the reference example.
 - Only suppress lint warnings with `# noqa: <code>` when there is a good
   reason, and always leave an inline comment explaining why. See the
@@ -188,7 +188,7 @@ Contains pure-ish functions that:
   settings; naive datetimes will raise warnings in tests.
 - Use `datetime.UTC` (Python 3.11+), not `timezone.utc` or `pytz`.
 - CAAML timestamps are parsed through `_parse_dt` in
-  [bulletins/services/data_fetcher.py](bulletins/services/data_fetcher.py)
+  [bulletins/services/slf_fetcher.py](bulletins/services/slf_fetcher.py)
   which always returns a UTC-aware datetime.
 - In factories, use `tzinfo=UTC` — see
   [tests/factories.py](tests/factories.py).
@@ -371,7 +371,7 @@ catalogue and flag reference.
   See
   [tests/regions/models/test_models.py](tests/regions/models/test_models.py)
   and
-  [tests/bulletins/services/test_data_fetcher.py](tests/bulletins/services/test_data_fetcher.py)
+  [tests/bulletins/services/test_slf_fetcher.py](tests/bulletins/services/test_slf_fetcher.py)
   for the reference style.
 
 ### 5.3 FactoryBoy
@@ -504,7 +504,7 @@ become `None` or empty tuples.
 ### 7.3 Upserts
 
 Bulletin writes go through `upsert_bulletin` in
-[bulletins/services/data_fetcher.py](bulletins/services/data_fetcher.py),
+[bulletins/services/slf_fetcher.py](bulletins/services/slf_fetcher.py),
 which uses `Bulletin.objects.update_or_create` keyed on `bulletin_id`.
 Re-runs must be idempotent.
 

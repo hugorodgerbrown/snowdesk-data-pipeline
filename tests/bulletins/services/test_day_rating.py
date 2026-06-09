@@ -813,7 +813,7 @@ class TestUpsertBulletinSwallowsException:
 
     def test_exception_is_caught_not_propagated(self) -> None:
         """When apply_bulletin_day_ratings raises, upsert_bulletin still returns."""
-        from bulletins.services.data_fetcher import upsert_bulletin
+        from bulletins.services.slf_fetcher import upsert_bulletin
 
         run = PipelineRunFactory.create()
         # Seed the region first — regions are fixture-backed (no auto-create).
@@ -834,7 +834,7 @@ class TestUpsertBulletinSwallowsException:
         }
 
         with patch(
-            "bulletins.services.data_fetcher.apply_bulletin_day_ratings",
+            "bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
             side_effect=RuntimeError("test explosion"),
         ):
             result = upsert_bulletin(raw, run)

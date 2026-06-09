@@ -34,7 +34,7 @@ import requests
 from django.conf import settings
 
 from bulletins.models import Bulletin, PipelineRun
-from bulletins.services.data_fetcher import upsert_bulletin
+from bulletins.services.slf_fetcher import upsert_bulletin
 
 logger = logging.getLogger(__name__)
 

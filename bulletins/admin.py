@@ -43,8 +43,8 @@ from bulletins.models import (
     RegionDayRating,
     WeatherSnapshot,
 )
-from bulletins.services.data_fetcher import run_pipeline
 from bulletins.services.meteofrance_archive_loader import load_meteofrance_archive
+from bulletins.services.slf_fetcher import run_pipeline
 from bulletins.services.weather_fetcher import fetch_all_regions
 from core.utils import html_to_markdown
 

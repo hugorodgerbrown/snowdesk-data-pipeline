@@ -266,7 +266,7 @@ Check:
 Targeted review of high-value paths:
 
 - **SLF ingest pipeline** —
-  [`pipeline/services/data_fetcher.py:43`](pipeline/services/data_fetcher.py:43)
+  [`pipeline/services/slf_fetcher.py:43`](pipeline/services/slf_fetcher.py:43)
   is `fetch_bulletin_page()`. Check: URL is env-driven via
   `settings.SLF_API_BASE_URL`, `requests.get` uses the implicit
   `verify=True`, 30 s timeout is set, JSON parsing has size guard or

@@ -41,12 +41,12 @@ import requests
 from django.conf import settings
 
 from bulletins.models import Bulletin, PipelineRun
-from bulletins.services.data_fetcher import UnknownRegionError, upsert_bulletin
 from bulletins.services.meteofrance_translator import (
     MeteoFranceDelegatedRegionError,
     MeteoFranceTranslationError,
     parse_dpbra_xml,
 )
+from bulletins.services.slf_fetcher import UnknownRegionError, upsert_bulletin
 
 logger = logging.getLogger(__name__)
 

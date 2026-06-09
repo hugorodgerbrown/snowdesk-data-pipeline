@@ -203,7 +203,7 @@ def _process_line(
         counts: Mutable counter object updated by this call.
 
     """
-    from bulletins.services.data_fetcher import upsert_bulletin
+    from bulletins.services.slf_fetcher import upsert_bulletin
 
     properties = _parse_envelope(raw_line, line_number)
     if properties is None:

@@ -2,7 +2,7 @@
 bulletins/services/meteofrance_translator.py — DPBRA XML → CAAML JSON translator.
 
 Converts a single Météo-France DPBRA XML document into the CAAML v6 JSON dict
-shape that ``upsert_bulletin()`` in ``bulletins/services/data_fetcher.py``
+shape that ``upsert_bulletin()`` in ``bulletins/services/slf_fetcher.py``
 consumes — identical in structure to the payloads produced by the SLF and
 ALBINA adapters.
 
@@ -19,7 +19,7 @@ receives a dict back, or catches one of the two domain exceptions:
 
 Timezone handling: all ``DATE*`` attributes in DPBRA are naive local time in
 Europe/Paris. They are localised on ingress and emitted as UTC ISO-8601 strings
-ending in ``Z`` — the format ``_parse_dt()`` in ``data_fetcher.py`` expects.
+ending in ``Z`` — the format ``_parse_dt()`` in ``slf_fetcher.py`` expects.
 
 Provider-specific DPBRA content that has no CAAML equivalent is stored under
 ``customData.MF``, mirroring ``customData.CH`` (SLF) and

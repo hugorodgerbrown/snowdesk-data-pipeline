@@ -47,7 +47,7 @@
 import json
 from django.utils import timezone
 from bulletins.models import PipelineRun
-from bulletins.services.data_fetcher import upsert_bulletin
+from bulletins.services.slf_fetcher import upsert_bulletin
 
 run = PipelineRun.objects.create(triggered_by="qa-setup")
 run.mark_running()
