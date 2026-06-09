@@ -2,6 +2,7 @@ __pycache__/
 .claude/settings.local.json
 .eggs/
 .Python
+.understand-anything/
 *.egg-info/
 *.py[cod]
 *.pyd
