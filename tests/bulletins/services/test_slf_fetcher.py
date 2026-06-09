@@ -29,6 +29,7 @@ from bulletins.services.slf_fetcher import (
     _normalise_response,
     _parse_dt,
     _resolve_issued_at,
+    _slf_pdf_url,
     fetch_bulletin_page,
     run_pipeline,
     upsert_bulletin,
@@ -841,3 +842,71 @@ class TestRunPipeline:
         # out-of-range branch terminates pagination — the stash captures
         # the page boundary even though the DB does not.
         assert seen == ["future", "in-range", "too-old"]
+
+
+# ---------------------------------------------------------------------------
+# _slf_pdf_url
+# ---------------------------------------------------------------------------
+
+
+class TestSlfPdfUrl:
+    """Tests for _slf_pdf_url URL derivation (pure, no DB)."""
+
+    def test_afternoon_issue_produces_1700_url(self) -> None:
+        """A bulletin published at 16:00 UTC (17:00 CET) uses the 17-00 slot."""
+        raw = _make_raw_bulletin(publication_time="2026-03-15T16:00:00Z", lang="en")
+        url = _slf_pdf_url(raw)
+        assert url == (
+            "https://www.slf.ch/fileadmin/avalanche_bulletin/pdf/"
+            "2026/03/Bulletin_2026-03-15_17-00_en.pdf"
+        )
+
+    def test_morning_update_produces_0800_url(self) -> None:
+        """A bulletin published at 07:00 UTC (08:00 CET) uses the 08-00 slot."""
+        raw = _make_raw_bulletin(publication_time="2026-03-15T07:00:00Z", lang="en")
+        url = _slf_pdf_url(raw)
+        assert url == (
+            "https://www.slf.ch/fileadmin/avalanche_bulletin/pdf/"
+            "2026/03/Bulletin_2026-03-15_08-00_en.pdf"
+        )
+
+    def test_hour_exactly_12_uses_1700(self) -> None:
+        """UTC hour == 12 is >= 12, so it maps to the 17-00 slot."""
+        raw = _make_raw_bulletin(publication_time="2026-03-15T12:00:00Z", lang="en")
+        url = _slf_pdf_url(raw)
+        assert "_17-00_" in url
+
+    def test_hour_11_uses_0800(self) -> None:
+        """UTC hour == 11 is < 12, so it maps to the 08-00 slot."""
+        raw = _make_raw_bulletin(publication_time="2026-03-15T11:59:59Z", lang="en")
+        url = _slf_pdf_url(raw)
+        assert "_08-00_" in url
+
+    def test_german_language_variant(self) -> None:
+        """Language is taken from raw['lang'] and embedded in the filename."""
+        raw = _make_raw_bulletin(publication_time="2026-03-15T16:00:00Z", lang="de")
+        url = _slf_pdf_url(raw)
+        assert url.endswith("_17-00_de.pdf")
+
+    def test_folder_uses_issue_date(self) -> None:
+        """The year/month folder is derived from the issue date, not validity."""
+        raw = _make_raw_bulletin(publication_time="2025-12-31T16:00:00Z", lang="en")
+        url = _slf_pdf_url(raw)
+        # Folder must be 2025/12, not 2026/01
+        assert "/2025/12/" in url
+
+
+@pytest.mark.django_db
+class TestSlfPdfUrlUpsertRoundTrip:
+    """Round-trip test: upsert_bulletin stores pdf_url in the database."""
+
+    def test_pdf_url_persisted_on_create(self) -> None:
+        """upsert_bulletin stores the supplied pdf_url on the created Bulletin."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        MicroRegionFactory.create(region_id="CH-7111")
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin(publication_time="2026-03-15T16:00:00Z", lang="en")
+        expected_url = _slf_pdf_url(raw)
+        upsert_bulletin(raw, run, pdf_url=expected_url)
+        b = Bulletin.objects.get(bulletin_id="test-001")
+        assert b.pdf_url == expected_url
