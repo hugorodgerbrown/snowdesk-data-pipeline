@@ -1,0 +1,160 @@
+{
+  "bulletinID": "0333d1d0-17eb-4e22-9fc9-98a914a3984e",
+  "lang": "en",
+  "validTime": {
+    "startTime": "2026-03-05T16:00:00Z",
+    "endTime": "2026-03-06T16:00:00Z"
+  },
+  "nextUpdate": "2026-03-06T07:00:00Z",
+  "unscheduled": false,
+  "regions": [
+    {
+      "regionID": "CH-7222",
+      "name": "unteres Puschlav"
+    },
+    {
+      "regionID": "CH-7231",
+      "name": "Münstertal"
+    },
+    {
+      "regionID": "CH-7126",
+      "name": "Val S-charl"
+    },
+    {
+      "regionID": "CH-7113",
+      "name": "Zuoz"
+    },
+    {
+      "regionID": "CH-5234",
+      "name": "Bivio"
+    },
+    {
+      "regionID": "CH-7125",
+      "name": "Val dal Spöl"
+    },
+    {
+      "regionID": "CH-7111",
+      "name": "Corvatsch"
+    },
+    {
+      "regionID": "CH-7115",
+      "name": "Val Chamuera"
+    },
+    {
+      "regionID": "CH-7211",
+      "name": "Bergell"
+    },
+    {
+      "regionID": "CH-5233",
+      "name": "Avers"
+    },
+    {
+      "regionID": "CH-7221",
+      "name": "oberes Puschlav"
+    },
+    {
+      "regionID": "CH-7114",
+      "name": "St. Moritz"
+    },
+    {
+      "regionID": "CH-7112",
+      "name": "Bernina"
+    }
+  ],
+  "dangerRatings": [
+    {
+      "mainValue": "considerable",
+      "validTimePeriod": "all_day",
+      "customData": {
+        "CH": {
+          "subdivision": "minus"
+        }
+      }
+    },
+    {
+      "mainValue": "moderate",
+      "validTimePeriod": "later"
+    }
+  ],
+  "avalancheProblems": [
+    {
+      "problemType": "persistent_weak_layers",
+      "comment": "Distinct weak layers exist in the bottom section of the snowpack. Avalanches can be released by a single winter sport participant. Caution is to be exercised in particular in areas where the snow cover is rather shallow, as well as at transitions from a shallow to a deep snowpack. Avalanches can be triggered in near-ground layers and reach large size. Isolated whumpfing sounds can indicate the danger. <br/> The avalanche prone locations are barely recognisable. Backcountry touring and other off-piste activities call for caution and restraint.",
+      "dangerRatingValue": "considerable",
+      "validTimePeriod": "all_day",
+      "elevation": {
+        "lowerBound": "2200"
+      },
+      "aspects": [
+        "N",
+        "NE",
+        "E",
+        "NW"
+      ],
+      "customData": {
+        "CH": {
+          "subdivision": "minus",
+          "coreZoneText": "Danger level \"considerable\" (3-) in northwest to northeast to east facing aspects above 2200m."
+        }
+      }
+    },
+    {
+      "problemType": "wet_snow",
+      "comment": "As a consequence of warming during the day and the solar radiation, the likelihood of wet slab avalanches being released will increase. These can be triggered in the old snowpack and reach medium size. They can sometimes be released by people. The avalanche prone locations are to be found in particular between approximately 1600 and 2600 m. <br/> Backcountry tours and off-piste skiing should be concluded timely.",
+      "dangerRatingValue": "moderate",
+      "validTimePeriod": "later",
+      "elevation": {
+        "upperBound": "2600"
+      },
+      "aspects": [
+        "E",
+        "SE",
+        "S",
+        "SW",
+        "W"
+      ],
+      "customData": {
+        "CH": {
+          "coreZoneText": "Danger level \"moderate\" (2) in east to south to west facing aspects below 2600m."
+        }
+      }
+    }
+  ],
+  "customData": {
+    "CH": {
+      "aggregation": [
+        {
+          "category": "dry",
+          "validTimePeriod": "all_day",
+          "problemTypes": [
+            "persistent_weak_layers"
+          ],
+          "title": "Dry avalanches, whole day"
+        },
+        {
+          "category": "wet",
+          "validTimePeriod": "later",
+          "problemTypes": [
+            "wet_snow"
+          ],
+          "title": "Wet-snow avalanches, as the day progresses"
+        }
+      ]
+    }
+  },
+  "publicationTime": "2026-03-05T16:00:00Z",
+  "weatherForecast": {
+    "comment": "<h1>Weather forecast to Friday</h1><p>The outgoing longwave radiation during the night will be reduced somewhat by high clouds. It will be quite sunny during the day, especially in the east. However, there will be sometimes denser medium and high cloud cover and visibility will be obscured by Sahara dust.</p><h2 contenteditable=\"false\">Fresh snow</h2><p>-</p><h2 contenteditable=\"false\">Temperature</h2><p>At midday at 2000 m, around +5 °C in the north and +2 °C in the south</p><h2>Wind</h2><p>Mainly light from the south to southeast</p>"
+  },
+  "weatherReview": {
+    "comment": "<h1>Weather review for Thursday</h1><p>After a clear night, it was mostly sunny and mild. The sky was somewhat obscured by Sahara dust, especially in the west.</p><h2>Fresh snow</h2><p>-</p><h2>Temperature</h2><p>At midday at 2000 m, between +7 °C in the northwest and +2 °C in the south</p><h2>Wind</h2><p>Mainly light, sometimes moderate from the south at high altitudes and in the foehn valleys</p>"
+  },
+  "snowpackStructure": {
+    "comment": "<h1>Snowpack</h1><p>In the regions situated north of a line Rhône-Rhine and in the extreme west of Lower Valais, weak layers in the snowpack are mostly thickly covered and are hardly triggerable by human activity.</p><p>In the regions situated south of a line Rhône-Rhine, the persistent weak layers that have been a feature since the beginning of January are still present. However, the number of avalanche-prone locations has decreased significantly. Reports of avalanches and alarm signs indicate that the situation in Grisons remains the most precarious.</p><p>Weak layers in the lower part of the snowpack are being weakened as they become moistened for the first time. Wet slab avalanches are possible as the day progresses. These can occur naturally but can also be triggered by winter sports participants, at present mainly on sunny slopes below approximately 2800 m.</p>"
+  },
+  "tendency": [
+    {
+      "comment": "<h1>Outlook to Sunday</h1><p>The nights will be partly clear. However, the cloud cover is uncertain due to the Sahara dust. On Saturday, it will be quite sunny despite cirrostratus clouds and obscured visibility due to Sahara dust. On Sunday, it will be increasingly cloudy in the south. There will be cumulus clouds in the Jura and along the Prealps. Otherwise it will remain quite sunny. On Saturday, the zero-degree level will be around 2700 m in the north and 2200 m in the south. On Sunday, it will drop by around 200 m. The winds will be mainly light.</p><p>The danger of dry avalanches will continue to decrease, but only slowly in Grisons due to the weak snowpack structure. Each day, the danger of wet avalanches will increase as the day progresses. Where outgoing longwave radiation has reduced during the night, the danger will increase in the morning. Touring and off-piste descents should be completed in good time.</p>"
+    }
+  ]
+}

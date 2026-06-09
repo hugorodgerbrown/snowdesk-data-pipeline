@@ -1,0 +1,118 @@
+{
+  "avalancheActivity": {
+    "comment": "On steep grassy slopes individual gliding avalanches are possible, especially on sunny slopes below approximately 2400 m. <br/> In addition below approximately 1800 m, small wet loose snow slides are to be expected. <br/> <br/> Weak layers in the lower part of the snowpack can be released in very isolated cases in particular on very steep shady slopes. Such avalanche prone locations are to be found on shady slopes above approximately 2200 m. Such avalanche prone locations are very rare but are difficult to recognise.",
+    "highlights": "Gliding avalanches and moist snow slides are possible. Weakly bonded old snow requires caution."
+  },
+  "avalancheProblems": [
+    {
+      "aspects": [
+        "SE",
+        "SW",
+        "E",
+        "S",
+        "W"
+      ],
+      "avalancheSize": 2,
+      "customData": {
+        "ALBINA": {
+          "avalancheType": "glide"
+        }
+      },
+      "elevation": {
+        "upperBound": "2400"
+      },
+      "frequency": "few",
+      "problemType": "gliding_snow",
+      "snowpackStability": "very_poor",
+      "validTimePeriod": "all_day"
+    }
+  ],
+  "bulletinID": "4441f095-5890-4047-8dd7-5e9c223964aa",
+  "customData": {
+    "ALBINA": {
+      "mainDate": "2025-11-29"
+    },
+    "LWD_Tyrol": {
+      "dangerPatterns": [
+        "DP2",
+        "DP1"
+      ]
+    }
+  },
+  "dangerRatings": [
+    {
+      "mainValue": "low",
+      "validTimePeriod": "all_day"
+    }
+  ],
+  "lang": "en",
+  "publicationTime": "2025-11-28T18:06:01Z",
+  "regions": [
+    {
+      "name": "Lechtal Alps East",
+      "regionID": "AT-07-02-02"
+    },
+    {
+      "name": "Ammergau Alps South",
+      "regionID": "AT-07-02-01"
+    },
+    {
+      "name": "Kitzbühel Alps Wildschönau",
+      "regionID": "AT-07-17-02"
+    },
+    {
+      "name": "Kitzbühel Alps Brixental",
+      "regionID": "AT-07-17-01"
+    },
+    {
+      "name": "Allgäu Alps East",
+      "regionID": "AT-07-01"
+    },
+    {
+      "name": "Mieming Mountains",
+      "regionID": "AT-07-03"
+    },
+    {
+      "name": "Brandenberg Alps",
+      "regionID": "AT-07-05"
+    },
+    {
+      "name": "Kaiser Mountains - Waidring Alps",
+      "regionID": "AT-07-06"
+    },
+    {
+      "name": "Kitzbühel Alps Wildseeloder",
+      "regionID": "AT-07-18"
+    },
+    {
+      "name": "Lechtal Alps Central",
+      "regionID": "AT-07-08"
+    },
+    {
+      "name": "Karwendel Mountains East",
+      "regionID": "AT-07-04-02"
+    },
+    {
+      "name": "Karwendel Mountains West",
+      "regionID": "AT-07-04-01"
+    }
+  ],
+  "snowpackStructure": {
+    "comment": "Over a wide area 20 to 40 cm of snow, and even more in some localities, has fallen since Monday. The wind was light to moderate. The snowpack will be in most cases well bonded. Isolated avalanche prone weak layers exist in the old snowpack on steep shady slopes. This applies in particular in places that are protected from the wind at elevated altitudes."
+  },
+  "tendency": [
+    {
+      "highlights": "The conditions are generally favourable.",
+      "tendencyType": "steady",
+      "validTime": {
+        "endTime": "2025-11-30T16:00:00Z",
+        "startTime": "2025-11-29T16:00:00Z"
+      }
+    }
+  ],
+  "unscheduled": true,
+  "validTime": {
+    "endTime": "2025-11-29T16:00:00Z",
+    "startTime": "2025-11-28T16:00:00Z"
+  }
+}

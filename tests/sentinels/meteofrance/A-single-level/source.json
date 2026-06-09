@@ -1,0 +1,97 @@
+{
+  "bulletinID": "FR-08-2026-05-18",
+  "lang": "fr",
+  "validTime": {
+    "startTime": "2026-05-17T14:00:00Z",
+    "endTime": "2026-05-18T16:00:00Z"
+  },
+  "publicationTime": "2026-05-17T13:37:00Z",
+  "unscheduled": false,
+  "regions": [
+    {
+      "regionID": "FR-08",
+      "name": "Belledonne"
+    }
+  ],
+  "dangerRatings": [
+    {
+      "mainValue": "moderate",
+      "validTimePeriod": "all_day"
+    }
+  ],
+  "avalancheProblems": [
+    {
+      "problemType": "wet_snow",
+      "aspects": [
+        "N",
+        "NE"
+      ],
+      "validTimePeriod": "all_day"
+    }
+  ],
+  "avalancheActivity": {
+    "highlights": "Départs spontanés : En pentes Nord raides, possibles coulées et petites avalanches humides...",
+    "comment": "<p>Il reste 30/40 cm de neige récente en versants froids d&#x27;altitude. Amorce de stabilisation, mais avec les petites pluies prévues, de possibles nouvelles coulées humides, notamment en pentes Nord...</p><p>Départs spontanés :</p><p>Pas de regel sous 2400m et humidification lundi en toutes orientations jusque vers 2500 voire 2800m.</p><p>En faces Nord notamment on s&#x27;attend à quelques nouvelles coulées spontanées ou petites avalanches humides.</p><p>En faces Sud moins de neige en place et plus dense déjà...</p><p>Déclenchements provoqués :</p><p>Là où la neige est bien humide en surface, en pentes soutenues, un skieur pourrait facilement amorcer une coulée ponctuelle. Accroche assez médiocre sous le fond plus dense/ferme ? Il reste davantage de neige en faces &quot;ombragées&quot;...</p><p>Enfin en faces Nord sommitales, il peut rester un peu de neige froide ventée, une rupture de mince plaque n&#x27;est pas totalement exclue.</p>"
+  },
+  "tendency": [
+    {
+      "tendencyType": "decreasing",
+      "highlights": "Indice de risque faible",
+      "comment": "<h2>Risque d&#x27;avalanche en légère baisse mardi</h2><p>Nuages/ douceur. Tassement ou fonte de la couche de neige récente. Moins de risque de coulée spontané et anciens névés stables...</p>",
+      "validTime": {
+        "startTime": "2026-05-18T22:00:00Z",
+        "endTime": "2026-05-19T22:00:00Z"
+      }
+    }
+  ],
+  "customData": {
+    "MF": {
+      "mfInternalId": 8,
+      "amendment": false,
+      "rawLocalTimes": {
+        "issuedAt": "2026-05-17T16:00:00",
+        "validTo": "2026-05-18T18:00:00",
+        "publishedAt": "2026-05-17T15:37:00"
+      },
+      "images": {
+        "danger": "montagne_risques_8.png",
+        "aspectRose": "rose_pentes_8.png"
+      },
+      "snowCover": {
+        "date": "2026-05-17T00:00:00",
+        "snowLineNorthM": 1500,
+        "snowLineSouthM": 1800,
+        "depthsCm": [
+          {
+            "altitudeM": 1500,
+            "north": 2,
+            "south": 0
+          },
+          {
+            "altitudeM": 2000,
+            "north": 95,
+            "south": 20
+          },
+          {
+            "altitudeM": 2500,
+            "north": 230,
+            "south": 75
+          }
+        ]
+      },
+      "j2Outlook": {
+        "maxDanger": 1,
+        "date": "2026-05-19T00:00:00",
+        "label": "Indice de risque faible",
+        "comment": "Risque d'avalanche en légère baisse mardi : Nuages/ douceur. Tassement ou fonte de la couche de neige récente. Moins de risque de coulée spontané et anciens névés stables..."
+      },
+      "redundantProse": {
+        "accidentel": "En pente soutenue et humidifiée, coulée humide ponctuelle sous les skis... En Nord sommital, rare mince plaque ?",
+        "naturel": "En pentes Nord raides, possibles coulées et petites avalanches humides..."
+      }
+    }
+  },
+  "snowpackStructure": {
+    "comment": "<h2>Qualification de l’enneigement</h2><p>Grâce au récent coup de froid l&#x27;enneigement s&#x27;est récemment amélioré, mais lundi les limites skiables remontent à nouveau,  rochers parfois juste recouverts. En revanche les combes d&#x27;altitude restent bien enneigées.</p><p>Limites skiables : Vers 1800/2300m environ, parfois plus haut en Sud raide.</p><h2>Qualité de la neige lundi</h2><p>Neige bien humide jusque vers 2300 puis 2500/2700m suivant les faibles précipitations et le éclaircies.</p><p>Localement saupoudrage de neige fraîche possible en altitude...</p><p>Neige de surface plus collante à pourrie en faces Nord, où le soleil l&#x27;a moins transformée...</p>"
+  }
+}

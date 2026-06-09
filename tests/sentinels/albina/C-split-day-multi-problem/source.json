@@ -1,0 +1,137 @@
+{
+  "avalancheActivity": {
+    "comment": "The new snow and wind slabs are lying on top of a weakly bonded old snowpack. Even single winter sport participants can release avalanches in some places. In particular shady slopes are dangerous, especially in areas close to the tree line, as well as above the tree line. <br/> <br/> As a consequence of warming during the day and solar radiation loose snow avalanches are to be expected as the day progresses. This applies in particular on steep sunny slopes. <br/> <br/> In addition gliding avalanches are possible. This applies especially on cut and grassy slopes.",
+    "highlights": "Weakly bonded old snow requires caution. Increase in danger of wet avalanches in the course of the day."
+  },
+  "avalancheProblems": [
+    {
+      "aspects": [
+        "N",
+        "NW",
+        "NE"
+      ],
+      "avalancheSize": 2,
+      "customData": {
+        "ALBINA": {
+          "avalancheType": "slab"
+        }
+      },
+      "elevation": {
+        "lowerBound": "treeline"
+      },
+      "frequency": "some",
+      "problemType": "persistent_weak_layers",
+      "snowpackStability": "poor",
+      "validTimePeriod": "earlier"
+    },
+    {
+      "aspects": [
+        "NW",
+        "N",
+        "NE"
+      ],
+      "avalancheSize": 2,
+      "customData": {
+        "ALBINA": {
+          "avalancheType": "slab"
+        }
+      },
+      "elevation": {
+        "lowerBound": "treeline"
+      },
+      "frequency": "some",
+      "problemType": "persistent_weak_layers",
+      "snowpackStability": "poor",
+      "validTimePeriod": "later"
+    },
+    {
+      "aspects": [
+        "SE",
+        "W",
+        "SW",
+        "S"
+      ],
+      "avalancheSize": 2,
+      "customData": {
+        "ALBINA": {
+          "avalancheType": "loose"
+        }
+      },
+      "elevation": {},
+      "frequency": "some",
+      "problemType": "wet_snow",
+      "snowpackStability": "very_poor",
+      "validTimePeriod": "later"
+    }
+  ],
+  "bulletinID": "27357867-b6eb-47a3-9542-d3a91e77eb6d",
+  "customData": {
+    "ALBINA": {
+      "mainDate": "2026-02-26"
+    },
+    "LWD_Tyrol": {
+      "dangerPatterns": [
+        "DP1",
+        "DP10"
+      ]
+    }
+  },
+  "dangerRatings": [
+    {
+      "elevation": {
+        "upperBound": "treeline"
+      },
+      "mainValue": "low",
+      "validTimePeriod": "earlier"
+    },
+    {
+      "elevation": {
+        "lowerBound": "treeline"
+      },
+      "mainValue": "considerable",
+      "validTimePeriod": "earlier"
+    },
+    {
+      "mainValue": "considerable",
+      "validTimePeriod": "later"
+    }
+  ],
+  "lang": "en",
+  "publicationTime": "2026-02-25T16:00:00Z",
+  "regions": [
+    {
+      "name": "Brandenberg Alps",
+      "regionID": "AT-07-05"
+    },
+    {
+      "name": "Kaiser Mountains - Waidring Alps",
+      "regionID": "AT-07-06"
+    },
+    {
+      "name": "Kitzb\u00fchel Alps Wildseeloder",
+      "regionID": "AT-07-18"
+    },
+    {
+      "name": "Karwendel Mountains East",
+      "regionID": "AT-07-04-02"
+    }
+  ],
+  "snowpackStructure": {
+    "comment": "On Thursday it will be very mild over a wide area. <br/> The surface of the snowpack will freeze to form a strong crust and will soften during the day. Sunshine and high temperatures will give rise as the day progresses to extreme and thorough wetting of the snowpack in particular on steep sunny slopes. <br/> <br/> Shady slopes: The snowpack remains prone to triggering in some places. Large quantities of fresh snow and the wind-drifted snow of the last few days are bonding only slowly with the old snowpack in particular on shady slopes. As a consequence of mild temperatures the snow drift accumulations stabilised."
+  },
+  "tendency": [
+    {
+      "highlights": "As a consequence of warming and solar radiation, the activity of wet avalanches will increase. Weakly bonded old snow is to be evaluated critically.",
+      "tendencyType": "steady",
+      "validTime": {
+        "endTime": "2026-02-27T16:00:00Z",
+        "startTime": "2026-02-26T16:00:00Z"
+      }
+    }
+  ],
+  "unscheduled": false,
+  "validTime": {
+    "endTime": "2026-02-26T16:00:00Z",
+    "startTime": "2026-02-25T16:00:00Z"
+  }
+}
