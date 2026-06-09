@@ -123,7 +123,7 @@ class Command(BaseCommand):
         Iterate the bulletin archive and accumulate wet-snow coverage stats.
 
         Source is detected from ``raw_data.properties.customData`` keys
-        (the same logic as ``_detect_source`` in render_model.py) rather
+        (the same logic as ``detect_source`` in render_model.py) rather
         than from a model field, because the Bulletin model does not store
         source as a dedicated database column.
 
@@ -217,7 +217,7 @@ def _detect_source_slug(properties: dict[str, Any]) -> str:
     """
     Detect the bulletin source from ``customData`` keys.
 
-    Mirrors the logic in ``render_model._detect_source`` but returns a plain
+    Mirrors the logic in ``render_model.detect_source`` but returns a plain
     string slug instead of a ``Bulletin.Source`` enum member, so this module
     stays free of Django ORM imports beyond what the management command base
     already requires.

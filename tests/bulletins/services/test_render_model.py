@@ -31,7 +31,6 @@ from bulletins.services.render_model import (
     RenderModelBuildError,
     _build_metadata,
     _build_prose,
-    _detect_source,
     _parse_elevation,
     _parse_iso_timestamp,
     _resolve_aggregations,
@@ -45,6 +44,7 @@ from bulletins.services.render_model import (
     band_label_for_elevation,
     build_render_model,
     compute_day_character,
+    detect_source,
 )
 
 # Path to test fixtures directory.
@@ -1716,33 +1716,33 @@ class TestQuietDayV3:
 
 
 # ---------------------------------------------------------------------------
-# Version 4 — _detect_source
+# Version 4 — detect_source
 # ---------------------------------------------------------------------------
 
 
 class TestDetectSource:
-    """Tests for _detect_source helper."""
+    """Tests for detect_source helper."""
 
     def test_slf_via_ch_custom_data(self) -> None:
         """Properties with customData.CH → Bulletin.Source.SLF."""
         props: dict[str, Any] = {
             "customData": {"CH": {"aggregation": []}},
         }
-        assert _detect_source(props) == Bulletin.Source.SLF
+        assert detect_source(props) == Bulletin.Source.SLF
 
     def test_albina_via_albina_custom_data(self) -> None:
         """Properties with customData.ALBINA → Bulletin.Source.ALBINA."""
         props: dict[str, Any] = {
             "customData": {"ALBINA": {"mainDate": "2026-05-03"}},
         }
-        assert _detect_source(props) == Bulletin.Source.ALBINA
+        assert detect_source(props) == Bulletin.Source.ALBINA
 
     def test_albina_via_lwd_key(self) -> None:
         """Properties with customData.LWD_Tyrol → Bulletin.Source.ALBINA."""
         props: dict[str, Any] = {
             "customData": {"LWD_Tyrol": {"dangerPatterns": ["DP10"]}},
         }
-        assert _detect_source(props) == Bulletin.Source.ALBINA
+        assert detect_source(props) == Bulletin.Source.ALBINA
 
     def test_albina_via_combined_custom_data(self) -> None:
         """Properties with both ALBINA and LWD_Tyrol → Bulletin.Source.ALBINA."""
@@ -1752,14 +1752,14 @@ class TestDetectSource:
                 "LWD_Tyrol": {"dangerPatterns": ["DP10"]},
             },
         }
-        assert _detect_source(props) == Bulletin.Source.ALBINA
+        assert detect_source(props) == Bulletin.Source.ALBINA
 
     def test_meteofrance_via_mf_custom_data(self) -> None:
         """Properties with customData.MF → Bulletin.Source.METEOFRANCE."""
         props: dict[str, Any] = {
             "customData": {"MF": {"massif_id": "1"}},
         }
-        assert _detect_source(props) == Bulletin.Source.METEOFRANCE
+        assert detect_source(props) == Bulletin.Source.METEOFRANCE
 
     def test_raises_when_no_custom_data(self) -> None:
         """No customData → RenderModelBuildError naming the offending keys."""
@@ -1767,7 +1767,7 @@ class TestDetectSource:
         with pytest.raises(
             RenderModelBuildError, match="no recognised customData marker"
         ):
-            _detect_source(props)
+            detect_source(props)
 
     def test_raises_when_unknown_custom_data_keys(self) -> None:
         """Unrecognised customData keys → RenderModelBuildError listing the keys."""
@@ -1775,7 +1775,7 @@ class TestDetectSource:
             "customData": {"UNKNOWN": {"foo": "bar"}},
         }
         with pytest.raises(RenderModelBuildError) as exc_info:
-            _detect_source(props)
+            detect_source(props)
         assert "UNKNOWN" in str(exc_info.value)
 
 
