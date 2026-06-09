@@ -183,6 +183,7 @@ class BulletinAdmin(admin.ModelAdmin):
         "region_count",
         "highest_danger_rating",
         "danger_ratings",
+        "pdf_url",
         "updated_at",
     ]
     list_filter = ["lang", "unscheduled", "issued_at"]
@@ -203,6 +204,7 @@ class BulletinAdmin(admin.ModelAdmin):
         "weather_review",
         "snowpack_structure",
         "tendency",
+        "pdf_url",
         "raw_data_pretty",
         "render_model_pretty",
         "created_at",
