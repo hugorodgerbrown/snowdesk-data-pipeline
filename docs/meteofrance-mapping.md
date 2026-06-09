@@ -4,7 +4,7 @@
 **Scope:** authoritative field-by-field translation reference for the
 MeteoFrance source adapter — a function that converts one DPBRA XML
 document into the same CAAML JSON dict shape that SLF and ALBINA emit,
-ready to feed straight into `bulletins/services/data_fetcher.py::upsert_bulletin()`.
+ready to feed straight into `bulletins/services/slf_fetcher.py::upsert_bulletin()`.
 **Source format:** Météo-France DPBRA XML
 (`<BULLETINS_NEIGE_AVALANCHE>` root element with bulletin attributes on
 the root itself — there is no inner `<BULLETIN>` wrapper despite the
@@ -96,7 +96,7 @@ separates MF from SLF (`CH-`) and ALBINA (`AT-…`, `IT-…`).
 Every `DATE*` attribute in DPBRA is naive local time in Europe/Paris. The
 translator MUST localise on the way in and emit ISO-8601 UTC strings
 ending in `Z` — exactly the format SLF emits, exactly what
-`_parse_dt()` in `data_fetcher.py` expects:
+`_parse_dt()` in `slf_fetcher.py` expects:
 
 ```python
 PARIS = ZoneInfo("Europe/Paris")

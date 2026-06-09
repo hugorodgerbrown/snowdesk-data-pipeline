@@ -43,9 +43,9 @@ from typing import Literal, cast
 from django.conf import settings
 from django.http import HttpRequest, JsonResponse
 
-from bulletins.services.data_fetcher import PAGE_SIZE
 from bulletins.services.openmeteo_archive import read_archive as read_openmeteo_archive
 from bulletins.services.slf_archive import read_archive
+from bulletins.services.slf_fetcher import PAGE_SIZE
 from regions.models import Centre, MicroRegion
 
 logger = logging.getLogger(__name__)

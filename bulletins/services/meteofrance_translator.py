@@ -2,7 +2,7 @@
 bulletins/services/meteofrance_translator.py — DPBRA XML → CAAML JSON translator.
 
 Converts a single Météo-France DPBRA XML document into the CAAML v6 JSON dict
-shape that ``upsert_bulletin()`` in ``bulletins/services/data_fetcher.py``
+shape that ``upsert_bulletin()`` in ``bulletins/services/slf_fetcher.py``
 consumes — identical in structure to the payloads produced by the SLF and
 ALBINA adapters.
 
@@ -19,7 +19,7 @@ receives a dict back, or catches one of the two domain exceptions:
 
 Timezone handling: all ``DATE*`` attributes in DPBRA are naive local time in
 Europe/Paris. They are localised on ingress and emitted as UTC ISO-8601 strings
-ending in ``Z`` — the format ``_parse_dt()`` in ``data_fetcher.py`` expects.
+ending in ``Z`` — the format ``_parse_dt()`` in ``slf_fetcher.py`` expects.
 
 Provider-specific DPBRA content that has no CAAML equivalent is stored under
 ``customData.MF``, mirroring ``customData.CH`` (SLF) and
@@ -1060,6 +1060,10 @@ def parse_dpbra_xml(xml_bytes: bytes) -> dict[str, Any]:
         date_validite=date_validite,
         date_diffusion=date_diffusion,
     )
+    # Add the canonical upper-case massif slug so downstream consumers
+    # (ingest PDF-URL resolver, backfill) can use customData.MF.massif
+    # instead of uppercasing regions[0]["name"] themselves.
+    custom_data_mf["massif"] = massif_name.upper()
 
     caaml: dict[str, Any] = {
         "bulletinID": bulletin_id,

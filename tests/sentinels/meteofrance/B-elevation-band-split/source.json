@@ -103,7 +103,8 @@
       "redundantProse": {
         "accidentel": "Neige humide sous les skis.",
         "naturel": "Neige humide au fil du réchauffement diurne."
-      }
+      },
+      "massif": "ARAVIS"
     }
   },
   "snowpackStructure": {

@@ -18,7 +18,7 @@ regions/         Geographic reference data — MicroRegion / MajorRegion /
                  (dump_resorts_fixture, refresh_eaws_fixtures)
 bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
                  PipelineRun, RegionDayRating, WeatherSnapshot, the ingestion
-                 services (data_fetcher, render_model, day_rating, slf_archive,
+                 services (slf_fetcher, render_model, day_rating, slf_archive,
                  weather_fetcher), the bulletin and weather ingestion commands
                  (see docs/management-commands.md), and the admin classes for
                  those models

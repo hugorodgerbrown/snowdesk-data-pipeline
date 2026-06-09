@@ -73,7 +73,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from bulletins.models import PipelineRun
-from bulletins.services.data_fetcher import (
+from bulletins.services.slf_fetcher import (
     SOURCE_CHOICES,
     BulletinSource,
     get_sources,

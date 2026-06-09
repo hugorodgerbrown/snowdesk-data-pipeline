@@ -44,7 +44,7 @@ Version 3 (continued — no shape change requiring regeneration):
     returned empty traits instead of synthesising from problem types.
 
 Version 4 changes:
-  - Source-aware builder: ``_detect_source()`` identifies SLF vs. ALBINA
+  - Source-aware builder: ``detect_source()`` identifies SLF vs. ALBINA
     bulletins and routes to source-specific helpers. Now also supports
     MeteoFrance (``"meteofrance"`` / ``Bulletin.Source.METEOFRANCE``). Raises
     ``RenderModelBuildError`` on unrecognised ``customData`` keys — the
@@ -364,7 +364,7 @@ def _resolve_danger(
 # ---------------------------------------------------------------------------
 
 
-def _detect_source(properties: dict[str, Any]) -> Bulletin.Source:
+def detect_source(properties: dict[str, Any]) -> Bulletin.Source:
     """
     Detect whether a bulletin originates from SLF, ALBINA, or MeteoFrance.
 
@@ -373,10 +373,11 @@ def _detect_source(properties: dict[str, Any]) -> Bulletin.Source:
     - ``"MF"`` → MeteoFrance.
     - ``"CH"`` → SLF.
 
-    Raises ``RenderModelBuildError`` when the ``customData`` keys do not match
-    any known source. The previous silent SLF fallback is removed: unknown
-    sources must surface immediately so they can be handled, not silently
-    misfiled as SLF bulletins.
+    This is the canonical source-detection logic shared by the render-model
+    builder and the ``backfill_pdf_urls`` management command.  Using
+    ``customData`` as the discriminator makes detection robust against stale
+    ``render_model["source"]`` values (e.g. the legacy ``"euregio"`` value
+    written by older pipeline versions).
 
     Args:
         properties: The CAAML properties dict.
@@ -1824,7 +1825,7 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     caller is responsible for catching this and storing an error sentinel.
 
     Supports SLF, ALBINA, and MeteoFrance (METEOFRANCE) bulletin formats.
-    The source is detected automatically via ``_detect_source()`` and
+    The source is detected automatically via ``detect_source()`` and
     stamped in the output as ``render_model["source"]``.
 
     Args:
@@ -1842,7 +1843,7 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     """
     bulletin_id: str = properties.get("bulletinID", "<unknown>")
 
-    source = _detect_source(properties)
+    source = detect_source(properties)
 
     ratings: list[dict[str, Any]] = properties.get("dangerRatings") or []
     danger = _resolve_danger(ratings, source)

@@ -9,6 +9,8 @@ Covers:
     dry-run, force, HTTP error slot-skip, on_fetched callback.
   - latest_albina_date: returns None when no ALBINA bulletins; returns
     the latest valid_from date otherwise.
+  - _albina_pdf_url: URL derivation for ALBINA archive PDFs (region
+    codes, language, grayscale=false).
 
 All HTTP calls are mocked via unittest.mock.patch so no real network is used.
 """
@@ -21,14 +23,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bulletins.models import Bulletin
 from bulletins.services.albina_fetcher import (
+    _albina_pdf_url,
     _normalise_response,
     _parse_issued_at,
     fetch_albina_for_date,
     latest_albina_date,
     run_albina_pipeline,
 )
-from tests.factories import MicroRegionFactory
+from bulletins.services.slf_fetcher import upsert_bulletin
+from tests.factories import MicroRegionFactory, PipelineRunFactory
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -485,3 +490,87 @@ class TestLatestEuregioDate:
             render_model_version=4,
         )
         assert latest_albina_date() is None
+
+
+# ---------------------------------------------------------------------------
+# _albina_pdf_url
+# ---------------------------------------------------------------------------
+
+
+class TestAlbinaPdfUrl:
+    """Tests for _albina_pdf_url URL derivation (pure, no DB)."""
+
+    def test_euregio_region_produces_correct_url(self) -> None:
+        """EUREGIO region and English language produce the expected URL."""
+        raw = _make_raw_bulletin(
+            validTime={
+                "startTime": "2025-11-30T16:00:00Z",
+                "endTime": "2025-12-01T16:00:00Z",
+            },
+            lang="en",
+        )
+        url = _albina_pdf_url(raw, "EUREGIO")
+        assert "date=2025-11-30T16%3A00%3A00Z" in url
+        assert "region=EUREGIO" in url
+        assert "lang=en" in url
+        assert "grayscale=false" in url
+        assert url.startswith("https://api.avalanche.report/albina/api/bulletins/pdf?")
+
+    def test_province_region_code(self) -> None:
+        """Province codes (AT-07, IT-32-BZ, IT-32-TN) are passed through unchanged."""
+        raw = _make_raw_bulletin(
+            validTime={
+                "startTime": "2025-11-30T16:00:00Z",
+                "endTime": "2025-12-01T16:00:00Z",
+            },
+            lang="de",
+        )
+        url = _albina_pdf_url(raw, "AT-07")
+        assert "region=AT-07" in url
+        assert "lang=de" in url
+
+    def test_it_32_bz_region(self) -> None:
+        """IT-32-BZ region code is URL-encoded correctly."""
+        raw = _make_raw_bulletin(
+            validTime={
+                "startTime": "2026-01-10T16:00:00Z",
+                "endTime": "2026-01-11T16:00:00Z",
+            },
+            lang="it",
+        )
+        url = _albina_pdf_url(raw, "IT-32-BZ")
+        assert "region=IT-32-BZ" in url
+        assert "lang=it" in url
+
+    def test_grayscale_always_false(self) -> None:
+        """The grayscale parameter is always set to false."""
+        raw = _make_raw_bulletin(
+            validTime={
+                "startTime": "2026-01-10T16:00:00Z",
+                "endTime": "2026-01-11T16:00:00Z",
+            },
+        )
+        url = _albina_pdf_url(raw, "AT-07")
+        assert "grayscale=false" in url
+
+
+@pytest.mark.django_db
+class TestAlbinaPdfUrlUpsertRoundTrip:
+    """Round-trip test: pdf_url is stored in the database via upsert_bulletin."""
+
+    def test_pdf_url_persisted_via_upsert(self) -> None:
+        """upsert_bulletin stores the ALBINA pdf_url on the created Bulletin."""
+        MicroRegionFactory.create(region_id="AT-07-01")
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin(
+            validTime={
+                "startTime": "2025-11-30T16:00:00Z",
+                "endTime": "2025-12-01T16:00:00Z",
+            },
+            regions=[{"regionID": "AT-07-01", "name": "Allgäu Alps East"}],
+            lang="en",
+        )
+        expected_url = _albina_pdf_url(raw, "AT-07")
+        upsert_bulletin(raw, run, pdf_url=expected_url)
+        b = Bulletin.objects.get(bulletin_id="albina-001")
+        assert b.pdf_url == expected_url

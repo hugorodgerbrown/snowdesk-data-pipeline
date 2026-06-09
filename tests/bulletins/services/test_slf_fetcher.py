@@ -1,5 +1,5 @@
 """
-tests/bulletins/services/test_data_fetcher.py — Tests for the data_fetcher service.
+tests/bulletins/services/test_slf_fetcher.py — Tests for the slf_fetcher service.
 
 Covers:
   - _normalise_response: all three API response shapes + empty cases
@@ -8,6 +8,7 @@ Covers:
   - upsert_bulletin: creation, update, region linking
   - fetch_bulletin_page: HTTP call with mocked responses
   - run_pipeline: full orchestration with mocked API pages
+  - _slf_pdf_url: URL derivation for SLF archive PDFs
 """
 
 import json
@@ -21,17 +22,18 @@ import requests
 from django.test import override_settings
 
 from bulletins.models import Bulletin, PipelineRun, RegionBulletin, RegionDayRating
-from bulletins.services.data_fetcher import (
+from bulletins.services.render_model import RENDER_MODEL_VERSION, RenderModelBuildError
+from bulletins.services.slf_fetcher import (
     UnknownRegionError,
     _get_region,
     _normalise_response,
     _parse_dt,
     _resolve_issued_at,
+    _slf_pdf_url,
     fetch_bulletin_page,
     run_pipeline,
     upsert_bulletin,
 )
-from bulletins.services.render_model import RENDER_MODEL_VERSION, RenderModelBuildError
 from regions.models import MicroRegion
 from tests.factories import MicroRegionFactory, PipelineRunFactory
 
@@ -458,7 +460,7 @@ class TestUpsertBulletin:
         raw = _make_raw_bulletin()
 
         with patch(
-            "bulletins.services.data_fetcher.build_render_model",
+            "bulletins.services.slf_fetcher.build_render_model",
             side_effect=RenderModelBuildError("boom"),
         ):
             upsert_bulletin(raw, run)
@@ -475,7 +477,7 @@ class TestUpsertBulletin:
         raw = _make_raw_bulletin()
 
         with patch(
-            "bulletins.services.data_fetcher.build_render_model",
+            "bulletins.services.slf_fetcher.build_render_model",
             side_effect=RenderModelBuildError("boom"),
         ):
             upsert_bulletin(raw, run)
@@ -489,7 +491,7 @@ class TestUpsertBulletin:
         raw = _make_raw_bulletin()
 
         with patch(
-            "bulletins.services.data_fetcher.build_render_model",
+            "bulletins.services.slf_fetcher.build_render_model",
             side_effect=ValueError("unexpected error"),
         ):
             with pytest.raises(ValueError, match="unexpected error"):
@@ -524,7 +526,7 @@ class TestUpsertBulletin:
 class TestFetchBulletinPage:
     """Tests for fetch_bulletin_page."""
 
-    @patch("bulletins.services.data_fetcher.requests.get")
+    @patch("bulletins.services.slf_fetcher.requests.get")
     def test_returns_normalised_bulletins(self, mock_get: MagicMock) -> None:
         """Fetches a page from the API and normalises the response."""
         mock_response = MagicMock()
@@ -542,7 +544,7 @@ class TestFetchBulletinPage:
             timeout=30,
         )
 
-    @patch("bulletins.services.data_fetcher.requests.get")
+    @patch("bulletins.services.slf_fetcher.requests.get")
     def test_raises_on_http_error(self, mock_get: MagicMock) -> None:
         """Raises HTTPError when the API returns a non-2xx status."""
         mock_response = MagicMock()
@@ -552,7 +554,7 @@ class TestFetchBulletinPage:
         with pytest.raises(requests.HTTPError):
             fetch_bulletin_page("en", 50, 0)
 
-    @patch("bulletins.services.data_fetcher.requests.get")
+    @patch("bulletins.services.slf_fetcher.requests.get")
     def test_passes_lang_in_url(self, mock_get: MagicMock) -> None:
         """The language code is included in the URL path."""
         mock_response = MagicMock()
@@ -565,7 +567,7 @@ class TestFetchBulletinPage:
         url = mock_get.call_args[0][0]
         assert "/de/json" in url
 
-    @patch("bulletins.services.data_fetcher.requests.get")
+    @patch("bulletins.services.slf_fetcher.requests.get")
     def test_base_url_override_replaces_default(self, mock_get: MagicMock) -> None:
         """``base_url=`` swaps out the API base for that single call."""
         mock_response = MagicMock()
@@ -588,7 +590,7 @@ class TestFetchBulletinPage:
     @override_settings(
         SLF_API_BASE_URL="https://override.example/api/bulletin-list/caaml"
     )
-    @patch("bulletins.services.data_fetcher.requests.get")
+    @patch("bulletins.services.slf_fetcher.requests.get")
     def test_default_base_url_falls_back_to_settings(self, mock_get: MagicMock) -> None:
         """Without ``base_url=``, the call reads ``settings.SLF_API_BASE_URL``."""
         mock_response = MagicMock()
@@ -613,7 +615,7 @@ class TestRunPipeline:
 
     pytestmark = pytest.mark.usefixtures("_seed_test_regions")
 
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_creates_bulletins_in_date_range(self, mock_fetch: MagicMock) -> None:
         """Bulletins within the date range are stored."""
         mock_fetch.return_value = [
@@ -631,7 +633,7 @@ class TestRunPipeline:
         assert run.records_created == 2
         assert Bulletin.objects.count() == 2
 
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_skips_bulletins_newer_than_end_date(self, mock_fetch: MagicMock) -> None:
         """Bulletins newer than the end date are skipped."""
         mock_fetch.return_value = [
@@ -649,7 +651,7 @@ class TestRunPipeline:
         assert Bulletin.objects.filter(bulletin_id="in-range").exists()
         assert not Bulletin.objects.filter(bulletin_id="future").exists()
 
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_stops_at_start_date_boundary(self, mock_fetch: MagicMock) -> None:
         """Pagination stops when a bulletin older than start date is hit."""
         mock_fetch.return_value = [
@@ -666,7 +668,7 @@ class TestRunPipeline:
         assert run.records_created == 1
         assert not Bulletin.objects.filter(bulletin_id="too-old").exists()
 
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_dry_run_does_not_write(self, mock_fetch: MagicMock) -> None:
         """Dry run fetches data but does not persist bulletins."""
         mock_fetch.return_value = [
@@ -684,7 +686,7 @@ class TestRunPipeline:
         assert run.records_created == 0
         assert Bulletin.objects.count() == 0
 
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_skips_existing_without_force(self, mock_fetch: MagicMock) -> None:
         """Without --force, existing bulletins are skipped."""
         # Pre-create the bulletin
@@ -708,7 +710,7 @@ class TestRunPipeline:
         assert run.records_created == 0
         assert run.records_updated == 0
 
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_updates_existing_with_force(self, mock_fetch: MagicMock) -> None:
         """With --force, existing bulletins are upserted."""
         pre_run = PipelineRunFactory.create()
@@ -731,7 +733,7 @@ class TestRunPipeline:
         assert run.records_updated == 1
         assert Bulletin.objects.count() == 1
 
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_marks_run_failed_on_exception(self, mock_fetch: MagicMock) -> None:
         """Run is marked FAILED if fetch raises an exception."""
         mock_fetch.side_effect = requests.ConnectionError("timeout")
@@ -745,8 +747,8 @@ class TestRunPipeline:
         assert run.status == PipelineRun.Status.FAILED
         assert "timeout" in run.error_message
 
-    @patch("bulletins.services.data_fetcher.PAGE_SIZE", 1)
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.PAGE_SIZE", 1)
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_paginates_until_empty_page(self, mock_fetch: MagicMock) -> None:
         """Pages until the API returns an empty list."""
         # With PAGE_SIZE=1, a page with 1 result does NOT trigger the
@@ -766,7 +768,7 @@ class TestRunPipeline:
         assert run.records_created == 1
         assert mock_fetch.call_count == 2
 
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_run_records_triggered_by(self, mock_fetch: MagicMock) -> None:
         """The triggered_by label is stored on the PipelineRun."""
         mock_fetch.return_value = []
@@ -779,7 +781,7 @@ class TestRunPipeline:
 
         assert run.triggered_by == "fetch_bulletins command"
 
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_base_url_threads_through_to_fetch(self, mock_fetch: MagicMock) -> None:
         """``base_url=`` is forwarded verbatim to ``fetch_bulletin_page``."""
         mock_fetch.return_value = []
@@ -795,7 +797,7 @@ class TestRunPipeline:
             "http://mirror.test/api/bulletin-list/caaml"
         )
 
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_on_fetched_called_for_every_record(self, mock_fetch: MagicMock) -> None:
         """``on_fetched`` fires once per raw record in the page."""
         mock_fetch.return_value = [
@@ -813,7 +815,7 @@ class TestRunPipeline:
 
         assert seen == ["a", "b"]
 
-    @patch("bulletins.services.data_fetcher.fetch_bulletin_page")
+    @patch("bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_on_fetched_fires_for_out_of_range_records(
         self, mock_fetch: MagicMock
     ) -> None:
@@ -840,3 +842,71 @@ class TestRunPipeline:
         # out-of-range branch terminates pagination — the stash captures
         # the page boundary even though the DB does not.
         assert seen == ["future", "in-range", "too-old"]
+
+
+# ---------------------------------------------------------------------------
+# _slf_pdf_url
+# ---------------------------------------------------------------------------
+
+
+class TestSlfPdfUrl:
+    """Tests for _slf_pdf_url URL derivation (pure, no DB)."""
+
+    def test_afternoon_issue_produces_1700_url(self) -> None:
+        """A bulletin published at 16:00 UTC (17:00 CET) uses the 17-00 slot."""
+        raw = _make_raw_bulletin(publication_time="2026-03-15T16:00:00Z", lang="en")
+        url = _slf_pdf_url(raw)
+        assert url == (
+            "https://www.slf.ch/fileadmin/avalanche_bulletin/pdf/"
+            "2026/03/Bulletin_2026-03-15_17-00_en.pdf"
+        )
+
+    def test_morning_update_produces_0800_url(self) -> None:
+        """A bulletin published at 07:00 UTC (08:00 CET) uses the 08-00 slot."""
+        raw = _make_raw_bulletin(publication_time="2026-03-15T07:00:00Z", lang="en")
+        url = _slf_pdf_url(raw)
+        assert url == (
+            "https://www.slf.ch/fileadmin/avalanche_bulletin/pdf/"
+            "2026/03/Bulletin_2026-03-15_08-00_en.pdf"
+        )
+
+    def test_hour_exactly_12_uses_1700(self) -> None:
+        """UTC hour == 12 is >= 12, so it maps to the 17-00 slot."""
+        raw = _make_raw_bulletin(publication_time="2026-03-15T12:00:00Z", lang="en")
+        url = _slf_pdf_url(raw)
+        assert "_17-00_" in url
+
+    def test_hour_11_uses_0800(self) -> None:
+        """UTC hour == 11 is < 12, so it maps to the 08-00 slot."""
+        raw = _make_raw_bulletin(publication_time="2026-03-15T11:59:59Z", lang="en")
+        url = _slf_pdf_url(raw)
+        assert "_08-00_" in url
+
+    def test_german_language_variant(self) -> None:
+        """Language is taken from raw['lang'] and embedded in the filename."""
+        raw = _make_raw_bulletin(publication_time="2026-03-15T16:00:00Z", lang="de")
+        url = _slf_pdf_url(raw)
+        assert url.endswith("_17-00_de.pdf")
+
+    def test_folder_uses_issue_date(self) -> None:
+        """The year/month folder is derived from the issue date, not validity."""
+        raw = _make_raw_bulletin(publication_time="2025-12-31T16:00:00Z", lang="en")
+        url = _slf_pdf_url(raw)
+        # Folder must be 2025/12, not 2026/01
+        assert "/2025/12/" in url
+
+
+@pytest.mark.django_db
+class TestSlfPdfUrlUpsertRoundTrip:
+    """Round-trip test: upsert_bulletin stores pdf_url in the database."""
+
+    def test_pdf_url_persisted_on_create(self) -> None:
+        """upsert_bulletin stores the supplied pdf_url on the created Bulletin."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        MicroRegionFactory.create(region_id="CH-7111")
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin(publication_time="2026-03-15T16:00:00Z", lang="en")
+        expected_url = _slf_pdf_url(raw)
+        upsert_bulletin(raw, run, pdf_url=expected_url)
+        b = Bulletin.objects.get(bulletin_id="test-001")
+        assert b.pdf_url == expected_url

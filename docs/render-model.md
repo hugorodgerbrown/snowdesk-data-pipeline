@@ -34,4 +34,4 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
 
 **Services**:
 - `bulletins/services/render_model.py` — `build_render_model()`, `compute_day_character()`, `RenderModelBuildError`, `RENDER_MODEL_VERSION`.
-- `bulletins/services/data_fetcher.py` — `upsert_bulletin` calls `build_render_model` inline (never via a signal); increments `run.records_failed` on `RenderModelBuildError`.
+- `bulletins/services/slf_fetcher.py` — `upsert_bulletin` calls `build_render_model` inline (never via a signal); increments `run.records_failed` on `RenderModelBuildError`.

@@ -1,5 +1,5 @@
 """
-bulletins/services/data_fetcher.py — Fetching and persisting SLF bulletins.
+bulletins/services/slf_fetcher.py — Fetching and persisting SLF bulletins.
 
 Contains pure-ish functions that:
   1. Fetch a page of bulletins from the SLF CAAML list API (fetch_bulletin_page).
@@ -12,6 +12,11 @@ Also defines the ``BulletinSource`` registry used by the unified
 latest-date function, settings keys, and archive-writer adapter so the
 command can iterate over requested sources without owning any
 provider-specific logic.
+
+Note: ``upsert_bulletin``, ``UnknownRegionError``, and ``_get_region`` are
+shared helpers also imported by ``albina_fetcher`` and ``meteofrance_fetcher``.
+Extracting them into a dedicated ``persistence.py`` module is a separate
+cleanup ticket (not in scope here).
 
 The SLF API returns bulletins in reverse chronological order and is
 paginated by offset/limit — it does not support filtering by date. The
@@ -50,6 +55,39 @@ LANG = "en"
 PAGE_SIZE = 50
 REQUEST_TIMEOUT = 30  # seconds
 _ONE_DAY = timedelta(days=1)
+
+_SLF_PDF_BASE = "https://www.slf.ch/fileadmin/avalanche_bulletin/pdf"
+
+
+def _slf_pdf_url(raw: dict[str, Any]) -> str:
+    """
+    Derive the SLF archive PDF URL from a raw bulletin dict.
+
+    The PDF URL encodes the issue date, issue time (``08-00`` for morning
+    updates, ``17-00`` for afternoon issues), and language.  The hour
+    boundary is based on UTC: SLF publishes the morning update at
+    approximately 07:00 UTC (08:00 CET) and the afternoon issue at
+    approximately 16:00 UTC (17:00 CET), so UTC hour < 12 → ``08-00``,
+    UTC hour ≥ 12 → ``17-00``.
+
+    Args:
+        raw: A single bulletin dict from the SLF CAAML API.  Must contain
+            a parseable ``publicationTime`` (or fall back via
+            ``_resolve_issued_at``).
+
+    Returns:
+        The full public URL to the PDF, e.g.
+        ``https://www.slf.ch/fileadmin/avalanche_bulletin/pdf/2026/03/Bulletin_2026-03-15_17-00_en.pdf``.
+
+    """
+    issued_at = _resolve_issued_at(raw)
+    issue_time = "08-00" if issued_at.hour < 12 else "17-00"
+    lang = raw.get("lang", LANG)
+    issue_date = issued_at.date()
+    return (
+        f"{_SLF_PDF_BASE}/{issue_date:%Y}/{issue_date:%m}/"
+        f"Bulletin_{issue_date:%Y-%m-%d}_{issue_time}_{lang}.pdf"
+    )
 
 
 def fetch_bulletin_page(
@@ -212,7 +250,7 @@ def _get_region(region_id: str) -> MicroRegion:
         ) from exc
 
 
-def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
+def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") -> bool:
     """
     Create or update a single Bulletin from a raw API dict.
 
@@ -223,6 +261,9 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
     Args:
         raw: A single bulletin dict from the SLF CAAML API.
         run: The PipelineRun to associate with this bulletin.
+        pdf_url: Optional URL of the source bulletin PDF. Defaults to ``""``
+            (empty) when not supplied — callers compute this via the
+            per-source ``_*_pdf_url`` helpers and pass it through.
 
     Returns:
         True if a new row was created, False if an existing row was updated.
@@ -268,6 +309,7 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun) -> bool:
         "lang": raw.get("lang", LANG),
         "unscheduled": raw.get("unscheduled", False),
         "pipeline_run": run,
+        "pdf_url": pdf_url,
     }
 
     bulletin, created = Bulletin.objects.update_or_create(
@@ -366,7 +408,7 @@ def _process_bulletin(
     if not force and Bulletin.objects.filter(bulletin_id=raw["bulletinID"]).exists():
         return _OUTCOME_SKIPPED_EXISTS
 
-    created = upsert_bulletin(raw, run)
+    created = upsert_bulletin(raw, run, pdf_url=_slf_pdf_url(raw))
     return _OUTCOME_CREATED if created else _OUTCOME_UPDATED
 
 
