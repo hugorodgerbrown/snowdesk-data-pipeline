@@ -380,10 +380,10 @@ def _render_bulletin_page(
     * When ``bulletin`` is not None an ``X-Bulletin-Id`` response header
       carries the bulletin UUID so operators can identify exactly which
       row rendered this page from network tools.
-    * When ``settings.DEBUG`` is True and a bulletin is present, its raw
-      CAAML ``raw_data`` payload is embedded as a ``<script
-      type="application/json">`` tag so it is visible in the page source
-      but invisible to the reader.  Never emitted in production.
+    * When ``settings.DEBUG`` is True *or* the request comes from a
+      superuser, and a bulletin is present, its raw CAAML ``raw_data``
+      payload is embedded as a ``<script type="application/json">`` tag
+      so it is visible in the page source but invisible to the reader.
 
     Args:
         request: The incoming HTTP request.
@@ -393,10 +393,11 @@ def _render_bulletin_page(
 
     Returns:
         The rendered ``HttpResponse`` with the debug header (and, when
-        DEBUG=True, the raw-data script tag) attached.
+        DEBUG=True or request.user.is_superuser, the raw-data script tag)
+        attached.
 
     """
-    if bulletin is not None and settings.DEBUG:
+    if bulletin is not None and (settings.DEBUG or request.user.is_superuser):
         # Escape ``</`` so a stray ``</script>`` substring in the CAAML
         # payload cannot terminate the embedding ``<script>`` tag.  JSON
         # decodes ``\/`` to ``/`` so round-tripping with JSON.parse is
