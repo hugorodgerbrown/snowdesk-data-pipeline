@@ -454,6 +454,42 @@ class TestRunMeteofrance:
         assert Bulletin.objects.filter(bulletin_id="FR-01-2026-05-18").exists()
         assert run.records_created == 1
 
+    @pytest.mark.django_db
+    def test_translated_bulletin_has_custom_data_massif_slug(self) -> None:
+        """Translator output carries customData.MF.massif as upper-case slug.
+
+        Regression for SNOW-295 Bug 1: the ingest path was reading
+        regions[0]["name"] (title-case, e.g. "Chablais") as the massif slug
+        instead of the canonical upper-case form required by the MF index
+        endpoint ("CHABLAIS").  This test verifies that after the fix the
+        persisted raw_data carries customData.MF.massif with the correct
+        upper-case value.
+        """
+        MicroRegionFactory.create(region_id="FR-01", name="Chablais")
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "massif-001.xml").write_bytes(_sample("massif-001.xml"))
+            run_meteofrance_pipeline(
+                date(2026, 5, 18),
+                date(2026, 5, 18),
+                triggered_by="test",
+                dry_run=False,
+                massif_ids=(1,),
+                base_url=f"file://{tmp}",
+            )
+
+        from bulletins.models import Bulletin
+
+        b = Bulletin.objects.get(bulletin_id="FR-01-2026-05-18")
+        raw_props = (b.raw_data or {}).get("properties", {})
+        massif_slug: str = (
+            raw_props.get("customData", {}).get("MF", {}).get("massif", "")
+        )
+        region_name: str = (raw_props.get("regions") or [{}])[0].get("name", "")
+        # regions[0].name carries the title-case display name.
+        assert region_name == "Chablais"
+        # customData.MF.massif must be the upper-case slug used by the index.
+        assert massif_slug == "CHABLAIS"
+
 
 # ---------------------------------------------------------------------------
 # latest_meteofrance_date

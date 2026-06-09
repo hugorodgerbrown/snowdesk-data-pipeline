@@ -116,7 +116,10 @@ def _meteofrance_pdf_url(
 
     Args:
         massif_name: Upper-case massif slug as stored in the raw bulletin's
-            ``regions[0]["name"]`` field (e.g. ``"CHABLAIS"``).
+            ``customData["MF"]["massif"]`` field (e.g. ``"CHABLAIS"``).
+            Do *not* pass ``regions[0]["name"]`` — that field holds the
+            title-case display name (e.g. ``"Chablais"``) which does not
+            match the index.
         valid_date: The bulletin's validity date — used to build the
             ``bra.YYYYMMDD.json`` index URL.
         session: A ``requests.Session`` shared across the pipeline run for
@@ -538,8 +541,12 @@ def _persist_bulletin(
     """
     pdf_url = ""
     if pdf_session is not None:
-        regions = raw.get("regions") or []
-        massif_name: str = regions[0].get("name", "") if regions else ""
+        # Read the canonical upstream slug from customData.MF.massif (e.g.
+        # "VANOISE"), not regions[0]["name"] which carries the display name
+        # (e.g. "Vanoise"). The MF index endpoint keys on the upper-case slug.
+        massif_name: str = (
+            raw.get("customData", {}).get("MF", {}).get("massif", "") or ""
+        )
         start_time_str: str = (raw.get("validTime") or {}).get("startTime", "")
         if massif_name and start_time_str:
             try:

@@ -1060,6 +1060,10 @@ def parse_dpbra_xml(xml_bytes: bytes) -> dict[str, Any]:
         date_validite=date_validite,
         date_diffusion=date_diffusion,
     )
+    # Add the canonical upper-case massif slug so downstream consumers
+    # (ingest PDF-URL resolver, backfill) can use customData.MF.massif
+    # instead of uppercasing regions[0]["name"] themselves.
+    custom_data_mf["massif"] = massif_name.upper()
 
     caaml: dict[str, Any] = {
         "bulletinID": bulletin_id,
