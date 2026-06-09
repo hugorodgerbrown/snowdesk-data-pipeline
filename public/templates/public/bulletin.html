@@ -636,7 +636,7 @@ reachable via the SNOW-81 deep-link in the masthead.
                             id="bulletin-debug-json"
                             class="mt-2 p-3 bg-card rounded-card border border-border text-xs text-text-2 overflow-x-auto whitespace-pre-wrap"
                         ></pre>
-                        <script>
+                        <script nonce="{{ request.csp_nonce }}">
                             (function () {
                                 var details = document.currentScript.closest("details");
                                 details.addEventListener("toggle", function () {
