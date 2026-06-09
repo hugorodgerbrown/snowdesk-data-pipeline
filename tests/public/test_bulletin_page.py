@@ -974,6 +974,238 @@ class TestDebuggingAids:
         assert "</script>" not in embedded
         assert "<\\/script>" in embedded
 
+    def test_raw_data_embedded_for_superuser_without_debug(
+        self,
+        client: Client,
+        region: MicroRegion,
+        settings: SettingsWrapper,
+    ) -> None:
+        """Superuser sees raw_data script even when DEBUG=False."""
+        settings.DEBUG = False
+        superuser = SubscriberFactory.create(
+            email="super@example.com",
+            is_superuser=True,
+            is_staff=True,
+            status=Subscriber.Status.ACTIVE,
+        )
+        day = date(2026, 3, 19)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data={"properties": {"bulletinID": "superuser-raw-check"}},
+        )
+        client.force_login(superuser)
+        url = _url("ch-4115", "valais", "2026-03-19")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'id="bulletin-raw-data"' in content
+        assert "superuser-raw-check" in content
+
+    def test_raw_data_absent_for_regular_user_without_debug(
+        self,
+        client: Client,
+        region: MicroRegion,
+        settings: SettingsWrapper,
+    ) -> None:
+        """Regular (non-superuser) authenticated user does not see raw_data."""
+        settings.DEBUG = False
+        user = SubscriberFactory.create(
+            email="regular@example.com",
+            is_superuser=False,
+            is_staff=False,
+            status=Subscriber.Status.ACTIVE,
+        )
+        day = date(2026, 3, 20)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data={"properties": {"bulletinID": "regular-hidden-check"}},
+        )
+        client.force_login(user)
+        url = _url("ch-4115", "valais", "2026-03-20")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'id="bulletin-raw-data"' not in content
+
+    def test_raw_data_absent_for_anon_without_debug(
+        self,
+        client: Client,
+        region: MicroRegion,
+        settings: SettingsWrapper,
+    ) -> None:
+        """Anonymous visitor does not see raw_data script when DEBUG=False."""
+        settings.DEBUG = False
+        day = date(2026, 3, 21)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data={"properties": {"bulletinID": "anon-hidden-check"}},
+        )
+        url = _url("ch-4115", "valais", "2026-03-21")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'id="bulletin-raw-data"' not in content
+
+
+# ---------------------------------------------------------------------------
+# Test: superuser debug affordances (SNOW-295)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSuperuserDebugAffordances:
+    """
+    Superuser-only debug block: PDF link + raw-JSON ``<details>`` viewer.
+    Only rendered when ``request.user.is_superuser`` is True.
+    """
+
+    def test_debug_block_visible_for_superuser(
+        self,
+        client: Client,
+        region: MicroRegion,
+        settings: SettingsWrapper,
+    ) -> None:
+        """Superuser sees the debug block with the correct data-testid."""
+        settings.DEBUG = False
+        superuser = SubscriberFactory.create(
+            email="super2@example.com",
+            is_superuser=True,
+            is_staff=True,
+            status=Subscriber.Status.ACTIVE,
+        )
+        day = date(2026, 3, 22)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        client.force_login(superuser)
+        url = _url("ch-4115", "valais", "2026-03-22")
+        response = client.get(url)
+        assert response.status_code == 200
+        assert 'data-testid="superuser-debug"' in response.content.decode()
+
+    def test_pdf_link_present_when_pdf_url_set(
+        self,
+        client: Client,
+        region: MicroRegion,
+        settings: SettingsWrapper,
+    ) -> None:
+        """PDF link is rendered when bulletin.pdf_url is truthy."""
+        settings.DEBUG = False
+        superuser = SubscriberFactory.create(
+            email="super3@example.com",
+            is_superuser=True,
+            is_staff=True,
+            status=Subscriber.Status.ACTIVE,
+        )
+        day = date(2026, 3, 23)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=RENDER_MODEL_VERSION,
+            pdf_url="https://www.slf.ch/fileadmin/avalanche_bulletin/pdf/test.pdf",
+        )
+        client.force_login(superuser)
+        url = _url("ch-4115", "valais", "2026-03-23")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "www.slf.ch" in content
+        assert "View source PDF" in content
+
+    def test_pdf_link_absent_when_pdf_url_empty(
+        self,
+        client: Client,
+        region: MicroRegion,
+        settings: SettingsWrapper,
+    ) -> None:
+        """PDF link is not rendered when bulletin.pdf_url is empty."""
+        settings.DEBUG = False
+        superuser = SubscriberFactory.create(
+            email="super4@example.com",
+            is_superuser=True,
+            is_staff=True,
+            status=Subscriber.Status.ACTIVE,
+        )
+        day = date(2026, 3, 24)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=RENDER_MODEL_VERSION,
+            pdf_url="",
+        )
+        client.force_login(superuser)
+        url = _url("ch-4115", "valais", "2026-03-24")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "View source PDF" not in content
+
+    def test_debug_block_absent_for_anon(
+        self,
+        client: Client,
+        region: MicroRegion,
+        settings: SettingsWrapper,
+    ) -> None:
+        """Anonymous visitor does not see the debug block."""
+        settings.DEBUG = False
+        day = date(2026, 3, 25)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=RENDER_MODEL_VERSION,
+            pdf_url="https://www.slf.ch/fileadmin/avalanche_bulletin/pdf/test.pdf",
+        )
+        url = _url("ch-4115", "valais", "2026-03-25")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="superuser-debug"' not in content
+        assert "View source PDF" not in content
+
+    def test_debug_block_absent_for_non_superuser(
+        self,
+        client: Client,
+        region: MicroRegion,
+        settings: SettingsWrapper,
+    ) -> None:
+        """Staff-but-not-superuser does not see the debug block."""
+        settings.DEBUG = False
+        staff_user = SubscriberFactory.create(
+            email="staffonly@example.com",
+            is_superuser=False,
+            is_staff=True,
+            status=Subscriber.Status.ACTIVE,
+        )
+        day = date(2026, 3, 26)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=RENDER_MODEL_VERSION,
+            pdf_url="https://www.slf.ch/fileadmin/avalanche_bulletin/pdf/test.pdf",
+        )
+        client.force_login(staff_user)
+        url = _url("ch-4115", "valais", "2026-03-26")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="superuser-debug"' not in content
+
 
 # ---------------------------------------------------------------------------
 # Test: rating-block grouping and ordering (SNOW-135)

@@ -605,6 +605,61 @@ reachable via the SNOW-81 deep-link in the masthead.
                     {% endwith %}
                 {% endwith %}{# rm #}
             {% endif %}{# error state else #}
+
+            {% if user.is_superuser %}
+                {# ── Superuser debug affordances (SNOW-295) ───────────────── #}
+                {# PDF link and raw-JSON viewer. Hidden from all non-superusers. #}
+                <div
+                    class="mt-8 pt-4 border-t border-border"
+                    data-testid="superuser-debug"
+                >
+                    <p class="font-mono uppercase tracking-wider text-meta text-text-3 mb-3">
+                        Debug
+                    </p>
+                    <div class="flex flex-wrap gap-3 mb-4">
+                        {% if bulletin.pdf_url %}
+                            <a
+                                href="{{ bulletin.pdf_url }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="inline-flex items-center gap-1 text-sm text-text-2 underline hover:text-text-1"
+                            >
+                                View source PDF ↗
+                            </a>
+                        {% endif %}
+                    </div>
+                    <details class="group">
+                        <summary class="cursor-pointer text-sm text-text-2 hover:text-text-1 select-none">
+                            View raw CAAML JSON
+                        </summary>
+                        <pre
+                            id="bulletin-debug-json"
+                            class="mt-2 p-3 bg-card rounded-card border border-border text-xs text-text-2 overflow-x-auto whitespace-pre-wrap"
+                        ></pre>
+                        <script>
+                            (function () {
+                                var details = document.currentScript.closest("details");
+                                details.addEventListener("toggle", function () {
+                                    if (!details.open) return;
+                                    var src = document.getElementById("bulletin-raw-data");
+                                    var pre = document.getElementById("bulletin-debug-json");
+                                    if (src && pre && !pre.textContent) {
+                                        try {
+                                            pre.textContent = JSON.stringify(
+                                                JSON.parse(src.textContent),
+                                                null,
+                                                2
+                                            );
+                                        } catch (e) {
+                                            pre.textContent = src.textContent;
+                                        }
+                                    }
+                                }, { once: true });
+                            })();
+                        </script>
+                    </details>
+                </div>
+            {% endif %}
         {% endif %}
         {# bulletin #}
 
