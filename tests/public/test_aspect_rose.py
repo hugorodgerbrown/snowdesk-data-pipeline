@@ -100,3 +100,18 @@ class TestAspectRose:
         """The returned string is marked as safe for Django templates."""
         result = aspect_rose(["N"])
         assert hasattr(result, "__html__")
+
+    def test_malicious_aspect_strings_are_rejected(self) -> None:
+        """Unknown and potentially malicious aspect strings are stripped out.
+
+        Values originate from external CAAML feeds and are interpolated into
+        the aria-label attribute inside mark_safe.  Only the eight known
+        compass directions must appear in the output; anything else is silently
+        dropped so it never reaches the rendered SVG.
+        """
+        result = aspect_rose(["N", 'evil" onload="x', "NOPE"])
+        # Only "N" is a valid compass direction; the other two are unknown.
+        assert 'aria-label="Aspects: N"' in result
+        assert "evil" not in result
+        assert "NOPE" not in result
+        assert "onload" not in result
