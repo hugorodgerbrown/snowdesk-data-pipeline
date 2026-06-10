@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from bulletins.management.commands.backfill_pdf_urls import _albina_cdn_region
 from bulletins.models import Bulletin
@@ -331,6 +332,55 @@ class TestBackfillPdfUrlsRegressions:
         b = Bulletin.objects.get(bulletin_id="mf-slug-test")
         # URL must contain the upper-case slug, not the title-case display name.
         assert "BRA.VANOISE.20260115100000.pdf" in b.pdf_url
+
+
+@pytest.mark.django_db
+class TestBackfillPdfUrlsErrorExit:
+    """Command raises CommandError and exits non-zero when errors occur."""
+
+    def test_derivation_exception_raises_command_error(self) -> None:
+        """When at least one bulletin errors during derivation, CommandError is raised."""
+        _make_slf_bulletin()
+
+        with patch(
+            "bulletins.management.commands.backfill_pdf_urls._derive_pdf_url",
+            side_effect=RuntimeError("forced error"),
+        ):
+            with pytest.raises(CommandError, match="error"):
+                call_command("backfill_pdf_urls")
+
+    def test_non_https_url_is_rejected_and_raises_command_error(self) -> None:
+        """A derived URL that does not start with https:// is rejected.
+
+        It must be counted as an error, not persisted (even with --commit),
+        and the command must raise CommandError.
+        """
+        _make_slf_bulletin()
+
+        with patch(
+            "bulletins.management.commands.backfill_pdf_urls._derive_pdf_url",
+            return_value="javascript:alert(1)",
+        ):
+            with pytest.raises(CommandError, match="error"):
+                call_command("backfill_pdf_urls", commit=True)
+
+        # The malicious URL must not have been persisted.
+        b = Bulletin.objects.get(bulletin_id="slf-001")
+        assert b.pdf_url == ""
+
+    def test_http_url_is_rejected_and_not_persisted(self) -> None:
+        """A plain http:// URL (not https://) is also rejected and never saved."""
+        _make_slf_bulletin()
+
+        with patch(
+            "bulletins.management.commands.backfill_pdf_urls._derive_pdf_url",
+            return_value="http://example.com/bulletin.pdf",
+        ):
+            with pytest.raises(CommandError, match="error"):
+                call_command("backfill_pdf_urls", commit=True)
+
+        b = Bulletin.objects.get(bulletin_id="slf-001")
+        assert b.pdf_url == ""
 
 
 class TestAlbinaCdnRegion:
