@@ -1,5 +1,5 @@
 ---
-name: project-update
+name: post-project-update
 description: >
   Draft and post a Linear project status update. Use when the user asks
   for a daily, weekly, or on-demand project update — e.g. "post a daily
