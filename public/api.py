@@ -569,7 +569,7 @@ def _require_edit_map_flag(request: HttpRequest) -> None:
     the editor panel: an unauthorised caller hitting the API directly
     must see the same 404 the URL conf used to give them when the
     feature was DEBUG-only. Flag is seeded with ``superusers=True`` by
-    migration ``pipeline/migrations/0017_seed_edit_map_flag.py``;
+    migration ``regions/migrations/0002_seed_edit_map_flag.py``;
     extend / disable via ``/admin/waffle/flag/edit_map/``.
     """
     if not waffle.flag_is_active(request, "edit_map"):

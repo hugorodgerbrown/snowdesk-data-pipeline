@@ -88,10 +88,11 @@ defaults to `no_rating`.
 The shared top-nav partial used on the map and other public pages is
 documented separately in [`nav_implementation_spec.md`](nav_implementation_spec.md).
 
-## Edit-resorts mode (SNOW-74) — DEBUG only
+## Edit-resorts mode (SNOW-74) — gated on the `edit_map` waffle flag
 
-`/map/?edit=resorts` enters resort-coordinate-edit mode when
-`settings.DEBUG` is `True`. The page renders a right-hand panel with a
+`/map/?edit=resorts` enters resort-coordinate-edit mode when the
+`edit_map` waffle flag is active for the request user (SNOW-86; see
+[`feature-flags.md`](feature-flags.md)). The page renders a right-hand panel with a
 queue of resorts that need geocoding (`Resort.objects.needs_geocoding()`
 — missing coords or `needs_review=True`) plus a search box across all
 resorts. Clicking the map drops a draggable orange pin; drag to refine,
@@ -103,13 +104,14 @@ existing resort point to re-position it.
 
 | URL | Name | Method | Notes |
 |-----|------|--------|-------|
-| `/api/edit/resorts/queue/` | `api:edit_resorts_queue` | GET | DEBUG-only. Returns `{queue, all_resorts}` — queue ordered `region_id ASC, name ASC` so the panel can group rows by L1 area (e.g. `CH-4`). `needs_review` rows still surface a ⚠ in the panel; they are no longer a sort key. |
-| `/api/edit/resorts/<int:resort_id>/coords/` | `api:edit_resort_save_coords` | POST | DEBUG-only. JSON body `{latitude, longitude}`; coordinates outside `_SWISS_BBOX` are hard-rejected with 400. |
+| `/api/edit/resorts/queue/` | `api:edit_resorts_queue` | GET | Flag-gated. Returns `{queue, all_resorts}` — queue ordered `region_id ASC, name ASC` so the panel can group rows by L1 area (e.g. `CH-4`). `needs_review` rows still surface a ⚠ in the panel; they are no longer a sort key. |
+| `/api/edit/resorts/<int:resort_id>/coords/` | `api:edit_resort_save_coords` | POST | Flag-gated. JSON body `{latitude, longitude}`; coordinates outside `_SWISS_BBOX` are hard-rejected with 400. |
 
-Both endpoints 404 when `DEBUG=False` (URL-level guard plus inline
-`_require_debug()` — belt-and-braces). The page itself silently falls
-back to the normal map when `?edit=resorts` is set without DEBUG, so
-the URL is safe to bookmark.
+Both endpoints 404 when the `edit_map` flag is inactive
+(`_require_edit_map_flag()` in `public/api.py` raises `Http404`). The
+page itself silently falls back to the normal map when `?edit=resorts`
+is set without the flag (`public/views.py`), so the URL is safe to
+bookmark.
 
 Coordinate-ordering pitfall (called out in `static/js/map_edit_resorts.js`):
 
@@ -122,12 +124,12 @@ Coordinate-ordering pitfall (called out in `static/js/map_edit_resorts.js`):
 
 Edits land in the local SQLite, not the source-of-truth fixture in git.
 Run the dump command after a session of placements to regenerate
-`pipeline/fixtures/resorts.json`:
+`regions/fixtures/resorts.json`:
 
 ```bash
 poetry run python manage.py dump_resorts_fixture          # dry-run, prints diff
 poetry run python manage.py dump_resorts_fixture --commit # writes the file
-git diff pipeline/fixtures/resorts.json                   # review
+git diff regions/fixtures/resorts.json                    # review
 ```
 
 The dump uses `use_natural_foreign_keys=True` (so `region` round-trips

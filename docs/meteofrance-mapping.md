@@ -454,8 +454,8 @@ download URL of the source PDF, and weather snapshots at 00 h / 06 h /
 
 **Useful for:** historical backfill of French danger ratings into
 Snowdesk's `Bulletin`/`RegionDayRating` tables — saves writing a PDF
-scraper of our own. Track as a follow-up SNOW ticket once forward-going
-ingestion (SNOW-177b) is in production.
+scraper of our own. Forward-going ingestion (SNOW-177) is now in
+production; the backfill remains a follow-up SNOW ticket.
 
 **Not useful for** the remaining open items in this spec:
 
@@ -467,11 +467,10 @@ ingestion (SNOW-177b) is in production.
   or `@ID`, so it can't answer the amendment-behaviour question
   either.
 
-### Cross-validation during shadow-mode
+### Cross-validation
 
-If the orchestrator runs DPBRA ingestion in shadow mode before
-go-live, comparing our `bulletins/services/sources/meteofrance.py`
-output against the same `(date, massif)` row in
+Comparing the output of `bulletins/services/meteofrance_translator.py`
+against the same `(date, massif)` row in
 `meteofrance_bra_hist`'s CSV catches translation bugs the unit-test
 fixtures may miss — particularly around the elevation-split semantics
 and `evolurisque` evolution arrows. Low-cost validation; high signal.

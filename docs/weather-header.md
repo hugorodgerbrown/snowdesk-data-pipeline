@@ -9,12 +9,9 @@ last-reviewed: 2026-06-10
 
 The bulletin detail page renders a unified header panel whose appearance varies with the current weather conditions and the time of day at the bulletin region. Data lives in `WeatherSnapshot` (see [`bulletins/models.py`](../bulletins/models.py)); display logic lives in [`bulletins/services/weather_display.py`](../bulletins/services/weather_display.py); markup lives in [`templates/includes/bulletin_header.html`](../templates/includes/bulletin_header.html); CSS tokens live in [`src/css/main.css`](../src/css/main.css) under the **Weather header** section.
 
-The `weather_header` waffle flag controls which header the bulletin page renders (see [`docs/feature-flags.md`](feature-flags.md)):
+The unified header (`templates/includes/bulletin_header.html` — region wayfinding + date + weather hero icon + condition label + sunrise/sunset) is the only bulletin header; it renders unconditionally. There is no feature flag — the `weather_header` flag and the legacy `bulletin_masthead.html` partial were both removed after the rollout (the only flag in the inventory is `edit_map`; see [`docs/feature-flags.md`](feature-flags.md)).
 
-- **Flag on** → `templates/includes/bulletin_header.html` — unified panel (region wayfinding + date + weather hero icon + condition label + sunrise/sunset).
-- **Flag off** → `templates/includes/bulletin_masthead.html` — legacy masthead without weather data.
-
-The pre-SNOW-100 band partial (`templates/includes/bulletin_weather_header.html`) was deleted alongside the unified header rollout — neither flag path referenced it any more.
+The pre-SNOW-100 band partial (`templates/includes/bulletin_weather_header.html`) was also deleted alongside the unified header rollout.
 
 ## Data flow
 

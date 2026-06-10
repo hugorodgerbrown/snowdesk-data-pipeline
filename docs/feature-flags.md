@@ -90,7 +90,7 @@ The change takes effect on the next request — there's no cache to bust.
 1. **Pick a name** following the convention above.
 2. **Add a data migration** under the relevant app's `migrations/`
    directory. Pattern (modelled on
-   `pipeline/migrations/0017_seed_edit_map_flag.py`):
+   `regions/migrations/0002_seed_edit_map_flag.py`):
 
    ```python
    from django.db import migrations
