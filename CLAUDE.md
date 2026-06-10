@@ -7,6 +7,9 @@ Avalanche Research) avalanche bulletins from the CAAML API, stores them,
 and renders them on a dashboard. The frontend uses HTMX for dynamic
 updates without a full JavaScript framework.
 
+Python 3.12 / Django 6.0 (pinned in `pyproject.toml`). If tox envs behave
+oddly after a dependency change, rebuild them with `poetry run tox --recreate`.
+
 ## Architecture
 
 ```
@@ -57,15 +60,8 @@ poetry run python manage.py runserver
 
 ## Dependency management
 
-Use **Poetry**. `pyproject.toml` is the single source of truth; there is no
-`requirements.txt`.
-
-```bash
-poetry add <package>              # add a runtime dependency
-poetry add --group dev <package>  # add a dev-only dependency
-poetry update                     # update all dependencies within constraints
-poetry show --outdated            # list packages with newer versions available
-```
+Use **Poetry** (`poetry add`, `poetry add --group dev`, `poetry update`).
+`pyproject.toml` is the single source of truth; there is no `requirements.txt`.
 
 The virtualenv lives at `.venv/` inside the repo — this is **by design**,
 pinned via `poetry.toml` (`virtualenvs.in-project = true`). The pre-commit
@@ -82,8 +78,16 @@ up `pyproject.toml` dependencies automatically.
 
 ## Conventions
 
-- **Header comment block** on every module describing its purpose.
-- **Docstring** on every function and class.
+### Code
+
+- **Header comment block** on every module describing its purpose;
+  **docstring** on every function and class.
+- All function arguments are typed, except `*args` and `**kwargs`.
+- `ruff` for linting and formatting (includes import sorting); `pre-commit`
+  hooks enforce on commit. No `# noqa` without a good reason and a comment
+  explaining why.
+- British English spellings (colour, behaviour, organise) — except third-party
+  identifiers.
 - **Composition over inheritance** — favour passing service objects as arguments
   over deep class hierarchies.
 - **Simple over complex** — no abstractions until they are needed by at least two
@@ -97,6 +101,32 @@ up `pyproject.toml` dependencies automatically.
   (e.g. building the render model) are called inline from the relevant service
   function, not via `post_save` signals. This keeps data flow explicit and
   testable.
+
+### Models
+
+Every concrete model ships the full kit — uniformity across models is the
+point, so don't skip pieces for "simple" models:
+
+- inherits from the `BaseModel` abstract model;
+- an explicit admin class;
+- an explicit `to_string()` method (`__str__` delegates to it);
+- an explicit `Meta.ordering` (`-created_at` by default);
+- a custom queryset;
+- a test factory and test coverage.
+
+### Testing
+
+- pytest + FactoryBoy. Tests live in a top-level `tests/` directory that
+  mirrors the source tree; each module has a corresponding
+  `test_{module_name}.py`.
+- All new code must have covering tests; the coverage target is 90%.
+- Always run tests via `poetry run tox -e test` (not a bare `pytest` call) —
+  the tox env mirrors CI.
+- All datetime objects must have `tzinfo`.
+- Always call factories with `.create()` (e.g. `RegionFactory.create(...)`) —
+  never use direct instantiation (`RegionFactory(...)`). The `.create()`
+  classmethod is properly typed and lets mypy infer the correct model
+  return type.
 
 ## Data source
 
@@ -113,42 +143,24 @@ that downstream consumers see `{ type: "Feature", geometry: null, properties: {�
 ## Management command design
 
 These rules apply to **every** new or refactored management command.
-Existing commands that pre-date these rules are being migrated; don't
-copy their old shape when adding new ones.
+Existing commands that pre-date them are being migrated; don't copy their
+old shape when adding new ones.
 
-1. **Sensible defaults — runs with no arguments.** The bare invocation
-   (`poetry run python manage.py <name>`) must do the most useful thing
-   for the common case. Required positional arguments are a smell —
-   prefer optional flags with defaults derived from context (current
-   date, settings, etc.).
+1. **Runs with no arguments** — sensible defaults derived from context
+   (current date, settings). Required positional arguments are a smell.
+2. **Read-only by default** — the bare invocation must never write to the
+   database, send mail, or call a paid/rate-limited external service.
+   Writing requires an explicit opt-in: new commands use `--commit`
+   (preferred); legacy `--dry-run` commands must prompt before writing and
+   accept `--no-input` for unattended runs. Don't mix the two shapes in
+   one command.
+3. **Respect `--verbosity`** in log calls (free via `BaseCommand`).
+4. **Exit non-zero on failure** — including a partially failed batch
+   (`records_failed > 0`) — so cron/CI can detect it.
 
-2. **Never alter data by default — dry-run is the default.** A command
-   invoked with no arguments must not write to the database, send mail,
-   or call out to a paid/rate-limited external service. The user (or a
-   script) must take an **explicit** step to commit changes.
-
-3. **Pick one of the two safe shapes** — be consistent within a command:
-
-   **Option A (preferred for new commands): explicit `--commit`.**
-   Drop `--dry-run` entirely. The command is read-only by default;
-   passing `--commit` is the only way to persist changes.
-
-   **Option B: keep `--dry-run`, but require confirmation when absent.**
-   Prompt the user (`Proceed? [y/N]`) before writing when `--dry-run`
-   is not passed. For unattended runs (cron, APScheduler, CI), accept
-   a `--no-input` flag that skips the prompt. Production callers must
-   pass `--no-input` explicitly — never default it on.
-
-   Don't mix shapes within one command.
-
-4. **Always implement `--verbosity`** (Django gives this for free via
-   `BaseCommand` — just respect it in log calls).
-
-5. **Exit non-zero on failure.** Any unhandled error, or a partially
-   failed batch (`records_failed > 0`), must surface as a non-zero exit
-   so cron/CI can detect it.
-
-Command catalogue and flag reference: [`docs/management-commands.md`](docs/management-commands.md).
+Full contract (the two safe command shapes, confirmation rules) plus the
+command catalogue and flag reference:
+[`docs/management-commands.md`](docs/management-commands.md).
 
 ## Frontend
 
@@ -161,14 +173,8 @@ Command catalogue and flag reference: [`docs/management-commands.md`](docs/manag
 - All styling uses Tailwind utility classes in templates. Only add custom CSS to
   `src/css/main.css` for things Tailwind cannot express (generated content,
   data-attribute selectors, raw HTML resets).
-
-```bash
-# Development (watch mode)
-npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch
-
-# Production (minified)
-npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
-```
+- Build with the watch command under "Running locally"; production builds add
+  `--minify` instead of `--watch`.
 
 **HTMX** patterns:
 - Full-page views return a complete HTML response.
@@ -181,50 +187,33 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 
 The canonical reference is the staff-only **component library at `/_components/`**
 (source: [`public/design_tokens.py`](public/design_tokens.py), variant fixtures in
-[`public/_component_fixtures.py`](public/_component_fixtures.py)). It renders every
-design token in both light and dark themes plus a growing set of component partials.
-Read it before adding any new visual surface.
+[`public/_component_fixtures.py`](public/_component_fixtures.py)). Read it before
+adding any new visual surface. Rules for any change that adds or touches
+templates — enforced by `bin/ds-lint` (`tox -e ds-lint`), which blocks every PR
+that introduces a violation:
 
-**Rules for any change that adds or touches templates:**
+1. **Reuse first, extract second, inline never.** Use an existing partial
+   (`_card`, `_button`, `_status_page`, `_collapsible_panel`, `_eyebrow`, …)
+   if there is one. If the same shape already exists inline in another
+   template, extract a new partial *with a registry entry* — don't add a
+   third copy.
+2. **Design tokens, not raw Tailwind palette utilities.** Colours: `bg-card`,
+   `text-text-1/2/3`, `border-border`, `bg-status-*` — never `bg-slate-200`,
+   `text-red-600`. Radius: `rounded-card`/`-tag`/`-pill`/`-sm` — never
+   `rounded-[12px]`. Primary CTAs use `templates/includes/_button.html`, not
+   inline class strings.
+3. **Hex colours belong in `src/css/main.css` `@theme`.** The only legitimate
+   template-side hex values are SVG `fill`/`stroke` attributes and the PWA
+   `theme-color` meta tag (which can't resolve CSS variables).
 
-1. **Reuse first, extract second, inline never.** If the surface already has a
-   partial (`_card`, `_button`, `_status_page`, `_collapsible_panel`, `_eyebrow`,
-   etc.), use it. If the same shape already exists inline in another template,
-   extract a new partial *with a registry entry* — don't add a third copy.
-2. **Use the design tokens, not raw Tailwind palette utilities.**
-   - Colours: `bg-card`, `text-text-1/2/3`, `border-border`, `bg-status-*`, etc.
-     — **never** `bg-slate-200`, `text-red-600`, etc.
-   - Radius: `rounded-card`, `rounded-tag`, `rounded-pill`, `rounded-sm` —
-     **never** `rounded-[12px]` and friends.
-   - Primary CTAs use `templates/includes/_button.html`, not inline class strings.
-3. **Hex colours belong in `src/css/main.css` `@theme`**, surfaced via Tailwind
-   token utilities. The only legitimate template-side hex values are SVG
-   `fill`/`stroke` attributes and the PWA `<meta name="theme-color">` tag (which
-   can't resolve CSS variables); annotate those with the escape-hatch comment
-   below.
-
-**Enforcement:** `bin/ds-lint` runs as `tox -e ds-lint` and blocks every PR that
-introduces a violation of the above. Per-line escape hatch:
+Per-line escape hatch, only when a token genuinely can't express the
+constraint. The reason is required and audit-visible
+(`bin/ds-lint --show-allows`) — write it for a reviewer judging it cold:
 
 ```html
-{# ds-lint-allow: <reason — required, audit-visible> #}
+{# ds-lint-allow: <reason> #}
 <element class="rounded-[16px]">…</element>
 ```
-
-Reasons are audit-visible via `bin/ds-lint --show-allows`. Use the escape hatch
-only when the design token genuinely can't express the constraint — and write
-the reason as if a reviewer who didn't see the original conversation has to
-judge it cold.
-
-## Code style
-
-- `ruff` for linting and formatting (includes import sorting).
-- `pre-commit` hooks enforce these on commit.
-- Do not suppress linting warnings with `# noqa` unless there is a good reason,
-  and always leave a comment explaining why.
-- Ensure that all function arguments are typed, except `*args` and `**kwargs`.
-- British English spellings (colour, behaviour, organise) — except third-party
-  identifiers.
 
 ## Local CI — always run tox
 
@@ -255,32 +244,6 @@ templates so the hook doesn't reformat on commit.
 change touching a public page, also run `npm run lh` (see
 [`docs/lighthouse.md`](docs/lighthouse.md)).
 
-## Django coding rules
-
-- All models inherit from `BaseModel` abstract model.
-- All models have an explicit `AdminModel`.
-- All models have an explicit `to_string()` method.
-- All models have an explicit test Factory representation.
-- All models have test coverage.
-- All models have an explicit `order_by` (`created_at` by default).
-- All models have a custom queryset.
-
-### Testing
-
-- Tests use pytest.
-- Tests use FactoryBoy.
-- Tests live in a top-level `tests/` directory that mirrors the source
-  tree. Each module has a corresponding `test_{module_name}.py`.
-- All new code must have covering tests.
-- Always run tests via `poetry run tox -e test` (not a bare `pytest` call) —
-  the tox env mirrors CI.
-- Target 100% pass rate and 90% coverage.
-- All datetime objects must have `tzinfo`.
-- Always call factories with `.create()` (e.g. `RegionFactory.create(...)`) —
-  never use direct instantiation (`RegionFactory(...)`). The `.create()`
-  classmethod is properly typed and lets mypy infer the correct model
-  return type.
-
 ## Cleanup tooling
 
 Two scripts under `bin/` keep local git state in sync with origin. Both
@@ -288,39 +251,30 @@ must be run from the primary worktree (on `main`); both refuse to run
 from inside a worktree they might delete.
 
 - [`bin/cleanup-merged-branch <branch>`](bin/cleanup-merged-branch) —
-  per-branch post-merge cleanup. Removes the worktree for `<branch>`,
-  deletes the local branch, and prunes remote tracking refs.
-- [`bin/sync-with-origin`](bin/sync-with-origin) — bulk cleanup. Lists
-  every redundant worktree and branch in one pass; default mode is
-  dry-run. Pass `--commit` to actually delete. Sweeps worktrees whose
-  upstream is `: gone`, plus dangling local branches that are either
-  `: gone` or fully reachable from `origin/main`.
+  post-merge cleanup of one branch: removes its worktree, deletes the local
+  branch, prunes remote tracking refs.
+- [`bin/sync-with-origin`](bin/sync-with-origin) — bulk cleanup of every
+  redundant worktree and branch (upstream `: gone` or fully reachable from
+  `origin/main`). Dry-run by default; `--commit` to delete.
 
-## Linear workflow (summary)
+## Linear workflow
 
-Linear (team prefix `SNOW-`) is the issue source of truth. Status moves
-up to and including `In Progress` happen via the Linear MCP — Chat
-creates and scopes tickets through `Ready for dev`, then Code moves the
-ticket to `In Progress` immediately after creating the local branch
-(no push at that point). The GitHub–Linear integration handles only
-`In Review` (when the PR opens) and `Done` (when the PR merges); both
-require `SNOW-xxx` in the branch name or PR body.
+Linear (team prefix `SNOW-`) is the issue source of truth. Chat creates and
+scopes tickets through `Ready for dev`; Code moves the ticket to
+`In Progress` via the Linear MCP immediately after creating the local branch
+(no push at that point). The GitHub–Linear integration handles `In Review`
+(PR opened) and `Done` (PR merged); both require `SNOW-xxx` in the branch
+name or PR body.
 
-**Branch and commit conventions:**
-- Branch: `feature/SNOW-xxx-short-description` (features), `fix/SNOW-xxx-…`
-  (bugs), `chore/SNOW-xxx-…` (tooling/infra).
-- Commit subject prefix: `SNOW-xxx:` — keeps the ticket reference in the git
+- Branch: `feature/SNOW-xxx-short-description` (`fix/SNOW-xxx-…` for bugs,
+  `chore/SNOW-xxx-…` for tooling/infra). One ticket per branch.
+- Commit subject prefix `SNOW-xxx:` — keeps the ticket reference in the git
   log after squash-merge.
-- One ticket per branch.
-
-**PR title:** `SNOW-42: short imperative summary`. The body must start with
-`Closes SNOW-42` — that magic comment closes the Linear ticket on merge.
-
-**When Code should stop and ask:**
-- Scoping comment missing on the ticket → ask the user to scope in Chat first.
-- Tests fail after implementation and the fix isn't obvious → report and stop.
-- Implementation reveals the scope was wrong → post a comment on the Linear
-  issue and ask the user how to proceed.
+- PR title: `SNOW-42: short imperative summary`. The body must start with
+  `Closes SNOW-42` — that magic comment closes the Linear ticket on merge.
+- **Stop and ask** if: the scoping comment is missing (scope in Chat first);
+  tests fail and the fix isn't obvious; or implementation reveals the scope
+  was wrong (comment on the Linear issue first).
 
 Full lifecycle, entry points, scoping-comment contract, and PR body template:
 [`docs/linear-workflow.md`](docs/linear-workflow.md).
@@ -362,8 +316,7 @@ Read these when working in the relevant area:
 | Internationalisation | [`docs/i18n.md`](docs/i18n.md) |
 | Lighthouse CI (budgets, perf settings) | [`docs/lighthouse.md`](docs/lighthouse.md) |
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
-| Management command catalogue | [`docs/management-commands.md`](docs/management-commands.md) |
-| Operational requirements (scheduled jobs) | [`docs/management-commands.md#operational-requirements`](docs/management-commands.md#operational-requirements) |
+| Management commands (design rules, catalogue, scheduled jobs) | [`docs/management-commands.md`](docs/management-commands.md) |
 | Nav partial implementation spec | [`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) |
 | Feature flags (django-waffle) | [`docs/feature-flags.md`](docs/feature-flags.md) |
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |

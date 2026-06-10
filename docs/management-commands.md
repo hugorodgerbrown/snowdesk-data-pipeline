@@ -3,9 +3,47 @@
 `fetch_bulletins` is the single entry point for fetching avalanche bulletins
 from all supported providers (SLF, ALBINA, and MeteoFrance). It
 supersedes the old `fetch_data`, `backfill_data`, and
-`fetch_euregio_bulletins` legacy commands and follows the management-command design
-convention in CLAUDE.md (read-only by default; opt in to writes with
-`--commit`).
+`fetch_euregio_bulletins` legacy commands and follows the design rules
+below (read-only by default; opt in to writes with `--commit`).
+
+## Design rules
+
+These rules apply to **every** new or refactored management command.
+Existing commands that pre-date these rules are being migrated; don't
+copy their old shape when adding new ones. (The headline rules are
+summarised in CLAUDE.md; this is the full contract.)
+
+1. **Sensible defaults — runs with no arguments.** The bare invocation
+   (`poetry run python manage.py <name>`) must do the most useful thing
+   for the common case. Required positional arguments are a smell —
+   prefer optional flags with defaults derived from context (current
+   date, settings, etc.).
+
+2. **Never alter data by default — dry-run is the default.** A command
+   invoked with no arguments must not write to the database, send mail,
+   or call out to a paid/rate-limited external service. The user (or a
+   script) must take an **explicit** step to commit changes.
+
+3. **Pick one of the two safe shapes** — be consistent within a command:
+
+   **Option A (preferred for new commands): explicit `--commit`.**
+   Drop `--dry-run` entirely. The command is read-only by default;
+   passing `--commit` is the only way to persist changes.
+
+   **Option B: keep `--dry-run`, but require confirmation when absent.**
+   Prompt the user (`Proceed? [y/N]`) before writing when `--dry-run`
+   is not passed. For unattended runs (cron, APScheduler, CI), accept
+   a `--no-input` flag that skips the prompt. Production callers must
+   pass `--no-input` explicitly — never default it on.
+
+   Don't mix shapes within one command.
+
+4. **Always implement `--verbosity`** (Django gives this for free via
+   `BaseCommand` — just respect it in log calls).
+
+5. **Exit non-zero on failure.** Any unhandled error, or a partially
+   failed batch (`records_failed > 0`), must surface as a non-zero exit
+   so cron/CI can detect it.
 
 ## Operational requirements
 
