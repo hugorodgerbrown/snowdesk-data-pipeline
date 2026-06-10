@@ -3,10 +3,10 @@
 ## Project overview
 
 Django-based data pipeline that fetches avalanche bulletins from three
-providers — SLF (Switzerland), ALBINA (EUREGIO Tyrol/South Tyrol/Trentino),
-and Météo-France — normalises them to CAAML v6 JSON, stores them, and
-renders them on a public bulletin site. The frontend uses HTMX for dynamic
-updates without a full JavaScript framework.
+providers — SLF (Swiss Institute for Snow and Avalanche Research), ALBINA
+(EUREGIO avalanche.report), and Météo-France — normalises them to CAAML v6
+JSON, stores them, and renders them on a public bulletin site. The frontend
+uses HTMX for dynamic updates without a full JavaScript framework.
 
 Domain term → code symbol map: [`docs/glossary.md`](docs/glossary.md).
 Accepted architectural decisions (the "why"): [`docs/decisions/`](docs/decisions/).
@@ -98,19 +98,25 @@ up `pyproject.toml` dependencies automatically.
 
 ## Data sources
 
-Three providers, one storage shape (CAAML v6 JSON):
+Three providers, one canonical storage shape (CAAML v6 JSON); all fetched
+via the `fetch_bulletins` command.
 
-- **SLF** (Switzerland) — paginated CAAML list API, no auth, no date filter:
+- **SLF** (`bulletins/services/slf_fetcher.py`) — paginated CAAML list API,
+  no auth, no date filter:
   `https://aws.slf.ch/api/bulletin-list/caaml/{lang}/json?limit={n}&offset={n}`.
   Reverse-chronological; the pipeline pages until it passes the start-date
   boundary. Historical depth limits: [`docs/slf-api-history.md`](docs/slf-api-history.md).
-- **ALBINA** (EUREGIO) — per-`(date, region)` CDN GETs; 404 means "no bulletin".
-- **Météo-France** — DPBRA XML per massif, translated to CAAML v6 JSON by
-  `bulletins/services/meteofrance_translator.py`
+- **ALBINA** (`bulletins/services/albina_fetcher.py`) — EUREGIO
+  avalanche.report CDN, no auth; per-day CAAML v6 JSON URLs for the AT-07,
+  IT-32-BZ, and IT-32-TN regions. 404 means "no bulletin".
+- **Météo-France** (`bulletins/services/meteofrance_fetcher.py`,
+  `meteofrance_translator.py`) — DPBRA XML per massif behind an API key
+  (`METEOFRANCE_API_KEY`), translated to the CAAML v6 shape that
+  `upsert_bulletin` expects
   (mapping spec: [`docs/meteofrance-mapping.md`](docs/meteofrance-mapping.md)).
 
-Raw bulletins are wrapped in a GeoJSON Feature envelope before storage —
-`{ type: "Feature", geometry: null, properties: {…} }`
+Raw bulletins from all three providers are wrapped in a GeoJSON Feature
+envelope before storage — `{ type: "Feature", geometry: null, properties: {…} }`
 ([why](docs/decisions/geojson-feature-envelope.md)).
 
 **Canonical payload examples** live in `tests/sentinels/` — three graded

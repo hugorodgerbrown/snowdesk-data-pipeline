@@ -31,7 +31,7 @@ from tests.factories import BulletinFactory, PipelineRunFactory
 # Patch targets
 # ---------------------------------------------------------------------------
 
-PATCH_SLF = "bulletins.services.slf_fetcher.run_pipeline"
+PATCH_SLF = "bulletins.services.slf_fetcher.run_slf_pipeline"
 PATCH_ALBINA = "bulletins.services.albina_fetcher.run_albina_pipeline"
 PATCH_METEOFRANCE = "bulletins.services.meteofrance_fetcher.run_meteofrance_pipeline"
 # The registry is built lazily; patch the underlying functions at their

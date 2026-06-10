@@ -92,7 +92,11 @@ def aspect_rose(aspects: list[str] | None, size: int = 36) -> str:
         An HTML-safe SVG string.
 
     """
-    active = set(aspects or [])
+    # Intersect with the known compass keys — security guard because aspect
+    # values originate from external CAAML feeds and are interpolated into the
+    # aria-label attribute inside mark_safe.  Unknown strings are silently
+    # dropped rather than forwarded into the output.
+    active = set(aspects or []) & set(_ASPECT_ANGLES)
     cx = cy = size / 2
     r = size / 2 - 2  # 2px inset for stroke clearance
 
