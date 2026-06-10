@@ -1,0 +1,62 @@
+# .github/workflows/lint-guards.yml — Design-system and documentation linters.
+#
+# Runs ``tox -e ds-lint`` (template design-token guard) and
+# ``tox -e docs-lint`` (docs frontmatter + CLAUDE.md routing guard) on every
+# pull request and push to main that touches templates, docs, the router,
+# or the linters themselves. Isolated from ci.yml so docs- and
+# template-only changes get a fast, focused gate without triggering the
+# full Python matrix.
+
+name: Lint guards
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.html"
+      - "docs/**"
+      - "CLAUDE.md"
+      - "bin/ds-lint"
+      - "bin/docs-lint"
+      - "tox.ini"
+      - ".github/workflows/lint-guards.yml"
+
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.html"
+      - "docs/**"
+      - "CLAUDE.md"
+      - "bin/ds-lint"
+      - "bin/docs-lint"
+      - "tox.ini"
+      - ".github/workflows/lint-guards.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Run lint guards
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toxenv: [ds-lint, docs-lint]
+    env:
+      TOXENV: ${{ matrix.toxenv }}
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python (3.12)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install and run tox
+        run: |
+          pip install tox
+          tox
