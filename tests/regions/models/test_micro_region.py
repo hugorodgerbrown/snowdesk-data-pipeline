@@ -140,7 +140,7 @@ class TestMicroRegionFactory:
     """Tests for the MicroRegionFactory itself."""
 
     def test_factory_creates_saved_instance(self) -> None:
-        """MicroRegionFactory() produces a persisted, valid MicroRegion."""
+        """MicroRegionFactory.create() produces a persisted, valid MicroRegion."""
         region = MicroRegionFactory.create()
         assert region.pk is not None
         region.full_clean()
