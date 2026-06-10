@@ -11,7 +11,7 @@ package-mode = false
 poetry-plugin-export = ">=1.8"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = "^3.14"
 Django = "^6.0"
 django-htmx = "^1.21.0"
 python-decouple = "^3.8"
@@ -63,7 +63,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.mypy]
 plugins = ["mypy_django_plugin.main"]
-python_version = "3.12"
+python_version = "3.14"
 strict = false
 strict_optional = true
 ignore_missing_imports = true
