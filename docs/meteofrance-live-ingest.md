@@ -1,3 +1,10 @@
+---
+name: meteofrance-live-ingest
+description: Météo-France DPBRA ingest operations — fetch_bulletins --source meteofrance, METEOFRANCE_API_KEY on Render, --local-mirror
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Météo-France live ingest — operations guide
 
 **Ticket:** SNOW-259

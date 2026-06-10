@@ -1,3 +1,10 @@
+---
+name: nav_implementation_spec
+description: templates/includes/nav.html partial — back_url/back_label/calendar_region_id parameters and per-page usage
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Navigation implementation spec
 
 ## Structure

@@ -1,3 +1,10 @@
+---
+name: client-side-tests
+description: Playwright e2e harness (tox -e e2e) — share-button smoke test, clipboard fixtures, CI cadence, adding browser tests
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Client-side test harness
 
 Snowdesk uses [Playwright](https://playwright.dev/) with

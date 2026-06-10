@@ -1,3 +1,10 @@
+---
+name: testing-scenarios
+description: Manual user-testing scenarios — homepage, bulletin pages, map, search and subscription flows on the test_data fixture
+status: current
+last-reviewed: 2026-06-10
+---
+
 # User Testing Scenarios -- Snowdesk
 
 > **Prerequisites**
@@ -271,26 +278,26 @@ both hits appear and the badge makes the distinction obvious.
 
 ### Scenario 10: Subscribe as a new user -- happy path
 
-**Goal**: Complete the full subscription flow from entering an email to selecting regions.
+**Goal**: Complete the full subscription flow from the bulletin-page inline form to the manage page.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/subscribe/ | Page loads with heading "Subscribe to avalanche bulletins" and an email input field with placeholder "your@email.com" |
+| 1 | Navigate to http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/ and scroll to the bottom of the bulletin | A "Get avalanche alerts" card is visible with an email input (placeholder "your@email.com") and a "Subscribe" button |
 | 2 | Type `tester@example.com` into the email field | Text appears in the input field |
-| 3 | Click "Send magic link" | Browser redirects to http://localhost:8000/subscribe/sent/ showing "Check your inbox" and the message "the link expires in 15 minutes" |
-| 4 | Open Mailhog at http://localhost:8025 | An email is listed in the inbox for `tester@example.com` |
-| 5 | Open the email and click the magic link | Browser navigates to `http://localhost:8000/subscribe/verify/?token=...` and then redirects to http://localhost:8000/subscribe/manage/ |
-| 6 | Verify the manage page | Page shows "Manage Subscription", the text "Bulletins sent to tester@example.com", "Your Regions" section showing "No regions selected yet", and a search box labelled "Add a Region" |
+| 3 | Click "Subscribe" | The card is replaced in-place (HTMX, no page reload) with "Check your inbox" and "We've sent you a link to access your account. It expires in 24 hours." |
+| 4 | Open Mailhog at http://localhost:8025 | An email is listed in the inbox for `tester@example.com` containing an account-access link of the form `http://localhost:8000/subscribe/account/<token>/` |
+| 5 | Open the email and click the account link | Browser redirects to http://localhost:8000/subscribe/manage/?just_confirmed=1 |
+| 6 | Verify the manage page | A "Your subscription is confirmed." banner is shown; a region card for the subscribed region (CH-4115) is listed with a "Remove" button; a "Passkeys" section prompts "Sign in faster with a passkey" |
 
-### Scenario 11: Search for a resort and add a region subscription (HTMX)
+### Scenario 11: One-click add a region from another bulletin page (HTMX)
 
-**Goal**: Use the live search to find a resort and subscribe to its region, verifying HTMX updates without page reload.
+**Goal**: Verify the inline CTA becomes a one-click "Add region" button when signed in, updating without a page reload.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | On the manage page, type `Verbier` into the "Search region name" input | After a ~300ms delay, search results appear below the input without a full page reload; a result shows "Verbier (Les 4 Vallees)" with region info and an "Add" button |
-| 2 | Click the "Add" button next to Verbier | The "Your Regions" section updates (without page reload) to show a card with the region name and a "Remove" button |
-| 3 | Verify the search results refreshed | The search results no longer include Verbier or other resorts in the same region (Nendaz, Veysonnaz, Thyon share CH-4115) |
+| 1 | While signed in (Scenario 10), navigate to http://localhost:8000/CH-1221/grindelwald/2026-04-10/ and scroll to the CTA | The card shows "You're signed in. One click to add daily bulletin updates for this region." with an "Add region" button (no email input) |
+| 2 | Click "Add region" | The card is replaced in-place (no page reload) with a confirmation that the region was added, including a "Manage your subscriptions" link |
+| 3 | Navigate to http://localhost:8000/subscribe/manage/ | Two region cards are listed |
 
 ### Scenario 12: Add multiple regions and remove one (HTMX)
 
@@ -298,105 +305,106 @@ both hits appear and the badge makes the distinction obvious.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | On the manage page, clear the search box and type `Zermatt` | Search results show "Zermatt" with region info |
-| 2 | Click "Add" next to Zermatt | Zermatt's region card appears in "Your Regions"; now two region cards are listed |
-| 3 | Clear the search box and type `Grindelwald` | Search results show "Grindelwald" with region info |
-| 4 | Click "Add" next to Grindelwald | Grindelwald's region card appears in "Your Regions"; now three region cards are listed |
-| 5 | Click "Remove" on the Zermatt region card | The Zermatt card disappears from "Your Regions" without a page reload; two region cards remain |
+| 1 | While signed in, navigate to http://localhost:8000/CH-4222/ and scroll to the CTA | The bulletin page for the Zermatt region shows the one-click "Add region" card |
+| 2 | Click "Add region" | The card confirms the region was added |
+| 3 | Navigate to http://localhost:8000/subscribe/manage/ | Three region cards are listed |
+| 4 | Click "Remove" on the Grindelwald region card | The card disappears without a page reload (HTMX swap); two region cards remain |
 
-### Scenario 13: Unsubscribe from all regions (HTMX)
+### Scenario 13: Unsubscribe from all alerts (delete account)
 
-**Goal**: Verify the "Unsubscribe from all regions" button clears all subscriptions.
-
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | On the manage page with at least one region subscribed, locate the "Unsubscribe from all regions" link at the bottom | The link is visible as underlined text |
-| 2 | Click "Unsubscribe from all regions" | A browser confirmation dialog appears asking "Remove all region subscriptions?" |
-| 3 | Click "OK" on the confirmation dialog | The "Your Regions" section updates (without page reload) to show "No regions selected yet. Use the search below to add one." |
-
-### Scenario 14: Search with no matching results
-
-**Goal**: Verify the empty-state message appears when no resorts match the search query.
+**Goal**: Verify the "Unsubscribe from all alerts" button deletes the account.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | On the manage page, type `xyznonexistent` into the search box | After the 300ms delay, the search results area shows "No matching resorts found." |
-| 2 | Clear the search box entirely | The search results area clears (no results, no error message) |
+| 1 | On the manage page with at least one region subscribed, locate the "Unsubscribe from all alerts" link at the bottom | The link is visible as small underlined text below the Passkeys section |
+| 2 | Click "Unsubscribe from all alerts" | A browser confirmation dialog appears asking "Unsubscribe from all alerts and delete your account?" |
+| 3 | Click "OK" on the confirmation dialog | Browser is redirected to http://localhost:8000/subscribe/unsubscribe-done/; the subscriber account is hard-deleted and the session is cleared |
 
-### Scenario 15: Search with an alternative resort name
+### Scenario 14: Removing the last region deletes the account
 
-**Goal**: Verify search matches on the alternative name field as well as the primary name.
-
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | On the manage page, type `Matterhorn` into the search box | Search results show "Zermatt (Matterhorn)" with region info and an "Add" button |
-| 2 | Clear and type `Saas Valley` | Search results show "Saas-Fee (Saas Valley)", "Saas-Grund (Saas Valley)", and "Saas-Almagell (Saas Valley)" |
-
-### Scenario 16: Submit the email form with an invalid email address
-
-**Goal**: Verify validation on the email form.
+**Goal**: Verify the last-region cascade hard-deletes the subscriber.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/subscribe/ | Email form loads |
+| 1 | Subscribe to exactly one region (Scenario 10) and open http://localhost:8000/subscribe/manage/ | One region card is listed |
+| 2 | Click "Remove" on the only region card | Browser is redirected to http://localhost:8000/subscribe/unsubscribe-done/ |
+| 3 | Navigate to http://localhost:8000/subscribe/manage/ | Browser redirects to http://localhost:8000/subscribe/sign-in/ (account deleted, session cleared) |
+
+### Scenario 15: Already-subscribed region shows an Unsubscribe CTA
+
+**Goal**: Verify the inline CTA reflects an existing subscription and can remove it.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | While signed in and subscribed to CH-4115, navigate to http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/ and scroll to the CTA | The card reads "You receive daily bulletin updates for this region." with an "Unsubscribe" button and a "Manage your subscriptions" link |
+| 2 | Click "Unsubscribe" (with at least one other region still subscribed) | The card is replaced in-place with an unsubscribed confirmation, without a page reload |
+
+### Scenario 16: Submit the inline subscribe form with an invalid email address
+
+**Goal**: Verify validation on the inline email form.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Sign out (or use a fresh private window) and open http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/ | The "Get avalanche alerts" card with the email input loads |
 | 2 | Type `notanemail` into the email field | Text appears in the input |
-| 3 | Click "Send magic link" | The form re-renders on the same page with a validation error message below the email field (e.g. "Enter a valid email address."); the browser does NOT redirect |
+| 3 | Click "Subscribe" | Submission is blocked: either the browser's built-in email validation fires, or the form re-renders in place with a validation error (e.g. "Enter a valid email address."); the page does NOT navigate |
 
-### Scenario 17: Submit the email form with an empty email
+### Scenario 17: Submit the inline subscribe form with an empty email
 
 **Goal**: Verify the form requires an email address.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/subscribe/ | Email form loads |
-| 2 | Leave the email field empty and click "Send magic link" | The form re-renders with a validation error (e.g. "This field is required."); no redirect occurs |
+| 1 | On the same bulletin page, leave the email field empty and click "Subscribe" | Submission is blocked: either the browser's required-field validation fires, or the form re-renders in place with a validation error (e.g. "This field is required."); no navigation occurs |
 
-### Scenario 18: Use an expired or invalid magic link
+### Scenario 18: Use an expired or invalid account link
 
 **Goal**: Verify the link-expired error page is shown for bad tokens.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/subscribe/verify/?token=expired.invalid.token | Page shows a "link has expired" message with text indicating the 15-minute validity window |
-| 2 | Verify the recovery link | A link or button to request a new link is visible |
-| 3 | Click the recovery link | Browser navigates to http://localhost:8000/subscribe/ (the email entry form) |
+| 1 | Navigate to http://localhost:8000/subscribe/account/expired.invalid.token/ | Page shows "This link has expired" (HTTP 400) with the text "Account links are only valid for 24 hours. This one has expired or is invalid." |
+| 2 | Verify the recovery link | A "Request a new link" button is visible |
+| 3 | Click "Request a new link" | Browser navigates to http://localhost:8000/subscribe/manage/, which redirects (unauthenticated) to http://localhost:8000/subscribe/sign-in/ |
 
-### Scenario 19: Access the magic link with no token parameter
+### Scenario 19: Access the account URL with no token
 
-**Goal**: Verify the verify endpoint handles a missing token gracefully.
+**Goal**: Verify the account endpoint requires a token in the URL path.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/subscribe/verify/ | Page shows the same "link has expired" message and recovery link as Scenario 18 |
+| 1 | Navigate to http://localhost:8000/subscribe/account/ | Browser shows a 404 Not Found page (the URL pattern requires a token segment) |
 
 ### Scenario 20: Access the manage page without authentication
 
-**Goal**: Verify unauthenticated users are redirected to the email entry form.
+**Goal**: Verify unauthenticated users are redirected to the sign-in page.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Open a new private/incognito browser window | Fresh session with no cookies |
-| 2 | Navigate to http://localhost:8000/subscribe/manage/ | Browser redirects to http://localhost:8000/subscribe/ (the email entry form) |
+| 2 | Navigate to http://localhost:8000/subscribe/manage/ | Browser redirects to http://localhost:8000/subscribe/sign-in/ |
 
-### Scenario 21: Returning subscriber re-authenticates via magic link
+### Scenario 21: Returning subscriber re-authenticates via the sign-in page
 
 **Goal**: Verify a returning subscriber sees their existing regions after re-authenticating.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Complete Scenario 10 and add at least one region (e.g. Verbier / CH-4115) via Scenario 11 | Region is saved |
+| 1 | Complete Scenario 10 (subscribe and confirm at least one region, e.g. CH-4115) | Region is saved |
 | 2 | Open a new private/incognito window (to clear the session) | Fresh session |
-| 3 | Navigate to http://localhost:8000/subscribe/ and enter the same email (`tester@example.com`) | Magic link email is sent |
-| 4 | Open Mailhog, find the new email, and click the magic link | Browser redirects to http://localhost:8000/subscribe/manage/ |
-| 5 | Verify existing subscriptions | "Your Regions" section shows the previously added region (e.g. CH-4115) with a "Remove" button |
+| 3 | Navigate to http://localhost:8000/subscribe/sign-in/ | Page loads with a "Sign in" heading, the text "Enter your email address and we'll send you a sign-in link.", and (where WebAuthn is available) a "Sign in with a passkey" button |
+| 4 | Enter `tester@example.com` and click "Send sign-in link" | A "Check your inbox" page loads: "If that address is registered, we've sent you a link to manage your subscriptions. It expires in 24 hours." (the same response is shown whether or not the email is registered) |
+| 5 | Open Mailhog, find the new email, and click the account link | Browser redirects to http://localhost:8000/subscribe/manage/ |
+| 6 | Verify existing subscriptions | The previously added region card (e.g. CH-4115) is listed with a "Remove" button |
 
-### Scenario 22: Legacy /subscribe/regions/ URL redirects to manage page
+### Scenario 22: Sign out via the nav account menu
 
-**Goal**: Verify the deprecated regions URL redirects correctly.
+**Goal**: Verify the authenticated account menu offers sign-out.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/subscribe/regions/ | Browser redirects to http://localhost:8000/subscribe/manage/ |
+| 1 | While signed in, click the circular avatar button (first letter of your email) in the top nav | A dropdown menu opens listing the subscribed region links, a "Manage alerts" link, and a "Sign out" button |
+| 2 | Click "Sign out" | The session is cleared and the browser is redirected to the sign-in page; navigating to http://localhost:8000/subscribe/manage/ now redirects to http://localhost:8000/subscribe/sign-in/ |
 
 ### Scenario 23: Deprecated /random/ URL redirects
 

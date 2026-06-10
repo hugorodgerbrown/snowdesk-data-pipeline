@@ -1,3 +1,10 @@
+---
+name: bulletin-guide
+description: How to read the SLF avalanche bulletin — danger levels, subdivisions, dry/wet hazards, aspects, elevation, day evolution
+status: current
+last-reviewed: 2026-06-10
+---
+
 # How to Read the Avalanche Bulletin
 
 The Swiss avalanche bulletin is published daily by the WSL Institute for Snow and Avalanche Research (SLF) and covers the Swiss Alps and Jura. It is an informed forecast — not a guarantee — and cannot replace an on-site assessment. The information here explains how the bulletin is structured, what each field means, and what the data reveals about how the bulletin behaves in practice.

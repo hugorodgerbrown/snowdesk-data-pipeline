@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+# bin/docs-lint — Documentation linter for Snowdesk markdown docs.
+#
+# Enforces the two structural invariants that keep docs/ navigable for both
+# humans and LLM agents:
+#
+#   1. Every doc carries YAML frontmatter (name / description / status /
+#      last-reviewed) so a reader can judge relevance and freshness without
+#      opening the body. The `description` line is the retrieval key agents
+#      use to decide whether to load the doc at all.
+#
+#   2. Every doc is reachable from the CLAUDE.md router — either referenced
+#      by path, or covered by a directory reference (e.g. `docs/decisions/`).
+#      Orphan docs are invisible to agents and rot silently.
+#
+# Directories under docs/ that hold dated artefacts rather than living
+# documentation (code-reviews, qa, research, screenshots) are excluded.
+#
+# Exit code: 0 = clean; 1 = one or more violations.
+#
+# Usage:
+#   bin/docs-lint                # scan all governed docs
+#   bin/docs-lint path/to/doc.md ...  # scan specific files
+"""Documentation linter — see module docstring for full behaviour."""
+
+# ruff: noqa: T201
+# CLI script — print() is the intended output channel.
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DOCS_ROOT = REPO_ROOT / "docs"
+ROUTER = REPO_ROOT / "CLAUDE.md"
+
+# Subdirectories of docs/ that hold dated artefacts (review records, QA
+# scripts, research spikes, images) rather than living documentation.
+# They are exempt from frontmatter and routing requirements.
+EXCLUDED_DIRS: frozenset[str] = frozenset(
+    {"code-reviews", "qa", "research", "screenshots"}
+)
+
+VALID_STATUSES: frozenset[str] = frozenset({"current", "draft", "historical"})
+REQUIRED_KEYS: tuple[str, ...] = ("name", "description", "status", "last-reviewed")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+MAX_DESCRIPTION_LEN = 140
+
+
+@dataclass(frozen=True)
+class Violation:
+    """One lint failure in a documentation file."""
+
+    path: Path
+    message: str
+
+
+def _repo_relative(path: Path) -> Path:
+    """Return `path` relative to `REPO_ROOT`, or unchanged if outside."""
+    try:
+        return path.relative_to(REPO_ROOT)
+    except ValueError:
+        return path
+
+
+def _parse_frontmatter(text: str) -> dict[str, str] | None:
+    """Return the frontmatter mapping, or None if no valid block exists.
+
+    Only flat `key: value` pairs are recognised — the docs frontmatter
+    schema is deliberately minimal so no YAML library is needed and the
+    lint env can run with zero dependencies.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    fields: dict[str, str] = {}
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return fields
+        match = re.match(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$", line)
+        if match:
+            fields[match.group(1)] = match.group(2).strip()
+    return None  # no closing delimiter
+
+
+def _check_frontmatter(path: Path) -> list[Violation]:
+    """Validate the frontmatter block of one doc."""
+    violations: list[Violation] = []
+    fields = _parse_frontmatter(path.read_text(encoding="utf-8"))
+    if fields is None:
+        return [
+            Violation(
+                path,
+                "missing frontmatter — every doc starts with a "
+                "`---` block carrying name/description/status/last-reviewed",
+            )
+        ]
+    for key in REQUIRED_KEYS:
+        if not fields.get(key):
+            violations.append(Violation(path, f"frontmatter key `{key}` missing or empty"))
+    if "name" in fields and fields.get("name") and fields["name"] != path.stem:
+        violations.append(
+            Violation(
+                path,
+                f"frontmatter `name: {fields['name']}` must equal the "
+                f"filename stem `{path.stem}`",
+            )
+        )
+    status = fields.get("status")
+    if status and status not in VALID_STATUSES:
+        violations.append(
+            Violation(
+                path,
+                f"frontmatter `status: {status}` must be one of "
+                f"{', '.join(sorted(VALID_STATUSES))}",
+            )
+        )
+    reviewed = fields.get("last-reviewed")
+    if reviewed and not DATE_RE.match(reviewed):
+        violations.append(
+            Violation(path, f"frontmatter `last-reviewed: {reviewed}` must be YYYY-MM-DD")
+        )
+    description = fields.get("description", "")
+    if len(description) > MAX_DESCRIPTION_LEN:
+        violations.append(
+            Violation(
+                path,
+                f"description is {len(description)} chars — keep the retrieval "
+                f"key under {MAX_DESCRIPTION_LEN}",
+            )
+        )
+    return violations
+
+
+def _check_routing(path: Path, router_text: str) -> list[Violation]:
+    """Ensure `path` is reachable from the CLAUDE.md router.
+
+    A doc is routed if its repo-relative path appears verbatim in
+    CLAUDE.md, or if any ancestor directory under docs/ is referenced
+    with a trailing slash (directory-level routing, e.g. `docs/decisions/`).
+    """
+    rel = _repo_relative(path).as_posix()
+    if rel in router_text:
+        return []
+    # Directory-level routing only applies below docs/ — `docs/` itself is a
+    # substring of every routed path and must not satisfy the check.
+    parent = Path(rel).parent
+    while parent != Path("docs") and parent != Path("."):
+        if f"{parent.as_posix()}/" in router_text:
+            return []
+        parent = parent.parent
+    return [
+        Violation(
+            path,
+            "not reachable from CLAUDE.md — add it to the routing table "
+            "(or reference its directory) so agents can find it",
+        )
+    ]
+
+
+def _collect_files(args_paths: list[str]) -> list[Path]:
+    """Resolve CLI args to the list of governed docs to scan."""
+    if args_paths:
+        candidates = [Path(raw).resolve() for raw in args_paths]
+        files = [p for p in candidates if p.suffix == ".md" and p.exists()]
+    else:
+        files = sorted(DOCS_ROOT.rglob("*.md"))
+    governed: list[Path] = []
+    for path in files:
+        rel = _repo_relative(path)
+        parts = rel.parts
+        if parts[0] != "docs":
+            continue
+        if any(part in EXCLUDED_DIRS for part in parts[1:-1]):
+            continue
+        governed.append(path)
+    return governed
+
+
+def main() -> int:
+    """CLI entry point — see module docstring for behaviour and exit codes."""
+    parser = argparse.ArgumentParser(description="Snowdesk documentation linter.")
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        help="Optional files to scan. Defaults to every governed doc under docs/.",
+    )
+    args = parser.parse_args()
+
+    router_text = ROUTER.read_text(encoding="utf-8")
+    files = _collect_files(args.paths)
+    violations: list[Violation] = []
+    for path in files:
+        violations.extend(_check_frontmatter(path))
+        violations.extend(_check_routing(path, router_text))
+
+    for v in violations:
+        print(f"{_repo_relative(v.path)}: {v.message}")
+    print(f"\nScanned {len(files)} doc(s) | {len(violations)} violation(s)")
+    return 1 if violations else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

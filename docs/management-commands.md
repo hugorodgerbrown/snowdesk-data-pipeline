@@ -1,3 +1,10 @@
+---
+name: management-commands
+description: Command catalogue — fetch_bulletins, fetch_weather, backfill_weather, rebuild_render_models, fixture builders, scheduler jobs
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Management commands
 
 `fetch_bulletins` is the single entry point for fetching avalanche bulletins
@@ -262,8 +269,11 @@ poetry run python manage.py rebuild_render_models --commit  # persist
 
 # Flags: --commit, --all (every row), --bulletin-id <id> (single row), --batch-size N
 
-# Re-derive every RegionDayRating row under the current v5 headline-only policy
-# (min_rating = max_rating = headline danger key). Intended as a post-deployment
+# Re-derive every RegionDayRating row under the current v8 policy: min/max
+# come from an elevation-band split (distinct all_day band keys) or, failing
+# that, a time-period split (afternoon level above morning level); otherwise
+# min_rating = max_rating = headline danger key. AM/PM fields are set whenever
+# both morning and afternoon trait levels exist. Intended as a post-deployment
 # step after a day-rating policy change. Read-only by default.
 poetry run python manage.py recompute_day_ratings                    # read-only
 poetry run python manage.py recompute_day_ratings --commit           # persist all pairs
@@ -399,7 +409,7 @@ optimised).
 
 **Scheduler note:** `fetch_bulletins` is invoked by the `snowdesk-scheduler`
 Background Worker via `schedule.py` — see the Operational requirements section
-below. To add or change sources, update `_run_fetch_bulletins` in `schedule.py`
+at the top of this file. To add or change sources, update `_run_fetch_bulletins` in `schedule.py`
 and redeploy the worker.
 
 ---
@@ -419,7 +429,7 @@ invocation a useful connectivity probe.
 
 > **Scheduler note:** `fetch_weather` is invoked by the `snowdesk-scheduler`
 > Background Worker via `schedule.py` — see the Operational requirements section
-> below. To change the schedule, update `_run_fetch_weather` in `schedule.py`
+> at the top of this file. To change the schedule, update `_run_fetch_weather` in `schedule.py`
 > and redeploy the worker.
 
 ```bash

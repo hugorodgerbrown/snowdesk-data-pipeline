@@ -1,8 +1,15 @@
+---
+name: render-model
+description: Bulletin.render_model JSON shape — danger ratings, traits, prose, RENDER_MODEL_VERSION, enrich_render_model, day character
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Render model
 
 Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest time so templates contain no derivation logic.
 
-**Shape**: `{ version, danger, traits[], snowpack_structure, metadata, prose }`.
+**Shape**: `{ version, source, danger, traits[], snowpack_structure, metadata, prose, danger_patterns }`.
 - `danger` — `{ key, number, subdivision, ratings[] }` resolved from `dangerRatings`.
   - `ratings[]` — one entry per CAAML `dangerRating` that had a valid `mainValue`. Each entry shape: `{ period, key, subdivision, elevation }`.
     - `period` — `"all_day"`, `"earlier"`, or `"later"` (from `validTimePeriod`).
@@ -16,7 +23,7 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
   - `geography.source` is `"problems"` when aspects/elevation are present, or `"prose_only"` when the SLF prose comment is the only geographic description.
 - `metadata` — `{ publication_time, valid_from, valid_until, next_update, unscheduled, lang }`. Timestamps are ISO 8601 strings or `None`; `unscheduled` defaults to `False`; `lang` defaults to `"en"`.
 - `prose` — `{ snowpack_structure, weather_review, weather_forecast, tendency[] }`. Scalars are HTML strings or `None`. Each tendency entry has `{ comment, tendency_type, valid_from, valid_until }`.
-- `snowpack_structure` (top-level) is kept alongside `prose.snowpack_structure` for backward compatibility; both hold the same value.
+- `snowpack_structure` (top-level) is kept alongside `prose.snowpack_structure` for v2 backward compatibility; both hold the same value (still present as of v7).
 
 **Versioning**: `RENDER_MODEL_VERSION = 7` (in `bulletins/services/render_model.py`). Bump it and run `rebuild_render_models` whenever the output shape or builder logic changes. `BulletinQuerySet.needs_render_model_rebuild()` returns all rows with a stale version.
 

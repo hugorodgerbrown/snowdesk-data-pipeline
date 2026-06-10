@@ -1,3 +1,10 @@
+---
+name: linear-workflow
+description: Linear ticket lifecycle — status transitions, scoping comment contract, branch naming, PR body with Closes SNOW-xxx
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Linear workflow
 
 Linear (team prefix `SNOW-`) is the issue source of truth. The Linear MCP

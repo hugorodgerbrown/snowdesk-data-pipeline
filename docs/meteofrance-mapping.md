@@ -1,6 +1,13 @@
+---
+name: meteofrance-mapping
+description: Field-by-field DPBRA XML to CAAML JSON mapping for meteofrance_translator — bulletinID synthesis, SAT_TO_EAWS, customData.MF
+status: current
+last-reviewed: 2026-06-10
+---
+
 # MeteoFrance DPBRA → CAAML JSON mapping spec
 
-**Status:** draft.
+**Status:** implemented — see `bulletins/services/meteofrance_translator.py`; this doc is the field-mapping reference.
 **Scope:** authoritative field-by-field translation reference for the
 MeteoFrance source adapter — a function that converts one DPBRA XML
 document into the same CAAML JSON dict shape that SLF and ALBINA emit,
@@ -447,8 +454,8 @@ download URL of the source PDF, and weather snapshots at 00 h / 06 h /
 
 **Useful for:** historical backfill of French danger ratings into
 Snowdesk's `Bulletin`/`RegionDayRating` tables — saves writing a PDF
-scraper of our own. Track as a follow-up SNOW ticket once forward-going
-ingestion (SNOW-177b) is in production.
+scraper of our own. Forward-going ingestion (SNOW-177) is now in
+production; the backfill remains a follow-up SNOW ticket.
 
 **Not useful for** the remaining open items in this spec:
 
@@ -460,11 +467,10 @@ ingestion (SNOW-177b) is in production.
   or `@ID`, so it can't answer the amendment-behaviour question
   either.
 
-### Cross-validation during shadow-mode
+### Cross-validation
 
-If the orchestrator runs DPBRA ingestion in shadow mode before
-go-live, comparing our `bulletins/services/sources/meteofrance.py`
-output against the same `(date, massif)` row in
+Comparing the output of `bulletins/services/meteofrance_translator.py`
+against the same `(date, massif)` row in
 `meteofrance_bra_hist`'s CSV catches translation bugs the unit-test
 fixtures may miss — particularly around the elevation-split semantics
 and `evolurisque` evolution arrows. Low-cost validation; high signal.

@@ -1,3 +1,10 @@
+---
+name: lighthouse
+description: Lighthouse CI budgets and the npm run lh local audit under config.settings.perf; checklist for new public pages
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Lighthouse CI — accessibility, SEO, performance, best-practices
 
 Lighthouse audits the public site on every PR and blocks merge on
