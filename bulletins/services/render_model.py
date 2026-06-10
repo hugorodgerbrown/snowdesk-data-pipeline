@@ -34,7 +34,9 @@ Version 3 changes:
     ``tendency`` list. Each tendency entry carries ``comment``,
     ``tendency_type``, ``valid_from``, and ``valid_until``.
   - Top-level ``snowpack_structure`` is kept (equals ``prose.snowpack_structure``)
-    for backward compatibility; the v4 bump will drop it.
+    for backward compatibility. It was originally slated for removal in v4
+    but has been retained — both locations hold the same value (still true
+    as of v7).
 
 Version 3 (continued — no shape change requiring regeneration):
   - Removed ``fallback_key_message`` from the output shape. The field was
