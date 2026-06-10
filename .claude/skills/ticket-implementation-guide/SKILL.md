@@ -1,9 +1,9 @@
 ---
-name: linear-ticket-implementer
-description: Use when picking up a scoped Linear ticket to implement it — i.e. the user says "implement SNOW-xxx" or equivalent. Covers the pickup sequence (fetch issue + comments, verify scoping comment exists, stop if missing), branch naming, the MCP move to In Progress (no push yet), PR title/body format including the `Closes SNOW-xxx` magic string, and when to stop and ask rather than push through. Do NOT use when creating or scoping a ticket — use linear-ticket-author for that.
+name: ticket-implementation-guide
+description: Use when picking up a scoped Linear ticket to implement it — i.e. the user says "implement SNOW-xxx" or equivalent. Covers the pickup sequence (fetch issue + comments, verify scoping comment exists, stop if missing), branch naming, the MCP move to In Progress (no push yet), PR title/body format including the `Closes SNOW-xxx` magic string, and when to stop and ask rather than push through. Do NOT use when creating or scoping a ticket — use ticket-authoring-guide for that.
 ---
 
-# Linear ticket implementer
+# Linear ticket implementation guide
 
 This skill governs how a scoped Linear ticket is **picked up, built, and
 landed**. The full narrative lives in `docs/linear-workflow.md`; this skill
@@ -30,7 +30,7 @@ integration:
 - Any time the task is executing against an existing, scoped Linear ticket.
 
 If the task is to *create* a ticket, *scope* a ticket, or *update* ticket
-metadata, stop — that's the `linear-ticket-author` skill's job.
+metadata, stop — that's the `ticket-authoring-guide` skill's job.
 
 ## Pickup sequence
 
@@ -138,7 +138,7 @@ body). See the PR format section below.
 - **One ticket per branch.** If implementation reveals work that needs its
   own ticket (newly discovered, not originally scoped), do not piggyback
   onto the current branch. Ask the user to spawn a follow-up ticket via
-  the `linear-ticket-author` flow, and keep the current branch focused.
+  the `ticket-authoring-guide` flow, and keep the current branch focused.
 
 ## PR format
 

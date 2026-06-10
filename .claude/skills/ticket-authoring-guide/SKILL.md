@@ -1,9 +1,9 @@
 ---
-name: linear-ticket-author
-description: Use when creating a new Linear ticket, updating an existing ticket's description, or posting a scoping comment on a ticket. Covers the scoping comment contract, ticket decomposition rules (one ticket per independently-shippable unit), MCP parameter gotchas (priority/estimate enums, state name matching, `blocks` relationship quirk), and the rule that only a clean scoping comment promotes a ticket to `Ready for dev`. Do NOT use when implementing a ticket that's already scoped — use linear-ticket-implementer for that.
+name: ticket-authoring-guide
+description: Use when creating a new Linear ticket, updating an existing ticket's description, or posting a scoping comment on a ticket. Covers the scoping comment contract, ticket decomposition rules (one ticket per independently-shippable unit), MCP parameter gotchas (priority/estimate enums, state name matching, `blocks` relationship quirk), and the rule that only a clean scoping comment promotes a ticket to `Ready for dev`. Do NOT use when implementing a ticket that's already scoped — use ticket-implementation-guide for that.
 ---
 
-# Linear ticket author
+# Linear ticket authoring guide
 
 This skill governs how tickets are **created, scoped, and updated** in the
 Snowdesk Linear workspace (team prefix `SNOW-`). The full narrative lives in
@@ -22,7 +22,7 @@ window — if it matters, it goes on the ticket.
 - Posting a project update on a Linear project.
 
 If the user is asking to **implement** a ticket that's already scoped,
-stop — that's the `linear-ticket-implementer` skill's job.
+stop — that's the `ticket-implementation-guide` skill's job.
 
 ## The two creation modes
 
