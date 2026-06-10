@@ -27,9 +27,7 @@ without an API key.
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import time
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
@@ -41,6 +39,13 @@ import requests
 from django.conf import settings
 
 from bulletins.models import Bulletin, PipelineRun
+from bulletins.services.fetcher_common import (
+    OUTCOME_CREATED,
+    OUTCOME_FAILED,
+    OUTCOME_SKIPPED,
+    OUTCOME_UPDATED,
+    write_ndjson_archive,
+)
 from bulletins.services.meteofrance_translator import (
     MeteoFranceDelegatedRegionError,
     MeteoFranceTranslationError,
@@ -55,6 +60,11 @@ _ONE_DAY = timedelta(days=1)
 
 _MF_ARCHIVE_BASE = "https://donneespubliques.meteofrance.fr/donnees_libres/Pdf/BRA"
 _MF_USER_AGENT = "snowdesk/1.0 (contact@snowdesk.app)"
+
+# MeteoFrance-specific outcome — a massif whose region is managed by a partner
+# body (e.g. Andorre / massif 71).  Not a shared constant because this is
+# semantically specific to MF's delegated-region concept.
+_OUTCOME_DELEGATED = "delegated"
 
 
 def _fetch_mf_index(
@@ -310,11 +320,11 @@ def run_meteofrance_pipeline(
     run.mark_running()
 
     counts: dict[str, int] = {
-        "created": 0,
-        "updated": 0,
-        "skipped": 0,
-        "delegated": 0,
-        "failed": 0,
+        OUTCOME_CREATED: 0,
+        OUTCOME_UPDATED: 0,
+        OUTCOME_SKIPPED: 0,
+        _OUTCOME_DELEGATED: 0,
+        OUTCOME_FAILED: 0,
     }
     request_count = 0
 
@@ -357,17 +367,17 @@ def run_meteofrance_pipeline(
         "%d created, %d updated, %d skipped, %d delegated, %d failed",
         run.pk,
         request_count,
-        counts["created"],
-        counts["updated"],
-        counts["skipped"],
-        counts["delegated"],
-        counts["failed"],
+        counts[OUTCOME_CREATED],
+        counts[OUTCOME_UPDATED],
+        counts[OUTCOME_SKIPPED],
+        counts[_OUTCOME_DELEGATED],
+        counts[OUTCOME_FAILED],
     )
 
     if dry_run:
         run.mark_success(0, 0)
     else:
-        run.mark_success(counts["created"], counts["updated"])
+        run.mark_success(counts[OUTCOME_CREATED], counts[OUTCOME_UPDATED])
 
     return run
 
@@ -441,11 +451,11 @@ def _process_massif(
 
     if dry_run:
         logger.info("[dry-run] Would store MeteoFrance %s", bulletin_id)
-        return "created"
+        return OUTCOME_CREATED
 
     if not force and Bulletin.objects.filter(bulletin_id=bulletin_id).exists():
         logger.debug("Skipping existing MeteoFrance bulletin %s", bulletin_id)
-        return "skipped"
+        return OUTCOME_SKIPPED
 
     return _persist_bulletin(massif_id, run, raw, bulletin_id, pdf_session=pdf_session)
 
@@ -475,11 +485,11 @@ def _fetch_xml(
         logger.exception("Error fetching MeteoFrance massif %d: %s", massif_id, exc)
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
-        return "failed"
+        return OUTCOME_FAILED
 
     if xml_bytes is None:
         logger.info("No bulletin for MeteoFrance massif %d today (404)", massif_id)
-        return "skipped"
+        return OUTCOME_SKIPPED
 
     return xml_bytes
 
@@ -505,14 +515,14 @@ def _translate_xml(
         return parse_dpbra_xml(xml_bytes)
     except MeteoFranceDelegatedRegionError as exc:
         logger.info("MeteoFrance massif %d is delegated — skipping: %s", massif_id, exc)
-        return "delegated"
+        return _OUTCOME_DELEGATED
     except MeteoFranceTranslationError as exc:
         logger.exception(
             "Translation error for MeteoFrance massif %d: %s", massif_id, exc
         )
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
-        return "failed"
+        return OUTCOME_FAILED
 
 
 def _persist_bulletin(
@@ -572,16 +582,16 @@ def _persist_bulletin(
         )
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
-        return "failed"
+        return OUTCOME_FAILED
     except Exception as exc:
         logger.exception(
             "Failed to upsert MeteoFrance bulletin %s: %s", bulletin_id, exc
         )
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
-        return "failed"
+        return OUTCOME_FAILED
 
-    return "created" if created else "updated"
+    return OUTCOME_CREATED if created else OUTCOME_UPDATED
 
 
 # ---------------------------------------------------------------------------
@@ -628,7 +638,8 @@ def meteofrance_stash_writer(records: list[dict[str, Any]], path: Path) -> int:
     """
     Merge ``records`` into the on-disk MeteoFrance archive and return the new size.
 
-    Reads the existing archive at ``path`` (if it exists), overlays the
+    Delegates to ``write_ndjson_archive`` from ``fetcher_common``, which
+    reads the existing archive at ``path`` (if it exists), overlays the
     supplied records (later ``bulletinID`` wins), sorts ascending by
     ``validTime.startTime``, and writes the result back atomically via a
     sibling ``.tmp`` file plus ``os.replace``.
@@ -641,38 +652,4 @@ def meteofrance_stash_writer(records: list[dict[str, Any]], path: Path) -> int:
         The total number of records in the archive after the merge.
 
     """
-    existing: dict[str, dict[str, Any]] = {}
-    if path.exists():
-        with path.open(encoding="utf-8") as fh:
-            for line in fh:
-                stripped = line.strip()
-                if stripped:
-                    record = json.loads(stripped)
-                    bid = record.get("bulletinID", "")
-                    if bid:
-                        existing[bid] = record
-
-    for record in records:
-        bid = record.get("bulletinID", "")
-        if bid:
-            existing[bid] = record
-
-    merged = sorted(
-        existing.values(),
-        key=lambda r: (r.get("validTime") or {}).get("startTime", ""),
-    )
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as fh:
-        for record in merged:
-            fh.write(json.dumps(record) + "\n")
-    os.replace(tmp, path)
-
-    logger.info(
-        "meteofrance_stash_writer: records_in=%d archive_total=%d path=%s",
-        len(records),
-        len(merged),
-        path,
-    )
-    return len(merged)
+    return write_ndjson_archive(records, path, source_label="meteofrance_stash_writer")
