@@ -2,7 +2,7 @@
 
 Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest time so templates contain no derivation logic.
 
-**Shape**: `{ version, danger, traits[], fallback_key_message, snowpack_structure, metadata, prose }`.
+**Shape**: `{ version, danger, traits[], snowpack_structure, metadata, prose }`.
 - `danger` — `{ key, number, subdivision, ratings[] }` resolved from `dangerRatings`.
   - `ratings[]` — one entry per CAAML `dangerRating` that had a valid `mainValue`. Each entry shape: `{ period, key, subdivision, elevation }`.
     - `period` — `"all_day"`, `"earlier"`, or `"later"` (from `validTimePeriod`).
