@@ -58,10 +58,6 @@ class BaseModel(models.Model):
 class RequestLogQuerySet(models.QuerySet["RequestLog"]):
     """Custom queryset for RequestLog."""
 
-    def for_subscriber(self, subscriber: object) -> RequestLogQuerySet:
-        """Return all RequestLog rows linked to the given subscriber."""
-        return self.filter(subscriber=subscriber)
-
 
 class RequestLogManager(models.Manager["RequestLog"]):
     """Manager for RequestLog with a from_request factory method."""
