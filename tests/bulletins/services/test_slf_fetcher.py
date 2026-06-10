@@ -7,7 +7,7 @@ Covers:
   - _get_region: returns seeded Region, raises UnknownRegionError otherwise
   - upsert_bulletin: creation, update, region linking
   - fetch_bulletin_page: HTTP call with mocked responses
-  - run_pipeline: full orchestration with mocked API pages
+  - run_slf_pipeline: full orchestration with mocked API pages
   - _slf_pdf_url: URL derivation for SLF archive PDFs
 """
 
@@ -31,7 +31,7 @@ from bulletins.services.slf_fetcher import (
     _resolve_issued_at,
     _slf_pdf_url,
     fetch_bulletin_page,
-    run_pipeline,
+    run_slf_pipeline,
     upsert_bulletin,
 )
 from regions.models import MicroRegion
@@ -605,13 +605,13 @@ class TestFetchBulletinPage:
 
 
 # ---------------------------------------------------------------------------
-# run_pipeline
+# run_slf_pipeline
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestRunPipeline:
-    """Tests for run_pipeline."""
+    """Tests for run_slf_pipeline."""
 
     pytestmark = pytest.mark.usefixtures("_seed_test_regions")
 
@@ -623,7 +623,7 @@ class TestRunPipeline:
             _make_raw_bulletin("b2", "2025-03-14T08:00:00Z"),
         ]
 
-        run = run_pipeline(
+        run = run_slf_pipeline(
             start=date(2025, 3, 14),
             end=date(2025, 3, 15),
             triggered_by="test",
@@ -641,7 +641,7 @@ class TestRunPipeline:
             _make_raw_bulletin("in-range", "2025-03-15T08:00:00Z"),
         ]
 
-        run = run_pipeline(
+        run = run_slf_pipeline(
             start=date(2025, 3, 15),
             end=date(2025, 3, 15),
             triggered_by="test",
@@ -659,7 +659,7 @@ class TestRunPipeline:
             _make_raw_bulletin("too-old", "2025-03-13T08:00:00Z"),
         ]
 
-        run = run_pipeline(
+        run = run_slf_pipeline(
             start=date(2025, 3, 14),
             end=date(2025, 3, 15),
             triggered_by="test",
@@ -675,7 +675,7 @@ class TestRunPipeline:
             _make_raw_bulletin("b1", "2025-03-15T08:00:00Z"),
         ]
 
-        run = run_pipeline(
+        run = run_slf_pipeline(
             start=date(2025, 3, 15),
             end=date(2025, 3, 15),
             triggered_by="test",
@@ -700,7 +700,7 @@ class TestRunPipeline:
             _make_raw_bulletin("existing", "2025-03-15T08:00:00Z"),
         ]
 
-        run = run_pipeline(
+        run = run_slf_pipeline(
             start=date(2025, 3, 15),
             end=date(2025, 3, 15),
             triggered_by="test",
@@ -723,7 +723,7 @@ class TestRunPipeline:
             _make_raw_bulletin("existing", "2025-03-15T08:00:00Z"),
         ]
 
-        run = run_pipeline(
+        run = run_slf_pipeline(
             start=date(2025, 3, 15),
             end=date(2025, 3, 15),
             triggered_by="test",
@@ -738,7 +738,7 @@ class TestRunPipeline:
         """Run is marked FAILED if fetch raises an exception."""
         mock_fetch.side_effect = requests.ConnectionError("timeout")
 
-        run = run_pipeline(
+        run = run_slf_pipeline(
             start=date(2025, 3, 15),
             end=date(2025, 3, 15),
             triggered_by="test",
@@ -758,7 +758,7 @@ class TestRunPipeline:
             [],
         ]
 
-        run = run_pipeline(
+        run = run_slf_pipeline(
             start=date(2025, 3, 15),
             end=date(2025, 3, 15),
             triggered_by="test",
@@ -773,7 +773,7 @@ class TestRunPipeline:
         """The triggered_by label is stored on the PipelineRun."""
         mock_fetch.return_value = []
 
-        run = run_pipeline(
+        run = run_slf_pipeline(
             start=date(2025, 3, 15),
             end=date(2025, 3, 15),
             triggered_by="fetch_bulletins command",
@@ -786,7 +786,7 @@ class TestRunPipeline:
         """``base_url=`` is forwarded verbatim to ``fetch_bulletin_page``."""
         mock_fetch.return_value = []
 
-        run_pipeline(
+        run_slf_pipeline(
             start=date(2025, 3, 15),
             end=date(2025, 3, 15),
             triggered_by="test",
@@ -806,7 +806,7 @@ class TestRunPipeline:
         ]
         seen: list[str] = []
 
-        run_pipeline(
+        run_slf_pipeline(
             start=date(2025, 3, 14),
             end=date(2025, 3, 15),
             triggered_by="test",
@@ -831,7 +831,7 @@ class TestRunPipeline:
         ]
         seen: list[str] = []
 
-        run_pipeline(
+        run_slf_pipeline(
             start=date(2025, 3, 14),
             end=date(2025, 3, 15),
             triggered_by="test",

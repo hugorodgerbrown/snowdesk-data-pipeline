@@ -371,10 +371,8 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
 
 # Per-bulletin processing outcomes returned by ``_process_bulletin``.
 # The generic OUTCOME_* constants are imported from fetcher_common; the
-# SLF pipeline also uses two internal pagination-control variants that have
+# SLF pipeline also uses internal pagination-control variants that have
 # no equivalent in other providers.
-_OUTCOME_CREATED = OUTCOME_CREATED
-_OUTCOME_UPDATED = OUTCOME_UPDATED
 _OUTCOME_SKIPPED_EXISTS = "skipped_exists"
 _OUTCOME_SKIPPED_NEWER = "skipped_newer"
 _OUTCOME_OUT_OF_RANGE = "out_of_range"
@@ -405,13 +403,13 @@ def _process_bulletin(
 
     if dry_run:
         logger.info("[dry-run] Would store %s", raw["bulletinID"])
-        return _OUTCOME_CREATED
+        return OUTCOME_CREATED
 
     if not force and Bulletin.objects.filter(bulletin_id=raw["bulletinID"]).exists():
         return _OUTCOME_SKIPPED_EXISTS
 
     created = upsert_bulletin(raw, run, pdf_url=_slf_pdf_url(raw))
-    return _OUTCOME_CREATED if created else _OUTCOME_UPDATED
+    return OUTCOME_CREATED if created else OUTCOME_UPDATED
 
 
 def _process_page(
@@ -428,7 +426,7 @@ def _process_page(
     """
     Walk a page of bulletins, mutating counts; return True to stop paging.
 
-    Pulled out of ``run_pipeline`` so the orchestration loop stays
+    Pulled out of ``run_slf_pipeline`` so the orchestration loop stays
     under the cyclomatic-complexity limit. The return value collapses
     the two pagination-termination signals into one: an out-of-range
     bulletin (``_OUTCOME_OUT_OF_RANGE``) tells the caller to stop.
@@ -506,8 +504,8 @@ def run_slf_pipeline(
     range_end = datetime(end.year, end.month, end.day, tzinfo=UTC) + _ONE_DAY
 
     counts: dict[str, int] = {
-        _OUTCOME_CREATED: 0,
-        _OUTCOME_UPDATED: 0,
+        OUTCOME_CREATED: 0,
+        OUTCOME_UPDATED: 0,
         _OUTCOME_SKIPPED_EXISTS: 0,
         _OUTCOME_SKIPPED_NEWER: 0,
     }
@@ -561,23 +559,17 @@ def run_slf_pipeline(
         "Pipeline run %s finished: %d pages, %d created, %d updated, %d skipped",
         run.pk,
         pages_fetched,
-        counts[_OUTCOME_CREATED],
-        counts[_OUTCOME_UPDATED],
+        counts[OUTCOME_CREATED],
+        counts[OUTCOME_UPDATED],
         counts[_OUTCOME_SKIPPED_EXISTS],
     )
 
     if dry_run:
         run.mark_success(0, 0)
     else:
-        run.mark_success(counts[_OUTCOME_CREATED], counts[_OUTCOME_UPDATED])
+        run.mark_success(counts[OUTCOME_CREATED], counts[OUTCOME_UPDATED])
 
     return run
-
-
-# Backwards-compatibility alias — external callers (admin, older tests) may
-# still reference ``run_pipeline`` by the old name.  New code should use
-# ``run_slf_pipeline`` directly.
-run_pipeline = run_slf_pipeline
 
 
 # ---------------------------------------------------------------------------

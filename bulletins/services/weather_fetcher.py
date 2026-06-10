@@ -149,11 +149,6 @@ def _parse_dt_preserve_offset(value: str) -> datetime:
     return parsed
 
 
-# Backwards-compatibility alias — tests and callers still reference ``_parse_dt``
-# by the old private name.
-_parse_dt = _parse_dt_preserve_offset
-
-
 def _build_snapshot_defaults(
     weather_code: int,
     sunrise_str: str,

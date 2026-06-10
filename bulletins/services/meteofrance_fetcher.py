@@ -652,4 +652,4 @@ def meteofrance_stash_writer(records: list[dict[str, Any]], path: Path) -> int:
         The total number of records in the archive after the merge.
 
     """
-    return write_ndjson_archive(records, path, source_label="meteofrance_stash_writer")
+    return write_ndjson_archive(records, path, source_label="meteofrance")
