@@ -1,3 +1,10 @@
+---
+name: offline-map
+description: PWA shell — sw.js cache strategy, update banner, manifest icons/screenshots, installability checklist, CACHE_VERSION
+status: current
+last-reviewed: 2026-06-10
+---
+
 # PWA shell
 
 Snowdesk is a Progressive Web App. Every public page registers a small

@@ -1,3 +1,10 @@
+---
+name: day_character_rules_spec
+description: Original implementation spec for the compute_day_character five-label rules cascade and its calibration check
+status: historical
+last-reviewed: 2026-06-10
+---
+
 # Day Character Rules — Implementation Spec
 
 ## Overview

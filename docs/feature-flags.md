@@ -1,3 +1,10 @@
+---
+name: feature-flags
+description: django-waffle operator guide — Flag/Switch/Sample, edit_map inventory, seeding migrations, override_flag tests
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Feature flags (django-waffle)
 
 Snowdesk uses [django-waffle](https://waffle.readthedocs.io/) for

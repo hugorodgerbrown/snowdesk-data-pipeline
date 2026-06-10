@@ -1,3 +1,10 @@
+---
+name: user-journeys
+description: Personas (anonymous visitor, subscriber) and core journeys J1–J7 with URL surfaces and invariants for new features
+status: current
+last-reviewed: 2026-06-10
+---
+
 # User personas and core journeys
 
 This document is the canonical reference for *who* uses Snowdesk and *what

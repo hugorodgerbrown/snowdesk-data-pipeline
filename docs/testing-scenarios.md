@@ -1,3 +1,10 @@
+---
+name: testing-scenarios
+description: Manual user-testing scenarios — homepage, bulletin pages, map, search and subscription flows on the test_data fixture
+status: current
+last-reviewed: 2026-06-10
+---
+
 # User Testing Scenarios -- Snowdesk
 
 > **Prerequisites**

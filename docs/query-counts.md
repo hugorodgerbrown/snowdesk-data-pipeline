@@ -1,3 +1,10 @@
+---
+name: query-counts
+description: Query-count monitoring — monitor_query_counts baseline in perf/query_counts.txt and the X-DB-Query-Count header
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Query-count monitoring (SNOW-13)
 
 Per-page SQL query counts are tracked in `perf/query_counts.txt` — a

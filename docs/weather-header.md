@@ -1,3 +1,10 @@
+---
+name: weather-header
+description: Weather bulletin header — WeatherSnapshot to WMO buckets via build_weather_display, is_day projection, Meteocons icons
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Weather-driven bulletin header
 
 The bulletin detail page renders a unified header panel whose appearance varies with the current weather conditions and the time of day at the bulletin region. Data lives in `WeatherSnapshot` (see [`bulletins/models.py`](../bulletins/models.py)); display logic lives in [`bulletins/services/weather_display.py`](../bulletins/services/weather_display.py); markup lives in [`templates/includes/bulletin_header.html`](../templates/includes/bulletin_header.html); CSS tokens live in [`src/css/main.css`](../src/css/main.css) under the **Weather header** section.

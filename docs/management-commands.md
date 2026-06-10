@@ -1,3 +1,10 @@
+---
+name: management-commands
+description: Command catalogue — fetch_bulletins, fetch_weather, backfill_weather, rebuild_render_models, fixture builders, scheduler jobs
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Management commands
 
 `fetch_bulletins` is the single entry point for fetching avalanche bulletins

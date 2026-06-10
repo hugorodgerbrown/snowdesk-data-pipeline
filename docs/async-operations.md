@@ -1,3 +1,10 @@
+---
+name: async-operations
+description: Catalogue of async callsites — django-tasks email backends, fetch_weather_async daemon thread, db_worker on Render
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Async operations
 
 Background work — anything dispatched off the request cycle — is a classic

@@ -1,3 +1,10 @@
+---
+name: subscriptions
+description: Subscriber/Subscription models, signed-token flow (TimestampSigner salts), A=B byte-equality invariant, rate limits
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Subscriptions
 
 Users subscribe to bulletin alerts via a signed-token flow — no passwords, no third-party auth library. An inline HTMX form on bulletin pages (or the landing page) captures an email address; an account-access link is sent by email. Clicking the link activates the subscriber and opens the account page where they manage their regions. Every outbound bulletin email carries a per-region unsubscribe token so subscribers can opt out without logging in.

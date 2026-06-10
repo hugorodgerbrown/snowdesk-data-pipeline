@@ -1,3 +1,10 @@
+---
+name: useful-repos
+description: Catalogue of yunojuno Django/Python packages to check before writing new functionality (auth, email, analytics, ops)
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Useful repos
 
 Public Python/Django libraries under [github.com/yunojuno](https://github.com/yunojuno) authored or maintained by Hugo / the YunoJuno team. Before implementing new functionality in Snowdesk, check if one of these already solves the problem — most are installable from PyPI under the same name.

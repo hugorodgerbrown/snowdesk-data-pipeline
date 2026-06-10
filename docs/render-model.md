@@ -1,3 +1,10 @@
+---
+name: render-model
+description: Bulletin.render_model JSON shape — danger ratings, traits, prose, RENDER_MODEL_VERSION, enrich_render_model, day character
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Render model
 
 Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest time so templates contain no derivation logic.

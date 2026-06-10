@@ -1,6 +1,13 @@
+---
+name: meteofrance-mapping
+description: Field-by-field DPBRA XML to CAAML JSON mapping for meteofrance_translator — bulletinID synthesis, SAT_TO_EAWS, customData.MF
+status: current
+last-reviewed: 2026-06-10
+---
+
 # MeteoFrance DPBRA → CAAML JSON mapping spec
 
-**Status:** draft.
+**Status:** implemented — see `bulletins/services/meteofrance_translator.py`; this doc is the field-mapping reference.
 **Scope:** authoritative field-by-field translation reference for the
 MeteoFrance source adapter — a function that converts one DPBRA XML
 document into the same CAAML JSON dict shape that SLF and ALBINA emit,

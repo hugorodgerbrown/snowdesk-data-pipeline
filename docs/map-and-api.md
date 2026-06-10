@@ -1,3 +1,10 @@
+---
+name: map-and-api
+description: /map/ MapLibre choropleth, season scrubber, basemap picker, and the /api/ JSON endpoints (ratings, geojson, summary)
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Map page and JSON API
 
 `/map/` (`public:map`) renders a MapLibre GL JS choropleth of Swiss avalanche

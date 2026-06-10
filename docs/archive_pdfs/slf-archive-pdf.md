@@ -1,3 +1,10 @@
+---
+name: slf-archive-pdf
+description: SLF archive PDF URL pattern (Bulletin_{date}_{HH-MM}_{lang}.pdf) and the TYPO3 JSON listing endpoint, 08-00/17-00 issues
+status: current
+last-reviewed: 2026-06-10
+---
+
 # SLF bulletin archive — PDF URL pattern
 
 How to derive the URL of an archived SLF bulletin PDF from a date and a

@@ -1,3 +1,10 @@
+---
+name: compressed-views-rating-rule
+description: Peak-rating rule — choropleth, map tooltip and season calendar always show RegionDayRating.max_rating on split days
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Compressed-views rating rule
 
 ## The rule
