@@ -8,6 +8,7 @@
 # Reference: https://semgrep.dev/docs/ignoring-files-folders-code/
 
 .venv/
+.tox/
 node_modules/
 .git/
 *.min.js

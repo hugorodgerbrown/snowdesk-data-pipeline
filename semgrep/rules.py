@@ -76,6 +76,20 @@ class AsyncRequestFactory:
         return object()
 
 
+class factory:
+    """Stub mimicking the ``factory`` module namespace for exclusion cases."""
+
+    @staticmethod
+    def LazyAttribute(fn: object) -> object:
+        """Stub for factory.LazyAttribute."""
+        return fn
+
+    @staticmethod
+    def LazyFunction(fn: object) -> object:
+        """Stub for factory.LazyFunction."""
+        return fn
+
+
 # ---------------------------------------------------------------------------
 # Test cases: bare call — rule SHOULD fire.
 # ---------------------------------------------------------------------------
@@ -114,3 +128,9 @@ _rf = RequestFactory()
 
 # ok: factoryboy-bare-factory-call
 _arf = AsyncRequestFactory()
+
+# ok: factoryboy-bare-factory-call
+_lazy_attr = factory.LazyAttribute(lambda obj: obj)
+
+# ok: factoryboy-bare-factory-call
+_lazy_func = factory.LazyFunction(list)
