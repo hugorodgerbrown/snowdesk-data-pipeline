@@ -1,0 +1,13 @@
+rules:
+  - id: factoryboy-bare-factory-call
+    languages: [python]
+    severity: ERROR
+    message: >
+      Call factories with the explicit classmethod — SomeFactory.create(...)
+      (or .build() / .create_batch()) — never the bare SomeFactory(...) form.
+      See CLAUDE.md "Testing".
+    patterns:
+      - pattern: $FACTORY(...)
+      - metavariable-regex:
+          metavariable: $FACTORY
+          regex: ^(?!SubFactory$|RequestFactory$|AsyncRequestFactory$)[A-Za-z_][A-Za-z0-9_]*Factory$
