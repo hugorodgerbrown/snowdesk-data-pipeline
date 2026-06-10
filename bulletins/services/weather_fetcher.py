@@ -123,16 +123,16 @@ def resolve_weather_source(source: str) -> str | None:
     return mirror_url
 
 
-def _parse_dt(value: str) -> datetime:
+def _parse_dt_preserve_offset(value: str) -> datetime:
     """
-    Parse an ISO-8601 datetime string (with timezone offset) into an aware datetime.
+    Parse an ISO-8601 datetime string, preserving the original timezone offset.
 
     Open-Meteo returns sunrise/sunset as ISO-8601 strings with a UTC offset
     when ``timezone=auto`` is specified — e.g. ``"2026-05-01T05:32+02:00"``.
-    We preserve that offset (local-time tz-aware) rather than converting to
-    UTC, because the consumer (SNOW-98 render model) wants the local time for
-    sunrise/sunset comparison.
+    We deliberately do NOT convert to UTC; the consumer (SNOW-98 render model)
+    wants local time for sunrise/sunset comparison.
 
+    This differs from ``slf_fetcher._parse_dt`` which always normalises to UTC.
     Naive inputs are assumed to be UTC and tagged accordingly.
 
     Args:
@@ -147,6 +147,11 @@ def _parse_dt(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed
+
+
+# Backwards-compatibility alias — tests and callers still reference ``_parse_dt``
+# by the old private name.
+_parse_dt = _parse_dt_preserve_offset
 
 
 def _build_snapshot_defaults(
@@ -168,8 +173,8 @@ def _build_snapshot_defaults(
     """
     return {
         "weather_code": weather_code,
-        "sunrise": _parse_dt(sunrise_str),
-        "sunset": _parse_dt(sunset_str),
+        "sunrise": _parse_dt_preserve_offset(sunrise_str),
+        "sunset": _parse_dt_preserve_offset(sunset_str),
         "fetched_at": django_timezone.now(),
     }
 
