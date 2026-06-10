@@ -11,7 +11,7 @@ uses HTMX for dynamic updates without a full JavaScript framework.
 Domain term → code symbol map: [`docs/glossary.md`](docs/glossary.md).
 Accepted architectural decisions (the "why"): [`docs/decisions/`](docs/decisions/).
 
-Python 3.12 / Django 6.0 (pinned in `pyproject.toml`). If tox envs behave
+Python 3.14 / Django 6.0 (pinned in `pyproject.toml`). If tox envs behave
 oddly after a dependency change, rebuild them with `poetry run tox --recreate`.
 
 ## Architecture
