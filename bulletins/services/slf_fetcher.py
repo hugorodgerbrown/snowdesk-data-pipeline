@@ -4,7 +4,7 @@ bulletins/services/slf_fetcher.py — Fetching and persisting SLF bulletins.
 Contains pure-ish functions that:
   1. Fetch a page of bulletins from the SLF CAAML list API (fetch_bulletin_page).
   2. Persist a single bulletin into the database (upsert_bulletin).
-  3. Orchestrate a full pipeline run across a date range (run_pipeline).
+  3. Orchestrate a full pipeline run across a date range (run_slf_pipeline).
 
 Also defines the ``BulletinSource`` registry used by the unified
 ``fetch_bulletins`` management command. The registry maps provider names
@@ -24,7 +24,7 @@ pipeline pages through results, skipping bulletins newer than the end date
 and stopping once it passes the start date boundary.
 
 Keeping these as functions rather than a class makes them easy to test and
-compose. The management commands call run_pipeline(); unit tests can call
+compose. The management commands call run_slf_pipeline(); unit tests can call
 fetch_bulletin_page() and upsert_bulletin() independently.
 """
 
@@ -42,6 +42,11 @@ from django.conf import settings
 
 from bulletins.models import Bulletin, PipelineRun, RegionBulletin
 from bulletins.services.day_rating import apply_bulletin_day_ratings
+from bulletins.services.fetcher_common import (
+    OUTCOME_CREATED,
+    OUTCOME_UPDATED,
+    normalise_bulletin_response,
+)
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -146,6 +151,9 @@ def _normalise_response(data: Any) -> list[dict[str, Any]]:
       - A single collection object with a "bulletins" key.
       - A list of collection objects, each with a "bulletins" key.
 
+    Delegates to ``normalise_bulletin_response`` from ``fetcher_common``
+    with the ``"SLF"`` source label.
+
     Args:
         data: The parsed JSON response from the SLF API.
 
@@ -153,16 +161,7 @@ def _normalise_response(data: Any) -> list[dict[str, Any]]:
         A flat list of bulletin dicts.
 
     """
-    if isinstance(data, list):
-        if len(data) > 0 and isinstance(data[0], dict) and "bulletins" in data[0]:
-            # List of collection objects
-            return [b for collection in data for b in collection.get("bulletins", [])]
-        return data
-
-    if isinstance(data, dict) and "bulletins" in data:
-        return data["bulletins"]  # type: ignore[no-any-return]
-
-    return []
+    return normalise_bulletin_response(data, "SLF")
 
 
 def _parse_dt(value: str) -> datetime:
@@ -371,8 +370,9 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
 
 
 # Per-bulletin processing outcomes returned by ``_process_bulletin``.
-_OUTCOME_CREATED = "created"
-_OUTCOME_UPDATED = "updated"
+# The generic OUTCOME_* constants are imported from fetcher_common; the
+# SLF pipeline also uses internal pagination-control variants that have
+# no equivalent in other providers.
 _OUTCOME_SKIPPED_EXISTS = "skipped_exists"
 _OUTCOME_SKIPPED_NEWER = "skipped_newer"
 _OUTCOME_OUT_OF_RANGE = "out_of_range"
@@ -403,13 +403,13 @@ def _process_bulletin(
 
     if dry_run:
         logger.info("[dry-run] Would store %s", raw["bulletinID"])
-        return _OUTCOME_CREATED
+        return OUTCOME_CREATED
 
     if not force and Bulletin.objects.filter(bulletin_id=raw["bulletinID"]).exists():
         return _OUTCOME_SKIPPED_EXISTS
 
     created = upsert_bulletin(raw, run, pdf_url=_slf_pdf_url(raw))
-    return _OUTCOME_CREATED if created else _OUTCOME_UPDATED
+    return OUTCOME_CREATED if created else OUTCOME_UPDATED
 
 
 def _process_page(
@@ -426,7 +426,7 @@ def _process_page(
     """
     Walk a page of bulletins, mutating counts; return True to stop paging.
 
-    Pulled out of ``run_pipeline`` so the orchestration loop stays
+    Pulled out of ``run_slf_pipeline`` so the orchestration loop stays
     under the cyclomatic-complexity limit. The return value collapses
     the two pagination-termination signals into one: an out-of-range
     bulletin (``_OUTCOME_OUT_OF_RANGE``) tells the caller to stop.
@@ -454,7 +454,7 @@ def _process_page(
     return False
 
 
-def run_pipeline(
+def run_slf_pipeline(
     start: date,
     end: date,
     triggered_by: str = "unknown",
@@ -465,7 +465,7 @@ def run_pipeline(
     delay: float = 0.0,
 ) -> PipelineRun:
     """
-    Orchestrate a full pipeline run over a date range.
+    Orchestrate a full SLF pipeline run over a date range.
 
     Pages through the SLF CAAML API in reverse chronological order.
     Bulletins newer than ``end`` are skipped; once a bulletin older than
@@ -504,8 +504,8 @@ def run_pipeline(
     range_end = datetime(end.year, end.month, end.day, tzinfo=UTC) + _ONE_DAY
 
     counts: dict[str, int] = {
-        _OUTCOME_CREATED: 0,
-        _OUTCOME_UPDATED: 0,
+        OUTCOME_CREATED: 0,
+        OUTCOME_UPDATED: 0,
         _OUTCOME_SKIPPED_EXISTS: 0,
         _OUTCOME_SKIPPED_NEWER: 0,
     }
@@ -559,15 +559,15 @@ def run_pipeline(
         "Pipeline run %s finished: %d pages, %d created, %d updated, %d skipped",
         run.pk,
         pages_fetched,
-        counts[_OUTCOME_CREATED],
-        counts[_OUTCOME_UPDATED],
+        counts[OUTCOME_CREATED],
+        counts[OUTCOME_UPDATED],
         counts[_OUTCOME_SKIPPED_EXISTS],
     )
 
     if dry_run:
         run.mark_success(0, 0)
     else:
-        run.mark_success(counts[_OUTCOME_CREATED], counts[_OUTCOME_UPDATED])
+        run.mark_success(counts[OUTCOME_CREATED], counts[OUTCOME_UPDATED])
 
     return run
 
@@ -679,7 +679,7 @@ def get_sources() -> dict[str, BulletinSource]:
     Built on each call so the ALBINA imports (which themselves import
     from this module) are not executed at module load time — avoiding a
     circular import. Not cached on the module: tests patch
-    ``run_pipeline`` / ``run_albina_pipeline`` at the module level, and
+    ``run_slf_pipeline`` / ``run_albina_pipeline`` at the module level, and
     caching the resolved references would freeze the unpatched originals
     inside the registry. The rebuild cost is negligible — the command
     runs once per cron invocation.
@@ -690,9 +690,9 @@ def get_sources() -> dict[str, BulletinSource]:
 
     """
     from bulletins.services.albina_fetcher import (
+        albina_stash_writer,
         latest_albina_date,
         run_albina_pipeline,
-        write_archive as albina_write_archive,
     )
     from bulletins.services.meteofrance_fetcher import (
         latest_meteofrance_date,
@@ -703,7 +703,7 @@ def get_sources() -> dict[str, BulletinSource]:
     return {
         SOURCE_SLF: BulletinSource(
             name=SOURCE_SLF,
-            pipeline_fn=run_pipeline,
+            pipeline_fn=run_slf_pipeline,
             latest_date_fn=latest_slf_date,
             live_url_setting="SLF_API_BASE_URL",
             mirror_url_setting="SLF_API_LOCAL_MIRROR_URL",
@@ -717,7 +717,7 @@ def get_sources() -> dict[str, BulletinSource]:
             live_url_setting="ALBINA_API_BASE_URL",
             mirror_url_setting="ALBINA_API_LOCAL_MIRROR_URL",
             archive_path_setting="ALBINA_ARCHIVE_PATH",
-            stash_writer=albina_write_archive,
+            stash_writer=albina_stash_writer,
         ),
         SOURCE_METEOFRANCE: BulletinSource(
             name=SOURCE_METEOFRANCE,
