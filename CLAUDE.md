@@ -2,10 +2,11 @@
 
 ## Project overview
 
-Django-based data pipeline that fetches SLF (Swiss Institute for Snow and
-Avalanche Research) avalanche bulletins from the CAAML API, stores them,
-and renders them on a dashboard. The frontend uses HTMX for dynamic
-updates without a full JavaScript framework.
+Django-based data pipeline that fetches avalanche bulletins from SLF
+(Swiss Institute for Snow and Avalanche Research), ALBINA (EUREGIO
+avalanche.report), and Météo-France, stores them, and renders them on a
+dashboard. The frontend uses HTMX for dynamic updates without a full
+JavaScript framework.
 
 ## Architecture
 
@@ -18,8 +19,11 @@ regions/         Geographic reference data — MicroRegion / MajorRegion /
                  (dump_resorts_fixture, refresh_eaws_fixtures)
 bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
                  PipelineRun, RegionDayRating, WeatherSnapshot, the ingestion
-                 services (slf_fetcher, render_model, day_rating, slf_archive,
-                 weather_fetcher), the bulletin and weather ingestion commands
+                 services (slf_fetcher, albina_fetcher, meteofrance_fetcher,
+                 meteofrance_translator, meteofrance_archive_loader,
+                 meteofrance_massifs, render_model, day_rating, slf_archive,
+                 openmeteo_archive, weather_fetcher, weather_display, geoip),
+                 the bulletin and weather ingestion commands
                  (see docs/management-commands.md), and the admin classes for
                  those models
 subscriptions/   Signed-token subscription flow (see docs/subscriptions.md);
@@ -37,8 +41,9 @@ logs/            Log files (gitignored except .gitkeep)
 
 The `bulletins/` ↔ `regions/` split is deliberate: `regions/` holds stable
 shared lookup data (regions, resorts); `bulletins/` holds everything that
-originates from the SLF API and the denormalisation that drives the calendar.
-`core/` exists so neither app needs to import abstract bases from the other.
+originates from the bulletin providers and the denormalisation that drives
+the calendar. `core/` exists so neither app needs to import abstract bases
+from the other.
 
 ## Running locally
 
@@ -98,17 +103,31 @@ up `pyproject.toml` dependencies automatically.
   function, not via `post_save` signals. This keeps data flow explicit and
   testable.
 
-## Data source
+## Data sources
 
-SLF CAAML bulletin list API (public, no auth required):
+Three bulletin providers are supported; all are fetched via `fetch_bulletins`.
+
+**SLF** (`bulletins/services/slf_fetcher.py`) — CAAML paginated API (public,
+no auth required):
   `https://aws.slf.ch/api/bulletin-list/caaml/{lang}/json?limit={n}&offset={n}`
 
-The API returns bulletins in reverse chronological order and is paginated.
-It does not support date filtering — the pipeline pages through results and
-stops once it passes the start date boundary.
+  The API returns bulletins in reverse chronological order and is paginated.
+  It does not support date filtering — the pipeline pages through results and
+  stops once it passes the start date boundary.
 
-Raw bulletins are wrapped in a GeoJSON Feature envelope before storage so
-that downstream consumers see `{ type: "Feature", geometry: null, properties: {…} }`.
+**ALBINA** (`bulletins/services/albina_fetcher.py`) — EUREGIO
+avalanche.report CDN (public, no auth required). Bulletins are fetched as
+CAAMLv6 JSON from per-day CDN URLs for the AT-07, IT-32-BZ, and IT-32-TN
+regions.
+
+**Météo-France** (`bulletins/services/meteofrance_fetcher.py`,
+`meteofrance_translator.py`) — DPBRA APIM endpoint (API key required; set
+`METEOFRANCE_API_KEY` in the environment). Payloads are translated from the
+MF schema into the CAAMLv6-compatible shape that `upsert_bulletin` expects.
+
+Raw bulletins from all three providers are wrapped in a GeoJSON Feature
+envelope before storage so that downstream consumers see
+`{ type: "Feature", geometry: null, properties: {…} }`.
 
 ## Management command design
 
