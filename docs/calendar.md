@@ -1,3 +1,10 @@
+---
+name: calendar
+description: RegionDayRating denormalisation and day_rating aggregation feeding the month-grid calendar_partial HTMX fragment
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Calendar and RegionDayRating
 
 The bulletin page hosts a month-grid calendar, opened from the calendar

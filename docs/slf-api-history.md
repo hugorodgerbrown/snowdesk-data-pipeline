@@ -1,3 +1,10 @@
+---
+name: slf-api-history
+description: 2026-05-01 probe of SLF bulletin-list API depth — ~900-entry offset wall, ~3-season cap, no archive endpoint (SNOW-89)
+status: historical
+last-reviewed: 2026-06-10
+---
+
 # SLF CAAML API — historical-data availability
 
 Probe of the public SLF bulletin-list endpoint conducted on **2026-05-01**

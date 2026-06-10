@@ -1,3 +1,10 @@
+---
+name: query-counts
+description: Query-count monitoring — monitor_query_counts baseline in perf/query_counts.txt and the X-DB-Query-Count header
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Query-count monitoring (SNOW-13)
 
 Per-page SQL query counts are tracked in `perf/query_counts.txt` — a
@@ -9,7 +16,7 @@ way they see a Lighthouse-score delta.
 
 ## Two surfaces
 
-- `pipeline.middleware.QueryCountMiddleware` attaches an
+- `core.middleware.QueryCountMiddleware` attaches an
   `X-DB-Query-Count` header to every response when
   `settings.QUERY_COUNT_HEADER_ENABLED` is truthy — on in
   `development` and `perf`, off in `production`. Useful for ad-hoc
@@ -21,7 +28,7 @@ way they see a Lighthouse-score delta.
 ## Adding a new monitored URL
 
 Append a `(name, url)` tuple to `MONITORED_URLS` in
-`pipeline/management/commands/monitor_query_counts.py`, then run
+`core/management/commands/monitor_query_counts.py`, then run
 `poetry run python manage.py monitor_query_counts --commit` to seed
 the new baseline row.
 

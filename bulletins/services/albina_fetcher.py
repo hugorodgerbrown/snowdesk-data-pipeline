@@ -13,17 +13,15 @@ CAAML v6 bulletin dicts. A 404 response for a given (date, region) pair means
 "no bulletin published for this slot" — not an error. Any other 4xx/5xx
 response logs a warning and skips the slot.
 
-``fetch_albina_for_date``, ``run_albina_pipeline``, and ``write_archive`` are
-the public entry points. The management command ``fetch_bulletins`` calls
-``run_albina_pipeline`` and ``write_archive``; unit tests can call any of
-them independently via mocked ``requests.get``.
+``fetch_albina_for_date``, ``run_albina_pipeline``, and ``albina_stash_writer``
+are the public entry points. The management command ``fetch_bulletins`` calls
+``run_albina_pipeline`` and ``albina_stash_writer``; unit tests can call any
+of them independently via mocked ``requests.get``.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -35,6 +33,14 @@ import requests
 from django.conf import settings
 
 from bulletins.models import Bulletin, PipelineRun
+from bulletins.services.fetcher_common import (
+    OUTCOME_CREATED,
+    OUTCOME_FAILED,
+    OUTCOME_SKIPPED,
+    OUTCOME_UPDATED,
+    normalise_bulletin_response,
+    write_ndjson_archive,
+)
 from bulletins.services.slf_fetcher import upsert_bulletin
 
 logger = logging.getLogger(__name__)
@@ -141,6 +147,10 @@ def _normalise_response(data: Any, date_str: str, region: str) -> list[dict[str,
     - A JSON array of bulletin dicts (most common).
     - A ``{"bulletins": [...]}`` envelope dict.
 
+    Delegates to ``normalise_bulletin_response`` from ``fetcher_common``,
+    passing ``"ALBINA {date_str}/{region}"`` as the source label so warning
+    messages retain the per-slot context.
+
     Args:
         data: The parsed JSON response from the CDN.
         date_str: ISO date string used in warning messages.
@@ -150,18 +160,7 @@ def _normalise_response(data: Any, date_str: str, region: str) -> list[dict[str,
         A flat list of bulletin dicts.
 
     """
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict) and "bulletins" in data:
-        result: list[dict[str, Any]] = data["bulletins"]
-        return result
-    logger.warning(
-        "Unexpected ALBINA CDN body shape for %s / %s — type=%s; returning []",
-        date_str,
-        region,
-        type(data).__name__,
-    )
-    return []
+    return normalise_bulletin_response(data, f"ALBINA {date_str}/{region}")
 
 
 def _parse_issued_at(raw: dict[str, Any], fallback: datetime) -> datetime:
@@ -191,6 +190,12 @@ def _parse_issued_at(raw: dict[str, Any], fallback: datetime) -> datetime:
         except ValueError:
             continue
     return fallback
+
+
+# ALBINA-specific outcome — a bulletin whose ``bulletinID`` was already
+# processed in a prior CDN slot (it spans multiple regions).  Not a shared
+# constant because this dedup tag is meaningless for the SLF and MF pipelines.
+_OUTCOME_DUPLICATE = "duplicate"
 
 
 def _process_albina_bulletin(
@@ -229,12 +234,12 @@ def _process_albina_bulletin(
     bulletin_id: str = raw.get("bulletinID", "")
     if not bulletin_id:
         logger.warning("ALBINA bulletin with no bulletinID — skipping")
-        return "skipped"
+        return OUTCOME_SKIPPED
 
     # Deduplicate — the same bulletin ID appears in multiple region files
     # when its coverage spans regions.
     if bulletin_id in seen_ids:
-        return "duplicate"
+        return _OUTCOME_DUPLICATE
     seen_ids.add(bulletin_id)
 
     if on_fetched is not None:
@@ -242,14 +247,14 @@ def _process_albina_bulletin(
 
     issued_at = _parse_issued_at(raw, fallback=range_start)
     if not (range_start <= issued_at < range_end):
-        return "skipped"
+        return OUTCOME_SKIPPED
 
     if dry_run:
         logger.info("[dry-run] Would store ALBINA %s", bulletin_id)
-        return "created"
+        return OUTCOME_CREATED
 
     if not force and Bulletin.objects.filter(bulletin_id=bulletin_id).exists():
-        return "skipped"
+        return OUTCOME_SKIPPED
 
     try:
         created = upsert_bulletin(raw, run, pdf_url=_albina_pdf_url(raw, region))
@@ -257,9 +262,9 @@ def _process_albina_bulletin(
         logger.exception("Failed to upsert ALBINA bulletin %s: %s", bulletin_id, exc)
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
-        return "failed"
+        return OUTCOME_FAILED
 
-    return "created" if created else "updated"
+    return OUTCOME_CREATED if created else OUTCOME_UPDATED
 
 
 def run_albina_pipeline(
@@ -312,11 +317,11 @@ def run_albina_pipeline(
     run.mark_running()
 
     counts: dict[str, int] = {
-        "created": 0,
-        "updated": 0,
-        "skipped": 0,
-        "duplicate": 0,
-        "failed": 0,
+        OUTCOME_CREATED: 0,
+        OUTCOME_UPDATED: 0,
+        OUTCOME_SKIPPED: 0,
+        _OUTCOME_DUPLICATE: 0,
+        OUTCOME_FAILED: 0,
     }
     request_count = 0
     seen_ids: set[str] = set()
@@ -384,15 +389,15 @@ def run_albina_pipeline(
         "%d created, %d updated, %d skipped",
         run.pk,
         request_count,
-        counts["created"],
-        counts["updated"],
-        counts["skipped"],
+        counts[OUTCOME_CREATED],
+        counts[OUTCOME_UPDATED],
+        counts[OUTCOME_SKIPPED],
     )
 
     if dry_run:
         run.mark_success(0, 0)
     else:
-        run.mark_success(counts["created"], counts["updated"])
+        run.mark_success(counts[OUTCOME_CREATED], counts[OUTCOME_UPDATED])
 
     return run
 
@@ -420,15 +425,16 @@ def latest_albina_date() -> date | None:
     return result.date()
 
 
-def write_archive(records: list[dict[str, Any]], path: Path) -> int:
+def albina_stash_writer(records: list[dict[str, Any]], path: Path) -> int:
     """
     Merge ``records`` into the on-disk ALBINA archive and return the new size.
 
-    Reads the existing archive at ``path`` (if it exists), overlays the
+    Delegates to ``write_ndjson_archive`` from ``fetcher_common``, which
+    reads the existing archive at ``path`` (if it exists), overlays the
     supplied records (later ``bulletinID`` wins), sorts ascending by
-    ``validTime.startTime``, and writes the result back atomically via
-    a sibling ``.tmp`` file plus ``os.replace`` so an interrupted run
-    never leaves a half-written archive in place.
+    ``validTime.startTime``, and writes the result back atomically via a
+    sibling ``.tmp`` file plus ``os.replace`` so an interrupted run never
+    leaves a half-written archive in place.
 
     Args:
         records: Raw ALBINA bulletin dicts collected during a pipeline run.
@@ -438,38 +444,4 @@ def write_archive(records: list[dict[str, Any]], path: Path) -> int:
         The total number of records in the archive after the merge.
 
     """
-    existing: dict[str, dict[str, Any]] = {}
-    if path.exists():
-        with path.open(encoding="utf-8") as fh:
-            for line in fh:
-                stripped = line.strip()
-                if stripped:
-                    record = json.loads(stripped)
-                    bid = record.get("bulletinID", "")
-                    if bid:
-                        existing[bid] = record
-
-    for record in records:
-        bid = record.get("bulletinID", "")
-        if bid:
-            existing[bid] = record
-
-    merged = sorted(
-        existing.values(),
-        key=lambda r: (r.get("validTime") or {}).get("startTime", ""),
-    )
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as fh:
-        for record in merged:
-            fh.write(json.dumps(record) + "\n")
-    os.replace(tmp, path)
-
-    logger.info(
-        "albina write_archive: records_in=%d archive_total=%d path=%s",
-        len(records),
-        len(merged),
-        path,
-    )
-    return len(merged)
+    return write_ndjson_archive(records, path, source_label="albina")

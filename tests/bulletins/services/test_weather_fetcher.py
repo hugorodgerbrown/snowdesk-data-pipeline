@@ -2,7 +2,7 @@
 tests/bulletins/services/test_weather_fetcher.py — Tests for the weather_fetcher service.
 
 Covers:
-  - _parse_dt: ISO-8601 parsing (tz-aware and naive inputs).
+  - _parse_dt_preserve_offset: ISO-8601 parsing (tz-aware and naive inputs).
   - fetch_weather_for_region: happy path, commit=False (no DB write), HTTP error,
     base_url threading, on_fetched callback.
   - fetch_all_regions: creates/skips/fails correctly, returns accurate counters,
@@ -28,7 +28,7 @@ import requests
 
 from bulletins.models import WeatherSnapshot
 from bulletins.services.weather_fetcher import (
-    _parse_dt,
+    _parse_dt_preserve_offset,
     backfill_all_regions,
     fetch_all_regions,
     fetch_archive_for_region,
@@ -93,33 +93,33 @@ def _mock_get(response_data: dict[str, Any]) -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# _parse_dt
+# _parse_dt_preserve_offset
 # ---------------------------------------------------------------------------
 
 
 class TestParseDt:
-    """Tests for _parse_dt (weather_fetcher variant — preserves local tz offset)."""
+    """Tests for _parse_dt_preserve_offset (weather_fetcher variant — preserves local tz offset)."""
 
     def test_naive_input_becomes_utc(self) -> None:
         """A naive datetime string is tagged as UTC."""
-        result = _parse_dt("2026-05-01T05:32:00")
+        result = _parse_dt_preserve_offset("2026-05-01T05:32:00")
         assert result.tzinfo is not None
         assert result.utcoffset() == datetime.timedelta(0)
 
     def test_offset_input_preserves_local_tz(self) -> None:
         """An ISO-8601 string with a +02:00 offset keeps that offset."""
-        result = _parse_dt("2026-05-01T05:32+02:00")
+        result = _parse_dt_preserve_offset("2026-05-01T05:32+02:00")
         assert result.tzinfo is not None
         assert result.utcoffset() == datetime.timedelta(hours=2)
 
     def test_utc_z_suffix(self) -> None:
         """A Z-suffixed string is UTC-aware."""
-        result = _parse_dt("2026-05-01T05:32:00Z")
+        result = _parse_dt_preserve_offset("2026-05-01T05:32:00Z")
         assert result.tzinfo is not None
 
     def test_hour_minute_values_preserved(self) -> None:
         """The hour and minute values from the input are preserved."""
-        result = _parse_dt("2026-05-01T05:32+02:00")
+        result = _parse_dt_preserve_offset("2026-05-01T05:32+02:00")
         assert result.hour == 5
         assert result.minute == 32
 

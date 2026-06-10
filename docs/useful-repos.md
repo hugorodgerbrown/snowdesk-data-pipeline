@@ -1,3 +1,10 @@
+---
+name: useful-repos
+description: Catalogue of yunojuno Django/Python packages to check before writing new functionality (auth, email, analytics, ops)
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Useful repos
 
 Public Python/Django libraries under [github.com/yunojuno](https://github.com/yunojuno) authored or maintained by Hugo / the YunoJuno team. Before implementing new functionality in Snowdesk, check if one of these already solves the problem — most are installable from PyPI under the same name.
@@ -103,7 +110,7 @@ Endpoint and models for collecting CSP violation reports from browsers, with adm
 Management commands that output project metadata: git SHA, migration state, installed Django version, relevant env vars. **Use for:** health-check endpoints, deploy verification, or just `manage.py status` during incident triage.
 
 ### [django-heroku-auto-scale-rq](https://github.com/yunojuno/django-heroku-auto-scale-rq)
-Autoscales RQ worker dynos on Heroku based on queue depth, via the Heroku platform API. **Use for:** Heroku + RQ setups where queue spikes justify paying for more dynos only when needed. Note: Snowdesk currently uses this stack context.
+Autoscales RQ worker dynos on Heroku based on queue depth, via the Heroku platform API. **Use for:** Heroku + RQ setups where queue spikes justify paying for more dynos only when needed. Note: not applicable to Snowdesk — it deploys on Render and uses `django-tasks` (`db_worker`), not RQ.
 
 ### [django-juno-testrunner](https://github.com/yunojuno/django-juno-testrunner)
 Legacy custom test runner that prints failures inline (without stopping the run), writes a `test_failures.txt` file, shows ETA, and outputs a failed-tests list for easy re-runs. **Use for:** historical reference only — modern pytest-django with `--tb=short` and `--lf` covers most of this.

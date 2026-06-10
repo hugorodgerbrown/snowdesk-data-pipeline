@@ -2,10 +2,14 @@
 
 ## Project overview
 
-Django-based data pipeline that fetches SLF (Swiss Institute for Snow and
-Avalanche Research) avalanche bulletins from the CAAML API, stores them,
-and renders them on a dashboard. The frontend uses HTMX for dynamic
-updates without a full JavaScript framework.
+Django-based data pipeline that fetches avalanche bulletins from three
+providers — SLF (Swiss Institute for Snow and Avalanche Research), ALBINA
+(EUREGIO avalanche.report), and Météo-France — normalises them to CAAML v6
+JSON, stores them, and renders them on a public bulletin site. The frontend
+uses HTMX for dynamic updates without a full JavaScript framework.
+
+Domain term → code symbol map: [`docs/glossary.md`](docs/glossary.md).
+Accepted architectural decisions (the "why"): [`docs/decisions/`](docs/decisions/).
 
 Python 3.12 / Django 6.0 (pinned in `pyproject.toml`). If tox envs behave
 oddly after a dependency change, rebuild them with `poetry run tox --recreate`.
@@ -19,12 +23,12 @@ core/            Shared abstractions (BaseModel; abstract, no concrete tables),
 regions/         Geographic reference data — MicroRegion / MajorRegion /
                  SubRegion / Resort, plus the fixture-maintenance commands
                  (dump_resorts_fixture, refresh_eaws_fixtures)
-bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
-                 PipelineRun, RegionDayRating, WeatherSnapshot, the ingestion
-                 services (slf_fetcher, render_model, day_rating, slf_archive,
-                 weather_fetcher), the bulletin and weather ingestion commands
-                 (see docs/management-commands.md), and the admin classes for
-                 those models
+bulletins/       Everything that originates from provider APIs — the models
+                 (Bulletin, RegionBulletin, PipelineRun, RegionDayRating,
+                 WeatherSnapshot, …), the per-provider fetchers/translators
+                 and render-model services under services/, the ingestion
+                 commands (see docs/management-commands.md), and their admin
+                 classes
 subscriptions/   Signed-token subscription flow (see docs/subscriptions.md);
                  also owns the custom ``Subscriber`` user model
 public/          Public-facing bulletin site
@@ -38,10 +42,8 @@ static/          CSS/JS assets (includes compiled output.css)
 logs/            Log files (gitignored except .gitkeep)
 ```
 
-The `bulletins/` ↔ `regions/` split is deliberate: `regions/` holds stable
-shared lookup data (regions, resorts); `bulletins/` holds everything that
-originates from the SLF API and the denormalisation that drives the calendar.
-`core/` exists so neither app needs to import abstract bases from the other.
+The `bulletins/` ↔ `regions/` split is deliberate — rationale in
+[`docs/decisions/bulletins-regions-split.md`](docs/decisions/bulletins-regions-split.md).
 
 ## Running locally
 
@@ -63,13 +65,10 @@ poetry run python manage.py runserver
 Use **Poetry** (`poetry add`, `poetry add --group dev`, `poetry update`).
 `pyproject.toml` is the single source of truth; there is no `requirements.txt`.
 
-The virtualenv lives at `.venv/` inside the repo — this is **by design**,
-pinned via `poetry.toml` (`virtualenvs.in-project = true`). The pre-commit
-mypy hook in `.pre-commit-config.yaml` invokes `.venv/bin/mypy` by
-repo-relative path so the hook works identically from the CLI and from
-GUI git clients (SublimeMerge, Tower, Fork, etc.) which launch git with
-a minimal environment and don't inherit the user's shell PATH. Don't
-change the venv location without also updating the mypy hook entry.
+The virtualenv lives at `.venv/` inside the repo — this is **by design**;
+don't relocate it without reading
+[`docs/decisions/in-project-venv.md`](docs/decisions/in-project-venv.md)
+(the pre-commit mypy hook depends on the path).
 
 When a runtime dependency is added via `poetry add`, **also add it to the
 relevant `deps =` block in `tox.ini`** (`test`, `django-checks`, and
@@ -97,10 +96,9 @@ up `pyproject.toml` dependencies automatically.
 - Use `python-decouple` for secrets; never hard-code credentials.
 - Logging is configured in `base.py` under `LOGGING`. Use `logging.getLogger(__name__)`
   in every module.
-- **No Django signals for side effects** — side effects triggered at save time
-  (e.g. building the render model) are called inline from the relevant service
-  function, not via `post_save` signals. This keeps data flow explicit and
-  testable.
+- **No Django signals for side effects** — save-time side effects are called
+  inline from the relevant service function, never via `post_save`
+  ([why](docs/decisions/no-signals-for-side-effects.md)).
 
 ### Models
 
@@ -128,38 +126,52 @@ point, so don't skip pieces for "simple" models:
   classmethod is properly typed and lets mypy infer the correct model
   return type.
 
-## Data source
+## Data sources
 
-SLF CAAML bulletin list API (public, no auth required):
-  `https://aws.slf.ch/api/bulletin-list/caaml/{lang}/json?limit={n}&offset={n}`
+Three providers, one canonical storage shape (CAAML v6 JSON); all fetched
+via the `fetch_bulletins` command.
 
-The API returns bulletins in reverse chronological order and is paginated.
-It does not support date filtering — the pipeline pages through results and
-stops once it passes the start date boundary.
+- **SLF** (`bulletins/services/slf_fetcher.py`) — paginated CAAML list API,
+  no auth, no date filter:
+  `https://aws.slf.ch/api/bulletin-list/caaml/{lang}/json?limit={n}&offset={n}`.
+  Reverse-chronological; the pipeline pages until it passes the start-date
+  boundary. Historical depth limits: [`docs/slf-api-history.md`](docs/slf-api-history.md).
+- **ALBINA** (`bulletins/services/albina_fetcher.py`) — EUREGIO
+  avalanche.report CDN, no auth; per-day CAAML v6 JSON URLs for the AT-07,
+  IT-32-BZ, and IT-32-TN regions. 404 means "no bulletin".
+- **Météo-France** (`bulletins/services/meteofrance_fetcher.py`,
+  `meteofrance_translator.py`) — DPBRA XML per massif behind an API key
+  (`METEOFRANCE_API_KEY`), translated to the CAAML v6 shape that
+  `upsert_bulletin` expects
+  (mapping spec: [`docs/meteofrance-mapping.md`](docs/meteofrance-mapping.md)).
 
-Raw bulletins are wrapped in a GeoJSON Feature envelope before storage so
-that downstream consumers see `{ type: "Feature", geometry: null, properties: {…} }`.
+Raw bulletins from all three providers are wrapped in a GeoJSON Feature
+envelope before storage — `{ type: "Feature", geometry: null, properties: {…} }`
+([why](docs/decisions/geojson-feature-envelope.md)).
+
+**Canonical payload examples** live in `tests/sentinels/` — three graded
+cases (A single-level, B structurally-enhanced, C split-day multi-problem)
+per provider, each with a README, enforced by a round-trip test. Read a
+sentinel before reasoning about any provider's payload shape; don't trust
+prose descriptions of the schema.
 
 ## Management command design
 
-These rules apply to **every** new or refactored management command.
-Existing commands that pre-date them are being migrated; don't copy their
-old shape when adding new ones.
+These rules apply to **every** new or refactored management command
+(commands pre-dating them are being migrated — don't copy their old shape):
 
-1. **Runs with no arguments** — sensible defaults derived from context
-   (current date, settings). Required positional arguments are a smell.
-2. **Read-only by default** — the bare invocation must never write to the
-   database, send mail, or call a paid/rate-limited external service.
-   Writing requires an explicit opt-in: new commands use `--commit`
-   (preferred); legacy `--dry-run` commands must prompt before writing and
-   accept `--no-input` for unattended runs. Don't mix the two shapes in
-   one command.
-3. **Respect `--verbosity`** in log calls (free via `BaseCommand`).
-4. **Exit non-zero on failure** — including a partially failed batch
-   (`records_failed > 0`) — so cron/CI can detect it.
+1. **Runs with no arguments** — the bare invocation does the most useful
+   thing for the common case; required positional arguments are a smell.
+2. **Never alters data by default** — read-only unless the caller takes an
+   explicit step: either an explicit `--commit` flag (preferred for new
+   commands) or `--dry-run` + `Proceed? [y/N]` prompt with `--no-input`
+   for unattended runs. Never mix the two shapes in one command. Full
+   rationale: [`docs/decisions/dry-run-default-commands.md`](docs/decisions/dry-run-default-commands.md).
+3. **Respects `--verbosity`** in log calls.
+4. **Exits non-zero on failure**, including partially failed batches
+   (`records_failed > 0`), so cron/CI can detect it.
 
-Full contract (the two safe command shapes, confirmation rules) plus the
-command catalogue and flag reference:
+Full contract plus the command catalogue and flag reference:
 [`docs/management-commands.md`](docs/management-commands.md).
 
 ## Frontend
@@ -189,8 +201,8 @@ The canonical reference is the staff-only **component library at `/_components/`
 (source: [`public/design_tokens.py`](public/design_tokens.py), variant fixtures in
 [`public/_component_fixtures.py`](public/_component_fixtures.py)). Read it before
 adding any new visual surface. Rules for any change that adds or touches
-templates — enforced by `bin/ds-lint` (`tox -e ds-lint`), which blocks every PR
-that introduces a violation:
+templates — enforced by `bin/ds-lint` (`tox -e ds-lint`, and the `lint-guards`
+CI workflow), which blocks every PR that introduces a violation:
 
 1. **Reuse first, extract second, inline never.** Use an existing partial
    (`_card`, `_button`, `_status_page`, `_collapsible_panel`, `_eyebrow`, …)
@@ -231,6 +243,7 @@ poetry run tox -e django-checks
 poetry run tox -e fmt             # ruff format --check
 poetry run tox -e lint            # ruff check
 poetry run tox -e ds-lint         # design-system template linter (see "Design system" above)
+poetry run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
 poetry run tox -e audit           # pip-audit on the locked dependency set
 poetry run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
 poetry run tox --recreate         # rebuild envs from scratch after a deps change
@@ -299,15 +312,33 @@ drift against this list on every PR.
 5. **No secrets in source** — all credentials via `python-decouple`; `.env`
    is gitignored and never committed.
 
+## Documentation
+
+Every doc under `docs/` carries YAML frontmatter (`name`, `description`,
+`status: current|draft|historical`, `last-reviewed`) and must be reachable
+from the routing table below — `bin/docs-lint` (`tox -e docs-lint`, and the
+`lint-guards` CI workflow) enforces both. The `description` line is the
+retrieval key: front-load the model/command/URL nouns an agent would search
+for. `docs/code-reviews/`, `docs/qa/`, and `docs/research/` hold dated
+artefacts, not living documentation, and are exempt.
+
+When you make a non-obvious architectural choice, add a file to
+[`docs/decisions/`](docs/decisions/) (format in its README). When a domain
+term gains a code symbol, add a line to [`docs/glossary.md`](docs/glossary.md).
+
 ## Feature-specific reference
 
 Read these when working in the relevant area:
 
 | Area | Doc |
 |------|-----|
+| Domain term → code symbol map | [`docs/glossary.md`](docs/glossary.md) |
+| Accepted architectural decisions | [`docs/decisions/`](docs/decisions/) |
+| How to read an avalanche bulletin (domain primer) | [`docs/bulletin-guide.md`](docs/bulletin-guide.md) |
 | User personas and core journeys | [`docs/user-journeys.md`](docs/user-journeys.md) |
 | Subscriptions (signed tokens, rate limits, email) | [`docs/subscriptions.md`](docs/subscriptions.md) |
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
+| Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
 | Weather-driven bulletin header (WMO buckets, is_day projection) | [`docs/weather-header.md`](docs/weather-header.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
 | Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |
@@ -317,8 +348,16 @@ Read these when working in the relevant area:
 | Lighthouse CI (budgets, perf settings) | [`docs/lighthouse.md`](docs/lighthouse.md) |
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
 | Management commands (design rules, catalogue, scheduled jobs) | [`docs/management-commands.md`](docs/management-commands.md) |
+| Météo-France DPBRA → CAAML field mapping | [`docs/meteofrance-mapping.md`](docs/meteofrance-mapping.md) |
+| Météo-France live ingest operations | [`docs/meteofrance-live-ingest.md`](docs/meteofrance-live-ingest.md) |
+| SLF API historical-depth probe (2026-05-01) | [`docs/slf-api-history.md`](docs/slf-api-history.md) |
+| Archive PDF URL patterns per provider | [`docs/archive_pdfs/`](docs/archive_pdfs/) |
 | Nav partial implementation spec | [`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) |
 | Feature flags (django-waffle) | [`docs/feature-flags.md`](docs/feature-flags.md) |
+| Client-side Playwright tests (`tox -e e2e`) | [`docs/client-side-tests.md`](docs/client-side-tests.md) |
+| Manual testing scenarios | [`docs/testing-scenarios.md`](docs/testing-scenarios.md) |
+| Existing in-house packages to reuse | [`docs/useful-repos.md`](docs/useful-repos.md) |
+| Linear workflow (full lifecycle) | [`docs/linear-workflow.md`](docs/linear-workflow.md) |
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |
 | Async operations (background threads, failure modes) | [`docs/async-operations.md`](docs/async-operations.md) |
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |

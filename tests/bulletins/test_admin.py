@@ -44,7 +44,7 @@ class TestBackfillView:
             records_created=10,
             records_updated=2,
         )
-        with patch("bulletins.admin.run_pipeline", return_value=run) as mock_run:
+        with patch("bulletins.admin.run_slf_pipeline", return_value=run) as mock_run:
             response = admin_client.post(BACKFILL_URL)
 
         mock_run.assert_called_once_with(
@@ -64,7 +64,7 @@ class TestBackfillView:
             records_created=5,
             records_updated=1,
         )
-        with patch("bulletins.admin.run_pipeline", return_value=run):
+        with patch("bulletins.admin.run_slf_pipeline", return_value=run):
             response = admin_client.post(BACKFILL_URL, follow=True)
 
         messages = list(response.context["messages"])
@@ -78,7 +78,7 @@ class TestBackfillView:
             status=PipelineRun.Status.FAILED,
             error_message="API timeout",
         )
-        with patch("bulletins.admin.run_pipeline", return_value=run):
+        with patch("bulletins.admin.run_slf_pipeline", return_value=run):
             response = admin_client.post(BACKFILL_URL, follow=True)
 
         messages = list(response.context["messages"])
@@ -87,7 +87,9 @@ class TestBackfillView:
 
     def test_exception_shows_error(self, admin_client: Client) -> None:
         """An exception during the pipeline shows an error message."""
-        with patch("bulletins.admin.run_pipeline", side_effect=RuntimeError("boom")):
+        with patch(
+            "bulletins.admin.run_slf_pipeline", side_effect=RuntimeError("boom")
+        ):
             response = admin_client.post(BACKFILL_URL, follow=True)
 
         messages = list(response.context["messages"])

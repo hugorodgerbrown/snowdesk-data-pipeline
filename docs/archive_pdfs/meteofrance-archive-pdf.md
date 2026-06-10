@@ -1,3 +1,10 @@
+---
+name: meteofrance-archive-pdf
+description: Météo-France BRA archive PDF URLs — bra.YYYYMMDD.json daily index and BRA.{MASSIF}.{HEURES}.pdf on donneespubliques
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Météo-France BRA archive — PDF URL scheme
 
 How to derive the public PDF URL for a historical Météo-France BRA

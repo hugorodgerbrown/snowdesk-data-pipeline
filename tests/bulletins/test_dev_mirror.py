@@ -93,7 +93,7 @@ class TestSlfMirror:
     def test_fewer_than_limit_signals_last_page(self, tmp_path: Path) -> None:
         """Mirror returns fewer than ``limit`` records on the last page.
 
-        ``run_pipeline`` relies on this signal to terminate its fetch
+        ``run_slf_pipeline`` relies on this signal to terminate its fetch
         loop (see data_fetcher.py: 'fewer results than requested means
         last page').
         """

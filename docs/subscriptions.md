@@ -1,3 +1,10 @@
+---
+name: subscriptions
+description: Subscriber/Subscription models, signed-token flow (TimestampSigner salts), A=B byte-equality invariant, rate limits
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Subscriptions
 
 Users subscribe to bulletin alerts via a signed-token flow — no passwords, no third-party auth library. An inline HTMX form on bulletin pages (or the landing page) captures an email address; an account-access link is sent by email. Clicking the link activates the subscriber and opens the account page where they manage their regions. Every outbound bulletin email carries a per-region unsubscribe token so subscribers can opt out without logging in.
@@ -28,7 +35,7 @@ The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`
 
 **Models**:
 - `Subscriber(email, status, confirmed_at)` — `status` is a `TextChoices` with `pending` (address captured, not yet confirmed) and `active` (confirmed; receives emails). `confirmed_at` is stamped on first account-link click.
-- `Subscription(subscriber, region)` — links a `Subscriber` to a `pipeline.Region`. `unique_together` on `(subscriber, region)`.
+- `Subscription(subscriber, region)` — links a `Subscriber` to a `regions.MicroRegion`. `unique_together` on `(subscriber, region)`.
 - Hard-delete semantics: removing all regions via the manage page or unsubscribe token cascades via `on_delete=CASCADE` to drop the `Subscriber` row.
 
 **Tokens** — `subscriptions/services/token.py` uses Django's built-in `TimestampSigner` (no extra secret needed; derived from `settings.SECRET_KEY` + salt):
@@ -51,6 +58,15 @@ The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`
 Production uses `DatabaseCache` (`LOCATION = "django_cache"`) so rate-limit counters are shared across workers. The cache table is created by `subscriptions/migrations/0003_create_cache_table.py`. Development sets `RATELIMIT_ENABLE = False` so tests are not throttled.
 
 **Account page** — `account_view` is dual-purpose: the first click on a pending subscriber's link flips `status → active` and stamps `confirmed_at`; re-clicks within the 24h window are idempotent (no double-stamp). Stores `subscriber_uuid` in the session so the manage page skips the email-entry step for the same browser session.
+
+**Passkeys (WebAuthn)** — returning subscribers can sign in without an email round-trip:
+
+- `PasskeyCredential` (`subscriptions/models.py`) — one row per registered passkey per device; stores the base64url `credential_id`, raw COSE `public_key` bytes, `sign_count` (clone detection), `aaguid`, and `device_type` (`platform` / `cross-platform`). FK to `Subscriber`, `on_delete=CASCADE`.
+- `/subscribe/sign-in/` (`sign_in`) — GET renders the email form with passkey conditional UI; POST (rate-limited 3/min) always returns the same "check your inbox" response whether or not the email is known.
+- JSON API endpoints (`subscriptions/views_passkey.py`): `/subscribe/webauthn/auth-request/` (GET, challenge), `/subscribe/webauthn/auth-response/` (POST, verifies `navigator.credentials.get()` and logs in via Django auth; 10/min), `/subscribe/webauthn/register-request/` (GET), `/subscribe/webauthn/register-response/` (POST, persists the new credential; 10/min).
+- `/subscribe/manage/passkeys/<uuid>/delete/` (`passkey_delete`) — HTMX POST, hard-deletes one passkey for the authenticated subscriber (5/min).
+- Signed account-access tokens remain the fallback (and bootstrap) path: a subscriber registers a passkey only after first authenticating via an emailed account link, and unsubscribe tokens are unaffected.
+- Server config: `WEBAUTHN_RP_ID` / `WEBAUTHN_RP_NAME` / `WEBAUTHN_ORIGIN` env vars (see `render.yaml`).
 
 **Email** — Django's standard SMTP backend. No custom backend.
 

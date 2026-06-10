@@ -1,3 +1,10 @@
+---
+name: feature-flags
+description: django-waffle operator guide — Flag/Switch/Sample, edit_map inventory, seeding migrations, override_flag tests
+status: current
+last-reviewed: 2026-06-10
+---
+
 # Feature flags (django-waffle)
 
 Snowdesk uses [django-waffle](https://waffle.readthedocs.io/) for
@@ -83,7 +90,7 @@ The change takes effect on the next request — there's no cache to bust.
 1. **Pick a name** following the convention above.
 2. **Add a data migration** under the relevant app's `migrations/`
    directory. Pattern (modelled on
-   `pipeline/migrations/0017_seed_edit_map_flag.py`):
+   `regions/migrations/0002_seed_edit_map_flag.py`):
 
    ```python
    from django.db import migrations
