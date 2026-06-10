@@ -211,12 +211,13 @@ POSTHOG_MW_CAPTURE_EXCEPTIONS = config(
 )
 
 # Capture local-variable values from each frame of captured exception
-# tracebacks (default True). PostHog applies built-in mask/ignore patterns to
-# redact common credential names, but enabling this still ships frame-locals
-# to PostHog — review the privacy implications before flipping in a new
-# environment. Set to False to capture stack traces only.
+# tracebacks (default False — opt-in). Stack traces only by default; set the
+# env var to True after reviewing the privacy implications, since enabling this
+# ships frame-local variable values to PostHog. PostHog applies built-in
+# mask/ignore patterns to redact common credential names, but frame-locals may
+# still contain PII — review before enabling in any environment.
 POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES = config(
-    "POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES", default=True, cast=bool
+    "POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES", default=False, cast=bool
 )
 
 

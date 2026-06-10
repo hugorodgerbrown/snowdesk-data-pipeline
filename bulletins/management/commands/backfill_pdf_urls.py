@@ -22,6 +22,11 @@ For Météo-France rows the command uses a shared ``requests.Session`` and
 sleeps 0.2 s between index calls (polite rate-limiting; the upstream index
 endpoint is being decommissioned, so we don't want to hammer it during a
 large backfill).
+
+Derived URLs are validated to start with ``https://`` before they are
+accepted.  A URL that fails this check is logged as an error and never
+persisted, even with ``--commit``.  This guards against unexpected values
+arriving from external CAAML feeds being written directly to the database.
 """
 
 from __future__ import annotations
@@ -33,7 +38,7 @@ from typing import Any
 
 import requests
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from bulletins.models import Bulletin
 from bulletins.services.albina_fetcher import _albina_pdf_url
@@ -122,6 +127,12 @@ class Command(BaseCommand):
         _log_summary(self, verbosity, commit, counts, len(batch) if not commit else 0)
         logger.info("backfill_pdf_urls finished: %s commit=%s", counts, commit)
 
+        if counts["error"] > 0:
+            raise CommandError(
+                f"backfill_pdf_urls completed with {counts['error']} error(s);"
+                " see logs."
+            )
+
 
 def _process_one(
     bulletin: Bulletin,
@@ -155,6 +166,19 @@ def _process_one(
             "backfill_pdf_urls: error deriving URL for bulletin %s: %s",
             bulletin.bulletin_id,
             exc,
+        )
+        counts["error"] += 1
+        return ""
+
+    # Scheme guard: only accept https:// URLs.  Values originate from external
+    # CAAML feeds; rejecting non-https results prevents unexpected schemes
+    # (e.g. javascript:, http://) from being written to the database.
+    if pdf_url and not pdf_url.startswith("https://"):
+        logger.error(
+            "backfill_pdf_urls: derived URL for bulletin %s has unexpected scheme"
+            " (expected https://): %r — skipping",
+            bulletin.bulletin_id,
+            pdf_url,
         )
         counts["error"] += 1
         return ""
