@@ -1,0 +1,16 @@
+# .semgrepignore — overrides semgrep built-in defaults.
+#
+# Semgrep's built-in defaults exclude "tests/" which prevents the
+# factoryboy-bare-factory-call rule from scanning the test suite.
+# Providing this file replaces those defaults so we control what is
+# excluded explicitly.
+#
+# Reference: https://semgrep.dev/docs/ignoring-files-folders-code/
+
+.venv/
+.tox/
+node_modules/
+.git/
+*.min.js
+*.min.css
+migrations/

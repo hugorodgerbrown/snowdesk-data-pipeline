@@ -6,7 +6,7 @@ sensible defaults. Use these in tests to avoid brittle fixture data.
 
 Factories are parameterised with their model type
 (e.g. ``DjangoModelFactory[MicroRegion]``) so that mypy infers the correct
-return type when calling ``MicroRegionFactory(...)`` — no casts needed at
+return type when calling ``MicroRegionFactory.create(...)`` — no casts needed at
 call sites.
 """
 
@@ -320,7 +320,7 @@ class PushSubscriptionFactory(factory.django.DjangoModelFactory[PushSubscription
 
         model = PushSubscription
 
-    subscriber = None  # nullable — use SubscriberFactory() to set
+    subscriber = None  # nullable — use SubscriberFactory.create() to set
     endpoint = factory.Sequence(lambda n: f"https://push.example.com/endpoint/{n:04d}")
     p256dh = factory.Sequence(lambda n: f"p256dh-key-{n:04d}")
     auth = factory.Sequence(lambda n: f"auth-secret-{n:04d}")

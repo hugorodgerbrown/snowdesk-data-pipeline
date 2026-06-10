@@ -2877,8 +2877,8 @@ class TestStructuredData:
         assert main["spatialCoverage"]["name"] == region.name
 
         # containedInPlace is populated with the MajorRegion name.
-        # MicroRegionFactory("CH-4115") → SubRegionFactory(prefix="CH-41") →
-        # MajorRegionFactory(prefix="CH-4") → name_en = "Major CH-4".
+        # MicroRegionFactory.create(region_id="CH-4115") → SubRegionFactory.create(prefix="CH-41") →
+        # MajorRegionFactory.create(prefix="CH-4") → name_en = "Major CH-4".
         contained = main["spatialCoverage"]["containedInPlace"]
         assert contained["name"] == "Major CH-4"
 
