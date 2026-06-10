@@ -104,8 +104,10 @@ incident that invalidates derived state:
 - `recompute_day_ratings --commit` — after a `DAY_RATING_VERSION` bump or
   any day-rating policy change. Re-derives every `RegionDayRating`.
 - `backfill_pdf_urls --commit` — populate `Bulletin.pdf_url` for rows
-  where it is currently empty. Dispatches by `render_model["source"]`
-  to the correct per-provider URL helper (SLF / ALBINA / Météo-France).
+  where it is currently empty. Dispatches by detecting the source from
+  the raw payload's `customData` (via `render_model.detect_source()` —
+  deliberately not `render_model["source"]`, which can be stale) to the
+  correct per-provider URL helper (SLF / ALBINA / Météo-France).
   Read-only by default; pass `--commit` to persist. Idempotent — rows
   with an existing `pdf_url` are skipped unconditionally. For Météo-France
   rows the command hits the archive index endpoint (one call per bulletin)
@@ -140,8 +142,24 @@ incident that invalidates derived state:
   A/B/C buckets (has ratings / missing rating but present in raw /
   never seen). Run after a pipeline outage to confirm coverage has
   recovered.
+- `parse_wet_snow_coverage` — reports the hit rate of the wet-snow prose
+  parser over the local bulletin archive. For each `(lang, source)` pair
+  that contains wet-snow or gliding-snow problems it prints counts for
+  total wet-snow problems, unstructured problems, and how many the prose
+  parser resolved. Pure SELECT — never writes to the database.
 
+  ```bash
+  # Scan all sources.
+  poetry run python manage.py parse_wet_snow_coverage
 
+  # Restrict to one source.
+  poetry run python manage.py parse_wet_snow_coverage --source slf
+
+  # Verbose: also show already-structured count per row.
+  poetry run python manage.py parse_wet_snow_coverage --verbosity 2
+  ```
+
+  Flags: `--source {slf,albina,meteofrance}` (default: all sources).
 
 `--source` is required. Pass one or more provider names (case-insensitive);
 both space-separated (`--source slf albina`) and repeated flags
@@ -489,3 +507,43 @@ poetry run python manage.py backfill_weather \
 #                        setting is not configured.
 #   --stash              append fetched weather records to the on-disk archive
 ```
+
+## Development & one-shot setup commands
+
+These commands never run on a schedule. `dev_magic_link` is dev-only and
+refuses to run unless `DEBUG=True`; `mint_vapid_keypair` is a one-time
+bootstrap command intended for production setup (dry-run by default, like
+every other command here).
+
+- `dev_magic_link` — prints a ready-to-open magic-link URL for a
+  subscriber so that the subscription / passkey flow can be tested
+  locally without a working SMTP stack. Creates the subscriber (active)
+  if one does not already exist. Refuses to run when `DEBUG` is `False`.
+
+  ```bash
+  poetry run python manage.py dev_magic_link --email you@example.com
+  ```
+
+  Flags: `--email EMAIL` (required).
+
+- `mint_vapid_keypair` — generates a VAPID P-256 keypair for Web Push
+  and writes the raw private scalar (single-line URL-safe-base64) to the
+  secret file at `VAPID_PRIVATE_KEY_PATH`. Dry-run by default; pass
+  `--commit` to write to disk. Refuses to overwrite an existing file —
+  delete it manually to rotate (rotating invalidates every live
+  `PushSubscription` row). Prints the `VAPID_PUBLIC_KEY` and
+  `VAPID_CLAIM_EMAIL` values ready for pasting into the Render
+  environment tab.
+
+  ```bash
+  # Dry-run — shows what would be generated without touching disk.
+  poetry run python manage.py mint_vapid_keypair
+
+  # Generate a real keypair and write the secret file.
+  poetry run python manage.py mint_vapid_keypair --commit
+
+  # Show the PEM rendering alongside the scalar (for human inspection only).
+  poetry run python manage.py mint_vapid_keypair --commit --verbosity 2
+  ```
+
+  Flags: `--commit` (write the secret file; omit for a read-only run).

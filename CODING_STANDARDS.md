@@ -25,10 +25,13 @@ regions/         Geographic reference data — MicroRegion / MajorRegion /
                  audit_resort_regions)
 bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
                  PipelineRun, RegionDayRating, WeatherSnapshot, the ingestion
-                 services (slf_fetcher / render_model / day_rating /
+                 services (slf_fetcher / albina_fetcher / meteofrance_fetcher /
+                 meteofrance_translator / meteofrance_archive_loader /
+                 meteofrance_massifs / render_model / day_rating /
                  slf_archive / openmeteo_archive / weather_fetcher /
-                 weather_display), the dev-only SLF / Open-Meteo mirror
-                 endpoints, and the bulletin and weather management commands
+                 weather_display / geoip), the dev-only SLF / Open-Meteo
+                 mirror endpoints, and the bulletin and weather management
+                 commands
 subscriptions/   Signed-token email subscription flow — Subscriber, Subscription
 public/          Public-facing bulletin site (HTMX-driven). Owns the JSON API
                  used by the map page (api.py / api_urls.py)
@@ -265,9 +268,9 @@ fetch, or mutate other records.
 ### 3.6 Services
 
 - Located in each app's `services/` subdirectory (e.g.
-  [bulletins/services/](bulletins/services/)). The bulletin ingestion,
-  render-model, day-rating, weather-fetching, weather-display, and
-  SLF/Open-Meteo archive services all live under `bulletins/services/`.
+  [bulletins/services/](bulletins/services/)). The bulletin ingestion
+  (SLF, ALBINA, Météo-France), render-model, day-rating, weather-fetching,
+  weather-display, and archive services all live under `bulletins/services/`.
 - Prefer plain functions over classes — composition over inheritance.
 - Pass collaborators as arguments rather than reaching for globals or
   building deep class hierarchies.

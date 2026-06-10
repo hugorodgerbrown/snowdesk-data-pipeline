@@ -2,7 +2,7 @@
 
 Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest time so templates contain no derivation logic.
 
-**Shape**: `{ version, danger, traits[], fallback_key_message, snowpack_structure, metadata, prose }`.
+**Shape**: `{ version, danger, traits[], snowpack_structure, metadata, prose }`.
 - `danger` — `{ key, number, subdivision, ratings[] }` resolved from `dangerRatings`.
   - `ratings[]` — one entry per CAAML `dangerRating` that had a valid `mainValue`. Each entry shape: `{ period, key, subdivision, elevation }`.
     - `period` — `"all_day"`, `"earlier"`, or `"later"` (from `validTimePeriod`).
@@ -16,9 +16,9 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
   - `geography.source` is `"problems"` when aspects/elevation are present, or `"prose_only"` when the SLF prose comment is the only geographic description.
 - `metadata` — `{ publication_time, valid_from, valid_until, next_update, unscheduled, lang }`. Timestamps are ISO 8601 strings or `None`; `unscheduled` defaults to `False`; `lang` defaults to `"en"`.
 - `prose` — `{ snowpack_structure, weather_review, weather_forecast, tendency[] }`. Scalars are HTML strings or `None`. Each tendency entry has `{ comment, tendency_type, valid_from, valid_until }`.
-- `snowpack_structure` (top-level) is kept alongside `prose.snowpack_structure` for backward compatibility; both hold the same value. Will be dropped in v4.
+- `snowpack_structure` (top-level) is kept alongside `prose.snowpack_structure` for backward compatibility; both hold the same value.
 
-**Versioning**: `RENDER_MODEL_VERSION = 3` (in `bulletins/services/render_model.py`). Bump it and run `rebuild_render_models` whenever the output shape or builder logic changes. `BulletinQuerySet.needs_render_model_rebuild()` returns all rows with a stale version.
+**Versioning**: `RENDER_MODEL_VERSION = 7` (in `bulletins/services/render_model.py`). Bump it and run `rebuild_render_models` whenever the output shape or builder logic changes. `BulletinQuerySet.needs_render_model_rebuild()` returns all rows with a stale version.
 
 **Display enrichment** (SNOW-69): the stored render model is the canonical, version-stamped shape — but it isn't what templates consume. `enrich_render_model()` in `public/views.py` adds presentation-ready fields (problem labels, `ElevationBounds`, `field_guidance`, `hide_comment`) on top of each trait's problems before the data reaches the template. Both the bulletin page and the map drawer endpoint (`public.api.region_summary`) call it, so the two render paths share a single enriched shape. Keep purely-derivable presentation in the enrichment step rather than the builder — it stays out of the stored JSON, doesn't bump the version, and can change without a rebuild.
 
