@@ -3,13 +3,21 @@ tests/subscriptions/test_models.py — Tests for subscriptions models.
 
 Covers Subscriber, Subscription, and PasskeyCredential model behaviour,
 queryset methods, string representations, and field constraints.
+
+Also covers the encrypted-at-rest email column:
+  - Raw DB value is ciphertext, not plaintext.
+  - decrypt_value recovers the original email from the raw column.
+  - unique constraint still raises IntegrityError for duplicate emails.
+  - by_email queryset method finds rows via deterministic encrypted lookup.
 """
 
 import uuid
 
 import pytest
+from django.db import connection
 
 from subscriptions.aaguids import lookup as aaguid_lookup
+from subscriptions.fields import decrypt_value
 from subscriptions.models import PasskeyCredential, Subscriber, Subscription
 from tests.factories import (
     MicroRegionFactory,
@@ -357,3 +365,71 @@ class TestSubscriberHasPasskeys:
         sub = SubscriberFactory.create()
         PasskeyCredentialFactory.create(subscriber=sub)
         assert sub.has_passkeys() is True
+
+
+# ---------------------------------------------------------------------------
+# Encrypted email column tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+class TestSubscriberEmailEncryption:
+    """Verify that Subscriber.email is stored as ciphertext in the DB."""
+
+    def test_raw_db_column_is_not_plaintext(self) -> None:
+        """The email column in the database holds ciphertext, not plaintext."""
+        plaintext = "encrypted@example.com"
+        sub = SubscriberFactory.create(email=plaintext)
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT email FROM subscriptions_subscriber WHERE id = %s",
+                [sub.pk],
+            )
+            raw = cursor.fetchone()[0]
+
+        assert raw != plaintext
+
+    def test_raw_db_column_decrypts_to_plaintext(self) -> None:
+        """The raw DB value, when decrypted, recovers the original email."""
+        plaintext = "encrypted@example.com"
+        sub = SubscriberFactory.create(email=plaintext)
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT email FROM subscriptions_subscriber WHERE id = %s",
+                [sub.pk],
+            )
+            raw = cursor.fetchone()[0]
+
+        assert decrypt_value(raw) == plaintext
+
+    def test_orm_read_returns_plaintext(self) -> None:
+        """Reading the email field via the ORM returns the plaintext email."""
+        plaintext = "readable@example.com"
+        sub = SubscriberFactory.create(email=plaintext)
+
+        sub.refresh_from_db()
+        assert sub.email == plaintext
+
+    def test_unique_constraint_enforced_on_encrypted_column(self) -> None:
+        """Creating two subscribers with the same email raises IntegrityError."""
+        from django.db import IntegrityError
+
+        SubscriberFactory.create(email="unique2@example.com")
+        with pytest.raises(IntegrityError):
+            SubscriberFactory.create(email="unique2@example.com")
+
+    def test_by_email_finds_row_deterministically(self) -> None:
+        """by_email finds a subscriber even though the column is encrypted."""
+        sub = SubscriberFactory.create(email="findme@example.com")
+        result = Subscriber.objects.by_email("findme@example.com")
+        assert sub in result
+        assert result.count() == 1
+
+    def test_by_email_case_insensitive(self) -> None:
+        """by_email normalises the query to lowercase before the encrypted match."""
+        sub = SubscriberFactory.create(email="findme@example.com")
+        result = Subscriber.objects.by_email("FINDME@EXAMPLE.COM")
+        assert sub in result
+        assert result.count() == 1
