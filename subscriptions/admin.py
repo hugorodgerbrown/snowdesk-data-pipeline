@@ -19,7 +19,6 @@ from django.contrib.auth.admin import UserAdmin
 from django.db.models import QuerySet
 from django.http import HttpRequest
 
-from .fields import encrypt_value
 from .models import PasskeyCredential, PushSubscription, Subscriber, Subscription
 
 logger = logging.getLogger(__name__)
@@ -36,8 +35,9 @@ class EncryptedEmailSearchMixin:
     Because the email column is stored as AES-SIV ciphertext, Django's default
     ``icontains`` search cannot match partial email strings.  This mixin intercepts
     the admin search when the operator uses the ``email:<address>`` token: it
-    encrypts the provided address and performs an exact-match filter against the
-    encrypted column.
+    passes the lowercased plaintext address to an exact ``filter()`` call.  The
+    ORM's ``get_prep_value`` encrypts the filter RHS deterministically, so the
+    comparison is ciphertext == ciphertext in the column.
 
     For any other search term the mixin falls through to ``super()``, so the
     remaining ``search_fields`` (e.g. ``region__region_id``, ``name``) work as
@@ -72,9 +72,11 @@ class EncryptedEmailSearchMixin:
         if search_term.startswith("email:"):
             raw = search_term[len("email:") :].strip().lower()
             if raw:
-                encrypted = encrypt_value(raw)
+                # Pass the plaintext address directly to filter(); the ORM calls
+                # get_prep_value on the RHS, which encrypts it deterministically.
+                # Do NOT pre-encrypt here — that would double-encrypt.
                 return (
-                    queryset.filter(**{self.encrypted_email_lookup: encrypted}),
+                    queryset.filter(**{self.encrypted_email_lookup: raw}),
                     False,
                 )
             # Empty "email:" prefix — return empty result set.
@@ -145,9 +147,12 @@ class SubscriberAdmin(EncryptedEmailSearchMixin, UserAdmin):
     list_filter = ["status", "is_staff", "is_superuser"]
     list_select_related = ("acquisition_request",)
     # email is encrypted at rest — plain-text search is replaced by the
-    # EncryptedEmailSearchMixin's email: token. search_fields remains an
-    # empty tuple so the search box is still rendered.
-    search_fields = ()
+    # EncryptedEmailSearchMixin's email: token. search_fields must be
+    # non-empty so Django renders the search box (the template gates the
+    # entire form on {% if cl.search_fields %}). The mixin intercepts
+    # "email:" tokens before calling super(), so Django's default icontains
+    # on the ciphertext column is harmless — it matches nothing.
+    search_fields = ("email",)
     ordering = ["-created_at"]
 
     @admin.display(description="Country (acquisition)")

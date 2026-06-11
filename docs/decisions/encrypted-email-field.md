@@ -71,6 +71,9 @@ that pre-date the backfill readable during the migration window.
   token (encrypted column, so icontains is meaningless).
 - Key rotation requires a new `FIELD_ENCRYPTION_KEY` plus a re-run of
   `encrypt_subscriber_email --commit`. This is a planned future operation, not
-  in scope for SNOW-285.
+  in scope for SNOW-285. Rotating `FIELD_ENCRYPTION_KEY` also requires a
+  process restart — the AES-SIV cipher is cached at module level
+  (`_cipher_instance` in `subscriptions/fields.py`) for the life of the process
+  and is not re-read on a settings change.
 - The column type changes from `varchar(254)` to `text` — metadata-only on
   Postgres; SQLite rebuilds the table (fine on a tiny subscriber table).

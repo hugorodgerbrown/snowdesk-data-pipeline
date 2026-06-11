@@ -95,7 +95,7 @@ class TestSubscriberAdminSearch:
 
     def test_bare_term_does_not_match_encrypted_email(self) -> None:
         """A plain-text search does NOT find the encrypted email column."""
-        SubscriberFactory.create(email="alice@example.com")
+        sub = SubscriberFactory.create(email="alice@example.com")
 
         admin = self._admin()
         qs, _ = admin.get_search_results(
@@ -103,15 +103,11 @@ class TestSubscriberAdminSearch:
             Subscriber.objects.all(),
             "alice",
         )
-        # search_fields is empty, so super() returns the full queryset unchanged.
-        # We should NOT get a match — but we also shouldn't crash.
-        # The key assertion: no encrypted-match on a bare term.
+        # search_fields = ("email",) means Django issues email__icontains="alice"
+        # against the ciphertext column. Ciphertext never contains "alice", so
+        # the subscriber must NOT appear in the results.
         pks = list(qs.values_list("pk", flat=True))
-        # The encrypted column holds ciphertext; "alice" will not match it.
-        # With empty search_fields, Django returns the unchanged queryset for
-        # blank/unrecognised fields — so we just confirm no crash and no
-        # encrypted-based match.
-        assert isinstance(pks, list)
+        assert sub.pk not in pks
 
 
 @pytest.mark.django_db
