@@ -69,7 +69,6 @@ L3 is deliberately skipped. All in `regions/models.py`.
 | Term | Meaning | Code |
 |------|---------|------|
 | Subscriber | The custom user model (`AUTH_USER_MODEL`) — email-keyed, pending/active status | `subscriptions/models.py` |
-| EncryptedEmailField | Custom `EmailField` subclass that stores AES-256-SIV ciphertext in a `text` column; decrypts on read with a legacy-plaintext fallback | `subscriptions/fields.py` |
 | Subscription | (Subscriber, MicroRegion) pair driving bulletin emails | `subscriptions/models.py` |
 | Signed token | `TimestampSigner` tokens for account access (expiring) and unsubscribe (permanent, encodes `email\|region_id`) | `subscriptions/services/token.py` |
 | PasskeyCredential | WebAuthn platform passkey for a subscriber | `subscriptions/models.py` |
