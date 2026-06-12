@@ -1,15 +1,17 @@
 """
 subscriptions/models.py — Database models for the subscriptions application.
 
-Defines three concrete models:
-  - Subscriber: the custom Django user model.  An email address that has opted
-    in to receive avalanche bulletin notifications.  Extends AbstractBaseUser
-    and PermissionsMixin so that a single identity covers both subscribers and
-    staff — request.user always refers to a Subscriber (or AnonymousUser).
-  - Subscription: links a Subscriber to a specific SLF Region so that
-    notifications can be scoped to the regions the subscriber cares about.
-  - PasskeyCredential: a WebAuthn platform passkey registered by a Subscriber,
-    storing the FIDO2 public key and metadata needed to verify future sign-ins.
+Defines the following concrete models:
+
+- Subscriber: the custom Django user model.  An email address that has opted
+  in to receive avalanche bulletin notifications.  Extends AbstractBaseUser
+  and PermissionsMixin so that a single identity covers both subscribers and
+  staff — request.user always refers to a Subscriber (or AnonymousUser).
+- Subscription: links a Subscriber to a specific MicroRegion so that
+  notifications can be scoped to the regions the subscriber cares about.
+- PasskeyCredential: a WebAuthn platform passkey registered by a Subscriber,
+  storing the FIDO2 public key and metadata needed to verify future sign-ins.
+- PushSubscription: a Web Push (VAPID) subscription for a Subscriber.
 
 Keep business logic out of models — put it in subscriptions/services/ instead.
 """
@@ -29,7 +31,6 @@ from django.contrib.auth.password_validation import validate_password
 from django.db import models
 
 from subscriptions.aaguids import lookup as _aaguid_lookup
-from subscriptions.fields import EncryptedEmailField
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ class Subscriber(AbstractBaseUser, PermissionsMixin):
     updated_at = models.DateTimeField(auto_now=True)
 
     # Domain fields
-    email = EncryptedEmailField(unique=True, db_index=True)
+    email = models.EmailField(unique=True, db_index=True)
     acquisition_request = models.ForeignKey(
         "core.RequestLog",
         null=True,

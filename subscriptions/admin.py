@@ -12,84 +12,13 @@ accounts.  Fieldsets are customised to expose subscription-specific fields
 """
 
 import logging
-from typing import Any
 
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from django.db.models import QuerySet
-from django.http import HttpRequest
 
 from .models import PasskeyCredential, PushSubscription, Subscriber, Subscription
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Encrypted-email search mixin
-# ---------------------------------------------------------------------------
-
-
-class EncryptedEmailSearchMixin:
-    """Mixin that adds ``email:`` token-based search for encrypted email fields.
-
-    Because the email column is stored as AES-SIV ciphertext, Django's default
-    ``icontains`` search cannot match partial email strings.  This mixin intercepts
-    the admin search when the operator uses the ``email:<address>`` token: it
-    passes the lowercased plaintext address to an exact ``filter()`` call.  The
-    ORM's ``get_prep_value`` encrypts the filter RHS deterministically, so the
-    comparison is ciphertext == ciphertext in the column.
-
-    For any other search term the mixin falls through to ``super()``, so the
-    remaining ``search_fields`` (e.g. ``region__region_id``, ``name``) work as
-    normal.
-
-    Subclasses must set ``encrypted_email_lookup`` to the ORM lookup path for
-    the encrypted email field (e.g. ``"email"`` or ``"subscriber__email"``).
-    """
-
-    encrypted_email_lookup: str = ""
-
-    def get_search_results(
-        self,
-        request: HttpRequest,
-        queryset: QuerySet[Any],
-        search_term: str,
-    ) -> tuple[QuerySet[Any], bool]:
-        """Override admin search to handle the ``email:`` token.
-
-        Args:
-            request: The incoming HTTP request.
-            queryset: The base queryset to filter.
-            search_term: The raw string entered in the admin search box.
-
-        Returns:
-            A ``(queryset, use_distinct)`` tuple.  When the ``email:`` token is
-            used the queryset is filtered by exact encrypted match and
-            ``use_distinct`` is ``False``.  For all other terms the result of
-            ``super().get_search_results()`` is returned unchanged.
-
-        """
-        if search_term.startswith("email:"):
-            raw = search_term[len("email:") :].strip().lower()
-            if raw:
-                # Pass the plaintext address directly to filter(); the ORM calls
-                # get_prep_value on the RHS, which encrypts it deterministically.
-                # Do NOT pre-encrypt here — that would double-encrypt.
-                return (
-                    queryset.filter(**{self.encrypted_email_lookup: raw}),
-                    False,
-                )
-            # Empty "email:" prefix — return empty result set.
-            return queryset.none(), False
-        result: tuple[QuerySet[Any], bool] = super().get_search_results(  # type: ignore[misc]
-            request, queryset, search_term
-        )
-        return result
-
-
-# ---------------------------------------------------------------------------
-# Inlines
-# ---------------------------------------------------------------------------
 
 
 class SubscriptionInline(admin.TabularInline):
@@ -127,14 +56,8 @@ class PasskeyCredentialInline(admin.TabularInline):
 
 
 @admin.register(Subscriber)
-class SubscriberAdmin(EncryptedEmailSearchMixin, UserAdmin):
-    """Admin view for Subscriber (custom user model).
-
-    Email search is available via the ``email:`` token (e.g. ``email:alice@…``).
-    The field is encrypted at rest so plain-text partial-match search is not supported.
-    """
-
-    encrypted_email_lookup = "email"
+class SubscriberAdmin(UserAdmin):
+    """Admin view for Subscriber (custom user model)."""
 
     list_display = [
         "email",
@@ -146,13 +69,7 @@ class SubscriberAdmin(EncryptedEmailSearchMixin, UserAdmin):
     ]
     list_filter = ["status", "is_staff", "is_superuser"]
     list_select_related = ("acquisition_request",)
-    # email is encrypted at rest — plain-text search is replaced by the
-    # EncryptedEmailSearchMixin's email: token. search_fields must be
-    # non-empty so Django renders the search box (the template gates the
-    # entire form on {% if cl.search_fields %}). The mixin intercepts
-    # "email:" tokens before calling super(), so Django's default icontains
-    # on the ciphertext column is harmless — it matches nothing.
-    search_fields = ("email",)
+    search_fields = ["email"]
     ordering = ["-created_at"]
 
     @admin.display(description="Country (acquisition)")
@@ -206,32 +123,19 @@ class SubscriberAdmin(EncryptedEmailSearchMixin, UserAdmin):
 
 
 @admin.register(Subscription)
-class SubscriptionAdmin(EncryptedEmailSearchMixin, admin.ModelAdmin):
-    """Admin view for Subscription.
-
-    Subscriber email search is available via the ``email:`` token
-    (e.g. ``email:alice@example.com``).  Region ID search works as normal.
-    """
-
-    encrypted_email_lookup = "subscriber__email"
+class SubscriptionAdmin(admin.ModelAdmin):
+    """Admin view for Subscription."""
 
     list_display = ["subscriber", "region", "subscribed_via", "created_at"]
     list_select_related = ["subscriber", "region", "subscribed_via"]
-    # subscriber__email is encrypted; use email: token for address lookup.
-    search_fields = ["region__region_id"]
+    search_fields = ["subscriber__email", "region__region_id"]
     readonly_fields = ["uuid", "created_at", "updated_at", "subscribed_via"]
     raw_id_fields = []  # subscribed_via is read-only, not editable here
 
 
 @admin.register(PasskeyCredential)
-class PasskeyCredentialAdmin(EncryptedEmailSearchMixin, admin.ModelAdmin):
-    """Admin view for PasskeyCredential.
-
-    Subscriber email search is available via the ``email:`` token
-    (e.g. ``email:alice@example.com``).  Passkey name search works as normal.
-    """
-
-    encrypted_email_lookup = "subscriber__email"
+class PasskeyCredentialAdmin(admin.ModelAdmin):
+    """Admin view for PasskeyCredential."""
 
     list_display = [
         "subscriber",
@@ -243,8 +147,7 @@ class PasskeyCredentialAdmin(EncryptedEmailSearchMixin, admin.ModelAdmin):
     ]
     list_filter = ["device_type", "backed_up"]
     list_select_related = ["subscriber"]
-    # subscriber__email is encrypted; use email: token for address lookup.
-    search_fields = ["name"]
+    search_fields = ["subscriber__email", "name"]
     readonly_fields = [
         "uuid",
         "credential_id",
