@@ -156,7 +156,7 @@ class TestTermsPage:
 
 @pytest.mark.django_db
 class TestGlobalSiteFooter:
-    """The site-wide SLF licence footer renders on every public page."""
+    """The site-wide three-provider attribution footer renders on every public page."""
 
     def test_home_renders_footer(self, client: Client) -> None:
         response = client.get(reverse("public:home"))

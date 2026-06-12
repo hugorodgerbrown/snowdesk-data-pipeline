@@ -1,11 +1,12 @@
 {% comment %}
 public/templates/public/_site_footer.html — Global site footer.
 
-Renders SLF data-licence attribution on every page that extends
-public/base.html (per the SLF CC BY 4.0 obligation tracked in SNOW-30).
-Pages that already carry a richer per-page footer (e.g. bulletin.html)
-still render this small line below — the rich page footer is content
-context, this is the site licence line.
+Renders provider attribution (SLF, ALBINA, Météo-France — SNOW-294) on
+every page that extends public/base.html. Licence links live on the
+colophon, which this footer links to (the SLF CC BY 4.0 obligation from
+SNOW-30 is satisfied there). Pages that already carry a richer per-page
+footer (e.g. bulletin.html) still render this small line below — the
+rich page footer is content context, this is the site attribution line.
 
 Kept deliberately minimal: one line of attribution + a /terms link.
 Visual weight should not compete with page content.
