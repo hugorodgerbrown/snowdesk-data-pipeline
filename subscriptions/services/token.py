@@ -151,7 +151,11 @@ def verify_unsubscribe_token(token: str) -> tuple[str, str] | None:
         return None
     parts = raw.split(_UNSUB_SEP, 1)
     if len(parts) != 2:
-        logger.warning("Unsubscribe token value has unexpected format: %r", raw)
+        logger.warning(
+            "Unsubscribe token value has unexpected format: parts=%d len=%d",
+            len(parts),
+            len(raw),
+        )
         return None
     email = parts[0].lower()
     region_id = parts[1]

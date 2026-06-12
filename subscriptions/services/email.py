@@ -43,6 +43,7 @@ from django_tasks import task
 
 from regions.models import MicroRegion
 
+from ..logging_utils import mask_email
 from .token import SALT_ACCOUNT_ACCESS, generate_token
 
 logger = logging.getLogger(__name__)
@@ -136,7 +137,7 @@ def _worker_send_account_access_email(email: str, base_url: str | None) -> None:
     plain_body = render_to_string("subscriptions/emails/account_access.txt", context)
     html_body = render_to_string("subscriptions/emails/account_access.html", context)
 
-    logger.info("Sending account-access email to %s", email)
+    logger.info("Sending account-access email to %s", mask_email(email))
 
     send_mail(
         subject=subject,
@@ -187,7 +188,7 @@ def _worker_send_subscription_confirmation_email(
 
     logger.info(
         "Sending subscription confirmation email to %s for region %s",
-        email,
+        mask_email(email),
         region_name,
     )
 
