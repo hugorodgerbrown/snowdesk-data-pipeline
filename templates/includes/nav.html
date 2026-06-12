@@ -16,8 +16,8 @@ Not authenticated:
   A "Sign in" link routes to /subscribe/sign-in/.
 
 Staff overlay (separate from subscriber auth):
-  A cog-icon button opens an admin dropdown: Component library, Edit map,
-  Django admin.  Rendered in addition to the subscriber avatar — a staff
+  A cog-icon button opens an admin dropdown: Component library, Push demo,
+  Edit map, Django admin.  Rendered in addition to the subscriber avatar — a staff
   user who is also a subscriber sees both.
 
 Parameters
@@ -219,6 +219,15 @@ Usage
                                 class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag"
                             >
                                 {% trans "Component library" %}
+                            </a>
+                        </li>
+                        <li role="none">
+                            <a
+                                role="menuitem"
+                                href="{% url 'public:push_demo' %}"
+                                class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag"
+                            >
+                                {% trans "Push demo" %}
                             </a>
                         </li>
                         <li role="none">
