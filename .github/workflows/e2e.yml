@@ -55,6 +55,7 @@ jobs:
         run: |
           echo "SECRET_KEY=ci-e2e-secret-key" > .env
           echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
+          echo "FIELD_ENCRYPTION_KEY=6hCNErF3I+ET1YTfRK6HHlCzhCzAtAuitiK2UN62/HrNgqIdF8CXn038te9524D+r0m5oll4t3W/oTzFuqiD5g==" >> .env
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4

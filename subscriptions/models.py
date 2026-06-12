@@ -29,6 +29,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.db import models
 
 from subscriptions.aaguids import lookup as _aaguid_lookup
+from subscriptions.fields import EncryptedEmailField
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ class Subscriber(AbstractBaseUser, PermissionsMixin):
     updated_at = models.DateTimeField(auto_now=True)
 
     # Domain fields
-    email = models.EmailField(unique=True, db_index=True)
+    email = EncryptedEmailField(unique=True, db_index=True)
     acquisition_request = models.ForeignKey(
         "core.RequestLog",
         null=True,
