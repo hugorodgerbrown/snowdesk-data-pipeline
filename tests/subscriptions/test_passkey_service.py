@@ -13,6 +13,8 @@ Covers:
                                     Subscriber; missing challenge raises; unknown
                                     credential raises PasskeyUnknownCredentialError;
                                     library exception re-raised as PasskeyError.
+  caplog regression               — plaintext emails never appear in log output;
+                                    pk= form appears instead (SNOW-311).
 """
 
 from __future__ import annotations
@@ -396,3 +398,87 @@ class TestVerifyAuthenticationResponse:
             except PasskeyError:
                 pass
         assert "webauthn_auth_challenge" not in session
+
+
+# ---------------------------------------------------------------------------
+# SNOW-311 — caplog regression: no plaintext emails in passkey service logs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPasskeyServiceLogging:
+    """SNOW-311: passkey service functions log pk, never the plaintext email."""
+
+    def test_passkey_registered_logs_pk_not_email(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """verify_and_save_registration logs subscriber pk=, not the email address.
+
+        The subscriptions logger has propagate=False in base.py; we flip it for
+        the duration of this test so caplog can capture the records.
+        """
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        subscriber = SubscriberFactory.create(email="reg-service@example.com")
+        mock_result = _mock_verified_registration()
+        session = _session_with_challenge("dGVzdGNoYWxsZW5nZQ")
+
+        with patch(
+            "subscriptions.services.passkey.webauthn.verify_registration_response",
+            return_value=mock_result,
+        ):
+            with caplog.at_level(logging.INFO, logger="subscriptions.services.passkey"):
+                verify_and_save_registration("{}", session, subscriber)
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The plaintext email must not appear in any log record.
+        for msg in all_messages:
+            assert "reg-service@example.com" not in msg, (
+                f"Plaintext email found in log: {msg!r}"
+            )
+
+        # At least one record must mention the subscriber's pk.
+        assert any(str(subscriber.pk) in msg for msg in all_messages), (
+            f"No log record contains pk={subscriber.pk}; records: {all_messages}"
+        )
+
+    def test_auth_successful_logs_pk_not_email(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """verify_authentication_response logs subscriber pk=, not the email address."""
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        subscriber = SubscriberFactory.create(email="auth-service@example.com")
+        PasskeyCredentialFactory.create(subscriber=subscriber, credential_id="dGVzdA")
+        credential_json = json.dumps({"id": "dGVzdA"})
+        mock_result = _mock_verified_authentication(new_sign_count=1)
+        session = _session_with_auth_challenge("dGVzdA")
+
+        with patch(
+            "subscriptions.services.passkey.webauthn.verify_authentication_response",
+            return_value=mock_result,
+        ):
+            with caplog.at_level(logging.INFO, logger="subscriptions.services.passkey"):
+                verify_authentication_response(credential_json, session)
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The plaintext email must not appear in any log record.
+        for msg in all_messages:
+            assert "auth-service@example.com" not in msg, (
+                f"Plaintext email found in log: {msg!r}"
+            )
+
+        # At least one record must mention the subscriber's pk (via subscriber_id).
+        assert any(str(subscriber.pk) in msg for msg in all_messages), (
+            f"No log record contains pk={subscriber.pk}; records: {all_messages}"
+        )

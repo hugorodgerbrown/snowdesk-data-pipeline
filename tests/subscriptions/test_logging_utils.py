@@ -2,8 +2,8 @@
 tests/subscriptions/test_logging_utils.py — Tests for subscriptions.logging_utils.
 
 Covers mask_email: normal address, single-char local part, empty local part,
-no ``@`` character, empty string, and a check that the full original address
-never appears in the output for the normal case.
+no ``@`` character, empty string, a check that the full original address never
+appears in the output for the normal case, and a unicode local-part case.
 """
 
 from __future__ import annotations
@@ -47,3 +47,7 @@ class TestMaskEmail:
     def test_long_local_part_still_single_char_prefix(self) -> None:
         """Long local parts are masked to one char prefix."""
         assert mask_email("verylongname@example.com") == "v***@example.com"
+
+    def test_unicode_local_part_returns_first_char_prefix(self) -> None:
+        """A unicode local part is masked to its first character + ***@domain."""
+        assert mask_email("héllo@example.com") == "h***@example.com"
