@@ -363,20 +363,30 @@
                 <section class="map-legend-section">
                     <div class="map-legend-title">{% trans "Avalanche data" %}</div>
                     <p class="map-legend-attribution">
+                        {% url 'public:colophon' as colophon_url %}
                         {% blocktrans trimmed %}
                             <a
                                 class="map-legend-attribution-link"
                                 href="https://www.slf.ch"
                                 target="_blank"
                                 rel="noopener"
-                            >WSL Institute for Snow and Avalanche Research SLF</a>
-                            &middot; Licensed under
+                            >SLF</a>
+                            &middot;
                             <a
                                 class="map-legend-attribution-link"
-                                href="https://creativecommons.org/licenses/by/4.0/"
+                                href="https://avalanche.report"
                                 target="_blank"
                                 rel="noopener"
-                            >CC BY 4.0</a>
+                            >ALBINA</a>
+                            &middot;
+                            <a
+                                class="map-legend-attribution-link"
+                                href="https://meteofrance.com/meteo-montagne"
+                                target="_blank"
+                                rel="noopener"
+                            >Météo-France</a>
+                            &middot; Full attribution in the
+                            <a class="map-legend-attribution-link" href="{{ colophon_url }}">colophon</a>
                         {% endblocktrans %}
                     </p>
                 </section>

@@ -22,15 +22,21 @@ Visual weight should not compete with page content.
         {% url 'public:terms_of_service' as tos_url %}
         {% blocktrans trimmed %}
             Avalanche data:
-            <a class="underline hover:text-text-2" href="https://www.slf.ch" target="_blank" rel="noopener"
-            >WSL Institute for Snow and Avalanche Research SLF</a>
-            &middot; Licensed under
+            <a class="underline hover:text-text-2" href="https://www.slf.ch" target="_blank" rel="noopener">SLF</a>
+            &middot;
             <a
                 class="underline hover:text-text-2"
-                href="https://creativecommons.org/licenses/by/4.0/"
+                href="https://avalanche.report"
                 target="_blank"
                 rel="noopener"
-            >CC BY 4.0</a>
+            >ALBINA</a>
+            &middot;
+            <a
+                class="underline hover:text-text-2"
+                href="https://meteofrance.com/meteo-montagne"
+                target="_blank"
+                rel="noopener"
+            >Météo-France</a>
             &middot;
             <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms</a>
             &middot;
