@@ -5,7 +5,9 @@ Covers:
 
   * ``GET /colophon/`` returns HTTP 200 for an anonymous user.
   * The page contains the expected section ``data-testid`` markers.
-  * Key attribution links and licence references are present.
+  * Key attribution links and licence references are present, including
+    all three avalanche data providers (SLF, ALBINA, Météo-France) added
+    in SNOW-294.
   * The global site footer contains a link to /colophon/.
   * The URL ``public:colophon`` resolves correctly.
 
@@ -74,6 +76,21 @@ class TestColophonPage:
     def test_footer_links_to_colophon(self, client: Client) -> None:
         response = client.get(reverse("public:home"))
         assert reverse("public:colophon").encode() in response.content
+
+    def test_albina_link_present(self, client: Client) -> None:
+        response = client.get(reverse("public:colophon"))
+        assert b"avalanche.report" in response.content
+
+    def test_meteofrance_link_present(self, client: Client) -> None:
+        response = client.get(reverse("public:colophon"))
+        assert "Météo-France".encode() in response.content
+
+    def test_meteofrance_licence_link_present(self, client: Client) -> None:
+        response = client.get(reverse("public:colophon"))
+        assert (
+            b"portail-api.meteofrance.fr/web/en/DonneesPubliquesBRA/license"
+            in response.content
+        )
 
     def test_url_reverses_correctly(self) -> None:
         assert reverse("public:colophon") == "/colophon/"
