@@ -126,7 +126,7 @@ def passkey_auth_response(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "verification_failed"}, status=400)
 
     login(request, subscriber, backend=_TOKEN_BACKEND)
-    logger.info("Subscriber %s signed in via passkey", subscriber.email)
+    logger.info("Subscriber pk=%s signed in via passkey", subscriber.pk)
     return JsonResponse({"ok": True})
 
 
@@ -191,7 +191,9 @@ def passkey_register_response(request: HttpRequest) -> JsonResponse:
             credential_json, request.session, subscriber
         )
     except PasskeyError as exc:
-        logger.info("Passkey registration failed for %s: %s", subscriber.email, exc)
+        logger.info(
+            "Passkey registration failed for subscriber pk=%s: %s", subscriber.pk, exc
+        )
         return JsonResponse({"error": str(exc)}, status=400)
 
     return JsonResponse(
@@ -246,8 +248,8 @@ def passkey_delete(request: HttpRequest, passkey_uuid: str) -> HttpResponse:
     )
     passkey.delete()
     logger.info(
-        "Subscriber %s deleted passkey %s",
-        subscriber.email,
+        "Subscriber pk=%s deleted passkey %s",
+        subscriber.pk,
         passkey_uuid,
     )
     return HttpResponse(status=200)
