@@ -26,11 +26,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = config("SECRET_KEY")
 
-# 64-byte (512-bit) base64-encoded key for AES-256-SIV at-rest email encryption.
-# No default — fail-closed (same posture as SECRET_KEY).
-# Generate a new key with: from subscriptions.fields import generate_encryption_key
-FIELD_ENCRYPTION_KEY = config("FIELD_ENCRYPTION_KEY")
-
 # ---------------------------------------------------------------------------
 # Release identifier
 # ---------------------------------------------------------------------------
