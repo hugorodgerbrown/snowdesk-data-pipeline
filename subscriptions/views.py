@@ -58,6 +58,7 @@ from public.decorators import lowercase_region_id
 from regions.models import MicroRegion
 
 from .forms import EmailForm, SubscribeForm
+from .logging_utils import mask_email
 from .models import Subscriber, Subscription
 from .services.email import (
     send_account_access_email,
@@ -151,7 +152,9 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         },
     )
     send_account_access_email(email, request=request)
-    logger.info("Account-access email sent to %s via sign-in page", email)
+    logger.info(
+        "Account-access email sent to subscriber pk=%s via sign-in page", subscriber.pk
+    )
 
     sign_in_props: dict[str, object] = {}
     if req_log.country_code:
@@ -303,7 +306,7 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
 
     if subscriber_created:
         # Case A — new subscriber.
-        logger.info("New subscriber created for %s (status=pending)", email)
+        logger.info("New subscriber created pk=%s (status=pending)", subscriber.pk)
         send_account_access_email(email, request=request)
 
         # Emit subscription_started (Case A only — silent on Case B resend).
@@ -320,7 +323,9 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
 
     if subscriber.status == Subscriber.Status.PENDING:
         # Case B — existing pending subscriber; resend the access link.
-        logger.info("Resending account-access email to pending subscriber %s", email)
+        logger.info(
+            "Resending account-access email to pending subscriber pk=%s", subscriber.pk
+        )
         send_account_access_email(email, request=request)
         return render(
             request,
@@ -330,7 +335,11 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
 
     if subscription_created:
         # Case C — active subscriber, new region added.
-        logger.info("Active subscriber %s added new region %s", email, region.region_id)
+        logger.info(
+            "Active subscriber pk=%s added new region %s",
+            subscriber.pk,
+            region.region_id,
+        )
         send_subscription_confirmation_email(email, region=region, request=request)
         region_added_props: dict[str, object] = {
             "region_id": region.region_id,
@@ -352,8 +361,8 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
 
     # Case D — active subscriber, already subscribed to this region.
     logger.info(
-        "Active subscriber %s already subscribed to region %s — no-op",
-        email,
+        "Active subscriber pk=%s already subscribed to region %s — no-op",
+        subscriber.pk,
         region.region_id,
     )
     return render(
@@ -395,14 +404,14 @@ def _delete_subscription_with_cascade(
     ).delete()
     if deleted_count == 0:
         logger.info(
-            "Subscriber %s has no subscription for region %s — nothing removed",
-            subscriber.email,
+            "Subscriber pk=%s has no subscription for region %s — nothing removed",
+            subscriber.pk,
             region.region_id,
         )
         return None
     logger.info(
-        "Subscriber %s removed region %s",
-        subscriber.email,
+        "Subscriber pk=%s removed region %s",
+        subscriber.pk,
         region.region_id,
     )
     region_count_after = subscriber.subscriptions.count()
@@ -418,7 +427,9 @@ def _delete_subscription_with_cascade(
         email = subscriber.email
         subscriber.delete()
         logout(request)
-        logger.info("Subscriber %s hard-deleted (last region removed)", email)
+        logger.info(
+            "Subscriber %s hard-deleted (last region removed)", mask_email(email)
+        )
         return True
     return False
 
@@ -477,8 +488,8 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
         defaults={"subscribed_via": req_log},
     )
     logger.info(
-        "Subscriber %s added region %s via bulletin page (idempotent)",
-        subscriber.email,
+        "Subscriber pk=%s added region %s via bulletin page (idempotent)",
+        subscriber.pk,
         region_id,
     )
     if sub_created:
@@ -558,9 +569,9 @@ def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpRes
     if result is None:
         # The subscriber never held this region — stale or forged POST.
         logger.warning(
-            "remove_region_from_bulletin: subscriber %s has no subscription for "
+            "remove_region_from_bulletin: subscriber pk=%s has no subscription for "
             "region %s — returning 400",
-            subscriber.email,
+            subscriber.pk,
             region.region_id,
         )
         return render(
@@ -617,14 +628,18 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
         try:
             subscriber = Subscriber.objects.get(email=email.lower())
         except Subscriber.DoesNotExist:
-            logger.warning("account_view: valid token for unknown email %s", email)
+            logger.warning(
+                "account_view: valid token for unknown email %s", mask_email(email)
+            )
             response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
         else:
             if subscriber.status == Subscriber.Status.PENDING:
                 subscriber.status = Subscriber.Status.ACTIVE
                 subscriber.confirmed_at = timezone.now()
                 subscriber.save(update_fields=["status", "confirmed_at", "updated_at"])
-                logger.info("Subscriber %s activated via account link", email)
+                logger.info(
+                    "Subscriber pk=%s activated via account link", subscriber.pk
+                )
                 # Emit subscription_confirmed and join the anonymous session
                 # identity to the now-authenticated subscriber PK.
                 hours_since: float = round(
@@ -796,7 +811,7 @@ def delete_account(request: HttpRequest) -> HttpResponse:
     distinct_id = str(subscriber.pk)
     subscriber.delete()
     logout(request)
-    logger.info("Subscriber %s hard-deleted via delete_account", email)
+    logger.info("Subscriber %s hard-deleted via delete_account", mask_email(email))
     analytics.track(
         "unsubscribed",
         distinct_id,
@@ -912,7 +927,8 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
     except Subscriber.DoesNotExist:
         # Already unsubscribed (perhaps from a different link) — idempotent.
         logger.info(
-            "unsubscribe_view: subscriber %s not found — already deleted", email
+            "unsubscribe_view: subscriber %s not found — already deleted",
+            mask_email(email),
         )
         response = render(request, "subscriptions/unsubscribe_done.html", {})
         response["Referrer-Policy"] = "no-referrer"
@@ -928,7 +944,9 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
     # is reserved for the in-app "remove a region" flow.  Firing both would
     # double-count churn for subscribers who leave via the email link.
     Subscription.objects.filter(subscriber=subscriber, region=region).delete()
-    logger.info("Subscriber %s unsubscribed from region %s", email, region_id)
+    logger.info(
+        "Subscriber pk=%s unsubscribed from region %s", subscriber.pk, region_id
+    )
 
     analytics.track(
         "unsubscribed",
@@ -941,7 +959,7 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
         subscriber.delete()
         logger.info(
             "Subscriber %s hard-deleted (last subscription removed via unsubscribe)",
-            email,
+            mask_email(email),
         )
 
     response = render(request, "subscriptions/unsubscribe_done.html", {})

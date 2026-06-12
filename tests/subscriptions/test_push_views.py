@@ -6,6 +6,7 @@ Covers all three push endpoints (push_register, push_unregister, push_test):
   - Non-staff authenticated users are also redirected (302).
   - Staff POST without CSRF token is rejected (403) when enforce_csrf_checks=True.
   - Staff POST succeeds (200) and the expected side effect occurs.
+  - SNOW-311 caplog regression: log records contain pk=, never the subscriber email.
 
 dispatch_push is patched throughout so no real push deliveries occur.
 
@@ -19,6 +20,7 @@ the side effects — the CSRF enforcement itself is already exercised by the exp
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 from unittest.mock import patch
 
@@ -298,3 +300,51 @@ class TestPushTest:
         assert response.status_code == 200
         data = response.json()
         assert data["sent"] == mock_dispatch.call_count
+
+
+# ---------------------------------------------------------------------------
+# SNOW-311 — caplog regression: no subscriber email in push_views log output
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPushRegisterLogging:
+    """SNOW-311: push_register logs pk + endpoint, never the subscriber email."""
+
+    def test_register_log_contains_pk_not_email(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """push_register log record contains pk= and never the subscriber email.
+
+        The subscriptions logger has propagate=False in base.py; we flip it for
+        the duration of this test so caplog can capture the records.
+        """
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+        staff = UserFactory.create()
+        client = Client()
+        client.force_login(staff)
+
+        body: dict[str, Any] = {
+            "endpoint": "https://push.example.com/caplog-test-endpoint",
+            "keys": {
+                "p256dh": "test-p256dh-caplog",
+                "auth": "test-auth-caplog",
+            },
+        }
+
+        with caplog.at_level(logging.INFO, logger="subscriptions.push_views"):
+            _post_json(client, _REGISTER_URL, body)
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # Plaintext email must not appear.
+        for msg in all_messages:
+            assert staff.email not in msg, f"Staff email found in log: {msg!r}"
+
+        # At least one record must mention pk=.
+        obj = PushSubscription.objects.get(endpoint=body["endpoint"])
+        assert any(f"pk={obj.pk}" in msg for msg in all_messages), (
+            f"No log record contains pk={obj.pk}; records: {all_messages}"
+        )

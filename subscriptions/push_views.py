@@ -66,7 +66,12 @@ def push_register(request: HttpRequest) -> HttpResponse:
             "user_agent": request.headers.get("User-Agent", "")[:512],
         },
     )
-    logger.info("push subscription %s for %s", "created" if created else "updated", obj)
+    logger.info(
+        "push subscription %s pk=%s endpoint=%.30s…",
+        "created" if created else "updated",
+        obj.pk,
+        obj.endpoint,
+    )
     return JsonResponse({"ok": True, "created": created, "uuid": str(obj.uuid)})
 
 

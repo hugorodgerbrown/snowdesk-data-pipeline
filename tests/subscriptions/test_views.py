@@ -21,6 +21,10 @@ Covers:
   unsubscribe_view    — valid token GET/POST; idempotent; bad token → 400;
                         last-subscription hard-delete; rate-limit 429.
   unsubscribe_done_view — GET renders done page.
+  caplog regression   — plaintext emails never appear in log output; pk=/masked
+                        forms appear instead; covers subscribe_partial, account_view,
+                        sign_in_view POST, delete_account, and unsubscribe_view
+                        hard-delete (SNOW-311).
 """
 
 import time
@@ -2138,3 +2142,210 @@ class TestAnalyticsSignInRequested:
             c for c in mock_track.call_args_list if c.args[0] == "sign_in_requested"
         ]
         assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# SNOW-311 — caplog regression: no plaintext emails in log output
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSubscribePartialLogging:
+    """SNOW-311: subscribe_partial logs pk, never the plaintext email address."""
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+        """Use in-memory email backend so mail.outbox is populated."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def test_new_subscriber_logs_pk_not_email(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Case A (new subscriber): log record contains pk=, not the full email address.
+
+        The subscriptions logger has propagate=False in base.py; we flip it for
+        the duration of this test so caplog can capture the records.
+        """
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        email = "caplog-new@example.com"
+        region = MicroRegionFactory.create()
+
+        with caplog.at_level(logging.INFO, logger="subscriptions.views"):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": email, "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        subscriber = Subscriber.objects.get(email=email)
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The plaintext email address must not appear in any log record.
+        for msg in all_messages:
+            assert email not in msg, f"Plaintext email found in log: {msg!r}"
+
+        # At least one record must mention the subscriber's pk.
+        assert any(str(subscriber.pk) in msg for msg in all_messages), (
+            f"No log record contains pk={subscriber.pk}; records: {all_messages}"
+        )
+
+
+@pytest.mark.django_db
+class TestAccountViewLogging:
+    """SNOW-311: account_view logs masked email for unknown-email path."""
+
+    def test_unknown_email_path_logs_masked_not_plaintext(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A valid token for an email with no subscriber row logs the masked form.
+
+        The subscriptions logger has propagate=False in base.py; we flip it for
+        the duration of this test so caplog can capture the records.
+        """
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        email = "unknown-caplog@example.com"
+        token = _valid_account_token(email)
+
+        with caplog.at_level(logging.WARNING, logger="subscriptions.views"):
+            Client().get(f"/subscribe/account/{token}/")
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # Plaintext email must not appear.
+        for msg in all_messages:
+            assert email not in msg, f"Plaintext email found in log: {msg!r}"
+
+        # The masked form u***@example.com must appear in at least one record.
+        assert any("u***@example.com" in msg for msg in all_messages), (
+            f"Masked email not found in any log record; records: {all_messages}"
+        )
+
+
+@pytest.mark.django_db
+class TestSignInViewLogging:
+    """SNOW-311: sign_in_view POST logs pk=, never the plaintext email address."""
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+        """Use in-memory email backend so mail.outbox is populated."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def test_post_success_logs_pk_not_email(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """sign_in_view POST logs subscriber pk=, not the full email address.
+
+        The subscriptions logger has propagate=False in base.py; we flip it for
+        the duration of this test so caplog can capture the records.
+        """
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        email = "signin-caplog@example.com"
+
+        with caplog.at_level(logging.INFO, logger="subscriptions.views"):
+            Client().post(
+                reverse("subscriptions:sign_in"),
+                data={"email": email},
+            )
+
+        subscriber = Subscriber.objects.get(email=email)
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The plaintext email must not appear in any log record.
+        for msg in all_messages:
+            assert email not in msg, f"Plaintext email found in log: {msg!r}"
+
+        # At least one record must mention the subscriber's pk.
+        assert any(str(subscriber.pk) in msg for msg in all_messages), (
+            f"No log record contains pk={subscriber.pk}; records: {all_messages}"
+        )
+
+
+@pytest.mark.django_db
+class TestDeleteAccountLogging:
+    """SNOW-311: delete_account logs masked email, never the plaintext address."""
+
+    def test_delete_account_logs_masked_not_plaintext(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """delete_account logs the masked email after hard-delete, not the plaintext.
+
+        The subscriptions logger has propagate=False in base.py; we flip it for
+        the duration of this test so caplog can capture the records.
+        """
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        email = "delete-caplog@example.com"
+        subscriber = SubscriberFactory.create(email=email)
+        client = _make_session_client(subscriber)
+
+        with caplog.at_level(logging.INFO, logger="subscriptions.views"):
+            client.post(reverse("subscriptions:delete_account"), **_HTMX_HEADERS)
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The plaintext email must not appear in any log record.
+        for msg in all_messages:
+            assert email not in msg, f"Plaintext email found in log: {msg!r}"
+
+        # The masked form d***@example.com must appear in at least one record.
+        assert any("d***@example.com" in msg for msg in all_messages), (
+            f"Masked email not found in any log record; records: {all_messages}"
+        )
+
+
+@pytest.mark.django_db
+class TestUnsubscribeViewLogging:
+    """SNOW-311: unsubscribe_view hard-delete path logs masked email, never plaintext."""
+
+    def test_last_subscription_hard_delete_logs_masked_not_plaintext(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Removing the last subscription (hard-delete) logs the masked email.
+
+        The subscriptions logger has propagate=False in base.py; we flip it for
+        the duration of this test so caplog can capture the records.
+        """
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        email = "unsub-caplog@example.com"
+        subscriber = SubscriberFactory.create(email=email)
+        region = MicroRegionFactory.create()
+        SubscriptionFactory.create(subscriber=subscriber, region=region)
+        token = generate_unsubscribe_token(email, region.region_id)
+
+        with caplog.at_level(logging.INFO, logger="subscriptions.views"):
+            Client().post(reverse("subscriptions:unsubscribe", kwargs={"token": token}))
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The plaintext email must not appear in any log record.
+        for msg in all_messages:
+            assert email not in msg, f"Plaintext email found in log: {msg!r}"
+
+        # The masked form u***@example.com must appear in at least one record.
+        assert any("u***@example.com" in msg for msg in all_messages), (
+            f"Masked email not found in any log record; records: {all_messages}"
+        )

@@ -5,10 +5,12 @@ Patches pywebpush.webpush to test three branches:
   - 201 happy path: row survives, returns {ok: True, status: 201}.
   - WebPushException with 410 (subscription gone): row deleted, returns {ok: False}.
   - WebPushException with 500 (transient error): row survives, returns {ok: False}.
+  - SNOW-311 caplog regression: log records contain pk=, never the subscriber email.
 """
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,7 +18,7 @@ from pywebpush import WebPushException
 
 from subscriptions.models import PushSubscription
 from subscriptions.push_service import dispatch_push
-from tests.factories import PushSubscriptionFactory
+from tests.factories import PushSubscriptionFactory, SubscriberFactory
 
 
 def _make_webpush_exception(status_code: int) -> WebPushException:
@@ -96,3 +98,49 @@ class TestDispatchPush:
             dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
         _, call_kwargs = mock_webpush.call_args
         assert call_kwargs["subscription_info"] == sub.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# SNOW-311 — caplog regression: no subscriber email in push_service log output
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestDispatchPushLogging:
+    """SNOW-311: dispatch_push logs pk + endpoint, never the subscriber email."""
+
+    def test_410_log_contains_pk_not_email(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A 410 error log record contains pk= and never the subscriber email.
+
+        The subscriptions logger has propagate=False in base.py; we flip it for
+        the duration of this test so caplog can capture the records.
+        """
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+        subscriber = SubscriberFactory.create(email="push-caplog@example.com")
+        sub = PushSubscriptionFactory.create(subscriber=subscriber)
+        exc = WebPushException(
+            "Push failed with 410",
+            response=MagicMock(status_code=410),
+        )
+        with (
+            caplog.at_level(logging.INFO, logger="subscriptions.push_service"),
+            patch("subscriptions.push_service.webpush", side_effect=exc),
+        ):
+            dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # Plaintext email must not appear.
+        for msg in all_messages:
+            assert "push-caplog@example.com" not in msg, (
+                f"Subscriber email found in log: {msg!r}"
+            )
+
+        # At least one record must mention pk=.
+        assert any(f"pk={sub.pk}" in msg for msg in all_messages), (
+            f"No log record contains pk={sub.pk}; records: {all_messages}"
+        )

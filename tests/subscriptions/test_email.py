@@ -8,6 +8,8 @@ Covers:
   - send_subscription_confirmation_email sends one email with region name in
     subject/body; the embedded URL round-trips through verify_token with
     SALT_ACCOUNT_ACCESS.
+  - caplog regression: worker functions log the masked address, not the plaintext
+    email (SNOW-311).
 """
 
 from typing import cast
@@ -218,3 +220,75 @@ class TestSendSubscriptionConfirmationEmail:
         assert "WSL Institute for Snow and Avalanche Research SLF" in html
         assert "https://www.slf.ch" in html
         assert "CC BY 4.0" in html
+
+
+# ---------------------------------------------------------------------------
+# SNOW-311 — caplog regression: no plaintext emails in email service log output
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestEmailServiceLogging:
+    """SNOW-311: email worker functions log masked email, never the plaintext address."""
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+        """Switch to the locmem backend so outbox is populated inline."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def test_account_access_email_logs_masked_not_plaintext(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """send_account_access_email logs the masked address, not the plaintext email.
+
+        The subscriptions logger has propagate=False in base.py; we flip it for
+        the duration of this test so caplog can capture the records.
+        """
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        email = "caplog-access@example.com"
+
+        with caplog.at_level(logging.INFO, logger="subscriptions.services.email"):
+            send_account_access_email(email)
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The plaintext email must not appear in any log record.
+        for msg in all_messages:
+            assert email not in msg, f"Plaintext email found in log: {msg!r}"
+
+        # The masked form c***@example.com must appear in at least one record.
+        assert any("c***@example.com" in msg for msg in all_messages), (
+            f"Masked email not found in any log record; records: {all_messages}"
+        )
+
+    def test_subscription_confirmation_email_logs_masked_not_plaintext(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """send_subscription_confirmation_email logs the masked address, not the plaintext email."""
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        email = "caplog-confirm@example.com"
+        region = MicroRegionFactory.create(name="Test Region")
+
+        with caplog.at_level(logging.INFO, logger="subscriptions.services.email"):
+            send_subscription_confirmation_email(email, region=region)
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The plaintext email must not appear in any log record.
+        for msg in all_messages:
+            assert email not in msg, f"Plaintext email found in log: {msg!r}"
+
+        # The masked form c***@example.com must appear in at least one record.
+        assert any("c***@example.com" in msg for msg in all_messages), (
+            f"Masked email not found in any log record; records: {all_messages}"
+        )

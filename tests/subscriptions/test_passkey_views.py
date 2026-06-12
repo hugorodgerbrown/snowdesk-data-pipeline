@@ -10,6 +10,8 @@ Covers:
                                failure 400; empty body 400; rate-limited 429.
   passkey_delete           — success 200 (HTMX); no session → 403; non-HTMX → 400;
                              wrong subscriber → 404; rate-limited 429.
+  caplog regression        — plaintext emails never appear in log output; pk= form
+                             appears instead (SNOW-311).
 """
 
 from __future__ import annotations
@@ -386,3 +388,129 @@ class TestPasskeyDelete:
             **_HTMX_HEADERS,
         )
         assert resp.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# SNOW-311 — caplog regression: no plaintext emails in passkey view log output
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPasskeyViewsLogging:
+    """SNOW-311: passkey views log pk, never the plaintext email address."""
+
+    def test_sign_in_via_passkey_logs_pk_not_email(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """passkey_auth_response logs subscriber pk=, not the email address.
+
+        The subscriptions logger has propagate=False in base.py; we flip it for
+        the duration of this test so caplog can capture the records.
+        """
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        subscriber = SubscriberFactory.create(email="passkey-auth@example.com")
+        client = Client()
+        _set_auth_challenge(client, "dGVzdA")
+
+        with patch(
+            "subscriptions.views_passkey._verify_auth_response",
+            return_value=subscriber,
+        ):
+            with caplog.at_level(logging.INFO, logger="subscriptions.views_passkey"):
+                client.post(
+                    reverse("subscriptions:passkey_auth_response"),
+                    data=json.dumps({"id": "dGVzdA"}),
+                    content_type="application/json",
+                )
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The plaintext email must not appear in any log record.
+        for msg in all_messages:
+            assert "passkey-auth@example.com" not in msg, (
+                f"Plaintext email found in log: {msg!r}"
+            )
+
+        # At least one record must mention the subscriber's pk.
+        assert any(str(subscriber.pk) in msg for msg in all_messages), (
+            f"No log record contains pk={subscriber.pk}; records: {all_messages}"
+        )
+
+    def test_registration_failed_logs_pk_not_email(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """passkey_register_response failure logs subscriber pk=, not the email address."""
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        subscriber = SubscriberFactory.create(email="passkey-reg-fail@example.com")
+        client = _make_session_client(subscriber)
+        _set_reg_challenge(client, "dGVzdA")
+
+        with patch(
+            "subscriptions.views_passkey.verify_and_save_registration",
+            side_effect=PasskeyError("bad registration"),
+        ):
+            with caplog.at_level(logging.INFO, logger="subscriptions.views_passkey"):
+                client.post(
+                    reverse("subscriptions:passkey_register_response"),
+                    data=json.dumps({"id": "dGVzdA"}),
+                    content_type="application/json",
+                )
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The plaintext email must not appear in any log record.
+        for msg in all_messages:
+            assert "passkey-reg-fail@example.com" not in msg, (
+                f"Plaintext email found in log: {msg!r}"
+            )
+
+        # At least one record must mention the subscriber's pk.
+        assert any(str(subscriber.pk) in msg for msg in all_messages), (
+            f"No log record contains pk={subscriber.pk}; records: {all_messages}"
+        )
+
+    def test_passkey_deleted_logs_pk_not_email(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """passkey_delete logs subscriber pk=, not the email address."""
+        import logging
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        subscriber = SubscriberFactory.create(email="passkey-del@example.com")
+        passkey = PasskeyCredentialFactory.create(subscriber=subscriber)
+        client = _make_session_client(subscriber)
+
+        with caplog.at_level(logging.INFO, logger="subscriptions.views_passkey"):
+            client.post(
+                reverse(
+                    "subscriptions:passkey_delete",
+                    kwargs={"passkey_uuid": str(passkey.uuid)},
+                ),
+                **_HTMX_HEADERS,
+            )
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The plaintext email must not appear in any log record.
+        for msg in all_messages:
+            assert "passkey-del@example.com" not in msg, (
+                f"Plaintext email found in log: {msg!r}"
+            )
+
+        # At least one record must mention the subscriber's pk.
+        assert any(str(subscriber.pk) in msg for msg in all_messages), (
+            f"No log record contains pk={subscriber.pk}; records: {all_messages}"
+        )

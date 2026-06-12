@@ -190,8 +190,8 @@ def verify_and_save_registration(
         backed_up=result.credential_backed_up,
     )
     logger.info(
-        "Passkey registered for subscriber %s (device_type=%s)",
-        subscriber.email,
+        "Passkey registered for subscriber pk=%s (device_type=%s)",
+        subscriber.pk,
         device_type,
     )
     return passkey
@@ -310,8 +310,8 @@ def verify_authentication_response(
     )
 
     logger.info(
-        "Passkey authentication successful for subscriber %s",
-        passkey.subscriber.email,
+        "Passkey authentication successful for subscriber pk=%s",
+        passkey.subscriber_id,
     )
     return passkey.subscriber
 

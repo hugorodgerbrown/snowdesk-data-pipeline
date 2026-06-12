@@ -41,8 +41,18 @@ def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, A
     except WebPushException as exc:
         status = exc.response.status_code if exc.response is not None else None
         if status in {404, 410}:
-            logger.info("dropping dead push subscription %s (%s)", sub, status)
+            logger.info(
+                "dropping dead push subscription pk=%s endpoint=%.30s… (%s)",
+                sub.pk,
+                sub.endpoint,
+                status,
+            )
             sub.delete()
-        logger.warning("webpush failed for %s: %s", sub, exc)
+        logger.warning(
+            "webpush failed for push subscription pk=%s endpoint=%.30s…: %s",
+            sub.pk,
+            sub.endpoint,
+            exc,
+        )
         return {"ok": False, "status": status, "error": str(exc)}
     return {"ok": True, "status": response.status_code}
