@@ -172,10 +172,16 @@ class TestDecryptEmails:
     def test_ciphertext_without_key_raises_runtime_error(self) -> None:
         """RuntimeError raised when ciphertext rows exist but key is absent.
 
-        ``decouple.config`` is patched at the module level to return None,
-        simulating a missing FIELD_ENCRYPTION_KEY regardless of the local
-        ``.env`` file (decouple reads from the file as well as the
-        environment, so patching the env var alone is insufficient).
+        This test patches ``decouple.config`` directly rather than using
+        ``monkeypatch.delenv``.  The distinction is specific to this test:
+        python-decouple reads from both the process environment *and* any
+        ``.env`` file on disk, so removing the env var alone cannot guarantee
+        the key is absent when a ``.env`` file is present.  Patching
+        ``decouple.config`` itself is the only reliable way to force the
+        "key not found" path in this test.  The other tests legitimately use
+        ``monkeypatch.setenv`` / ``monkeypatch.delenv`` because they are
+        supplying or confirming the presence of a value, not guaranteeing its
+        absence.
         """
         key = _make_key()
         ciphertext = _encrypt(key, "alice@example.com")
@@ -208,3 +214,27 @@ class TestDecryptEmails:
         _decrypt_emails(apps, None)
 
         assert rows[0].email == "alice@example.com"
+
+    def test_corrupt_ciphertext_raises_runtime_error_with_pk(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A corrupt or truncated ciphertext row raises RuntimeError naming the pk.
+
+        The error message must include the subscriber pk so an ops team can
+        locate the row.  It must NOT include the raw value or any email address
+        (PII invariant).
+        """
+        key = _make_key()
+        # Construct a valid base64 string that is NOT valid AES-SIV ciphertext
+        # (too short — AES-SIV ciphertext is at minimum 16 bytes of tag plus
+        # the plaintext, so a 4-byte payload will always fail AESSIV.decrypt).
+        garbage_b64 = base64.b64encode(b"bad!").decode()
+        assert "@" not in garbage_b64  # must look like ciphertext to the heuristic
+
+        rows = [_FakeSubscriber(42, garbage_b64)]
+        apps = _make_apps(rows)
+
+        monkeypatch.setenv("FIELD_ENCRYPTION_KEY", base64.b64encode(key).decode())
+
+        with pytest.raises(RuntimeError, match=r"pk=42"):
+            _decrypt_emails(apps, None)

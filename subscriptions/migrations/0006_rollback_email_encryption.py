@@ -88,8 +88,15 @@ def _decrypt_emails(apps: object, schema_editor: object) -> None:
 
     decrypted_count = 0
     for row in ciphertext_rows:
-        ciphertext = base64.b64decode(row.email)
-        plaintext = cipher.decrypt(ciphertext, None).decode()
+        try:
+            ciphertext = base64.b64decode(row.email)
+            plaintext = cipher.decrypt(ciphertext, None).decode()
+        except Exception as exc:
+            raise RuntimeError(
+                "SNOW-312 rollback migration: failed to decrypt email for "
+                "subscriber pk=%s — value may be corrupt or truncated.  "
+                "Inspect the row and correct it before re-running migrate." % row.pk
+            ) from exc
         row.email = plaintext.lower()
         row.save(update_fields=["email"])
         decrypted_count += 1
