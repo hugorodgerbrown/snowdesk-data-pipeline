@@ -9,8 +9,11 @@ Covers:
   - Tampered and garbage tokens return None.
   - Generated tokens contain no '/' characters (safe in URL path segments).
   - Unsubscribe convenience wrappers encode/decode (email, region_id).
+  - SNOW-311 caplog regression: malformed-token warning logs parts/length, not the
+    raw token value.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -162,3 +165,50 @@ class TestUnsubscribeConvenienceWrappers:
         with freeze_time("2025-06-01T00:00:00Z"):
             result = verify_unsubscribe_token(token)
         assert result == ("alice@example.com", "CH-4115")
+
+
+# ---------------------------------------------------------------------------
+# SNOW-311 — caplog regression: malformed-token warning logs parts/length
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyUnsubscribeTokenLogging:
+    """SNOW-311: verify_unsubscribe_token warning logs parts/length, not the raw value."""
+
+    def test_malformed_token_warning_logs_parts_and_length(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A token whose decoded value has no separator logs parts= and len=, not the value.
+
+        We craft a token whose signed payload contains no '|' separator so that
+        verify_unsubscribe_token hits the unexpected-format branch.
+
+        The subscriptions logger has propagate=False in base.py; we flip it for
+        the duration of this test so caplog can capture the records.
+        """
+        from subscriptions.services.token import SALT_UNSUBSCRIBE, generate_token
+
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+
+        # Sign a value with no '|' so the split check fails.
+        no_sep_token = generate_token("noseparatorvalue", salt=SALT_UNSUBSCRIBE)
+
+        with caplog.at_level(logging.WARNING, logger="subscriptions.services.token"):
+            result = verify_unsubscribe_token(no_sep_token)
+
+        assert result is None
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # The raw signed value must not appear in any warning.
+        for msg in all_messages:
+            assert "noseparatorvalue" not in msg, (
+                f"Raw token value found in log warning: {msg!r}"
+            )
+
+        # At least one record must contain parts= and len=.
+        assert any("parts=" in msg and "len=" in msg for msg in all_messages), (
+            f"No log record contains parts= and len=; records: {all_messages}"
+        )
