@@ -1,21 +1,25 @@
 """
-tests/public/test_slf_attribution.py — Tests for SLF data-licence
-compliance surfaces (SNOW-30).
+tests/public/test_slf_attribution.py — Tests for provider data-licence
+compliance surfaces (SNOW-30, SNOW-294).
 
 Covers:
 
   * ``/terms/`` page renders, has the four placeholder sections, and
     is reachable.
   * The global ``_site_footer.html`` partial renders on every public
-    page (home, terms, bulletin, map) with the SLF licence link and a
-    link to /terms.
+    page (home, terms, bulletin, map) with all three provider links
+    (SLF, ALBINA, Météo-France) and a link to /terms.
+  * The map legend names all three providers and links to /colophon/.
 
 SNOW-174 note: the inline SLF source + feedback block that previously
 lived in the map drawer's expanded fragment has been removed. Attribution
 is fully covered by the global ``_site_footer.html`` which renders on
 every page (including ``/map/``). The ``TestRegionExpandedAttribution``
 class now asserts that the site footer — not the drawer fragment — is
-the single canonical SLF attribution surface.
+the single canonical attribution surface.
+
+SNOW-294: the legend/footer now credits SLF, ALBINA, and Météo-France.
+Full attribution (including licence links) lives in the colophon.
 
 Per the SNOW-30 ticket, the *legal copy* on /terms is to be authored
 by Hugo separately — these tests assert the structural scaffold is
@@ -152,14 +156,15 @@ class TestTermsPage:
 
 @pytest.mark.django_db
 class TestGlobalSiteFooter:
-    """The site-wide SLF licence footer renders on every public page."""
+    """The site-wide three-provider attribution footer renders on every public page."""
 
     def test_home_renders_footer(self, client: Client) -> None:
         response = client.get(reverse("public:home"))
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
         assert b"slf.ch" in response.content
-        assert b"CC BY 4.0" in response.content
+        assert b"avalanche.report" in response.content
+        assert "Météo-France".encode() in response.content
 
     def test_terms_renders_footer(self, client: Client) -> None:
         response = client.get(reverse("public:terms"))
@@ -238,3 +243,31 @@ class TestRegionExpandedAttribution:
         # SNOW-174: the tooltip returns {"html": "..."} only; attribution is
         # covered by the global site footer, not the per-region tooltip.
         assert 'data-testid="expanded-slf-attribution"' not in payload["html"]
+
+
+# ---------------------------------------------------------------------------
+# Map legend — three-provider attribution (SNOW-294)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestMapLegendAttribution:
+    """The map legend's Avalanche data section names all three providers.
+
+    SNOW-294: the legend was updated from SLF-only to SLF + ALBINA +
+    Météo-France, with full attribution delegated to the colophon.
+    """
+
+    def test_map_legend_names_all_providers(self, client: Client) -> None:
+        """The map legend contains links to all three avalanche data providers."""
+        response = client.get(reverse("public:map"))
+        assert response.status_code == 200
+        assert b"slf.ch" in response.content
+        assert b"avalanche.report" in response.content
+        assert "Météo-France".encode() in response.content
+
+    def test_map_legend_links_to_colophon(self, client: Client) -> None:
+        """The map legend links to /colophon/ for full attribution."""
+        response = client.get(reverse("public:map"))
+        assert response.status_code == 200
+        assert reverse("public:colophon").encode() in response.content

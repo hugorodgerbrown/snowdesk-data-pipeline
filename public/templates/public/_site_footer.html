@@ -1,11 +1,12 @@
 {% comment %}
 public/templates/public/_site_footer.html — Global site footer.
 
-Renders SLF data-licence attribution on every page that extends
-public/base.html (per the SLF CC BY 4.0 obligation tracked in SNOW-30).
-Pages that already carry a richer per-page footer (e.g. bulletin.html)
-still render this small line below — the rich page footer is content
-context, this is the site licence line.
+Renders provider attribution (SLF, ALBINA, Météo-France — SNOW-294) on
+every page that extends public/base.html. Licence links live on the
+colophon, which this footer links to (the SLF CC BY 4.0 obligation from
+SNOW-30 is satisfied there). Pages that already carry a richer per-page
+footer (e.g. bulletin.html) still render this small line below — the
+rich page footer is content context, this is the site attribution line.
 
 Kept deliberately minimal: one line of attribution + a /terms link.
 Visual weight should not compete with page content.
@@ -22,15 +23,21 @@ Visual weight should not compete with page content.
         {% url 'public:terms_of_service' as tos_url %}
         {% blocktrans trimmed %}
             Avalanche data:
-            <a class="underline hover:text-text-2" href="https://www.slf.ch" target="_blank" rel="noopener"
-            >WSL Institute for Snow and Avalanche Research SLF</a>
-            &middot; Licensed under
+            <a class="underline hover:text-text-2" href="https://www.slf.ch" target="_blank" rel="noopener">SLF</a>
+            &middot;
             <a
                 class="underline hover:text-text-2"
-                href="https://creativecommons.org/licenses/by/4.0/"
+                href="https://avalanche.report"
                 target="_blank"
                 rel="noopener"
-            >CC BY 4.0</a>
+            >ALBINA</a>
+            &middot;
+            <a
+                class="underline hover:text-text-2"
+                href="https://meteofrance.com/meteo-montagne"
+                target="_blank"
+                rel="noopener"
+            >Météo-France</a>
             &middot;
             <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms</a>
             &middot;
