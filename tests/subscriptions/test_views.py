@@ -2067,7 +2067,7 @@ class TestAnalyticsUnsubscribed:
 
     def test_fires_in_delete_account(self) -> None:
         subscriber = SubscriberFactory.create()
-        pk = str(subscriber.pk)
+        pk = str(subscriber.user_id)
         client = _make_session_client(subscriber)
         with patch("subscriptions.views.analytics.track") as mock_track:
             client.post(reverse("subscriptions:delete_account"), **_HTMX_HEADERS)

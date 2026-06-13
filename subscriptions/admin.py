@@ -6,10 +6,11 @@ and PushSubscription records so that operators can inspect and manage newsletter
 subscriptions, registered passkeys, and Web Push subscriptions without direct
 database access.
 
-User accounts are managed via the standard Django UserAdmin (registered below)
-so that staff password management works.  SubscriberAdmin is a plain ModelAdmin
-that surfaces the subscription lifecycle fields (status, confirmed_at) and
-exposes the linked User's email as a read-only display field.
+User accounts (auth.User) are managed via the standard Django UserAdmin
+registered by django.contrib.auth's own admin, so that staff password
+management works — this module does not re-register it.  SubscriberAdmin is a
+plain ModelAdmin that surfaces the subscription lifecycle fields (status,
+confirmed_at) and exposes the linked User's email as a read-only display field.
 """
 
 import logging
