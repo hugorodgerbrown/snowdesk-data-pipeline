@@ -65,9 +65,9 @@ _TOKEN_BACKEND = "subscriptions.backends.TokenBackend"
 
 
 def _make_session_client(subscriber: Subscriber) -> Client:
-    """Return a test client logged in as subscriber via Django auth."""
+    """Return a test client logged in as the subscriber's User via Django auth."""
     client = Client()
-    client.force_login(subscriber, backend=_TOKEN_BACKEND)
+    client.force_login(subscriber.user, backend=_TOKEN_BACKEND)
     return client
 
 
@@ -116,7 +116,9 @@ class TestSubscribePartial:
         )
         assert response.status_code == 200
         # Form is re-rendered — no subscriber created
-        assert not Subscriber.objects.filter(email="noregion@example.com").exists()
+        assert not Subscriber.objects.filter(
+            user__email="noregion@example.com"
+        ).exists()
 
     def test_unknown_region_id_returns_400_error_fragment(self) -> None:
         """POST with a region_id that does not exist in the DB returns 400."""
@@ -169,7 +171,7 @@ class TestSubscribePartial:
             **_HTMX_HEADERS,
         )
         assert response.status_code == 200
-        sub = Subscriber.objects.get(email="newuser@example.com")
+        sub = Subscriber.objects.get(user__email="newuser@example.com")
         assert sub.status == Subscriber.Status.PENDING
 
     def test_case_a_new_subscriber_creates_subscription_row(self) -> None:
@@ -181,7 +183,7 @@ class TestSubscribePartial:
             data={"email": "newwithregion@example.com", "region_id": region.region_id},
             **_HTMX_HEADERS,
         )
-        sub = Subscriber.objects.get(email="newwithregion@example.com")
+        sub = Subscriber.objects.get(user__email="newwithregion@example.com")
         assert Subscription.objects.filter(subscriber=sub, region=region).exists()
 
     def test_case_a_new_subscriber_sends_account_access_email(self) -> None:
@@ -213,7 +215,7 @@ class TestSubscribePartial:
     def test_case_b_pending_creates_subscription_row(self) -> None:
         """Case B: existing pending + new region → Subscription row created."""
         subscriber = SubscriberFactory.create(
-            email="pending@example.com", status=Subscriber.Status.PENDING
+            user__email="pending@example.com", status=Subscriber.Status.PENDING
         )
         region = MicroRegionFactory.create()
         client = Client()
@@ -229,7 +231,7 @@ class TestSubscribePartial:
     def test_case_b_pending_sends_account_access_email(self) -> None:
         """Case B: existing pending subscriber → account-access email resent."""
         SubscriberFactory.create(
-            email="pending@example.com", status=Subscriber.Status.PENDING
+            user__email="pending@example.com", status=Subscriber.Status.PENDING
         )
         region = MicroRegionFactory.create()
         client = Client()
@@ -244,7 +246,7 @@ class TestSubscribePartial:
     def test_case_b_response_contains_check_your_inbox(self) -> None:
         """Case B: response fragment contains 'Check your inbox'."""
         SubscriberFactory.create(
-            email="pending@example.com", status=Subscriber.Status.PENDING
+            user__email="pending@example.com", status=Subscriber.Status.PENDING
         )
         region = MicroRegionFactory.create()
         client = Client()
@@ -260,7 +262,7 @@ class TestSubscribePartial:
     def test_case_c_active_new_region_creates_subscription_row(self) -> None:
         """Case C: active subscriber + new region → Subscription row created."""
         subscriber = SubscriberFactory.create(
-            email="active@example.com", status=Subscriber.Status.ACTIVE
+            user__email="active@example.com", status=Subscriber.Status.ACTIVE
         )
         region = MicroRegionFactory.create()
         client = Client()
@@ -276,7 +278,7 @@ class TestSubscribePartial:
     def test_case_c_active_new_region_sends_confirmation_email(self) -> None:
         """Case C: active subscriber + new region → subscription confirmation email sent."""
         SubscriberFactory.create(
-            email="active@example.com", status=Subscriber.Status.ACTIVE
+            user__email="active@example.com", status=Subscriber.Status.ACTIVE
         )
         region = MicroRegionFactory.create(name="Davos Region")
         client = Client()
@@ -291,7 +293,7 @@ class TestSubscribePartial:
     def test_case_c_response_contains_added_and_region_name(self) -> None:
         """Case C: response fragment contains 'Added' and the region name."""
         SubscriberFactory.create(
-            email="active@example.com", status=Subscriber.Status.ACTIVE
+            user__email="active@example.com", status=Subscriber.Status.ACTIVE
         )
         region = MicroRegionFactory.create(name="Davos Region")
         client = Client()
@@ -308,7 +310,7 @@ class TestSubscribePartial:
     def test_case_d_already_subscribed_is_idempotent(self) -> None:
         """Case D: active subscriber already subscribed → no duplicate Subscription row."""
         subscriber = SubscriberFactory.create(
-            email="active2@example.com", status=Subscriber.Status.ACTIVE
+            user__email="active2@example.com", status=Subscriber.Status.ACTIVE
         )
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
@@ -326,7 +328,7 @@ class TestSubscribePartial:
     def test_case_d_already_subscribed_sends_no_email(self) -> None:
         """Case D: active subscriber already subscribed → no email sent."""
         subscriber = SubscriberFactory.create(
-            email="active2@example.com", status=Subscriber.Status.ACTIVE
+            user__email="active2@example.com", status=Subscriber.Status.ACTIVE
         )
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
@@ -341,7 +343,7 @@ class TestSubscribePartial:
     def test_case_d_response_contains_already_subscribed_and_region_name(self) -> None:
         """Case D: response fragment contains 'already subscribed' and the region name."""
         subscriber = SubscriberFactory.create(
-            email="active2@example.com", status=Subscriber.Status.ACTIVE
+            user__email="active2@example.com", status=Subscriber.Status.ACTIVE
         )
         region = MicroRegionFactory.create(name="Zermatt Region")
         SubscriptionFactory.create(subscriber=subscriber, region=region)
@@ -391,7 +393,7 @@ class TestSubscribePartialRequestLog:
                 **_HTMX_HEADERS,
             )
 
-        subscriber = Subscriber.objects.get(email="newuser@example.com")
+        subscriber = Subscriber.objects.get(user__email="newuser@example.com")
         assert subscriber.acquisition_request is not None
         assert subscriber.acquisition_request.country_code == "CH"
 
@@ -417,7 +419,7 @@ class TestSubscribePartialRequestLog:
                 **_HTMX_HEADERS,
             )
 
-        subscriber = Subscriber.objects.get(email="newuser2@example.com")
+        subscriber = Subscriber.objects.get(user__email="newuser2@example.com")
         subscription = Subscription.objects.get(subscriber=subscriber, region=region)
         assert subscription.subscribed_via is not None
         assert subscription.subscribed_via.country_code == "DE"
@@ -447,7 +449,9 @@ class TestSubscribePartialRequestLog:
                 **_HTMX_HEADERS,
             )
 
-        original_request_id = Subscriber.objects.get(email=email).acquisition_request_id
+        original_request_id = Subscriber.objects.get(
+            user__email=email
+        ).acquisition_request_id
 
         # Second call from a different IP / country (Case B: pending re-send).
         geo_second = GeoLookup(
@@ -466,7 +470,7 @@ class TestSubscribePartialRequestLog:
             )
 
         # acquisition_request unchanged.
-        sub = Subscriber.objects.get(email=email)
+        sub = Subscriber.objects.get(user__email=email)
         assert sub.acquisition_request_id == original_request_id
 
     def test_subscription_started_event_includes_country_code(self) -> None:
@@ -539,7 +543,7 @@ class TestSignInViewRequestLog:
 
         from bulletins.services.geoip import GeoLookup
 
-        SubscriberFactory.create(email="signin@example.com")
+        SubscriberFactory.create(user__email="signin@example.com")
         fake_geo = GeoLookup(
             country="IT",
             subdivision="",
@@ -566,7 +570,7 @@ class TestSignInViewRequestLog:
         """sign_in_requested omits country_code when geo lookup returns None."""
         from unittest.mock import patch
 
-        SubscriberFactory.create(email="signin2@example.com")
+        SubscriberFactory.create(user__email="signin2@example.com")
         with (
             patch("bulletins.services.geoip.geo_lookup", return_value=None),
             patch("subscriptions.views.analytics.track") as mock_track,
@@ -598,19 +602,19 @@ class TestAccountView:
     def test_valid_token_activates_pending_subscriber(self) -> None:
         """Pending subscriber is activated when a valid token is presented."""
         SubscriberFactory.create(
-            email="pending@example.com", status=Subscriber.Status.PENDING
+            user__email="pending@example.com", status=Subscriber.Status.PENDING
         )
         token = _valid_account_token("pending@example.com")
         client = Client()
         client.get(reverse("subscriptions:account", kwargs={"token": token}))
-        sub = Subscriber.objects.get(email="pending@example.com")
+        sub = Subscriber.objects.get(user__email="pending@example.com")
         assert sub.status == Subscriber.Status.ACTIVE
         assert sub.confirmed_at is not None
 
     def test_valid_token_redirects_to_manage_with_just_confirmed(self) -> None:
         """Successful token click redirects to /subscribe/manage/?just_confirmed=1."""
         SubscriberFactory.create(
-            email="redirect@example.com", status=Subscriber.Status.PENDING
+            user__email="redirect@example.com", status=Subscriber.Status.PENDING
         )
         token = _valid_account_token("redirect@example.com")
         client = Client()
@@ -621,30 +625,30 @@ class TestAccountView:
     def test_valid_token_sets_confirmed_at_with_timezone(self) -> None:
         """confirmed_at timestamp has tzinfo set."""
         SubscriberFactory.create(
-            email="tz@example.com", status=Subscriber.Status.PENDING
+            user__email="tz@example.com", status=Subscriber.Status.PENDING
         )
         token = _valid_account_token("tz@example.com")
         client = Client()
         client.get(reverse("subscriptions:account", kwargs={"token": token}))
-        sub = Subscriber.objects.get(email="tz@example.com")
+        sub = Subscriber.objects.get(user__email="tz@example.com")
         assert sub.confirmed_at is not None
         assert sub.confirmed_at.tzinfo is not None
 
     def test_valid_token_sets_session(self) -> None:
         """Django auth session is established after successful token click."""
         SubscriberFactory.create(
-            email="session@example.com", status=Subscriber.Status.PENDING
+            user__email="session@example.com", status=Subscriber.Status.PENDING
         )
         token = _valid_account_token("session@example.com")
         client = Client()
         client.get(reverse("subscriptions:account", kwargs={"token": token}))
-        sub = Subscriber.objects.get(email="session@example.com")
-        assert client.session.get("_auth_user_id") == str(sub.pk)
+        sub = Subscriber.objects.get(user__email="session@example.com")
+        assert client.session.get("_auth_user_id") == str(sub.user_id)
 
     def test_idempotent_on_re_click_does_not_re_stamp_confirmed_at(self) -> None:
         """Re-clicking the same link for an already-active subscriber does not re-stamp confirmed_at."""
         sub = SubscriberFactory.create(
-            email="active@example.com", status=Subscriber.Status.ACTIVE
+            user__email="active@example.com", status=Subscriber.Status.ACTIVE
         )
         sub.confirmed_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
         sub.save(update_fields=["confirmed_at"])
@@ -661,7 +665,7 @@ class TestAccountView:
     def test_active_subscriber_re_click_also_redirects(self) -> None:
         """Active subscriber clicking the link again still gets redirected to manage."""
         sub = SubscriberFactory.create(
-            email="active2@example.com", status=Subscriber.Status.ACTIVE
+            user__email="active2@example.com", status=Subscriber.Status.ACTIVE
         )
         sub.confirmed_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
         sub.save(update_fields=["confirmed_at"])
@@ -752,7 +756,7 @@ class TestSignInView:
 
     def test_post_known_email_sends_account_access_email(self) -> None:
         """Known email on POST → account access email sent."""
-        SubscriberFactory.create(email="known@example.com")
+        SubscriberFactory.create(user__email="known@example.com")
         client = Client()
         response = client.post(
             reverse("subscriptions:sign_in"),
@@ -771,11 +775,11 @@ class TestSignInView:
         )
         assert response.status_code == 200
         assert len(mail.outbox) == 1
-        assert Subscriber.objects.filter(email="brandnew@example.com").exists()
+        assert Subscriber.objects.filter(user__email="brandnew@example.com").exists()
 
     def test_post_known_email_response_identical_to_unknown(self) -> None:
         """Responses for known and unknown emails must be byte-equal (anti-enumeration)."""
-        SubscriberFactory.create(email="exists@example.com")
+        SubscriberFactory.create(user__email="exists@example.com")
         client = Client()
         resp_known = client.post(
             reverse("subscriptions:sign_in"),
@@ -845,7 +849,7 @@ class TestSignInPostTimingSideChannel:
         the test only measures the enqueue-side timing, which is what the
         request handler observes.
         """
-        SubscriberFactory.create(email="known@example.com")
+        SubscriberFactory.create(user__email="known@example.com")
         client = Client()
         # Warm-up — first request pays template-cache and DB-connection cost.
         client.post(
@@ -1274,7 +1278,7 @@ class TestUnsubscribeView:
 
     def test_get_valid_token_renders_confirmation(self) -> None:
         """Valid token GET renders the unsubscribe confirmation page."""
-        subscriber = SubscriberFactory.create(email="unsub@example.com")
+        subscriber = SubscriberFactory.create(user__email="unsub@example.com")
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         token = generate_unsubscribe_token("unsub@example.com", region.region_id)
@@ -1287,7 +1291,7 @@ class TestUnsubscribeView:
 
     def test_post_valid_token_removes_subscription(self) -> None:
         """Valid token POST deletes the matching Subscription row."""
-        subscriber = SubscriberFactory.create(email="unsub2@example.com")
+        subscriber = SubscriberFactory.create(user__email="unsub2@example.com")
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         token = generate_unsubscribe_token("unsub2@example.com", region.region_id)
@@ -1302,7 +1306,7 @@ class TestUnsubscribeView:
 
     def test_post_last_subscription_hard_deletes_subscriber(self) -> None:
         """Removing last subscription hard-deletes the Subscriber."""
-        subscriber = SubscriberFactory.create(email="lastregion@example.com")
+        subscriber = SubscriberFactory.create(user__email="lastregion@example.com")
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         sub_pk = subscriber.pk
@@ -1313,7 +1317,7 @@ class TestUnsubscribeView:
 
     def test_post_not_last_subscription_keeps_subscriber(self) -> None:
         """Removing one of multiple subscriptions keeps the subscriber."""
-        subscriber = SubscriberFactory.create(email="keep@example.com")
+        subscriber = SubscriberFactory.create(user__email="keep@example.com")
         region1 = MicroRegionFactory.create()
         region2 = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region1)
@@ -1321,14 +1325,14 @@ class TestUnsubscribeView:
         token = generate_unsubscribe_token("keep@example.com", region1.region_id)
         client = Client()
         client.post(reverse("subscriptions:unsubscribe", kwargs={"token": token}))
-        assert Subscriber.objects.filter(email="keep@example.com").exists()
+        assert Subscriber.objects.filter(user__email="keep@example.com").exists()
         assert Subscription.objects.filter(
             subscriber=subscriber, region=region2
         ).exists()
 
     def test_post_idempotent_when_already_deleted(self) -> None:
         """Re-submitting after subscriber deletion renders done page without error."""
-        subscriber = SubscriberFactory.create(email="gone@example.com")
+        subscriber = SubscriberFactory.create(user__email="gone@example.com")
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         token = generate_unsubscribe_token("gone@example.com", region.region_id)
@@ -1350,7 +1354,7 @@ class TestUnsubscribeView:
 
     def test_unsubscribe_token_does_not_expire(self) -> None:
         """Unsubscribe tokens must remain valid regardless of age."""
-        subscriber = SubscriberFactory.create(email="old@example.com")
+        subscriber = SubscriberFactory.create(user__email="old@example.com")
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
 
@@ -1437,19 +1441,19 @@ class TestEmailNormalisation:
         region = MicroRegionFactory.create()
         self._subscribe("User@Example.com", region.region_id)
         self._subscribe("user@example.com", region.region_id)
-        assert Subscriber.objects.filter(email="user@example.com").count() == 1
+        assert Subscriber.objects.filter(user__email="user@example.com").count() == 1
         assert Subscriber.objects.count() == 1
 
     def test_mixed_case_address_is_stored_lowercase(self) -> None:
         """The stored email address is the lowercase-normalised form."""
         region = MicroRegionFactory.create()
         self._subscribe("ALICE@EXAMPLE.COM", region.region_id)
-        assert Subscriber.objects.filter(email="alice@example.com").exists()
+        assert Subscriber.objects.filter(user__email="alice@example.com").exists()
 
     def test_sign_in_post_looks_up_normalised_email(self) -> None:
         """sign_in_view POST for a mixed-case address finds the lowercase subscriber."""
         subscriber = SubscriberFactory.create(
-            email="bob@example.com", status=Subscriber.Status.ACTIVE
+            user__email="bob@example.com", status=Subscriber.Status.ACTIVE
         )
         client = Client()
         with patch("subscriptions.views.send_account_access_email") as mock_send:
@@ -1458,7 +1462,7 @@ class TestEmailNormalisation:
                 data={"email": "BOB@EXAMPLE.COM"},
             )
         mock_send.assert_called_once_with(
-            subscriber.email, request=mock_send.call_args[1]["request"]
+            subscriber.user.email, request=mock_send.call_args[1]["request"]
         )
 
     def test_account_view_resolves_mixed_case_token_to_lowercase_subscriber(
@@ -1471,7 +1475,7 @@ class TestEmailNormalisation:
         the database lookup so the stored lowercase record is found.
         """
         subscriber = SubscriberFactory.create(
-            email="foo@bar.com", status=Subscriber.Status.PENDING
+            user__email="foo@bar.com", status=Subscriber.Status.PENDING
         )
         token = generate_token("FOO@BAR.com", salt=SALT_ACCOUNT_ACCESS)
         client = Client()
@@ -1490,7 +1494,7 @@ class TestEmailNormalisation:
         for the lowercase-stored subscriber is deleted correctly.
         """
         subscriber = SubscriberFactory.create(
-            email="foo@bar.com", status=Subscriber.Status.ACTIVE
+            user__email="foo@bar.com", status=Subscriber.Status.ACTIVE
         )
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
@@ -1856,7 +1860,7 @@ class TestAnalyticsSubscriptionStarted:
     def test_case_b_does_not_fire_subscription_started(self) -> None:
         region = MicroRegionFactory.create()
         SubscriberFactory.create(
-            email="pending@example.com", status=Subscriber.Status.PENDING
+            user__email="pending@example.com", status=Subscriber.Status.PENDING
         )
         client = Client()
         with patch("subscriptions.views.analytics.track") as mock_track:
@@ -1902,7 +1906,7 @@ class TestAnalyticsSubscriptionConfirmed:
 
     def test_fires_on_pending_confirmation(self) -> None:
         subscriber = SubscriberFactory.create(status=Subscriber.Status.PENDING)
-        token = _valid_account_token(subscriber.email)
+        token = _valid_account_token(subscriber.user.email)
         client = Client()
         with patch("subscriptions.views.analytics.track") as mock_track:
             client.get(reverse("subscriptions:account", kwargs={"token": token}))
@@ -1912,13 +1916,13 @@ class TestAnalyticsSubscriptionConfirmed:
             if c.args[0] == "subscription_confirmed"
         ]
         assert len(calls) == 1
-        assert calls[0].args[1] == str(subscriber.pk)
+        assert calls[0].args[1] == str(subscriber.user_id)
         props = calls[0].args[2]
         assert "hours_since_started" in props
 
     def test_does_not_fire_on_already_active(self) -> None:
         subscriber = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
-        token = _valid_account_token(subscriber.email)
+        token = _valid_account_token(subscriber.user.email)
         client = Client()
         with patch("subscriptions.views.analytics.track") as mock_track:
             client.get(reverse("subscriptions:account", kwargs={"token": token}))
@@ -1931,7 +1935,7 @@ class TestAnalyticsSubscriptionConfirmed:
 
     def test_alias_called_when_anon_id_in_session(self) -> None:
         subscriber = SubscriberFactory.create(status=Subscriber.Status.PENDING)
-        token = _valid_account_token(subscriber.email)
+        token = _valid_account_token(subscriber.user.email)
         client = Client()
         session = client.session
         session["analytics_anon_id"] = "anon-uuid-111"
@@ -1939,13 +1943,13 @@ class TestAnalyticsSubscriptionConfirmed:
         with patch("subscriptions.views.analytics.alias") as mock_alias:
             client.get(reverse("subscriptions:account", kwargs={"token": token}))
         mock_alias.assert_called_once_with(
-            distinct_id=str(subscriber.pk),
+            distinct_id=str(subscriber.user_id),
             alias_id="anon-uuid-111",
         )
 
     def test_alias_not_called_without_anon_id(self) -> None:
         subscriber = SubscriberFactory.create(status=Subscriber.Status.PENDING)
-        token = _valid_account_token(subscriber.email)
+        token = _valid_account_token(subscriber.user.email)
         client = Client()
         with patch("subscriptions.views.analytics.alias") as mock_alias:
             client.get(reverse("subscriptions:account", kwargs={"token": token}))
@@ -1981,14 +1985,14 @@ class TestAnalyticsRegionAdded:
 
     def test_fires_in_subscribe_case_c(self) -> None:
         subscriber = SubscriberFactory.create(
-            email="active@example.com", status=Subscriber.Status.ACTIVE
+            user__email="active@example.com", status=Subscriber.Status.ACTIVE
         )
         region = MicroRegionFactory.create()
         client = Client()
         with patch("subscriptions.views.analytics.track") as mock_track:
             client.post(
                 reverse("subscriptions:subscribe"),
-                data={"email": subscriber.email, "region_id": region.region_id},
+                data={"email": subscriber.user.email, "region_id": region.region_id},
                 **_HTMX_HEADERS,
             )
         calls = [c for c in mock_track.call_args_list if c.args[0] == "region_added"]
@@ -2078,8 +2082,8 @@ class TestAnalyticsUnsubscribed:
         subscriber = SubscriberFactory.create()
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
-        pk = str(subscriber.pk)
-        token = generate_unsubscribe_token(subscriber.email, region.region_id)
+        pk = str(subscriber.user_id)
+        token = generate_unsubscribe_token(subscriber.user.email, region.region_id)
         client = Client()
         with patch("subscriptions.views.analytics.track") as mock_track:
             client.post(reverse("subscriptions:unsubscribe", kwargs={"token": token}))
@@ -2102,7 +2106,7 @@ class TestAnalyticsSignInRequested:
 
     def test_fires_for_known_email(self) -> None:
         """POST with a known email fires sign_in_requested with the existing PK."""
-        subscriber = SubscriberFactory.create(email="known@example.com")
+        subscriber = SubscriberFactory.create(user__email="known@example.com")
         client = Client()
         with patch("subscriptions.views.analytics.track") as mock_track:
             client.post(
@@ -2113,7 +2117,7 @@ class TestAnalyticsSignInRequested:
             c for c in mock_track.call_args_list if c.args[0] == "sign_in_requested"
         ]
         assert len(calls) == 1
-        assert calls[0].args[1] == str(subscriber.pk)
+        assert calls[0].args[1] == str(subscriber.user_id)
 
     def test_fires_for_unknown_email_after_subscriber_created(self) -> None:
         """POST with a fresh email creates a Subscriber and fires sign_in_requested with the new PK."""
@@ -2123,12 +2127,12 @@ class TestAnalyticsSignInRequested:
                 reverse("subscriptions:sign_in"),
                 data={"email": "brandnew@example.com"},
             )
-        new_subscriber = Subscriber.objects.get(email="brandnew@example.com")
+        new_subscriber = Subscriber.objects.get(user__email="brandnew@example.com")
         calls = [
             c for c in mock_track.call_args_list if c.args[0] == "sign_in_requested"
         ]
         assert len(calls) == 1
-        assert calls[0].args[1] == str(new_subscriber.pk)
+        assert calls[0].args[1] == str(new_subscriber.user_id)
 
     def test_does_not_fire_on_invalid_email(self) -> None:
         """POST with an invalid email re-renders the form and does not fire the event."""
@@ -2182,7 +2186,7 @@ class TestSubscribePartialLogging:
                 **_HTMX_HEADERS,
             )
 
-        subscriber = Subscriber.objects.get(email=email)
+        subscriber = Subscriber.objects.get(user__email=email)
         all_messages = [r.getMessage() for r in caplog.records]
 
         # The plaintext email address must not appear in any log record.
@@ -2262,7 +2266,7 @@ class TestSignInViewLogging:
                 data={"email": email},
             )
 
-        subscriber = Subscriber.objects.get(email=email)
+        subscriber = Subscriber.objects.get(user__email=email)
         all_messages = [r.getMessage() for r in caplog.records]
 
         # The plaintext email must not appear in any log record.
@@ -2294,7 +2298,7 @@ class TestDeleteAccountLogging:
         monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
 
         email = "delete-caplog@example.com"
-        subscriber = SubscriberFactory.create(email=email)
+        subscriber = SubscriberFactory.create(user__email=email)
         client = _make_session_client(subscriber)
 
         with caplog.at_level(logging.INFO, logger="subscriptions.views"):
@@ -2331,7 +2335,7 @@ class TestUnsubscribeViewLogging:
         monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
 
         email = "unsub-caplog@example.com"
-        subscriber = SubscriberFactory.create(email=email)
+        subscriber = SubscriberFactory.create(user__email=email)
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(subscriber=subscriber, region=region)
         token = generate_unsubscribe_token(email, region.region_id)

@@ -41,7 +41,7 @@ _TOKEN_BACKEND = "subscriptions.backends.TokenBackend"
 def _make_session_client(subscriber: Subscriber) -> Client:
     """Return a test Client logged in as subscriber via Django auth."""
     client = Client()
-    client.force_login(subscriber, backend=_TOKEN_BACKEND)
+    client.force_login(subscriber.user, backend=_TOKEN_BACKEND)
     return client
 
 
@@ -118,7 +118,7 @@ class TestPasskeyAuthResponse:
         assert resp.status_code == 200
         data = json.loads(resp.content)
         assert data["ok"] is True
-        assert client.session.get("_auth_user_id") == str(subscriber.pk)
+        assert client.session.get("_auth_user_id") == str(subscriber.user_id)
 
     def test_unknown_credential_returns_404(self) -> None:
         client = Client()
@@ -413,7 +413,7 @@ class TestPasskeyViewsLogging:
 
         monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
 
-        subscriber = SubscriberFactory.create(email="passkey-auth@example.com")
+        subscriber = SubscriberFactory.create(user__email="passkey-auth@example.com")
         client = Client()
         _set_auth_challenge(client, "dGVzdA")
 
@@ -451,7 +451,9 @@ class TestPasskeyViewsLogging:
 
         monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
 
-        subscriber = SubscriberFactory.create(email="passkey-reg-fail@example.com")
+        subscriber = SubscriberFactory.create(
+            user__email="passkey-reg-fail@example.com"
+        )
         client = _make_session_client(subscriber)
         _set_reg_challenge(client, "dGVzdA")
 
@@ -489,7 +491,7 @@ class TestPasskeyViewsLogging:
 
         monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
 
-        subscriber = SubscriberFactory.create(email="passkey-del@example.com")
+        subscriber = SubscriberFactory.create(user__email="passkey-del@example.com")
         passkey = PasskeyCredentialFactory.create(subscriber=subscriber)
         client = _make_session_client(subscriber)
 

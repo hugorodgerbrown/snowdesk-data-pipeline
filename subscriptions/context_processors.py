@@ -34,10 +34,16 @@ def nav_subscriptions(request: HttpRequest) -> dict[str, Any]:
     if not request.user.is_authenticated:
         return {}
 
-    from subscriptions.models import Subscription
+    from subscriptions.models import Subscriber, Subscription
+
+    # Staff users (created via createsuperuser) have no Subscriber profile.
+    try:
+        subscriber = request.user.subscriber
+    except Subscriber.DoesNotExist:
+        return {}
 
     nav_subs = (
-        Subscription.objects.filter(subscriber=request.user)
+        Subscription.objects.filter(subscriber=subscriber)
         .select_related("region")
         .order_by("region__name")[:_NAV_SUBSCRIPTION_LIMIT]
     )

@@ -16,13 +16,11 @@ def test_base_model_default_ordering() -> None:
     assert BaseModel._meta.ordering == ["-created_at"]
 
 
-def test_subscriber_is_abstract_base_user() -> None:
-    """Subscriber extends AbstractBaseUser (not BaseModel) as the custom user model."""
-    from django.contrib.auth.models import AbstractBaseUser
-
+def test_subscriber_inherits_base_model() -> None:
+    """Subscriber is now a profile model extending BaseModel, not AbstractBaseUser."""
     from subscriptions.models import Subscriber
 
-    assert issubclass(Subscriber, AbstractBaseUser)
+    assert issubclass(Subscriber, BaseModel)
 
 
 def test_pipeline_models_inherit_base_model() -> None:

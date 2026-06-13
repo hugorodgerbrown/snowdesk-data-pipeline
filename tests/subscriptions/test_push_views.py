@@ -105,7 +105,7 @@ class TestPushRegister:
     def test_non_staff_redirected_to_admin_login(self, regular_user: Any) -> None:
         """Non-staff authenticated user is also redirected."""
         c = Client()
-        c.force_login(regular_user)
+        c.force_login(regular_user.user)
         response = _post_json(c, _REGISTER_URL, _REGISTER_BODY)
         assert response.status_code == 302
         assert "/admin/login/" in response["Location"]
@@ -132,13 +132,17 @@ class TestPushRegister:
             endpoint=_REGISTER_BODY["endpoint"]
         ).exists()
 
-    def test_staff_register_links_to_staff_user(
+    def test_staff_register_without_profile_has_null_subscriber(
         self, staff_client: Client, staff_user: Any
     ) -> None:
-        """Registered subscription is linked to the requesting staff user."""
+        """A staff user with no Subscriber profile registers with subscriber=None.
+
+        Push registrations are staff-only; a plain staff User (no Subscriber
+        profile) will result in a PushSubscription with a null subscriber FK.
+        """
         _post_json(staff_client, _REGISTER_URL, _REGISTER_BODY)
         sub = PushSubscription.objects.get(endpoint=_REGISTER_BODY["endpoint"])
-        assert sub.subscriber_id == staff_user.pk
+        assert sub.subscriber_id is None
 
     def test_missing_fields_returns_400(self, staff_client: Client) -> None:
         """POST with missing fields returns 400."""
@@ -200,7 +204,7 @@ class TestPushUnregister:
     def test_non_staff_redirected_to_admin_login(self, regular_user: Any) -> None:
         """Non-staff authenticated user is also redirected."""
         c = Client()
-        c.force_login(regular_user)
+        c.force_login(regular_user.user)
         response = _post_json(c, _UNREGISTER_URL, _UNREGISTER_BODY)
         assert response.status_code == 302
         assert "/admin/login/" in response["Location"]
@@ -250,7 +254,7 @@ class TestPushTest:
     def test_non_staff_redirected_to_admin_login(self, regular_user: Any) -> None:
         """Non-staff authenticated user is also redirected."""
         c = Client()
-        c.force_login(regular_user)
+        c.force_login(regular_user.user)
         response = _post_json(c, _TEST_URL, _TEST_BODY)
         assert response.status_code == 302
         assert "/admin/login/" in response["Location"]

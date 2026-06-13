@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, cast
+from typing import Any
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -53,10 +53,14 @@ def push_register(request: HttpRequest) -> HttpResponse:
     if not (endpoint and p256dh and auth):
         return JsonResponse({"ok": False, "error": "missing fields"}, status=400)
 
-    # The staff gate guarantees an authenticated Subscriber — link the subscription
-    # directly to the requesting staff member. Cast narrows the type for mypy
-    # (runtime guard is the @staff_member_required decorator above).
-    subscriber = cast(Subscriber, request.user)
+    # The staff gate guarantees an authenticated staff User.  Staff users who
+    # have a Subscriber profile (e.g. created via the subscribe flow) link the
+    # PushSubscription directly; staff with no profile leave subscriber=None.
+    subscriber: Subscriber | None = None
+    try:
+        subscriber = request.user.subscriber  # type: ignore[union-attr]  # staff_member_required guarantees authentication
+    except Subscriber.DoesNotExist:
+        pass
     obj, created = PushSubscription.objects.update_or_create(
         endpoint=endpoint,
         defaults={

@@ -108,8 +108,8 @@ def generate_registration_options(
         rp_id=_rp_id(),
         rp_name=_rp_name(),
         user_id=str(subscriber.uuid).encode(),
-        user_name=subscriber.email,
-        user_display_name=subscriber.email,
+        user_name=subscriber.user.email,
+        user_display_name=subscriber.user.email,
         authenticator_selection=AuthenticatorSelectionCriteria(
             authenticator_attachment=AuthenticatorAttachment.PLATFORM,
             resident_key=ResidentKeyRequirement.REQUIRED,

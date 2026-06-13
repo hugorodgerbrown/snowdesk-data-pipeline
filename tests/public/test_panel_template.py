@@ -18,12 +18,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
 from bulletins.models import Bulletin
 from regions.models import MicroRegion
-from subscriptions.models import Subscriber
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -61,8 +61,8 @@ def region() -> MicroRegion:
 
 
 @pytest.fixture()
-def staff_user(db: Any) -> Subscriber:
-    """Return a staff Subscriber."""
+def staff_user(db: Any) -> User:
+    """Return a staff User."""
     return UserFactory.create()
 
 
@@ -73,7 +73,7 @@ def anon_client() -> Client:
 
 
 @pytest.fixture()
-def staff_client(staff_user: Subscriber) -> Client:
+def staff_client(staff_user: User) -> Client:
     """Return a test client logged in as the staff user."""
     c = Client()
     c.force_login(staff_user)

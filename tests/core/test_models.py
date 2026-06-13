@@ -159,11 +159,11 @@ class TestRequestLogFromRequest:
     def test_from_request_links_authenticated_subscriber(
         self, rf: RequestFactory
     ) -> None:
-        """Authenticated requests link the log to request.user."""
+        """Authenticated requests link the log to the Subscriber profile on request.user."""
         subscriber = SubscriberFactory.create()
         request = rf.post("/", REMOTE_ADDR="203.0.113.1")
         request.session = type("S", (), {"session_key": "y"})()
-        request.user = subscriber  # noqa: PGH003 — Subscriber is a valid auth user
+        request.user = subscriber.user  # noqa: PGH003 — auth.User is request.user
 
         with patch("bulletins.services.geoip.geo_lookup", return_value=None):
             log = RequestLog.objects.from_request(request)

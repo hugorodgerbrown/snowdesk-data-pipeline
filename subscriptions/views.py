@@ -87,10 +87,17 @@ _UNSUBSCRIBE_DONE_URL = "/subscribe/unsubscribe-done/"
 
 
 def _get_subscriber(request: HttpRequest) -> Subscriber | None:
-    """Return the authenticated Subscriber from request.user, or None."""
-    if request.user.is_authenticated:
-        return request.user
-    return None
+    """Return the authenticated Subscriber profile from request.user, or None.
+
+    Returns None for anonymous users and for authenticated staff users who have
+    no Subscriber profile (e.g. superusers created via createsuperuser).
+    """
+    if not request.user.is_authenticated:
+        return None
+    try:
+        return request.user.subscriber
+    except Subscriber.DoesNotExist:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -144,8 +151,8 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
     # first-observation wins on acquisition_request.
     req_log = capture_request_log(request)
 
-    subscriber, created = Subscriber.objects.get_or_create(
-        email=email,
+    subscriber, created = Subscriber.objects.get_or_create_for_email(
+        email,
         defaults={
             "status": Subscriber.Status.PENDING,
             "acquisition_request": req_log,
@@ -159,7 +166,7 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
     sign_in_props: dict[str, object] = {}
     if req_log.country_code:
         sign_in_props["country_code"] = req_log.country_code
-    analytics.track("sign_in_requested", str(subscriber.pk), sign_in_props)
+    analytics.track("sign_in_requested", str(subscriber.user_id), sign_in_props)
 
     return render(request, "subscriptions/manage_sent.html", {})
 
@@ -289,8 +296,8 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
     # Capture request context once; first-observation wins on both FKs.
     req_log = capture_request_log(request)
 
-    subscriber, subscriber_created = Subscriber.objects.get_or_create(
-        email=email,
+    subscriber, subscriber_created = Subscriber.objects.get_or_create_for_email(
+        email,
         defaults={
             "status": Subscriber.Status.PENDING,
             "acquisition_request": req_log,
@@ -350,7 +357,7 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
             region_added_props["country_code"] = req_log.country_code
         analytics.track(
             "region_added",
-            str(subscriber.pk),
+            str(subscriber.user_id),
             region_added_props,
         )
         return render(
@@ -417,15 +424,17 @@ def _delete_subscription_with_cascade(
     region_count_after = subscriber.subscriptions.count()
     analytics.track(
         "region_removed",
-        str(subscriber.pk),
+        str(subscriber.user_id),
         {
             "region_id": region.region_id,
             "region_count_after": region_count_after,
         },
     )
     if region_count_after == 0:
-        email = subscriber.email
+        email = subscriber.user.email
+        user = subscriber.user
         subscriber.delete()
+        user.delete()
         logout(request)
         logger.info(
             "Subscriber %s hard-deleted (last region removed)", mask_email(email)
@@ -502,7 +511,7 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
             region_added_props["country_code"] = req_log.country_code
         analytics.track(
             "region_added",
-            str(subscriber.pk),
+            str(subscriber.user_id),
             region_added_props,
         )
     return render(
@@ -626,7 +635,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
         response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
     else:
         try:
-            subscriber = Subscriber.objects.get(email=email.lower())
+            subscriber = Subscriber.objects.get(user__email=email.lower())
         except Subscriber.DoesNotExist:
             logger.warning(
                 "account_view: valid token for unknown email %s", mask_email(email)
@@ -641,23 +650,23 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
                     "Subscriber pk=%s activated via account link", subscriber.pk
                 )
                 # Emit subscription_confirmed and join the anonymous session
-                # identity to the now-authenticated subscriber PK.
+                # identity to the now-authenticated User PK.
                 hours_since: float = round(
                     (timezone.now() - subscriber.created_at).total_seconds() / 3600,
                     2,
                 )
                 analytics.track(
                     "subscription_confirmed",
-                    str(subscriber.pk),
+                    str(subscriber.user_id),
                     {"hours_since_started": hours_since},
                 )
                 anon_id: str | None = request.session.get("analytics_anon_id")
                 if anon_id:
                     analytics.alias(
-                        distinct_id=str(subscriber.pk),
+                        distinct_id=str(subscriber.user_id),
                         alias_id=anon_id,
                     )
-            login(request, subscriber, backend=_TOKEN_BACKEND)
+            login(request, subscriber.user, backend=_TOKEN_BACKEND)
             response = redirect(f"{_MANAGE_URL}?just_confirmed=1")
 
     # Tokens appear in this view's URL path — suppress Referer leakage.
@@ -805,11 +814,13 @@ def delete_account(request: HttpRequest) -> HttpResponse:
     if subscriber is None:
         return HttpResponse(status=403)
 
-    email = subscriber.email
-    # Capture account_age_days BEFORE deleting the subscriber row.
+    email = subscriber.user.email
+    # Capture account_age_days and distinct_id BEFORE deleting the subscriber row.
     account_age_days = (timezone.now() - subscriber.created_at).days
-    distinct_id = str(subscriber.pk)
+    distinct_id = str(subscriber.user_id)
+    user = subscriber.user
     subscriber.delete()
+    user.delete()
     logout(request)
     logger.info("Subscriber %s hard-deleted via delete_account", mask_email(email))
     analytics.track(
@@ -923,7 +934,7 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
 
     # POST — execute unsubscribe.
     try:
-        subscriber = Subscriber.objects.get(email=email.lower())
+        subscriber = Subscriber.objects.get(user__email=email.lower())
     except Subscriber.DoesNotExist:
         # Already unsubscribed (perhaps from a different link) — idempotent.
         logger.info(
@@ -935,7 +946,7 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
         return response
 
     # Capture distinct_id and account_age_days BEFORE any delete.
-    distinct_id = str(subscriber.pk)
+    distinct_id = str(subscriber.user_id)
     account_age_days = (timezone.now() - subscriber.created_at).days
 
     # Delete the specific subscription.
@@ -954,9 +965,11 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
         {"reason": "unsubscribe_link", "account_age_days": account_age_days},
     )
 
-    # If no subscriptions remain, hard-delete the subscriber.
+    # If no subscriptions remain, hard-delete the subscriber and their User.
     if not subscriber.subscriptions.exists():
+        user = subscriber.user
         subscriber.delete()
+        user.delete()
         logger.info(
             "Subscriber %s hard-deleted (last subscription removed via unsubscribe)",
             mask_email(email),

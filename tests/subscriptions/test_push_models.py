@@ -62,7 +62,7 @@ class TestPushSubscriptionModel:
         sub = PushSubscriptionFactory.create(subscriber=subscriber)
         s = sub.to_string()
         assert s
-        assert subscriber.email in s
+        assert subscriber.user.email in s
 
     def test_str_delegates_to_to_string(self) -> None:
         """__str__ returns the same value as to_string()."""

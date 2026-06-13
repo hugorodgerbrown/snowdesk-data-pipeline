@@ -25,6 +25,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from django.contrib.auth.models import User
 from django.contrib.staticfiles.finders import find as find_static
 from django.test import Client
 from django.urls import reverse
@@ -45,8 +46,8 @@ def _all_slugs() -> list[str]:
 
 
 @pytest.fixture()
-def staff_user(db: Any) -> Subscriber:
-    """Return a staff Subscriber."""
+def staff_user(db: Any) -> User:
+    """Return a staff User."""
     return UserFactory.create()
 
 
@@ -57,7 +58,7 @@ def regular_user(db: Any) -> Subscriber:
 
 
 @pytest.fixture()
-def staff_client(staff_user: Subscriber) -> Client:
+def staff_client(staff_user: User) -> Client:
     """Return a logged-in staff client."""
     c = Client()
     c.force_login(staff_user)
@@ -65,7 +66,7 @@ def staff_client(staff_user: Subscriber) -> Client:
 
 
 @pytest.fixture()
-def htmx_staff_client(staff_user: Subscriber) -> Client:
+def htmx_staff_client(staff_user: User) -> Client:
     """Return a logged-in staff client whose requests carry the HX-Request header."""
     c = Client()
     c.force_login(staff_user)
@@ -98,7 +99,7 @@ class TestComponentLibraryIndex:
     ) -> None:
         """A logged-in non-staff user is also bounced to admin login."""
         client = Client()
-        client.force_login(regular_user)
+        client.force_login(regular_user.user)
         response = client.get(_index_url())
         assert response.status_code == 302
         assert "/admin/login/" in response["Location"]

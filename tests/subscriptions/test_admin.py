@@ -4,9 +4,8 @@ tests/subscriptions/test_admin.py — Tests for subscriptions/admin.py.
 Covers:
   - search_fields configuration for each admin class.
   - That get_search_results finds subscribers via partial email search
-    (icontains) through each of the three admins — verifying the SNOW-312
-    acceptance criterion that plain icontains search is restored now that
-    the email column is no longer encrypted.
+    (icontains) through each of the three admins — verifying the SNOW-313
+    acceptance criterion that email lookup goes via user__email.
 """
 
 from typing import Any
@@ -38,35 +37,35 @@ class TestAdminSearchFieldsConfig:
     """Verify search_fields declarations on each admin class."""
 
     def test_subscriber_admin_search_fields(self) -> None:
-        """SubscriberAdmin.search_fields includes 'email'."""
+        """SubscriberAdmin.search_fields includes 'user__email'."""
         admin = SubscriberAdmin(Subscriber, AdminSite())
-        assert "email" in admin.search_fields
+        assert "user__email" in admin.search_fields
 
     def test_subscription_admin_search_fields(self) -> None:
-        """SubscriptionAdmin.search_fields includes 'subscriber__email' and 'region__region_id'."""
+        """SubscriptionAdmin.search_fields includes 'subscriber__user__email' and 'region__region_id'."""
         admin = SubscriptionAdmin(Subscription, AdminSite())
-        assert "subscriber__email" in admin.search_fields
+        assert "subscriber__user__email" in admin.search_fields
         assert "region__region_id" in admin.search_fields
 
     def test_passkey_credential_admin_search_fields(self) -> None:
-        """PasskeyCredentialAdmin.search_fields includes 'subscriber__email' and 'name'."""
+        """PasskeyCredentialAdmin.search_fields includes 'subscriber__user__email' and 'name'."""
         admin = PasskeyCredentialAdmin(PasskeyCredential, AdminSite())
-        assert "subscriber__email" in admin.search_fields
+        assert "subscriber__user__email" in admin.search_fields
         assert "name" in admin.search_fields
 
 
 @pytest.mark.django_db
 class TestSubscriberAdminSearch:
-    """Tests for SubscriberAdmin.get_search_results with plain EmailField."""
+    """Tests for SubscriberAdmin.get_search_results."""
 
     def _admin(self) -> SubscriberAdmin:
         """Return a SubscriberAdmin bound to the default admin site."""
         return SubscriberAdmin(Subscriber, AdminSite())
 
     def test_partial_email_search_finds_subscriber(self) -> None:
-        """Partial email fragment matches via icontains now that email is plaintext."""
-        sub = SubscriberFactory.create(email="alice@example.com")
-        SubscriberFactory.create(email="bob@example.com")
+        """Partial email fragment matches via user__email icontains."""
+        sub = SubscriberFactory.create(user__email="alice@example.com")
+        SubscriberFactory.create(user__email="bob@example.com")
 
         admin = self._admin()
         qs, _ = admin.get_search_results(
@@ -78,8 +77,8 @@ class TestSubscriberAdminSearch:
 
     def test_full_email_search_finds_exact_subscriber(self) -> None:
         """Full email address finds exactly the matching subscriber."""
-        sub = SubscriberFactory.create(email="alice@example.com")
-        SubscriberFactory.create(email="bob@example.com")
+        sub = SubscriberFactory.create(user__email="alice@example.com")
+        SubscriberFactory.create(user__email="bob@example.com")
 
         admin = self._admin()
         qs, _ = admin.get_search_results(
@@ -91,7 +90,7 @@ class TestSubscriberAdminSearch:
 
     def test_no_match_returns_empty(self) -> None:
         """A search term with no match returns an empty result set."""
-        SubscriberFactory.create(email="alice@example.com")
+        SubscriberFactory.create(user__email="alice@example.com")
 
         admin = self._admin()
         qs, _ = admin.get_search_results(
@@ -111,10 +110,10 @@ class TestSubscriptionAdminSearch:
         return SubscriptionAdmin(Subscription, AdminSite())
 
     def test_partial_subscriber_email_finds_subscription(self) -> None:
-        """Partial email fragment finds subscriptions via subscriber__email icontains."""
-        sub = SubscriberFactory.create(email="alice@example.com")
+        """Partial email fragment finds subscriptions via subscriber__user__email icontains."""
+        sub = SubscriberFactory.create(user__email="alice@example.com")
         subscription = SubscriptionFactory.create(subscriber=sub)
-        other = SubscriberFactory.create(email="bob@example.com")
+        other = SubscriberFactory.create(user__email="bob@example.com")
         SubscriptionFactory.create(subscriber=other)
 
         admin = self._admin()
@@ -148,10 +147,10 @@ class TestPasskeyCredentialAdminSearch:
         return PasskeyCredentialAdmin(PasskeyCredential, AdminSite())
 
     def test_partial_subscriber_email_finds_passkey(self) -> None:
-        """Partial email fragment finds passkeys via subscriber__email icontains."""
-        sub = SubscriberFactory.create(email="alice@example.com")
+        """Partial email fragment finds passkeys via subscriber__user__email icontains."""
+        sub = SubscriberFactory.create(user__email="alice@example.com")
         passkey = PasskeyCredentialFactory.create(subscriber=sub)
-        other = SubscriberFactory.create(email="bob@example.com")
+        other = SubscriberFactory.create(user__email="bob@example.com")
         PasskeyCredentialFactory.create(subscriber=other)
 
         admin = self._admin()
