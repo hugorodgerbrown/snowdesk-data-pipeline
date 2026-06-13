@@ -425,6 +425,8 @@ Optional context:
         {# Dismissed by clicking the overlay or a button; localStorage key      #}
         {# 'snowdesk.home.intro' persists the dismissed state. /#about hash     #}
         {# forces it open. home_intro.js owns the behaviour.                    #}
+        {# NOTE: the off-season archive note lives in #map-offseason-note below, #}
+        {# NOT here — so dismissing this overlay never hides the archive notice. #}
         <div id="home-intro" class="home-intro" aria-modal="false" role="complementary">
             <div class="home-intro-card">
                 <div class="home-intro-identity">
@@ -434,14 +436,8 @@ Optional context:
                     {% trans "Avalanche bulletins for backcountry skiers — tap a region to explore." %}
                 </p>
                 {% if is_offseason %}
-                    <p class="home-intro-offseason" data-testid="home-intro-offseason">
-                        {% if latest_data_date %}
-                            {% blocktrans trimmed with date=latest_data_date|date:"N j Y" %}
-                                Season archive — last data from {{ date }}.
-                            {% endblocktrans %}
-                        {% else %}
-                            {% trans "Season archive — no live data yet." %}
-                        {% endif %}
+                    <p class="home-intro-offseason-ref">
+                        {% trans "Showing season archive — see note below." %}
                     </p>
                 {% endif %}
                 <div class="home-intro-actions">
@@ -461,5 +457,20 @@ Optional context:
                 </div>
             </div>
         </div>
+        {# SNOW-314: Persistent off-season note — anchored near the scrubber/   #}
+        {# legend, shown whenever is_offseason is True. This element is a        #}
+        {# sibling of #home-intro, NOT a child of it, so dismissing the intro   #}
+        {# overlay never hides this archive-data honesty notice.                 #}
+        {% if is_offseason %}
+            <div id="map-offseason-note" class="map-offseason-note" data-testid="home-intro-offseason">
+                {% if latest_data_date %}
+                    {% blocktrans trimmed with date=latest_data_date|date:"N j Y" %}
+                        Season archive — last data from {{ date }}.
+                    {% endblocktrans %}
+                {% else %}
+                    {% trans "Season archive — no live data yet." %}
+                {% endif %}
+            </div>
+        {% endif %}
     {% endif %}
 </div>
