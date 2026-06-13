@@ -998,3 +998,120 @@
     height: 16px;
     outline: none;
 }
+
+/* —————————————————————————————————————————————————————————
+   SNOW-314 — Homepage intro overlay (#home-intro)
+   Absolutely positioned over #map; rendered with show_intro=True from
+   the home() view. Dismissed via button or Escape key; restored by
+   visiting /#about. home_intro.js owns the state machine.
+   ————————————————————————————————————————————————————————— */
+
+.home-intro {
+    position: absolute;
+    /* Offset from safe areas so the card clears the status bar / notch. */
+    top: calc(env(safe-area-inset-top, 0px) + 64px);
+    left: calc(env(safe-area-inset-left, 0px) + 16px);
+    z-index: 5;
+    /* Pointer events on the card only; the map behind the card stays interactive. */
+    pointer-events: none;
+}
+
+.home-intro[hidden] {
+    display: none;
+}
+
+.home-intro-card {
+    pointer-events: auto;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border: 0.5px solid var(--color-border);
+    box-shadow: var(--shadow-glass);
+    border-radius: 12px;
+    padding: 20px 22px;
+    max-width: 320px;
+    color: var(--color-text-1);
+    font-family: var(--sans);
+}
+
+.home-intro-identity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.home-intro-wordmark {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--color-text-1);
+}
+
+.home-intro-tagline {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-2);
+    margin: 0 0 12px;
+}
+
+/* Off-season note — rendered only when is_offseason is True. */
+.home-intro-offseason {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--color-text-3);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    margin: 0 0 12px;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.04);
+    border-radius: 6px;
+}
+
+.home-intro-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.home-intro-sample-link {
+    font-size: 13px;
+    color: var(--color-text-2);
+    text-decoration: none;
+    line-height: 1.4;
+}
+
+.home-intro-sample-link:hover {
+    color: var(--color-text-1);
+    text-decoration: underline;
+}
+
+.home-intro-dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: opacity 120ms ease;
+}
+
+.home-intro-dismiss:hover {
+    opacity: 0.85;
+}
+
+.home-intro--no-motion .home-intro-dismiss {
+    transition: none;
+}
+
+/* Dark mode: the glass card uses the dark glass token automatically via
+   the .dark body class set by the theme head partial. */
+.dark .home-intro-card {
+    background: var(--color-glass);
+    color: var(--color-text-1);
+}

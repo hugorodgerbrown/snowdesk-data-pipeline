@@ -660,16 +660,73 @@ def _get_name_slug(region: MicroRegion) -> str:
 
 def home(request: HttpRequest) -> HttpResponse:
     """
-    Render the marketing homepage.
+    Render the map-as-homepage.
+
+    SNOW-314: the homepage is now the full-frame map with a dismissable
+    landing overlay (``#home-intro``). The map surface is identical to
+    ``/map/`` — same basemap picker, scrubber, ribbon, and season data —
+    but the overlay provides identity, a factual one-liner, an off-season
+    note when today is past the season end, and a sample-bulletin link so
+    first-time visitors can explore without tapping a region.
+
+    Context:
+      ``ribbon``              — default-region (CH-4115) SeasonRibbon or None.
+      ``default_region_id``   — str: "CH-4115".
+      ``show_intro``          — True (the overlay renders on home but not /map/).
+      ``is_offseason``        — True when today is past the active season end.
+      ``latest_data_date``    — most-recent RegionDayRating.date across CH, or None.
+      ``sample_bulletin_url`` — resolved URL for CH-4115 2026-02-17 (High-danger
+                                day, verified 200 in test_data), via reverse().
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        The rendered homepage.
+        The rendered homepage embedding the map surface.
 
     """
-    return render(request, "public/home.html")
+    today = datetime.date.today()
+    base_ctx = _base_map_context(today)
+    ribbon = _build_default_ribbon(today)
+
+    # The season is considered "off" when today is past the season_end bound
+    # already narrowed to actual data in _base_map_context().
+    season_end: datetime.date = base_ctx["season_end"]
+    is_offseason = today > season_end
+
+    # Latest bulletin date across all CH regions — shown in the off-season note
+    # so the user knows when the archive data is from.
+    latest_data_date: datetime.date | None = None
+    if is_offseason:
+        season_start: datetime.date = base_ctx["season_start"]
+        bounds = RegionDayRating.objects.season_date_bounds(season_start, season_end)
+        if bounds[1] is not None:
+            latest_data_date = bounds[1]
+
+    # The sample CTA points to CH-4115 2026-02-17 — a High-danger day verified
+    # 200 in the test_data fixture. Reversed here so the URL is never hardcoded.
+    sample_bulletin_url = reverse(
+        "public:bulletin_date",
+        kwargs={
+            "region_id": "ch-4115",
+            "slug": "martigny-verbier",
+            "date_str": "2026-02-17",
+        },
+    )
+
+    return render(
+        request,
+        "public/home.html",
+        {
+            **base_ctx,
+            "ribbon": ribbon,
+            "default_region_id": _DEFAULT_RIBBON_REGION_ID,
+            "show_intro": True,
+            "is_offseason": is_offseason,
+            "latest_data_date": latest_data_date,
+            "sample_bulletin_url": sample_bulletin_url,
+        },
+    )
 
 
 def terms(request: HttpRequest) -> HttpResponse:

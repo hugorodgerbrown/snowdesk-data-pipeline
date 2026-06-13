@@ -1,55 +1,46 @@
 {% extends "public/base.html" %}
+{% load i18n static %}
 {% comment %}
-public/templates/public/home.html — Marketing landing page.
+public/templates/public/home.html — Map-as-homepage (SNOW-314).
 
-Placeholder page describing what SnowDesk is and how it works.
-This will be replaced with a full marketing site before launch.
+The homepage is the full-frame map with a dismissable landing overlay
+(#home-intro). The map surface is shared with /map/ via the
+_map_embed.html partial (show_intro=True adds the overlay inside #map).
+
+This template owns homepage-specific metadata (title, meta_description,
+og_tags) and loads home_intro.js in addition to the map assets.
 {% endcomment %}
-{% load i18n components %}
 
-{% block title %}
-    {% trans "Snowdesk — Avalanche bulletins for backcountry skiers" %}
-{% endblock %}
+{% block title %}{% trans "Snowdesk — Swiss avalanche bulletins" %}{% endblock %}
 
-{% block meta_description %}
-    {% trans "Daily Swiss avalanche bulletins for backcountry skiers — per-region danger levels, avalanche problems, snowpack structure, and a season-wide map timelapse, sourced from SLF." %}
+{% block meta_description %}{% trans "Interactive map of Swiss avalanche regions with daily danger ratings, avalanche problems, and a full-season timelapse. Sourced from SLF." %}{% endblock %}
+
+{% block og_tags %}
+    {{ block.super }}
+    <meta property="og:title" content="{% trans 'Snowdesk — Swiss avalanche bulletins' %}">
+    <meta
+        property="og:description"
+        content="{% trans 'Interactive map of Swiss avalanche regions with daily danger ratings and a full-season timelapse.' %}"
+    >
+    <meta property="og:url" content="{{ SITE_BASE_URL }}{% url 'public:home' %}">
+{% endblock og_tags %}
+
+{% block extra_head %}
+    <link rel="prefetch" href="{% url 'api:regions_geojson' %}?country=ch">
+    <link rel="prefetch" href="{% url 'api:ratings' %}?d={{ season_end|date:'Y-m-d' }}&country=ch">
+    <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
+    <link rel="stylesheet" href="{% static 'css/map.css' %}">
 {% endblock %}
 
 {% block content %}
-    <div class="flex-1 flex flex-col items-center justify-center px-4 py-8">
-        <div class="max-w-lg text-center">
-            <h1 class="text-3xl font-semibold tracking-tight mb-4">{% trans "Snowdesk" %}</h1>
-            <p class="text-text-2 text-lg leading-relaxed mb-6">
-                {% trans "Avalanche bulletins for backcountry skiers." %}
-            </p>
-            <p class="text-text-2 text-lg leading-relaxed mb-6">
-                {% blocktrans trimmed %}
-                    We take the daily SLF avalanche forecast and present it in a clear, mobile-friendly format so you
-                    can make better decisions in the mountains.
-                {% endblocktrans %}
-            </p>
-            <div class="space-y-3 text-text-2 text-sm">
-                <p>
-                    <strong class="text-text-1">{% trans "Daily bulletins" %}</strong> &mdash;
-                    {% trans "fetched automatically from the Swiss Institute for Snow and Avalanche Research (SLF)." %}
-                </p>
-                <p>
-                    <strong class="text-text-1">{% trans "Per-region detail" %}</strong> &mdash;
-                    {% trans "danger level, avalanche problems, snowpack structure, and field guidance for every forecast region." %}
-                </p>
-                <p>
-                    <strong class="text-text-1">{% trans "Season at a glance" %}</strong> &mdash;
-                    {% trans "scrub through the whole season on the map to see how danger evolved across regions." %}
-                </p>
-            </div>
-            <div class="mt-8 flex flex-wrap justify-center gap-3">
-                {% url 'public:examples_random' as examples_url %}
-                {% trans "View a sample bulletin →" as label %}
-                {% include "includes/_button.html" with label=label href=examples_url variant="primary" %}
-                {% url 'public:map' as map_url %}
-                {% trans "Explore the map →" as label %}
-                {% include "includes/_button.html" with label=label href=map_url variant="secondary" %}
-            </div>
-        </div>
-    </div>
+    {# SNOW-314: shared map surface with intro overlay enabled.          #}
+    {# The _map_embed partial renders #home-intro when show_intro=True.  #}
+    {% include "public/partials/_map_embed.html" with show_intro=True %}
+{% endblock %}
+
+{% block extra_js %}
+    <script defer src="{% static 'js/maplibre-gl.min.js' %}"></script>
+    <script defer src="{% static 'js/map.js' %}"></script>
+    {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
+    <script defer src="{% static 'js/home_intro.js' %}"></script>
 {% endblock %}
