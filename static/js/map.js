@@ -2592,6 +2592,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (ratingInt != null) regionHasData = true;
       const cell = document.createElement('span');
       cell.className = 'scrubber-ribbon-cell ribbon-cell--' + intToKey(ratingInt);
+      // Month-boundary hairline: mark the first-of-month cells (skip the very
+      // first cell so there's no leading mark). A pure CSS overlay — see
+      // .scrubber-ribbon-cell--month — so it adds no width and the cells stay
+      // aligned with the scrubber thumb.
+      if (d.slice(8, 10) === '01' && t !== startMs) {
+        cell.classList.add('scrubber-ribbon-cell--month');
+      }
       cells.push(cell);
     }
     if (!regionHasData) {

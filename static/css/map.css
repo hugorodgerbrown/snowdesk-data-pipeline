@@ -764,6 +764,26 @@
     height: 100%;
 }
 
+/* Month-boundary hairline (SNOW-314). At mobile density each day cell is
+   sub-pixel, so per-day gaps are impossible; instead a thin overlay marks the
+   first-of-month cells (~6 across the season) for orientation. Drawn as an
+   absolutely-positioned pseudo-element so it adds no width — the cells stay
+   aligned 1:1 with the scrubber thumb. */
+.scrubber-ribbon-cell--month {
+    position: relative;
+}
+
+.scrubber-ribbon-cell--month::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    background: rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+}
+
 .season-scrubber-thumb {
     position: absolute;
     top: 50%;
