@@ -40,20 +40,21 @@ active-day highlight in sync.
                 </span>
             {% endif %}
         </div>
-        <div class="ribbon-track" role="list" aria-label='{% trans "Season ribbon days" %}'>
+        <ul class="ribbon-track" aria-label='{% trans "Season ribbon days" %}'>
             {% for day in ribbon.days %}
-                <button
-                    type="button"
-                    class="ribbon-cell ribbon-cell--{{ day.max_rating_key }}"
-                    data-date="{{ day.date|date:'Y-m-d' }}"
-                    aria-label="{{ day.date|date:'N j Y' }} — {{ day.max_rating_key }}"
-                    role="listitem"
-                    {% if not day.has_bulletin %}
-                        aria-disabled="true"
-                    {% endif %}
-                >
-                </button>
+                <li>
+                    <button
+                        type="button"
+                        class="ribbon-cell ribbon-cell--{{ day.max_rating_key }}"
+                        data-date="{{ day.date|date:'Y-m-d' }}"
+                        aria-label="{{ day.date|date:'N j Y' }} — {{ day.max_rating_key }}"
+                        {% if not day.has_bulletin %}
+                            aria-disabled="true"
+                        {% endif %}
+                    >
+                    </button>
+                </li>
             {% endfor %}
-        </div>
+        </ul>
     </div>
 {% endif %}
