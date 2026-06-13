@@ -696,12 +696,11 @@ def home(request: HttpRequest) -> HttpResponse:
 
     # Latest bulletin date across all CH regions — shown in the off-season note
     # so the user knows when the archive data is from.
-    latest_data_date: datetime.date | None = None
-    if is_offseason:
-        season_start: datetime.date = base_ctx["season_start"]
-        bounds = RegionDayRating.objects.season_date_bounds(season_start, season_end)
-        if bounds[1] is not None:
-            latest_data_date = bounds[1]
+    # _base_map_context already ran season_date_bounds and stored data_end in
+    # its return dict; reuse it here to avoid a second aggregation query.
+    latest_data_date: datetime.date | None = (
+        base_ctx["data_end"] if is_offseason else None
+    )
 
     # The sample CTA points to CH-4115 2026-02-17 — a High-danger day verified
     # 200 in the test_data fixture. Reversed here so the URL is never hardcoded.
@@ -1114,7 +1113,9 @@ def _base_map_context(today: datetime.date) -> dict[str, Any]:
 
     Returns:
         A dict with ``basemaps``, ``default_basemap_key``, ``season_start``,
-        ``season_end``, ``today``, and ``today_pct``.
+        ``season_end``, ``today``, ``today_pct``, and ``data_end``
+        (the latest ``RegionDayRating.date`` in the window, or ``None`` when
+        the season has not started or the DB is empty).
 
     """
     season_start, season_end = _season_date_range(today)
@@ -1134,6 +1135,7 @@ def _base_map_context(today: datetime.date) -> dict[str, Any]:
         "season_end": season_end,
         "today": today,
         "today_pct": today_pct,
+        "data_end": data_end,
     }
 
 
