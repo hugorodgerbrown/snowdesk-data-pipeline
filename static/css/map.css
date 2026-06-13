@@ -727,9 +727,41 @@
     border-radius: 2px;
     position: relative;
     /* overflow: visible so the date pill (absolutely positioned above the
-       track) is not clipped by the 3px track height. */
+       track) is not clipped by the track height. */
     overflow: visible;
     cursor: grab;
+    transition: height 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* SNOW-314: when a region's season is painted into the track, it grows from
+   the thin grey rail into the full ribbon. The thumb rides over the colours;
+   the track itself still owns drag/click-to-scrub. */
+.season-scrubber-track[data-ribbon="on"] {
+    height: 14px;
+    border-radius: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .season-scrubber-track { transition: none; }
+}
+
+/* Decorative season-ribbon fill inside the track. One flex cell per day,
+   no pointer events (the track beneath handles scrubbing), clipped to the
+   track's rounded rail. */
+.scrubber-ribbon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    border-radius: inherit;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.scrubber-ribbon-cell {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
 }
 
 .season-scrubber-thumb {
@@ -742,6 +774,8 @@
     background: var(--ink);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     touch-action: none;
+    /* Ride over the decorative ribbon fill. */
+    z-index: 2;
 }
 
 .season-scrubber-track.dragging {
@@ -915,101 +949,111 @@
     padding: 0 2px;
 }
 
-.ribbon-season-label {
+
+/* SNOW-314: persistent focused-region readout — names the region whose season
+   fills the scrubber track and shows its danger for the scrubbed day. Survives
+   playback (cache-fed by map.js); the source of truth for "which region", with
+   the map popup demoted to on-tap detail. */
+.region-readout[hidden] {
+    display: none;
+}
+
+.region-readout {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: 11px;
+    /* Frosted pill so the label stays legible over the map (it was getting
+       lost against the choropleth). Matches the scrubber / utility-pill idiom. */
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.75);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    /* When a region is focused the pill is an <a> to the bulletin. */
+    text-decoration: none;
+    color: var(--ink);
+    transition: box-shadow 120ms ease, background 120ms ease;
 }
 
-.ribbon-caption {
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 10px;
-    color: var(--muted);
-}
-
-.ribbon-track {
-    display: flex;
-    gap: 1px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;      /* Firefox */
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 1px;        /* Room for focus ring */
-}
-
-.ribbon-track::-webkit-scrollbar {
-    display: none;              /* Chrome / Safari */
-}
-
-/* The <li> wrappers (added for correct list semantics — each cell is a
-   button announced as a list item) are the flex items of the track, so the
-   thin-column sizing lives here, not on the button. Without this the <li>
-   collapses to zero width and the whole ribbon becomes invisible. */
-.ribbon-track > li {
-    flex: 0 0 3px;
-    min-width: 0;
-    display: flex;
-    list-style: none;
-}
-
-/* Each cell is a thin coloured bar — 16 px tall, 3 px wide (it fills its
-   <li> column). Height is intentionally shorter than the scrubber thumb
-   (14 px) so the ribbon reads as supplementary context rather than a
-   navigation control. The active cell gets an outline accent instead of a
-   width change so layout stays stable. */
-.ribbon-cell {
-    flex: 1 0 auto;
-    width: 100%;
-    height: 16px;
-    border: none;
-    border-radius: 1px;
+/* Focused → the whole pill is the bulletin CTA: pressable, with a hover lift
+   that signals clickability. */
+.region-readout.has-region {
     cursor: pointer;
-    padding: 0;
-    position: relative;
-    /* Reduced-motion: skip the transition */
-    transition: height 120ms ease;
+}
+
+.region-readout.has-region:hover,
+.region-readout.has-region:focus-visible {
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .ribbon-cell { transition: none; }
+    .region-readout {
+        transition: none;
+    }
 }
 
-.ribbon-cell:hover,
-.ribbon-cell:focus-visible {
-    height: 20px;
-    outline: 1.5px solid var(--color-border);
-    outline-offset: 1px;
-    z-index: 1;
+.region-readout-name {
+    font-weight: 600;
+    color: var(--ink);
 }
 
-.ribbon-cell--active {
-    height: 20px;
-    outline: 2px solid var(--ink);
-    outline-offset: 1px;
-    z-index: 2;
+/* The action affordance — "View bulletin →", set off by a divider so it reads
+   as the tappable part of the pill. Shown only when a region is focused. */
+.region-readout-cta {
+    font-weight: 600;
+    color: var(--ink);
+    padding-left: 8px;
+    border-left: 0.5px solid var(--border);
 }
 
-/* EAWS rating fills — use the same CSS custom properties as the legend
-   swatches and the MapLibre choropleth fill layer. */
+.region-readout.has-region:hover .region-readout-cta {
+    text-decoration: underline;
+}
+
+/* No region focused → date-only: drop the (empty) name, the danger swatch,
+   and the CTA so the chip reads as a plain date. */
+.region-readout:not(.has-region) .region-readout-name,
+.region-readout:not(.has-region) .region-readout-cta {
+    display: none;
+}
+
+.region-readout:not(.has-region) .region-readout-danger::before {
+    display: none;
+}
+
+/* Danger label carries a leading colour swatch via a pseudo-element; the
+   swatch colour is set inline by map.js from the EAWS rating token. */
+.region-readout-danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--muted);
+}
+
+.region-readout-danger::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--readout-swatch, transparent);
+    box-shadow: inset 0 0 0 0.5px var(--border);
+}
+
+/* EAWS rating fills for the .scrubber-ribbon-cell elements that paint
+   the season-scrubber track when a region is focused (SNOW-314).
+   Use the same CSS custom properties as the legend swatches and the
+   MapLibre choropleth fill layer. */
 .ribbon-cell--no_rating   { background: rgba(0, 0, 0, 0.08); }
 .ribbon-cell--low         { background: var(--color-eaws-low); }
 .ribbon-cell--moderate    { background: var(--color-eaws-moderate); }
 .ribbon-cell--considerable { background: var(--color-eaws-considerable); }
 .ribbon-cell--high        { background: var(--color-eaws-high); }
 .ribbon-cell--very_high   { background: var(--color-eaws-very-high); }
-
-/* Aria-disabled cells (no bulletin data) are dimmed and not pointer-active. */
-.ribbon-cell[aria-disabled="true"] {
-    cursor: default;
-    opacity: 0.45;
-}
-.ribbon-cell[aria-disabled="true"]:hover {
-    height: 16px;
-    outline: none;
-}
 
 /* —————————————————————————————————————————————————————————
    SNOW-314 — Homepage intro overlay (#home-intro)
@@ -1127,53 +1171,4 @@
 .dark .home-intro-card {
     background: var(--color-glass);
     color: var(--color-text-1);
-}
-
-/* —————————————————————————————————————————————————————————
-   SNOW-314 — Off-season archive note (#map-offseason-note)
-   Rendered inside #map (position:relative) as a sibling of
-   #home-intro so dismissing the intro card never hides this
-   honesty notice.  Positioned above the season ribbon so it
-   clears the scrubber and ribbon at both desktop and mobile
-   widths.  Styled as a quiet frosted pill — calm and factual,
-   not a loud banner.
-   ————————————————————————————————————————————————————————— */
-
-.map-offseason-note {
-    position: absolute;
-    /* Sit above the ribbon (~36px) which itself sits above the scrubber
-       (~54px from the viewport bottom).  An 8px gap keeps a visible
-       separation between the note and the ribbon header text. */
-    bottom: calc(98px + env(safe-area-inset-bottom, 0px));
-    /* Left-align with the scrubber/ribbon; leave the right side open so
-       the pill never extends to the utility cluster (top-right). */
-    left: 12px;
-    z-index: 3;
-    /* Frosted-glass pill matching the scrubber and utility cluster idiom. */
-    display: inline-flex;
-    align-items: center;
-    max-width: calc(100vw - 24px);
-    padding: 5px 12px;
-    background: rgba(255, 255, 255, 0.75);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    border: 0.5px solid var(--border);
-    border-radius: 999px;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-    /* Quiet secondary text — monospace to match the scrubber date label. */
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 11px;
-    line-height: 1.4;
-    color: var(--muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    /* No transitions on this element, but guard any future additions. */
-    .map-offseason-note {
-        transition: none;
-    }
 }
