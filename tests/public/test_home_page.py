@@ -129,13 +129,26 @@ class TestHomePageOffseason:
         content = response.content.decode()
         assert 'data-testid="home-intro-offseason"' in content
 
-    @freeze_time("2026-02-15")  # mid-season
+    @freeze_time("2026-03-10")  # today is past data_end when no data exists after Feb
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     def test_offseason_note_absent_during_season(self) -> None:
-        """Off-season note is absent when today is within the active season window."""
+        """Off-season note is absent when today is within the active season window.
+
+        Uses today=2026-03-10 with data through 2026-03-15 so that data_end
+        (2026-03-15) > today, meaning is_offseason=False.  Without the factory
+        row, data_end would be None and season_end would fall back to the
+        calendar end (2026-05-31), which is also > today — making the factory
+        data load non-vacuous: the assertion exercises the in-season branch via
+        the data-narrowed season_end rather than the calendar fallback.
+        """
         region = MicroRegionFactory.create(region_id="CH-5500")
-        # Create a rating within the active season so data_end is in the future.
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 1))
+        bulletin = BulletinFactory.create()
+        # data_end will be 2026-03-15; today (2026-03-10) < data_end → in-season.
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 3, 15),
+            source_bulletin=bulletin,
+        )
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
