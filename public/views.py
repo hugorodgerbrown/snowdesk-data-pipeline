@@ -104,7 +104,12 @@ from subscriptions.models import Subscription
 from .decorators import lowercase_region_id
 from .guidance import load_field_guidance
 from .headlines import headline_for
-from .season_calendar import build_season_grid, season_header
+from .season_calendar import (
+    SeasonRibbon,
+    build_season_grid,
+    build_season_ribbon,
+    season_header,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1027,6 +1032,78 @@ def _basemaps_for_picker() -> list[dict[str, Any]]:
     ]
 
 
+# SNOW-314: The default region whose season ribbon is server-rendered at
+# first paint on both / and /map/. CH-4115 (Martigny / Verbier) is the
+# canonical preview region — it has the richest test-data coverage and
+# represents a central Swiss backcountry area that most users recognise.
+_DEFAULT_RIBBON_REGION_ID = "CH-4115"
+
+
+def _base_map_context(today: datetime.date) -> dict[str, Any]:
+    """
+    Build the shared map context for the season scrubber and ribbon.
+
+    Extracted from ``map_view`` so that ``home()`` can embed the full map
+    surface without duplicating the season-window + basemap logic.
+
+    The season window is narrowed to the actual ``RegionDayRating`` data
+    bounds when rows exist (SNOW-173), and falls back to the calendar Nov 1 /
+    May 31 window when the season has not yet started or the DB is empty.
+    ``today_pct`` is clamped to [0, 100] so the scrubber thumb always sits
+    inside the track.
+
+    Args:
+        today: Current date — passed in so callers can freeze time in tests.
+
+    Returns:
+        A dict with ``basemaps``, ``default_basemap_key``, ``season_start``,
+        ``season_end``, ``today``, and ``today_pct``.
+
+    """
+    season_start, season_end = _season_date_range(today)
+    data_start, data_end = RegionDayRating.objects.season_date_bounds(
+        season_start, season_end
+    )
+    if data_start is not None and data_end is not None:
+        season_start = data_start
+        season_end = data_end
+    span = (season_end - season_start).days
+    elapsed = max(0, min((today - season_start).days, span))
+    today_pct = round(elapsed / span * 100, 2) if span else 100.0
+    return {
+        "basemaps": _basemaps_for_picker(),
+        "default_basemap_key": settings.BASEMAP,
+        "season_start": season_start,
+        "season_end": season_end,
+        "today": today,
+        "today_pct": today_pct,
+    }
+
+
+def _build_default_ribbon(
+    today: datetime.date,
+) -> SeasonRibbon | None:
+    """
+    Build the season ribbon for the default region (CH-4115) for first-paint.
+
+    Returns ``None`` gracefully when the region does not exist in the DB
+    (e.g. a freshly migrated empty database in development or CI), so the
+    ribbon template renders nothing rather than raising a 500.
+
+    Args:
+        today: Current date (passed through to ``build_season_ribbon``).
+
+    Returns:
+        A :class:`~public.season_calendar.SeasonRibbon` or ``None``.
+
+    """
+    try:
+        region = MicroRegion.objects.get_by_natural_key(_DEFAULT_RIBBON_REGION_ID)
+    except MicroRegion.DoesNotExist:
+        return None
+    return build_season_ribbon(region, today)
+
+
 def map_view(request: HttpRequest) -> HttpResponse:
     """
     Render the interactive region-choropleth map page.
@@ -1061,22 +1138,7 @@ def map_view(request: HttpRequest) -> HttpResponse:
 
     """
     today = datetime.date.today()
-    season_start, season_end = _season_date_range(today)
-    # Narrow the season window to the actual data if any RegionDayRating rows
-    # exist for this season. Falls back to the calendar window when the season
-    # hasn't started yet or the queryset is empty (e.g. development with no
-    # ingested data).
-    data_start, data_end = RegionDayRating.objects.season_date_bounds(
-        season_start, season_end
-    )
-    if data_start is not None and data_end is not None:
-        season_start = data_start
-        season_end = data_end
-    # Clamp so the thumb stays inside the track if the user loads the page
-    # outside the nominal season window (e.g. mid-summer development).
-    span = (season_end - season_start).days
-    elapsed = max(0, min((today - season_start).days, span))
-    today_pct = round(elapsed / span * 100, 2) if span else 100.0
+    base_ctx = _base_map_context(today)
 
     edit_mode = request.GET.get("edit") == "resorts" and waffle.flag_is_active(
         request, "edit_map"
@@ -1097,17 +1159,18 @@ def map_view(request: HttpRequest) -> HttpResponse:
             }
         )
 
+    # SNOW-314: build the default-region ribbon for first-paint; JS replaces
+    # it with the selected region's data once the season-ratings cache resolves.
+    ribbon = _build_default_ribbon(today)
+
     return render(
         request,
         "public/map.html",
         {
-            "basemaps": _basemaps_for_picker(),
-            "default_basemap_key": settings.BASEMAP,
-            "season_start": season_start,
-            "season_end": season_end,
-            "today": today,
-            "today_pct": today_pct,
+            **base_ctx,
             **edit_context,
+            "ribbon": ribbon,
+            "default_region_id": _DEFAULT_RIBBON_REGION_ID,
         },
     )
 

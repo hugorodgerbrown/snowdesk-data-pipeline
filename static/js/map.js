@@ -1423,6 +1423,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
         popupHistoryOpen = true;
       }
 
+      // SNOW-314: notify the season ribbon that the active region changed.
+      document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
+        detail: { region_id: props.regionID },
+      }));
+
       if (AUTOZOOM) {
         const feature = FEATURE_BY_ID[numericId];
         if (feature) {
@@ -2202,6 +2207,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
   });
 
+  // SNOW-314: ribbon click-to-scrub — the season ribbon dispatches this
+  // event when a day cell is clicked; commitDate drives the scrubber thumb
+  // and repaints the choropleth just as a drag-release would.
+  document.addEventListener('snowdesk:scrub-to', (e) => {
+    commitDate(e.detail.date);
+  });
+
 })();
 
 // SNOW-38: Collapsible danger-scale legend. State persists in localStorage
@@ -2699,4 +2711,121 @@ const repaintRegionsForDate = (dateKey, cache) => {
     catch (_) { /* private mode — apply for session only */ }
     sync();
   });
+})();
+
+// SNOW-314: Season ribbon — a flat horizontal strip of one cell per day,
+// coloured by the day's peak rating for the selected region. Docked with
+// the season scrubber. Clicking a cell dispatches ``snowdesk:scrub-to`` to
+// drive the scrubber thumb and recolour the choropleth.
+//
+// The ribbon's HTML is server-rendered for the default region (CH-4115) at
+// first paint. When the user taps a region, ``snowdesk:region-selected``
+// fires and the ribbon re-renders from the in-memory season-ratings cache
+// (same payload as the scrubber / timelapse — no additional fetch).
+// ``snowdesk:date-changed`` keeps the active-day highlight in sync.
+(function seasonRibbonInit() {
+  const ribbonEl = document.getElementById('season-ribbon');
+  if (!ribbonEl) return;
+
+  const track = ribbonEl.querySelector('.ribbon-track');
+  if (!track) return;
+
+  // The EAWS danger levels in display order, matching INT_TO_RATING.
+  const RATING_KEYS = ['no_rating', 'low', 'moderate', 'considerable', 'high', 'very_high'];
+
+  // Build a sorted list of ISO date strings for a given region from the
+  // merged ratings cache returned by getSeasonRatings(). Oldest-first.
+  const getDatesForRegion = (cache, regionId) => {
+    return Object.keys(cache).sort().filter((d) => cache[d] != null);
+  };
+
+  // Convert the int rating from the ratings cache to a key string.
+  const intToKey = (n) => {
+    if (n == null || n < 0 || n >= INT_TO_RATING.length) return 'no_rating';
+    return INT_TO_RATING[n];
+  };
+
+  // Render the ribbon cells for a given region from the ratings cache.
+  // Clears the existing track content and inserts one button per season day.
+  const renderForRegion = (cache, regionId, activeDateKey) => {
+    const dates = getDatesForRegion(cache, regionId);
+    if (!dates.length) return;
+
+    const seasonStart = ribbonEl.dataset.seasonStart;
+    const seasonEnd = ribbonEl.dataset.seasonEnd;
+
+    // Collect all dates in the season window (oldest-first).
+    const allDates = Object.keys(cache).sort().filter((d) => {
+      return d >= seasonStart && d <= seasonEnd;
+    });
+    if (!allDates.length) return;
+
+    const cells = allDates.map((dateKey) => {
+      const ratingsByRegion = cache[dateKey];
+      const ratingInt = ratingsByRegion ? ratingsByRegion[regionId] : null;
+      const ratingKey = intToKey(ratingInt);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ribbon-cell ribbon-cell--' + ratingKey;
+      btn.dataset.date = dateKey;
+      btn.setAttribute('aria-label', dateKey + ' — ' + ratingKey.replace('_', ' '));
+      if (dateKey === activeDateKey) btn.classList.add('ribbon-cell--active');
+      btn.addEventListener('click', () => {
+        document.dispatchEvent(new CustomEvent('snowdesk:scrub-to', {
+          detail: { date: dateKey },
+        }));
+      });
+      return btn;
+    });
+
+    track.replaceChildren(...cells);
+
+    // Scroll the active cell into view (no animation — ribbon is compact).
+    const activeCell = track.querySelector('.ribbon-cell--active');
+    if (activeCell) {
+      activeCell.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' });
+    }
+  };
+
+  // Track the currently displayed region and date so both events can
+  // update the ribbon independently.
+  let currentRegionId = ribbonEl.dataset.defaultRegionId || null;
+  let currentDateKey = ribbonEl.dataset.defaultDate || null;
+
+  // Highlight the active-day cell; remove previous highlight.
+  const updateActiveCell = (dateKey) => {
+    currentDateKey = dateKey;
+    for (const cell of track.querySelectorAll('.ribbon-cell--active')) {
+      cell.classList.remove('ribbon-cell--active');
+    }
+    const next = track.querySelector(`.ribbon-cell[data-date="${dateKey}"]`);
+    if (next) {
+      next.classList.add('ribbon-cell--active');
+      next.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    }
+  };
+
+  // When the user selects a region, re-render the ribbon for that region.
+  document.addEventListener('snowdesk:region-selected', (e) => {
+    currentRegionId = e.detail.region_id;
+    getSeasonRatings().then((cache) => {
+      if (!cache) return;
+      renderForRegion(cache, currentRegionId, currentDateKey);
+    });
+  });
+
+  // Keep the active-day highlight in sync with the scrubber.
+  document.addEventListener('snowdesk:date-changed', (e) => {
+    updateActiveCell(e.detail.date);
+  });
+
+  // On first load, render from the ratings cache once it resolves.
+  // The server-rendered HTML already shows the default region; this
+  // replaces it with the fully interactive version once JS has the data.
+  if (currentRegionId) {
+    getSeasonRatings().then((cache) => {
+      if (!cache) return;
+      renderForRegion(cache, currentRegionId, currentDateKey);
+    });
+  }
 })();

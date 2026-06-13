@@ -882,3 +882,119 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* —————————————————————————————————————————————————————————
+   SNOW-314 — Season ribbon
+   A compact horizontal strip of coloured day cells docked above the
+   season scrubber. One cell per calendar day, coloured by peak danger
+   rating for the selected region. Clicking a cell dispatches
+   snowdesk:scrub-to to drive the scrubber and recolour the choropleth.
+   ————————————————————————————————————————————————————————— */
+
+/* The ribbon is a sibling of #season-scrubber inside #map (which is
+   position:relative via MapLibre). It sits above the scrubber pill:
+   the scrubber's bottom edge is 5px + safe-area from the viewport bottom,
+   the pill itself is ~40px tall, and the ribbon header + track add ~36px.
+   Using a fixed bottom offset keeps the ribbon visually anchored above the
+   scrubber without depending on scrubber height in CSS. */
+.season-ribbon {
+    position: absolute;
+    bottom: calc(54px + env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    right: 12px;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.ribbon-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 0 2px;
+}
+
+.ribbon-season-label {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.ribbon-caption {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10px;
+    color: var(--muted);
+}
+
+.ribbon-track {
+    display: flex;
+    gap: 1px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;      /* Firefox */
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 1px;        /* Room for focus ring */
+}
+
+.ribbon-track::-webkit-scrollbar {
+    display: none;              /* Chrome / Safari */
+}
+
+/* Each cell is a thin coloured bar — 4 px tall, 3 px wide at default.
+   Height is intentionally shorter than the scrubber thumb (14 px) so
+   the ribbon reads as supplementary context rather than a navigation
+   control. The active cell gets a bottom-border accent instead of
+   a size change so layout stays stable. */
+.ribbon-cell {
+    flex: 0 0 3px;
+    height: 16px;
+    border: none;
+    border-radius: 1px;
+    cursor: pointer;
+    padding: 0;
+    position: relative;
+    /* Reduced-motion: skip the transition */
+    transition: height 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ribbon-cell { transition: none; }
+}
+
+.ribbon-cell:hover,
+.ribbon-cell:focus-visible {
+    height: 20px;
+    outline: 1.5px solid var(--color-border);
+    outline-offset: 1px;
+    z-index: 1;
+}
+
+.ribbon-cell--active {
+    height: 20px;
+    outline: 2px solid var(--ink);
+    outline-offset: 1px;
+    z-index: 2;
+}
+
+/* EAWS rating fills — use the same CSS custom properties as the legend
+   swatches and the MapLibre choropleth fill layer. */
+.ribbon-cell--no_rating   { background: rgba(0, 0, 0, 0.08); }
+.ribbon-cell--low         { background: var(--color-eaws-low); }
+.ribbon-cell--moderate    { background: var(--color-eaws-moderate); }
+.ribbon-cell--considerable { background: var(--color-eaws-considerable); }
+.ribbon-cell--high        { background: var(--color-eaws-high); }
+.ribbon-cell--very_high   { background: var(--color-eaws-very-high); }
+
+/* Aria-disabled cells (no bulletin data) are dimmed and not pointer-active. */
+.ribbon-cell[aria-disabled="true"] {
+    cursor: default;
+    opacity: 0.45;
+}
+.ribbon-cell[aria-disabled="true"]:hover {
+    height: 16px;
+    outline: none;
+}

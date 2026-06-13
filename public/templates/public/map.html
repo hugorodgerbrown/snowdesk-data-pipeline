@@ -418,6 +418,10 @@
                 </svg>
             </button>
         </div>
+        {# SNOW-314: Season ribbon — flat horizontal strip of one cell per day, #}
+        {# coloured by peak danger for the selected region (default CH-4115). #}
+        {# Positioned above the scrubber. Requires ribbon context from view.  #}
+        {% include "public/partials/_season_ribbon.html" with default_region_id=default_region_id %}
         <div
             id="season-scrubber"
             class="season-scrubber"
