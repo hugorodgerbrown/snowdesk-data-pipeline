@@ -944,13 +944,25 @@
     display: none;              /* Chrome / Safari */
 }
 
-/* Each cell is a thin coloured bar — 4 px tall, 3 px wide at default.
-   Height is intentionally shorter than the scrubber thumb (14 px) so
-   the ribbon reads as supplementary context rather than a navigation
-   control. The active cell gets a bottom-border accent instead of
-   a size change so layout stays stable. */
-.ribbon-cell {
+/* The <li> wrappers (added for correct list semantics — each cell is a
+   button announced as a list item) are the flex items of the track, so the
+   thin-column sizing lives here, not on the button. Without this the <li>
+   collapses to zero width and the whole ribbon becomes invisible. */
+.ribbon-track > li {
     flex: 0 0 3px;
+    min-width: 0;
+    display: flex;
+    list-style: none;
+}
+
+/* Each cell is a thin coloured bar — 16 px tall, 3 px wide (it fills its
+   <li> column). Height is intentionally shorter than the scrubber thumb
+   (14 px) so the ribbon reads as supplementary context rather than a
+   navigation control. The active cell gets an outline accent instead of a
+   width change so layout stays stable. */
+.ribbon-cell {
+    flex: 1 0 auto;
+    width: 100%;
     height: 16px;
     border: none;
     border-radius: 1px;

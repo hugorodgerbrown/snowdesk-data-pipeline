@@ -2101,9 +2101,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (!opts.silent) {
       // ``replaceState`` (never push) so a long scrub doesn't bury the
       // back button under dozens of intermediate dates. Today clears the
-      // ``?d=`` param entirely, matching the canonical /map/ URL.
+      // ``?d=`` param entirely, matching the canonical URL. Use the current
+      // pathname (not a hardcoded /map/) so scrubbing on the homepage keeps
+      // the visitor on ``/`` instead of silently rewriting to ``/map/``.
       const search = isToday ? '' : '?d=' + dateKey;
-      history.replaceState(null, '', '/map/' + search + location.hash);
+      history.replaceState(null, '', location.pathname + search + location.hash);
     }
     document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
       detail: { date: dateKey, source: 'scrubber' },
