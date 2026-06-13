@@ -171,14 +171,10 @@ class SeasonRibbon:
     ``season_label`` is the SLF-style two-year season identifier (e.g.
     ``"25/26"``), used by the ribbon header.
 
-    ``considerable_plus_count`` is the number of days whose ``max_rating_key``
-    is ``considerable``, ``high``, or ``very_high`` — shown as a factual caption
-    so visitors can assess the season at a glance without needing to count cells.
     """
 
     days: list[RibbonDay]
     season_label: str
-    considerable_plus_count: int
 
     def __bool__(self) -> bool:
         """Return ``False`` when the ribbon is empty (e.g. before season start)."""
@@ -358,18 +354,10 @@ def build_season_ribbon(
     start: datetime.date = settings.SEASON_START_DATE
     season_label = _season_label(start)
     if today < start:
-        return SeasonRibbon(
-            days=[], season_label=season_label, considerable_plus_count=0
-        )
+        return SeasonRibbon(days=[], season_label=season_label)
 
     rows = RegionDayRating.objects.for_region_range(region, start, today)
     by_date: dict[datetime.date, RegionDayRating] = {r.date: r for r in rows}
-
-    _considerable_plus = {
-        RegionDayRating.Rating.CONSIDERABLE,
-        RegionDayRating.Rating.HIGH,
-        RegionDayRating.Rating.VERY_HIGH,
-    }
 
     days: list[RibbonDay] = []
     cursor = start
@@ -390,14 +378,7 @@ def build_season_ribbon(
         )
         cursor += datetime.timedelta(days=1)
 
-    considerable_plus_count = sum(
-        1 for d in days if d.max_rating_key in _considerable_plus
-    )
-    return SeasonRibbon(
-        days=days,
-        season_label=season_label,
-        considerable_plus_count=considerable_plus_count,
-    )
+    return SeasonRibbon(days=days, season_label=season_label)
 
 
 def _season_label(start: datetime.date) -> str:

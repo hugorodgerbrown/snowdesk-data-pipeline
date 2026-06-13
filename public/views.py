@@ -674,7 +674,6 @@ def home(request: HttpRequest) -> HttpResponse:
       ``default_region_id``   — str: "CH-4115".
       ``show_intro``          — True (the overlay renders on home but not /map/).
       ``is_offseason``        — True when today is past the active season end.
-      ``latest_data_date``    — most-recent RegionDayRating.date across CH, or None.
       ``sample_bulletin_url`` — resolved URL for CH-4115 2026-02-17 (High-danger
                                 day, verified 200 in test_data), via reverse().
 
@@ -688,19 +687,14 @@ def home(request: HttpRequest) -> HttpResponse:
     today = datetime.date.today()
     base_ctx = _base_map_context(today)
     ribbon = _build_default_ribbon(today)
+    # Name + slug of the pre-selected default region (CH-4115) for the readout
+    # chip and its "view bulletin" link.
+    default_region_name, default_region_slug = _default_region_label()
 
     # The season is considered "off" when today is past the season_end bound
     # already narrowed to actual data in _base_map_context().
     season_end: datetime.date = base_ctx["season_end"]
     is_offseason = today > season_end
-
-    # Latest bulletin date across all CH regions — shown in the off-season note
-    # so the user knows when the archive data is from.
-    # _base_map_context already ran season_date_bounds and stored data_end in
-    # its return dict; reuse it here to avoid a second aggregation query.
-    latest_data_date: datetime.date | None = (
-        base_ctx["data_end"] if is_offseason else None
-    )
 
     # The sample CTA points to CH-4115 2026-02-17 — a High-danger day verified
     # 200 in the test_data fixture. Reversed here so the URL is never hardcoded.
@@ -720,9 +714,10 @@ def home(request: HttpRequest) -> HttpResponse:
             **base_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
+            "default_region_name": default_region_name,
+            "default_region_slug": default_region_slug,
             "show_intro": True,
             "is_offseason": is_offseason,
-            "latest_data_date": latest_data_date,
             "sample_bulletin_url": sample_bulletin_url,
         },
     )
@@ -1163,6 +1158,27 @@ def _build_default_ribbon(
     return build_season_ribbon(region, today)
 
 
+def _default_region_label() -> tuple[str, str]:
+    """
+    Return the display name and bulletin-URL slug of the default ribbon region.
+
+    Used to seed the persistent region-readout chip on the homepage, where
+    CH-4115 is pre-selected: the name labels the chip and the slug builds its
+    "view bulletin" link. One query for both. Returns ``("", "")`` when the
+    region is absent (empty DB) so the readout simply stays hidden.
+
+    Returns:
+        A ``(name, name_slug)`` tuple, or ``("", "")`` if the region does not
+        exist.
+
+    """
+    try:
+        region = MicroRegion.objects.get_by_natural_key(_DEFAULT_RIBBON_REGION_ID)
+    except MicroRegion.DoesNotExist:
+        return "", ""
+    return region.name, region.name_slug
+
+
 def map_view(request: HttpRequest) -> HttpResponse:
     """
     Render the interactive region-choropleth map page.
@@ -1218,8 +1234,10 @@ def map_view(request: HttpRequest) -> HttpResponse:
             }
         )
 
-    # SNOW-314: build the default-region ribbon for first-paint; JS replaces
-    # it with the selected region's data once the season-ratings cache resolves.
+    # SNOW-314: build the ribbon as the data carrier (season bounds, caption)
+    # but DON'T pre-select a region on /map/ — the scrubber stays a plain grey
+    # rail until the user taps a region, which then paints its season into the
+    # track. The homepage, by contrast, pre-selects CH-4115 (see home()).
     ribbon = _build_default_ribbon(today)
 
     return render(
@@ -1229,7 +1247,9 @@ def map_view(request: HttpRequest) -> HttpResponse:
             **base_ctx,
             **edit_context,
             "ribbon": ribbon,
-            "default_region_id": _DEFAULT_RIBBON_REGION_ID,
+            "default_region_id": "",
+            "default_region_name": "",
+            "default_region_slug": "",
         },
     )
 

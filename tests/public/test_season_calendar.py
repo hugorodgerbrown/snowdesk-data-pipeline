@@ -25,7 +25,6 @@ SNOW-314 — build_season_ribbon:
   - No-data days → max_rating_key='no_rating', has_bulletin=False.
   - Days with a source_bulletin → has_bulletin=True, correct rating key.
   - Days without a source_bulletin → has_bulletin=False.
-  - considerable_plus_count counts considerable/high/very_high days.
   - season_label matches the SLF two-year format.
   - Cross-region isolation (other region's rows not included).
 """
@@ -711,40 +710,6 @@ class TestBuildSeasonRibbon:
         ribbon = build_season_ribbon(region, today=today)
         day = next(d for d in ribbon.days if d.date == target)
         assert day.has_bulletin is False
-
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
-    def test_considerable_plus_count(self) -> None:
-        """considerable_plus_count counts days at Considerable, High, or Very High."""
-        region = MicroRegionFactory.create(region_id="CH-4115")
-        today = datetime.date(2025, 11, 7)
-        bulletin = BulletinFactory.create()
-        RegionDayRatingFactory.create(
-            region=region,
-            date=datetime.date(2025, 11, 3),
-            max_rating=RegionDayRating.Rating.LOW,
-            source_bulletin=bulletin,
-        )
-        RegionDayRatingFactory.create(
-            region=region,
-            date=datetime.date(2025, 11, 4),
-            max_rating=RegionDayRating.Rating.CONSIDERABLE,
-            source_bulletin=bulletin,
-        )
-        RegionDayRatingFactory.create(
-            region=region,
-            date=datetime.date(2025, 11, 5),
-            max_rating=RegionDayRating.Rating.HIGH,
-            source_bulletin=bulletin,
-        )
-        RegionDayRatingFactory.create(
-            region=region,
-            date=datetime.date(2025, 11, 6),
-            max_rating=RegionDayRating.Rating.MODERATE,
-            source_bulletin=bulletin,
-        )
-        ribbon = build_season_ribbon(region, today=today)
-        # Nov 4 (considerable) + Nov 5 (high) = 2
-        assert ribbon.considerable_plus_count == 2
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_season_label_format(self) -> None:
