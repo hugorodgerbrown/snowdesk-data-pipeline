@@ -2730,27 +2730,26 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const track = ribbonEl.querySelector('.ribbon-track');
   if (!track) return;
 
-  // The EAWS danger levels in display order, matching INT_TO_RATING.
-  const RATING_KEYS = ['no_rating', 'low', 'moderate', 'considerable', 'high', 'very_high'];
-
-  // Build a sorted list of ISO date strings for a given region from the
-  // merged ratings cache returned by getSeasonRatings(). Oldest-first.
-  const getDatesForRegion = (cache, regionId) => {
-    return Object.keys(cache).sort().filter((d) => cache[d] != null);
-  };
-
   // Convert the int rating from the ratings cache to a key string.
   const intToKey = (n) => {
     if (n == null || n < 0 || n >= INT_TO_RATING.length) return 'no_rating';
     return INT_TO_RATING[n];
   };
 
-  // Render the ribbon cells for a given region from the ratings cache.
-  // Clears the existing track content and inserts one button per season day.
-  const renderForRegion = (cache, regionId, activeDateKey) => {
-    const dates = getDatesForRegion(cache, regionId);
-    if (!dates.length) return;
+  // Format an ISO date string (YYYY-MM-DD) as a human-readable label that
+  // matches the Django ``date:"N j Y"`` filter used in SSR cells, e.g.
+  // "Feb. 17 2026". Using noon UTC avoids timezone-offset date shifts.
+  const formatDateLabel = (dateKey) => {
+    const d = new Date(dateKey + 'T12:00:00Z');
+    return d.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
 
+  // Render the ribbon cells for a given region from the ratings cache.
+  // Clears the existing track content and inserts one button+li per season
+  // day, matching the SSR markup (ul > li > button) from _season_ribbon.html.
+  // When the selected region has no data in the season window the ribbon is
+  // cleared to an empty state rather than showing a misleading grey strip.
+  const renderForRegion = (cache, regionId, activeDateKey) => {
     const seasonStart = ribbonEl.dataset.seasonStart;
     const seasonEnd = ribbonEl.dataset.seasonEnd;
 
@@ -2760,22 +2759,35 @@ const repaintRegionsForDate = (dateKey, cache) => {
     });
     if (!allDates.length) return;
 
+    // Check whether the selected region has any data in the window.
+    const regionHasData = allDates.some((d) => cache[d]?.[regionId] != null);
+    if (!regionHasData) {
+      // No data for this region: show an empty ribbon rather than a
+      // misleading all-grey strip.
+      track.replaceChildren();
+      return;
+    }
+
     const cells = allDates.map((dateKey) => {
       const ratingsByRegion = cache[dateKey];
       const ratingInt = ratingsByRegion ? ratingsByRegion[regionId] : null;
       const ratingKey = intToKey(ratingInt);
+      const li = document.createElement('li');
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'ribbon-cell ribbon-cell--' + ratingKey;
       btn.dataset.date = dateKey;
-      btn.setAttribute('aria-label', dateKey + ' — ' + ratingKey.replace('_', ' '));
+      const dateLabel = formatDateLabel(dateKey);
+      btn.setAttribute('aria-label', dateLabel + ' — ' + ratingKey.replace(/_/g, ' '));
+      if (ratingInt == null) btn.setAttribute('aria-disabled', 'true');
       if (dateKey === activeDateKey) btn.classList.add('ribbon-cell--active');
       btn.addEventListener('click', () => {
         document.dispatchEvent(new CustomEvent('snowdesk:scrub-to', {
           detail: { date: dateKey },
         }));
       });
-      return btn;
+      li.appendChild(btn);
+      return li;
     });
 
     track.replaceChildren(...cells);
