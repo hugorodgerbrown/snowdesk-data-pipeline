@@ -1,7 +1,8 @@
 """
-tests/public/test_season_calendar.py — Tests for build_season_grid and season_header.
+tests/public/test_season_calendar.py — Tests for build_season_grid, season_header,
+and build_season_ribbon.
 
-Covers:
+Covers build_season_grid:
   - Empty grid when ``today + 1`` precedes ``SEASON_START_DATE``.
   - Column count and weeks-as-columns layout.
   - Leading ``None`` padding when the season starts mid-week.
@@ -17,6 +18,16 @@ Covers:
 SNOW-252 — peak semantics:
   - Calendar cell max_rating_key reflects the day's peak on split days.
   - Two-period escalating day (morning=2, afternoon=3) → max_rating_key=considerable.
+
+SNOW-314 — build_season_ribbon:
+  - Empty ribbon when today precedes SEASON_START_DATE.
+  - Flat ordered day list from start through today (inclusive).
+  - No-data days → max_rating_key='no_rating', has_bulletin=False.
+  - Days with a source_bulletin → has_bulletin=True, correct rating key.
+  - Days without a source_bulletin → has_bulletin=False.
+  - considerable_plus_count counts considerable/high/very_high days.
+  - season_label matches the SLF two-year format.
+  - Cross-region isolation (other region's rows not included).
 """
 
 from __future__ import annotations
@@ -27,7 +38,7 @@ import pytest
 from django.test import override_settings
 
 from bulletins.models import RegionDayRating
-from public.season_calendar import build_season_grid, season_header
+from public.season_calendar import build_season_grid, build_season_ribbon, season_header
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -615,3 +626,148 @@ class TestSeasonCalendarTimeSplit:
         assert cell.is_time_split is True
         assert cell.am_rating_key == RegionDayRating.Rating.MODERATE
         assert cell.pm_rating_key == RegionDayRating.Rating.CONSIDERABLE
+
+
+# ---------------------------------------------------------------------------
+# SNOW-314 — build_season_ribbon
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestBuildSeasonRibbon:
+    """Tests for the build_season_ribbon helper (SNOW-314)."""
+
+    @override_settings(SEASON_START_DATE=datetime.date(2026, 1, 5))
+    def test_empty_when_today_before_season_start(self) -> None:
+        """Returns an empty (falsy) ribbon when today < SEASON_START_DATE."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2026, 1, 3)  # before Jan 5 start
+        ribbon = build_season_ribbon(region, today=today)
+        assert not ribbon
+        assert ribbon.days == []
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_days_ordered_oldest_first(self) -> None:
+        """Ribbon days run chronologically from season start through today."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 7)
+        ribbon = build_season_ribbon(region, today=today)
+        assert ribbon
+        dates = [d.date for d in ribbon.days]
+        assert dates == sorted(dates)
+        assert dates[0] == datetime.date(2025, 11, 3)
+        assert dates[-1] == today
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_today_included_tomorrow_excluded(self) -> None:
+        """Ribbon runs through today inclusive; tomorrow is not in the strip."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        ribbon = build_season_ribbon(region, today=today)
+        dates = {d.date for d in ribbon.days}
+        assert today in dates
+        assert today + datetime.timedelta(days=1) not in dates
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_missing_row_renders_as_no_rating(self) -> None:
+        """Days without a RegionDayRating row appear as no_rating, has_bulletin=False."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        ribbon = build_season_ribbon(region, today=today)
+        for day in ribbon.days:
+            assert day.has_bulletin is False
+            assert day.max_rating_key == RegionDayRating.Rating.NO_RATING
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_row_with_source_bulletin_is_interactive(self) -> None:
+        """A day with a source_bulletin row has has_bulletin=True and the correct key."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        target = datetime.date(2025, 11, 4)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            max_rating=RegionDayRating.Rating.HIGH,
+            source_bulletin=bulletin,
+        )
+        ribbon = build_season_ribbon(region, today=today)
+        day = next(d for d in ribbon.days if d.date == target)
+        assert day.has_bulletin is True
+        assert day.max_rating_key == RegionDayRating.Rating.HIGH
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_row_without_source_bulletin_is_inert(self) -> None:
+        """A day with a RegionDayRating row but no source_bulletin has has_bulletin=False."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        target = datetime.date(2025, 11, 4)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            source_bulletin=None,
+        )
+        ribbon = build_season_ribbon(region, today=today)
+        day = next(d for d in ribbon.days if d.date == target)
+        assert day.has_bulletin is False
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_considerable_plus_count(self) -> None:
+        """considerable_plus_count counts days at Considerable, High, or Very High."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 7)
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2025, 11, 3),
+            max_rating=RegionDayRating.Rating.LOW,
+            source_bulletin=bulletin,
+        )
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2025, 11, 4),
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            source_bulletin=bulletin,
+        )
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2025, 11, 5),
+            max_rating=RegionDayRating.Rating.HIGH,
+            source_bulletin=bulletin,
+        )
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2025, 11, 6),
+            max_rating=RegionDayRating.Rating.MODERATE,
+            source_bulletin=bulletin,
+        )
+        ribbon = build_season_ribbon(region, today=today)
+        # Nov 4 (considerable) + Nov 5 (high) = 2
+        assert ribbon.considerable_plus_count == 2
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_season_label_format(self) -> None:
+        """season_label uses the SLF two-digit-year format."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2025, 11, 5)
+        ribbon = build_season_ribbon(region, today=today)
+        assert ribbon.season_label == "25/26"
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_cross_region_isolation(self) -> None:
+        """Ratings from a different region do not contaminate the focal region's ribbon."""
+        region_a = MicroRegionFactory.create(region_id="CH-4115")
+        region_b = MicroRegionFactory.create(region_id="CH-9999")
+        today = datetime.date(2025, 11, 5)
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region_b,
+            date=datetime.date(2025, 11, 4),
+            max_rating=RegionDayRating.Rating.HIGH,
+            source_bulletin=bulletin,
+        )
+        ribbon = build_season_ribbon(region_a, today=today)
+        day = next(d for d in ribbon.days if d.date == datetime.date(2025, 11, 4))
+        assert day.has_bulletin is False
+        assert day.max_rating_key == RegionDayRating.Rating.NO_RATING
