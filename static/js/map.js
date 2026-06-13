@@ -2559,34 +2559,46 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let regionSlug = ribbonEl.dataset.defaultRegionSlug || null;
   let dateKey = ribbonEl.dataset.defaultDate || null;
 
-  // Paint one decorative cell per season day for the focused region into the
-  // scrubber track. Cells are pointer-events:none — the track beneath keeps
-  // its drag/click-to-scrub behaviour and the thumb marks the active day.
-  // With no focus or no data, clear the fill so the track shows its grey rail.
+  // Paint one decorative cell per CALENDAR DAY across [seasonStart, seasonEnd]
+  // for the focused region into the scrubber track. One cell per day (not per
+  // data-date) is essential: the scrubber thumb maps date→position linearly
+  // over the same range, so a cell-per-day grid lines up with the thumb. A
+  // cell-per-data-date grid would compress gap days and drift every cell off
+  // its true date — making the colour under the thumb mismatch the map. Gap
+  // days (and any days past the last data point) render as no_rating slivers.
+  // Cells are pointer-events:none — the track beneath keeps its drag/click; the
+  // thumb marks the active day. With no focus or no region data → grey rail.
+  const DAY_MS = 86400000;
   const paintTrack = () => {
     if (!cache || !regionId) {
       fill.replaceChildren();
       trackEl.removeAttribute('data-ribbon');
       return;
     }
-    const seasonStart = ribbonEl.dataset.seasonStart;
-    const seasonEnd = ribbonEl.dataset.seasonEnd;
-    const allDates = Object.keys(cache)
-      .sort()
-      .filter((d) => d >= seasonStart && d <= seasonEnd);
-    const regionHasData =
-      allDates.length > 0 && allDates.some((d) => cache[d]?.[regionId] != null);
+    const startMs = Date.parse(ribbonEl.dataset.seasonStart);
+    const endMs = Date.parse(ribbonEl.dataset.seasonEnd);
+    if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) {
+      fill.replaceChildren();
+      trackEl.removeAttribute('data-ribbon');
+      return;
+    }
+    // UTC-midnight stepping (seasonStart parses as UTC midnight); UTC has no
+    // DST, so adding exact days and slicing toISOString gives correct ISO keys.
+    let regionHasData = false;
+    const cells = [];
+    for (let t = startMs; t <= endMs; t += DAY_MS) {
+      const d = new Date(t).toISOString().slice(0, 10);
+      const ratingInt = cache[d] ? cache[d][regionId] : null;
+      if (ratingInt != null) regionHasData = true;
+      const cell = document.createElement('span');
+      cell.className = 'scrubber-ribbon-cell ribbon-cell--' + intToKey(ratingInt);
+      cells.push(cell);
+    }
     if (!regionHasData) {
       fill.replaceChildren();
       trackEl.removeAttribute('data-ribbon');
       return;
     }
-    const cells = allDates.map((d) => {
-      const ratingInt = cache[d] ? cache[d][regionId] : null;
-      const cell = document.createElement('span');
-      cell.className = 'scrubber-ribbon-cell ribbon-cell--' + intToKey(ratingInt);
-      return cell;
-    });
     fill.replaceChildren(...cells);
     trackEl.setAttribute('data-ribbon', 'on');
   };
