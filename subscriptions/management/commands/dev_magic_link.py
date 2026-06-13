@@ -46,8 +46,8 @@ class Command(BaseCommand):
 
         email = options["email"].strip().lower()
 
-        subscriber, created = Subscriber.objects.get_or_create(
-            email=email,
+        subscriber, created = Subscriber.objects.get_or_create_for_email(
+            email,
             defaults={
                 "status": Subscriber.Status.ACTIVE,
                 "confirmed_at": timezone.now(),

@@ -106,7 +106,7 @@ class TestBulletinViewedEvent:
     ) -> None:
         subscriber = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
         client = Client()
-        client.force_login(subscriber, backend=_TOKEN_BACKEND)
+        client.force_login(subscriber.user, backend=_TOKEN_BACKEND)
         url = _bulletin_url(region.region_id, region.slug, "2026-03-15")
         with (
             patch("django.utils.timezone.now", return_value=_FROZEN_NOW),
@@ -115,8 +115,8 @@ class TestBulletinViewedEvent:
             client.get(url)
         calls = [c for c in mock_track.call_args_list if c.args[0] == "bulletin_viewed"]
         assert len(calls) == 1
-        # Authenticated distinct_id is subscriber PK as string.
-        assert calls[0].args[1] == str(subscriber.pk)
+        # Authenticated distinct_id is User PK (subscriber.user_id) as string.
+        assert calls[0].args[1] == str(subscriber.user_id)
 
     def test_distinct_id_is_non_empty_for_anon(
         self, region: MicroRegion, bulletin: Bulletin

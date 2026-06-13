@@ -176,12 +176,10 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ---------------------------------------------------------------------------
-# Custom user model
+# Authentication
 # ---------------------------------------------------------------------------
-# Subscriber is the single identity for both end users (magic-link / passkey
-# auth) and staff (password auth via Django admin).
-
-AUTH_USER_MODEL = "subscriptions.Subscriber"
+# Django's default auth.User is the user model.  Subscribers are linked via
+# a OneToOneField on subscriptions.Subscriber (related_name="subscriber").
 
 AUTHENTICATION_BACKENDS = [
     # Verifies signed magic-link tokens; used by account_view and passkey auth.

@@ -983,9 +983,9 @@ class TestDebuggingAids:
         """Superuser sees raw_data script even when DEBUG=False."""
         settings.DEBUG = False
         superuser = SubscriberFactory.create(
-            email="super@example.com",
-            is_superuser=True,
-            is_staff=True,
+            user__email="super@example.com",
+            user__is_superuser=True,
+            user__is_staff=True,
             status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 19)
@@ -996,7 +996,7 @@ class TestDebuggingAids:
             render_model_version=RENDER_MODEL_VERSION,
             raw_data={"properties": {"bulletinID": "superuser-raw-check"}},
         )
-        client.force_login(superuser)
+        client.force_login(superuser.user)
         url = _url("ch-4115", "valais", "2026-03-19")
         response = client.get(url)
         assert response.status_code == 200
@@ -1013,9 +1013,9 @@ class TestDebuggingAids:
         """Regular (non-superuser) authenticated user does not see raw_data."""
         settings.DEBUG = False
         user = SubscriberFactory.create(
-            email="regular@example.com",
-            is_superuser=False,
-            is_staff=False,
+            user__email="regular@example.com",
+            user__is_superuser=False,
+            user__is_staff=False,
             status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 20)
@@ -1026,7 +1026,7 @@ class TestDebuggingAids:
             render_model_version=RENDER_MODEL_VERSION,
             raw_data={"properties": {"bulletinID": "regular-hidden-check"}},
         )
-        client.force_login(user)
+        client.force_login(user.user)
         url = _url("ch-4115", "valais", "2026-03-20")
         response = client.get(url)
         assert response.status_code == 200
@@ -1077,9 +1077,9 @@ class TestSuperuserDebugAffordances:
         """Superuser sees the debug block with the correct data-testid."""
         settings.DEBUG = False
         superuser = SubscriberFactory.create(
-            email="super2@example.com",
-            is_superuser=True,
-            is_staff=True,
+            user__email="super2@example.com",
+            user__is_superuser=True,
+            user__is_staff=True,
             status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 22)
@@ -1089,7 +1089,7 @@ class TestSuperuserDebugAffordances:
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
             render_model_version=RENDER_MODEL_VERSION,
         )
-        client.force_login(superuser)
+        client.force_login(superuser.user)
         url = _url("ch-4115", "valais", "2026-03-22")
         response = client.get(url)
         assert response.status_code == 200
@@ -1104,9 +1104,9 @@ class TestSuperuserDebugAffordances:
         """PDF link is rendered when bulletin.pdf_url is truthy."""
         settings.DEBUG = False
         superuser = SubscriberFactory.create(
-            email="super3@example.com",
-            is_superuser=True,
-            is_staff=True,
+            user__email="super3@example.com",
+            user__is_superuser=True,
+            user__is_staff=True,
             status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 23)
@@ -1117,7 +1117,7 @@ class TestSuperuserDebugAffordances:
             render_model_version=RENDER_MODEL_VERSION,
             pdf_url="https://www.slf.ch/fileadmin/avalanche_bulletin/pdf/test.pdf",
         )
-        client.force_login(superuser)
+        client.force_login(superuser.user)
         url = _url("ch-4115", "valais", "2026-03-23")
         response = client.get(url)
         assert response.status_code == 200
@@ -1134,9 +1134,9 @@ class TestSuperuserDebugAffordances:
         """PDF link is not rendered when bulletin.pdf_url is empty."""
         settings.DEBUG = False
         superuser = SubscriberFactory.create(
-            email="super4@example.com",
-            is_superuser=True,
-            is_staff=True,
+            user__email="super4@example.com",
+            user__is_superuser=True,
+            user__is_staff=True,
             status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 24)
@@ -1147,7 +1147,7 @@ class TestSuperuserDebugAffordances:
             render_model_version=RENDER_MODEL_VERSION,
             pdf_url="",
         )
-        client.force_login(superuser)
+        client.force_login(superuser.user)
         url = _url("ch-4115", "valais", "2026-03-24")
         response = client.get(url)
         assert response.status_code == 200
@@ -1186,9 +1186,9 @@ class TestSuperuserDebugAffordances:
         """Staff-but-not-superuser does not see the debug block."""
         settings.DEBUG = False
         staff_user = SubscriberFactory.create(
-            email="staffonly@example.com",
-            is_superuser=False,
-            is_staff=True,
+            user__email="staffonly@example.com",
+            user__is_superuser=False,
+            user__is_staff=True,
             status=Subscriber.Status.ACTIVE,
         )
         day = date(2026, 3, 26)
@@ -1199,7 +1199,7 @@ class TestSuperuserDebugAffordances:
             render_model_version=RENDER_MODEL_VERSION,
             pdf_url="https://www.slf.ch/fileadmin/avalanche_bulletin/pdf/test.pdf",
         )
-        client.force_login(staff_user)
+        client.force_login(staff_user.user)
         url = _url("ch-4115", "valais", "2026-03-26")
         response = client.get(url)
         assert response.status_code == 200
@@ -2969,7 +2969,7 @@ _TOKEN_BACKEND = "subscriptions.backends.TokenBackend"
 def _make_session_client(subscriber: Subscriber) -> Client:
     """Return a test client logged in as subscriber via Django auth."""
     client = Client()
-    client.force_login(subscriber, backend=_TOKEN_BACKEND)
+    client.force_login(subscriber.user, backend=_TOKEN_BACKEND)
     return client
 
 

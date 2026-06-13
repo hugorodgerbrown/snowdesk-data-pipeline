@@ -50,10 +50,17 @@ _TOKEN_BACKEND = "subscriptions.backends.TokenBackend"  # noqa: S105 — backend
 
 
 def _get_subscriber(request: HttpRequest) -> Subscriber | None:
-    """Return the authenticated Subscriber from request.user, or None."""
-    if request.user.is_authenticated:
-        return request.user
-    return None
+    """Return the authenticated Subscriber profile from request.user, or None.
+
+    Returns None for anonymous users and for authenticated staff users who have
+    no Subscriber profile (e.g. superusers created via createsuperuser).
+    """
+    if not request.user.is_authenticated:
+        return None
+    try:
+        return request.user.subscriber
+    except Subscriber.DoesNotExist:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +132,7 @@ def passkey_auth_response(request: HttpRequest) -> JsonResponse:
         logger.info("Passkey auth failed: %s", exc)
         return JsonResponse({"error": "verification_failed"}, status=400)
 
-    login(request, subscriber, backend=_TOKEN_BACKEND)
+    login(request, subscriber.user, backend=_TOKEN_BACKEND)
     logger.info("Subscriber pk=%s signed in via passkey", subscriber.pk)
     return JsonResponse({"ok": True})
 

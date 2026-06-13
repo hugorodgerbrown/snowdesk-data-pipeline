@@ -120,7 +120,7 @@ class TestDispatchPushLogging:
         the duration of this test so caplog can capture the records.
         """
         monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
-        subscriber = SubscriberFactory.create(email="push-caplog@example.com")
+        subscriber = SubscriberFactory.create(user__email="push-caplog@example.com")
         sub = PushSubscriptionFactory.create(subscriber=subscriber)
         exc = WebPushException(
             "Push failed with 410",

@@ -3,10 +3,11 @@ subscriptions/models.py — Database models for the subscriptions application.
 
 Defines the following concrete models:
 
-- Subscriber: the custom Django user model.  An email address that has opted
-  in to receive avalanche bulletin notifications.  Extends AbstractBaseUser
-  and PermissionsMixin so that a single identity covers both subscribers and
-  staff — request.user always refers to a Subscriber (or AnonymousUser).
+- Subscriber: a thin profile linked to Django's built-in User model via
+  OneToOneField (related_name="subscriber").  Tracks the subscription
+  lifecycle (pending / active) for an email address that has opted in to
+  receive avalanche bulletin notifications.  Email is stored exclusively on
+  User.email; ``Subscriber`` carries only domain-specific fields.
 - Subscription: links a Subscriber to a specific MicroRegion so that
   notifications can be scoped to the regions the subscriber cares about.
 - PasskeyCredential: a WebAuthn platform passkey registered by a Subscriber,
@@ -20,23 +21,19 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import ClassVar
 
-from django.contrib.auth.models import (
-    AbstractBaseUser,
-    BaseUserManager,
-    PermissionsMixin,
-)
-from django.contrib.auth.password_validation import validate_password
+from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import models
 
+from core.models import BaseModel
 from subscriptions.aaguids import lookup as _aaguid_lookup
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Subscriber manager
+# Subscriber queryset / manager
 # ---------------------------------------------------------------------------
 
 
@@ -49,37 +46,84 @@ class SubscriberQuerySet(models.QuerySet["Subscriber"]):
 
     def by_email(self, email: str) -> SubscriberQuerySet:
         """Return subscribers matching the given email (normalised to lowercase)."""
-        return self.filter(email=email.lower())
+        return self.filter(user__email=email.lower())
+
+    def get_or_create_for_email(
+        self,
+        email: str,
+        *,
+        defaults: dict | None = None,
+    ) -> tuple[Subscriber, bool]:
+        """Get or create a (User, Subscriber) pair for the given email address.
+
+        Email is normalised to lowercase at this single entry point (Invariant 2).
+        The User is created with ``username = email = email_lower`` so that
+        ``auth.User``'s unique ``username`` field carries the uniqueness
+        constraint.  If the User already exists, the Subscriber profile is
+        looked up or created against that User.
+
+        Args:
+            email: Raw email address (may be mixed-case).
+            defaults: Extra keyword arguments forwarded to the Subscriber
+                get_or_create call (e.g. ``status``, ``acquisition_request``).
+
+        Returns:
+            ``(subscriber, created)`` — ``created`` is True when the Subscriber
+            row was freshly created (the User may already have existed).
+
+        """
+        email_lower = email.strip().lower()
+        User = get_user_model()  # noqa: N806 — conventional upper-case alias
+        user, _user_created = User.objects.get_or_create(
+            username=email_lower,
+            defaults={"email": email_lower},
+        )
+        # Ensure email is always in sync even if the User pre-existed.
+        if user.email != email_lower:
+            user.email = email_lower
+            user.save(update_fields=["email"])
+        subscriber, created = Subscriber.objects.get_or_create(
+            user=user,
+            defaults=defaults or {},
+        )
+        return subscriber, created
 
 
-class SubscriberManager(BaseUserManager.from_queryset(SubscriberQuerySet)):  # type: ignore[misc]
-    """Custom manager for Subscriber.
+class SubscriberManager(models.Manager["Subscriber"]):
+    """Manager for Subscriber that exposes the SubscriberQuerySet methods."""
 
-    Combines BaseUserManager with SubscriberQuerySet.
-    """
+    def get_queryset(self) -> SubscriberQuerySet:
+        """Return the custom queryset."""
+        return SubscriberQuerySet(self.model, using=self._db)
 
-    def create_user(
-        self, email: str, password: str | None = None, **extra_fields: object
-    ) -> Subscriber:
-        """Create and return a subscriber with an unusable password by default."""
-        email = self.normalize_email(email)
-        user: Subscriber = self.model(email=email, **extra_fields)
-        if password:
-            validate_password(password, user=user)
-            user.set_password(password)
-        else:
-            user.set_unusable_password()
-        user.save(using=self._db)
-        return user
+    def active(self) -> SubscriberQuerySet:
+        """Return only active subscribers."""
+        return self.get_queryset().active()
 
-    def create_superuser(
-        self, email: str, password: str | None = None, **extra_fields: object
-    ) -> Subscriber:
-        """Create and return a superuser (staff=True, superuser=True, status=active)."""
-        extra_fields.setdefault("is_staff", True)
-        extra_fields.setdefault("is_superuser", True)
-        extra_fields.setdefault("status", "active")
-        return self.create_user(email, password, **extra_fields)
+    def by_email(self, email: str) -> SubscriberQuerySet:
+        """Return subscribers matching the given email (normalised to lowercase)."""
+        return self.get_queryset().by_email(email)
+
+    def get_or_create_for_email(
+        self,
+        email: str,
+        *,
+        defaults: dict | None = None,
+    ) -> tuple[Subscriber, bool]:
+        """Get or create a (User, Subscriber) pair for the given email address.
+
+        Delegates to SubscriberQuerySet.get_or_create_for_email.
+
+        Args:
+            email: Raw email address (may be mixed-case).
+            defaults: Extra keyword arguments forwarded to the Subscriber
+                get_or_create call.
+
+        Returns:
+            ``(subscriber, created)`` tuple.
+
+        """
+        return self.get_queryset().get_or_create_for_email(email, defaults=defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -87,21 +131,20 @@ class SubscriberManager(BaseUserManager.from_queryset(SubscriberQuerySet)):  # t
 # ---------------------------------------------------------------------------
 
 
-class Subscriber(AbstractBaseUser, PermissionsMixin):
+class Subscriber(BaseModel):
     """
-    The Snowdesk custom user model.
+    Profile model linked to Django's built-in User via OneToOneField.
 
     An email address subscribed to avalanche bulletin notifications.
-    Replaces Django's default User so that request.user is always a Subscriber
-    instance (or AnonymousUser).  Staff and superusers are Subscribers with
-    is_staff=True / is_superuser=True plus a usable password.
+    ``request.user`` is a plain ``auth.User``; the subscriber profile is
+    accessed via ``request.user.subscriber`` (related_name="subscriber").
 
-    Regular subscribers authenticate via magic-link email or passkeys;
-    their password field is always set to an unusable hash.
+    Email is stored exclusively on ``User.email``.  Access it as
+    ``subscriber.user.email``.  The ``status`` field tracks the subscription
+    lifecycle:
 
-    The ``status`` field tracks the subscription lifecycle:
     - ``pending``: address captured but not yet confirmed via a link click.
-    - ``active``: confirmed at least once; is_active returns True.
+    - ``active``: confirmed at least once; ``is_active`` returns True.
     """
 
     class Status(models.TextChoices):
@@ -110,15 +153,11 @@ class Subscriber(AbstractBaseUser, PermissionsMixin):
         PENDING = "pending", "Pending"
         ACTIVE = "active", "Active"
 
-    # Standard fields inlined from BaseModel (can't mix BaseModel + AbstractBaseUser
-    # without complex MRO; explicit fields are clearer here).
-    id = models.BigAutoField(primary_key=True)
-    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    # Domain fields
-    email = models.EmailField(unique=True, db_index=True)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="subscriber",
+    )
     acquisition_request = models.ForeignKey(
         "core.RequestLog",
         null=True,
@@ -130,7 +169,6 @@ class Subscriber(AbstractBaseUser, PermissionsMixin):
             "First-observation wins; never overwritten."
         ),
     )
-    is_staff = models.BooleanField(default=False)
     status = models.CharField(
         max_length=16,
         choices=Status.choices,
@@ -145,10 +183,7 @@ class Subscriber(AbstractBaseUser, PermissionsMixin):
 
     objects = SubscriberManager()
 
-    USERNAME_FIELD = "email"
-    REQUIRED_FIELDS: ClassVar[list[str]] = []
-
-    class Meta:
+    class Meta(BaseModel.Meta):
         """Model metadata."""
 
         ordering = ["-created_at"]
@@ -158,13 +193,9 @@ class Subscriber(AbstractBaseUser, PermissionsMixin):
         """Return True when the subscriber is confirmed (status=active)."""
         return self.status == self.Status.ACTIVE
 
-    @is_active.setter
-    def is_active(self, value: bool) -> None:
-        """No-op setter — status field is the authoritative source of truth."""
-
     def to_string(self) -> str:
         """Return a human-readable representation."""
-        return self.email
+        return self.user.email
 
     def __str__(self) -> str:
         """Return a human-readable representation."""
@@ -237,7 +268,7 @@ class Subscription(models.Model):
 
     def to_string(self) -> str:
         """Return a human-readable representation."""
-        return f"{self.subscriber.email} → {self.region.region_id}"
+        return f"{self.subscriber.user.email} → {self.region.region_id}"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""
@@ -338,7 +369,7 @@ class PasskeyCredential(models.Model):
 
     def to_string(self) -> str:
         """Return a human-readable representation."""
-        return f"{self.subscriber.email} — {self.display_name}"
+        return f"{self.subscriber.user.email} — {self.display_name}"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""
@@ -407,7 +438,7 @@ class PushSubscription(models.Model):
 
     def to_string(self) -> str:
         """Return a human-readable representation."""
-        who = self.subscriber.email if self.subscriber else "anon"
+        who = self.subscriber.user.email if self.subscriber else "anon"
         return f"{who} — {self.endpoint[:60]}…"
 
     def __str__(self) -> str:

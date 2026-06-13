@@ -14,7 +14,7 @@ import datetime
 from datetime import UTC
 
 import factory
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.utils import timezone as django_timezone
 
 from bulletins.models import (
@@ -240,15 +240,46 @@ class RequestLogFactory(factory.django.DjangoModelFactory[RequestLog]):
     language = ""
 
 
+class UserFactory(factory.django.DjangoModelFactory[User]):
+    """Factory for plain Django auth.User instances (non-subscriber staff).
+
+    ``username`` is derived from ``email`` via LazyAttribute so that the
+    production invariant (username == email) is upheld by default.  Override
+    either field individually or together — LazyAttribute always resolves from
+    whatever ``email`` was set to on the same instance.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = User
+
+    email = factory.Sequence(lambda n: f"staff{n}@example.com")
+    username = factory.LazyAttribute(lambda obj: obj.email)
+    password = factory.django.Password("pass")
+    is_staff = True
+
+
 class SubscriberFactory(factory.django.DjangoModelFactory[Subscriber]):
-    """Factory for Subscriber instances."""
+    """Factory for Subscriber profile instances.
+
+    Each factory creates a linked User (is_staff=False by default) and a
+    Subscriber profile pointing to that User.  ``user__username`` is derived
+    from ``user__email`` via LazyAttribute so that overriding ``user__email``
+    at call sites also fixes the username — matching the production invariant
+    enforced by ``get_or_create_for_email``.
+    """
 
     class Meta:
         """Factory metadata."""
 
         model = Subscriber
 
-    email = factory.Sequence(lambda n: f"subscriber{n}@example.com")
+    user = factory.SubFactory(
+        UserFactory,
+        is_staff=False,
+        email=factory.Sequence(lambda n: f"subscriber{n}@example.com"),
+    )
     status = Subscriber.Status.ACTIVE
     acquisition_request = None  # nullable — not always set
 
@@ -326,17 +357,3 @@ class PushSubscriptionFactory(factory.django.DjangoModelFactory[PushSubscription
     auth = factory.Sequence(lambda n: f"auth-secret-{n:04d}")
     user_agent = "Mozilla/5.0 (Test)"
     last_used_at = None
-
-
-class UserFactory(factory.django.DjangoModelFactory[Subscriber]):
-    """Factory for a staff Subscriber (used in admin/staff tests)."""
-
-    class Meta:
-        """Factory metadata."""
-
-        model = get_user_model()
-
-    email = factory.Sequence(lambda n: f"staff{n}@example.com")
-    password = factory.django.Password("pass")
-    is_staff = True
-    status = Subscriber.Status.ACTIVE

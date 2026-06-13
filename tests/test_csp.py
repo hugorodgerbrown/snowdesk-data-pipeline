@@ -90,9 +90,9 @@ def test_csp_header_absent_on_admin() -> None:
     """CSP is intentionally skipped on /admin/ via CSP_FILTER_REQUEST_FUNC."""
     from tests.factories import UserFactory
 
-    UserFactory.create(email="admin@example.com", is_superuser=True)
+    UserFactory.create(email="admin@example.com", is_superuser=True, is_staff=True)
     client = Client()
-    client.login(email="admin@example.com", password="pass")  # noqa: S106
+    client.login(username="admin@example.com", password="pass")  # noqa: S106
     response = client.get("/admin/")
     assert response.status_code == 200
     assert REPORT_ONLY_HEADER not in response.headers

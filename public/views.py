@@ -2776,10 +2776,14 @@ def _bulletin_detail_response(
         # Subscribe panel state — whether the authenticated user already has a
         # Subscription for this region (SNOW-222).  Anonymous users short-circuit
         # to False so no DB query is issued for unauthenticated requests.
+        # Subscription lookup: authenticated users with a Subscriber profile are
+        # checked; anonymous users and staff-only Users (no profile) return False.
         "user_subscribed_to_region": (
             request.user.is_authenticated
+            and hasattr(request.user, "subscriber")
             and Subscription.objects.filter(
-                subscriber=request.user, region=region
+                subscriber=request.user.subscriber,
+                region=region,
             ).exists()
         ),
         # JSON-LD structured data (SNOW-220) — schema.org WebPage + Report.

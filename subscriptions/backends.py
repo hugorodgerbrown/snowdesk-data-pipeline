@@ -1,18 +1,17 @@
 """
 subscriptions/backends.py — Custom Django authentication backend for Snowdesk.
 
-Provides ``TokenBackend``, which verifies a signed magic-link token and
-returns the matching Subscriber.  It is listed before ``ModelBackend`` in
-``AUTHENTICATION_BACKENDS`` so that token-based logins use it directly;
-``ModelBackend`` still handles staff password logins via the Django admin
-form.
+Provides ``TokenBackend``, which is listed before ``ModelBackend`` in
+``AUTHENTICATION_BACKENDS``.  It is used when views call
+``django.contrib.auth.login(request, user, backend=…)`` directly after
+verifying a magic-link token or a WebAuthn passkey assertion.
 
-Usage — token verification (account_view / passkey flow):
-  The views call ``django.contrib.auth.login(request, subscriber, backend=…)``
-  directly after verifying the token themselves, so ``authenticate()`` is not
-  called for the normal subscriber flow.  ``TokenBackend.get_user()`` is called
-  by the session middleware on every subsequent request to reload the user from
-  the session.
+``TokenBackend.get_user()`` is called by ``AuthenticationMiddleware`` on every
+subsequent request to reload the User from the session.  It returns a plain
+``auth.User`` instance; the subscriber profile (if any) is accessed via
+``user.subscriber`` (the OneToOneField reverse accessor).
+
+``ModelBackend`` still handles staff password logins via the Django admin form.
 """
 
 from __future__ import annotations
@@ -20,12 +19,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend
+from django.contrib.auth.models import User
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
-
-    from subscriptions.models import Subscriber
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +38,7 @@ class TokenBackend(BaseBackend):
     The ``authenticate()`` method is intentionally minimal — the views
     perform their own token/passkey verification and call ``login()``
     directly.  ``get_user()`` is the critical method: it is called on every
-    request by ``AuthenticationMiddleware`` to reconstruct the user from the
+    request by ``AuthenticationMiddleware`` to reconstruct the User from the
     session-stored primary key.
     """
 
@@ -47,11 +46,10 @@ class TokenBackend(BaseBackend):
         """Not used directly; views call login() after verifying credentials."""
         return None
 
-    def get_user(self, user_id: int) -> Subscriber | None:
-        """Return the Subscriber for the given primary key, or None."""
-        from subscriptions.models import Subscriber
-
+    def get_user(self, user_id: int) -> User | None:
+        """Return the User for the given primary key, or None."""
+        UserModel = get_user_model()  # noqa: N806 — conventional upper-case alias
         try:
-            return Subscriber.objects.get(pk=user_id)  # type: ignore[no-any-return]
-        except Subscriber.DoesNotExist:
+            return UserModel.objects.get(pk=user_id)
+        except UserModel.DoesNotExist:
             return None

@@ -170,9 +170,9 @@ class TestCapture:
         assert log.subscriber is None
 
     def test_authenticated_request_links_subscriber(self, rf: RequestFactory) -> None:
-        """Authenticated requests link the RequestLog to request.user."""
+        """Authenticated requests link the RequestLog to the Subscriber profile on request.user."""
         subscriber = SubscriberFactory.create()
-        request = _make_request(rf, user=subscriber)
+        request = _make_request(rf, user=subscriber.user)
         with patch("bulletins.services.geoip.geo_lookup", return_value=None):
             log = capture(request)
         assert log.subscriber_id == subscriber.pk

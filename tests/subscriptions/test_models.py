@@ -8,6 +8,7 @@ queryset methods, string representations, and field constraints.
 import uuid
 
 import pytest
+from django.contrib.auth import get_user_model
 
 from subscriptions.aaguids import lookup as aaguid_lookup
 from subscriptions.models import PasskeyCredential, Subscriber, Subscription
@@ -16,7 +17,10 @@ from tests.factories import (
     PasskeyCredentialFactory,
     SubscriberFactory,
     SubscriptionFactory,
+    UserFactory,
 )
+
+User = get_user_model()
 
 
 class TestAaguidLookup:
@@ -40,15 +44,20 @@ class TestSubscriberModel:
     """Tests for the Subscriber model."""
 
     def test_str_returns_email(self) -> None:
-        sub = SubscriberFactory.create(email="alice@example.com")
+        sub = SubscriberFactory.create(user__email="alice@example.com")
         assert str(sub) == "alice@example.com"
 
     def test_to_string_returns_email(self) -> None:
-        sub = SubscriberFactory.create(email="bob@example.com")
+        sub = SubscriberFactory.create(user__email="bob@example.com")
         assert sub.to_string() == "bob@example.com"
 
     def test_default_status_is_pending_on_fresh_create(self) -> None:
-        sub = Subscriber.objects.create(email="fresh@example.com")
+        user = UserFactory.create(
+            username="fresh@example.com",
+            email="fresh@example.com",
+            is_staff=False,
+        )
+        sub = Subscriber.objects.create(user=user)
         assert sub.status == Subscriber.Status.PENDING
 
     def test_factory_default_status_is_active(self) -> None:
@@ -62,12 +71,14 @@ class TestSubscriberModel:
         sub.refresh_from_db()
         assert sub.confirmed_at is None
 
-    def test_email_is_unique(self) -> None:
+    def test_one_subscriber_per_user(self) -> None:
+        """A second Subscriber for the same User violates the OneToOneField constraint."""
         from django.db import IntegrityError
 
-        SubscriberFactory.create(email="unique@example.com")
+        existing = SubscriberFactory.create()
+        # Attempt to create a second Subscriber linked to the same User.
         with pytest.raises(IntegrityError):
-            SubscriberFactory.create(email="unique@example.com")
+            Subscriber.objects.create(user=existing.user)
 
     def test_has_uuid(self) -> None:
         sub = SubscriberFactory.create()
@@ -88,6 +99,63 @@ class TestSubscriberModel:
 
 
 @pytest.mark.django_db
+class TestSubscriberIsActive:
+    """Tests for Subscriber.is_active property."""
+
+    def test_is_active_true_when_status_active(self) -> None:
+        """is_active returns True when status is ACTIVE."""
+        sub = SubscriberFactory.create(status=Subscriber.Status.ACTIVE)
+        assert sub.is_active is True
+
+    def test_is_active_false_when_status_pending(self) -> None:
+        """is_active returns False when status is PENDING."""
+        sub = SubscriberFactory.create(status=Subscriber.Status.PENDING)
+        assert sub.is_active is False
+
+
+@pytest.mark.django_db
+class TestGetOrCreateForEmail:
+    """Tests for Subscriber.objects.get_or_create_for_email."""
+
+    def test_creates_user_and_subscriber_on_first_call(self) -> None:
+        """First call creates both a User and a Subscriber."""
+        subscriber, created = Subscriber.objects.get_or_create_for_email(
+            "newuser@example.com",
+            defaults={"status": Subscriber.Status.PENDING},
+        )
+        assert created is True
+        assert subscriber.user.email == "newuser@example.com"
+        assert subscriber.user.username == "newuser@example.com"
+        assert subscriber.status == Subscriber.Status.PENDING
+
+    def test_idempotent_on_second_call(self) -> None:
+        """Second call returns the existing Subscriber without creating a new one."""
+        first, _ = Subscriber.objects.get_or_create_for_email("idempotent@example.com")
+        second, created = Subscriber.objects.get_or_create_for_email(
+            "idempotent@example.com"
+        )
+        assert created is False
+        assert first.pk == second.pk
+
+    def test_lowercases_email(self) -> None:
+        """Email is normalised to lowercase before creating User and Subscriber."""
+        subscriber, created = Subscriber.objects.get_or_create_for_email(
+            "UPPER@EXAMPLE.COM",
+            defaults={"status": Subscriber.Status.PENDING},
+        )
+        assert created is True
+        assert subscriber.user.email == "upper@example.com"
+        assert subscriber.user.username == "upper@example.com"
+
+    def test_finds_existing_on_mixed_case_input(self) -> None:
+        """Mixed-case email finds the existing lowercase subscriber."""
+        first, _ = Subscriber.objects.get_or_create_for_email("case@example.com")
+        second, created = Subscriber.objects.get_or_create_for_email("CASE@EXAMPLE.COM")
+        assert created is False
+        assert first.pk == second.pk
+
+
+@pytest.mark.django_db
 class TestSubscriberQuerySet:
     """Tests for SubscriberQuerySet custom methods."""
 
@@ -105,7 +173,7 @@ class TestSubscriberQuerySet:
 
     def test_by_email_exact_match(self) -> None:
         """by_email finds a subscriber when the query is already lowercase."""
-        sub = SubscriberFactory.create(email="test@example.com")
+        sub = SubscriberFactory.create(user__email="test@example.com")
         result = Subscriber.objects.by_email("test@example.com")
         assert sub in result
         assert result.count() == 1
@@ -116,7 +184,7 @@ class TestSubscriberQuerySet:
         Stored emails are always lowercase (form normalisation invariant);
         callers may pass mixed-case input and should still find the record.
         """
-        sub = SubscriberFactory.create(email="test@example.com")
+        sub = SubscriberFactory.create(user__email="test@example.com")
         result = Subscriber.objects.by_email("TEST@EXAMPLE.com")
         assert sub in result
         assert result.count() == 1
@@ -132,7 +200,7 @@ class TestSubscriptionModel:
 
     def test_str_returns_email_arrow_region(self) -> None:
         sub = SubscriptionFactory.create()
-        expected = f"{sub.subscriber.email} \u2192 {sub.region.region_id}"
+        expected = f"{sub.subscriber.user.email} → {sub.region.region_id}"
         assert str(sub) == expected
 
     def test_to_string_matches_str(self) -> None:
@@ -256,7 +324,7 @@ class TestPasskeyCredentialModel:
     def test_str_returns_email_and_name(self) -> None:
         passkey = PasskeyCredentialFactory.create(name="My passkey")
         assert "My passkey" in str(passkey)
-        assert passkey.subscriber.email in str(passkey)
+        assert passkey.subscriber.user.email in str(passkey)
 
     def test_to_string_matches_str(self) -> None:
         passkey = PasskeyCredentialFactory.create()

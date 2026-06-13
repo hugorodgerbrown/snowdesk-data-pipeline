@@ -2,8 +2,6 @@
 
 import uuid
 
-import django.db.models.deletion
-from django.conf import settings
 from django.db import migrations, models
 
 
@@ -12,13 +10,7 @@ class Migration(migrations.Migration):
 
     initial = True
 
-    dependencies = [
-        # subscriptions.Subscriber is the AUTH_USER_MODEL; the FK on
-        # RequestLog.subscriber points there.  We declare the dependency
-        # directly so the migration graph is consistent even if core/
-        # migrations run before subscriptions/.
-        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-    ]
+    dependencies: list[tuple[str, str]] = []
 
     operations = [
         migrations.CreateModel(
@@ -168,21 +160,8 @@ class Migration(migrations.Migration):
                         max_length=8,
                     ),
                 ),
-                (
-                    "subscriber",
-                    models.ForeignKey(
-                        blank=True,
-                        null=True,
-                        on_delete=django.db.models.deletion.SET_NULL,
-                        related_name="request_logs",
-                        to=settings.AUTH_USER_MODEL,
-                        help_text=(
-                            "Authenticated subscriber at request time, if any. "
-                            "Null for anonymous requests (e.g. sign-up before the "
-                            "row exists)."
-                        ),
-                    ),
-                ),
+                # subscriber FK added in core.0003_requestlog_subscriber_fk
+                # after the subscriptions app is initialised (circular-dep break).
             ],
             options={
                 "ordering": ["-created_at"],

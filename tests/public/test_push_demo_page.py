@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
@@ -25,8 +26,8 @@ _PUSH_DEMO_URL = "/_push-demo/"
 
 
 @pytest.fixture()
-def staff_user(db: Any) -> Subscriber:
-    """Return a staff Subscriber."""
+def staff_user(db: Any) -> User:
+    """Return a staff User."""
     return UserFactory.create()
 
 
@@ -37,7 +38,7 @@ def regular_user(db: Any) -> Subscriber:
 
 
 @pytest.fixture()
-def staff_client(staff_user: Subscriber) -> Client:
+def staff_client(staff_user: User) -> Client:
     """Return a Django test Client logged in as a staff user."""
     c = Client()
     c.force_login(staff_user)
@@ -59,7 +60,7 @@ class TestPushDemoPage:
     ) -> None:
         """A logged-in non-staff user is also bounced to admin login."""
         c = Client()
-        c.force_login(regular_user)
+        c.force_login(regular_user.user)
         response = c.get(_PUSH_DEMO_URL)
         assert response.status_code == 302
         assert "/admin/login/" in response["Location"]

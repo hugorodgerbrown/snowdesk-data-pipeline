@@ -94,9 +94,18 @@ class RequestLogManager(models.Manager["RequestLog"]):
         accept_language: str = request.META.get("HTTP_ACCEPT_LANGUAGE", "")
         language = primary_language(accept_language)
 
+        # Resolve the Subscriber profile for the authenticated user.  A plain
+        # staff User (created via createsuperuser) has no Subscriber profile;
+        # guard the reverse accessor so anonymous requests and staff-only
+        # sessions both yield subscriber=None.
         subscriber = None
         if request.user.is_authenticated:
-            subscriber = request.user
+            from subscriptions.models import Subscriber  # noqa: PLC0415
+
+            try:
+                subscriber = request.user.subscriber
+            except Subscriber.DoesNotExist:
+                subscriber = None
 
         sec_purpose_raw = request.headers.get("Sec-Purpose", "")
         sec_purpose = sec_purpose_raw[:64]

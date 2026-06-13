@@ -127,7 +127,7 @@ class TestGenerateRegistrationOptions:
         assert result["rp"]["id"] == "test.example.com"
 
     def test_user_name_is_subscriber_email(self) -> None:
-        subscriber = SubscriberFactory.create(email="alice@example.com")
+        subscriber = SubscriberFactory.create(user__email="alice@example.com")
         session: Any = {}
         result = generate_registration_options(subscriber, session)
         assert result["user"]["name"] == "alice@example.com"
@@ -423,7 +423,7 @@ class TestPasskeyServiceLogging:
 
         monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
 
-        subscriber = SubscriberFactory.create(email="reg-service@example.com")
+        subscriber = SubscriberFactory.create(user__email="reg-service@example.com")
         mock_result = _mock_verified_registration()
         session = _session_with_challenge("dGVzdGNoYWxsZW5nZQ")
 
@@ -457,7 +457,7 @@ class TestPasskeyServiceLogging:
 
         monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
 
-        subscriber = SubscriberFactory.create(email="auth-service@example.com")
+        subscriber = SubscriberFactory.create(user__email="auth-service@example.com")
         PasskeyCredentialFactory.create(subscriber=subscriber, credential_id="dGVzdA")
         credential_json = json.dumps({"id": "dGVzdA"})
         mock_result = _mock_verified_authentication(new_sign_count=1)
