@@ -178,21 +178,6 @@ incident that invalidates derived state:
   multi-year backfills to stay polite to the public APIs.
 - `audit_resort_regions --commit` — after editing resort coordinates or
   region polygons; refixes FKs and rewrites the resort fixture.
-- `encrypt_subscriber_email --commit` — post-deploy backfill that re-saves
-  every `Subscriber` row so the ORM writes AES-SIV ciphertext for the email
-  column. Read-only by default (reports count); `--commit` to persist.
-  Idempotent (deterministic encryption). Run once after deploying SNOW-285;
-  safe to re-run if interrupted.
-
-  ```bash
-  # Dry-run — counts rows that would be encrypted, no writes.
-  poetry run python manage.py encrypt_subscriber_email
-
-  # Encrypt all rows.
-  poetry run python manage.py encrypt_subscriber_email --commit
-  ```
-
-  Flags: `--commit`.
 
 ### Health checks (read-only)
 

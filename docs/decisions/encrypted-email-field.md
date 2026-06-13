@@ -1,15 +1,25 @@
 ---
 name: encrypted-email-field
 description: Subscriber.email encrypted at rest with deterministic AES-SIV via a custom Django field — rationale, key posture, and deploy ordering
-status: current
-last-reviewed: 2026-06-11
+status: historical
+last-reviewed: 2026-06-12
 ---
 
-# Encrypted email field (SNOW-285)
+# Encrypted email field (SNOW-285) — reversed by SNOW-312
 
-**Decision.** `Subscriber.email` is stored encrypted at rest using a small
-custom Django field (`EncryptedEmailField` in `subscriptions/fields.py`), built
-on AES-SIV (RFC 5297) via the `cryptography` library already in the project.
+**This decision was reversed.** The AES-SIV encryption introduced in SNOW-285
+was rolled back in SNOW-312 (migration `0006_rollback_email_encryption`). The
+backfill command (`encrypt_subscriber_email`) was never run in production, so
+no subscriber rows held real ciphertext. The added complexity — a custom field,
+a required environment variable, an admin search workaround, and a key-rotation
+burden — was not justified given that encryption was never active in production.
+
+---
+
+**Original decision.** `Subscriber.email` is stored encrypted at rest using a
+small custom Django field (`EncryptedEmailField` in `subscriptions/fields.py`),
+built on AES-SIV (RFC 5297) via the `cryptography` library already in the
+project.
 
 ## Why AES-SIV (not the scoped library)
 

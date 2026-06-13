@@ -62,7 +62,6 @@ jobs:
           echo "MAGIC_LINK_BASE_URL=http://localhost:8000" >> .env
           echo "EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend" >> .env
           echo "DEFAULT_FROM_EMAIL=ci@example.com" >> .env
-          echo "FIELD_ENCRYPTION_KEY=6hCNErF3I+ET1YTfRK6HHlCzhCzAtAuitiK2UN62/HrNgqIdF8CXn038te9524D+r0m5oll4t3W/oTzFuqiD5g==" >> .env
 
       - name: Run migrations
         run: poetry run python manage.py migrate --noinput

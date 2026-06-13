@@ -2,13 +2,11 @@
 tests/subscriptions/test_admin.py — Tests for subscriptions/admin.py.
 
 Covers:
-  - EncryptedEmailSearchMixin.get_search_results:
-      - 'email:' token finds the subscriber via each admin's encrypted lookup.
-      - 'email:' token with wrong address returns empty queryset.
-      - Empty 'email:' prefix returns empty queryset.
-      - Bare term does NOT match the encrypted email column.
-      - Bare term DOES match non-email search fields
-        (region__region_id for SubscriptionAdmin, name for PasskeyCredentialAdmin).
+  - search_fields configuration for each admin class.
+  - That get_search_results finds subscribers via partial email search
+    (icontains) through each of the three admins — verifying the SNOW-312
+    acceptance criterion that plain icontains search is restored now that
+    the email column is no longer encrypted.
 """
 
 from typing import Any
@@ -36,16 +34,37 @@ def _get_request() -> Any:
     return RequestFactory().get("/admin/")
 
 
+class TestAdminSearchFieldsConfig:
+    """Verify search_fields declarations on each admin class."""
+
+    def test_subscriber_admin_search_fields(self) -> None:
+        """SubscriberAdmin.search_fields includes 'email'."""
+        admin = SubscriberAdmin(Subscriber, AdminSite())
+        assert "email" in admin.search_fields
+
+    def test_subscription_admin_search_fields(self) -> None:
+        """SubscriptionAdmin.search_fields includes 'subscriber__email' and 'region__region_id'."""
+        admin = SubscriptionAdmin(Subscription, AdminSite())
+        assert "subscriber__email" in admin.search_fields
+        assert "region__region_id" in admin.search_fields
+
+    def test_passkey_credential_admin_search_fields(self) -> None:
+        """PasskeyCredentialAdmin.search_fields includes 'subscriber__email' and 'name'."""
+        admin = PasskeyCredentialAdmin(PasskeyCredential, AdminSite())
+        assert "subscriber__email" in admin.search_fields
+        assert "name" in admin.search_fields
+
+
 @pytest.mark.django_db
 class TestSubscriberAdminSearch:
-    """Tests for SubscriberAdmin.get_search_results."""
+    """Tests for SubscriberAdmin.get_search_results with plain EmailField."""
 
     def _admin(self) -> SubscriberAdmin:
         """Return a SubscriberAdmin bound to the default admin site."""
         return SubscriberAdmin(Subscriber, AdminSite())
 
-    def test_email_token_finds_exact_subscriber(self) -> None:
-        """'email:alice@example.com' finds the matching subscriber."""
+    def test_partial_email_search_finds_subscriber(self) -> None:
+        """Partial email fragment matches via icontains now that email is plaintext."""
         sub = SubscriberFactory.create(email="alice@example.com")
         SubscriberFactory.create(email="bob@example.com")
 
@@ -53,61 +72,34 @@ class TestSubscriberAdminSearch:
         qs, _ = admin.get_search_results(
             _get_request(),
             Subscriber.objects.all(),
-            "email:alice@example.com",
-        )
-        assert list(qs) == [sub]
-
-    def test_email_token_normalises_case(self) -> None:
-        """'email:' token lowercases the address before encrypting."""
-        sub = SubscriberFactory.create(email="alice@example.com")
-
-        admin = self._admin()
-        qs, _ = admin.get_search_results(
-            _get_request(),
-            Subscriber.objects.all(),
-            "email:ALICE@EXAMPLE.COM",
-        )
-        assert list(qs) == [sub]
-
-    def test_email_token_wrong_address_returns_empty(self) -> None:
-        """An 'email:' token with no matching address returns an empty queryset."""
-        SubscriberFactory.create(email="alice@example.com")
-
-        admin = self._admin()
-        qs, _ = admin.get_search_results(
-            _get_request(),
-            Subscriber.objects.all(),
-            "email:nobody@example.com",
-        )
-        assert qs.count() == 0
-
-    def test_empty_email_token_returns_empty(self) -> None:
-        """An 'email:' prefix with no address returns an empty queryset."""
-        SubscriberFactory.create(email="alice@example.com")
-
-        admin = self._admin()
-        qs, _ = admin.get_search_results(
-            _get_request(),
-            Subscriber.objects.all(),
-            "email:",
-        )
-        assert qs.count() == 0
-
-    def test_bare_term_does_not_match_encrypted_email(self) -> None:
-        """A plain-text search does NOT find the encrypted email column."""
-        sub = SubscriberFactory.create(email="alice@example.com")
-
-        admin = self._admin()
-        qs, _ = admin.get_search_results(
-            _get_request(),
-            Subscriber.objects.all(),
             "alice",
         )
-        # search_fields = ("email",) means Django issues email__icontains="alice"
-        # against the ciphertext column. Ciphertext never contains "alice", so
-        # the subscriber must NOT appear in the results.
-        pks = list(qs.values_list("pk", flat=True))
-        assert sub.pk not in pks
+        assert sub in list(qs)
+
+    def test_full_email_search_finds_exact_subscriber(self) -> None:
+        """Full email address finds exactly the matching subscriber."""
+        sub = SubscriberFactory.create(email="alice@example.com")
+        SubscriberFactory.create(email="bob@example.com")
+
+        admin = self._admin()
+        qs, _ = admin.get_search_results(
+            _get_request(),
+            Subscriber.objects.all(),
+            "alice@example.com",
+        )
+        assert sub in list(qs)
+
+    def test_no_match_returns_empty(self) -> None:
+        """A search term with no match returns an empty result set."""
+        SubscriberFactory.create(email="alice@example.com")
+
+        admin = self._admin()
+        qs, _ = admin.get_search_results(
+            _get_request(),
+            Subscriber.objects.all(),
+            "nobody",
+        )
+        assert qs.count() == 0
 
 
 @pytest.mark.django_db
@@ -118,8 +110,8 @@ class TestSubscriptionAdminSearch:
         """Return a SubscriptionAdmin bound to the default admin site."""
         return SubscriptionAdmin(Subscription, AdminSite())
 
-    def test_email_token_finds_subscription_by_subscriber_email(self) -> None:
-        """'email:' token finds subscriptions via the subscriber's email."""
+    def test_partial_subscriber_email_finds_subscription(self) -> None:
+        """Partial email fragment finds subscriptions via subscriber__email icontains."""
         sub = SubscriberFactory.create(email="alice@example.com")
         subscription = SubscriptionFactory.create(subscriber=sub)
         other = SubscriberFactory.create(email="bob@example.com")
@@ -129,12 +121,12 @@ class TestSubscriptionAdminSearch:
         qs, _ = admin.get_search_results(
             _get_request(),
             Subscription.objects.all(),
-            "email:alice@example.com",
+            "alice",
         )
-        assert list(qs) == [subscription]
+        assert subscription in list(qs)
 
     def test_region_id_search_still_works(self) -> None:
-        """A bare region_id term still matches via search_fields."""
+        """A region_id fragment still matches via search_fields."""
         region = MicroRegionFactory.create(region_id="CH-9999")
         subscription = SubscriptionFactory.create(region=region)
 
@@ -144,20 +136,7 @@ class TestSubscriptionAdminSearch:
             Subscription.objects.all(),
             "CH-9999",
         )
-        assert subscription in qs
-
-    def test_email_token_does_not_match_region_id(self) -> None:
-        """'email:CH-9999' does not match a region_id (wrong field)."""
-        region = MicroRegionFactory.create(region_id="CH-9999")
-        SubscriptionFactory.create(region=region)
-
-        admin = self._admin()
-        qs, _ = admin.get_search_results(
-            _get_request(),
-            Subscription.objects.all(),
-            "email:CH-9999",
-        )
-        assert qs.count() == 0
+        assert subscription in list(qs)
 
 
 @pytest.mark.django_db
@@ -168,8 +147,8 @@ class TestPasskeyCredentialAdminSearch:
         """Return a PasskeyCredentialAdmin bound to the default admin site."""
         return PasskeyCredentialAdmin(PasskeyCredential, AdminSite())
 
-    def test_email_token_finds_passkey_by_subscriber_email(self) -> None:
-        """'email:' token finds passkeys via the subscriber's email."""
+    def test_partial_subscriber_email_finds_passkey(self) -> None:
+        """Partial email fragment finds passkeys via subscriber__email icontains."""
         sub = SubscriberFactory.create(email="alice@example.com")
         passkey = PasskeyCredentialFactory.create(subscriber=sub)
         other = SubscriberFactory.create(email="bob@example.com")
@@ -179,12 +158,12 @@ class TestPasskeyCredentialAdminSearch:
         qs, _ = admin.get_search_results(
             _get_request(),
             PasskeyCredential.objects.all(),
-            "email:alice@example.com",
+            "alice",
         )
-        assert list(qs) == [passkey]
+        assert passkey in list(qs)
 
     def test_name_search_still_works(self) -> None:
-        """A bare name term still matches via search_fields."""
+        """A passkey name fragment still matches via search_fields."""
         passkey = PasskeyCredentialFactory.create(name="My iPhone passkey")
 
         admin = self._admin()
@@ -193,20 +172,4 @@ class TestPasskeyCredentialAdminSearch:
             PasskeyCredential.objects.all(),
             "iPhone",
         )
-        assert passkey in qs
-
-    def test_bare_email_fragment_does_not_match(self) -> None:
-        """A bare email fragment does NOT match the encrypted subscriber__email."""
-        sub = SubscriberFactory.create(email="alice@example.com")
-        PasskeyCredentialFactory.create(subscriber=sub, name="unrelated-name")
-
-        admin = self._admin()
-        qs, _ = admin.get_search_results(
-            _get_request(),
-            PasskeyCredential.objects.all(),
-            "alice",
-        )
-        # "alice" should not match the encrypted email column; name is the
-        # only active search_field, and "alice" is not in the name.
-        pks = list(qs.values_list("pk", flat=True))
-        assert sub.passkeys.get().pk not in pks
+        assert passkey in list(qs)
