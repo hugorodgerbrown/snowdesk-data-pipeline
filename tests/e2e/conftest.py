@@ -31,6 +31,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from django.core.cache import cache
 from django.core.management import call_command
 
 
@@ -55,3 +56,8 @@ def _load_test_data(django_db_blocker: Any) -> None:
     """
     with django_db_blocker.unblock():
         call_command("loaddata", "test_data", verbosity=0)
+    # The ratings API caches its payload server-side (cache.get_or_set keyed on
+    # country/date). LocMemCache persists across tests in one process, so a
+    # prior test that hit /api/ratings/ against the empty (pre-load) DB would
+    # otherwise leave an empty payload cached and starve this test's ribbon.
+    cache.clear()

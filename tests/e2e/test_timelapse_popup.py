@@ -27,7 +27,6 @@ All tests stub ``/api/ratings/`` so the scrubber enters ready state.
 from __future__ import annotations
 
 import json
-from typing import cast
 
 from playwright.sync_api import Page, Route
 from pytest_django.live_server_helper import LiveServer
@@ -185,32 +184,39 @@ def test_date_changed_updates_region_readout(
     page: Page,
     _load_test_data: None,
 ) -> None:
-    """``snowdesk:date-changed`` causes the region readout to become visible.
+    """``snowdesk:date-changed`` updates the date shown in the region readout.
 
-    ``seasonRibbonInit`` listens to ``snowdesk:date-changed`` and calls
-    ``updateReadout()``.  With no region focused the readout is hidden; once
-    a date is received it is made visible (``hidden`` attribute removed) so the
-    date string is readable.  This listener is registered synchronously and runs
-    without a loaded MapLibre map.
+    On ``/map/`` no region is focused, so ``seasonRibbonInit`` renders the
+    readout as a date-only chip (visible, ``.has-region`` absent — no region
+    name, no danger swatch). It is NOT hidden: the date is always shown as a
+    minimal scrubbed-date display. ``seasonRibbonInit`` listens to
+    ``snowdesk:date-changed`` and re-runs ``updateReadout()``, so the chip's
+    date text tracks the scrubbed day. This runs without a loaded MapLibre map.
     """
     page_errors: list[str] = []
 
     _navigate_and_wait(page, live_server.url)
     page.on("pageerror", lambda err: page_errors.append(str(err)))
 
-    # Before any event, the readout is hidden.
     readout = page.locator("#region-readout")
     assert readout.count() == 1, "#region-readout element must be present"
-    hidden_before = cast("bool | None", readout.get_attribute("hidden"))
-    assert hidden_before is not None, "#region-readout should be hidden initially"
 
-    # Dispatch date-changed — updateReadout() should unhide the element.
+    # No region focused on /map/ → the readout is a visible, date-only chip.
+    page.wait_for_function(
+        "() => { const r = document.getElementById('region-readout');"
+        " return r && !r.hasAttribute('hidden'); }"
+    )
+    assert "has-region" not in (readout.get_attribute("class") or ""), (
+        "with no region focused the readout should be a date-only chip (no .has-region)"
+    )
+
+    # date-changed updates the displayed date text (formatDateLong → "APR 8 2026").
     _dispatch_date_changed(page, "2026-04-08")
     page.wait_for_timeout(150)
 
-    hidden_after = readout.get_attribute("hidden")
-    assert hidden_after is None, (
-        "#region-readout should be visible after snowdesk:date-changed is dispatched"
+    date_text = page.locator("#region-readout .region-readout-danger").inner_text()
+    assert "2026" in date_text and "8" in date_text, (
+        f"readout date should update to the dispatched day; got {date_text!r}"
     )
 
     assert page_errors == [], f"JS errors: {page_errors}"
