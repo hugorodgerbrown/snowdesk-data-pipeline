@@ -1,25 +1,25 @@
 """
-tests/e2e/test_home_ribbon.py — Playwright tests for the season ribbon on / (SNOW-314).
+tests/e2e/test_home_ribbon.py — Playwright tests for the SNOW-314 scrubber ribbon.
 
 Guards two regressions that pure DOM-presence assertions (Django test client)
 cannot catch, and which do NOT require live MapLibre tiles:
 
-(a) The ribbon cells must render with a non-zero width. The cells are empty
-    ``<button>`` elements inside ``<li>`` wrappers; their thin-column sizing
-    lives on the ``<li>`` (the flex item of ``.ribbon-track``). A regression
-    that put the flex sizing on the button instead collapsed every ``<li>`` to
-    zero width, leaving the whole ribbon invisible while still present in the
-    DOM — so a presence-only test passed despite a blank ribbon.
+(a) The scrubber ribbon cells (``.scrubber-ribbon-cell``) must paint with a
+    non-zero width. These are JS-injected ``<span>`` elements inside the
+    ``.scrubber-ribbon`` fill div; they are painted by ``seasonRibbonInit``
+    once the ``/api/ratings/`` cache resolves. A regression that broke the
+    flex sizing would collapse every cell to zero width while they remain in
+    the DOM — invisible but present, so a DOM-count test would still pass.
 
-(b) Clicking a ribbon day must keep the visitor on ``/``. ``commitDate`` in
-    map.js rewrites the URL via ``replaceState``; a hardcoded ``/map/`` there
-    silently bounced homepage visitors to ``/map/`` on every scrub/ribbon click.
+(b) Scrubbing to a date on the homepage must keep the visitor on ``/``.
+    ``commitDate`` in map.js rewrites the URL via ``replaceState``; a
+    hardcoded ``/map/`` there silently bounced homepage visitors to ``/map/``
+    on every scrub/ribbon click.
 
-The ribbon is server-rendered (so cells exist before any tile fetch) and the
-scrubber/ribbon JS runs off the ``/api/ratings/`` fetch, not the basemap — so
-both paths are exercisable in headless CI without a tile stack. These tests
-request ``_load_test_data`` because the ribbon only has cells when CH-4115 has
-``RegionDayRating`` rows.
+The ribbon cells are JS-injected after the ``/api/ratings/`` fetch resolves.
+These tests request ``_load_test_data`` so CH-4115 has ``RegionDayRating``
+rows and the default-region focus paints cells immediately after the cache
+resolves — no MapLibre tile fetch needed.
 """
 
 from __future__ import annotations
@@ -42,26 +42,37 @@ def test_ribbon_cells_render_with_nonzero_width(
     live_server: LiveServer,
     page: Page,
 ) -> None:
-    """Each season-ribbon cell renders as a visible, non-zero-width bar.
+    """Each scrubber-ribbon cell paints with a non-zero width.
 
-    Directly guards the flex-sizing-on-the-wrong-element regression that
-    collapsed the ribbon to an invisible strip of zero-width cells.
+    ``seasonRibbonInit`` injects ``.scrubber-ribbon-cell`` spans into the
+    ``.scrubber-ribbon`` fill div after the ``/api/ratings/`` cache resolves.
+    A flex-sizing regression would leave them zero-width while still in the
+    DOM — invisible but DOM-present. This test catches that by measuring the
+    bounding box of the first injected cell.
+
+    The homepage defaults to CH-4115, so cells paint as soon as the cache
+    resolves when test_data includes CH-4115 RegionDayRating rows.
     """
     page_errors: list[str] = []
     page.on("pageerror", lambda err: page_errors.append(str(err)))
 
     _navigate_home(page, live_server.url)
 
-    cell = page.locator("#season-ribbon .ribbon-cell").first
+    # Wait for the scrubber to finish loading (ratings cache resolved + painted).
+    page.wait_for_selector('#season-scrubber[data-state="ready"]')
+
+    cell = page.locator(".scrubber-ribbon-cell").first
     cell.wait_for(state="attached")
     box = cell.bounding_box()
 
-    assert box is not None, "ribbon cell should have a bounding box"
+    assert box is not None, "scrubber-ribbon cell should have a bounding box"
     assert box["width"] > 0, (
-        f"ribbon cell width should be > 0 (the ribbon is invisible otherwise); "
+        f"scrubber-ribbon cell width should be > 0 (the ribbon is invisible otherwise); "
         f"got {box['width']}"
     )
-    assert box["height"] > 0, f"ribbon cell height should be > 0; got {box['height']}"
+    assert box["height"] > 0, (
+        f"scrubber-ribbon cell height should be > 0; got {box['height']}"
+    )
     assert page_errors == [], f"JS errors: {page_errors}"
 
 

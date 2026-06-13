@@ -10,6 +10,8 @@ Covers:
   - sample_bulletin_url resolves to the CH-4115 2026-02-17 URL.
   - The sample-bulletin URL itself returns 200 (against test_data fixture).
   - Homepage <title> is distinct from /map/ title.
+  - #season-ribbon carries data-default-region-name and -slug on homepage.
+  - #season-ribbon carries empty defaults on /map/.
   - /map/ regression: still 200, scrubber present, #season-ribbon present,
     no #home-intro.
 """
@@ -123,11 +125,11 @@ class TestHomePageOffseason:
     @freeze_time("2026-06-15")  # past the May 31 season end
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     def test_offseason_note_present_when_past_season_end(self) -> None:
-        """Off-season note (data-testid=home-intro-offseason) appears after season end."""
+        """Off-season note (.home-intro-offseason-ref) appears in the intro after season end."""
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert 'data-testid="home-intro-offseason"' in content
+        assert "home-intro-offseason-ref" in content
 
     @freeze_time("2026-03-10")  # today is past data_end when no data exists after Feb
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
@@ -152,7 +154,7 @@ class TestHomePageOffseason:
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert 'data-testid="home-intro-offseason"' not in content
+        assert "home-intro-offseason-ref" not in content
 
 
 @pytest.mark.django_db
@@ -178,8 +180,15 @@ class TestHomePageRibbon:
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     @freeze_time("2026-02-17")
-    def test_ribbon_contains_high_cell_when_high_day_exists(self) -> None:
-        """A High-danger day produces a ribbon-cell--high cell in the HTML."""
+    def test_ribbon_season_data_available_via_api(self) -> None:
+        """CH-4115 RegionDayRating rows are accessible via /api/season-ratings/.
+
+        SNOW-314 moved ribbon cells from server-rendered HTML to JS-injected
+        elements (painted by ``seasonRibbonInit`` after the ratings cache resolves).
+        The API endpoint carries the data that drives the cell colours; this test
+        confirms a High-danger row is present in the API response so the JS can
+        paint the correct colour.
+        """
         region = MicroRegionFactory.create(region_id="CH-4115")
         bulletin = BulletinFactory.create()
         RegionDayRatingFactory.create(
@@ -189,9 +198,11 @@ class TestHomePageRibbon:
             source_bulletin=bulletin,
         )
         client = Client()
-        response = client.get(reverse("public:home"))
-        content = response.content.decode()
-        assert "ribbon-cell--high" in content
+        response = client.get(reverse("api:ratings"))
+        assert response.status_code == 200
+        data = response.json()
+        # The High rating is encoded as 4 in the int-packed ratings payload.
+        assert data.get("2026-02-17", {}).get("CH-4115") == 4
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     @freeze_time("2026-02-17")
@@ -209,6 +220,79 @@ class TestHomePageRibbon:
         response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'id="season-ribbon"' in content
+
+
+@pytest.mark.django_db
+class TestHomePageReadoutData:
+    """Tests for the data-* attributes that drive the readout chip."""
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    @freeze_time("2026-02-17")
+    def test_homepage_ribbon_carries_region_name(self) -> None:
+        """#season-ribbon has data-default-region-name on the homepage."""
+        MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'data-default-region-name="Martigny Verbier"' in content
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    @freeze_time("2026-02-17")
+    def test_homepage_ribbon_carries_region_slug(self) -> None:
+        """#season-ribbon has data-default-region-slug on the homepage.
+
+        ``name_slug`` is derived from ``slugify(name)``; factory receives
+        ``name`` so the property returns the expected slug value.
+        """
+        # slugify("Martigny Verbier") == "martigny-verbier"
+        MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'data-default-region-slug="martigny-verbier"' in content
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    @freeze_time("2026-02-17")
+    def test_map_page_ribbon_has_empty_region_defaults(self) -> None:
+        """#season-ribbon on /map/ carries empty data-default-region-name and -slug.
+
+        /map/ never pre-selects a region — the readout and track start empty
+        so the user's first tap is the activation point.  Requires CH-4115 to
+        exist so the ribbon renders (the template skips the block when ribbon is
+        falsy), and a RegionDayRating row so the ribbon has at least one day.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 2, 17),
+            source_bulletin=bulletin,
+        )
+        client = Client()
+        response = client.get(reverse("public:map"))
+        content = response.content.decode()
+        assert 'data-default-region-name=""' in content
+        assert 'data-default-region-slug=""' in content
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    @freeze_time("2026-02-17")
+    def test_region_readout_is_anchor_element(self) -> None:
+        """#region-readout is rendered as an <a> element for the bulletin CTA.
+
+        Requires CH-4115 and a RegionDayRating row so the ribbon block renders
+        (the template skips the {% if ribbon %} block when ribbon is falsy).
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 2, 17),
+            source_bulletin=bulletin,
+        )
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert '<a id="region-readout"' in content
 
 
 @pytest.mark.django_db

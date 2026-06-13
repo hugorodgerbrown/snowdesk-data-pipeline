@@ -23,15 +23,14 @@ from tests.factories import MicroRegionFactory, RegionDayRatingFactory
 
 @pytest.mark.django_db
 def test_map_page_renders() -> None:
-    """GET /map/ returns 200 and contains the map container and popup endpoint."""
+    """GET /map/ returns 200 and contains the map container."""
     client = Client()
     response = client.get(reverse("public:map"))
     assert response.status_code == 200
     content = response.content.decode()
     assert 'id="map"' in content
-    # SNOW-174: the region popup URL template must be baked into the markup
-    # so that map.js can fetch tooltip HTML without hard-coding the path.
-    assert "data-region-summary-url" in content
+    # SNOW-314: the region popup was removed; data-region-summary-url is gone.
+    assert "data-region-summary-url" not in content
     # SNOW-236: data-season-end must be present on #map so map.js can clamp
     # the cold-open fetch to the last populated date after season end.
     assert 'data-season-end="' in content
@@ -191,16 +190,18 @@ def test_map_page_accepts_date_query_param() -> None:
 @pytest.mark.django_db
 def test_map_page_renders_unified_time_controls() -> None:
     """
-    The play button (#scrubber-play) and the always-visible date pill
-    (#map-date-pill) must be rendered server-side so the JS only has to
-    wire behaviour onto pre-existing DOM. Today's date is server-rendered
-    into the pill so the first paint is correct without waiting on JS.
+    The play button (#scrubber-play) must be rendered server-side so the JS
+    only has to wire behaviour onto pre-existing DOM.
+
+    SNOW-314: the floating date pill (#map-date-pill) was removed from the
+    scrubber controls; the date is now shown in the persistent region readout
+    (#region-readout) which is part of the season ribbon.
     """
     client = Client()
     response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'id="scrubber-play"' in content
-    assert 'id="map-date-pill"' in content
+    assert 'id="map-date-pill"' not in content
 
 
 @pytest.mark.django_db
