@@ -1055,8 +1055,9 @@
     margin: 0 0 12px;
 }
 
-/* Off-season note — rendered only when is_offseason is True. */
-.home-intro-offseason {
+/* Off-season reference line inside the intro card — rendered only when
+   is_offseason is True; points at the persistent #map-offseason-note pill. */
+.home-intro-offseason-ref {
     font-size: 11px;
     line-height: 1.4;
     color: var(--color-text-3);
