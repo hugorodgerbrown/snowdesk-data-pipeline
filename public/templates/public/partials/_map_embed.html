@@ -22,14 +22,8 @@ Optional context:
   show_intro          — bool (default False): when True, renders the
                         #home-intro overlay inside #map.
   is_offseason        — bool: True when today is past the season end.
-  latest_data_date    — datetime.date or None: most-recent bulletin date.
   sample_bulletin_url — str: URL for the sample-bulletin CTA link.
 {% endcomment %}
-{# data-region-summary-url carries the literal placeholder XX-0000 which   #}
-{# static/js/map.js substitutes for the tapped region's region_id at       #}
-{# fetch time. Keeping the URL in {% url %} preserves a single source of   #}
-{# truth for the route name. XX-0000 passes the RegionIdConverter regex     #}
-{# (two-letter prefix + digit) while being an obviously non-existent ID.    #}
 {# SNOW-188: Hidden SVG sprite for country flags shown in the search   #}
 {# result badge. Extracted to a shared include (SNOW-162) so the      #}
 {# subscription manage page can reuse the same symbols without        #}
@@ -45,7 +39,6 @@ Optional context:
     data-ratings-url="{% url 'api:ratings' %}"
     data-resorts-url="{% url 'api:resorts_by_region' %}"
     data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
-    data-region-summary-url="{% url 'api:region_summary' 'XX-0000' %}"
     data-default-basemap-key="{{ default_basemap_key }}"
     data-season-end="{{ season_end|date:'Y-m-d' }}"
 >
@@ -189,8 +182,8 @@ Optional context:
                 {# SNOW-78: Resorts overlay — geocoded ski resorts as #}
                 {# circle pins above the L4 choropleth. Off by default;  #}
                 {# state persists in localStorage under                  #}
-                {# snowdesk.map.overlay.resorts. Pin click opens the     #}
-                {# parent region's MapLibre Popup tooltip.               #}
+                {# snowdesk.map.overlay.resorts. Pin click focuses the   #}
+                {# parent region and updates the readout.                #}
                 <li role="none">
                     <button
                         type="button"
@@ -425,8 +418,6 @@ Optional context:
         {# Dismissed by clicking the overlay or a button; localStorage key      #}
         {# 'snowdesk.home.intro' persists the dismissed state. /#about hash     #}
         {# forces it open. home_intro.js owns the behaviour.                    #}
-        {# NOTE: the off-season archive note lives in #map-offseason-note below, #}
-        {# NOT here — so dismissing this overlay never hides the archive notice. #}
         <div id="home-intro" class="home-intro" aria-modal="false" role="complementary">
             <div class="home-intro-card">
                 <div class="home-intro-identity">
@@ -436,8 +427,11 @@ Optional context:
                     {% trans "Avalanche bulletins for backcountry skiers — tap a region to explore." %}
                 </p>
                 {% if is_offseason %}
+                    {# Off-season honesty (launch requirement): the data shown is #}
+                    {# archive, not live. Carried here in the intro now that the  #}
+                    {# standalone note has been removed.                          #}
                     <p class="home-intro-offseason-ref">
-                        {% trans "Showing season archive — see note below." %}
+                        {% trans "Showing the 2025/26 season archive — live bulletins resume in November." %}
                     </p>
                 {% endif %}
                 <div class="home-intro-actions">
@@ -457,20 +451,5 @@ Optional context:
                 </div>
             </div>
         </div>
-        {# SNOW-314: Persistent off-season note — anchored near the scrubber/   #}
-        {# legend, shown whenever is_offseason is True. This element is a        #}
-        {# sibling of #home-intro, NOT a child of it, so dismissing the intro   #}
-        {# overlay never hides this archive-data honesty notice.                 #}
-        {% if is_offseason %}
-            <div id="map-offseason-note" class="map-offseason-note" data-testid="home-intro-offseason">
-                {% if latest_data_date %}
-                    {% blocktrans trimmed with date=latest_data_date|date:"N j Y" %}
-                        Season archive — last data from {{ date }}.
-                    {% endblocktrans %}
-                {% else %}
-                    {% trans "Season archive — no live data yet." %}
-                {% endif %}
-            </div>
-        {% endif %}
     {% endif %}
 </div>

@@ -105,16 +105,18 @@ must remain in the accessibility tree.
 {% endcomment %}
 <div class="season-scrubber-track">
     {% comment %}
-    Date pill: server-rendered for first-paint correctness;
-    map.js moves it horizontally via --thumb-pct and updates
-    the text on snowdesk:date-changed / date-preview.
+    Season ribbon fill (SNOW-314): a decorative row of one coloured
+    cell per season day for the selected region, painted by map.js
+    (seasonRibbonInit). pointer-events:none so the track beneath keeps
+    its drag/click-to-scrub behaviour; the thumb rides over the colours.
+    Empty until a region is selected — the track shows its grey rail.
     {% endcomment %}
-    <span
-        id="map-date-pill"
-        class="map-date-pill"
-        aria-live="polite"
-        style="--thumb-pct: {{ today_pct }}%"
-    >{{ today|date:'M j Y'|upper }}</span>
+    <div class="scrubber-ribbon" aria-hidden="true"></div>
+    {% comment %}
+    SNOW-314: the floating date pill has been removed — the scrubbed date now
+    lives in the persistent region readout (#region-readout) alongside the
+    region name. The thumb alone marks the position on the ribbon track.
+    {% endcomment %}
     <div class="season-scrubber-thumb" style="left: {{ today_pct }}%"></div>
 </div>
 {% comment %}

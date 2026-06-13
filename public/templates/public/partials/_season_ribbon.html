@@ -26,35 +26,27 @@ active-day highlight in sync.
         data-season-start="{{ season_start|date:'Y-m-d' }}"
         data-season-end="{{ season_end|date:'Y-m-d' }}"
         data-default-region-id="{{ default_region_id }}"
+        data-default-region-name="{{ default_region_name|default:'' }}"
+        data-default-region-slug="{{ default_region_slug|default:'' }}"
         data-default-date="{{ today|date:'Y-m-d' }}"
         aria-label="{% blocktrans trimmed with label=ribbon.season_label %}Season {{ label }} danger ribbon{% endblocktrans %}"
         role="region"
     >
         <div class="ribbon-header">
-            <span class="ribbon-season-label">{{ ribbon.season_label }}</span>
-            {% if ribbon.considerable_plus_count %}
-                <span class="ribbon-caption">
-                    {% blocktrans trimmed with count=ribbon.considerable_plus_count %}
-                        {{ count }} Considerable+ day{{ count|pluralize }}
-                    {% endblocktrans %}
-                </span>
-            {% endif %}
+            {% comment %}
+            Persistent focused-region readout (SNOW-314): names the region whose
+            season is painted into the scrubber track, shows its danger for the
+            currently-scrubbed day, and — when a region is focused — IS the link
+            to that region+date's bulletin (the "View bulletin →" CTA). map.js
+            sets the href and toggles .has-region; cache-fed so it survives
+            playback, replacing the old map popup as the way into the bulletin.
+            With no region focused it degrades to a plain (non-link) date chip.
+            {% endcomment %}
+            <a id="region-readout" class="region-readout" aria-live="polite" hidden>
+                <span class="region-readout-name"></span>
+                <span class="region-readout-danger"></span>
+                <span class="region-readout-cta" aria-hidden="true">{% trans "View bulletin" %} →</span>
+            </a>
         </div>
-        <ul class="ribbon-track" aria-label='{% trans "Season ribbon days" %}'>
-            {% for day in ribbon.days %}
-                <li>
-                    <button
-                        type="button"
-                        class="ribbon-cell ribbon-cell--{{ day.max_rating_key }}"
-                        data-date="{{ day.date|date:'Y-m-d' }}"
-                        aria-label="{{ day.date|date:'N j Y' }} — {{ day.max_rating_key }}"
-                        {% if not day.has_bulletin %}
-                            aria-disabled="true"
-                        {% endif %}
-                    >
-                    </button>
-                </li>
-            {% endfor %}
-        </ul>
     </div>
 {% endif %}
