@@ -115,23 +115,57 @@ Optional context:
                 </svg>
             </button>
             <ul id="basemap-menu" class="basemap-menu" role="menu" hidden>
+                {# SNOW-172: Country toggles — show/hide each country's region     #}
+                {# outlines. CH is on by default. FR/AT/IT are off; their        #}
+                {# GeoJSON is lazy-fetched on first toggle-on. State persists in  #}
+                {# localStorage under snowdesk.map.overlay.country.<code>.       #}
                 <li role="none" class="basemap-menu-section-label">
-                    {% trans "Base map" %}
+                    {% trans "Countries" %}
                 </li>
-                {% for bm in basemaps %}
-                    <li role="none">
-                        <button
-                            type="button"
-                            role="menuitemradio"
-                            class="basemap-menu-item"
-                            data-basemap-key="{{ bm.key }}"
-                            data-basemap-url="{{ bm.url }}"
-                            aria-checked="false"
-                        >
-                            {{ bm.label }}
-                        </button>
-                    </li>
-                {% endfor %}
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="country.ch"
+                        aria-checked="true"
+                    >
+                        {% trans "Switzerland" %}
+                    </button>
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="country.fr"
+                        aria-checked="false"
+                    >
+                        {% trans "France" %}
+                    </button>
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="country.at"
+                        aria-checked="false"
+                    >
+                        {% trans "Austria" %}
+                    </button>
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="country.it"
+                        aria-checked="false"
+                    >
+                        {% trans "Italy" %}
+                    </button>
+                </li>
                 {# SNOW-59: EAWS region overlays. menuitemcheckbox toggles    #}
                 {# add/remove visibility on outline-only line layers stacked  #}
                 {# above the L4 choropleth. State persists in localStorage    #}
@@ -195,58 +229,6 @@ Optional context:
                         {% trans "Resorts" %}
                     </button>
                 </li>
-                {# SNOW-172: Country toggles — show/hide each country's region     #}
-                {# outlines. CH is on by default. FR/AT/IT are off; their        #}
-                {# GeoJSON is lazy-fetched on first toggle-on. State persists in  #}
-                {# localStorage under snowdesk.map.overlay.country.<code>.       #}
-                <li role="separator" class="basemap-menu-separator"></li>
-                <li role="none" class="basemap-menu-section-label">
-                    {% trans "Countries" %}
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="country.ch"
-                        aria-checked="true"
-                    >
-                        {% trans "Switzerland" %}
-                    </button>
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="country.fr"
-                        aria-checked="false"
-                    >
-                        {% trans "France" %}
-                    </button>
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="country.at"
-                        aria-checked="false"
-                    >
-                        {% trans "Austria" %}
-                    </button>
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay"
-                        data-overlay-key="country.it"
-                        aria-checked="false"
-                    >
-                        {% trans "Italy" %}
-                    </button>
-                </li>
                 {# SNOW-65: Options section — behaviours that modify interaction   #}
                 {# rather than visual layers. Uses the same checkbox affordance   #}
                 {# as the overlay items.                                          #}
@@ -265,6 +247,24 @@ Optional context:
                         {% trans "Auto-zoom" %}
                     </button>
                 </li>
+                <li role="separator" class="basemap-menu-separator"></li>
+                <li role="none" class="basemap-menu-section-label">
+                    {% trans "Base map" %}
+                </li>
+                {% for bm in basemaps %}
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemradio"
+                            class="basemap-menu-item"
+                            data-basemap-key="{{ bm.key }}"
+                            data-basemap-url="{{ bm.url }}"
+                            aria-checked="false"
+                        >
+                            {{ bm.label }}
+                        </button>
+                    </li>
+                {% endfor %}
             </ul>
         </div>
         {# SNOW-79: The "Save offline" download button used to live    #}
