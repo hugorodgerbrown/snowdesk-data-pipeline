@@ -207,21 +207,23 @@ def test_map_page_renders_unified_time_controls() -> None:
 @pytest.mark.django_db
 def test_map_page_renders_timelapse_transport_buttons() -> None:
     """
-    The four transport buttons (skip-start, play, fast-forward, skip-end)
-    must all be present in the rendered markup so that map.js can wire
-    behaviour onto pre-existing DOM nodes.  The old single-button speed
-    cycler (``#scrubber-speed`` / ``data-speed``) was replaced in SNOW-230
-    with this four-button layout — assert the new IDs are present and the
-    removed ones are absent.
+    The five transport buttons (skip-start, play-reverse, play-forward,
+    skip-end) must all be present in the rendered markup so that map.js
+    can wire behaviour onto pre-existing DOM nodes.  SNOW-230 replaced the
+    old single-button speed cycler with a four-button layout; SNOW-315
+    replaced the fast-forward button with a reverse button, making five
+    controls total — assert the new IDs are present and the removed ones
+    are absent.
     """
     client = Client()
     response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'id="scrubber-skip-start"' in content
+    assert 'id="scrubber-reverse"' in content
     assert 'id="scrubber-play"' in content
-    assert 'id="scrubber-fast"' in content
     assert 'id="scrubber-skip-end"' in content
     # Removed elements must no longer appear.
+    assert 'id="scrubber-fast"' not in content
     assert 'id="scrubber-speed"' not in content
     assert "data-speed=" not in content
 
@@ -288,9 +290,10 @@ def test_map_page_renders_scrubber_loading_state() -> None:
     assert "Season data loading" in content
     # Transport controls must remain in the DOM (hidden by CSS only).
     assert 'id="scrubber-play"' in content
+    assert 'id="scrubber-reverse"' in content
     assert 'id="scrubber-skip-start"' in content
     assert 'id="scrubber-skip-end"' in content
-    assert 'id="scrubber-fast"' in content
+    assert 'id="scrubber-fast"' not in content
 
 
 @pytest.mark.django_db
