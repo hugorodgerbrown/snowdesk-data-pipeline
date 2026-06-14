@@ -720,6 +720,34 @@ class TestSubscribePartialGeoMatch:
         props = calls["subscription_started"].args[2]
         assert props.get("region_match") is True
 
+    def test_subscription_started_props_include_region_match_true_for_in_neighbour(
+        self,
+    ) -> None:
+        """subscription_started event includes region_match=True for in_neighbour (Case A)."""
+        target = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 5, 5))
+        neighbour = MicroRegionFactory.create(
+            boundary=self._square_polygon(10, 0, 15, 5)
+        )
+        target.neighbours.add(neighbour)
+        geo = self._make_geo_lookup(lon=12.0, lat=2.0)
+
+        with (
+            patch("bulletins.services.geoip.geo_lookup", return_value=geo),
+            patch("subscriptions.views.analytics.track") as mock_track,
+        ):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={
+                    "email": "geo-rm-neighbour@example.com",
+                    "region_id": target.region_id,
+                },
+                **_HTMX_HEADERS,
+            )
+
+        calls = {c.args[0]: c for c in mock_track.call_args_list}
+        props = calls["subscription_started"].args[2]
+        assert props.get("region_match") is True
+
     def test_subscription_started_props_include_region_match_false_for_elsewhere(
         self,
     ) -> None:

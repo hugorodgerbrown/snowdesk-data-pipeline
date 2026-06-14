@@ -56,6 +56,7 @@ from core.decorators import require_htmx
 from core.services.request_log import capture as capture_request_log
 from public.decorators import lowercase_region_id
 from regions.models import MicroRegion
+from regions.services.point_match import IN_NEIGHBOUR, IN_REGION
 
 from .forms import EmailForm, SubscribeForm
 from .logging_utils import mask_email
@@ -364,7 +365,7 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
             anon_id,
             country_code=req_log.country_code,
             geo_match_kind=_kind,
-            region_match=_kind in {"in_region", "in_neighbour"},
+            region_match=_kind in {IN_REGION, IN_NEIGHBOUR},
             language_primary=req_log.language,
         )
 
