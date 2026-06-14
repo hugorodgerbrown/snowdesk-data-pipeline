@@ -361,3 +361,4 @@ Read these when working in the relevant area:
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |
 | Async operations (background threads, failure modes) | [`docs/async-operations.md`](docs/async-operations.md) |
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |
+| Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
