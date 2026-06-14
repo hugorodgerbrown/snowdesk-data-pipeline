@@ -1,9 +1,12 @@
 {% load i18n %}
 {% comment %}
-public/partials/_season_scrubber_controls.html — the four transport
-buttons and the draggable track that together make up the scrubber
-media-player UI. Included by /map/ inside #season-scrubber and by the
-component library at /_components/?slug=season-scrubber.
+public/partials/_season_scrubber_controls.html — five transport controls
+and the draggable track that together make up the scrubber media-player UI.
+Included by /map/ inside #season-scrubber and by the component library at
+/_components/?slug=season-scrubber.
+
+Controls (left to right): skip-to-start, play-reverse, [track], play-forward,
+skip-to-end.
 
 Context expected:
 * today        — a date (used to label the floating date pill).
@@ -32,6 +35,40 @@ before the ratings cache resolves.
     </svg>
 </button>
 {% comment %}
+Reverse / stop transport button — plays the timelapse backwards from
+the current thumb position. Second press stops. Mirrors the play
+button's dual-icon pattern: a left-pointing triangle for the reverse
+state and a stop square for the playing state.
+{% endcomment %}
+<button
+    id="scrubber-reverse"
+    type="button"
+    class="scrubber-transport-button scrubber-reverse"
+    aria-label='{% trans "Play season timelapse in reverse" %}'
+    data-state="stopped"
+>
+    <svg
+        class="scrubber-play-icon"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+    >
+        <path d="M16 5.5v13L5 12z" />
+    </svg>
+    <svg
+        class="scrubber-stop-icon"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+    >
+        <rect x="6" y="6" width="12" height="12" rx="1.5" />
+    </svg>
+</button>
+{% comment %}
 Play / stop transport button — starts timelapse from the
 current thumb position at 1× speed. Second press stops.
 {% endcomment %}
@@ -51,39 +88,6 @@ current thumb position at 1× speed. Second press stops.
         aria-hidden="true"
     >
         <path d="M8 5.5v13l11-6.5z" />
-    </svg>
-    <svg
-        class="scrubber-stop-icon"
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        aria-hidden="true"
-    >
-        <rect x="6" y="6" width="12" height="12" rx="1.5" />
-    </svg>
-</button>
-{% comment %}
-Fast-forward transport button — plays at 2× from the
-current position. Pressing while 1× is playing switches
-speed; pressing while already at 2× stops playback.
-{% endcomment %}
-<button
-    id="scrubber-fast"
-    type="button"
-    class="scrubber-transport-button scrubber-fast"
-    aria-label='{% trans "Fast-forward season timelapse" %}'
-    data-state="stopped"
->
-    <svg
-        class="scrubber-play-icon"
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        aria-hidden="true"
-    >
-        <path d="M5 5.5v13l8-6.5zm8 0v13l8-6.5z" />
     </svg>
     <svg
         class="scrubber-stop-icon"

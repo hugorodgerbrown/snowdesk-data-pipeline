@@ -2061,22 +2061,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
   });
 })();
 
-// Season timelapse — four transport buttons on the scrubber:
+// Season timelapse — five transport buttons on the scrubber:
 //   |<  skip to season start
-//   >   play at 1× from current thumb position (second press = stop)
-//   >>  play at 2× from current thumb position (second press = stop)
+//   <   play in reverse from current thumb position (second press = stop)
+//   >   play forward from current thumb position (second press = stop)
 //   >|  skip to season end
 //
 // Each frame repaints region colours via feature-state and announces a
-// snowdesk:date-changed event so the date pill stays in sync. Pressing
-// the other speed button mid-playback switches speed without losing
-// the current frame index.
+// snowdesk:date-changed event so the date readout stays in sync. Pressing
+// the opposite play button mid-playback flips direction from the current
+// frame without resetting the frame index.
 (function timelapseInit() {
   const playButton = document.getElementById('scrubber-play');
   if (!playButton) return;
 
-  // BASE_FRAME_MS gives ~10 fps at 1×; 2× halves the interval.
-  // The 10 ms floor prevents a future multiplier from starving the thread.
+  // BASE_FRAME_MS gives ~5 fps — consistent in both forward and reverse.
   const BASE_FRAME_MS = 200;
 
   // Drive the scrubber thumb so playback position is visible.
@@ -2086,14 +2085,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const seasonEndMs = scrubber ? Date.parse(scrubber.dataset.seasonEnd) : NaN;
   const seasonSpanMs = seasonEndMs - seasonStartMs;
 
-  const fastButton = document.getElementById('scrubber-fast');
+  const reverseButton = document.getElementById('scrubber-reverse');
   const skipStartButton = document.getElementById('scrubber-skip-start');
   const skipEndButton = document.getElementById('scrubber-skip-end');
 
-  // Active playback speed — set per button click (1 for play, 2 for fast).
-  let speed = 1;
-
-  const frameMs = () => Math.max(10, Math.round(BASE_FRAME_MS / speed));
+  // Active playback direction: 1 = forward, -1 = reverse.
+  let direction = 1;
 
   const moveScrubber = (dateKey) => {
     if (!scrubberThumb || !Number.isFinite(seasonSpanMs) || seasonSpanMs <= 0) return;
@@ -2147,12 +2144,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
     announce(dateKey);
   };
 
-  // Hoisted so start() can re-arm setInterval at a new speed without
+  // Hoisted so start() can re-arm setInterval at a new direction without
   // losing the current frame index.
   const tick = () => {
-    frameIdx += 1;
-    if (frameIdx >= sortedDates.length) {
-      // Last frame already painted — stop so the final value settles.
+    frameIdx += direction;
+    if (direction === 1 && frameIdx >= sortedDates.length) {
+      // Forward end: last frame already painted — stop so the value settles.
+      stop();
+      return;
+    }
+    if (direction === -1 && frameIdx < 0) {
+      // Reverse start: first frame already painted — stop.
       stop();
       return;
     }
@@ -2164,12 +2166,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
       clearInterval(timer);
       timer = null;
     }
-    // Reset data-state on both transport buttons.
+    // Reset data-state on both play transport buttons.
     playButton.dataset.state = 'stopped';
     playButton.setAttribute('aria-label', 'Play season timelapse');
-    if (fastButton) {
-      fastButton.dataset.state = 'stopped';
-      fastButton.setAttribute('aria-label', 'Fast-forward season timelapse');
+    if (reverseButton) {
+      reverseButton.dataset.state = 'stopped';
+      reverseButton.setAttribute('aria-label', 'Play season timelapse in reverse');
     }
     // Leave the map painted on the current frame — do not clear
     // feature-state or reset the thumb. The user sees what was playing.
@@ -2177,11 +2179,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
     document.dispatchEvent(new CustomEvent('snowdesk:timelapse-state', { detail: { playing: false } }));
   };
 
-  // start(speedArg) — begins playback from the current thumb position.
-  // If timer is already running (speed switch mid-playback), re-arms the
-  // interval at the new rate without resetting frameIdx so position is
+  // start(directionArg) — begins playback from the current thumb position.
+  // If timer is already running (direction flip mid-playback), re-arms the
+  // interval at the new direction without resetting frameIdx so position is
   // preserved.
-  const start = async (speedArg) => {
+  const start = async (directionArg) => {
     if (!MAP || !MAP.isStyleLoaded()) return;
     if (cache === null) {
       try {
@@ -2193,9 +2195,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
     if (sortedDates.length === 0) return;
 
-    speed = speedArg;
+    direction = directionArg;
 
-    // Only update frameIdx when starting fresh (not a speed switch).
+    // Only update frameIdx when starting fresh (not a direction flip).
     if (timer === null) {
       frameIdx = currentFrameIdx();
     }
@@ -2207,17 +2209,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
     }
 
     // Update button states to reflect which transport is now active.
-    if (speedArg === 1) {
+    if (directionArg === 1) {
       playButton.dataset.state = 'playing';
       playButton.setAttribute('aria-label', 'Stop season timelapse');
-      if (fastButton) {
-        fastButton.dataset.state = 'stopped';
-        fastButton.setAttribute('aria-label', 'Fast-forward season timelapse');
+      if (reverseButton) {
+        reverseButton.dataset.state = 'stopped';
+        reverseButton.setAttribute('aria-label', 'Play season timelapse in reverse');
       }
     } else {
-      if (fastButton) {
-        fastButton.dataset.state = 'playing';
-        fastButton.setAttribute('aria-label', 'Stop fast-forward timelapse');
+      if (reverseButton) {
+        reverseButton.dataset.state = 'playing';
+        reverseButton.setAttribute('aria-label', 'Stop reverse timelapse');
       }
       playButton.dataset.state = 'stopped';
       playButton.setAttribute('aria-label', 'Play season timelapse');
@@ -2226,7 +2228,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     IS_PLAYING = true;
     document.dispatchEvent(new CustomEvent('snowdesk:timelapse-state', { detail: { playing: true } }));
     applyFrame(sortedDates[frameIdx]);
-    timer = setInterval(tick, frameMs());
+    timer = setInterval(tick, BASE_FRAME_MS);
   };
 
   // When the scrubber commits a new date, the timelapse must surrender
@@ -2244,24 +2246,24 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (timer !== null) stop();
   });
 
-  // Play button: same speed → stop; other speed active → switch to 1×;
-  // stopped → start at 1×.
+  // Play-forward button: running forward → stop; else → start(1).
+  // Pressing while reverse is playing flips direction from the current frame.
   playButton.addEventListener('click', () => {
-    if (timer !== null && speed === 1) {
+    if (timer !== null && direction === 1) {
       stop();
     } else {
       start(1);
     }
   });
 
-  // Fast-forward button: same speed → stop; other speed active → switch
-  // to 2×; stopped → start at 2×.
-  if (fastButton) {
-    fastButton.addEventListener('click', () => {
-      if (timer !== null && speed === 2) {
+  // Play-reverse button: running reverse → stop; else → start(-1).
+  // Pressing while forward is playing flips direction from the current frame.
+  if (reverseButton) {
+    reverseButton.addEventListener('click', () => {
+      if (timer !== null && direction === -1) {
         stop();
       } else {
-        start(2);
+        start(-1);
       }
     });
   }
