@@ -112,11 +112,40 @@ class SubscriberAdmin(admin.ModelAdmin):
 class SubscriptionAdmin(admin.ModelAdmin):
     """Admin view for Subscription."""
 
-    list_display = ["subscriber", "region", "subscribed_via", "created_at"]
-    list_select_related = ["subscriber", "subscriber__user", "region", "subscribed_via"]
+    list_display = [
+        "subscriber",
+        "region",
+        "acquisition_country",
+        "geo_match_kind",
+        "geo_matched_region",
+        "created_at",
+    ]
+    list_filter = ["geo_match_kind"]
+    list_select_related = [
+        "subscriber",
+        "subscriber__user",
+        "region",
+        "subscribed_via",
+        "geo_matched_region",
+    ]
     search_fields = ["subscriber__user__email", "region__region_id"]
-    readonly_fields = ["uuid", "created_at", "updated_at", "subscribed_via"]
+    readonly_fields = [
+        "uuid",
+        "created_at",
+        "updated_at",
+        "subscribed_via",
+        "geo_match_kind",
+        "geo_matched_region",
+    ]
     raw_id_fields = []  # subscribed_via is read-only, not editable here
+
+    @admin.display(description="Country (acquisition)")
+    def acquisition_country(self, obj: Subscription) -> str:
+        """Return the country code from the subscribed_via RequestLog, or '—'."""
+        req = getattr(obj, "subscribed_via", None)
+        if req is not None:
+            return req.country_code or "—"
+        return "—"
 
 
 @admin.register(PasskeyCredential)
