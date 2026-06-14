@@ -807,11 +807,11 @@
 }
 
 /* Shared geometry for every transport button on the scrubber — play,
-   skip-to-start, fast-forward, skip-to-end. Each button is a circular
-   flex-centred target with no padding or margin; the per-variant rules
-   below add size, fill, and stroke. SVG state-swap (play icon when
-   stopped, stop icon when playing) is shared across the play and
-   fast-forward variants. */
+   skip-to-start, play-reverse, play-forward, skip-to-end. Each button is
+   a circular flex-centred target with no padding or margin; the per-variant
+   rules below add size, fill, and stroke. SVG state-swap (play icon when
+   stopped, stop icon when playing) is shared across the play-reverse and
+   play-forward variants. */
 .scrubber-transport-button {
     flex: 0 0 auto;
     margin: 0;
@@ -828,11 +828,12 @@
     display: none;
 }
 
-/* Inline play / stop button on the scrubber. Same 22×22 geometry as the
-   skip and fast-forward buttons so the transport reads as a uniform row;
-   the filled dark fill picks it out as the primary action. SVG state is
-   swapped via the data-state attribute set by static/js/map.js. */
-.scrubber-play {
+/* Play-reverse and play-forward transport buttons — 22×22 dark-filled
+   circles that act as a symmetric pair flanking the track. The filled
+   dark fill picks them out as the primary actions. SVG state is swapped
+   via the data-state attribute set by static/js/map.js. */
+.scrubber-play,
+.scrubber-reverse {
     width: 22px;
     height: 22px;
     background: var(--ink);
@@ -841,7 +842,8 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.scrubber-play:hover {
+.scrubber-play:hover,
+.scrubber-reverse:hover {
     background: #000;
 }
 
@@ -861,29 +863,6 @@
     background: rgba(0, 0, 0, 0.06);
 }
 
-/* Fast-forward transport button — same dimensions and resting style as
-   .scrubber-skip. The state-swap rule on .scrubber-transport-button
-   above handles the play/stop icon toggle. */
-.scrubber-fast {
-    width: 22px;
-    height: 22px;
-    background: transparent;
-    color: var(--ink);
-    border: 0.5px solid var(--border);
-}
-
-.scrubber-fast:hover {
-    background: rgba(0, 0, 0, 0.06);
-}
-
-/* When fast-forward is active, invert colours to match .scrubber-play's
-   resting style — dark circle with white icon. */
-.scrubber-fast[data-state="playing"] {
-    background: var(--ink);
-    color: var(--on-ink);
-    border-color: transparent;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
 
 /* Season scrubber loading state (SNOW-234).
    While the season-ratings fetch is in flight the scrubber carries
