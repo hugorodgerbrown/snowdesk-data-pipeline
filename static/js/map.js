@@ -68,6 +68,19 @@ const formatDateLong = (dateKey) => {
   return `${SCRUBBER_MONTHS[parseInt(m, 10) - 1]} ${parseInt(d, 10)} ${y}`;
 };
 
+// SNOW-318: "2026-04-08" → "8 Apr 2026" — day-first, title-case 3-letter month.
+// Deliberately distinct from formatDateLong (uppercase, month-first, for the
+// readout pill). This mirrors the popup card's server render, where
+// _region_tooltip.html formats the date with ``date:"j M Y"``, so the bulletin
+// label reads identically whether the popup was just opened (server-rendered)
+// or relabelled in place on a scrubber date change.
+const POPUP_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const formatDatePopup = (dateKey) => {
+  const [y, m, d] = dateKey.split('-');
+  return `${parseInt(d, 10)} ${POPUP_MONTHS[parseInt(m, 10) - 1]} ${y}`;
+};
+
 // Lazily-fetched, cached payload from /api/ratings/?country=ch. Shape:
 // { date_iso: { region_id: rating_int } }. Both timelapse (SNOW-46) and
 // the scrubber (SNOW-47) consume the same dataset; sharing one fetch
@@ -2011,14 +2024,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
         tile.textContent = ratingInt != null ? String(ratingInt) : '';
       }
 
-      // Update the bulletin link text and href.
+      // Update the bulletin link text and href. formatDatePopup matches the
+      // server render's ``date:"j M Y"`` so the label is unchanged in format
+      // when the popup is relabelled in place.
       // Note: this string is built in JS (not from a Django template tag) so
       // the project is English-only pre-launch. When i18n is added, this
       // JS-built string will need the same treatment as the #region-readout
       // strings in seasonRibbonInit. See docs/i18n.md.
       const link = el.querySelector('.region-tooltip-bulletin-link');
       if (link) {
-        link.textContent = 'Open bulletin for ' + formatDateLong(dateKey) + ' →';
+        link.textContent = 'Open bulletin for ' + formatDatePopup(dateKey) + ' →';
         link.href = '/' + regionID.toLowerCase() + '/' + slug + '/' + dateKey + '/';
       }
 
@@ -2029,7 +2044,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       // Note: same i18n caveat as the bulletin link above.
       const noBulletin = el.querySelector('.region-tooltip-no-bulletin');
       if (noBulletin) {
-        noBulletin.textContent = 'No bulletin available for ' + formatDateLong(dateKey);
+        noBulletin.textContent = 'No bulletin available for ' + formatDatePopup(dateKey);
       }
     };
     // Publish to the outer-IIFE forwarding variable so the date-changed listener
