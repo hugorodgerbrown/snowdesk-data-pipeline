@@ -297,6 +297,33 @@ def test_map_page_renders_scrubber_loading_state() -> None:
 
 
 @pytest.mark.django_db
+def test_map_layer_menu_section_order() -> None:
+    """
+    SNOW-243: The basemap-menu popover must present sections in the order
+    Countries → Overlays → Options → Base map.  This is a presentation
+    reorder only; all items and their data-* attributes are unchanged.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    # Each label is unique in the rendered output; assert relative order.
+    idx_countries = content.index("basemap-menu-section-label")
+    # Find each label text after the first section-label class occurrence.
+    idx_countries_label = content.index("Countries", idx_countries)
+    idx_overlays_label = content.index("Overlays", idx_countries)
+    idx_options_label = content.index("Options", idx_countries)
+    idx_basemap_label = content.index("Base map", idx_countries)
+
+    assert (
+        idx_countries_label < idx_overlays_label < idx_options_label < idx_basemap_label
+    ), (
+        "Map layer menu sections are not in the expected order "
+        "(Countries < Overlays < Options < Base map)"
+    )
+
+
+@pytest.mark.django_db
 class TestMapPageDataDrivenSeasonBounds:
     """
     SNOW-173: data-season-start / data-season-end reflect the actual
