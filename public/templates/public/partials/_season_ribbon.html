@@ -1,0 +1,52 @@
+{% load i18n %}
+{% comment %}
+public/partials/_season_ribbon.html — Season-long danger-rating ribbon strip.
+
+Renders a flat horizontal row of one cell per calendar day from SEASON_START_DATE
+through today, coloured by the day's peak (max_rating_key) for the currently
+selected region. Defaults to CH-4115 (Martigny / Verbier) at first paint.
+
+Context expected:
+  ribbon            — SeasonRibbon instance from build_season_ribbon().
+  season_start      — datetime.date: season window start (for data-season-start).
+  season_end        — datetime.date: season window end (for data-season-end).
+  today             — datetime.date: current date (for data-default-date).
+  default_region_id — str: the region whose ribbon is server-rendered (CH-4115).
+
+The strip is fully interactive once map.js has the season-ratings cache
+(seasonRibbonInit IIFE, SNOW-314): clicking a cell dispatches
+``snowdesk:scrub-to`` to drive the scrubber; ``snowdesk:region-selected``
+swaps the cells to the new region; ``snowdesk:date-changed`` keeps the
+active-day highlight in sync.
+{% endcomment %}
+{% if ribbon %}
+    <div
+        id="season-ribbon"
+        class="season-ribbon"
+        data-season-start="{{ season_start|date:'Y-m-d' }}"
+        data-season-end="{{ season_end|date:'Y-m-d' }}"
+        data-default-region-id="{{ default_region_id }}"
+        data-default-region-name="{{ default_region_name|default:'' }}"
+        data-default-region-slug="{{ default_region_slug|default:'' }}"
+        data-default-date="{{ today|date:'Y-m-d' }}"
+        aria-label="{% blocktrans trimmed with label=ribbon.season_label %}Season {{ label }} danger ribbon{% endblocktrans %}"
+        role="region"
+    >
+        <div class="ribbon-header">
+            {% comment %}
+            Persistent focused-region readout (SNOW-314): names the region whose
+            season is painted into the scrubber track, shows its danger for the
+            currently-scrubbed day, and — when a region is focused — IS the link
+            to that region+date's bulletin (the "View bulletin →" CTA). map.js
+            sets the href and toggles .has-region; cache-fed so it survives
+            playback, replacing the old map popup as the way into the bulletin.
+            With no region focused it degrades to a plain (non-link) date chip.
+            {% endcomment %}
+            <a id="region-readout" class="region-readout" aria-live="polite" hidden>
+                <span class="region-readout-name"></span>
+                <span class="region-readout-danger"></span>
+                <span class="region-readout-cta" aria-hidden="true">{% trans "View bulletin" %} →</span>
+            </a>
+        </div>
+    </div>
+{% endif %}

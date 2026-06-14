@@ -360,6 +360,10 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": {
                     "id": region.region_id,
                     "name": region.name,
+                    # SNOW-314: name-derived slug for the bulletin URL's second
+                    # path component, so the season-ribbon readout can link
+                    # straight to /<region_id>/<slug>/<date>/ without a lookup.
+                    "slug": region.name_slug,
                     "country": sub.major.country,
                     "subregion_name": subregion_name,
                 },

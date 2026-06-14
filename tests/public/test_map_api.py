@@ -6,7 +6,8 @@ Covers the endpoints consumed by the /map/ page:
 * ``api:ratings``               — unified ratings endpoint (SNOW-239).
                                   Optional ?d=YYYY-MM-DD and ?country= filters.
 * ``api:resorts_by_region``     — resort list per region.
-* ``api:regions_geojson``       — FeatureCollection of L4 region polygons.
+* ``api:regions_geojson``       — FeatureCollection of L4 region polygons;
+                                  carries ``slug`` property (SNOW-314).
 * ``api:major_regions_geojson`` — FeatureCollection of L1 region polygons (SNOW-59).
 * ``api:sub_regions_geojson``   — FeatureCollection of L2 region polygons (SNOW-59).
 * ``api:region_summary``        — tooltip with danger-rating chip (?d= aware),
@@ -335,6 +336,39 @@ def test_regions_geojson_returns_feature_collection() -> None:
     at_response = client.get(reverse("api:regions_geojson") + "?country=at")
     at_by_id = {f["properties"]["id"]: f for f in at_response.json()["features"]}
     assert at_by_id["AT-02-01-01"]["properties"]["subregion_name"] == ""
+
+
+@pytest.mark.django_db
+def test_regions_geojson_features_carry_slug() -> None:
+    """SNOW-314: each feature's properties include the region's name_slug value.
+
+    The slug is used by the client-side readout chip to build the bulletin URL
+    without a second lookup (``/ch-4115/martigny-verbier/<date>/``).
+    ``name_slug`` is a ``@property`` derived from ``slugify(name)`` so the
+    factory receives ``name`` and we derive the expected slug value from it.
+    """
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+        ],
+    }
+    ch_major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+    sub = SubRegionFactory.create(prefix="CH-41", major=ch_major)
+    # slugify("Martigny Verbier") == "martigny-verbier"
+    MicroRegionFactory.create(
+        region_id="CH-4115",
+        name="Martigny Verbier",
+        boundary=boundary,
+        subregion=sub,
+    )
+    client = Client()
+    response = client.get(reverse("api:regions_geojson") + "?country=ch")
+    assert response.status_code == 200
+    data = response.json()
+    by_id = {f["properties"]["id"]: f for f in data["features"]}
+    assert "slug" in by_id["CH-4115"]["properties"]
+    assert by_id["CH-4115"]["properties"]["slug"] == "martigny-verbier"
 
 
 # ---------------------------------------------------------------------------

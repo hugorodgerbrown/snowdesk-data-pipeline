@@ -141,6 +141,47 @@ class SeasonCell:
 
 
 @dataclasses.dataclass(frozen=True)
+class RibbonDay:
+    """
+    A single day entry in the season ribbon strip.
+
+    The ribbon is a flat chronological list of coloured cells — one per day
+    from ``SEASON_START_DATE`` through today — docked beside the map scrubber.
+    Cells are coloured by ``max_rating_key`` so the strip gives an at-a-glance
+    view of how danger peaked each day for the selected region.
+
+    ``has_bulletin=True`` means a ``RegionDayRating`` row exists and the cell
+    is interactive (clicking drives the scrubber). ``False`` cells still appear
+    in the strip as inert placeholders (``no_rating`` colour).
+    """
+
+    date: datetime.date
+    max_rating_key: str
+    has_bulletin: bool
+
+
+@dataclasses.dataclass(frozen=True)
+class SeasonRibbon:
+    """
+    Output of :func:`build_season_ribbon`.
+
+    ``days`` is a flat chronological list of :class:`RibbonDay` objects, one
+    per calendar day from ``SEASON_START_DATE`` through today.
+
+    ``season_label`` is the SLF-style two-year season identifier (e.g.
+    ``"25/26"``), used by the ribbon header.
+
+    """
+
+    days: list[RibbonDay]
+    season_label: str
+
+    def __bool__(self) -> bool:
+        """Return ``False`` when the ribbon is empty (e.g. before season start)."""
+        return bool(self.days)
+
+
+@dataclasses.dataclass(frozen=True)
 class SeasonGrid:
     """
     Output of :func:`build_season_grid`.
@@ -284,6 +325,60 @@ def season_header(today: datetime.date) -> dict[str, str] | None:
     if end < start:
         return None
     return {"season_label": _season_label(start)}
+
+
+def build_season_ribbon(
+    region: "MicroRegion",
+    today: datetime.date,
+) -> SeasonRibbon:
+    """
+    Build the flat chronological season ribbon for ``region``.
+
+    The ribbon is a simpler counterpart to :func:`build_season_grid`: a flat
+    list of one :class:`RibbonDay` per calendar day from ``SEASON_START_DATE``
+    through ``today`` (inclusive), ordered oldest-first. Days after ``today``
+    are excluded — the ribbon is a retrospective view of the season so far.
+
+    Reuses the same ``RegionDayRating`` queryset as ``build_season_grid``; no
+    additional DB queries. Rendering is cached at the view layer.
+
+    Args:
+        region: The region whose ratings to render (e.g. CH-4115).
+        today: Current date — the last day included in the ribbon.
+
+    Returns:
+        A :class:`SeasonRibbon` ready to render. Empty (falsy) when today
+        precedes ``SEASON_START_DATE``.
+
+    """
+    start: datetime.date = settings.SEASON_START_DATE
+    season_label = _season_label(start)
+    if today < start:
+        return SeasonRibbon(days=[], season_label=season_label)
+
+    rows = RegionDayRating.objects.for_region_range(region, start, today)
+    by_date: dict[datetime.date, RegionDayRating] = {r.date: r for r in rows}
+
+    days: list[RibbonDay] = []
+    cursor = start
+    while cursor <= today:
+        rdr = by_date.get(cursor)
+        max_key: str
+        if rdr is None:
+            max_key = RegionDayRating.Rating.NO_RATING
+            has_bulletin = False
+        else:
+            max_key = rdr.max_rating
+            has_bulletin = (
+                rdr.source_bulletin_id is not None
+                and max_key != RegionDayRating.Rating.NO_RATING
+            )
+        days.append(
+            RibbonDay(date=cursor, max_rating_key=max_key, has_bulletin=has_bulletin)
+        )
+        cursor += datetime.timedelta(days=1)
+
+    return SeasonRibbon(days=days, season_label=season_label)
 
 
 def _season_label(start: datetime.date) -> str:

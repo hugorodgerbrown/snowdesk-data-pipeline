@@ -727,9 +727,61 @@
     border-radius: 2px;
     position: relative;
     /* overflow: visible so the date pill (absolutely positioned above the
-       track) is not clipped by the 3px track height. */
+       track) is not clipped by the track height. */
     overflow: visible;
     cursor: grab;
+    transition: height 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* SNOW-314: when a region's season is painted into the track, it grows from
+   the thin grey rail into the full ribbon. The thumb rides over the colours;
+   the track itself still owns drag/click-to-scrub. */
+.season-scrubber-track[data-ribbon="on"] {
+    height: 14px;
+    border-radius: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .season-scrubber-track { transition: none; }
+}
+
+/* Decorative season-ribbon fill inside the track. One flex cell per day,
+   no pointer events (the track beneath handles scrubbing), clipped to the
+   track's rounded rail. */
+.scrubber-ribbon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    border-radius: inherit;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.scrubber-ribbon-cell {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
+}
+
+/* Month-boundary hairline (SNOW-314). At mobile density each day cell is
+   sub-pixel, so per-day gaps are impossible; instead a thin overlay marks the
+   first-of-month cells (~6 across the season) for orientation. Drawn as an
+   absolutely-positioned pseudo-element so it adds no width — the cells stay
+   aligned 1:1 with the scrubber thumb. */
+.scrubber-ribbon-cell--month {
+    position: relative;
+}
+
+.scrubber-ribbon-cell--month::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    background: rgba(0, 0, 0, 0.4);
+    pointer-events: none;
 }
 
 .season-scrubber-thumb {
@@ -742,6 +794,8 @@
     background: var(--ink);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     touch-action: none;
+    /* Ride over the decorative ribbon fill. */
+    z-index: 2;
 }
 
 .season-scrubber-track.dragging {
@@ -881,4 +935,260 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* —————————————————————————————————————————————————————————
+   SNOW-314 — Season ribbon
+   A compact horizontal strip of coloured day cells docked above the
+   season scrubber. One cell per calendar day, coloured by peak danger
+   rating for the selected region. Clicking a cell dispatches
+   snowdesk:scrub-to to drive the scrubber and recolour the choropleth.
+   ————————————————————————————————————————————————————————— */
+
+/* The ribbon is a sibling of #season-scrubber inside #map (which is
+   position:relative via MapLibre). It sits above the scrubber pill:
+   the scrubber's bottom edge is 5px + safe-area from the viewport bottom,
+   the pill itself is ~40px tall, and the ribbon header + track add ~36px.
+   Using a fixed bottom offset keeps the ribbon visually anchored above the
+   scrubber without depending on scrubber height in CSS. */
+.season-ribbon {
+    position: absolute;
+    bottom: calc(54px + env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    right: 12px;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.ribbon-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 0 2px;
+}
+
+
+/* SNOW-314: persistent focused-region readout — names the region whose season
+   fills the scrubber track and shows its danger for the scrubbed day. Survives
+   playback (cache-fed by map.js); the source of truth for "which region", with
+   the map popup demoted to on-tap detail. */
+.region-readout[hidden] {
+    display: none;
+}
+
+.region-readout {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    /* Frosted pill so the label stays legible over the map (it was getting
+       lost against the choropleth). Matches the scrubber / utility-pill idiom. */
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.75);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    /* When a region is focused the pill is an <a> to the bulletin. */
+    text-decoration: none;
+    color: var(--ink);
+    transition: box-shadow 120ms ease, background 120ms ease;
+}
+
+/* Focused → the whole pill is the bulletin CTA: pressable, with a hover lift
+   that signals clickability. */
+.region-readout.has-region {
+    cursor: pointer;
+}
+
+.region-readout.has-region:hover,
+.region-readout.has-region:focus-visible {
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .region-readout {
+        transition: none;
+    }
+}
+
+.region-readout-name {
+    font-weight: 600;
+    color: var(--ink);
+}
+
+/* The action affordance — "View bulletin →", set off by a divider so it reads
+   as the tappable part of the pill. Shown only when a region is focused. */
+.region-readout-cta {
+    font-weight: 600;
+    color: var(--ink);
+    padding-left: 8px;
+    border-left: 0.5px solid var(--border);
+}
+
+.region-readout.has-region:hover .region-readout-cta {
+    text-decoration: underline;
+}
+
+/* No region focused → date-only: drop the (empty) name, the danger swatch,
+   and the CTA so the chip reads as a plain date. */
+.region-readout:not(.has-region) .region-readout-name,
+.region-readout:not(.has-region) .region-readout-cta {
+    display: none;
+}
+
+.region-readout:not(.has-region) .region-readout-danger::before {
+    display: none;
+}
+
+/* Danger label carries a leading colour swatch via a pseudo-element; the
+   swatch colour is set inline by map.js from the EAWS rating token. */
+.region-readout-danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--muted);
+}
+
+.region-readout-danger::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--readout-swatch, transparent);
+    box-shadow: inset 0 0 0 0.5px var(--border);
+}
+
+/* EAWS rating fills for the .scrubber-ribbon-cell elements that paint
+   the season-scrubber track when a region is focused (SNOW-314).
+   Use the same CSS custom properties as the legend swatches and the
+   MapLibre choropleth fill layer. */
+.ribbon-cell--no_rating   { background: rgba(0, 0, 0, 0.08); }
+.ribbon-cell--low         { background: var(--color-eaws-low); }
+.ribbon-cell--moderate    { background: var(--color-eaws-moderate); }
+.ribbon-cell--considerable { background: var(--color-eaws-considerable); }
+.ribbon-cell--high        { background: var(--color-eaws-high); }
+.ribbon-cell--very_high   { background: var(--color-eaws-very-high); }
+
+/* —————————————————————————————————————————————————————————
+   SNOW-314 — Homepage intro overlay (#home-intro)
+   Absolutely positioned over #map; rendered with show_intro=True from
+   the home() view. Dismissed via button or Escape key; restored by
+   visiting /#about. home_intro.js owns the state machine.
+   ————————————————————————————————————————————————————————— */
+
+.home-intro {
+    position: absolute;
+    /* Offset from safe areas so the card clears the status bar / notch. */
+    top: calc(env(safe-area-inset-top, 0px) + 64px);
+    left: calc(env(safe-area-inset-left, 0px) + 16px);
+    z-index: 5;
+    /* Pointer events on the card only; the map behind the card stays interactive. */
+    pointer-events: none;
+}
+
+.home-intro[hidden] {
+    display: none;
+}
+
+.home-intro-card {
+    pointer-events: auto;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border: 0.5px solid var(--color-border);
+    box-shadow: var(--shadow-glass);
+    border-radius: 12px;
+    padding: 20px 22px;
+    max-width: 320px;
+    color: var(--color-text-1);
+    font-family: var(--sans);
+}
+
+.home-intro-identity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.home-intro-wordmark {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--color-text-1);
+}
+
+.home-intro-tagline {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-2);
+    margin: 0 0 12px;
+}
+
+/* Off-season reference line inside the intro card — rendered only when
+   is_offseason is True; points at the persistent #map-offseason-note pill. */
+.home-intro-offseason-ref {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--color-text-3);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    margin: 0 0 12px;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.04);
+    border-radius: 6px;
+}
+
+.home-intro-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.home-intro-sample-link {
+    font-size: 13px;
+    color: var(--color-text-2);
+    text-decoration: none;
+    line-height: 1.4;
+}
+
+.home-intro-sample-link:hover {
+    color: var(--color-text-1);
+    text-decoration: underline;
+}
+
+.home-intro-dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: opacity 120ms ease;
+}
+
+.home-intro-dismiss:hover {
+    opacity: 0.85;
+}
+
+.home-intro--no-motion .home-intro-dismiss {
+    transition: none;
+}
+
+/* Dark mode: the glass card uses the dark glass token automatically via
+   the .dark body class set by the theme head partial. */
+.dark .home-intro-card {
+    background: var(--color-glass);
+    color: var(--color-text-1);
 }

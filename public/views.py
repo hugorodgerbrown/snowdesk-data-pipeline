@@ -104,7 +104,12 @@ from subscriptions.models import Subscription
 from .decorators import lowercase_region_id
 from .guidance import load_field_guidance
 from .headlines import headline_for
-from .season_calendar import build_season_grid, season_header
+from .season_calendar import (
+    SeasonRibbon,
+    build_season_grid,
+    build_season_ribbon,
+    season_header,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -655,16 +660,67 @@ def _get_name_slug(region: MicroRegion) -> str:
 
 def home(request: HttpRequest) -> HttpResponse:
     """
-    Render the marketing homepage.
+    Render the map-as-homepage.
+
+    SNOW-314: the homepage is now the full-frame map with a dismissable
+    landing overlay (``#home-intro``). The map surface is identical to
+    ``/map/`` — same basemap picker, scrubber, ribbon, and season data —
+    but the overlay provides identity, a factual one-liner, an off-season
+    note when today is past the season end, and a sample-bulletin link so
+    first-time visitors can explore without tapping a region.
+
+    Context:
+      ``ribbon``              — default-region (CH-4115) SeasonRibbon or None.
+      ``default_region_id``   — str: "CH-4115".
+      ``show_intro``          — True (the overlay renders on home but not /map/).
+      ``is_offseason``        — True when today is past the active season end.
+      ``sample_bulletin_url`` — resolved URL for CH-4115 2026-02-17 (High-danger
+                                day, verified 200 in test_data), via reverse().
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        The rendered homepage.
+        The rendered homepage embedding the map surface.
 
     """
-    return render(request, "public/home.html")
+    today = datetime.date.today()
+    base_ctx = _base_map_context(today)
+    ribbon = _build_default_ribbon(today)
+    # Name + slug of the pre-selected default region (CH-4115) for the readout
+    # chip and its "view bulletin" link.
+    default_region_name, default_region_slug = _default_region_label()
+
+    # The season is considered "off" when today is past the season_end bound
+    # already narrowed to actual data in _base_map_context().
+    season_end: datetime.date = base_ctx["season_end"]
+    is_offseason = today > season_end
+
+    # The sample CTA points to CH-4115 2026-02-17 — a High-danger day verified
+    # 200 in the test_data fixture. Reversed here so the URL is never hardcoded.
+    sample_bulletin_url = reverse(
+        "public:bulletin_date",
+        kwargs={
+            "region_id": "ch-4115",
+            "slug": "martigny-verbier",
+            "date_str": "2026-02-17",
+        },
+    )
+
+    return render(
+        request,
+        "public/home.html",
+        {
+            **base_ctx,
+            "ribbon": ribbon,
+            "default_region_id": _DEFAULT_RIBBON_REGION_ID,
+            "default_region_name": default_region_name,
+            "default_region_slug": default_region_slug,
+            "show_intro": True,
+            "is_offseason": is_offseason,
+            "sample_bulletin_url": sample_bulletin_url,
+        },
+    )
 
 
 def terms(request: HttpRequest) -> HttpResponse:
@@ -1027,6 +1083,102 @@ def _basemaps_for_picker() -> list[dict[str, Any]]:
     ]
 
 
+# SNOW-314: The default region whose season ribbon is server-rendered at
+# first paint on both / and /map/. CH-4115 (Martigny / Verbier) is the
+# canonical preview region — it has the richest test-data coverage and
+# represents a central Swiss backcountry area that most users recognise.
+_DEFAULT_RIBBON_REGION_ID = "CH-4115"
+
+
+def _base_map_context(today: datetime.date) -> dict[str, Any]:
+    """
+    Build the shared map context for the season scrubber and ribbon.
+
+    Extracted from ``map_view`` so that ``home()`` can embed the full map
+    surface without duplicating the season-window + basemap logic.
+
+    The season window is narrowed to the actual ``RegionDayRating`` data
+    bounds when rows exist (SNOW-173), and falls back to the calendar Nov 1 /
+    May 31 window when the season has not yet started or the DB is empty.
+    ``today_pct`` is clamped to [0, 100] so the scrubber thumb always sits
+    inside the track.
+
+    Args:
+        today: Current date — passed in so callers can freeze time in tests.
+
+    Returns:
+        A dict with ``basemaps``, ``default_basemap_key``, ``season_start``,
+        ``season_end``, ``today``, ``today_pct``, and ``data_end``
+        (the latest ``RegionDayRating.date`` in the window, or ``None`` when
+        the season has not started or the DB is empty).
+
+    """
+    season_start, season_end = _season_date_range(today)
+    data_start, data_end = RegionDayRating.objects.season_date_bounds(
+        season_start, season_end
+    )
+    if data_start is not None and data_end is not None:
+        season_start = data_start
+        season_end = data_end
+    span = (season_end - season_start).days
+    elapsed = max(0, min((today - season_start).days, span))
+    today_pct = round(elapsed / span * 100, 2) if span else 100.0
+    return {
+        "basemaps": _basemaps_for_picker(),
+        "default_basemap_key": settings.BASEMAP,
+        "season_start": season_start,
+        "season_end": season_end,
+        "today": today,
+        "today_pct": today_pct,
+        "data_end": data_end,
+    }
+
+
+def _build_default_ribbon(
+    today: datetime.date,
+) -> SeasonRibbon | None:
+    """
+    Build the season ribbon for the default region (CH-4115) for first-paint.
+
+    Returns ``None`` gracefully when the region does not exist in the DB
+    (e.g. a freshly migrated empty database in development or CI), so the
+    ribbon template renders nothing rather than raising a 500.
+
+    Args:
+        today: Current date (passed through to ``build_season_ribbon``).
+
+    Returns:
+        A :class:`~public.season_calendar.SeasonRibbon` or ``None``.
+
+    """
+    try:
+        region = MicroRegion.objects.get_by_natural_key(_DEFAULT_RIBBON_REGION_ID)
+    except MicroRegion.DoesNotExist:
+        return None
+    return build_season_ribbon(region, today)
+
+
+def _default_region_label() -> tuple[str, str]:
+    """
+    Return the display name and bulletin-URL slug of the default ribbon region.
+
+    Used to seed the persistent region-readout chip on the homepage, where
+    CH-4115 is pre-selected: the name labels the chip and the slug builds its
+    "view bulletin" link. One query for both. Returns ``("", "")`` when the
+    region is absent (empty DB) so the readout simply stays hidden.
+
+    Returns:
+        A ``(name, name_slug)`` tuple, or ``("", "")`` if the region does not
+        exist.
+
+    """
+    try:
+        region = MicroRegion.objects.get_by_natural_key(_DEFAULT_RIBBON_REGION_ID)
+    except MicroRegion.DoesNotExist:
+        return "", ""
+    return region.name, region.name_slug
+
+
 def map_view(request: HttpRequest) -> HttpResponse:
     """
     Render the interactive region-choropleth map page.
@@ -1061,22 +1213,7 @@ def map_view(request: HttpRequest) -> HttpResponse:
 
     """
     today = datetime.date.today()
-    season_start, season_end = _season_date_range(today)
-    # Narrow the season window to the actual data if any RegionDayRating rows
-    # exist for this season. Falls back to the calendar window when the season
-    # hasn't started yet or the queryset is empty (e.g. development with no
-    # ingested data).
-    data_start, data_end = RegionDayRating.objects.season_date_bounds(
-        season_start, season_end
-    )
-    if data_start is not None and data_end is not None:
-        season_start = data_start
-        season_end = data_end
-    # Clamp so the thumb stays inside the track if the user loads the page
-    # outside the nominal season window (e.g. mid-summer development).
-    span = (season_end - season_start).days
-    elapsed = max(0, min((today - season_start).days, span))
-    today_pct = round(elapsed / span * 100, 2) if span else 100.0
+    base_ctx = _base_map_context(today)
 
     edit_mode = request.GET.get("edit") == "resorts" and waffle.flag_is_active(
         request, "edit_map"
@@ -1097,17 +1234,22 @@ def map_view(request: HttpRequest) -> HttpResponse:
             }
         )
 
+    # SNOW-314: build the ribbon as the data carrier (season bounds, caption)
+    # but DON'T pre-select a region on /map/ — the scrubber stays a plain grey
+    # rail until the user taps a region, which then paints its season into the
+    # track. The homepage, by contrast, pre-selects CH-4115 (see home()).
+    ribbon = _build_default_ribbon(today)
+
     return render(
         request,
         "public/map.html",
         {
-            "basemaps": _basemaps_for_picker(),
-            "default_basemap_key": settings.BASEMAP,
-            "season_start": season_start,
-            "season_end": season_end,
-            "today": today,
-            "today_pct": today_pct,
+            **base_ctx,
             **edit_context,
+            "ribbon": ribbon,
+            "default_region_id": "",
+            "default_region_name": "",
+            "default_region_slug": "",
         },
     )
 

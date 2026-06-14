@@ -1,0 +1,455 @@
+{% load i18n static %}
+{% comment %}
+public/partials/_map_embed.html — Shared map surface partial.
+
+Encapsulates the full #map DOM (utility cluster, legend, ribbon, scrubber)
+so it can be included from both /map/ (map.html) and / (home.html) without
+duplicating the markup.  The {% if edit_mode %} resort-edit panel is
+intentionally excluded — it is rendered directly in map.html after this
+include, keeping the edit-mode concern out of the shared surface.
+
+Context expected from the including template:
+  default_basemap_key — str: settings.BASEMAP fallback key.
+  season_start        — datetime.date: season window start.
+  season_end          — datetime.date: season window end.
+  today               — datetime.date: current date.
+  today_pct           — float: scrubber thumb starting position 0..100.
+  basemaps            — list of {key, label, url} dicts for the picker.
+  ribbon              — SeasonRibbon or None (from build_season_ribbon).
+  default_region_id   — str: region whose ribbon is server-rendered (CH-4115).
+
+Optional context:
+  show_intro          — bool (default False): when True, renders the
+                        #home-intro overlay inside #map.
+  is_offseason        — bool: True when today is past the season end.
+  sample_bulletin_url — str: URL for the sample-bulletin CTA link.
+{% endcomment %}
+{# SNOW-188: Hidden SVG sprite for country flags shown in the search   #}
+{# result badge. Extracted to a shared include (SNOW-162) so the      #}
+{# subscription manage page can reuse the same symbols without        #}
+{# duplicating the SVG block.                                         #}
+{% include "includes/country_flags_sprite.html" %}
+{# SNOW-236: data-season-end is read by map.js at boot to clamp the cold-open #}
+{# fetch to the last populated date when today is past the season end.       #}
+<div
+    id="map"
+    data-regions-url="{% url 'api:regions_geojson' %}"
+    data-major-regions-url="{% url 'api:major_regions_geojson' %}"
+    data-sub-regions-url="{% url 'api:sub_regions_geojson' %}"
+    data-ratings-url="{% url 'api:ratings' %}"
+    data-resorts-url="{% url 'api:resorts_by_region' %}"
+    data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
+    data-default-basemap-key="{{ default_basemap_key }}"
+    data-season-end="{{ season_end|date:'Y-m-d' }}"
+>
+    <div class="map-utility-cluster" id="map-utility-cluster">
+        <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">
+            <button
+                id="search-toggle"
+                type="button"
+                class="map-utility-button"
+                aria-label='{% trans "Find a region" %}'
+                aria-expanded="false"
+                aria-controls="search-input"
+            >
+                <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    aria-hidden="true"
+                >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m20 20-3-3" />
+                </svg>
+            </button>
+            <input
+                id="search-input"
+                class="search-input"
+                type="search"
+                placeholder='{% trans "Find a region" %}'
+                autocomplete="off"
+                spellcheck="false"
+                aria-label='{% trans "Find a region" %}'
+                aria-autocomplete="list"
+                aria-controls="search-results"
+                aria-expanded="false"
+                role="combobox"
+            >
+        </div>
+        {# SNOW-58: basemap layer picker — Google-Maps-style stacked-layers   #}
+        {# pill that opens a popover of basemap options. Choice persists in   #}
+        {# localStorage; selecting a value calls maplibre setStyle() and JS   #}
+        {# re-installs the regions source + layers on style.load.             #}
+        <div
+            class="map-utility-pill map-utility-pill--basemap"
+            id="basemap-pill"
+            data-state="collapsed"
+        >
+            <button
+                id="basemap-toggle"
+                type="button"
+                class="map-utility-button"
+                aria-label='{% trans "Choose basemap" %}'
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-controls="basemap-menu"
+            >
+                <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M12 2 2 7l10 5 10-5-10-5Z" />
+                    <path d="m2 12 10 5 10-5" />
+                    <path d="m2 17 10 5 10-5" />
+                </svg>
+            </button>
+            <ul id="basemap-menu" class="basemap-menu" role="menu" hidden>
+                <li role="none" class="basemap-menu-section-label">
+                    {% trans "Base map" %}
+                </li>
+                {% for bm in basemaps %}
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemradio"
+                            class="basemap-menu-item"
+                            data-basemap-key="{{ bm.key }}"
+                            data-basemap-url="{{ bm.url }}"
+                            aria-checked="false"
+                        >
+                            {{ bm.label }}
+                        </button>
+                    </li>
+                {% endfor %}
+                {# SNOW-59: EAWS region overlays. menuitemcheckbox toggles    #}
+                {# add/remove visibility on outline-only line layers stacked  #}
+                {# above the L4 choropleth. State persists in localStorage    #}
+                {# under snowdesk.map.overlay.l1 / .l2 / .l4. Micro regions   #}
+                {# is checked-and-disabled because the danger-rating          #}
+                {# choropleth is rendered on the L4 layer — hiding it would   #}
+                {# leave the map empty.                                       #}
+                <li role="separator" class="basemap-menu-separator"></li>
+                <li role="none" class="basemap-menu-section-label">
+                    {% trans "Overlays" %}
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="l1"
+                        aria-checked="false"
+                    >
+                        {% trans "Major regions" %}
+                    </button>
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="l2"
+                        aria-checked="false"
+                    >
+                        {% trans "Sub regions" %}
+                    </button>
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="l4"
+                        aria-checked="true"
+                        aria-disabled="true"
+                        disabled
+                        title='{% trans "Micro regions carry the avalanche danger ratings — required" %}'
+                    >
+                        {% trans "Micro regions" %}
+                    </button>
+                </li>
+                {# SNOW-78: Resorts overlay — geocoded ski resorts as #}
+                {# circle pins above the L4 choropleth. Off by default;  #}
+                {# state persists in localStorage under                  #}
+                {# snowdesk.map.overlay.resorts. Pin click focuses the   #}
+                {# parent region and updates the readout.                #}
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="resorts"
+                        aria-checked="false"
+                    >
+                        {% trans "Resorts" %}
+                    </button>
+                </li>
+                {# SNOW-172: Country toggles — show/hide each country's region     #}
+                {# outlines. CH is on by default. FR/AT/IT are off; their        #}
+                {# GeoJSON is lazy-fetched on first toggle-on. State persists in  #}
+                {# localStorage under snowdesk.map.overlay.country.<code>.       #}
+                <li role="separator" class="basemap-menu-separator"></li>
+                <li role="none" class="basemap-menu-section-label">
+                    {% trans "Countries" %}
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="country.ch"
+                        aria-checked="true"
+                    >
+                        {% trans "Switzerland" %}
+                    </button>
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="country.fr"
+                        aria-checked="false"
+                    >
+                        {% trans "France" %}
+                    </button>
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="country.at"
+                        aria-checked="false"
+                    >
+                        {% trans "Austria" %}
+                    </button>
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="country.it"
+                        aria-checked="false"
+                    >
+                        {% trans "Italy" %}
+                    </button>
+                </li>
+                {# SNOW-65: Options section — behaviours that modify interaction   #}
+                {# rather than visual layers. Uses the same checkbox affordance   #}
+                {# as the overlay items.                                          #}
+                <li role="separator" class="basemap-menu-separator"></li>
+                <li role="none" class="basemap-menu-section-label">
+                    {% trans "Options" %}
+                </li>
+                <li role="none">
+                    <button
+                        id="autozoom-toggle"
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        aria-checked="false"
+                    >
+                        {% trans "Auto-zoom" %}
+                    </button>
+                </li>
+            </ul>
+        </div>
+        {# SNOW-79: The "Save offline" download button used to live    #}
+        {# here. The PWA shell now caches assets on first visit via    #}
+        {# stale-while-revalidate, so an explicit opt-in download is   #}
+        {# no longer needed (and was the source of "stuck on stale     #}
+        {# data" reports). Removed wholesale.                          #}
+        <ul id="search-results" class="search-results" role="listbox" hidden></ul>
+    </div>
+    {% comment %}
+    Map info panel (SNOW-38, redesigned SNOW-230). A single (i) toggle
+    at top-left expands a card with three sections: today's danger
+    scale, map-tile attribution (populated by map.js from each source's
+    attribution string), and avalanche-data attribution naming all
+    three providers (SLF, ALBINA, Météo-France — SNOW-294), with
+    licence links delegated to the colophon.
+    Replaces what used to be three separate UI surfaces — the legend,
+    the MapLibre attribution control, and the site footer line.
+    {% endcomment %}
+    <div id="map-legend" class="map-legend" data-state="collapsed">
+        <div
+            class="map-legend-card"
+            id="map-legend-card"
+            role="region"
+            aria-label='{% trans "Map information" %}'
+        >
+            <section class="map-legend-section">
+                <div class="map-legend-title">{% trans "Today" %}</div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--low"
+                        aria-hidden="true"
+                    ></span>{% trans "Low (1)" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--moderate"
+                        aria-hidden="true"
+                    ></span>{% trans "Moderate (2)" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--considerable"
+                        aria-hidden="true"
+                    ></span>{% trans "Considerable (3)" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--high"
+                        aria-hidden="true"
+                    ></span>{% trans "High (4)" %}
+                </div>
+                {% comment %}
+                SNOW-78: Resorts overlay legend entry — only meaningful
+                when the user has enabled the layer in the basemap menu,
+                but rendered unconditionally so the legend is a complete
+                key for everything the map can show.
+                {% endcomment %}
+                <div class="map-legend-row" data-testid="map-legend-resorts">
+                    <span class="map-legend-pin" aria-hidden="true"></span>{% trans "Resorts" %}
+                </div>
+            </section>
+            <section class="map-legend-section">
+                <div class="map-legend-title">{% trans "Map data" %}</div>
+                {% comment %}
+                Populated by map.js from the current style's source
+                attributions; refreshed on every basemap swap. The
+                placeholder text is replaced before paint completes.
+                {% endcomment %}
+                <p id="map-attribution-text" class="map-legend-attribution"></p>
+            </section>
+            <section class="map-legend-section">
+                <div class="map-legend-title">{% trans "Avalanche data" %}</div>
+                <p class="map-legend-attribution">
+                    {% url 'public:colophon' as colophon_url %}
+                    {% blocktrans trimmed %}
+                        <a
+                            class="map-legend-attribution-link"
+                            href="https://www.slf.ch"
+                            target="_blank"
+                            rel="noopener"
+                        >SLF</a>
+                        &middot;
+                        <a
+                            class="map-legend-attribution-link"
+                            href="https://avalanche.report"
+                            target="_blank"
+                            rel="noopener"
+                        >ALBINA</a>
+                        &middot;
+                        <a
+                            class="map-legend-attribution-link"
+                            href="https://meteofrance.com/meteo-montagne"
+                            target="_blank"
+                            rel="noopener"
+                        >Météo-France</a>
+                        &middot; Full attribution in the
+                        <a class="map-legend-attribution-link" href="{{ colophon_url }}">colophon</a>
+                    {% endblocktrans %}
+                </p>
+            </section>
+        </div>
+        <button
+            id="map-legend-toggle"
+            type="button"
+            class="map-legend-toggle"
+            aria-label='{% trans "Map information" %}'
+            aria-expanded="false"
+            aria-controls="map-legend-card"
+        >
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+        </button>
+    </div>
+    {# SNOW-314: Season ribbon — flat horizontal strip of one cell per day, #}
+    {# coloured by peak danger for the selected region (default CH-4115). #}
+    {# Positioned above the scrubber. Requires ribbon context from view.  #}
+    {% include "public/partials/_season_ribbon.html" with default_region_id=default_region_id %}
+    <div
+        id="season-scrubber"
+        class="season-scrubber"
+        role="slider"
+        aria-label='{% trans "Season scrubber" %}'
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="{{ today_pct }}"
+        data-season-start="{{ season_start|date:'Y-m-d' }}"
+        data-season-end="{{ season_end|date:'Y-m-d' }}"
+        data-today="{{ today|date:'Y-m-d' }}"
+        data-today-pct="{{ today_pct }}"
+        data-state="loading"
+    >
+        <div class="season-scrubber-loading">{% trans "Season data loading…" %}</div>
+        {% include "public/partials/_season_scrubber_controls.html" %}
+    </div>
+    {% if show_intro %}
+        {# SNOW-314: Homepage intro overlay — absolutely positioned over #map.  #}
+        {# Dismissed by clicking the overlay or a button; localStorage key      #}
+        {# 'snowdesk.home.intro' persists the dismissed state. /#about hash     #}
+        {# forces it open. home_intro.js owns the behaviour.                    #}
+        <div id="home-intro" class="home-intro" aria-modal="false" role="complementary">
+            <div class="home-intro-card">
+                <div class="home-intro-identity">
+                    <span class="home-intro-wordmark">Snowdesk</span>
+                </div>
+                <p class="home-intro-tagline">
+                    {% trans "Avalanche bulletins for backcountry skiers — tap a region to explore." %}
+                </p>
+                {% if is_offseason %}
+                    {# Off-season honesty (launch requirement): the data shown is #}
+                    {# archive, not live. Carried here in the intro now that the  #}
+                    {# standalone note has been removed.                          #}
+                    <p class="home-intro-offseason-ref">
+                        {% trans "Showing the 2025/26 season archive — live bulletins resume in November." %}
+                    </p>
+                {% endif %}
+                <div class="home-intro-actions">
+                    {% if sample_bulletin_url %}
+                        <a href="{{ sample_bulletin_url }}" class="home-intro-sample-link">
+                            {% trans "View a sample bulletin →" %}
+                        </a>
+                    {% endif %}
+                    <button
+                        id="home-intro-dismiss"
+                        type="button"
+                        class="home-intro-dismiss"
+                        aria-label='{% trans "Dismiss and explore the map" %}'
+                    >
+                        {% trans "Explore the map" %}
+                    </button>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+</div>
