@@ -177,3 +177,38 @@ class TestWorkerDispatchPush:
         with patch("subscriptions.push_service.dispatch_push") as mock_dispatch:
             _worker_dispatch_push.call(999999, payload)
         mock_dispatch.assert_not_called()
+
+    def test_does_not_exist_log_contains_pk_not_email(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SNOW-311: DoesNotExist log record contains pk= and never a subscriber email.
+
+        Creates a subscriber so there is a real email in the database, then
+        exercises the DoesNotExist path with a non-existent PK. The log message
+        must reference the pk= only — no email should be emitted.
+        """
+        monkeypatch.setattr(logging.getLogger("subscriptions"), "propagate", True)
+        subscriber = SubscriberFactory.create(user__email="worker-caplog@example.com")
+        nonexistent_pk = subscriber.pk + 999999
+        payload = {"title": "Hi", "body": "Test", "url": "/"}
+
+        with (
+            caplog.at_level(logging.INFO, logger="subscriptions.push_service"),
+            patch("subscriptions.push_service.dispatch_push"),
+        ):
+            _worker_dispatch_push.call(nonexistent_pk, payload)
+
+        all_messages = [r.getMessage() for r in caplog.records]
+
+        # Plaintext email must not appear.
+        for msg in all_messages:
+            assert "worker-caplog@example.com" not in msg, (
+                f"Subscriber email found in DoesNotExist log: {msg!r}"
+            )
+
+        # At least one record must mention pk=.
+        assert any(f"pk={nonexistent_pk}" in msg for msg in all_messages), (
+            f"No log record contains pk={nonexistent_pk}; records: {all_messages}"
+        )

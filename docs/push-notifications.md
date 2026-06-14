@@ -2,7 +2,7 @@
 name: push-notifications
 description: Web Push — mint_vapid_keypair, VAPID raw-scalar secret on Render, /_push-demo/ smoke test, rotation, troubleshooting
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-06-14
 ---
 
 # Web Push notifications
