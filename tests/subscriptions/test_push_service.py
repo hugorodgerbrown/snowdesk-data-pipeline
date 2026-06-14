@@ -1,11 +1,15 @@
 """
-tests/subscriptions/test_push_service.py — Tests for dispatch_push.
+tests/subscriptions/test_push_service.py — Tests for dispatch_push and the async worker.
 
 Patches pywebpush.webpush to test three branches:
   - 201 happy path: row survives, returns {ok: True, status: 201}.
   - WebPushException with 410 (subscription gone): row deleted, returns {ok: False}.
   - WebPushException with 500 (transient error): row survives, returns {ok: False}.
   - SNOW-311 caplog regression: log records contain pk=, never the subscriber email.
+
+Also tests _worker_dispatch_push (SNOW-319):
+  - Happy path: loads the subscription by PK and calls dispatch_push.
+  - DoesNotExist: exits silently without calling dispatch_push when the row is gone.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ import pytest
 from pywebpush import WebPushException
 
 from subscriptions.models import PushSubscription
-from subscriptions.push_service import dispatch_push
+from subscriptions.push_service import _worker_dispatch_push, dispatch_push
 from tests.factories import PushSubscriptionFactory, SubscriberFactory
 
 
@@ -144,3 +148,32 @@ class TestDispatchPushLogging:
         assert any(f"pk={sub.pk}" in msg for msg in all_messages), (
             f"No log record contains pk={sub.pk}; records: {all_messages}"
         )
+
+
+# ---------------------------------------------------------------------------
+# SNOW-319 — _worker_dispatch_push async worker
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestWorkerDispatchPush:
+    """Unit tests for _worker_dispatch_push."""
+
+    def test_happy_path_calls_dispatch_push(self) -> None:
+        """Worker loads the subscription by PK and calls dispatch_push once."""
+        sub = PushSubscriptionFactory.create()
+        payload = {"title": "Hi", "body": "Test", "url": "/"}
+        with patch("subscriptions.push_service.dispatch_push") as mock_dispatch:
+            _worker_dispatch_push.call(sub.pk, payload)
+        mock_dispatch.assert_called_once()
+        call_args = mock_dispatch.call_args
+        loaded_sub = call_args[0][0]
+        assert loaded_sub.pk == sub.pk
+        assert call_args[0][1] == payload
+
+    def test_does_not_exist_does_not_raise(self) -> None:
+        """Worker exits silently when the PushSubscription row no longer exists."""
+        payload = {"title": "Hi", "body": "Test", "url": "/"}
+        with patch("subscriptions.push_service.dispatch_push") as mock_dispatch:
+            _worker_dispatch_push.call(999999, payload)
+        mock_dispatch.assert_not_called()

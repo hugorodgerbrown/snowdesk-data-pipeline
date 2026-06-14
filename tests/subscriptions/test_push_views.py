@@ -267,7 +267,7 @@ class TestPushTest:
         assert response.status_code == 403
 
     def test_staff_dispatches_push(self, staff_client: Client) -> None:
-        """Staff POST calls dispatch_push and returns per-row results."""
+        """Staff POST enqueues a task and returns {"ok": True, "enqueued": 1}."""
         push_sub = PushSubscriptionFactory.create(
             endpoint="https://push.example.com/test-target"
         )
@@ -277,33 +277,24 @@ class TestPushTest:
             "body": "Test",
             "url": "/",
         }
-        fake_result = {"ok": True, "status": 201}
-        with patch(
-            "subscriptions.push_views.dispatch_push", return_value=fake_result
-        ) as mock_dispatch:
+        with patch("subscriptions.push_views.enqueue_push") as mock_enqueue:
             response = _post_json(staff_client, _TEST_URL, body)
         assert response.status_code == 200
         data = response.json()
-        assert data["ok"] is True
-        assert data["sent"] == 1
-        assert len(data["results"]) == 1
-        assert data["results"][0]["ok"] is True
-        mock_dispatch.assert_called_once()
+        assert data == {"ok": True, "enqueued": 1}
+        mock_enqueue.assert_called_once()
 
     def test_dispatch_push_called_for_every_matching_row(
         self, staff_client: Client
     ) -> None:
-        """Without endpoint filter, dispatch_push is called for every stored sub."""
+        """Without endpoint filter, enqueue_push is called once per stored sub."""
         PushSubscriptionFactory.create()
         PushSubscriptionFactory.create()
-        fake_result = {"ok": True, "status": 201}
-        with patch(
-            "subscriptions.push_views.dispatch_push", return_value=fake_result
-        ) as mock_dispatch:
+        with patch("subscriptions.push_views.enqueue_push") as mock_enqueue:
             response = _post_json(staff_client, _TEST_URL, {})
         assert response.status_code == 200
         data = response.json()
-        assert data["sent"] == mock_dispatch.call_count
+        assert data == {"ok": True, "enqueued": mock_enqueue.call_count}
 
 
 # ---------------------------------------------------------------------------
