@@ -10,7 +10,8 @@
     {
       "name": "Django dev server (preview)",
       "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["manage.py", "runserver", "8765"],
+      "autoport": true,
+      "runtimeArgs": ["manage.py", "runserver", "$PORT"],
       "port": 8765
     },
     {

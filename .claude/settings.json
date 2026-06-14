@@ -43,6 +43,16 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bin/mark-worktree-cleanable 2>&1 || true"
+          }
+        ]
+      }
     ]
   }
 }
