@@ -4,8 +4,8 @@ MapLibre Popup on /map/.
 
 Server-rendered by ``public.api.region_summary`` and injected into a
 ``maplibregl.Popup`` via ``popup.setHTML(data.html)`` in
-``static/js/map.js``. The popup is anchored to the click point (or the
-region's bbox centre for deep-link / resort-pin paths).
+``static/js/map.js``. The popup is anchored to the region's north edge
+via ``featureNorthAnchor`` (SNOW-318).
 
 Content:
   1. Header row — danger-tile chip (when a bulletin exists) or default

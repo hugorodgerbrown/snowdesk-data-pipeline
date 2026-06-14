@@ -1478,9 +1478,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // Genuine tap on empty map area (outside any region) — the only gesture
         // that both closes the popup AND deselects the region (greys the ribbon,
         // drops the readout to date-only, removes the highlight).
-        // SNOW-318: closePopupOnly first so dismissActivePopupSilently inside
-        // clearTooltip doesn't fight the 'close' event. clearTooltip handles the
-        // selection/hash teardown path.
+        // SNOW-318: close the popup before clearTooltip/clearSelectionDom
+        // deselects the region. Sequencing matters: clearTooltip resets
+        // activePopup/activePopupRegion, so closePopupOnly must run first to
+        // fire the 'close' teardown while those references are still live.
         closePopupOnly();
         clearTooltip();
         document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
@@ -1964,7 +1965,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // change" — keeping the popup in sync with the pill without a round-trip.
     const refreshPopupForDate = async (dateKey) => {
       if (!activePopup || !activePopupRegion) return;
-      const { regionID, slug } = activePopupRegion;
+
+      // Snapshot the region reference before the async gap so we can detect
+      // if a different region took over while we were awaiting the cache.
+      const snapRegion = activePopupRegion;
 
       // Resolve the season ratings cache (already in-flight or cached — no
       // extra network request). If it hasn't settled yet, bail silently; the
@@ -1977,6 +1981,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
       if (!activePopup || !activePopupRegion) return;  // popup closed during await
 
+      // Stale-closure guard: if a different region was selected during the
+      // await above, activePopupRegion is repointed to the new region while
+      // regionID/slug are still bound to the old one. Bail so we don't
+      // overwrite the new region's popup with the old region's href.
+      if (activePopupRegion !== snapRegion) return;
+
+      const { regionID, slug } = snapRegion;
       const ratingInt = cache && cache[dateKey] ? cache[dateKey][regionID] : undefined;
       const key = (ratingInt != null ? INT_TO_RATING[ratingInt] : null) || 'no_rating';
 
@@ -1987,7 +1998,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
       el.setAttribute('data-level', key);
 
       // Update the danger chip: data-level drives the background colour via
-      // .region-popup .danger-tile[data-level=…]; the digit is the int.
+      // .region-popup .danger-tile[data-level=…]; the digit is the integer
+      // rating.
+      // Documented limitation: the chip digit is recoloured/renumbered from
+      // the integer rating only. Any max_subdivision suffix (e.g. "3+") that
+      // the server template rendered on first open is not reapplied here —
+      // the ratings cache holds integer levels only, not subdivision strings.
+      // Re-clicking the region re-fetches the exact server-rendered chip.
       const tile = el.querySelector('.danger-tile');
       if (tile) {
         tile.setAttribute('data-level', key);
@@ -1995,19 +2012,24 @@ const repaintRegionsForDate = (dateKey, cache) => {
       }
 
       // Update the bulletin link text and href.
+      // Note: this string is built in JS (not from a Django template tag) so
+      // the project is English-only pre-launch. When i18n is added, this
+      // JS-built string will need the same treatment as the #region-readout
+      // strings in seasonRibbonInit. See docs/i18n.md.
       const link = el.querySelector('.region-tooltip-bulletin-link');
       if (link) {
-        link.textContent = formatDateLong(dateKey);
+        link.textContent = 'Open bulletin for ' + formatDateLong(dateKey) + ' →';
         link.href = '/' + regionID.toLowerCase() + '/' + slug + '/' + dateKey + '/';
       }
 
       // Update the no-bulletin date label (shown when there is no rated bulletin
       // for the date — the rated layout uses .region-tooltip-bulletin-link).
+      // The template renders this as a plain <p> with inline text; there is no
+      // child .region-tooltip-date element to update, so we set the full string.
+      // Note: same i18n caveat as the bulletin link above.
       const noBulletin = el.querySelector('.region-tooltip-no-bulletin');
       if (noBulletin) {
-        // Preserve any non-text child nodes (e.g. an icon) before the date span.
-        const dateSpan = noBulletin.querySelector('.region-tooltip-date');
-        if (dateSpan) dateSpan.textContent = formatDateLong(dateKey);
+        noBulletin.textContent = 'No bulletin available for ' + formatDateLong(dateKey);
       }
     };
     // Publish to the outer-IIFE forwarding variable so the date-changed listener
