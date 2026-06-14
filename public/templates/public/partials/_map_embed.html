@@ -39,6 +39,7 @@ Optional context:
     data-ratings-url="{% url 'api:ratings' %}"
     data-resorts-url="{% url 'api:resorts_by_region' %}"
     data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
+    data-region-summary-url="{% url 'api:region_summary' region_id='XX-0000' %}"
     data-default-basemap-key="{{ default_basemap_key }}"
     data-season-end="{{ season_end|date:'Y-m-d' }}"
 >

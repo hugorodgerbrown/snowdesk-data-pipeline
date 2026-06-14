@@ -29,8 +29,13 @@ def test_map_page_renders() -> None:
     assert response.status_code == 200
     content = response.content.decode()
     assert 'id="map"' in content
-    # SNOW-314: the region popup was removed; data-region-summary-url is gone.
-    assert "data-region-summary-url" not in content
+    # SNOW-318: the region popup is restored; data-region-summary-url must be
+    # present on #map so map.js can construct the per-region summary fetch URL.
+    # The 'XX-0000' placeholder is the literal string Django renders for the
+    # region_id kwarg; map.js string-replaces it with the real region id at
+    # runtime.
+    assert "data-region-summary-url" in content
+    assert "XX-0000" in content
     # SNOW-236: data-season-end must be present on #map so map.js can clamp
     # the cold-open fetch to the last populated date after season end.
     assert 'data-season-end="' in content
