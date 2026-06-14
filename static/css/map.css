@@ -366,6 +366,19 @@
     color: var(--muted);
 }
 
+/* Full-viewport map pages (/ and /map/) override the default body class so
+   the body is sized to 100dvh rather than Tailwind's `min-h-screen`
+   (100vh). On mobile, 100vh measures the *large* viewport — it ignores the
+   browser address bar — so a 100vh flex column overshoots the visible area
+   and pushes the bottom-pinned season scrubber and the in-flow site footer
+   below the fold. 100dvh (the dynamic viewport height) tracks the visible
+   area, so nav + map + footer all fit. On desktop the two units are equal,
+   so this is a no-op there. The column stays `flex flex-col`, so #map's
+   `flex: 1 1 auto` still fills the space between the nav and the footer. */
+.map-fullscreen {
+    min-height: 100dvh;
+}
+
 #map {
     flex: 1 1 auto;
     min-height: 0;
