@@ -7,9 +7,9 @@ Three views, all JSON in / JSON out:
                               Upserts a PushSubscription keyed by endpoint.
 - ``push_unregister`` POST  — body: ``{endpoint}``. Hard-deletes the row.
 - ``push_test``       POST  — body: ``{endpoint?, title?, body?, url?}``.
-                              Dispatches a real push to one endpoint (or all
-                              rows if no endpoint passed). Returns per-row
-                              status codes.
+                              Enqueues one ``_worker_dispatch_push`` task per
+                              matching subscription (or all rows if no endpoint
+                              is passed) and returns a count of rows enqueued.
 
 All three are guarded by ``@staff_member_required`` and rely on Django's
 default CSRF middleware. The JS client at ``static/js/push_demo.js`` sends
@@ -27,7 +27,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.http import require_POST
 
 from subscriptions.models import PushSubscription, Subscriber
-from subscriptions.push_service import dispatch_push
+from subscriptions.push_service import enqueue_push
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +94,17 @@ def push_unregister(request: HttpRequest) -> HttpResponse:
 @staff_member_required
 @require_POST
 def push_test(request: HttpRequest) -> HttpResponse:
-    """Send a real push notification to one or all stored subscriptions.
+    """Enqueue a push notification task for one or all stored subscriptions.
 
     Body fields (all optional):
 
-    - ``endpoint``  — if present, only fire to that one row
+    - ``endpoint``  — if present, only enqueue for that one row
     - ``title``     — notification title (default: "Snowdesk")
     - ``body``      — notification body  (default: stub copy)
     - ``url``       — URL to open on click (default: "/")
+
+    Returns ``{"ok": True, "enqueued": N}`` where N is the number of tasks
+    queued.  Actual delivery happens asynchronously in the background worker.
     """
     data = _parse_json(request)
     qs = PushSubscription.objects.all()
@@ -114,9 +117,9 @@ def push_test(request: HttpRequest) -> HttpResponse:
         "url": data.get("url", "/"),
     }
 
-    results = []
+    count = 0
     for sub in qs:
-        result = dispatch_push(sub, payload)
-        results.append({"uuid": str(sub.uuid), **result})
+        enqueue_push(sub, payload)
+        count += 1
 
-    return JsonResponse({"ok": True, "sent": len(results), "results": results})
+    return JsonResponse({"ok": True, "enqueued": count})
