@@ -22,6 +22,11 @@
 {% block title %}{% trans "Snowdesk — Avalanche map" %}{% endblock %}
 {% block meta_description %}{% trans "Interactive map of Swiss avalanche regions — tap a region to see today's danger rating, headline problem, and nearby resorts." %}{% endblock %}
 
+{# Full-viewport map surface — size to 100dvh (via .map-fullscreen in     #}
+{# map.css) instead of the default min-h-screen so the bottom scrubber    #}
+{# and the site footer stay within the visible viewport on mobile.        #}
+{% block body_class %}bg-bg text-text-1 font-sans flex flex-col map-fullscreen{% endblock %}
+
 {% block extra_head %}
     {# SNOW-79: manifest.webmanifest is now linked from base.html so the #}
     {# install affordance works site-wide, not just on /map/. #}
