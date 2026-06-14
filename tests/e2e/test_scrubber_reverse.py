@@ -2,30 +2,24 @@
 tests/e2e/test_scrubber_reverse.py — Playwright smoke tests for the reverse
 play transport added in SNOW-315.
 
-The transport row is now five controls (skip-to-start, play-reverse, play-forward,
-skip-to-end) flanking a draggable track.  These tests verify:
+The transport row is four circular buttons (skip-to-start, play-reverse,
+play-forward, skip-to-end) bracketing a draggable track.  These tests cover:
 
-1. DOM structure — five transport buttons present in the correct order;
-   no #scrubber-fast element exists.
-2. Reverse button click — the reverse button transitions to data-state="playing"
-   and the forward button stays data-state="stopped".
-3. Stop from reverse — clicking the reverse button again while it is playing
-   stops playback (data-state back to "stopped" on both buttons).
-4. Direction flip — pressing the forward button while reverse is active stops
-   reverse and starts forward (forward button transitions to "playing").
+1. DOM structure — four transport buttons and one track present in the correct
+   order; no #scrubber-fast element exists.
+2. Initial state — the reverse button starts in data-state="stopped" with the
+   correct aria-label.
+3. Event-dispatch path — dispatching snowdesk:timelapse-state and
+   snowdesk:date-changed events produces no JS errors.
 
 MapLibre's ``map.on('load')`` never fires in offline headless Chromium (no
 tiles), so the ``start()`` call inside timelapseInit returns early at the
-``MAP.isStyleLoaded()`` guard.  We therefore test only the synchronously-
-observable DOM changes produced by the button click handlers: the guard is
-hit before any async work, so ``direction`` and button ``data-state`` are
-never updated by the real start() path in this environment.
-
-We inject a lightweight stub via page.evaluate() that replaces the real
-click-handler logic with a thin version that directly updates button state
-(bypassing the map-load guard) — this mirrors the approach used in
-test_timelapse_popup.py, which dispatches synthetic CustomEvents rather
-than clicking real buttons.
+``MAP.isStyleLoaded()`` guard.  Click-driven ``data-state`` transitions for
+criteria 2–4 of the original acceptance criteria (reverse → playing, stop from
+reverse, direction flip) cannot be exercised in this headless environment
+because the real ``start()`` path is blocked before it updates ``direction`` or
+button state.  No JS stub is injected; these tests verify DOM structure, initial
+state, and the event-dispatch path only.
 """
 
 from __future__ import annotations
@@ -67,7 +61,7 @@ def _navigate_and_wait(page: Page, live_server_url: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# DOM structure tests — no #scrubber-fast; five buttons in order.
+# DOM structure tests — no #scrubber-fast; four buttons + track in order.
 # ---------------------------------------------------------------------------
 
 
@@ -88,12 +82,12 @@ def test_no_fast_forward_button(
     assert page_errors == [], f"JS errors on page load: {page_errors}"
 
 
-def test_five_transport_buttons_present(
+def test_four_transport_buttons_and_track_present(
     live_server: LiveServer,
     page: Page,
     _load_test_data: None,
 ) -> None:
-    """All five transport buttons are present and in the correct DOM order."""
+    """Four transport buttons and one draggable track are present in the correct DOM order."""
     page_errors: list[str] = []
     page.on("pageerror", lambda err: page_errors.append(str(err)))
 

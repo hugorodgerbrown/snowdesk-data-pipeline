@@ -785,12 +785,12 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="season-scrubber",
         label="Season scrubber",
         description=(
-            "Floating media-player transport at the bottom of /map/. Five circular "
-            "buttons (skip-to-start, play-reverse, play-forward, skip-to-end) bracket "
-            "a draggable track; the two play buttons flank the track as a symmetric "
-            "pair. The library variants pin the thumb at season start, mid-season, and "
-            "season end so the thumb positioning is visible at the extremes; "
-            "interaction is non-functional on this page (the JS lives in map.js)."
+            "Floating media-player transport at the bottom of /map/. Four circular "
+            "buttons (skip-to-start, play-reverse, play-forward, skip-to-end) "
+            "bracketing a draggable track; the two play buttons flank the track as a "
+            "symmetric pair. The library variants pin the thumb at season start, "
+            "mid-season, and season end so the thumb positioning is visible at the "
+            "extremes; interaction is non-functional on this page (JS lives in map.js)."
         ),
         kind="components",
         partial="public/partials/_season_scrubber_demo.html",

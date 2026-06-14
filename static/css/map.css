@@ -20,7 +20,7 @@
     --muted: #5f5e5a;
     --border: rgba(0, 0, 0, 0.12);
     /* Icon / label colour painted on top of a dark filled circle (the
-       scrubber play button at rest, fast-forward when active). Kept as a
+       scrubber play-forward and play-reverse buttons at rest). Kept as a
        named token so the inversion stays consistent if --ink ever shifts. */
     --on-ink: #ffffff;
     --serif: Georgia, "Times New Roman", serif;
