@@ -70,6 +70,20 @@ def _clear_storage(page: Page) -> None:
     )
 
 
+def _dismiss_intro(page: Page) -> None:
+    """Trigger the intro dismiss button's click handler.
+
+    Dispatches the ``click`` event straight to the button rather than doing a
+    physical mouse click. The homepage is the full interactive map, and in
+    headless CI the map canvas / site chrome can transiently intercept the
+    click point while tiles settle, making a pixel-level click flaky (it passes
+    reliably locally, where the button is consistently the top element). The
+    unit under test here is home_intro.js's dismiss handler, not the browser's
+    hit-testing, so a direct event dispatch is the deterministic way to fire it.
+    """
+    page.dispatch_event("#home-intro-dismiss", "click")
+
+
 def test_dismiss_hides_overlay_and_persists_to_storage(
     live_server: LiveServer,
     page: Page,
@@ -91,7 +105,7 @@ def test_dismiss_hides_overlay_and_persists_to_storage(
     )
 
     # Click the dismiss button.
-    page.click("#home-intro-dismiss")
+    _dismiss_intro(page)
     page.wait_for_timeout(100)  # let the synchronous JS settle
 
     assert _overlay_is_hidden(page), "#home-intro should be hidden after dismiss"
@@ -115,7 +129,7 @@ def test_reload_keeps_overlay_hidden_when_dismissed(
     # First visit: dismiss.
     _navigate_home(page, live_server.url)
     _clear_storage(page)
-    page.click("#home-intro-dismiss")
+    _dismiss_intro(page)
     page.wait_for_timeout(100)
 
     # Reload — home_intro.js should read the flag and hide immediately.
@@ -143,7 +157,7 @@ def test_hash_about_reopens_dismissed_overlay(
     # Set up a dismissed state first.
     _navigate_home(page, live_server.url)
     _clear_storage(page)
-    page.click("#home-intro-dismiss")
+    _dismiss_intro(page)
     page.wait_for_timeout(100)
     assert _overlay_is_hidden(page), (
         "Precondition: overlay should be hidden after dismiss"
