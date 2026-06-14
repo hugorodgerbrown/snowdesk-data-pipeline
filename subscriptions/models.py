@@ -229,7 +229,27 @@ class Subscription(models.Model):
 
     A subscriber may have many subscriptions, one per region of interest.
     The unique_together constraint prevents duplicate subscriber/region pairs.
+
+    ``geo_match_kind`` and ``geo_matched_region`` record how the subscriber's
+    geolocation (read from ``subscribed_via``) relates to the subscribed region
+    at the moment of sign-up.  These fields are frozen on INSERT; they are
+    never updated after the row is created.  Raw geo and language fields live
+    on ``subscribed_via`` (a ``RequestLog``); only the region-relative
+    classification is stored here because ``RequestLog`` is region-agnostic.
     """
+
+    class GeoMatchKind(models.TextChoices):
+        """Region-relative classification of the subscriber's geolocation.
+
+        Literal values must stay in sync with the constants in
+        ``regions.services.point_match``.  A unit test in
+        ``tests/regions/services/test_point_match.py`` guards against drift.
+        """
+
+        IN_REGION = "in_region", "In region"
+        IN_NEIGHBOUR = "in_neighbour", "In neighbouring region"
+        ELSEWHERE = "elsewhere", "Elsewhere"
+        UNKNOWN = "unknown", "Unknown"
 
     id = models.BigAutoField(primary_key=True)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -255,6 +275,30 @@ class Subscription(models.Model):
         help_text=(
             "Request that created this subscription. "
             "First-observation wins on the (subscriber, region) pair."
+        ),
+    )
+    geo_match_kind = models.CharField(
+        max_length=16,
+        choices=GeoMatchKind.choices,
+        default=GeoMatchKind.UNKNOWN,
+        db_index=True,
+        help_text=(
+            "How the subscriber's geolocation (from subscribed_via) relates to "
+            "the subscribed region at sign-up time. Frozen on INSERT; never "
+            "updated. Raw geo fields live on subscribed_via (RequestLog)."
+        ),
+    )
+    geo_matched_region = models.ForeignKey(
+        "regions.MicroRegion",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        help_text=(
+            "The specific MicroRegion the subscriber's geolocation fell inside "
+            "(target region itself, or the first matching neighbour). Null when "
+            "geo_match_kind is elsewhere or unknown. Analytics-only; not surfaced "
+            "on the public region API."
         ),
     )
 

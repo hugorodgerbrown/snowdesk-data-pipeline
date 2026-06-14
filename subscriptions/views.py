@@ -56,6 +56,7 @@ from core.decorators import require_htmx
 from core.services.request_log import capture as capture_request_log
 from public.decorators import lowercase_region_id
 from regions.models import MicroRegion
+from regions.services.point_match import IN_NEIGHBOUR, IN_REGION
 
 from .forms import EmailForm, SubscribeForm
 from .logging_utils import mask_email
@@ -64,6 +65,7 @@ from .services.email import (
     send_account_access_email,
     send_subscription_confirmation_email,
 )
+from .services.request_context import geo_match_snapshot
 from .services.token import (
     SALT_ACCOUNT_ACCESS,
     generate_unsubscribe_token,
@@ -176,8 +178,38 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_utm_source(request: HttpRequest, utm_source: str) -> str:
+    """Return utm_source, falling back to the Referer host when empty.
+
+    Args:
+        request: The current HTTP request.
+        utm_source: UTM source extracted from the session.  Returned as-is
+            when non-empty.
+
+    Returns:
+        The utm_source string, or the Referer hostname, or an empty string.
+
+    """
+    if utm_source:
+        return utm_source
+    referer: str = request.META.get("HTTP_REFERER", "")
+    if not referer:
+        return ""
+    try:
+        from urllib.parse import urlparse
+
+        return urlparse(referer).hostname or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _track_subscription_started(
-    request: HttpRequest, anon_id: str, country_code: str = ""
+    request: HttpRequest,
+    anon_id: str,
+    country_code: str = "",
+    geo_match_kind: str = "",
+    region_match: bool = False,
+    language_primary: str = "",
 ) -> None:
     """Emit the ``subscription_started`` analytics event.
 
@@ -190,23 +222,21 @@ def _track_subscription_started(
         anon_id: The session-scoped anonymous UUID used as ``distinct_id``.
         country_code: ISO 3166-1 alpha-2 country code resolved from the
             client IP.  Included in props when non-empty.
+        geo_match_kind: The region-relative classification string (one of
+            ``in_region``, ``in_neighbour``, ``elsewhere``, ``unknown``).
+            Included in props when non-empty.
+        region_match: True when geo_match_kind is ``in_region`` or
+            ``in_neighbour``, signalling the subscriber was geographically
+            close to the region they signed up for.
+        language_primary: The primary language subtag from Accept-Language
+            (e.g. ``'en'``, ``'de'``, ``'fr'``).  Included in props when
+            non-empty.
 
     """
     utm: dict[str, str] = request.session.get("analytics_utm") or {}
-    utm_source: str = utm.get("utm_source", "")
+    utm_source: str = _resolve_utm_source(request, utm.get("utm_source", ""))
     utm_medium: str = utm.get("utm_medium", "")
     utm_campaign: str = utm.get("utm_campaign", "")
-
-    if not utm_source:
-        # Fall back to the Referer host when no UTM source is present.
-        referer: str = request.META.get("HTTP_REFERER", "")
-        if referer:
-            try:
-                from urllib.parse import urlparse
-
-                utm_source = urlparse(referer).hostname or ""
-            except Exception:  # noqa: BLE001
-                utm_source = ""
 
     props: dict[str, object] = {}
     if utm_source:
@@ -217,6 +247,11 @@ def _track_subscription_started(
         props["utm_campaign"] = utm_campaign
     if country_code:
         props["country_code"] = country_code
+    if geo_match_kind:
+        props["geo_match_kind"] = geo_match_kind
+        props["region_match"] = region_match
+    if language_primary:
+        props["language_primary"] = language_primary
 
     analytics.track("subscription_started", anon_id, props)
 
@@ -304,11 +339,15 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
         },
     )
 
+    # Compute geo match before get_or_create so the fields land in the
+    # INSERT rather than a subsequent UPDATE.  Existing rows are never touched.
+    geo_defaults = geo_match_snapshot(req_log, region)
+
     # Persist the region subscription idempotently; capture whether it's new.
     _subscription, subscription_created = Subscription.objects.get_or_create(
         subscriber=subscriber,
         region=region,
-        defaults={"subscribed_via": req_log},
+        defaults={"subscribed_via": req_log, **geo_defaults},
     )
 
     if subscriber_created:
@@ -320,7 +359,15 @@ def subscribe_partial(request: HttpRequest) -> HttpResponse:
         anon_id: str = request.session.setdefault(
             "analytics_anon_id", str(uuid.uuid4())
         )
-        _track_subscription_started(request, anon_id, country_code=req_log.country_code)
+        _kind: str = str(geo_defaults.get("geo_match_kind", ""))
+        _track_subscription_started(
+            request,
+            anon_id,
+            country_code=req_log.country_code,
+            geo_match_kind=_kind,
+            region_match=_kind in {IN_REGION, IN_NEIGHBOUR},
+            language_primary=req_log.language,
+        )
 
         return render(
             request,
@@ -491,10 +538,11 @@ def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
         )
 
     req_log = capture_request_log(request)
+    geo_defaults = geo_match_snapshot(req_log, region)
     _subscription, sub_created = Subscription.objects.get_or_create(
         subscriber=subscriber,
         region=region,
-        defaults={"subscribed_via": req_log},
+        defaults={"subscribed_via": req_log, **geo_defaults},
     )
     logger.info(
         "Subscriber pk=%s added region %s via bulletin page (idempotent)",

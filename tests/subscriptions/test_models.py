@@ -313,6 +313,67 @@ class TestSubscriptionSubscribedVia:
 
 
 # ---------------------------------------------------------------------------
+# Subscription geo-match fields (SNOW-278)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSubscriptionGeoMatchFields:
+    """Tests for Subscription.geo_match_kind and geo_matched_region (SNOW-278)."""
+
+    def test_geo_match_kind_defaults_to_unknown(self) -> None:
+        """Factory-created Subscription has geo_match_kind='unknown' by default."""
+        subscription = SubscriptionFactory.create()
+        assert subscription.geo_match_kind == Subscription.GeoMatchKind.UNKNOWN
+
+    def test_geo_matched_region_defaults_to_none(self) -> None:
+        """Factory-created Subscription has geo_matched_region=None by default."""
+        subscription = SubscriptionFactory.create()
+        assert subscription.geo_matched_region is None
+
+    def test_geo_match_kind_can_be_set_to_in_region(self) -> None:
+        """geo_match_kind can be explicitly set to IN_REGION."""
+        region = MicroRegionFactory.create()
+        subscription = SubscriptionFactory.create(
+            geo_match_kind=Subscription.GeoMatchKind.IN_REGION,
+            geo_matched_region=region,
+        )
+        subscription.refresh_from_db()
+        assert subscription.geo_match_kind == Subscription.GeoMatchKind.IN_REGION
+        assert subscription.geo_matched_region == region
+
+    def test_geo_match_kind_can_be_set_to_elsewhere(self) -> None:
+        """geo_match_kind can be explicitly set to ELSEWHERE."""
+        subscription = SubscriptionFactory.create(
+            geo_match_kind=Subscription.GeoMatchKind.ELSEWHERE,
+        )
+        subscription.refresh_from_db()
+        assert subscription.geo_match_kind == Subscription.GeoMatchKind.ELSEWHERE
+
+    def test_geo_matched_region_is_nullable(self) -> None:
+        """geo_matched_region can be null (elsewhere / unknown cases)."""
+        subscription = SubscriptionFactory.create(geo_matched_region=None)
+        subscription.refresh_from_db()
+        assert subscription.geo_matched_region is None
+
+    def test_geo_matched_region_set_null_on_region_delete(self) -> None:
+        """Deleting the matched MicroRegion sets geo_matched_region to None (SET_NULL)."""
+        matched = MicroRegionFactory.create()
+        subscription = SubscriptionFactory.create(
+            geo_match_kind=Subscription.GeoMatchKind.IN_REGION,
+            geo_matched_region=matched,
+        )
+        matched.delete()
+        subscription.refresh_from_db()
+        assert subscription.geo_matched_region is None
+
+    def test_geomatchkind_choices_are_correct(self) -> None:
+        """GeoMatchKind has all four expected values."""
+        kinds = {c[0] for c in Subscription.GeoMatchKind.choices}
+        assert kinds == {"in_region", "in_neighbour", "elsewhere", "unknown"}
+
+
+# ---------------------------------------------------------------------------
 # PasskeyCredential
 # ---------------------------------------------------------------------------
 

@@ -1,0 +1,371 @@
+"""
+tests/regions/services/test_point_match.py — Tests for point_match service.
+
+Covers:
+  point_in_polygon  — inside / outside / on-boundary / inside-a-hole;
+                      None and malformed geometry → False; MultiPolygon.
+  classify_match    — four outcomes: in_region, in_neighbour, elsewhere,
+                      unknown (no coords).
+  Drift guard       — asserts that module-level constants equal the
+                      Subscription.GeoMatchKind choice values so the two
+                      representations never diverge silently.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from regions.services.point_match import (
+    ELSEWHERE,
+    IN_NEIGHBOUR,
+    IN_REGION,
+    UNKNOWN,
+    classify_match,
+    point_in_polygon,
+)
+from subscriptions.models import Subscription
+from tests.factories import MicroRegionFactory
+
+# ---------------------------------------------------------------------------
+# Shared geometry helpers
+# ---------------------------------------------------------------------------
+
+
+def _square_polygon(x0: float, y0: float, x1: float, y1: float) -> dict[str, Any]:
+    """Return a GeoJSON Polygon for the axis-aligned rectangle (x0,y0)→(x1,y1).
+
+    Args:
+        x0: Minimum longitude (left edge).
+        y0: Minimum latitude (bottom edge).
+        x1: Maximum longitude (right edge).
+        y1: Maximum latitude (top edge).
+
+    Returns:
+        GeoJSON Polygon dict with a single exterior ring.
+
+    """
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [x0, y0],
+                [x1, y0],
+                [x1, y1],
+                [x0, y1],
+                [x0, y0],  # closed ring
+            ]
+        ],
+    }
+
+
+def _square_polygon_with_hole(
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    hx0: float,
+    hy0: float,
+    hx1: float,
+    hy1: float,
+) -> dict[str, Any]:
+    """Return a GeoJSON Polygon with an exterior ring and one interior hole.
+
+    Args:
+        x0, y0, x1, y1: Exterior ring bounding box.
+        hx0, hy0, hx1, hy1: Hole bounding box (must be inside the exterior).
+
+    Returns:
+        GeoJSON Polygon dict with exterior ring and one hole ring.
+
+    """
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [x0, y0],
+                [x1, y0],
+                [x1, y1],
+                [x0, y1],
+                [x0, y0],
+            ],
+            [
+                [hx0, hy0],
+                [hx1, hy0],
+                [hx1, hy1],
+                [hx0, hy1],
+                [hx0, hy0],
+            ],
+        ],
+    }
+
+
+def _multi_polygon(
+    squares: list[tuple[float, float, float, float]],
+) -> dict[str, Any]:
+    """Return a GeoJSON MultiPolygon from a list of (x0, y0, x1, y1) tuples.
+
+    Args:
+        squares: List of bounding-box tuples for each sub-polygon.
+
+    Returns:
+        GeoJSON MultiPolygon dict.
+
+    """
+    return {
+        "type": "MultiPolygon",
+        "coordinates": [
+            [
+                [
+                    [x0, y0],
+                    [x1, y0],
+                    [x1, y1],
+                    [x0, y1],
+                    [x0, y0],
+                ]
+            ]
+            for x0, y0, x1, y1 in squares
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# point_in_polygon — Polygon
+# ---------------------------------------------------------------------------
+
+
+class TestPointInPolygonBasic:
+    """Basic inside / outside tests for a simple square polygon."""
+
+    def test_centre_point_is_inside(self) -> None:
+        """A point at the centre of a unit square is inside."""
+        polygon = _square_polygon(0, 0, 10, 10)
+        assert point_in_polygon(5.0, 5.0, polygon) is True
+
+    def test_far_away_point_is_outside(self) -> None:
+        """A point far from the polygon is outside."""
+        polygon = _square_polygon(0, 0, 10, 10)
+        assert point_in_polygon(50.0, 50.0, polygon) is False
+
+    def test_point_just_outside_is_not_inside(self) -> None:
+        """A point just outside the right edge is not inside."""
+        polygon = _square_polygon(0, 0, 10, 10)
+        assert point_in_polygon(10.1, 5.0, polygon) is False
+
+    def test_point_just_inside_is_inside(self) -> None:
+        """A point just inside the right edge is inside."""
+        polygon = _square_polygon(0, 0, 10, 10)
+        assert point_in_polygon(9.9, 5.0, polygon) is True
+
+    def test_real_world_coordinates_inside(self) -> None:
+        """A WGS-84 point known to be inside a bounding box is inside."""
+        # Rough bounding box for Martigny area, CH-4115 territory.
+        polygon = _square_polygon(7.0, 46.0, 7.5, 46.4)
+        # Martigny itself: lon≈7.10, lat≈46.10
+        assert point_in_polygon(7.10, 46.10, polygon) is True
+
+    def test_real_world_coordinates_outside(self) -> None:
+        """A WGS-84 point outside the bounding box is outside."""
+        polygon = _square_polygon(7.0, 46.0, 7.5, 46.4)
+        # Berne: lon≈7.45, lat≈46.95 — above the polygon
+        assert point_in_polygon(7.45, 46.95, polygon) is False
+
+
+class TestPointInPolygonHoles:
+    """Tests for the hole (interior ring) handling."""
+
+    def test_point_in_exterior_but_also_in_hole_is_outside(self) -> None:
+        """A point inside the exterior ring but also inside a hole is outside."""
+        # Exterior (0,0)→(10,10), hole (3,3)→(7,7).
+        polygon = _square_polygon_with_hole(0, 0, 10, 10, 3, 3, 7, 7)
+        # Point in the hole:
+        assert point_in_polygon(5.0, 5.0, polygon) is False
+
+    def test_point_in_exterior_outside_hole_is_inside(self) -> None:
+        """A point in the exterior ring but outside the hole is inside."""
+        polygon = _square_polygon_with_hole(0, 0, 10, 10, 3, 3, 7, 7)
+        # Point in the exterior band (outside the hole):
+        assert point_in_polygon(1.0, 1.0, polygon) is True
+
+    def test_point_outside_both_is_outside(self) -> None:
+        """A point outside both exterior and hole is still outside."""
+        polygon = _square_polygon_with_hole(0, 0, 10, 10, 3, 3, 7, 7)
+        assert point_in_polygon(15.0, 15.0, polygon) is False
+
+
+class TestPointInPolygonNoneAndMalformed:
+    """None / malformed geometry → False, never raises."""
+
+    def test_none_geometry_returns_false(self) -> None:
+        """None geometry returns False without raising."""
+        assert point_in_polygon(5.0, 5.0, None) is False
+
+    def test_empty_dict_returns_false(self) -> None:
+        """An empty dict returns False."""
+        assert point_in_polygon(5.0, 5.0, {}) is False
+
+    def test_missing_type_returns_false(self) -> None:
+        """A geometry dict missing 'type' returns False."""
+        assert point_in_polygon(5.0, 5.0, {"coordinates": [[[0, 0]]]}) is False
+
+    def test_missing_coordinates_returns_false(self) -> None:
+        """A geometry dict missing 'coordinates' returns False."""
+        assert point_in_polygon(5.0, 5.0, {"type": "Polygon"}) is False
+
+    def test_unsupported_type_returns_false(self) -> None:
+        """An unsupported geometry type (e.g. Point) returns False."""
+        assert (
+            point_in_polygon(5.0, 5.0, {"type": "Point", "coordinates": [5.0, 5.0]})
+            is False
+        )
+
+    def test_malformed_coordinates_returns_false(self) -> None:
+        """Malformed coordinates (non-list) return False without raising."""
+        assert (
+            point_in_polygon(5.0, 5.0, {"type": "Polygon", "coordinates": "bad"})
+            is False
+        )
+
+
+class TestPointInPolygonMultiPolygon:
+    """MultiPolygon — any sub-polygon containing the point → True."""
+
+    def test_point_in_first_sub_polygon(self) -> None:
+        """A point inside the first sub-polygon of a MultiPolygon is inside."""
+        geom = _multi_polygon([(0, 0, 5, 5), (10, 10, 15, 15)])
+        assert point_in_polygon(2.5, 2.5, geom) is True
+
+    def test_point_in_second_sub_polygon(self) -> None:
+        """A point inside the second sub-polygon of a MultiPolygon is inside."""
+        geom = _multi_polygon([(0, 0, 5, 5), (10, 10, 15, 15)])
+        assert point_in_polygon(12.5, 12.5, geom) is True
+
+    def test_point_between_sub_polygons_is_outside(self) -> None:
+        """A point between the two sub-polygons is outside."""
+        geom = _multi_polygon([(0, 0, 5, 5), (10, 10, 15, 15)])
+        assert point_in_polygon(7.5, 7.5, geom) is False
+
+    def test_empty_multi_polygon_is_outside(self) -> None:
+        """An empty MultiPolygon returns False."""
+        geom: dict[str, Any] = {"type": "MultiPolygon", "coordinates": []}
+        assert point_in_polygon(5.0, 5.0, geom) is False
+
+
+# ---------------------------------------------------------------------------
+# classify_match
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestClassifyMatch:
+    """Tests for classify_match — four outcome paths."""
+
+    def _make_region_with_boundary(
+        self, x0: float, y0: float, x1: float, y1: float
+    ) -> Any:
+        """Create a MicroRegion with a square boundary polygon.
+
+        Args:
+            x0, y0: Bottom-left corner (lon, lat).
+            x1, y1: Top-right corner (lon, lat).
+
+        Returns:
+            A saved MicroRegion instance.
+
+        """
+        return MicroRegionFactory.create(boundary=_square_polygon(x0, y0, x1, y1))
+
+    def test_returns_unknown_when_coords_are_none(self) -> None:
+        """Returns (UNKNOWN, None) when both lon and lat are None."""
+        target = self._make_region_with_boundary(0, 0, 10, 10)
+        kind, matched = classify_match(None, None, target)
+        assert kind == UNKNOWN
+        assert matched is None
+
+    def test_returns_unknown_when_lon_only_is_none(self) -> None:
+        """Returns (UNKNOWN, None) when lon is None (lat provided)."""
+        target = self._make_region_with_boundary(0, 0, 10, 10)
+        kind, matched = classify_match(None, 5.0, target)
+        assert kind == UNKNOWN
+        assert matched is None
+
+    def test_returns_unknown_when_lat_only_is_none(self) -> None:
+        """Returns (UNKNOWN, None) when lat is None (lon provided)."""
+        target = self._make_region_with_boundary(0, 0, 10, 10)
+        kind, matched = classify_match(5.0, None, target)
+        assert kind == UNKNOWN
+        assert matched is None
+
+    def test_returns_in_region_when_inside_target(self) -> None:
+        """Returns (IN_REGION, target) when the point is inside target.boundary."""
+        target = self._make_region_with_boundary(0, 0, 10, 10)
+        kind, matched = classify_match(5.0, 5.0, target)
+        assert kind == IN_REGION
+        assert matched == target
+
+    def test_returns_in_neighbour_when_inside_neighbour(self) -> None:
+        """Returns (IN_NEIGHBOUR, neighbour) when point is inside a neighbour's boundary."""
+        target = self._make_region_with_boundary(0, 0, 5, 5)
+        neighbour = self._make_region_with_boundary(10, 0, 15, 5)
+        target.neighbours.add(neighbour)
+
+        # Point inside neighbour (12, 2), outside target.
+        kind, matched = classify_match(12.0, 2.0, target)
+        assert kind == IN_NEIGHBOUR
+        assert matched == neighbour
+
+    def test_returns_elsewhere_when_outside_all(self) -> None:
+        """Returns (ELSEWHERE, None) when point is outside target and all neighbours."""
+        target = self._make_region_with_boundary(0, 0, 5, 5)
+        neighbour = self._make_region_with_boundary(10, 0, 15, 5)
+        target.neighbours.add(neighbour)
+
+        # Point at (50, 50) — outside everything.
+        kind, matched = classify_match(50.0, 50.0, target)
+        assert kind == ELSEWHERE
+        assert matched is None
+
+    def test_returns_elsewhere_with_no_neighbours(self) -> None:
+        """Returns (ELSEWHERE, None) when the region has no neighbours and point is outside."""
+        target = self._make_region_with_boundary(0, 0, 5, 5)
+        # No neighbours added.
+        kind, matched = classify_match(50.0, 50.0, target)
+        assert kind == ELSEWHERE
+        assert matched is None
+
+    def test_in_region_takes_precedence_over_neighbours(self) -> None:
+        """When point is inside target, IN_REGION is returned even if a neighbour also contains it."""
+        target = self._make_region_with_boundary(0, 0, 10, 10)
+        # Overlapping neighbour — same bounding box.
+        neighbour = self._make_region_with_boundary(0, 0, 10, 10)
+        target.neighbours.add(neighbour)
+
+        kind, matched = classify_match(5.0, 5.0, target)
+        assert kind == IN_REGION
+        assert matched == target
+
+
+# ---------------------------------------------------------------------------
+# Drift guard — point_match constants must equal GeoMatchKind choice values
+# ---------------------------------------------------------------------------
+
+
+class TestConstantsDriftGuard:
+    """Assert that point_match module constants match Subscription.GeoMatchKind.
+
+    If a developer renames a constant in one place but not the other, this
+    test will catch the drift before it reaches production.
+    """
+
+    def test_in_region_matches_geomatchkind(self) -> None:
+        assert IN_REGION == Subscription.GeoMatchKind.IN_REGION
+
+    def test_in_neighbour_matches_geomatchkind(self) -> None:
+        assert IN_NEIGHBOUR == Subscription.GeoMatchKind.IN_NEIGHBOUR
+
+    def test_elsewhere_matches_geomatchkind(self) -> None:
+        assert ELSEWHERE == Subscription.GeoMatchKind.ELSEWHERE
+
+    def test_unknown_matches_geomatchkind(self) -> None:
+        assert UNKNOWN == Subscription.GeoMatchKind.UNKNOWN
