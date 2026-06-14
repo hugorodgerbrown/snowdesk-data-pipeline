@@ -782,7 +782,8 @@ def test_region_summary_cta_label_includes_date() -> None:
     # CTA label carries the date — single source of truth for the displayed
     # day; no separate caption line.
     assert "Open bulletin for" in html
-    # Date formatted as "j N Y" → "15 Jan. 2026" (N = abbreviated month name).
+    # Date formatted as "j M Y" → "15 Jan 2026" (M = 3-letter month, no period;
+    # SNOW-318 switched from "j N Y" so the format matches the JS scrub relabel).
     assert "15 Jan" in html
     assert "2026" in html
     # The earlier separate "Showing …" caption is gone.

@@ -4,8 +4,8 @@ MapLibre Popup on /map/.
 
 Server-rendered by ``public.api.region_summary`` and injected into a
 ``maplibregl.Popup`` via ``popup.setHTML(data.html)`` in
-``static/js/map.js``. The popup is anchored to the click point (or the
-region's bbox centre for deep-link / resort-pin paths).
+``static/js/map.js``. The popup is anchored to the region's north edge
+via ``featureNorthAnchor`` (SNOW-318).
 
 Content:
   1. Header row — danger-tile chip (when a bulletin exists) or default
@@ -57,11 +57,11 @@ Context variables expected:
     </p>
     {% if day_rating %}
         <a href="{{ bulletin_url }}" class="region-tooltip-bulletin-link" data-testid="region-tooltip-bulletin-link">
-            {% blocktrans with d=target_date|date:"j N Y" trimmed %}Open bulletin for {{ d }} →{% endblocktrans %}
+            {% blocktrans with d=target_date|date:"j M Y" trimmed %}Open bulletin for {{ d }} →{% endblocktrans %}
         </a>
     {% else %}
         <p class="region-tooltip-no-bulletin" data-testid="region-tooltip-no-bulletin">
-            {% blocktrans with d=target_date|date:"j N Y" trimmed %}No bulletin available for {{ d }}{% endblocktrans %}
+            {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for {{ d }}{% endblocktrans %}
         </p>
     {% endif %}
     <div class="region-tooltip-editorial" data-testid="region-tooltip-editorial"></div>

@@ -68,6 +68,19 @@ const formatDateLong = (dateKey) => {
   return `${SCRUBBER_MONTHS[parseInt(m, 10) - 1]} ${parseInt(d, 10)} ${y}`;
 };
 
+// SNOW-318: "2026-04-08" → "8 Apr 2026" — day-first, title-case 3-letter month.
+// Deliberately distinct from formatDateLong (uppercase, month-first, for the
+// readout pill). This mirrors the popup card's server render, where
+// _region_tooltip.html formats the date with ``date:"j M Y"``, so the bulletin
+// label reads identically whether the popup was just opened (server-rendered)
+// or relabelled in place on a scrubber date change.
+const POPUP_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const formatDatePopup = (dateKey) => {
+  const [y, m, d] = dateKey.split('-');
+  return `${parseInt(d, 10)} ${POPUP_MONTHS[parseInt(m, 10) - 1]} ${y}`;
+};
+
 // Lazily-fetched, cached payload from /api/ratings/?country=ch. Shape:
 // { date_iso: { region_id: rating_int } }. Both timelapse (SNOW-46) and
 // the scrubber (SNOW-47) consume the same dataset; sharing one fetch
@@ -121,6 +134,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // scrubber IIFEs (defined further down in this file) can share one
   // full-season fetch via getSeasonRatings().
   RATINGS_URL = mapEl.dataset.ratingsUrl;
+  // SNOW-318: The per-region summary URL template — the 'XX-0000' token is
+  // string-replaced with the actual region id before each fetch. Django
+  // renders the literal placeholder through {% url 'api:region_summary'
+  // region_id='XX-0000' %} so the JS never has to reconstruct URL structure.
+  const REGION_SUMMARY_URL_TEMPLATE = mapEl.dataset.regionSummaryUrl || '';
 
   // SNOW-236: Clamp the cold-open boot date to the season end so the
   // choropleth paints at the last populated date after season end.
@@ -956,12 +974,30 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // active so the no-op is the correct behaviour.
   let _clearTooltip = () => {};
 
+  // SNOW-318: Forward reference to the refreshPopupForDate function defined
+  // inside map.on('load'). Default no-op so the date-changed listener below
+  // is always safe to call through before the map finishes loading.
+  let _refreshPopupForDate = () => {};
+
   // SNOW-47: keep currentDisplayedDate in sync as the scrubber commits new
   // dates or timelapse frames advance. Registered at outer-IIFE scope so this
   // listener is active in headless test environments where MapLibre's 'load'
   // event never fires.
   document.addEventListener('snowdesk:date-changed', (e) => {
     currentDisplayedDate = (e.detail && e.detail.date) || null;
+  });
+
+  // SNOW-318: Refresh the open popup's colour/label/link when the scrubber
+  // commits a new date. Guarded by !IS_PLAYING so the popup isn't updated on
+  // every timelapse frame (timelapse closes the popup silently on start, so
+  // this branch only fires during manual scrubbing with a popup open).
+  // Registered here at outer-IIFE scope so the listener is active before the
+  // map's 'load' event; the no-op default above means it's harmless if the
+  // map hasn't finished setting up yet.
+  document.addEventListener('snowdesk:date-changed', (e) => {
+    if (IS_PLAYING) return;
+    const dk = (e.detail && e.detail.date) || null;
+    if (dk) _refreshPopupForDate(dk);
   });
 
   map.on('load', async () => {
@@ -1068,6 +1104,22 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // Interaction
     let selectedId = null;
 
+    // SNOW-318: Popup state — decoupled from the selection state.
+    //
+    // The key design change from pre-SNOW-314: closing the popup (via ×/Esc or
+    // the timelapse start) does NOT deselect the region. The highlight, pill,
+    // and #CH-xxxx hash all persist. Only an empty-canvas tap truly deselects.
+    //
+    // activePopupRegion tracks { regionID, slug } of the currently-open popup
+    // so refreshPopupForDate can build the updated bulletin href without having
+    // to look up REGION_LOOKUP again (avoids a subtle bug where selectedId
+    // could diverge from the popup's region during rapid region switches).
+    let activePopup = null;
+    let activePopupRegion = null;  // { regionID, slug } or null
+    // Race guard — incremented before every new fetch; stale responses bail
+    // out early by comparing their captured seq against the current value.
+    let summarySeq = 0;
+
     // ---- URL fragment state (SNOW-39) ----
     //
     // The currently-selected region is mirrored in ``location.hash`` as
@@ -1115,6 +1167,137 @@ const repaintRegionsForDate = (dateKey, cache) => {
         }
       }
       return [[w, s], [e, n]];
+    };
+
+    // SNOW-318: Return the lng/lat of the region's north edge mid-point.
+    // With anchor:'bottom' the popup tip lands on this point and the body
+    // floats above it, keeping the entire polygon visible in the viewport
+    // (no need to pan just to see the popup body clear the region's top edge).
+    const featureNorthAnchor = (feature) => {
+      const [[w], [e, n]] = featureBBox(feature);
+      return [(w + e) / 2, n];
+    };
+
+    // SNOW-318: Popup-DOM-only teardown. Clears the popup and its region
+    // association without touching the selection, highlight, pill, or URL hash.
+    // This is the key behavioural change from pre-314: ×/Esc closes the popup
+    // but leaves the region highlighted and the hash intact — the user can
+    // re-click to reopen.
+    //
+    // Re-entry guard: null activePopup BEFORE calling p.remove(). MapLibre
+    // fires the popup's 'close' event synchronously inside remove(), which
+    // would otherwise trigger closePopupOnly() again and run the side-effects
+    // twice. Nulling first makes the second entry a harmless early-return.
+    //
+    // summarySeq++ invalidates any inflight fetch — if openRegionPopup is still
+    // awaiting its fetch when the popup is closed, the stale response will bail
+    // out early and not re-open the popup.
+    const closePopupOnly = () => {
+      if (!activePopup) return;
+      const p = activePopup;
+      activePopup = null;
+      activePopupRegion = null;
+      summarySeq++;
+      p.remove();
+    };
+
+    // SNOW-318: Silent dismissal for region-to-region transitions. Removes the
+    // current popup WITHOUT bumping summarySeq, so a new fetch already in-flight
+    // is not invalidated. The 'close' listener is detached first so closePopupOnly
+    // doesn't fire during remove(), which would bump summarySeq and discard the
+    // new fetch.
+    const dismissActivePopupSilently = () => {
+      if (!activePopup) return;
+      const p = activePopup;
+      activePopup = null;
+      activePopupRegion = null;
+      p.off('close', closePopupOnly);
+      p.remove();
+    };
+
+    // SNOW-318: Fetch the server-rendered tooltip HTML for a region and open a
+    // MapLibre Popup anchored above the region's north edge. The summarySeq
+    // guard discards stale responses when the user taps a different region
+    // mid-flight. Returns true on success, false on network error or stale seq.
+    //
+    // Design notes:
+    //   - anchor:'bottom' + featureNorthAnchor keeps the popup above the polygon.
+    //   - closeOnClick:false — the empty-canvas handler routes through
+    //     closePopupOnly explicitly; we don't want MapLibre's canvas-click to
+    //     deselect (the popup close and the deselect are now independent).
+    //   - focusAfterOpen:false — avoids an unwanted focus ring on deep-link
+    //     arrival where the popup opens without keyboard activation.
+    //   - summarySeq is incremented here (not in dismissActivePopupSilently) so
+    //     the new fetch's seq is captured before the old popup is removed.
+    const openRegionPopup = async (numericId) => {
+      const props = REGION_LOOKUP[numericId];
+      if (!props) return false;
+      const regionID = props.regionID;
+      if (!REGION_ID_RE.test(regionID)) return false;
+
+      dismissActivePopupSilently();
+
+      let url = REGION_SUMMARY_URL_TEMPLATE.replace(
+        'XX-0000', encodeURIComponent(regionID),
+      );
+      if (currentDisplayedDate) url += '?d=' + encodeURIComponent(currentDisplayedDate);
+
+      const seq = ++summarySeq;
+      try {
+        const resp = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (seq !== summarySeq) return false;  // a newer tap won the race
+        if (!resp.ok) return false;
+        const data = await resp.json();
+        if (seq !== summarySeq) return false;
+
+        const feature = FEATURE_BY_ID[numericId];
+        if (!feature) return false;
+
+        // Server-trusted HTML: rendered by Django templates with all
+        // user-supplied values escaped by autoescape — safe for setHTML.
+        const popup = new maplibregl.Popup({
+          closeButton: true,
+          closeOnClick: false,
+          // focusAfterOpen:false — the popup opens in response to pointer / hash
+          // navigation, not keyboard activation, so the default focus-ring on the
+          // bulletin CTA is just visual noise. The close button is still reachable
+          // via Tab for keyboard users.
+          focusAfterOpen: false,
+          // anchor:'bottom' + featureNorthAnchor: tip points down to the region's
+          // north edge, body floats above — keeps the whole polygon visible.
+          anchor: 'bottom',
+          maxWidth: 'min(320px, calc(100vw - 32px))',
+          className: 'region-popup',
+        });
+
+        // Set HTML before lngLat so MapLibre can compute correct DOM dimensions
+        // when _update runs. Chain order matters: setHTML → setLngLat → addTo.
+        popup
+          .setHTML(data.html)
+          .setLngLat(featureNorthAnchor(feature))
+          .addTo(map);
+
+        // Force immediate positioning — MapLibre's _update normally runs on the
+        // next rAF tick, which can lag perceptibly on heavy renders. Calling it
+        // directly snaps the popup to its anchor on the same frame. _update is a
+        // private method (acknowledged trade-off); stable across MapLibre v3/v4.
+        if (typeof popup._update === 'function') popup._update();
+
+        // Stamp the rating level on the popup root so map.css drives the border
+        // colour via .region-popup[data-level=…].
+        const el = popup.getElement();
+        if (el) el.setAttribute('data-level', data.level || 'no_rating');
+
+        activePopup = popup;
+        activePopupRegion = { regionID, slug: props.slug || '' };
+
+        // Wire the popup's own close event to closePopupOnly so ×/Esc/outside-map
+        // close only the popup — not the highlight, pill, or hash.
+        popup.on('close', closePopupOnly);
+        return true;
+      } catch (_err) {
+        return false;
+      }
     };
 
     // Clear the selection state for the currently-focused region (deselects
@@ -1178,27 +1361,39 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
     // Re-usable selection logic. Both the map click handler and the search
     // dropdown route through this so "make this region the active one" has
-    // a single definition. ``toggle`` mirrors the map-click UX where a
-    // second click on the already-selected region dismisses the popup;
-    // search callers pass ``toggle: false`` so selecting a result always
-    // opens it, never toggles it off. ``urlMode`` controls how the URL
-    // hash is reconciled after the popup opens: ``'push'`` (default,
-    // user-initiated) writes the hash via push/replaceState; ``'mark'``
-    // skips the write because the URL already matches (popstate,
-    // hashchange, initial load) and just records that our hash is now
-    // the active history entry. ``clickPoint`` is the lngLat of the
-    // click event, used as the popup anchor; absent for deep-link and
-    // search paths (falls back to region bbox centre).
-    const selectFeature = (
+    // a single definition.
+    //
+    // SNOW-318 decoupling: popup open/closed state is now separate from the
+    // selection (highlight + pill + hash). A re-tap of the already-selected
+    // region no longer toggles the selection off — instead it reopens a closed
+    // popup. The toggle-closed path was removed entirely; empty-canvas tap is
+    // the only deselect gesture.
+    //
+    // ``urlMode`` controls how the URL hash is reconciled after the popup opens:
+    //   'push' (default, user-initiated) — writes the hash via push/replaceState.
+    //   'mark' — skips the write because the URL already matches (popstate,
+    //   hashchange, initial load) and just records that our hash is the active
+    //   history entry.
+    const selectFeature = async (
       numericId,
       { urlMode = 'push' } = {},
     ) => {
-      // SNOW-314: re-tapping the already-focused region is a no-op — deselect
-      // happens only on an empty-map tap, never by re-tapping the region.
-      if (numericId === selectedId) return;
+      // SNOW-318: Re-tapping the already-highlighted region reopens a closed
+      // popup without changing any selection state. Re-tapping while the popup
+      // is already open is a no-op (the user sees it, nothing to do).
+      if (numericId === selectedId) {
+        if (!activePopup) openRegionPopup(numericId);
+        return;
+      }
+
+      // Switching to a different region: drop the old highlight first, then
+      // silently dismiss the old popup (summarySeq is NOT bumped here —
+      // openRegionPopup bumps it at the start of its own fetch).
       if (selectedId !== null) {
         map.setFeatureState({ source: 'regions', id: selectedId }, { selected: false });
       }
+      dismissActivePopupSilently();
+
       selectedId = numericId;
       map.setFeatureState({ source: 'regions', id: selectedId }, { selected: true });
       // SNOW-174: trigger an immediate repaint so the regions-line-selected
@@ -1207,9 +1402,8 @@ const repaintRegionsForDate = (dateKey, cache) => {
 
       const props = REGION_LOOKUP[numericId];
 
-      // SNOW-314: the map popup has been removed — selecting a region now
-      // drives the persistent readout, which links straight to the bulletin.
-      // Keep the URL hash in sync so a selected region stays deep-linkable.
+      // Keep the URL hash in sync so the selected region stays deep-linkable
+      // regardless of whether the popup fetch succeeds.
       if (urlMode === 'push') {
         syncUrlForRegion(props.regionID);
       } else if (urlMode === 'mark') {
@@ -1226,6 +1420,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
           region_slug: props.slug || '',
         },
       }));
+
+      // Open the popup above the region's north edge. Fire-and-forget — a fetch
+      // failure leaves the selection (highlight/pill/hash) intact; the user can
+      // re-tap to retry.
+      openRegionPopup(numericId);
 
       if (AUTOZOOM) {
         const feature = FEATURE_BY_ID[numericId];
@@ -1289,10 +1488,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!layers.length) return;
       const features = map.queryRenderedFeatures(e.point, { layers });
       if (features.length === 0) {
-        // Genuine tap on empty map area (outside any region) — the only
-        // gesture that deselects: dismiss the popup AND clear the focused
-        // region (greys the ribbon, drops the readout to date-only, removes
-        // the highlight).
+        // Genuine tap on empty map area (outside any region) — the only gesture
+        // that both closes the popup AND deselects the region (greys the ribbon,
+        // drops the readout to date-only, removes the highlight).
+        // SNOW-318: close the popup before clearTooltip/clearSelectionDom
+        // deselects the region. Sequencing matters: clearTooltip resets
+        // activePopup/activePopupRegion, so closePopupOnly must run first to
+        // fire the 'close' teardown while those references are still live.
+        closePopupOnly();
         clearTooltip();
         document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
           detail: { region_id: null, region_name: null },
@@ -1342,10 +1545,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
           // in their state; the initial-load entry has null state. Use that
           // to decide whether a later close can safely ``history.back``.
           popupHashWasPushed = !!(event.state && event.state.popup);
-          selectFeature(numericId, { toggle: false, urlMode: 'mark' });
+          selectFeature(numericId, { urlMode: 'mark' });
         } else {
           popupHistoryOpen = false;
           popupHashWasPushed = false;
+          closePopupOnly();
           clearSelectionDom();
         }
       } finally {
@@ -1366,10 +1570,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
         // hash, which is part of the entry the user landed on), so a
         // subsequent close can safely pop it.
         popupHashWasPushed = true;
-        selectFeature(numericId, { toggle: false, urlMode: 'mark' });
+        selectFeature(numericId, { urlMode: 'mark' });
       } else if (location.hash === '' || location.hash === '#') {
         popupHistoryOpen = false;
         popupHashWasPushed = false;
+        closePopupOnly();
         clearSelectionDom();
       }
     });
@@ -1620,9 +1825,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!feature) return;
       inputEl.value = item.primary;
       collapseSearch();
-      // Force a fresh open even if the region is already the selected one —
-      // the user clearly wants to see it, not toggle it off.
-      selectFeature(feature.id, { toggle: false });
+      // SNOW-318: selectFeature now opens the popup automatically. If the
+      // region is already selected, openRegionPopup is called directly via the
+      // re-tap branch inside selectFeature — the user gets a fresh popup open.
+      selectFeature(feature.id);
     };
 
     inputEl.addEventListener('input', () => {
@@ -1679,7 +1885,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // history entry. Unknown / malformed hashes are silently ignored.
     const initialFeatureId = featureIdFromHash();
     if (initialFeatureId !== null) {
-      selectFeature(initialFeatureId, { toggle: false, urlMode: 'mark' });
+      selectFeature(initialFeatureId, { urlMode: 'mark' });
     }
 
     // SNOW-58: re-install our source + layers when a new basemap style
@@ -1754,6 +1960,103 @@ const repaintRegionsForDate = (dateKey, cache) => {
           .then((ratings) => repaintRegionsForDate(dateKey, ratings))
           .catch(() => { /* network fail → leave today's colours */ });
       }
+    });
+
+    // SNOW-318: Refresh the open popup's colour, digit, date label, and bulletin
+    // link when the scrubber commits a new date, using only the preloaded season
+    // ratings cache — no API fetch.
+    //
+    // This mirrors updateReadout() in seasonRibbonInit (map.js:~2640) which does
+    // the same local lookup for the persistent readout pill.
+    //
+    // Documented limitation: the local update recolours/relabels the elements the
+    // initial server render produced; it does NOT restructure between the rated
+    // (danger chip + bulletin link) and no-rating (icon + muted text) layouts
+    // when scrubbing across a data gap. That boundary is an edge case for a
+    // focused region within its season, and re-clicking the region re-fetches the
+    // correct layout. This is the deliberate trade-off for "no API call on date
+    // change" — keeping the popup in sync with the pill without a round-trip.
+    const refreshPopupForDate = async (dateKey) => {
+      if (!activePopup || !activePopupRegion) return;
+
+      // Snapshot the region reference before the async gap so we can detect
+      // if a different region took over while we were awaiting the cache.
+      const snapRegion = activePopupRegion;
+
+      // Resolve the season ratings cache (already in-flight or cached — no
+      // extra network request). If it hasn't settled yet, bail silently; the
+      // next scrub after it resolves will update correctly.
+      let cache = null;
+      try {
+        cache = await getSeasonRatings();
+      } catch (_err) {
+        return;
+      }
+      if (!activePopup || !activePopupRegion) return;  // popup closed during await
+
+      // Stale-closure guard: if a different region was selected during the
+      // await above, activePopupRegion is repointed to the new region while
+      // regionID/slug are still bound to the old one. Bail so we don't
+      // overwrite the new region's popup with the old region's href.
+      if (activePopupRegion !== snapRegion) return;
+
+      const { regionID, slug } = snapRegion;
+      const ratingInt = cache && cache[dateKey] ? cache[dateKey][regionID] : undefined;
+      const key = (ratingInt != null ? INT_TO_RATING[ratingInt] : null) || 'no_rating';
+
+      const el = activePopup.getElement();
+      if (!el) return;
+
+      // Recolour the popup border — CSS targets [data-level] on the root.
+      el.setAttribute('data-level', key);
+
+      // Update the danger chip: data-level drives the background colour via
+      // .region-popup .danger-tile[data-level=…]; the digit is the integer
+      // rating.
+      // Documented limitation: the chip digit is recoloured/renumbered from
+      // the integer rating only. Any max_subdivision suffix (e.g. "3+") that
+      // the server template rendered on first open is not reapplied here —
+      // the ratings cache holds integer levels only, not subdivision strings.
+      // Re-clicking the region re-fetches the exact server-rendered chip.
+      const tile = el.querySelector('.danger-tile');
+      if (tile) {
+        tile.setAttribute('data-level', key);
+        tile.textContent = ratingInt != null ? String(ratingInt) : '';
+      }
+
+      // Update the bulletin link text and href. formatDatePopup matches the
+      // server render's ``date:"j M Y"`` so the label is unchanged in format
+      // when the popup is relabelled in place.
+      // Note: this string is built in JS (not from a Django template tag) so
+      // the project is English-only pre-launch. When i18n is added, this
+      // JS-built string will need the same treatment as the #region-readout
+      // strings in seasonRibbonInit. See docs/i18n.md.
+      const link = el.querySelector('.region-tooltip-bulletin-link');
+      if (link) {
+        link.textContent = 'Open bulletin for ' + formatDatePopup(dateKey) + ' →';
+        link.href = '/' + regionID.toLowerCase() + '/' + slug + '/' + dateKey + '/';
+      }
+
+      // Update the no-bulletin date label (shown when there is no rated bulletin
+      // for the date — the rated layout uses .region-tooltip-bulletin-link).
+      // The template renders this as a plain <p> with inline text; there is no
+      // child .region-tooltip-date element to update, so we set the full string.
+      // Note: same i18n caveat as the bulletin link above.
+      const noBulletin = el.querySelector('.region-tooltip-no-bulletin');
+      if (noBulletin) {
+        noBulletin.textContent = 'No bulletin available for ' + formatDatePopup(dateKey);
+      }
+    };
+    // Publish to the outer-IIFE forwarding variable so the date-changed listener
+    // registered before map.on('load') can reach it.
+    _refreshPopupForDate = refreshPopupForDate;
+
+    // SNOW-318: Timelapse start → close the popup silently. The highlight and
+    // pill persist (seasonRibbonInit re-asserts the highlight on every
+    // date-changed; the pill is independent of the popup). Closing the popup
+    // during playback avoids the popup DOM becoming stale on every frame advance.
+    document.addEventListener('snowdesk:timelapse-state', (e) => {
+      if (e.detail && e.detail.playing === true) closePopupOnly();
     });
 
     // Signal to sibling IIFEs (scrubber) that the map style + regions
