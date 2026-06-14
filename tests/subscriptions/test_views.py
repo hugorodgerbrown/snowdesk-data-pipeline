@@ -524,6 +524,248 @@ class TestSubscribePartialRequestLog:
 
 
 # ---------------------------------------------------------------------------
+# subscribe_partial — geo-match classification (SNOW-278)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSubscribePartialGeoMatch:
+    """Tests for geo_match_kind / geo_matched_region written by subscribe_partial.
+
+    The geo_lookup call is patched at ``bulletins.services.geoip.geo_lookup``
+    (the import site in ``core.models.RequestLogManager.from_request``).
+    """
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings: SettingsWrapper) -> None:
+        """Use in-memory email backend."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def _square_polygon(self, x0: float, y0: float, x1: float, y1: float) -> dict:
+        """Return a GeoJSON Polygon for the rectangle (x0,y0)→(x1,y1)."""
+        return {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [x0, y0],
+                    [x1, y0],
+                    [x1, y1],
+                    [x0, y1],
+                    [x0, y0],
+                ]
+            ],
+        }
+
+    def _make_geo_lookup(self, lon: float | None, lat: float | None) -> object:
+        """Return a GeoLookup stub with the given coordinates."""
+        from bulletins.services.geoip import GeoLookup
+
+        return GeoLookup(
+            country="CH",
+            subdivision="VS",
+            city="Sion",
+            latitude=lat,
+            longitude=lon,
+            accuracy_radius_km=50,
+        )
+
+    def test_subscription_written_with_in_region_kind(self) -> None:
+        """subscribe_partial sets geo_match_kind=in_region when inside the target."""
+        region = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 10, 10))
+        geo = self._make_geo_lookup(lon=5.0, lat=5.0)
+
+        with patch("bulletins.services.geoip.geo_lookup", return_value=geo):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "geo-in@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        sub = Subscriber.objects.get(user__email="geo-in@example.com")
+        subscription = Subscription.objects.get(subscriber=sub, region=region)
+        assert subscription.geo_match_kind == Subscription.GeoMatchKind.IN_REGION
+        assert subscription.geo_matched_region == region
+
+    def test_subscription_written_with_in_neighbour_kind(self) -> None:
+        """subscribe_partial sets geo_match_kind=in_neighbour when inside a neighbour."""
+        target = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 5, 5))
+        neighbour = MicroRegionFactory.create(
+            boundary=self._square_polygon(10, 0, 15, 5)
+        )
+        target.neighbours.add(neighbour)
+        geo = self._make_geo_lookup(lon=12.0, lat=2.0)
+
+        with patch("bulletins.services.geoip.geo_lookup", return_value=geo):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "geo-nb@example.com", "region_id": target.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        sub = Subscriber.objects.get(user__email="geo-nb@example.com")
+        subscription = Subscription.objects.get(subscriber=sub, region=target)
+        assert subscription.geo_match_kind == Subscription.GeoMatchKind.IN_NEIGHBOUR
+        assert subscription.geo_matched_region == neighbour
+
+    def test_subscription_written_with_elsewhere_kind(self) -> None:
+        """subscribe_partial sets geo_match_kind=elsewhere when outside all regions."""
+        region = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 5, 5))
+        geo = self._make_geo_lookup(lon=50.0, lat=50.0)
+
+        with patch("bulletins.services.geoip.geo_lookup", return_value=geo):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "geo-el@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        sub = Subscriber.objects.get(user__email="geo-el@example.com")
+        subscription = Subscription.objects.get(subscriber=sub, region=region)
+        assert subscription.geo_match_kind == Subscription.GeoMatchKind.ELSEWHERE
+        assert subscription.geo_matched_region is None
+
+    def test_subscription_written_with_unknown_kind_when_no_geo(self) -> None:
+        """subscribe_partial sets geo_match_kind=unknown when geo_lookup returns None."""
+        region = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 5, 5))
+
+        with patch("bulletins.services.geoip.geo_lookup", return_value=None):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "geo-unk@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        sub = Subscriber.objects.get(user__email="geo-unk@example.com")
+        subscription = Subscription.objects.get(subscriber=sub, region=region)
+        assert subscription.geo_match_kind == Subscription.GeoMatchKind.UNKNOWN
+        assert subscription.geo_matched_region is None
+
+    def test_repeat_call_does_not_overwrite_geo_match_fields(self) -> None:
+        """A second POST for the same (subscriber, region) pair does not overwrite.
+
+        The first call (Case A) sets geo_match_kind=in_region.  A repeat call
+        (Case B — pending re-send) must leave the frozen fields untouched.
+        """
+        region = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 10, 10))
+        email = "geo-repeat@example.com"
+
+        # First call — inside the region.
+        geo_inside = self._make_geo_lookup(lon=5.0, lat=5.0)
+        with patch("bulletins.services.geoip.geo_lookup", return_value=geo_inside):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": email, "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        first_subscription = Subscription.objects.get(
+            subscriber__user__email=email, region=region
+        )
+        assert first_subscription.geo_match_kind == Subscription.GeoMatchKind.IN_REGION
+
+        # Second call — outside the region (different geo).
+        geo_outside = self._make_geo_lookup(lon=50.0, lat=50.0)
+        with patch("bulletins.services.geoip.geo_lookup", return_value=geo_outside):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": email, "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        # get_or_create with (subscriber, region) uniqueness — existing row unchanged.
+        refreshed = Subscription.objects.get(
+            subscriber__user__email=email, region=region
+        )
+        assert refreshed.geo_match_kind == Subscription.GeoMatchKind.IN_REGION
+
+    def test_subscription_started_props_include_geo_match_kind(self) -> None:
+        """subscription_started event includes geo_match_kind when resolved (Case A)."""
+        region = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 10, 10))
+        geo = self._make_geo_lookup(lon=5.0, lat=5.0)
+
+        with (
+            patch("bulletins.services.geoip.geo_lookup", return_value=geo),
+            patch("subscriptions.views.analytics.track") as mock_track,
+        ):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "geo-props@example.com", "region_id": region.region_id},
+                **_HTMX_HEADERS,
+            )
+
+        calls = {c.args[0]: c for c in mock_track.call_args_list}
+        assert "subscription_started" in calls
+        props = calls["subscription_started"].args[2]
+        assert props.get("geo_match_kind") == "in_region"
+
+    def test_subscription_started_props_include_region_match_true(self) -> None:
+        """subscription_started event includes region_match=True for in_region (Case A)."""
+        region = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 10, 10))
+        geo = self._make_geo_lookup(lon=5.0, lat=5.0)
+
+        with (
+            patch("bulletins.services.geoip.geo_lookup", return_value=geo),
+            patch("subscriptions.views.analytics.track") as mock_track,
+        ):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={
+                    "email": "geo-rm-true@example.com",
+                    "region_id": region.region_id,
+                },
+                **_HTMX_HEADERS,
+            )
+
+        calls = {c.args[0]: c for c in mock_track.call_args_list}
+        props = calls["subscription_started"].args[2]
+        assert props.get("region_match") is True
+
+    def test_subscription_started_props_include_region_match_false_for_elsewhere(
+        self,
+    ) -> None:
+        """subscription_started event includes region_match=False for elsewhere."""
+        region = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 5, 5))
+        geo = self._make_geo_lookup(lon=50.0, lat=50.0)
+
+        with (
+            patch("bulletins.services.geoip.geo_lookup", return_value=geo),
+            patch("subscriptions.views.analytics.track") as mock_track,
+        ):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={
+                    "email": "geo-rm-false@example.com",
+                    "region_id": region.region_id,
+                },
+                **_HTMX_HEADERS,
+            )
+
+        calls = {c.args[0]: c for c in mock_track.call_args_list}
+        props = calls["subscription_started"].args[2]
+        assert props.get("region_match") is False
+
+    def test_subscription_started_props_include_language_primary(self) -> None:
+        """subscription_started event includes language_primary when non-empty (Case A)."""
+        region = MicroRegionFactory.create(boundary=self._square_polygon(0, 0, 10, 10))
+        geo = self._make_geo_lookup(lon=5.0, lat=5.0)
+
+        with (
+            patch("bulletins.services.geoip.geo_lookup", return_value=geo),
+            patch("subscriptions.views.analytics.track") as mock_track,
+        ):
+            Client().post(
+                reverse("subscriptions:subscribe"),
+                data={"email": "geo-lang@example.com", "region_id": region.region_id},
+                HTTP_ACCEPT_LANGUAGE="de-CH,de;q=0.9,en;q=0.8",
+                **_HTMX_HEADERS,
+            )
+
+        calls = {c.args[0]: c for c in mock_track.call_args_list}
+        props = calls["subscription_started"].args[2]
+        assert props.get("language_primary") == "de"
+
+
+# ---------------------------------------------------------------------------
 # sign_in_view — RequestLog wiring (SNOW-277)
 # ---------------------------------------------------------------------------
 

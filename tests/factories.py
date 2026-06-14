@@ -295,6 +295,8 @@ class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):
     subscriber = factory.SubFactory(SubscriberFactory)
     region = factory.SubFactory(MicroRegionFactory)
     subscribed_via = None  # nullable — not always set
+    geo_match_kind = Subscription.GeoMatchKind.UNKNOWN
+    geo_matched_region = None  # nullable — not set for unknown / elsewhere
 
 
 class PasskeyCredentialFactory(factory.django.DjangoModelFactory[PasskeyCredential]):
