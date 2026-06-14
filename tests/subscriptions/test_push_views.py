@@ -8,7 +8,8 @@ Covers all three push endpoints (push_register, push_unregister, push_test):
   - Staff POST succeeds (200) and the expected side effect occurs.
   - SNOW-311 caplog regression: log records contain pk=, never the subscriber email.
 
-dispatch_push is patched throughout so no real push deliveries occur.
+In the push_test tests, enqueue_push is patched so no real task is enqueued.
+dispatch_push is patched in the push_service tests but is not relevant here.
 
 Note on the CSRF+credential test: Django's test Client with enforce_csrf_checks=True
 and a CSRF token sourced from the middleware directly is used for the 403 test. The
@@ -267,7 +268,7 @@ class TestPushTest:
         assert response.status_code == 403
 
     def test_staff_dispatches_push(self, staff_client: Client) -> None:
-        """Staff POST calls dispatch_push and returns per-row results."""
+        """Staff POST enqueues a task and returns {"ok": True, "enqueued": 1}."""
         push_sub = PushSubscriptionFactory.create(
             endpoint="https://push.example.com/test-target"
         )
@@ -277,33 +278,24 @@ class TestPushTest:
             "body": "Test",
             "url": "/",
         }
-        fake_result = {"ok": True, "status": 201}
-        with patch(
-            "subscriptions.push_views.dispatch_push", return_value=fake_result
-        ) as mock_dispatch:
+        with patch("subscriptions.push_views.enqueue_push") as mock_enqueue:
             response = _post_json(staff_client, _TEST_URL, body)
         assert response.status_code == 200
         data = response.json()
-        assert data["ok"] is True
-        assert data["sent"] == 1
-        assert len(data["results"]) == 1
-        assert data["results"][0]["ok"] is True
-        mock_dispatch.assert_called_once()
+        assert data == {"ok": True, "enqueued": 1}
+        mock_enqueue.assert_called_once()
 
-    def test_dispatch_push_called_for_every_matching_row(
+    def test_enqueue_push_called_for_every_matching_row(
         self, staff_client: Client
     ) -> None:
-        """Without endpoint filter, dispatch_push is called for every stored sub."""
+        """Without endpoint filter, enqueue_push is called once per stored sub."""
         PushSubscriptionFactory.create()
         PushSubscriptionFactory.create()
-        fake_result = {"ok": True, "status": 201}
-        with patch(
-            "subscriptions.push_views.dispatch_push", return_value=fake_result
-        ) as mock_dispatch:
+        with patch("subscriptions.push_views.enqueue_push") as mock_enqueue:
             response = _post_json(staff_client, _TEST_URL, {})
         assert response.status_code == 200
-        data = response.json()
-        assert data["sent"] == mock_dispatch.call_count
+        assert mock_enqueue.call_count == 2
+        assert response.json() == {"ok": True, "enqueued": 2}
 
 
 # ---------------------------------------------------------------------------
