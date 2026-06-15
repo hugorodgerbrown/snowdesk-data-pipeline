@@ -14,17 +14,31 @@ The deliverable for each cycle lands here as a dated markdown file
 
 ## Cadence
 
-Monthly or on-demand. One cycle per Linear ticket.
+Weekly (automated Routine) or on-demand. One cycle per Linear ticket.
 
 ## Starting a new cycle
 
-1. Clone the previous cycle's Linear ticket description (or the SNOW-112
-   template stored in Linear) and create a new ticket.
+The cycle is automated by the **`code-review-pass` skill**
+(`.claude/skills/code-review-pass/`), which drives the read-only
+**`code-auditor` agent** (`.claude/agents/code-auditor.md`) through the
+17-item checklist:
+
+- **On-demand:** run `/code-review-pass` (interactive — proposes the doc,
+  inline fixes, and tickets for approval before shipping).
+- **Weekly:** a scheduled Routine invokes `/code-review-pass routine`, which
+  runs end-to-end with no approval gate — branch → audit → dated doc →
+  inline fixes → deduped child tickets → tox → PR.
+
+The skill performs these steps each cycle:
+
+1. Create this cycle's Linear ticket, cloned from the SNOW-269 template.
 2. Create a branch: `chore/SNOW-NNN-code-review-YYYY-MM-DD`.
-3. Run the 17-item audit checklist from the ticket description.
+3. Run the 17-item audit checklist (via the `code-auditor` agent).
 4. Create `docs/code-reviews/YYYY-MM-DD.md` (matching today's date) using
    the layout below.
 5. Update the "Most recent cycle" pointer at the top of this file.
+
+To run a cycle by hand without the skill, follow the same five steps.
 
 ## Trivial vs spin-off rule
 
