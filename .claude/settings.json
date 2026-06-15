@@ -39,6 +39,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bin/setup-remote-env 2>&1 || true"
+          },
+          {
+            "type": "command",
             "command": "bin/init-worktree 2>&1 || true"
           }
         ]

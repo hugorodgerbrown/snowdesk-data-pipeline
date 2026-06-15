@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+#
+# bin/setup-remote-env — bootstrap Python 3.14 and the Poetry virtualenv in
+# Claude Code remote (cloud) sessions.
+#
+# Remote containers ship with Python ≤ 3.13 but the project requires Python
+# 3.14 (pyproject.toml: python = "^3.14"). This script:
+#
+#   1. Exits immediately (no-op) when CLAUDE_CODE_REMOTE is not "true", so
+#      local developer environments are never touched.
+#   2. Installs Python 3.14 via `uv python install` (uv fetches a pre-built
+#      binary from its managed distribution; no PPA or sudo required).
+#   3. Configures Poetry to create the virtualenv inside the project (.venv/),
+#      which lets bin/init-worktree symlink it into git worktrees.
+#   4. Runs `poetry install --sync` to populate the virtualenv.
+#
+# Idempotent: each step checks whether it is already done before acting, so
+# re-running the script in the same container is cheap (≈ 1 s).
+#
+# Wired to the SessionStart hook in .claude/settings.json so it runs
+# automatically before bin/init-worktree at the start of every remote session.
+
+set -euo pipefail
+
+LOG_PREFIX="setup-remote-env"
+
+# ── Guard: only run in Claude Code remote (cloud) sessions ─────────────────
+if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
+    exit 0
+fi
+
+# ── 1. Install Python 3.14 via uv ──────────────────────────────────────────
+PYTHON_VERSION="3.14"
+
+if command -v "python${PYTHON_VERSION}" &>/dev/null; then
+    PYTHON_BIN=$(command -v "python${PYTHON_VERSION}")
+    echo "$LOG_PREFIX: python${PYTHON_VERSION} already present at $PYTHON_BIN"
+else
+    if ! command -v uv &>/dev/null; then
+        echo "$LOG_PREFIX: ERROR — uv is not installed; cannot install Python ${PYTHON_VERSION}" >&2
+        exit 1
+    fi
+    echo "$LOG_PREFIX: installing Python ${PYTHON_VERSION} via uv"
+    uv python install "${PYTHON_VERSION}"
+    PYTHON_BIN=$(uv python find "${PYTHON_VERSION}")
+    echo "$LOG_PREFIX: Python ${PYTHON_VERSION} ready at $PYTHON_BIN"
+fi
+
+# ── 2. Configure Poetry for in-project virtualenv ──────────────────────────
+# An in-project .venv/ lets bin/init-worktree symlink it into git worktrees.
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+if poetry config virtualenvs.in-project | grep -q "true"; then
+    echo "$LOG_PREFIX: poetry in-project venv already configured"
+else
+    echo "$LOG_PREFIX: configuring poetry to create .venv/ inside the project"
+    poetry config virtualenvs.in-project true
+fi
+
+# ── 3. Install the virtualenv ───────────────────────────────────────────────
+if [ -d ".venv" ]; then
+    echo "$LOG_PREFIX: .venv already exists, skipping poetry install"
+else
+    echo "$LOG_PREFIX: creating virtualenv with Python ${PYTHON_VERSION}"
+    poetry env use "$PYTHON_BIN"
+    poetry sync
+    echo "$LOG_PREFIX: virtualenv ready — 'poetry run tox' should now work"
+fi
