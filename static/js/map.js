@@ -115,7 +115,13 @@ const getBulletinGroupings = () => {
   if (!BULLETIN_GROUPINGS_URL_MODULE) {
     return Promise.reject(new Error('bulletin groupings URL not set'));
   }
-  BULLETIN_GROUPINGS_PROMISE = fetch(BULLETIN_GROUPINGS_URL_MODULE + '?country=ch').then((resp) => {
+  // SNOW-323: fetch ALL groupings (no ?country= filter) so cross-border
+  // ALBINA bulletins — e.g. countries: ["AT", "IT"] with no "CH" — are present
+  // in the payload. Per-country visibility is handled client-side by
+  // applyCountryFilters' array-membership filter on the `countries` property.
+  // This deliberately differs from the L1/L2 overlays and getSeasonRatings,
+  // which are CH-scoped at the fetch.
+  BULLETIN_GROUPINGS_PROMISE = fetch(BULLETIN_GROUPINGS_URL_MODULE).then((resp) => {
     if (!resp.ok) throw new Error('bulletin groupings fetch failed');
     return resp.json();
   });
