@@ -519,3 +519,77 @@ class TestProblemCardEawsFields:
             [self._trait(snowpack_stability="catastrophic")]
         )
         assert cards[0]["stability_label"] is None
+
+
+# ── Aspect clockwise ordering ─────────────────────────────────────────────────
+
+
+class TestSortAspectsClockwise:
+    """Unit tests for _sort_aspects_clockwise (SNOW-297)."""
+
+    def _sort(self, aspects: list[str]) -> list[str]:
+        """Call _sort_aspects_clockwise directly."""
+        from public.views import _sort_aspects_clockwise
+
+        return _sort_aspects_clockwise(aspects)
+
+    def test_out_of_order_input_is_sorted_clockwise(self) -> None:
+        """Out-of-order input produces the canonical clockwise sequence."""
+        result = self._sort(["E", "NE", "W", "N", "NW"])
+        assert result == ["N", "NE", "E", "W", "NW"]
+
+    def test_all_eight_aspects_preserves_length(self) -> None:
+        """All eight aspects produce a length-8 list (drives 'All aspects' guard)."""
+        all_aspects = ["S", "SW", "W", "NW", "N", "NE", "E", "SE"]
+        result = self._sort(all_aspects)
+        assert len(result) == 8
+        assert result == ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+
+    def test_single_aspect_unchanged(self) -> None:
+        """A one-element list is returned unchanged."""
+        assert self._sort(["SE"]) == ["SE"]
+
+    def test_empty_input_returns_empty_list(self) -> None:
+        """Empty input produces an empty list (no KeyError or similar)."""
+        assert self._sort([]) == []
+
+    def test_unknown_token_sorts_to_end(self) -> None:
+        """An unknown aspect token sorts after all known tokens."""
+        result = self._sort(["S", "UNKNOWN", "N"])
+        assert result == ["N", "S", "UNKNOWN"]
+
+
+class TestEnrichRenderModelProblemAspectOrder:
+    """Aspect list is sorted clockwise by _enrich_render_model_problem (SNOW-297)."""
+
+    def _enrich(self, aspects: list[str]) -> dict[str, Any]:
+        """Call _enrich_render_model_problem with a minimal problem dict."""
+        from public.views import _enrich_render_model_problem
+
+        rm_problem = {
+            "problem_type": "new_snow",
+            "danger_rating_value": "moderate",
+            "time_period": "all_day",
+            "elevation": None,
+            "aspects": aspects,
+            "core_zone_text": "",
+            "comment_html": "",
+        }
+        return _enrich_render_model_problem(rm_problem, {}, [rm_problem], 0)
+
+    def test_out_of_order_aspects_sorted_clockwise(self) -> None:
+        """Aspects arrive out of order and the enriched dict holds them sorted."""
+        result = self._enrich(["E", "NE", "W", "N", "NW"])
+        assert result["aspects"] == ["N", "NE", "E", "W", "NW"]
+
+    def test_sorted_aspects_override_spread(self) -> None:
+        """The explicit 'aspects' key in the return dict overrides **rm_problem."""
+        # Ensures the {**rm_problem, "aspects": aspects} pattern wins over the
+        # raw unsorted list that the spread would otherwise propagate.
+        result = self._enrich(["S", "N"])
+        assert result["aspects"] == ["N", "S"]
+
+    def test_empty_aspects_remain_empty(self) -> None:
+        """Empty aspect list is preserved without error."""
+        result = self._enrich([])
+        assert result["aspects"] == []

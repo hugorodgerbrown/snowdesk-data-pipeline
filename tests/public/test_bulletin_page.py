@@ -416,6 +416,44 @@ class TestRatingBlockCount:
 # ---------------------------------------------------------------------------
 # Test: aspect/elevation row presence
 # ---------------------------------------------------------------------------
+# Test: aspect clockwise ordering — _enrich_avalanche_problem (SNOW-297)
+# ---------------------------------------------------------------------------
+
+
+class TestEnrichAvalancheProblemAspectOrder:
+    """Aspects are sorted clockwise by _enrich_avalanche_problem (SNOW-297)."""
+
+    def _enrich(self, aspects: list[str]) -> dict[str, Any]:
+        """Call _enrich_avalanche_problem with a minimal CAAML problem dict."""
+        from public.views import _enrich_avalanche_problem
+
+        problem = {
+            "problemType": "wind_slab",
+            "validTimePeriod": "all_day",
+            "aspects": aspects,
+            "comment": "",
+            "elevation": None,
+        }
+        return _enrich_avalanche_problem(problem, [problem], 0)
+
+    def test_out_of_order_aspects_sorted_clockwise(self) -> None:
+        """Out-of-order aspects are reordered to the canonical clockwise sequence."""
+        result = self._enrich(["E", "NE", "W", "N", "NW"])
+        assert result["aspects"] == ["N", "NE", "E", "W", "NW"]
+
+    def test_all_eight_aspects_preserves_length(self) -> None:
+        """All eight aspects yield a length-8 list (drives 'All aspects' guard)."""
+        all_aspects = ["S", "SW", "W", "NW", "N", "NE", "E", "SE"]
+        result = self._enrich(all_aspects)
+        assert len(result["aspects"]) == 8
+
+    def test_empty_aspects_remain_empty(self) -> None:
+        """Empty aspect list is returned unchanged without error."""
+        result = self._enrich([])
+        assert result["aspects"] == []
+
+
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
