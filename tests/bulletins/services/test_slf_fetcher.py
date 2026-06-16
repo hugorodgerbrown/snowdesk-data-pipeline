@@ -21,7 +21,13 @@ import pytest
 import requests
 from django.test import override_settings
 
-from bulletins.models import Bulletin, PipelineRun, RegionBulletin, RegionDayRating
+from bulletins.models import (
+    Bulletin,
+    BulletinGrouping,
+    PipelineRun,
+    RegionBulletin,
+    RegionDayRating,
+)
 from bulletins.services.render_model import RENDER_MODEL_VERSION, RenderModelBuildError
 from bulletins.services.slf_fetcher import (
     UnknownRegionError,
@@ -35,7 +41,12 @@ from bulletins.services.slf_fetcher import (
     upsert_bulletin,
 )
 from regions.models import MicroRegion
-from tests.factories import MicroRegionFactory, PipelineRunFactory
+from tests.factories import (
+    MajorRegionFactory,
+    MicroRegionFactory,
+    PipelineRunFactory,
+    SubRegionFactory,
+)
 
 
 def _make_raw_bulletin(
@@ -910,3 +921,68 @@ class TestSlfPdfUrlUpsertRoundTrip:
         upsert_bulletin(raw, run, pdf_url=expected_url)
         b = Bulletin.objects.get(bulletin_id="test-001")
         assert b.pdf_url == expected_url
+
+
+# ---------------------------------------------------------------------------
+# BulletinGrouping ingest hook (SNOW-323)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUpsertBulletinGroupingHook:
+    """Tests for the grouping hook inside upsert_bulletin.
+
+    The hook calls compute_bulletin_grouping_boundary after apply_bulletin_day_ratings.
+    It must:
+    - Create a BulletinGrouping when the bulletin has boundaried regions.
+    - Swallow exceptions from compute_bulletin_grouping_boundary without
+      aborting ingest (so a geometry error never kills the pipeline).
+    """
+
+    def test_upsert_creates_grouping_when_region_has_boundary(self) -> None:
+        """A bulletin whose linked region has a boundary gets a BulletinGrouping row."""
+        major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+        sub = SubRegionFactory.create(prefix="CH-41", major=major)
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            subregion=sub,
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+                ],
+            },
+        )
+        # The second region (CH-7111) is seeded without a boundary so we
+        # confirm that the missing-boundary case is handled gracefully.
+        MicroRegionFactory.create(region_id="CH-7111", subregion=sub, boundary=None)
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin()
+
+        upsert_bulletin(raw, run)
+
+        assert BulletinGrouping.objects.count() == 1
+        grouping = BulletinGrouping.objects.get()
+        assert "CH" in grouping.countries
+
+    def test_upsert_swallows_grouping_exception_and_still_creates_bulletin(
+        self,
+    ) -> None:
+        """A geometry exception from compute_bulletin_grouping_boundary is swallowed.
+
+        Ingest must succeed and the Bulletin row must be created even when the
+        grouping service raises — a geometry error must never abort the pipeline.
+        """
+        MicroRegionFactory.create(region_id="CH-4115")
+        MicroRegionFactory.create(region_id="CH-7111")
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin()
+
+        with patch(
+            "bulletins.services.slf_fetcher.compute_bulletin_grouping_boundary",
+            side_effect=RuntimeError("geometry exploded"),
+        ):
+            upsert_bulletin(raw, run)
+
+        assert Bulletin.objects.count() == 1
+        assert BulletinGrouping.objects.count() == 0

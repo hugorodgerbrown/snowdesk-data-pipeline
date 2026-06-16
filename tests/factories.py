@@ -19,6 +19,7 @@ from django.utils import timezone as django_timezone
 
 from bulletins.models import (
     Bulletin,
+    BulletinGrouping,
     BulletinShare,
     BulletinShareClick,
     PipelineRun,
@@ -359,3 +360,29 @@ class PushSubscriptionFactory(factory.django.DjangoModelFactory[PushSubscription
     auth = factory.Sequence(lambda n: f"auth-secret-{n:04d}")
     user_agent = "Mozilla/5.0 (Test)"
     last_used_at = None
+
+
+class BulletinGroupingFactory(factory.django.DjangoModelFactory[BulletinGrouping]):
+    """Factory for BulletinGrouping instances.
+
+    Produces a BulletinGrouping with a minimal valid GeoJSON Polygon boundary
+    and a single CH country entry.  Override ``boundary`` and/or ``countries``
+    as needed in individual tests.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = BulletinGrouping
+
+    bulletin = factory.SubFactory(BulletinFactory)
+    target_date = factory.LazyFunction(lambda: datetime.date(2026, 1, 15))
+    boundary = factory.LazyFunction(
+        lambda: {
+            "type": "Polygon",
+            "coordinates": [
+                [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.0, 0.0]]
+            ],
+        }
+    )
+    countries = factory.LazyFunction(lambda: ["CH"])

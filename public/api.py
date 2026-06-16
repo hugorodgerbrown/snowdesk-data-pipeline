@@ -576,13 +576,16 @@ def _build_groupings_payload(
     """
     qs = BulletinGrouping.objects.select_related("bulletin").order_by("target_date")
 
-    if country_param:
-        # ``countries`` is a JSON list; filter to groupings that contain the code.
-        # Django's ``__contains`` on a JSONField checks for list membership.
-        qs = qs.filter(countries__contains=[country_param])
-
+    # ``countries`` is a JSON list (e.g. ["AT", "IT"]). We filter membership
+    # in Python rather than with a DB-level JSONField lookup so that the query
+    # is backend-agnostic — Django's JSONField ``__contains`` list-membership
+    # check is not supported by SQLite, which the dev and test environments use.
+    # The full-season scan is tiny (one row per bulletin per day) and is cached,
+    # so the extra Python iteration is negligible.
     payload: dict[str, dict[str, Any]] = {}
     for grouping in qs.iterator():
+        if country_param and country_param not in grouping.countries:
+            continue
         date_key = grouping.target_date.isoformat()
         if date_key not in payload:
             payload[date_key] = {"type": "FeatureCollection", "features": []}
