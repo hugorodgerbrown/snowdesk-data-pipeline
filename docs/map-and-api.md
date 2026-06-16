@@ -1,8 +1,8 @@
 ---
 name: map-and-api
-description: /map/ MapLibre choropleth, season scrubber, basemap picker, and the /api/ JSON endpoints (ratings, geojson, summary)
+description: /map/ MapLibre choropleth, season scrubber, basemap picker, and the /api/ JSON endpoints (ratings, geojson, summary, bulletin-groupings)
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-06-16
 ---
 
 # Map page and JSON API
@@ -76,6 +76,7 @@ appeared first.
 | `GET /api/major-regions.geojson` | `api:major_regions_geojson` | GeoJSON FeatureCollection of L1 EAWS major regions (e.g. `CH-4`, `CH-5`) with `properties.id` + `properties.name`. |
 | `GET /api/sub-regions.geojson` | `api:sub_regions_geojson` | GeoJSON FeatureCollection of L2 EAWS sub-regions (e.g. `CH-41`, `CH-42`) with `properties.id` + `properties.name`. |
 | `GET /api/region/<region_id>/summary/` | `api:region_summary` | `{html, level}` — `html` is the server-rendered MapLibre Popup snippet (danger-rating chip + geographic breadcrumb); `level` is the rating string the JS uses to stamp `data-level` on the popup container for the border colour. Honours `?d=YYYY-MM-DD` so the popup can show any scrubbed-to date; returns 400 on a malformed value. |
+| `GET /api/bulletin-groupings.geojson` | `api:bulletin_groupings_geojson` | `{"YYYY-MM-DD": {"type":"FeatureCollection","features":[…]}, …}` — whole-season payload keyed by date. Each feature's geometry is the dissolved outer boundary of all L4 micro-regions sharing that bulletin; `properties` carries `bulletin_id`, `date`, and `countries` (sorted ISO-2 list). Accepts optional `?country=ch\|fr\|at\|it`; filters by membership in the `countries` list (a cross-border bulletin with `["AT","IT"]` appears for both `?country=at` and `?country=it`). Server-side `cache.get_or_set` keyed by country (5 min). The JS overlay ("Bulletin groupings", `data-overlay-key="l3"`) fetches once with `?country=ch` via `getBulletinGroupings()`, caches the date-keyed payload, and calls `setData` on the `bulletin-groupings` source when the scrubber moves — no network after the initial load. The MapLibre layer uses an array-membership filter (`['in', c, ['get','countries']]`) instead of the scalar `match` filter used by L1/L2, because `countries` is a JSON list not a string. |
 
 The data flow on map load is: `map.js` fetches `?d=<today>&country=ch` and
 `regions.geojson?country=ch` in parallel. Once both resolve, it calls
