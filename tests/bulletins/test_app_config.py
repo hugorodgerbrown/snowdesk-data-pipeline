@@ -18,11 +18,13 @@ def test_bulletins_app_owns_the_expected_models() -> None:
 
     SNOW-97 adds WeatherSnapshot.
     SNOW-217 adds BulletinShare and BulletinShareClick.
+    SNOW-323 adds BulletinGrouping.
     """
     config = apps.get_app_config("bulletins")
     model_names = {m.__name__ for m in config.get_models()}
     assert model_names == {
         "Bulletin",
+        "BulletinGrouping",
         "RegionBulletin",
         "PipelineRun",
         "RegionDayRating",

@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Command catalogue — fetch_bulletins, fetch_weather, backfill_weather, backfill_bulletin_groupings, rebuild_render_models, fixture builders, scheduler jobs
+description: Command catalogue — fetch_bulletins, fetch_weather, backfill_weather, backfill_bulletin_groupings, rebuild_render_models, fixture builders
 status: current
 last-reviewed: 2026-06-16
 ---
