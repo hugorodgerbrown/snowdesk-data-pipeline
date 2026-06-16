@@ -47,6 +47,7 @@ from bulletins.services.fetcher_common import (
     OUTCOME_UPDATED,
     normalise_bulletin_response,
 )
+from bulletins.services.grouping import compute_bulletin_grouping_boundary
 from bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -363,6 +364,18 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
     except Exception:
         logger.exception(
             "apply_bulletin_day_ratings failed for bulletin %s — ingest continues",
+            bulletin_id,
+        )
+
+    # Compute the dissolved grouping boundary — wrapped identically so that
+    # a geometry error never aborts ingest.  The grouping is a denormalisation;
+    # the authoritative data lives in the RegionBulletin rows.
+    try:
+        compute_bulletin_grouping_boundary(bulletin)
+    except Exception:
+        logger.exception(
+            "compute_bulletin_grouping_boundary failed for bulletin %s"
+            " — ingest continues",
             bulletin_id,
         )
 
