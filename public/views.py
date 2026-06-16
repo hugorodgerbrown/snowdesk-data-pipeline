@@ -3685,6 +3685,27 @@ def _format_elevation(elevation: dict[str, Any] | None) -> ElevationBounds:
     )
 
 
+# Clockwise compass order used when rendering aspect text labels on problem
+# cards. The aspect-rose SVG is positional and unaffected; this is text-only.
+_CLOCKWISE_ASPECTS: tuple[str, ...] = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+
+
+def _sort_aspects_clockwise(aspects: list[str]) -> list[str]:
+    """Return aspects in clockwise compass order (N, NE, …, NW).
+
+    Unknown tokens sort to the end, preserving their relative order.
+
+    Args:
+        aspects: Raw aspect list from the CAAML bulletin payload.
+
+    Returns:
+        The same list reordered into clockwise compass sequence.
+
+    """
+    order = {a: i for i, a in enumerate(_CLOCKWISE_ASPECTS)}
+    return sorted(aspects, key=lambda a: order.get(a, len(order)))
+
+
 def _problem_summary(
     core_zone_text: str,
     elevation: ElevationBounds,
@@ -3730,7 +3751,7 @@ def _enrich_avalanche_problem(
     """
     problem_type: str = problem.get("problemType") or ""
     time_period: str = problem.get("validTimePeriod") or ""
-    aspects: list[str] = problem.get("aspects") or []
+    aspects: list[str] = _sort_aspects_clockwise(problem.get("aspects") or [])
     comment_html: str = problem.get("comment") or ""
     raw_elevation: dict[str, Any] | None = problem.get("elevation") or None
     elevation = _format_elevation(raw_elevation) if raw_elevation else None
@@ -4144,7 +4165,7 @@ def _build_single_trait_card(
         "panel_title": panel_title,
         "subdivision": subdivision,
         "level_number": level_number,
-        "aspects": first.get("aspects") or [],
+        "aspects": _sort_aspects_clockwise(first.get("aspects") or []),
         "elevation": first.get("elevation"),
         "comment_html": first.get("comment_html") or "",
         "core_zone_text": first.get("core_zone_text") or "",
@@ -4449,7 +4470,7 @@ def _enrich_render_model_problem(
     else:
         elevation_bounds = _format_elevation(None)
 
-    aspects: list[str] = rm_problem.get("aspects") or []
+    aspects: list[str] = _sort_aspects_clockwise(rm_problem.get("aspects") or [])
     core_zone_text: str = rm_problem.get("core_zone_text") or ""
     summary = _problem_summary(core_zone_text, elevation_bounds, aspects)
     field_guidance = guidance.get(problem_type)
@@ -4476,6 +4497,7 @@ def _enrich_render_model_problem(
 
     return {
         **rm_problem,
+        "aspects": aspects,
         "label": label,
         "time_period_label": time_period_label,
         "elevation": elevation_bounds,
