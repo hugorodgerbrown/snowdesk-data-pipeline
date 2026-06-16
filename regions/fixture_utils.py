@@ -133,8 +133,9 @@ def bbox_from_children(children: list[dict[str, Any]]) -> list[float]:
 def boundary_from_children(children: list[dict[str, Any]]) -> dict[str, Any]:
     """Merge child boundaries into a single GeoJSON Polygon/MultiPolygon.
 
-    Uses ``shapely.ops.unary_union`` — a dev-only dependency. Raises
-    ``RuntimeError`` with install instructions if shapely is absent.
+    Uses ``shapely.ops.unary_union`` — a runtime dependency (promoted from
+    dev-only in SNOW-323 because grouping dissolves now run at ingest time).
+    Raises ``RuntimeError`` with install instructions if shapely is absent.
 
     Args:
         children: List of field-dicts, each with a ``boundary`` key.
