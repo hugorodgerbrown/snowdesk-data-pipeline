@@ -32,6 +32,13 @@ urlpatterns = [
         api.sub_regions_geojson,
         name="sub_regions_geojson",
     ),
+    # SNOW-323: dissolved bulletin grouping boundaries keyed by date.
+    # The whole-season payload is cached client-side by map.js.
+    path(
+        "bulletin-groupings.geojson",
+        api.bulletin_groupings_geojson,
+        name="bulletin_groupings_geojson",
+    ),
     path(
         "region/<region_id:region_id>/summary/",
         api.region_summary,
