@@ -8,7 +8,6 @@
   "devDependencies": {
     "@lhci/cli": "^0.14.0",
     "@tailwindcss/cli": "^4.2.2",
-    "sharp": "^0.34.0",
-    "supabase": "^2.87.1"
+    "sharp": "^0.34.0"
   }
 }
