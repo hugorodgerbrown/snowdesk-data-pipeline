@@ -51,7 +51,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
 from django_ratelimit.decorators import ratelimit
 
-from bulletins.models import Bulletin, BulletinShare, RegionDayRating
+from bulletins.models import Bulletin, BulletinGrouping, BulletinShare, RegionDayRating
 from regions.models import (
     MajorRegion,
     MicroRegion,
@@ -486,6 +486,121 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
             "features": features,
         }
     )
+
+
+@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
+def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
+    """
+    Return a date-keyed FeatureCollection of dissolved bulletin boundaries.
+
+    Response shape::
+
+        {
+          "YYYY-MM-DD": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "geometry": <GeoJSON Polygon or MultiPolygon>,
+                "properties": {
+                  "bulletin_id": "...",
+                  "date": "YYYY-MM-DD",
+                  "countries": ["AT", "IT"]
+                }
+              },
+              ...
+            ]
+          },
+          ...
+        }
+
+    Each entry is one bulletin's dissolved L4 micro-region boundary for
+    its forecast day. Powered by ``BulletinGrouping`` rows computed at
+    ingest time.
+
+    Optional query parameters:
+
+    * ``?country=ch|fr|at|it`` (case-insensitive) — restrict to groupings
+      whose ``countries`` list **contains** the requested country. Returns
+      400 on an unrecognised value.
+
+    Server-side ``cache.get_or_set`` keyed by country mirrors the pattern
+    used by the ``ratings`` view so DB hits are bounded to one per cache
+    window (5 minutes, same as other dynamic endpoints).
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse mapping ISO date strings to FeatureCollection dicts,
+        or 400 on an invalid ``?country=`` parameter.
+
+    """
+    country_param = (request.GET.get("country") or "").upper()
+
+    if country_param and country_param not in _VALID_GEOJSON_COUNTRIES:
+        return JsonResponse(
+            {"error": "invalid_country", "valid": sorted(_VALID_GEOJSON_COUNTRIES)},
+            status=400,
+        )
+
+    cache_key = f"bulletin_groupings:{country_param.lower() or 'all'}"
+
+    payload = cache.get_or_set(
+        cache_key,
+        lambda: _build_groupings_payload(country_param),
+        timeout=_DYNAMIC_CACHE_MAX_AGE,
+    )
+    return JsonResponse(payload)
+
+
+def _build_groupings_payload(
+    country_param: str,
+) -> dict[str, dict[str, Any]]:
+    """
+    Build the date-keyed groupings payload from the DB.
+
+    Queries all ``BulletinGrouping`` rows (optionally filtered to those
+    whose ``countries`` list contains the requested country), groups
+    them by ``target_date``, and returns a dict mapping ISO date strings
+    to GeoJSON FeatureCollection dicts.
+
+    Args:
+        country_param: Uppercase ISO-2 country code (e.g. ``"CH"``), or
+            an empty string to include all countries.
+
+    Returns:
+        A dict mapping ISO date string to GeoJSON FeatureCollection dict.
+
+    """
+    qs = BulletinGrouping.objects.select_related("bulletin").order_by("target_date")
+
+    # ``countries`` is a JSON list (e.g. ["AT", "IT"]). We filter membership
+    # in Python rather than with a DB-level JSONField lookup so that the query
+    # is backend-agnostic — Django's JSONField ``__contains`` list-membership
+    # check is not supported by SQLite, which the dev and test environments use.
+    # The full-season scan is tiny (one row per bulletin per day) and is cached,
+    # so the extra Python iteration is negligible.
+    payload: dict[str, dict[str, Any]] = {}
+    for grouping in qs.iterator():
+        if country_param and country_param not in grouping.countries:
+            continue
+        date_key = grouping.target_date.isoformat()
+        if date_key not in payload:
+            payload[date_key] = {"type": "FeatureCollection", "features": []}
+        payload[date_key]["features"].append(
+            {
+                "type": "Feature",
+                "geometry": grouping.boundary,
+                "properties": {
+                    "bulletin_id": grouping.bulletin.bulletin_id,
+                    "date": date_key,
+                    "countries": grouping.countries,
+                },
+            }
+        )
+    return payload
 
 
 @lowercase_region_id

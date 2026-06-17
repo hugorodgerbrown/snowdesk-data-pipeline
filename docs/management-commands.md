@@ -1,8 +1,8 @@
 ---
 name: management-commands
-description: Command catalogue — fetch_bulletins, fetch_weather, backfill_weather, rebuild_render_models, fixture builders, scheduler jobs
+description: Command catalogue — fetch_bulletins, fetch_weather, backfill_weather, backfill_bulletin_groupings, rebuild_render_models, fixture builders
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-06-16
 ---
 
 # Management commands
@@ -166,6 +166,26 @@ incident that invalidates derived state:
 
   # Persist (run on Render after deploying SNOW-295).
   poetry run python manage.py backfill_pdf_urls --commit
+  ```
+
+  Flags: `--commit`.
+
+- `backfill_bulletin_groupings --commit` — one-off post-deploy step
+  after SNOW-323: computes `BulletinGrouping` rows for all bulletins
+  that lack one. Groupings are normally created inline by `upsert_bulletin`
+  at ingest time (via `compute_bulletin_grouping_boundary`); this command
+  backfills historical rows that pre-date the ingest hook. Read-only by
+  default; pass `--commit` to persist. Idempotent — bulletins that already
+  have a grouping are skipped. Bulletins with no boundaried regions produce
+  no row (not counted as failures). Raises `CommandError` and exits non-zero
+  if any bulletin fails so cron/CI can detect partial failures.
+
+  ```bash
+  # Dry-run — counts how many bulletins would be processed.
+  poetry run python manage.py backfill_bulletin_groupings
+
+  # Persist (run on Render after deploying SNOW-323).
+  poetry run python manage.py backfill_bulletin_groupings --commit
   ```
 
   Flags: `--commit`.

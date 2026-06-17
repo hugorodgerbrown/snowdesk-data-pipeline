@@ -34,6 +34,7 @@ from django.urls import reverse
 
 from bulletins.models import RegionDayRating
 from tests.factories import (
+    BulletinGroupingFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
@@ -1352,3 +1353,150 @@ def test_region_summary_tooltip_chip_shows_peak_on_split_day() -> None:
     assert ">3<" in html
     # Morning-only level (moderate = 2) must NOT appear as the chip's data-level.
     assert 'data-level="moderate"' not in html
+
+
+# ---------------------------------------------------------------------------
+# bulletin_groupings_geojson (SNOW-323)
+# ---------------------------------------------------------------------------
+
+
+def _make_groupings_fixture() -> None:
+    """Create two BulletinGrouping rows spanning two dates and two countries.
+
+    Row 1: date=2026-01-15, countries=['CH']
+    Row 2: date=2026-01-16, countries=['AT', 'IT']
+    """
+    BulletinGroupingFactory.create(
+        target_date=dt.date(2026, 1, 15),
+        countries=["CH"],
+        boundary={
+            "type": "Polygon",
+            "coordinates": [
+                [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+            ],
+        },
+    )
+    BulletinGroupingFactory.create(
+        target_date=dt.date(2026, 1, 16),
+        countries=["AT", "IT"],
+        boundary={
+            "type": "Polygon",
+            "coordinates": [
+                [[10.0, 46.0], [11.0, 46.0], [11.0, 47.0], [10.0, 47.0], [10.0, 46.0]]
+            ],
+        },
+    )
+
+
+@pytest.mark.django_db
+def test_groupings_empty_when_no_rows() -> None:
+    """No BulletinGrouping rows → empty dict."""
+    response = Client().get(reverse("api:bulletin_groupings_geojson"))
+    assert response.status_code == 200
+    assert response.json() == {}
+
+
+@pytest.mark.django_db
+def test_groupings_payload_shape() -> None:
+    """Response is date-keyed with valid FeatureCollection entries."""
+    _make_groupings_fixture()
+    response = Client().get(reverse("api:bulletin_groupings_geojson"))
+    assert response.status_code == 200
+    data = response.json()
+
+    assert set(data.keys()) == {"2026-01-15", "2026-01-16"}
+    for date_key, fc in data.items():
+        assert fc["type"] == "FeatureCollection"
+        assert isinstance(fc["features"], list)
+        for feature in fc["features"]:
+            assert feature["type"] == "Feature"
+            props = feature["properties"]
+            assert "bulletin_id" in props
+            assert "date" in props
+            assert "countries" in props
+
+
+@pytest.mark.django_db
+def test_groupings_country_filter_ch() -> None:
+    """?country=ch returns only rows whose countries list contains 'CH'."""
+    _make_groupings_fixture()
+    response = Client().get(reverse("api:bulletin_groupings_geojson") + "?country=ch")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "2026-01-15" in data
+    assert "2026-01-16" not in data
+
+
+@pytest.mark.django_db
+def test_groupings_country_filter_case_insensitive() -> None:
+    """?country=CH and ?country=ch are treated identically."""
+    _make_groupings_fixture()
+    r_lower = Client().get(reverse("api:bulletin_groupings_geojson") + "?country=ch")
+    r_upper = Client().get(reverse("api:bulletin_groupings_geojson") + "?country=CH")
+    assert r_lower.status_code == 200
+    assert r_upper.status_code == 200
+    assert r_lower.json() == r_upper.json()
+
+
+@pytest.mark.django_db
+def test_groupings_country_filter_multi_country_row() -> None:
+    """A grouping with ['AT', 'IT'] appears when ?country=at is requested."""
+    _make_groupings_fixture()
+    response = Client().get(reverse("api:bulletin_groupings_geojson") + "?country=at")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "2026-01-16" in data
+    assert "2026-01-15" not in data
+
+
+@pytest.mark.django_db
+def test_groupings_invalid_country_returns_400() -> None:
+    """An unrecognised ?country= value returns 400."""
+    response = Client().get(reverse("api:bulletin_groupings_geojson") + "?country=zz")
+    assert response.status_code == 400
+    assert "error" in response.json()
+
+
+@pytest.mark.django_db
+def test_groupings_cache_control_header() -> None:
+    """Response carries a public Cache-Control header."""
+    response = Client().get(reverse("api:bulletin_groupings_geojson"))
+    assert response.status_code == 200
+    cc = response.get("Cache-Control", "")
+    assert "public" in cc
+    assert "max-age=" in cc
+
+
+@pytest.mark.django_db
+def test_groupings_cache_hit_avoids_db_on_second_call() -> None:
+    """After the first call the DB is not queried again for the same cache key."""
+    _make_groupings_fixture()
+    url = reverse("api:bulletin_groupings_geojson")
+
+    # Prime the cache.
+    resp1 = Client().get(url)
+    assert resp1.status_code == 200
+
+    with patch("public.api._build_groupings_payload") as mock_build:
+        resp2 = Client().get(url)
+        assert resp2.status_code == 200
+        assert resp2.json() == resp1.json()
+        mock_build.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_groupings_query_count() -> None:
+    """Endpoint uses a bounded number of DB queries (one main query, no N+1)."""
+    _make_groupings_fixture()
+    url = reverse("api:bulletin_groupings_geojson") + "?country=ch"
+
+    # Warm the cache; then clear it so the next call actually queries.
+    cache.clear()
+
+    with CaptureQueriesContext(connection) as ctx:
+        response = Client().get(url)
+    assert response.status_code == 200
+    # One select_related query; any more indicates an N+1 regression.
+    assert len(ctx.captured_queries) <= 3

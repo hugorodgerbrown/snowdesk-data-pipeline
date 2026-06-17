@@ -36,6 +36,7 @@ from django.utils.html import format_html, format_html_join
 
 from bulletins.models import (
     Bulletin,
+    BulletinGrouping,
     BulletinShare,
     BulletinShareClick,
     PipelineRun,
@@ -799,3 +800,24 @@ class BulletinShareClickAdmin(admin.ModelAdmin):
     ]
     raw_id_fields = ["request"]
     ordering = ["-created_at"]
+
+
+# ---------------------------------------------------------------------------
+# BulletinGrouping (SNOW-323)
+# ---------------------------------------------------------------------------
+
+
+@admin.register(BulletinGrouping)
+class BulletinGroupingAdmin(admin.ModelAdmin):
+    """Admin view for BulletinGrouping."""
+
+    list_display = (
+        "bulletin",
+        "target_date",
+        "countries",
+    )
+    list_filter = ("target_date",)
+    date_hierarchy = "target_date"
+    raw_id_fields = ("bulletin",)
+    readonly_fields = ("uuid", "created_at", "updated_at")
+    ordering = ("-target_date",)

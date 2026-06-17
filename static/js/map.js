@@ -104,6 +104,30 @@ const getSeasonRatings = () => {
   return SEASON_RATINGS_PROMISE;
 };
 
+// SNOW-323: Lazily-fetched, cached payload from /api/bulletin-groupings.geojson
+// Shape: { "YYYY-MM-DD": { type: "FeatureCollection", features: [...] } }.
+// Fetched once on first l3 toggle; date-switched via setData (no network).
+let BULLETIN_GROUPINGS_PROMISE = null;
+let BULLETIN_GROUPINGS_URL_MODULE = null;
+
+const getBulletinGroupings = () => {
+  if (BULLETIN_GROUPINGS_PROMISE !== null) return BULLETIN_GROUPINGS_PROMISE;
+  if (!BULLETIN_GROUPINGS_URL_MODULE) {
+    return Promise.reject(new Error('bulletin groupings URL not set'));
+  }
+  // SNOW-323: fetch ALL groupings (no ?country= filter) so cross-border
+  // ALBINA bulletins — e.g. countries: ["AT", "IT"] with no "CH" — are present
+  // in the payload. Per-country visibility is handled client-side by
+  // applyCountryFilters' array-membership filter on the `countries` property.
+  // This deliberately differs from the L1/L2 overlays and getSeasonRatings,
+  // which are CH-scoped at the fetch.
+  BULLETIN_GROUPINGS_PROMISE = fetch(BULLETIN_GROUPINGS_URL_MODULE).then((resp) => {
+    if (!resp.ok) throw new Error('bulletin groupings fetch failed');
+    return resp.json();
+  });
+  return BULLETIN_GROUPINGS_PROMISE;
+};
+
 // Repaint every known region's choropleth fill via MapLibre feature-state
 // for the supplied date. Missing regions in the frame fall back to
 // no_rating so colours from a previous frame don't leak through.
@@ -130,6 +154,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const SUB_REGIONS_URL     = mapEl.dataset.subRegionsUrl;
   const RESORTS_GEOJSON_URL = mapEl.dataset.resortsGeojsonUrl;
   const RESORTS_URL       = mapEl.dataset.resortsUrl;
+  // SNOW-323: Bulletin groupings URL — whole-season date-keyed FeatureCollection.
+  // Loaded lazily on first enable; cached for the session in BULLETIN_GROUPINGS_PROMISE.
+  const BULLETIN_GROUPINGS_URL = mapEl.dataset.bulletinGroupingsUrl || null;
+  // Hoist to module scope so getBulletinGroupings() (defined before the IIFE)
+  // can reach the URL that was read from the DOM here.
+  BULLETIN_GROUPINGS_URL_MODULE = BULLETIN_GROUPINGS_URL;
   // SNOW-239: Hand the ratings URL to module scope so the timelapse and
   // scrubber IIFEs (defined further down in this file) can share one
   // full-season fetch via getSeasonRatings().
@@ -203,14 +233,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const OVERLAY_STORAGE_KEY = {
     l1: 'snowdesk.map.overlay.l1',
     l2: 'snowdesk.map.overlay.l2',
+    l3: 'snowdesk.map.overlay.l3',
     l4: 'snowdesk.map.overlay.l4',
     resorts: 'snowdesk.map.overlay.resorts',
   };
   // L4 defaults to true and is force-locked below — the choropleth is
   // the entire point of the page, so toggling it off would leave the
   // map empty. SNOW-78 resorts default off so the map opens uncluttered.
-  const overlayState = { l1: false, l2: false, l4: true, resorts: false };
-  for (const key of ['l1', 'l2', 'resorts']) {
+  // SNOW-323: l3 (bulletin groupings) defaults off so the map opens uncluttered.
+  const overlayState = { l1: false, l2: false, l3: false, l4: true, resorts: false };
+  for (const key of ['l1', 'l2', 'l3', 'resorts']) {
     try {
       overlayState[key] =
         localStorage.getItem(OVERLAY_STORAGE_KEY[key]) === 'true';
@@ -671,6 +703,50 @@ const repaintRegionsForDate = (dateKey, cache) => {
     });
   };
 
+  // SNOW-323: Install the bulletin-groupings source and line layer.
+  // Idempotent — early-returns when the source already exists (called on
+  // basemap swap via the styledata handler and on first l3 toggle).
+  //
+  // The layer uses a dashed line so it reads visually distinct from the
+  // L2 (sub-regions, solid thin blue) and L1 (major, solid heavier red)
+  // outlines.  Colour uses the same neutral near-black as the selection ring
+  // but at lower opacity and with a dash pattern so it reads as an informational
+  // overlay rather than a selection indicator.  Inserted above
+  // 'regions-line-selected' so it sits between the choropleth and the
+  // selection ring in the layer stack.
+  //
+  // Visibility is seeded from overlayState.l3 so a page-reload with l3
+  // persisted to localStorage makes the layer appear immediately.
+  let groupingsGeojsonCache = null;
+  const installBulletinGroupingsLayer = (featureCollection) => {
+    if (map.getSource('bulletin-groupings')) return;
+    const data = featureCollection || { type: 'FeatureCollection', features: [] };
+    map.addSource('bulletin-groupings', { type: 'geojson', data });
+    map.addLayer(
+      {
+        id: 'bulletin-groupings-line',
+        type: 'line',
+        source: 'bulletin-groupings',
+        layout: {
+          visibility: overlayState.l3 ? 'visible' : 'none',
+          'line-join': 'round',
+          'line-cap': 'round',
+        },
+        paint: {
+          'line-color': '#1a6b3c',
+          'line-width': 2.0,
+          'line-dasharray': [4, 3],
+          'line-opacity': 0.85,
+        },
+      },
+      // Insert above regions-line-selected so grouping boundaries sit
+      // between the choropleth and the selection ring.
+      'regions-line-selected',
+    );
+    BASE_LAYER_FILTERS['bulletin-groupings-line'] =
+      map.getFilter('bulletin-groupings-line') ?? null;
+  };
+
   // Cached at IIFE scope so the style.load handler (registered inside
   // map.on('load') below) can re-install layers without a refetch when
   // the user picks a new basemap.
@@ -730,6 +806,21 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // and feature-state, which cannot appear in filter expressions (MapLibre v4).
     // Country filtering is implicit: only features visible through regions-fill
     // (which does carry the country filter) can be clicked and selected.
+
+    // SNOW-323: bulletin-groupings-line carries a ``countries`` JSON *array*
+    // rather than a scalar ``country`` string, so the scalar 'match' filter
+    // above cannot be reused.  Build a membership filter using MapLibre's
+    // 'in' expression (value, array form — first arg is the needle, second
+    // is ['get', 'countries'] which resolves to the feature's array).
+    // Compose with its base filter if one was snapshotted at install time.
+    if (map.getLayer('bulletin-groupings-line')) {
+      const arrayFilter = enabled.length > 0
+        ? ['any', ...enabled.map(c => ['in', c, ['get', 'countries']])]
+        : ['==', false, true];
+      const base = BASE_LAYER_FILTERS['bulletin-groupings-line'];
+      const composed = base ? ['all', base, arrayFilter] : arrayFilter;
+      map.setFilter('bulletin-groupings-line', composed);
+    }
   };
 
   // SNOW-172: Lazy-fetch a country's L1 + L2 + L4 GeoJSON and merge it
@@ -876,7 +967,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // errors degrade silently (no layer install), applyCountryFilters is called
   // after install so freshly-added L1/L2 layers respect the active country
   // filter immediately.
-  const overlayLoaded = { l1: false, l2: false, resorts: false };
+  const overlayLoaded = { l1: false, l2: false, l3: false, resorts: false };
 
   const ensureOverlayLoaded = async (key) => {
     if (overlayLoaded[key]) return;
@@ -894,6 +985,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!data) return;
       subGeojsonCache = data;
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
+    } else if (key === 'l3') {
+      // SNOW-323: fetch the whole-season bulletin-groupings payload once
+      // and cache it; subsequent date changes swap source data without
+      // hitting the network again.
+      if (!BULLETIN_GROUPINGS_URL) return;
+      const cache = await getBulletinGroupings().catch(() => null);
+      if (!cache) return;
+      groupingsGeojsonCache = cache;
+      const dateKey = currentDisplayedDate || bootDateKey;
+      const fc = groupingsGeojsonCache[dateKey] || { type: 'FeatureCollection', features: [] };
+      installBulletinGroupingsLayer(fc);
     } else if (key === 'resorts') {
       if (!RESORTS_GEOJSON_URL) return;
       const data = await fetch(RESORTS_GEOJSON_URL)
@@ -903,7 +1005,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       installResortsLayer(resortsGeojsonCache);
     }
     overlayLoaded[key] = true;
-    // Apply country filters to the freshly-added L1/L2 layers so they
+    // Apply country filters to the freshly-added layers so they
     // respect whichever countries are currently enabled.
     applyCountryFilters();
   };
@@ -916,6 +1018,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const OVERLAY_LAYER_IDS_MAIN = {
     l1: ['major-regions-line', 'major-regions-label'],
     l2: ['sub-regions-line', 'sub-regions-label'],
+    // SNOW-323: l3 has only a line layer (no label layer — groupings
+    // don't carry a user-facing name property).
+    l3: ['bulletin-groupings-line'],
     resorts: ['resorts-pin', 'resorts-label'],
   };
 
@@ -998,6 +1103,20 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (IS_PLAYING) return;
     const dk = (e.detail && e.detail.date) || null;
     if (dk) _refreshPopupForDate(dk);
+  });
+
+  // SNOW-323: Swap the bulletin-groupings source to the new date's
+  // FeatureCollection when the scrubber moves. No network — the
+  // whole-season payload was cached on first l3 enable.
+  document.addEventListener('snowdesk:date-changed', (e) => {
+    if (!overlayLoaded.l3) return;
+    const dk = (e.detail && e.detail.date) || null;
+    if (!dk) return;
+    const src = map.getSource('bulletin-groupings');
+    if (!src) return;
+    const fc = (groupingsGeojsonCache && groupingsGeojsonCache[dk])
+      || { type: 'FeatureCollection', features: [] };
+    src.setData(fc);
   });
 
   map.on('load', async () => {
@@ -1923,6 +2042,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
       // SNOW-78: same story for the resorts pin layer.
       installResortsLayer(resortsGeojsonCache);
+      // SNOW-323: Re-install the bulletin-groupings layer if the cache
+      // was populated (i.e. the user had enabled l3 before the basemap swap).
+      if (groupingsGeojsonCache) {
+        const dk = currentDisplayedDate || bootDateKey;
+        const fc = groupingsGeojsonCache[dk] || { type: 'FeatureCollection', features: [] };
+        installBulletinGroupingsLayer(fc);
+      }
 
       // SNOW-172: Re-apply country filters for the freshly-installed layers.
       // The caches (geojsonCache, majorGeojsonCache, subGeojsonCache) still
@@ -2703,12 +2829,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const OVERLAY_LAYER_IDS = {
     l1: ['major-regions-line', 'major-regions-label'],
     l2: ['sub-regions-line', 'sub-regions-label'],
+    // SNOW-323: l3 — bulletin groupings, lazily loaded on first toggle.
+    l3: ['bulletin-groupings-line'],
     l4: ['regions-fill', 'regions-line', 'regions-label'],
     resorts: ['resorts-pin', 'resorts-label'],
   };
   const OVERLAY_STORAGE_KEY = {
     l1: 'snowdesk.map.overlay.l1',
     l2: 'snowdesk.map.overlay.l2',
+    l3: 'snowdesk.map.overlay.l3',
     l4: 'snowdesk.map.overlay.l4',
     resorts: 'snowdesk.map.overlay.resorts',
   };
@@ -2745,12 +2874,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
         try { localStorage.setItem(OVERLAY_STORAGE_KEY[overlayKey], String(next)); }
         catch (_) { /* private mode — choice still applies for this session */ }
         if (MAP) {
-          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts')) {
+          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'l3' || overlayKey === 'resorts')) {
             // SNOW-235: First enable of a lazy overlay tier — delegate to the
             // main IIFE via snowdesk:overlay-load so it can fetch the GeoJSON,
             // install the layers, and then make them visible. The main IIFE
             // listener handles both the fetch and the setLayoutProperty call,
             // so we return here without running the direct visibility loop.
+            // SNOW-323: l3 (bulletin groupings) is also lazy — same pattern.
             document.dispatchEvent(new CustomEvent('snowdesk:overlay-load', {
               detail: { key: overlayKey },
             }));

@@ -40,6 +40,7 @@ Optional context:
     data-resorts-url="{% url 'api:resorts_by_region' %}"
     data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
     data-region-summary-url="{% url 'api:region_summary' region_id='XX-0000' %}"
+    data-bulletin-groupings-url="{% url 'api:bulletin_groupings_geojson' %}"
     data-default-basemap-key="{{ default_basemap_key }}"
     data-season-end="{{ season_end|date:'Y-m-d' }}"
 >
@@ -198,6 +199,20 @@ Optional context:
                         aria-checked="false"
                     >
                         {% trans "Sub regions" %}
+                    </button>
+                </li>
+                {# SNOW-323: L3 bulletin groupings — dissolved outline of the #}
+                {# micro-regions sharing a bulletin. Off by default; loaded #}
+                {# lazily on first toggle via ensureOverlayLoaded('l3').    #}
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay"
+                        data-overlay-key="l3"
+                        aria-checked="false"
+                    >
+                        {% trans "Bulletin groupings" %}
                     </button>
                 </li>
                 <li role="none">

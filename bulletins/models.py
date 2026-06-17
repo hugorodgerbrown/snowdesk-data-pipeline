@@ -1,7 +1,7 @@
 """
 bulletins/models.py — Bulletin-derived database models.
 
-Owns the seven bulletin-driven models:
+Owns the eight bulletin-driven models:
   - PipelineRun: records each execution of the data pipeline (scheduled or
     manual), its status, and timing metadata.
   - Bulletin: stores SLF avalanche bulletins fetched from the CAAML API,
@@ -23,6 +23,9 @@ Owns the seven bulletin-driven models:
   - BulletinShareClick: one row per follow of a BulletinShare link.
     Captures client metadata (IP, UA, session, Referer, Sec-Purpose,
     country_code, visitor_hash) for share-click analytics (SNOW-217).
+  - BulletinGrouping: dissolved outer boundary of all L4 micro-regions
+    sharing a bulletin on a given day, computed at ingest time. Provides
+    the "L3" dynamic overlay on the map (SNOW-323).
 
 Region hierarchy (MicroRegion, MajorRegion, SubRegion, Resort) lives
 in ``regions.models`` — those are stable lookup tables shared across the
@@ -872,6 +875,101 @@ class BulletinShareClick(BaseModel):
         Format: ``BulletinShareClick(<share_token>, <country_code>)``
         """
         return f"BulletinShareClick({self.share.token}, {self.request.country_code!r})"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# BulletinGrouping (SNOW-323)
+# ---------------------------------------------------------------------------
+
+
+class BulletinGroupingQuerySet(models.QuerySet["BulletinGrouping"]):
+    """Custom queryset for BulletinGrouping."""
+
+    def for_date(self, target_date: _date) -> "BulletinGroupingQuerySet":
+        """
+        Return all groupings whose target_date equals the supplied date.
+
+        Args:
+            target_date: The calendar date to filter by.
+
+        Returns:
+            A filtered queryset of BulletinGrouping rows for that date.
+
+        """
+        return self.filter(target_date=target_date)
+
+
+class BulletinGrouping(BaseModel):
+    """
+    Dissolved outer boundary of the micro-regions sharing a bulletin.
+
+    One row per bulletin. Computed at ingest time by
+    ``bulletins.services.grouping.compute_bulletin_grouping_boundary``:
+    the micro-regions linked to the bulletin via ``RegionBulletin`` that
+    carry a ``boundary`` are dissolved into a single GeoJSON
+    Polygon/MultiPolygon using Shapely's ``unary_union``. The result is
+    stored here so the ``/api/bulletin-groupings.geojson`` endpoint can
+    serve a date-keyed FeatureCollection without touching Shapely at
+    request time.
+
+    ``countries`` is a sorted JSON list of ISO-2 country codes (e.g.
+    ``["AT", "IT"]``) derived from the linked regions' parent
+    ``MajorRegion.country``. A bulletin that spans two countries produces
+    a two-element list; a single-country bulletin produces a one-element
+    list.
+
+    The relationship is ``OneToOne`` because each bulletin dissolves to
+    exactly one polygon (or is absent when no boundaried regions are
+    linked). Re-ingest is idempotent via ``update_or_create``.
+    """
+
+    bulletin = models.OneToOneField(
+        Bulletin,
+        on_delete=CASCADE,
+        related_name="grouping",
+        help_text="The bulletin whose linked micro-regions were dissolved.",
+    )
+    target_date = models.DateField(
+        db_index=True,
+        help_text=(
+            "Calendar date this bulletin is forecasting, as determined by "
+            "the same morning/evening boundary rule used by the day-rating service."
+        ),
+    )
+    boundary = models.JSONField(
+        help_text=(
+            "Dissolved GeoJSON geometry (Polygon or MultiPolygon) covering "
+            "all micro-regions linked to the bulletin that carry a boundary."
+        ),
+    )
+    countries = models.JSONField(
+        default=list,
+        help_text=(
+            "Sorted list of ISO-2 country codes touched by the bulletin's regions "
+            "(e.g. ['AT', 'IT'] for an ALBINA cross-border bulletin)."
+        ),
+    )
+
+    objects = BulletinGroupingQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["-target_date"]
+
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this grouping.
+
+        Format: ``BulletinGrouping(<bulletin_id>, <target_date>, <countries>)``
+        """
+        return (
+            f"BulletinGrouping({self.bulletin.bulletin_id},"
+            f" {self.target_date}, {self.countries})"
+        )
 
     def __str__(self) -> str:
         """Return a human-readable representation."""
