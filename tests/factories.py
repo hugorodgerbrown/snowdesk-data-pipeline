@@ -392,8 +392,8 @@ class BulletinGroupingFactory(factory.django.DjangoModelFactory[BulletinGrouping
 class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation]):
     """Factory for FieldObservation instances.
 
-    Defaults to a CH-alpine GPS fix (Martigny area) with a single
-    WHUMPFING observation type.  Override any field as needed.
+    Defaults to a CH-alpine GPS fix (Martigny area) with observation_type
+    WHUMPFING.  Override any field as needed.
     """
 
     class Meta:
@@ -408,6 +408,4 @@ class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation
     longitude = 7.10
     accuracy_radius_km = None
     observed_at = factory.LazyFunction(django_timezone.now)
-    observation_types = factory.LazyFunction(
-        lambda: [FieldObservation.OBSERVATION_TYPE.WHUMPFING]
-    )
+    observation_type = FieldObservation.OBSERVATION_TYPE.WHUMPFING

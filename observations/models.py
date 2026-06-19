@@ -2,8 +2,8 @@
 observations/models.py — Database models for the observations application.
 
 Defines ``FieldObservation``: a GPS-gated field report submitted by an
-authenticated subscriber from the map page.  Each row captures the
-observation type(s) selected (e.g. whumpfing, pinwheels), the GPS fix
+authenticated subscriber from the map page.  Each row captures the single
+observation type selected (e.g. whumpfing, pinwheels), the GPS fix
 (latitude, longitude, accuracy), the wall-clock time, and a best-effort
 resolution to the MicroRegion containing the point.
 
@@ -13,6 +13,7 @@ Business logic (point→region resolution, rate limiting) lives in
 
 from __future__ import annotations
 
+import collections
 import datetime
 import logging
 from typing import TYPE_CHECKING
@@ -60,8 +61,9 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
     ) -> dict[str, int]:
         """Tally per-type observation counts for a region on a calendar day.
 
-        Fetches only the ``observation_types`` JSON field and iterates in
-        Python to avoid JSON-path DB function portability concerns.
+        Each row contributes exactly one type (the singular ``observation_type``
+        field).  Uses ``collections.Counter`` over a flat values_list query —
+        no JSON-path DB function portability concerns.
 
         Args:
             region: The MicroRegion to filter by.
@@ -73,16 +75,10 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
             omitted.
 
         """
-        rows = self.for_region_day(region, day).values_list(
-            "observation_types", flat=True
+        types = self.filter(region=region, observed_at__date=day).values_list(
+            "observation_type", flat=True
         )
-        counts: dict[str, int] = {}
-        for types_list in rows:
-            if not isinstance(types_list, list):
-                continue
-            for obs_type in types_list:
-                counts[obs_type] = counts.get(obs_type, 0) + 1
-        return counts
+        return dict(collections.Counter(types))
 
 
 class FieldObservationManager(models.Manager["FieldObservation"]):
@@ -118,8 +114,8 @@ class FieldObservationManager(models.Manager["FieldObservation"]):
 class FieldObservation(BaseModel):
     """A GPS-gated field observation submitted by a subscriber from the map.
 
-    One row per report submission.  The ``observation_types`` JSON list
-    holds one or more ``OBSERVATION_TYPE`` values from the report form.
+    One row per report submission.  The ``observation_type`` CharField holds
+    one ``OBSERVATION_TYPE`` value from the one-tap report form.
     The ``region`` FK is best-effort — it may be null when the GPS fix
     cannot be matched to a known MicroRegion boundary.
 
@@ -131,8 +127,9 @@ class FieldObservation(BaseModel):
         """Recognised field-observation signal types.
 
         Values are UPPER_CASE identifiers; labels are in British English.
-        Extend this list to add new observation types — existing rows are
-        unaffected because the list is stored as raw strings in JSONField.
+        Extend this list to add new observation types — the CharField
+        constraint enforces only the values present at row-creation time;
+        adding new choices does not require a migration.
         """
 
         WHUMPFING = "WHUMPFING", "Whumpfing"
@@ -180,11 +177,12 @@ class FieldObservation(BaseModel):
         db_index=True,
         help_text="Wall-clock time when the report was submitted.",
     )
-    observation_types = models.JSONField(
-        default=list,
+    observation_type = models.CharField(
+        max_length=32,
+        choices=OBSERVATION_TYPE.choices,
         help_text=(
-            "List of OBSERVATION_TYPE values selected by the subscriber "
-            '(e.g. ["WHUMPFING", "PINWHEELS"]).'
+            "Single OBSERVATION_TYPE value reported by the subscriber "
+            "(e.g. WHUMPFING).  To report two problems, submit two reports."
         ),
     )
 
@@ -198,14 +196,12 @@ class FieldObservation(BaseModel):
     def to_string(self) -> str:
         """Return a concise human-readable description of this observation.
 
-        Format: ``"{subscriber} @ {region} on {date}: {types}"``
+        Format: ``"{subscriber} @ {region} on {date}: {type label}"``
         """
         region_label = self.region.name if self.region is not None else "unknown region"
         date_label = self.observed_at.strftime("%Y-%m-%d")
-        types_label = (
-            ", ".join(self.observation_types) if self.observation_types else "no types"
-        )
-        return f"{self.subscriber} @ {region_label} on {date_label}: {types_label}"
+        type_label = self.get_observation_type_display()
+        return f"{self.subscriber} @ {region_label} on {date_label}: {type_label}"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""

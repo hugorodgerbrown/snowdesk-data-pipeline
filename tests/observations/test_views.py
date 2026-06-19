@@ -6,7 +6,8 @@ Covers:
                   missing GPS → 400; returns form with region banner;
                   returns form with "couldn't match" when no region.
   report_submit — flag off → 404; non-HTMX → 400; non-subscriber → 403;
-                  missing GPS → 400; creates row + returns confirmation;
+                  missing GPS → 400; missing/invalid observation_type → 400;
+                  valid observation_type → creates row + returns confirmation;
                   rate-limit → 429; multiple reports same day allowed.
 """
 
@@ -169,6 +170,22 @@ class TestReportFormSuccess:
         assert response.status_code == 200
         assert "couldn" in response.content.decode()
 
+    @override_flag("field_observations", active=True)
+    def test_form_contains_problem_buttons(self, client: Client) -> None:
+        """Each OBSERVATION_TYPE value appears as a submit button in the form."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.get(
+                FORM_URL,
+                {"lat": "46.1", "lon": "7.1"},
+                **HTMX_HEADERS,
+            )
+        content = response.content.decode()
+        for value in FieldObservation.OBSERVATION_TYPE.values:
+            assert value in content
+
 
 # ---------------------------------------------------------------------------
 # report_submit — POST /partials/report/
@@ -241,6 +258,41 @@ class TestReportSubmitGpsGate:
 
 
 @pytest.mark.django_db
+class TestReportSubmitObservationTypeGate:
+    """Missing or invalid observation_type returns 400."""
+
+    @override_flag("field_observations", active=True)
+    def test_missing_observation_type_returns_400(self, client: Client) -> None:
+        """POST with valid GPS but no observation_type → 400."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {"lat": "46.1", "lon": "7.1"},
+                **HTMX_HEADERS,
+            )
+        assert response.status_code == 400
+
+    @override_flag("field_observations", active=True)
+    def test_invalid_observation_type_returns_400(self, client: Client) -> None:
+        """POST with an unknown observation_type value → 400."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "observation_type": "UNKNOWN_TYPE",
+                },
+                **HTMX_HEADERS,
+            )
+        assert response.status_code == 400
+
+
+@pytest.mark.django_db
 class TestReportSubmitSuccess:
     """Valid POST creates a FieldObservation and returns confirmation."""
 
@@ -256,7 +308,7 @@ class TestReportSubmitSuccess:
                 {
                     "lat": "46.1",
                     "lon": "7.1",
-                    "observation_types": [FieldObservation.OBSERVATION_TYPE.WHUMPFING],
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
                 },
                 **HTMX_HEADERS,
             )
@@ -266,7 +318,27 @@ class TestReportSubmitSuccess:
         obs = FieldObservation.objects.get(subscriber=subscriber)
         assert obs.latitude == 46.1
         assert obs.longitude == 7.1
-        assert FieldObservation.OBSERVATION_TYPE.WHUMPFING in obs.observation_types
+        assert obs.observation_type == FieldObservation.OBSERVATION_TYPE.WHUMPFING
+
+    @override_flag("field_observations", active=True)
+    def test_stores_the_submitted_type(self, client: Client) -> None:
+        """The stored observation_type matches what was submitted."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+
+        with patch("observations.views.region_for_point", return_value=None):
+            client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.FRACTURES,
+                },
+                **HTMX_HEADERS,
+            )
+
+        obs = FieldObservation.objects.get(subscriber=subscriber)
+        assert obs.observation_type == FieldObservation.OBSERVATION_TYPE.FRACTURES
 
     @override_flag("field_observations", active=True)
     def test_returns_confirmation_partial(self, client: Client) -> None:
@@ -277,7 +349,11 @@ class TestReportSubmitSuccess:
         with patch("observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
-                {"lat": "46.1", "lon": "7.1"},
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                },
                 **HTMX_HEADERS,
             )
 
@@ -294,7 +370,11 @@ class TestReportSubmitSuccess:
         with patch("observations.views.region_for_point", return_value=region):
             response = client.post(
                 SUBMIT_URL,
-                {"lat": "46.1", "lon": "7.1"},
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                },
                 **HTMX_HEADERS,
             )
 
@@ -303,45 +383,33 @@ class TestReportSubmitSuccess:
 
     @override_flag("field_observations", active=True)
     def test_multiple_reports_same_day_allowed(self, client: Client) -> None:
-        """Multiple reports from the same subscriber on the same day are all created."""
+        """Multiple reports from the same subscriber on the same day are all created.
+
+        To report two problems the user submits two reports — each with a
+        different observation_type.
+        """
         subscriber = SubscriberFactory.create()
         client.force_login(subscriber.user)
 
-        for _ in range(3):
+        types = [
+            FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+            FieldObservation.OBSERVATION_TYPE.PINWHEELS,
+            FieldObservation.OBSERVATION_TYPE.FRACTURES,
+        ]
+        for obs_type in types:
             with patch("observations.views.region_for_point", return_value=None):
                 resp = client.post(
                     SUBMIT_URL,
-                    {"lat": "46.1", "lon": "7.1"},
+                    {
+                        "lat": "46.1",
+                        "lon": "7.1",
+                        "observation_type": obs_type,
+                    },
                     **HTMX_HEADERS,
                 )
             assert resp.status_code == 200
 
         assert FieldObservation.objects.filter(subscriber=subscriber).count() == 3
-
-    @override_flag("field_observations", active=True)
-    def test_unknown_observation_types_are_filtered(self, client: Client) -> None:
-        """POST with unknown observation_type values silently drops them."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
-
-        with patch("observations.views.region_for_point", return_value=None):
-            response = client.post(
-                SUBMIT_URL,
-                {
-                    "lat": "46.1",
-                    "lon": "7.1",
-                    "observation_types": [
-                        "UNKNOWN_TYPE",
-                        FieldObservation.OBSERVATION_TYPE.PINWHEELS,
-                    ],
-                },
-                **HTMX_HEADERS,
-            )
-
-        assert response.status_code == 200
-        obs = FieldObservation.objects.get(subscriber=subscriber)
-        assert "UNKNOWN_TYPE" not in obs.observation_types
-        assert FieldObservation.OBSERVATION_TYPE.PINWHEELS in obs.observation_types
 
     @override_flag("field_observations", active=True)
     def test_accuracy_converted_metres_to_km(self, client: Client) -> None:
@@ -352,7 +420,12 @@ class TestReportSubmitSuccess:
         with patch("observations.views.region_for_point", return_value=None):
             client.post(
                 SUBMIT_URL,
-                {"lat": "46.1", "lon": "7.1", "accuracy_m": "500"},
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                    "accuracy_m": "500",
+                },
                 **HTMX_HEADERS,
             )
 

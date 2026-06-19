@@ -30,10 +30,10 @@ class TestFieldObservationAdminRegistration:
         registered = admin.site._registry[FieldObservation]
         assert "subscriber" in registered.list_display
 
-    def test_list_display_includes_observation_types(self) -> None:
-        """list_display includes observation_types."""
+    def test_list_display_includes_observation_type(self) -> None:
+        """list_display includes observation_type (singular)."""
         registered = admin.site._registry[FieldObservation]
-        assert "observation_types" in registered.list_display
+        assert "observation_type" in registered.list_display
 
     def test_readonly_fields_includes_subscriber(self) -> None:
         """subscriber is read-only (no editing user-generated content)."""

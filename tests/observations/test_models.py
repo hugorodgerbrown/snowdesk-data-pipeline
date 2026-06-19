@@ -2,9 +2,10 @@
 tests/observations/test_models.py — Tests for observations.models.
 
 Covers:
-  FieldObservation defaults, to_string, Meta.ordering.
-  FieldObservationQuerySet.counts_for_region_day — multi-type rows, empty case,
-    cross-region isolation, cross-day isolation.
+  FieldObservation field values, to_string, Meta.ordering.
+  FieldObservationQuerySet.counts_for_region_day — single-type rows,
+    multi-row aggregation, empty case, cross-region isolation,
+    cross-day isolation.
 """
 
 from __future__ import annotations
@@ -24,17 +25,19 @@ from tests.factories import (
 
 
 @pytest.mark.django_db
-class TestFieldObservationDefaults:
-    """Verify field defaults and Meta settings."""
+class TestFieldObservationFields:
+    """Verify field values and Meta settings."""
 
-    def test_observation_types_defaults_to_empty_list(self) -> None:
-        """observation_types defaults to an empty list when not provided."""
+    def test_observation_type_round_trips(self) -> None:
+        """observation_type is stored and retrieved correctly."""
         obs = FieldObservation.objects.create(
             subscriber=SubscriberFactory.create(),
             latitude=46.10,
             longitude=7.10,
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
         )
-        assert obs.observation_types == []
+        obs.refresh_from_db()
+        assert obs.observation_type == FieldObservation.OBSERVATION_TYPE.WHUMPFING
 
     def test_observed_at_defaults_to_now(self) -> None:
         """observed_at defaults to the current time (tz-aware)."""
@@ -50,6 +53,7 @@ class TestFieldObservationDefaults:
             subscriber=SubscriberFactory.create(),
             latitude=46.10,
             longitude=7.10,
+            observation_type=FieldObservation.OBSERVATION_TYPE.PINWHEELS,
             region=None,
         )
         assert obs.region is None
@@ -82,21 +86,21 @@ class TestFieldObservationToString:
     """to_string and __str__ coverage."""
 
     def test_to_string_with_region(self) -> None:
-        """to_string includes region name when region is set."""
+        """to_string includes region name and display label when region is set."""
         region = MicroRegionFactory.create(name="Martigny-Verbier")
         obs = FieldObservationFactory.create(
             region=region,
-            observation_types=[FieldObservation.OBSERVATION_TYPE.WHUMPFING],
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
         )
         result = obs.to_string()
         assert "Martigny-Verbier" in result
-        assert "WHUMPFING" in result
+        assert "Whumpfing" in result
 
     def test_to_string_without_region(self) -> None:
         """to_string says 'unknown region' when region is null."""
         obs = FieldObservationFactory.create(
             region=None,
-            observation_types=[FieldObservation.OBSERVATION_TYPE.PINWHEELS],
+            observation_type=FieldObservation.OBSERVATION_TYPE.PINWHEELS,
         )
         result = obs.to_string()
         assert "unknown region" in result
@@ -106,10 +110,15 @@ class TestFieldObservationToString:
         obs = FieldObservationFactory.create()
         assert str(obs) == obs.to_string()
 
-    def test_to_string_with_no_types(self) -> None:
-        """to_string says 'no types' when observation_types is empty."""
-        obs = FieldObservationFactory.create(observation_types=[])
-        assert "no types" in obs.to_string()
+    def test_to_string_uses_display_label(self) -> None:
+        """to_string shows the human-readable label, not the raw value."""
+        obs = FieldObservationFactory.create(
+            observation_type=FieldObservation.OBSERVATION_TYPE.WIND_STRIATIONS,
+        )
+        assert "Wind striations" in obs.to_string()
+        # Raw value should not appear in isolation (it appears as part of the label too,
+        # but the key check is that the human-readable label is present).
+        assert "WIND_STRIATIONS" not in obs.to_string()
 
 
 @pytest.mark.django_db
@@ -121,7 +130,7 @@ class TestCountsForRegionDay:
         return datetime.date(2026, 1, 15)
 
     def _at(self, d: datetime.date) -> datetime.datetime:
-        """Return a tz-aware datetime for midnight on date d."""
+        """Return a tz-aware datetime for noon on date d."""
         return datetime.datetime(d.year, d.month, d.day, 12, 0, tzinfo=UTC)
 
     def test_returns_empty_dict_when_no_observations(self) -> None:
@@ -130,13 +139,13 @@ class TestCountsForRegionDay:
         counts = FieldObservation.objects.counts_for_region_day(region, self._day())
         assert counts == {}
 
-    def test_counts_single_observation_type(self) -> None:
-        """Counts a single observation type correctly."""
+    def test_counts_single_observation(self) -> None:
+        """A single row with one type produces count of 1."""
         region = MicroRegionFactory.create()
         FieldObservationFactory.create(
             region=region,
             observed_at=self._at(self._day()),
-            observation_types=[FieldObservation.OBSERVATION_TYPE.WHUMPFING],
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
         )
         counts = FieldObservation.objects.counts_for_region_day(region, self._day())
         assert counts == {"WHUMPFING": 1}
@@ -148,21 +157,23 @@ class TestCountsForRegionDay:
             FieldObservationFactory.create(
                 region=region,
                 observed_at=self._at(self._day()),
-                observation_types=[FieldObservation.OBSERVATION_TYPE.PINWHEELS],
+                observation_type=FieldObservation.OBSERVATION_TYPE.PINWHEELS,
             )
         counts = FieldObservation.objects.counts_for_region_day(region, self._day())
         assert counts == {"PINWHEELS": 3}
 
-    def test_counts_multiple_types_in_one_row(self) -> None:
-        """A single row with multiple types contributes to each type's count."""
+    def test_counts_multiple_reports_different_types(self) -> None:
+        """Two reports with different types each contribute to their own count."""
         region = MicroRegionFactory.create()
         FieldObservationFactory.create(
             region=region,
             observed_at=self._at(self._day()),
-            observation_types=[
-                FieldObservation.OBSERVATION_TYPE.WHUMPFING,
-                FieldObservation.OBSERVATION_TYPE.FRACTURES,
-            ],
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        FieldObservationFactory.create(
+            region=region,
+            observed_at=self._at(self._day()),
+            observation_type=FieldObservation.OBSERVATION_TYPE.FRACTURES,
         )
         counts = FieldObservation.objects.counts_for_region_day(region, self._day())
         assert counts == {"WHUMPFING": 1, "FRACTURES": 1}
@@ -174,7 +185,7 @@ class TestCountsForRegionDay:
         FieldObservationFactory.create(
             region=other_region,
             observed_at=self._at(self._day()),
-            observation_types=[FieldObservation.OBSERVATION_TYPE.WHUMPFING],
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
         )
         counts = FieldObservation.objects.counts_for_region_day(region, self._day())
         assert counts == {}
@@ -186,34 +197,32 @@ class TestCountsForRegionDay:
         FieldObservationFactory.create(
             region=region,
             observed_at=self._at(other_day),
-            observation_types=[FieldObservation.OBSERVATION_TYPE.WHUMPFING],
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
         )
         counts = FieldObservation.objects.counts_for_region_day(region, self._day())
         assert counts == {}
 
-    def test_multiple_reports_same_day_multiple_types(self) -> None:
-        """Two reporters each with a mix of types produce correct totals."""
+    def test_multiple_reporters_same_day(self) -> None:
+        """Two reporters submitting different types produce correct totals."""
         region = MicroRegionFactory.create()
         FieldObservationFactory.create(
             region=region,
             observed_at=self._at(self._day()),
-            observation_types=[
-                FieldObservation.OBSERVATION_TYPE.WHUMPFING,
-                FieldObservation.OBSERVATION_TYPE.PINWHEELS,
-            ],
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
         )
         FieldObservationFactory.create(
             region=region,
             observed_at=self._at(self._day()),
-            observation_types=[
-                FieldObservation.OBSERVATION_TYPE.WHUMPFING,
-                FieldObservation.OBSERVATION_TYPE.SHOOTING_CRACKS,
-            ],
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        FieldObservationFactory.create(
+            region=region,
+            observed_at=self._at(self._day()),
+            observation_type=FieldObservation.OBSERVATION_TYPE.PINWHEELS,
         )
         counts = FieldObservation.objects.counts_for_region_day(region, self._day())
         assert counts["WHUMPFING"] == 2
         assert counts["PINWHEELS"] == 1
-        assert counts["SHOOTING_CRACKS"] == 1
         assert "FRACTURES" not in counts
 
 
