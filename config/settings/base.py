@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     "public",
     "subscriptions",
     "analytics",
+    "observations",
 ]
 
 MIDDLEWARE = [
