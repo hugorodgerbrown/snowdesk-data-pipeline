@@ -64,6 +64,12 @@ L3 is deliberately skipped. All in `regions/models.py`.
 | is_day projection | Render-time check that "now" falls between that region's sunrise and sunset — never stored | `is_day()` in `bulletins/services/weather_display.py` |
 | Bulletin header | Context dict for `templates/includes/bulletin_header.html` ("weather header" is its historical name) | `bulletin_header_context()` in `bulletins/services/weather_display.py` |
 
+## Field observations
+
+| Term | Meaning | Code |
+|------|---------|------|
+| FieldObservation | A GPS-gated avalanche-signal report submitted by a subscriber from the map page (SNOW-324); stores observation types, coordinates, and region match | `observations/models.py` |
+
 ## Subscriptions and tracking
 
 | Term | Meaning | Code |
