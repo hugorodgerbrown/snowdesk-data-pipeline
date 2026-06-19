@@ -492,51 +492,62 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
 @vary_on_headers("Accept-Encoding")
 def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
     """
-    Return a date-keyed FeatureCollection of dissolved bulletin boundaries.
+    Return a single date's FeatureCollection of dissolved bulletin boundaries.
 
     Response shape::
 
         {
-          "YYYY-MM-DD": {
-            "type": "FeatureCollection",
-            "features": [
-              {
-                "type": "Feature",
-                "geometry": <GeoJSON Polygon or MultiPolygon>,
-                "properties": {
-                  "bulletin_id": "...",
-                  "date": "YYYY-MM-DD",
-                  "countries": ["AT", "IT"]
-                }
-              },
-              ...
-            ]
-          },
-          ...
+          "type": "FeatureCollection",
+          "features": [
+            {
+              "type": "Feature",
+              "geometry": <GeoJSON Polygon or MultiPolygon>,
+              "properties": {
+                "bulletin_id": "...",
+                "date": "YYYY-MM-DD",
+                "countries": ["AT", "IT"]
+              }
+            },
+            ...
+          ]
         }
 
-    Each entry is one bulletin's dissolved L4 micro-region boundary for
-    its forecast day. Powered by ``BulletinGrouping`` rows computed at
-    ingest time.
+    Each feature is one bulletin's dissolved L4 micro-region boundary for
+    the requested forecast day. Powered by ``BulletinGrouping`` rows
+    computed at ingest time.
 
-    Optional query parameters:
+    The endpoint is deliberately **single-date** (``?d=`` is required). An
+    earlier version returned the whole season keyed by date in one payload;
+    once the historical backfill landed, serialising every day's dissolved
+    geometry at once pushed the web worker past its 512 MB limit. The map
+    now fetches one day at a time, debounced on the scrubber settling, so
+    the response — and the worker's peak memory — stays bounded regardless
+    of how much history accumulates (see ``docs/map-and-api.md``).
 
+    Query parameters:
+
+    * ``?d=YYYY-MM-DD`` (**required**) — the forecast day to fetch.
     * ``?country=ch|fr|at|it`` (case-insensitive) — restrict to groupings
-      whose ``countries`` list **contains** the requested country. Returns
-      400 on an unrecognised value.
+      whose ``countries`` list **contains** the requested country.
 
-    Server-side ``cache.get_or_set`` keyed by country mirrors the pattern
-    used by the ``ratings`` view so DB hits are bounded to one per cache
-    window (5 minutes, same as other dynamic endpoints).
+    Server-side ``cache.get_or_set`` keyed on ``(country, date)`` mirrors
+    the ``ratings`` view so DB hits are bounded to one per cache window
+    (5 minutes, same as other dynamic endpoints).
+
+    Errors:
+        400 — missing ``?d=`` date.
+        400 — malformed ``?d=`` date string.
+        400 — unrecognised ``?country=`` value.
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        A JsonResponse mapping ISO date strings to FeatureCollection dicts,
-        or 400 on an invalid ``?country=`` parameter.
+        A JsonResponse holding one GeoJSON FeatureCollection, or 400 on an
+        invalid/absent parameter.
 
     """
+    date_param = request.GET.get("d")
     country_param = (request.GET.get("country") or "").upper()
 
     if country_param and country_param not in _VALID_GEOJSON_COUNTRIES:
@@ -545,51 +556,71 @@ def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    cache_key = f"bulletin_groupings:{country_param.lower() or 'all'}"
+    if not date_param:
+        return JsonResponse(
+            {"error": "date_required", "hint": "pass ?d=YYYY-MM-DD"},
+            status=400,
+        )
+    # Enforce the strict hyphenated YYYY-MM-DD wire format, mirroring the
+    # ``ratings`` view: ``date.fromisoformat`` also accepts "YYYYMMDD" on
+    # Python 3.11+, but callers only ever send hyphenated ISO dates.
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_param):
+        return JsonResponse({"error": "malformed date"}, status=400)
+    try:
+        parsed_date = date.fromisoformat(date_param)
+    except ValueError:
+        return JsonResponse({"error": "malformed date"}, status=400)
+
+    cache_key = (
+        f"bulletin_groupings:{country_param.lower() or 'all'}:{parsed_date.isoformat()}"
+    )
 
     payload = cache.get_or_set(
         cache_key,
-        lambda: _build_groupings_payload(country_param),
+        lambda: _build_groupings_payload(parsed_date, country_param),
         timeout=_DYNAMIC_CACHE_MAX_AGE,
     )
     return JsonResponse(payload)
 
 
 def _build_groupings_payload(
+    target_date: date,
     country_param: str,
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, Any]:
     """
-    Build the date-keyed groupings payload from the DB.
+    Build one date's groupings FeatureCollection from the DB.
 
-    Queries all ``BulletinGrouping`` rows (optionally filtered to those
-    whose ``countries`` list contains the requested country), groups
-    them by ``target_date``, and returns a dict mapping ISO date strings
-    to GeoJSON FeatureCollection dicts.
+    Queries the ``BulletinGrouping`` rows for ``target_date`` (optionally
+    filtered to those whose ``countries`` list contains the requested
+    country) and returns a single GeoJSON FeatureCollection dict.
 
     Args:
+        target_date: The forecast day to build the FeatureCollection for.
         country_param: Uppercase ISO-2 country code (e.g. ``"CH"``), or
             an empty string to include all countries.
 
     Returns:
-        A dict mapping ISO date string to GeoJSON FeatureCollection dict.
+        A GeoJSON FeatureCollection dict for the requested date.
 
     """
-    qs = BulletinGrouping.objects.select_related("bulletin").order_by("target_date")
+    qs = (
+        BulletinGrouping.objects.for_date(target_date)
+        .select_related("bulletin")
+        .order_by("bulletin__bulletin_id")
+    )
 
+    date_key = target_date.isoformat()
     # ``countries`` is a JSON list (e.g. ["AT", "IT"]). We filter membership
     # in Python rather than with a DB-level JSONField lookup so that the query
     # is backend-agnostic — Django's JSONField ``__contains`` list-membership
     # check is not supported by SQLite, which the dev and test environments use.
-    # The full-season scan is tiny (one row per bulletin per day) and is cached,
-    # so the extra Python iteration is negligible.
-    payload: dict[str, dict[str, Any]] = {}
+    # A single day's rows are a tiny set, so the extra Python iteration is
+    # negligible.
+    features: list[dict[str, Any]] = []
     for grouping in qs.iterator():
         if country_param and country_param not in grouping.countries:
             continue
-        date_key = grouping.target_date.isoformat()
-        if date_key not in payload:
-            payload[date_key] = {"type": "FeatureCollection", "features": []}
-        payload[date_key]["features"].append(
+        features.append(
             {
                 "type": "Feature",
                 "geometry": grouping.boundary,
@@ -600,7 +631,7 @@ def _build_groupings_payload(
                 },
             }
         )
-    return payload
+    return {"type": "FeatureCollection", "features": features}
 
 
 @lowercase_region_id

@@ -104,28 +104,47 @@ const getSeasonRatings = () => {
   return SEASON_RATINGS_PROMISE;
 };
 
-// SNOW-323: Lazily-fetched, cached payload from /api/bulletin-groupings.geojson
-// Shape: { "YYYY-MM-DD": { type: "FeatureCollection", features: [...] } }.
-// Fetched once on first l3 toggle; date-switched via setData (no network).
-let BULLETIN_GROUPINGS_PROMISE = null;
+// SNOW-323: Per-date bulletin-groupings fetch from /api/bulletin-groupings.geojson.
+// The endpoint is single-date (?d=YYYY-MM-DD) and returns one day's
+// FeatureCollection — { type: "FeatureCollection", features: [...] }. Each
+// response is memoised per date for the session, so re-visiting a date the user
+// has already landed on costs no network. This replaces the former whole-season
+// payload: once the historical backfill landed, serialising every day's
+// dissolved geometry in one response pushed the web worker past its 512 MB
+// limit. Fetching one settled day at a time keeps the response — and the
+// server's peak memory — bounded regardless of how deep the archive grows.
 let BULLETIN_GROUPINGS_URL_MODULE = null;
+const BULLETIN_GROUPINGS_BY_DATE = new Map(); // dateKey -> Promise<FeatureCollection>
+const EMPTY_FEATURE_COLLECTION = { type: 'FeatureCollection', features: [] };
 
-const getBulletinGroupings = () => {
-  if (BULLETIN_GROUPINGS_PROMISE !== null) return BULLETIN_GROUPINGS_PROMISE;
+const fetchBulletinGroupingsForDate = (dateKey) => {
+  if (!dateKey) return Promise.reject(new Error('bulletin groupings: no date'));
+  const cached = BULLETIN_GROUPINGS_BY_DATE.get(dateKey);
+  if (cached) return cached;
   if (!BULLETIN_GROUPINGS_URL_MODULE) {
     return Promise.reject(new Error('bulletin groupings URL not set'));
   }
-  // SNOW-323: fetch ALL groupings (no ?country= filter) so cross-border
-  // ALBINA bulletins — e.g. countries: ["AT", "IT"] with no "CH" — are present
-  // in the payload. Per-country visibility is handled client-side by
-  // applyCountryFilters' array-membership filter on the `countries` property.
-  // This deliberately differs from the L1/L2 overlays and getSeasonRatings,
-  // which are CH-scoped at the fetch.
-  BULLETIN_GROUPINGS_PROMISE = fetch(BULLETIN_GROUPINGS_URL_MODULE).then((resp) => {
-    if (!resp.ok) throw new Error('bulletin groupings fetch failed');
-    return resp.json();
-  });
-  return BULLETIN_GROUPINGS_PROMISE;
+  // Fetch ALL countries (no ?country= filter) so cross-border ALBINA
+  // bulletins — e.g. countries: ["AT", "IT"] with no "CH" — are present.
+  // Per-country visibility is handled client-side by applyCountryFilters'
+  // array-membership filter on the `countries` property, so a country toggle
+  // never triggers a refetch. This deliberately differs from the L1/L2
+  // overlays and getSeasonRatings, which are CH-scoped at the fetch.
+  const sep = BULLETIN_GROUPINGS_URL_MODULE.includes('?') ? '&' : '?';
+  const url = BULLETIN_GROUPINGS_URL_MODULE + sep + 'd=' + encodeURIComponent(dateKey);
+  const promise = fetch(url)
+    .then((resp) => {
+      if (!resp.ok) throw new Error('bulletin groupings fetch failed');
+      return resp.json();
+    })
+    .catch((err) => {
+      // Don't poison the cache on failure — drop the entry so a later
+      // settle on the same date can retry.
+      BULLETIN_GROUPINGS_BY_DATE.delete(dateKey);
+      throw err;
+    });
+  BULLETIN_GROUPINGS_BY_DATE.set(dateKey, promise);
+  return promise;
 };
 
 // Repaint every known region's choropleth fill via MapLibre feature-state
@@ -154,11 +173,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const SUB_REGIONS_URL     = mapEl.dataset.subRegionsUrl;
   const RESORTS_GEOJSON_URL = mapEl.dataset.resortsGeojsonUrl;
   const RESORTS_URL       = mapEl.dataset.resortsUrl;
-  // SNOW-323: Bulletin groupings URL — whole-season date-keyed FeatureCollection.
-  // Loaded lazily on first enable; cached for the session in BULLETIN_GROUPINGS_PROMISE.
+  // SNOW-323: Bulletin groupings URL — single-date endpoint (?d=YYYY-MM-DD).
+  // Fetched one settled day at a time and memoised per date (see
+  // fetchBulletinGroupingsForDate at module scope).
   const BULLETIN_GROUPINGS_URL = mapEl.dataset.bulletinGroupingsUrl || null;
-  // Hoist to module scope so getBulletinGroupings() (defined before the IIFE)
-  // can reach the URL that was read from the DOM here.
+  // Hoist to module scope so fetchBulletinGroupingsForDate() (defined before
+  // the IIFE) can reach the URL that was read from the DOM here.
   BULLETIN_GROUPINGS_URL_MODULE = BULLETIN_GROUPINGS_URL;
   // SNOW-239: Hand the ratings URL to module scope so the timelapse and
   // scrubber IIFEs (defined further down in this file) can share one
@@ -717,7 +737,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   //
   // Visibility is seeded from overlayState.l3 so a page-reload with l3
   // persisted to localStorage makes the layer appear immediately.
-  let groupingsGeojsonCache = null;
+  // SNOW-323: the FC currently drawn into the bulletin-groupings source (kept
+  // so the basemap-swap handler can re-install the layer without a refetch),
+  // and whether that layer is currently showing data vs blanked for scrub.
+  let currentGroupingsFC = null;
+  let groupingsDrawn = false;
   const installBulletinGroupingsLayer = (featureCollection) => {
     if (map.getSource('bulletin-groupings')) return;
     const data = featureCollection || { type: 'FeatureCollection', features: [] };
@@ -745,6 +769,54 @@ const repaintRegionsForDate = (dateKey, cache) => {
     );
     BASE_LAYER_FILTERS['bulletin-groupings-line'] =
       map.getFilter('bulletin-groupings-line') ?? null;
+  };
+
+  // SNOW-323: L3 boundaries are fetched one day at a time, lazily, and only
+  // once the scrubber has *settled*. During playback or an active drag the
+  // boundary is blanked so it neither thrashes the network (one fetch per
+  // intermediate frame) nor lags a frame behind the choropleth. Rapid date
+  // commits — play frames, keyboard repeat — are debounced into a single
+  // fetch by GROUPINGS_SETTLE_MS of quiet.
+  const GROUPINGS_SETTLE_MS = 250;
+  let groupingsSettleTimer = null;
+
+  // Hide the boundary immediately (without forgetting the last good FC, which
+  // the basemap-swap handler still needs). No-op when already blank.
+  const blankGroupings = () => {
+    if (!groupingsDrawn) return;
+    const src = map.getSource('bulletin-groupings');
+    if (src) src.setData(EMPTY_FEATURE_COLLECTION);
+    groupingsDrawn = false;
+  };
+
+  // Draw a FeatureCollection into the source and re-apply country filters so
+  // the freshly-set data respects whichever countries are currently enabled.
+  const drawGroupings = (featureCollection) => {
+    const src = map.getSource('bulletin-groupings');
+    if (!src) return;
+    currentGroupingsFC = featureCollection || EMPTY_FEATURE_COLLECTION;
+    src.setData(currentGroupingsFC);
+    groupingsDrawn = true;
+    applyCountryFilters();
+  };
+
+  // Blank now, then (after the scrubber settles) fetch and draw the boundary
+  // for `dateKey`. A new call before the timer fires cancels the pending
+  // fetch, so scrubbing/playback never draws an intermediate frame.
+  const scheduleGroupingsForDate = (dateKey) => {
+    if (groupingsSettleTimer) clearTimeout(groupingsSettleTimer);
+    blankGroupings();
+    if (!dateKey) return;
+    groupingsSettleTimer = setTimeout(() => {
+      groupingsSettleTimer = null;
+      fetchBulletinGroupingsForDate(dateKey)
+        .then((fc) => {
+          // Guard against a slow fetch resolving after the user has moved
+          // on: only draw if this is still the displayed date.
+          if ((currentDisplayedDate || bootDateKey) === dateKey) drawGroupings(fc);
+        })
+        .catch(() => { /* leave the boundary blank on failure */ });
+    }, GROUPINGS_SETTLE_MS);
   };
 
   // Cached at IIFE scope so the style.load handler (registered inside
@@ -986,16 +1058,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
       subGeojsonCache = data;
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l3') {
-      // SNOW-323: fetch the whole-season bulletin-groupings payload once
-      // and cache it; subsequent date changes swap source data without
-      // hitting the network again.
+      // SNOW-323: enabling L3 is a deliberate, settled action — fetch the
+      // currently-displayed day's boundary and draw it immediately (no
+      // settle delay; that only applies while the scrubber is moving).
       if (!BULLETIN_GROUPINGS_URL) return;
-      const cache = await getBulletinGroupings().catch(() => null);
-      if (!cache) return;
-      groupingsGeojsonCache = cache;
       const dateKey = currentDisplayedDate || bootDateKey;
-      const fc = groupingsGeojsonCache[dateKey] || { type: 'FeatureCollection', features: [] };
+      const fc = await fetchBulletinGroupingsForDate(dateKey).catch(() => null);
+      if (!fc) return;
       installBulletinGroupingsLayer(fc);
+      currentGroupingsFC = fc;
+      groupingsDrawn = true;
     } else if (key === 'resorts') {
       if (!RESORTS_GEOJSON_URL) return;
       const data = await fetch(RESORTS_GEOJSON_URL)
@@ -1105,18 +1177,29 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (dk) _refreshPopupForDate(dk);
   });
 
-  // SNOW-323: Swap the bulletin-groupings source to the new date's
-  // FeatureCollection when the scrubber moves. No network — the
-  // whole-season payload was cached on first l3 enable.
+  // SNOW-323: When the scrubber commits to a date (drag release, each
+  // playback frame, keyboard step), blank the boundary and schedule a
+  // settle-debounced fetch for that day. Playback fires this per frame, so
+  // the debounce collapses a run of frames into a single fetch once motion
+  // stops — the boundary is only ever drawn for a day the user rests on.
   document.addEventListener('snowdesk:date-changed', (e) => {
     if (!overlayLoaded.l3) return;
     const dk = (e.detail && e.detail.date) || null;
     if (!dk) return;
-    const src = map.getSource('bulletin-groupings');
-    if (!src) return;
-    const fc = (groupingsGeojsonCache && groupingsGeojsonCache[dk])
-      || { type: 'FeatureCollection', features: [] };
-    src.setData(fc);
+    scheduleGroupingsForDate(dk);
+  });
+
+  // SNOW-323: While the user is actively dragging the thumb, the scrubber
+  // emits a continuous stream of preview dates (no commit). Blank the
+  // boundary and cancel any pending fetch so a stale outline never lingers
+  // mid-drag; the fetch is (re)scheduled by the date-changed commit on release.
+  document.addEventListener('snowdesk:date-preview', () => {
+    if (!overlayLoaded.l3) return;
+    if (groupingsSettleTimer) {
+      clearTimeout(groupingsSettleTimer);
+      groupingsSettleTimer = null;
+    }
+    blankGroupings();
   });
 
   map.on('load', async () => {
@@ -2042,12 +2125,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
       // SNOW-78: same story for the resorts pin layer.
       installResortsLayer(resortsGeojsonCache);
-      // SNOW-323: Re-install the bulletin-groupings layer if the cache
-      // was populated (i.e. the user had enabled l3 before the basemap swap).
-      if (groupingsGeojsonCache) {
-        const dk = currentDisplayedDate || bootDateKey;
-        const fc = groupingsGeojsonCache[dk] || { type: 'FeatureCollection', features: [] };
-        installBulletinGroupingsLayer(fc);
+      // SNOW-323: Re-install the bulletin-groupings layer if L3 was enabled
+      // before the basemap swap. Seed it with the last-drawn FC (no refetch);
+      // if it was mid-scrub and blanked, seed empty and let the next settle
+      // redraw.
+      if (overlayLoaded.l3) {
+        installBulletinGroupingsLayer(
+          groupingsDrawn ? currentGroupingsFC : EMPTY_FEATURE_COLLECTION,
+        );
       }
 
       // SNOW-172: Re-apply country filters for the freshly-installed layers.

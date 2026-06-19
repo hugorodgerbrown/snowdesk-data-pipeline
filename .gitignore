@@ -20,7 +20,6 @@ DO_NOT_ADD/
 .venv/
 venv/
 env/
-supabase/
 node_modules/
 
 # Poetry
