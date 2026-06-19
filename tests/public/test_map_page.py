@@ -17,8 +17,13 @@ from django.conf import settings
 from django.test import Client, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
+from waffle.testutils import override_flag
 
-from tests.factories import MicroRegionFactory, RegionDayRatingFactory
+from tests.factories import (
+    MicroRegionFactory,
+    RegionDayRatingFactory,
+    SubscriberFactory,
+)
 
 
 @pytest.mark.django_db
@@ -370,3 +375,56 @@ class TestMapPageDataDrivenSeasonBounds:
         # Calendar fallback for the 2025/2026 season
         assert 'data-season-start="2025-11-01"' in content
         assert 'data-season-end="2026-05-31"' in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-324: report_mode — floating Report button on the map
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@override_flag("field_observations", active=False)
+def test_report_button_not_shown_when_flag_off() -> None:
+    """Report button is absent when field_observations flag is inactive."""
+    subscriber = SubscriberFactory.create()
+    client = Client()
+    client.force_login(subscriber.user)
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "report-btn" not in content
+
+
+@pytest.mark.django_db
+@override_flag("field_observations", active=True)
+def test_report_button_not_shown_for_anonymous() -> None:
+    """Report button is absent for anonymous users even when flag is active."""
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "report-btn" not in content
+
+
+@pytest.mark.django_db
+@override_flag("field_observations", active=True)
+def test_report_button_shown_for_subscriber_with_flag() -> None:
+    """Report button and sheet are shown for a subscriber when flag is active."""
+    subscriber = SubscriberFactory.create()
+    client = Client()
+    client.force_login(subscriber.user)
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "report-btn" in content
+    assert "report-sheet" in content
+    assert "report.js" in content
+
+
+@pytest.mark.django_db
+@override_flag("field_observations", active=False)
+def test_report_js_not_loaded_when_flag_off() -> None:
+    """report.js is not referenced when the flag is inactive."""
+    subscriber = SubscriberFactory.create()
+    client = Client()
+    client.force_login(subscriber.user)
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "report.js" not in content

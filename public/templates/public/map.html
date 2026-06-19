@@ -59,6 +59,29 @@
     {# The edit-resorts panel stays in map.html — it is /map/-only and is  #}
     {# intentionally excluded from the shared _map_embed partial.          #}
     {% if edit_mode %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
+    {# SNOW-324: GPS-gated field-report affordance — floating Report button  #}
+    {# + empty sheet container that report.js swaps with the form/confirmation. #}
+    {% if report_mode %}
+        {# Floating Report button — bottom-right, above the scrubber.          #}
+        <button
+            id="report-btn"
+            type="button"
+            data-report-form-url="{{ report_form_url }}"
+            class="fixed bottom-20 right-4 z-30 flex items-center gap-2 rounded-pill bg-status-info-bg px-4 py-2.5 text-sm font-medium text-status-info-text [box-shadow:var(--shadow-glass)] hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-info-text"
+            aria-label='{% trans "Submit a field observation" %}'
+        >
+            <span aria-hidden="true">&#43;</span>
+            {% trans "Report" %}
+        </button>
+        {# Sheet container — hidden until report.js opens it.                 #}
+        <div
+            id="report-sheet"
+            hidden
+            class="fixed bottom-0 left-0 right-0 z-40 rounded-t-card border-t border-border bg-card px-4 pb-8 pt-4 [box-shadow:var(--shadow-glass)] sm:left-auto sm:right-4 sm:bottom-4 sm:w-96 sm:rounded-card sm:border"
+            aria-label='{% trans "Field observation report" %}'
+        >
+        </div>
+    {% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -68,4 +91,6 @@
     <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-79: SW registration moved to base.html; offline.js retired. #}
     {% if edit_mode %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
+    {# SNOW-324: field-report JS — geolocation + HTMX sheet opener.         #}
+    {% if report_mode %}<script defer src="{% static 'js/report.js' %}"></script>{% endif %}
 {% endblock %}

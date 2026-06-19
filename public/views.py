@@ -1179,6 +1179,54 @@ def _default_region_label() -> tuple[str, str]:
     return region.name, region.name_slug
 
 
+def _subscriber_present(request: HttpRequest) -> bool:
+    """Return True when the authenticated user has a Subscriber profile.
+
+    Superusers created via ``createsuperuser`` have no Subscriber profile;
+    this check safely handles that case without raising.
+
+    Args:
+        request: The current HTTP request (user must be authenticated).
+
+    Returns:
+        True when a Subscriber profile exists for request.user.
+
+    """
+    from subscriptions.models import Subscriber  # noqa: PLC0415
+
+    try:
+        return bool(request.user.subscriber)  # type: ignore[union-attr]
+    except Subscriber.DoesNotExist:
+        return False
+
+
+def _get_observation_counts(
+    request: HttpRequest,
+    region: "MicroRegion",
+    day: datetime.date,
+) -> "dict[str, int]":
+    """Return per-type field-observation counts for a region on a calendar day.
+
+    Returns an empty dict when the ``field_observations`` flag is inactive
+    (zero-overhead on historic pages and for non-flagged users).
+
+    Args:
+        request: The current HTTP request (used for waffle flag lookup).
+        region: The MicroRegion to count observations for.
+        day: The calendar day to count observations on.
+
+    Returns:
+        Mapping from observation-type value string to count, or ``{}`` when
+        the flag is inactive or no observations exist.
+
+    """
+    if not waffle.flag_is_active(request, "field_observations"):
+        return {}
+    from observations.models import FieldObservation  # noqa: PLC0415
+
+    return FieldObservation.objects.counts_for_region_day(region, day)
+
+
 def map_view(request: HttpRequest) -> HttpResponse:
     """
     Render the interactive region-choropleth map page.
@@ -1234,6 +1282,23 @@ def map_view(request: HttpRequest) -> HttpResponse:
             }
         )
 
+    # SNOW-324: GPS-gated field-report mode — shown when the
+    # ``field_observations`` flag is active AND the user has a Subscriber
+    # profile (anonymous users and flag-less sessions stay read-only).
+    _flag_on = waffle.flag_is_active(request, "field_observations")
+    _has_subscriber = (
+        request.user.is_authenticated and _flag_on and _subscriber_present(request)
+    )
+    report_mode = _flag_on and _has_subscriber
+    report_context: dict[str, Any] = {"report_mode": report_mode}
+    if report_mode:
+        report_context.update(
+            {
+                "report_form_url": reverse("observations:report_form"),
+                "report_submit_url": reverse("observations:report_submit"),
+            }
+        )
+
     # SNOW-314: build the ribbon as the data carrier (season bounds, caption)
     # but DON'T pre-select a region on /map/ — the scrubber stays a plain grey
     # rail until the user taps a region, which then paints its season into the
@@ -1246,6 +1311,7 @@ def map_view(request: HttpRequest) -> HttpResponse:
         {
             **base_ctx,
             **edit_context,
+            **report_context,
             "ribbon": ribbon,
             "default_region_id": "",
             "default_region_name": "",
@@ -2828,6 +2894,13 @@ def _bulletin_detail_response(
         source_key, ("", "")
     )
 
+    # SNOW-324: per-type field-observation counts for the current-day bulletin
+    # page.  Only fetched when the flag is active; zero-overhead on historic
+    # pages because the ``is_today`` guard short-circuits the query.
+    observation_counts: dict[str, int] = (
+        _get_observation_counts(request, region, page_date) if is_today else {}
+    )
+
     # Emit bulletin_viewed (no-ops silently on /examples/* paths).
     _track_bulletin_viewed(request, region, selected, panel)
 
@@ -2936,6 +3009,9 @@ def _bulletin_detail_response(
         ),
         # Bulletin headline — data-driven variant copy (SNOW-249).
         "headline": headline,
+        # SNOW-324: per-type field-observation counts for the current-day
+        # bulletin page.  Empty dict on historic pages (flag off or not today).
+        "observation_counts": observation_counts,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 
