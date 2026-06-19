@@ -246,6 +246,26 @@
     border-radius: 999px;
 }
 
+/* SNOW-324: field-report roundel. Reuses .map-utility-pill for the 40×40
+   glass-circle look, but anchored bottom-right inside #map and floated
+   above the season scrubber (bottom 5px + ~43px pill, + safe-area), level
+   with the date pill, so it never overlaps the timeline. The
+   warning-triangle icon is tinted amber (status-warning) to stand out as
+   the report-a-hazard action; the SVG strokes inherit it via currentColor. */
+.map-report-control {
+    position: absolute;
+    right: calc(env(safe-area-inset-right, 0px) + 12px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
+    width: 40px;
+    justify-content: center;
+    z-index: 4;
+    color: var(--color-status-warning-text);
+}
+
+.map-report-control:hover {
+    filter: brightness(1.04);
+}
+
 /* Search input inside the expanded pill — hidden until the pill is
    in the expanded state. Width/opacity transition in sync with the
    pill's width transition so the reveal feels like one motion. */
