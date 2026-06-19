@@ -91,6 +91,12 @@
     <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-79: SW registration moved to base.html; offline.js retired. #}
     {% if edit_mode %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
-    {# SNOW-324: field-report JS — geolocation + HTMX sheet opener.         #}
-    {% if report_mode %}<script defer src="{% static 'js/report.js' %}"></script>{% endif %}
+    {# SNOW-324: field-report JS — geolocation + HTMX sheet opener. The map  #}
+    {# page is otherwise MapLibre-driven and does not load htmx, so pull it  #}
+    {# in here (before report.js, which calls htmx.ajax and whose swapped-in #}
+    {# form submits via hx-post). Both deferred → execute in document order. #}
+    {% if report_mode %}
+        <script defer src="{% static 'js/htmx.min.js' %}"></script>
+        <script defer src="{% static 'js/report.js' %}"></script>
+    {% endif %}
 {% endblock %}
