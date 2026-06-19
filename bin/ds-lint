@@ -41,6 +41,7 @@ TEMPLATE_ROOTS: tuple[Path, ...] = (
     REPO_ROOT / "public" / "templates",
     REPO_ROOT / "subscriptions" / "templates",
     REPO_ROOT / "bulletins" / "templates",
+    REPO_ROOT / "observations" / "templates",
 )
 
 # Path-glob allowlist — files whose violations are tolerated globally.
