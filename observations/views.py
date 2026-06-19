@@ -5,9 +5,9 @@ Provides two HTMX-only fragment views used by the floating Report button on
 the map page (SNOW-324):
 
 - ``report_form`` (GET)   — reads GPS fix from query params, resolves the
-  point to a MicroRegion, returns the observation-type toggle form.
-- ``report_submit`` (POST) — validates the form, creates a FieldObservation
-  row, returns the thank-you confirmation fragment.
+  point to a MicroRegion, returns the one-tap problem-selection form.
+- ``report_submit`` (POST) — validates the single observation_type, creates
+  a FieldObservation row, returns the thank-you confirmation fragment.
 
 Both endpoints are:
   - flag-gated on ``field_observations`` (404 when inactive);
@@ -112,7 +112,7 @@ def _parse_gps(lat_str: str | None, lon_str: str | None) -> tuple[float, float] 
 
 @require_htmx
 def report_form(request: HttpRequest) -> HttpResponse:
-    """Return the observation-type toggle form for a GPS-gated report.
+    """Return the one-tap problem-selection form for a GPS-gated report.
 
     Reads ``lat``, ``lon``, and ``accuracy`` query parameters (set by
     ``report.js`` after a successful geolocation call).  Returns 400 if
@@ -157,7 +157,7 @@ def report_form(request: HttpRequest) -> HttpResponse:
             "lat": lat,
             "lon": lon,
             "accuracy_m": accuracy_m,
-            "observation_types": FieldObservation.OBSERVATION_TYPE.choices,
+            "problems": FieldObservation.OBSERVATION_TYPE.choices,
             "submit_url": reverse("observations:report_submit"),
         },
     )
@@ -171,8 +171,8 @@ def report_submit(request: HttpRequest) -> HttpResponse:
 
     Validates the POST body:
     - ``lat`` / ``lon`` must be present and parseable (GPS gate; 400 otherwise).
-    - ``observation_types`` must be a subset of ``OBSERVATION_TYPE.values``
-      (silently drops unknown values — no hard error, to tolerate stale JS).
+    - ``observation_type`` must be a value from ``OBSERVATION_TYPE.values``
+      (400 when missing or not recognised).
     - Rate-limited to 5 submissions per minute per IP (429 on excess).
 
     On success, creates the row and returns ``_report_confirmation.html``.
@@ -204,6 +204,15 @@ def report_submit(request: HttpRequest) -> HttpResponse:
 
     lat, lon = coords
 
+    # Validate the single observation type.
+    valid_values = set(FieldObservation.OBSERVATION_TYPE.values)
+    observation_type = request.POST.get("observation_type")
+    if not observation_type or observation_type not in valid_values:
+        return HttpResponse(
+            "A valid observation_type is required.",
+            status=400,
+        )
+
     # Parse optional accuracy (metres → kilometres).
     accuracy_radius_km: float | None = None
     accuracy_m_str = request.POST.get("accuracy_m")
@@ -212,11 +221,6 @@ def report_submit(request: HttpRequest) -> HttpResponse:
             accuracy_radius_km = float(accuracy_m_str) / 1000.0
         except ValueError, TypeError:
             accuracy_radius_km = None
-
-    # Validate and filter observation types.
-    valid_values = set(FieldObservation.OBSERVATION_TYPE.values)
-    raw_types = request.POST.getlist("observation_types")
-    observation_types = [t for t in raw_types if t in valid_values]
 
     # Best-effort region resolution.
     region = region_for_point(lon, lat)
@@ -227,14 +231,14 @@ def report_submit(request: HttpRequest) -> HttpResponse:
         latitude=lat,
         longitude=lon,
         accuracy_radius_km=accuracy_radius_km,
-        observation_types=observation_types,
+        observation_type=observation_type,
     )
 
     logger.info(
-        "FieldObservation created: subscriber=%s region=%s types=%s",
+        "FieldObservation created: subscriber=%s region=%s type=%s",
         subscriber.pk,
         region.region_id if region else None,
-        observation_types,
+        observation_type,
     )
 
     return render(
