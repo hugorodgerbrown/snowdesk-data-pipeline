@@ -1,9 +1,10 @@
 """
 regions/services/point_match.py — Pure-Python point-in-polygon classification.
 
-Provides ``point_in_polygon`` (ray-casting) and ``classify_match``
+Provides ``point_in_polygon`` (ray-casting), ``classify_match``
 (region-relative subscriber classification: in_region / in_neighbour /
-elsewhere / unknown).
+elsewhere / unknown), and ``region_for_point`` (global point→MicroRegion
+resolver used by the GPS-gated field-report feature).
 
 Deliberately uses no Shapely or GDAL.  Shapely is a dev-only dependency
 (used lazily by ``audit_resort_regions``); promoting it to the request path
@@ -194,3 +195,64 @@ def classify_match(
             return IN_NEIGHBOUR, neighbour
 
     return ELSEWHERE, None
+
+
+# ---------------------------------------------------------------------------
+# Global point→region resolver (SNOW-324 field reports)
+# ---------------------------------------------------------------------------
+
+
+def region_for_point(lon: float, lat: float) -> "MicroRegion | None":
+    """Return the MicroRegion that contains the given (lon, lat) point.
+
+    Performs a best-effort, full-scan match against all MicroRegions that
+    have a non-null boundary geometry.  Candidates are ordered by the
+    squared Euclidean distance from their ``centre`` point so that the most
+    likely containing region is tested first, short-circuiting early on the
+    common case where the user is somewhere in the Alps.
+
+    Squared distance is used instead of true great-circle distance because
+    the ordering only needs to be monotone in distance — the expensive trig
+    is avoided for the vast majority of submissions that match on the first
+    or second candidate.
+
+    Cost: one DB query (all regions with a boundary) plus up to N
+    Python-level point-in-polygon tests.  In practice the nearest-centre
+    ordering means 1–2 polygon tests suffice.  Acceptable given that
+    submissions are rare and rate-limited (5 per minute per IP).  A spatial
+    index can be added later if volume grows.
+
+    Args:
+        lon: Longitude of the GPS fix (WGS-84).
+        lat: Latitude of the GPS fix (WGS-84).
+
+    Returns:
+        The first MicroRegion whose boundary contains the point, or None
+        when no match is found (e.g. the point is outside all known regions).
+
+    """
+    # Import here to avoid a module-level circular dependency:
+    # regions.models → regions.services is fine at import time, but
+    # regions.services.point_match is also imported by observations which
+    # imports regions.models — keep it deferred.
+    from regions.models import MicroRegion  # noqa: PLC0415
+
+    candidates = list(MicroRegion.objects.exclude(boundary__isnull=True))
+
+    # Order by squared Euclidean distance from centre (cheap proxy for proximity).
+    def _sq_distance(region: "MicroRegion") -> float:
+        """Return the squared distance from the region centre to (lon, lat)."""
+        centre = region.centre
+        if not centre:
+            return float("inf")
+        dlon = float(centre.get("lon", 0.0)) - lon
+        dlat = float(centre.get("lat", 0.0)) - lat
+        return dlon * dlon + dlat * dlat
+
+    candidates.sort(key=_sq_distance)
+
+    for region in candidates:
+        if point_in_polygon(lon, lat, region.boundary):
+            return region
+
+    return None
