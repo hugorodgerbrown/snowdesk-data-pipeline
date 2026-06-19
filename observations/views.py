@@ -79,7 +79,7 @@ def _get_subscriber(request: HttpRequest) -> Subscriber | None:
     if not request.user.is_authenticated:
         return None
     try:
-        return request.user.subscriber  # type: ignore[union-attr]
+        return request.user.subscriber
     except Subscriber.DoesNotExist:
         return None
 
