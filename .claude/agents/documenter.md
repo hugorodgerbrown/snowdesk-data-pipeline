@@ -11,7 +11,7 @@ You are a technical writer and Django developer maintaining the documentation fo
 
 ## Project context
 
-- **Stack**: Django, HTMX, Tailwind CSS v4, Poetry
+- **Stack**: Django, HTMX, Tailwind CSS v4, uv
 - **Key doc file**: `CLAUDE.md` — the single source of truth for project conventions, architecture, and running instructions
 - **Inline docs**: header comment blocks + docstrings on all modules and functions
 

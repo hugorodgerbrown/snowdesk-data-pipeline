@@ -414,16 +414,15 @@ catalogue and flag reference.
 
 ### 6.1 Dependency management
 
-- **Poetry** is the single source of truth. There is no
-  `requirements.txt`.
-- The virtualenv lives at `.venv/` inside the repo — pinned via
-  [poetry.toml](poetry.toml). This is **by design**, because the
-  pre-commit `mypy` hook invokes `.venv/bin/mypy` by repo-relative path
-  so it works identically from the CLI and from GUI git clients
-  (SublimeMerge, Tower, Fork) which launch git with a minimal
-  environment.
-- Never change the venv location without also updating
-  [.pre-commit-config.yaml](.pre-commit-config.yaml).
+- **uv** is the single source of truth (`pyproject.toml` + `uv.lock`).
+  There is no `requirements.txt`.
+- The virtualenv lives at `.venv/` inside the repo — uv's default
+  location. This is also **by design**, because the pre-commit `mypy`
+  hook invokes `.venv/bin/mypy` by repo-relative path so it works
+  identically from the CLI and from GUI git clients (SublimeMerge,
+  Tower, Fork) which launch git with a minimal environment.
+- Never change the venv location (e.g. via `UV_PROJECT_ENVIRONMENT`)
+  without also updating [.pre-commit-config.yaml](.pre-commit-config.yaml).
 
 ### 6.2 Pre-commit
 
@@ -439,7 +438,7 @@ catalogue and flag reference.
   public/ subscriptions/ tests/ config/` (kept in sync with the
   `tox -e mypy` target)
 
-Install with `poetry run pre-commit install`. Do not bypass hooks with
+Install with `uv run pre-commit install`. Do not bypass hooks with
 `--no-verify` — if a hook fails, fix the underlying issue and create a
 **new** commit (never amend, as the original commit didn't land).
 
@@ -458,19 +457,16 @@ sensitive code.
 | `mypy`           | `mypy core/ bulletins/ regions/ public/ subscriptions/ tests/ config/`                   |
 | `django-checks`  | `manage.py check` + `makemigrations --check`                                             |
 | `test`           | `pytest --cov=core --cov=bulletins --cov=regions --cov=public --cov=subscriptions tests/` |
-| `audit`          | `pip-audit` against the Poetry-exported requirements                                     |
+| `audit`          | `pip-audit` against the uv-exported requirements                                         |
 | `sast`           | `semgrep` with the Django + Python + security-audit rulesets                             |
 
 Run the default suite locally with `tox` before pushing.
 
 ### 6.4 Configuration files
 
-- All ruff, mypy, pytest, coverage, and django-stubs config lives in
+- All ruff, mypy, pytest, coverage, django-stubs, and uv config lives in
   [pyproject.toml](pyproject.toml). There is no `mypy.ini`,
   `.ruff.toml`, or `pytest.ini` — don't create one.
-- Poetry settings that must take effect *before* Poetry reads
-  `pyproject.toml` (specifically `virtualenvs.in-project`) live in
-  [poetry.toml](poetry.toml).
 
 ---
 

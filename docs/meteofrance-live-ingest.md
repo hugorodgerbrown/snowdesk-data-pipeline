@@ -141,7 +141,7 @@ no-op:
 To force a re-fetch (e.g. after a translation-logic fix):
 
 ```bash
-poetry run python manage.py fetch_bulletins --source meteofrance --commit --force
+uv run python manage.py fetch_bulletins --source meteofrance --commit --force
 ```
 
 ---
@@ -157,10 +157,10 @@ network I/O occurs:
 METEOFRANCE_API_LOCAL_MIRROR_URL=file:///path/to/bulletins-2026-05-18
 
 # Run with local mirror (read-only):
-poetry run python manage.py fetch_bulletins --source meteofrance --local-mirror
+uv run python manage.py fetch_bulletins --source meteofrance --local-mirror
 
 # Run with local mirror and persist:
-poetry run python manage.py fetch_bulletins --source meteofrance --local-mirror --commit
+uv run python manage.py fetch_bulletins --source meteofrance --local-mirror --commit
 ```
 
 The bundled research fixtures in

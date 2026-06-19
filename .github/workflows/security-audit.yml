@@ -33,15 +33,21 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Install Poetry, export plugin, and pip-audit
-        run: pip install poetry poetry-plugin-export pip-audit
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install pip-audit
+        run: pip install pip-audit
 
       - name: Export locked dependencies
         run: >-
-          poetry export
-          --without-hashes
-          --format=requirements.txt
-          --output=/tmp/requirements-audit.txt
+          uv export
+          --frozen
+          --no-dev
+          --no-emit-project
+          --no-hashes
+          --format requirements-txt
+          --output-file /tmp/requirements-audit.txt
 
       - name: Audit dependencies for known CVEs
         run: pip-audit -r /tmp/requirements-audit.txt

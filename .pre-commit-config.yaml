@@ -20,7 +20,7 @@ repos:
       - id: gitleaks
 
   # Local hooks pointing directly at the in-project venv's binaries.
-  # Using `.venv/bin/<tool>` (rather than `poetry run <tool>`) avoids
+  # Using `.venv/bin/<tool>` (rather than `uv run <tool>`) avoids
   # depending on PATH, so the hooks work identically from the CLI and
   # from GUI git clients like SublimeMerge that launch git with a
   # minimal environment and don't inherit the user's shell PATH.

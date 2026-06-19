@@ -13,8 +13,8 @@ This test exists to catch two classes of drift:
      ``audit_resort_regions``).
 
 If this test fails in CI, run:
-  poetry run python manage.py audit_resort_regions --commit
-  poetry run python manage.py loaddata regions/fixtures/resorts.json
+  uv run python manage.py audit_resort_regions --commit
+  uv run python manage.py loaddata regions/fixtures/resorts.json
 
 then re-run the test to confirm the fix.
 """
@@ -74,6 +74,6 @@ def test_geocoded_resorts_inside_region_polygon() -> None:
     assert not failures, (
         f"{len(failures)} resort(s) outside their FK polygon:\n"
         + "\n".join(failures)
-        + "\n\nFix: poetry run python manage.py audit_resort_regions --commit"
-        + "\n     poetry run python manage.py loaddata regions/fixtures/resorts.json"
+        + "\n\nFix: uv run python manage.py audit_resort_regions --commit"
+        + "\n     uv run python manage.py loaddata regions/fixtures/resorts.json"
     )

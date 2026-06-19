@@ -19,8 +19,8 @@ Pure SELECT — no ``--commit`` flag; the command never writes to the database.
 
 Typical use::
 
-    poetry run python manage.py parse_wet_snow_coverage
-    poetry run python manage.py parse_wet_snow_coverage --verbosity 2
+    uv run python manage.py parse_wet_snow_coverage
+    uv run python manage.py parse_wet_snow_coverage --verbosity 2
 """
 
 from __future__ import annotations

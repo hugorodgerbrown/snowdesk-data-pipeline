@@ -10,7 +10,7 @@ on:
     paths:
       - "**/*.py"
       - "pyproject.toml"
-      - "poetry.lock"
+      - "uv.lock"
       - "tox.ini"
       - ".github/workflows/ci.yml"
 
@@ -19,7 +19,7 @@ on:
     paths:
       - "**/*.py"
       - "pyproject.toml"
-      - "poetry.lock"
+      - "uv.lock"
       - "tox.ini"
       - ".github/workflows/ci.yml"
 

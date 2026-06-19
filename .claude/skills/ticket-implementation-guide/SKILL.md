@@ -112,7 +112,7 @@ catching violations before the commit is faster than fixing them at review time.
 
 ### 6. Run the test suite
 
-- `poetry run tox` — must pass cleanly before opening the PR. `ds-lint` is in
+- `uv run tox` — must pass cleanly before opening the PR. `ds-lint` is in
   the default envlist; visual changes that bypass the design system fail here.
 - `npm run lh` — for any change touching a public page.
 
@@ -221,5 +221,5 @@ stopping:
   close on merge.
 - **Don't squash unrelated work onto one branch.** One ticket, one branch,
   one PR.
-- **Don't skip the pre-PR test run.** `poetry run tox` must pass locally
+- **Don't skip the pre-PR test run.** `uv run tox` must pass locally
   before the PR opens — CI failing on the PR is wasted round trips.

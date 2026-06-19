@@ -9,15 +9,15 @@ mobile-friendly public website.
 
 ```bash
 cp .env.example .env          # fill in values
-poetry install
+uv sync
 npm install
-poetry run python manage.py migrate
+uv run python manage.py migrate
 
 # Terminal 1: Tailwind CSS watcher
 npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch
 
 # Terminal 2: Django dev server
-poetry run python manage.py runserver
+uv run python manage.py runserver
 ```
 
 In local development, run `fetch_bulletins` with `--local-mirror` so you
@@ -37,16 +37,16 @@ GeoJSON Feature envelopes wrapping the raw CAAML payload.
 ```bash
 # Bulletin ingestion (dry-run by default; --commit to persist)
 # --source is required; end is always today UTC (there is no --end-date flag)
-poetry run python manage.py fetch_bulletins --source slf albina meteofrance --commit
-poetry run python manage.py fetch_bulletins --source slf --date 2024-06-15 --commit
-poetry run python manage.py fetch_bulletins --source slf --start-date 2024-01-01 --commit
+uv run python manage.py fetch_bulletins --source slf albina meteofrance --commit
+uv run python manage.py fetch_bulletins --source slf --date 2024-06-15 --commit
+uv run python manage.py fetch_bulletins --source slf --start-date 2024-01-01 --commit
 
 # Render-model rebuild (after a RENDER_MODEL_VERSION bump)
-poetry run python manage.py rebuild_render_models --commit
+uv run python manage.py rebuild_render_models --commit
 
 # Weather (drives the bulletin header — WMO bucket + day/night state)
-poetry run python manage.py fetch_weather --commit
-poetry run python manage.py backfill_weather --start 2024-11-01 --end 2025-05-01 --commit
+uv run python manage.py fetch_weather --commit
+uv run python manage.py backfill_weather --start 2024-11-01 --end 2025-05-01 --commit
 ```
 
 ## Stack
@@ -64,7 +64,7 @@ poetry run python manage.py backfill_weather --start 2024-11-01 --end 2025-05-01
 - **PWA shell** — service worker + offline page so an open bulletin
   stays readable on a flaky lift queue
 - **Render cron** — runs the `fetch_bulletins` management command on a schedule; the pipeline itself is just Django code, no in-process scheduler
-- **Poetry** — Python dependency management
+- **uv** — Python dependency management
 - **WhiteNoise** — static file serving in production
 
 ## What you'll see
@@ -83,8 +83,8 @@ and Météo-France.
 ## Testing
 
 ```bash
-poetry run tox -e test               # run tests with coverage (mirrors CI)
-poetry run tox                       # full CI (fmt, lint, mypy, django-checks, test)
+uv run tox -e test               # run tests with coverage (mirrors CI)
+uv run tox                       # full CI (fmt, lint, mypy, django-checks, test)
 ```
 
 See [CODING_STANDARDS.md](CODING_STANDARDS.md) for conventions and

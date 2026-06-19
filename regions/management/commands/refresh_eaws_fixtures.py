@@ -17,7 +17,7 @@ is a **dev-only** dependency — fixtures are always rebuilt locally and
 committed, so the runtime never imports it. The import lives inside
 the helper that needs it; running this command in an environment that
 lacks shapely raises a friendly RuntimeError pointing at
-``poetry install --with dev``.
+``uv sync``.
 
 This command does NOT:
   * Fetch from ``regions.avalanches.org`` — the authoritative dataset is
@@ -32,10 +32,10 @@ invocation prints a diff summary and exits 0 without writing anything.
 
 Usage:
     # Preview what would change (default — no writes).
-    poetry run python manage.py refresh_eaws_fixtures
+    uv run python manage.py refresh_eaws_fixtures
 
     # Actually write the updated L1/L2 fixtures.
-    poetry run python manage.py refresh_eaws_fixtures --commit
+    uv run python manage.py refresh_eaws_fixtures --commit
 """
 
 from __future__ import annotations
@@ -211,7 +211,7 @@ def _boundary_from_children(children: list[dict[str, Any]]) -> dict[str, Any]:
     except ImportError as exc:  # pragma: no cover — dev-only dependency
         raise RuntimeError(
             "refresh_eaws_fixtures requires the dev-only `shapely` "
-            "dependency. Install it with `poetry install --with dev`."
+            "dependency. Install it with `uv sync`."
         ) from exc
 
     polys = [shape(child["boundary"]) for child in children if child.get("boundary")]

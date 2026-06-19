@@ -1,6 +1,6 @@
 # SNOW-13 query-count baseline — committed artefact.
 # Do not edit by hand; regenerate with:
-#   poetry run python manage.py monitor_query_counts --commit
+#   uv run python manage.py monitor_query_counts --commit
 # Format: <name> <count>
 home 5
 map 4

@@ -147,7 +147,7 @@ Code's expected sequence:
 4. **Implement** the work on that branch, following the conventions in
    CLAUDE.md (render-model shape, management-command design, i18n
    rules, test structure, etc.).
-5. **Run `poetry run tox`** and fix every failure before opening the PR.
+5. **Run `uv run tox`** and fix every failure before opening the PR.
    Run `npm run lh` for any change touching a public page.
 6. **Push the branch and open a PR** — this is the first push, and is
    what triggers the GitHub-driven `In Review` transition (see next

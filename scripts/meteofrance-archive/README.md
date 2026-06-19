@@ -17,21 +17,21 @@ records, one per bulletin, ready for ingestion by the Snowdesk Django pipeline.
 
 ```bash
 # Prerequisites:
-#   poetry install                 (includes pdfplumber)
+#   uv sync                         (includes pdfplumber)
 #   brew install aria2             (macOS; see below for alternatives)
 
 cd scripts/meteofrance-archive/
 
 # Stage 1 — fetch daily index responses (2025-11-01 → today, Alpine only)
-poetry run python mf_bra_index_archive.py --commit
+uv run python mf_bra_index_archive.py --commit
 # Output: bra_indexes.ndjson
 
 # Stage 2 — expand indexes into per-bulletin URLs
-poetry run python mf_bra_url_discover.py --commit
+uv run python mf_bra_url_discover.py --commit
 # Output: bra_urls.csv
 
 # Stage 3 — build the aria2c download manifest
-poetry run python build_aria2c_input.py --commit
+uv run python build_aria2c_input.py --commit
 # Output: bra_downloads.txt
 # Exit code 2 if any rows were skipped (see below).
 
@@ -40,7 +40,7 @@ mkdir -p bra_pdfs
 aria2c --input-file=bra_downloads.txt --dir=bra_pdfs --max-concurrent-downloads=4
 
 # Stage 5 — parse PDFs into CAAML 6.0 NDJSON
-poetry run python mf_bra_to_caaml.py --input bra_pdfs/ --output bulletins.ndjson
+uv run python mf_bra_to_caaml.py --input bra_pdfs/ --output bulletins.ndjson
 # Output: bulletins.ndjson
 ```
 
@@ -276,13 +276,13 @@ an object store, not git.
 
 ```bash
 # All tests (includes PDF parser integration tests using committed fixtures)
-poetry run tox -e test
+uv run tox -e test
 
 # Just the meteofrance archive tests (faster)
-poetry run pytest tests/scripts/meteofrance_archive/ -q
+uv run pytest tests/scripts/meteofrance_archive/ -q
 
 # Smoke-test the parser against committed fixtures
-poetry run python scripts/meteofrance-archive/mf_bra_to_caaml.py \
+uv run python scripts/meteofrance-archive/mf_bra_to_caaml.py \
   --input tests/scripts/meteofrance_archive/fixtures/ \
   --dry-run
 ```

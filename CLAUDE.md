@@ -12,7 +12,7 @@ Domain term → code symbol map: [`docs/glossary.md`](docs/glossary.md).
 Accepted architectural decisions (the "why"): [`docs/decisions/`](docs/decisions/).
 
 Python 3.14 / Django 6.0 (pinned in `pyproject.toml`). If tox envs behave
-oddly after a dependency change, rebuild them with `poetry run tox --recreate`.
+oddly after a dependency change, rebuild them with `uv run tox --recreate`.
 
 ## Architecture
 
@@ -49,28 +49,30 @@ The `bulletins/` ↔ `regions/` split is deliberate — rationale in
 
 ```bash
 cp .env.example .env          # fill in values
-poetry install
+uv sync
 npm install
-poetry run python manage.py migrate
+uv run python manage.py migrate
 
 # Terminal 1: Tailwind CSS watcher
 npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch
 
 # Terminal 2: Django dev server
-poetry run python manage.py runserver
+uv run python manage.py runserver
 ```
 
 ## Dependency management
 
-Use **Poetry** (`poetry add`, `poetry add --group dev`, `poetry update`).
-`pyproject.toml` is the single source of truth; there is no `requirements.txt`.
+Use **uv** (`uv add`, `uv add --dev`, `uv lock --upgrade`).
+`pyproject.toml` is the single source of truth (PEP 621 `[project]` +
+PEP 735 `[dependency-groups]`); there is no `requirements.txt`. The resolved
+set is pinned in `uv.lock` — commit it with every dependency change.
 
-The virtualenv lives at `.venv/` inside the repo — this is **by design**;
-don't relocate it without reading
+The virtualenv lives at `.venv/` inside the repo — this is uv's default and
+also **by design**; don't relocate it without reading
 [`docs/decisions/in-project-venv.md`](docs/decisions/in-project-venv.md)
 (the pre-commit mypy hook depends on the path).
 
-When a runtime dependency is added via `poetry add`, **also add it to the
+When a runtime dependency is added via `uv add`, **also add it to the
 relevant `deps =` block in `tox.ini`** (`test`, `django-checks`, and
 `mypy` all need it; `fmt` and `lint` almost never do). Tox will not pick
 up `pyproject.toml` dependencies automatically.
@@ -118,7 +120,7 @@ point, so don't skip pieces for "simple" models:
   mirrors the source tree; each module has a corresponding
   `test_{module_name}.py`.
 - All new code must have covering tests; the coverage target is 90%.
-- Always run tests via `poetry run tox -e test` (not a bare `pytest` call) —
+- Always run tests via `uv run tox -e test` (not a bare `pytest` call) —
   the tox env mirrors CI.
 - All datetime objects must have `tzinfo`.
 - Always call factories with `.create()` (e.g. `RegionFactory.create(...)`) —
@@ -231,29 +233,29 @@ constraint. The reason is required and audit-visible
 
 **`tox` is the single entry point** for running linters, type checks, Django
 system checks, and the test suite locally. The tox envs declare their own
-dependencies (independent of the Poetry venv), so a tox run mirrors what CI
+dependencies (independent of the uv-managed venv), so a tox run mirrors what CI
 will execute — catching the "works on my machine" class of failure before a
 PR is opened.
 
 ```bash
-poetry run tox                    # run every env (fmt, lint, mypy, django-checks, test)
-poetry run tox -e test            # one env at a time
-poetry run tox -e mypy
-poetry run tox -e django-checks
-poetry run tox -e fmt             # ruff format --check
-poetry run tox -e lint            # ruff check
-poetry run tox -e ds-lint         # design-system template linter (see "Design system" above)
-poetry run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
-poetry run tox -e audit           # pip-audit on the locked dependency set
-poetry run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
-poetry run tox --recreate         # rebuild envs from scratch after a deps change
+uv run tox                    # run every env (fmt, lint, mypy, django-checks, test)
+uv run tox -e test            # one env at a time
+uv run tox -e mypy
+uv run tox -e django-checks
+uv run tox -e fmt             # ruff format --check
+uv run tox -e lint            # ruff check
+uv run tox -e ds-lint         # design-system template linter (see "Design system" above)
+uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
+uv run tox -e audit           # pip-audit on the locked dependency set
+uv run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
+uv run tox --recreate         # rebuild envs from scratch after a deps change
 ```
 
 Template formatting is enforced by `djangofmt`, which runs as a pre-commit
 hook. Always run `pre-commit run djangofmt --files <path>` after editing
 templates so the hook doesn't reformat on commit.
 
-**Before opening a PR**, run `poetry run tox` and fix every failure. For any
+**Before opening a PR**, run `uv run tox` and fix every failure. For any
 change touching a public page, also run `npm run lh` (see
 [`docs/lighthouse.md`](docs/lighthouse.md)).
 

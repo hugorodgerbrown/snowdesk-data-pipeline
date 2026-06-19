@@ -24,13 +24,13 @@
 # Usage::
 #
 #     # Dry-run (default — no DB writes):
-#     poetry run python scripts/meteofrance-archive/load_archive.py
+#     uv run python scripts/meteofrance-archive/load_archive.py
 #
 #     # Commit mode (writes to DB):
-#     poetry run python scripts/meteofrance-archive/load_archive.py --commit
+#     uv run python scripts/meteofrance-archive/load_archive.py --commit
 #
 #     # Custom input file:
-#     poetry run python scripts/meteofrance-archive/load_archive.py \
+#     uv run python scripts/meteofrance-archive/load_archive.py \
 #         --input /path/to/bulletins.ndjson --commit
 """CLI wrapper for the Météo-France BRA NDJSON archive loader."""
 

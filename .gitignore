@@ -22,9 +22,6 @@ venv/
 env/
 node_modules/
 
-# Poetry
-poetry.toml
-
 # Tailwind CLI build output (regenerated from static/css/main.css)
 static/css/output.css
 

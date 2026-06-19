@@ -36,10 +36,10 @@ invocation prints a summary and exits 0 without writing anything.
 
 Usage:
     # Preview only (default — no writes).
-    poetry run python manage.py build_austria_fixture
+    uv run python manage.py build_austria_fixture
 
     # Write regions/fixtures/eaws_AT.json.
-    poetry run python manage.py build_austria_fixture --commit
+    uv run python manage.py build_austria_fixture --commit
 """
 
 from __future__ import annotations

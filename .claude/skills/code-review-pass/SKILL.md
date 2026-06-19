@@ -216,7 +216,7 @@ Present, via plan mode, for approval **before** committing/pushing:
 Run the full suite the project gates on:
 
 ```bash
-PATH=~/.local/bin:$PATH poetry run tox
+PATH=~/.local/bin:$PATH uv run tox
 ```
 
 - **Green:** continue.

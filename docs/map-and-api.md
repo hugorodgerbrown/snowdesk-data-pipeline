@@ -128,8 +128,8 @@ Run the dump command after a session of placements to regenerate
 `regions/fixtures/resorts.json`:
 
 ```bash
-poetry run python manage.py dump_resorts_fixture          # dry-run, prints diff
-poetry run python manage.py dump_resorts_fixture --commit # writes the file
+uv run python manage.py dump_resorts_fixture          # dry-run, prints diff
+uv run python manage.py dump_resorts_fixture --commit # writes the file
 git diff regions/fixtures/resorts.json                    # review
 ```
 

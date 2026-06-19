@@ -15,8 +15,8 @@ stdout; pass ``--output PATH`` to write to a file. Optional ``--lang``,
 
 Typical use::
 
-    poetry run python manage.py export_day_character_csv --lang de > dc.csv
-    poetry run python manage.py export_day_character_csv \
+    uv run python manage.py export_day_character_csv --lang de > dc.csv
+    uv run python manage.py export_day_character_csv \
         --start-date 2026-01-01 --end-date 2026-01-31 --lang de
 """
 
