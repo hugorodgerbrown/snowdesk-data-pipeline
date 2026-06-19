@@ -62,17 +62,34 @@
     {# SNOW-324: GPS-gated field-report affordance — floating Report button  #}
     {# + empty sheet container that report.js swaps with the form/confirmation. #}
     {% if report_mode %}
-        {# Floating Report button — bottom-right, above the scrubber.          #}
-        <button
-            id="report-btn"
-            type="button"
-            data-report-form-url="{{ report_form_url }}"
-            class="fixed bottom-20 right-4 z-30 flex items-center gap-2 rounded-pill bg-status-info-bg px-4 py-2.5 text-sm font-medium text-status-info-text [box-shadow:var(--shadow-glass)] hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-info-text"
-            aria-label='{% trans "Submit a field observation" %}'
-        >
-            <span aria-hidden="true">&#43;</span>
-            {% trans "Report" %}
-        </button>
+        {# Field-report roundel — reuses the search/layers glass control       #}
+        {# (.map-utility-pill, 40×40), pinned bottom-right above the scrubber.  #}
+        {# Warning-triangle icon (Waze-style; reads as a mountain too).        #}
+        <div class="map-utility-pill fixed bottom-20 right-3 z-30 w-10 justify-center">
+            <button
+                id="report-btn"
+                type="button"
+                class="map-utility-button"
+                data-report-form-url="{{ report_form_url }}"
+                aria-label='{% trans "Report a field observation" %}'
+            >
+                <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                    <path d="M12 9v4" />
+                    <path d="M12 17h.01" />
+                </svg>
+            </button>
+        </div>
         {# Sheet container — hidden until report.js opens it.                 #}
         <div
             id="report-sheet"
