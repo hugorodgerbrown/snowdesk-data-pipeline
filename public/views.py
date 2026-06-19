@@ -1293,14 +1293,18 @@ def map_view(request: HttpRequest) -> HttpResponse:
             }
         )
 
-    # SNOW-324: GPS-gated field-report mode — shown when the
-    # ``field_observations`` flag is active AND the user has a Subscriber
-    # profile (anonymous users and flag-less sessions stay read-only).
-    _flag_on = waffle.flag_is_active(request, "field_observations")
-    _has_subscriber = (
-        request.user.is_authenticated and _flag_on and _subscriber_present(request)
+    # SNOW-324: GPS-gated field-report mode — shown when the user has a
+    # Subscriber profile AND the ``field_observations`` flag is active
+    # (anonymous users and flag-less sessions stay read-only). Order matters:
+    # short-circuit on the free ``is_authenticated`` check before the
+    # Subscriber lookup and the DB-backed waffle flag check, so anonymous map
+    # loads — the common case — pay no extra queries (mirrors how the
+    # ``edit_map`` mode only checks its flag when ``?edit=resorts`` is set).
+    report_mode = (
+        request.user.is_authenticated
+        and _subscriber_present(request)
+        and waffle.flag_is_active(request, "field_observations")
     )
-    report_mode = _flag_on and _has_subscriber
     report_context: dict[str, Any] = {"report_mode": report_mode}
     if report_mode:
         report_context.update(
