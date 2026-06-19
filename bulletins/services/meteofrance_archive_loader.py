@@ -147,7 +147,7 @@ def _fixup_envelope(
     try:
         raw_slug: str = properties["customData"]["MF"]["massif"]
         date_str: str = properties["customData"]["MF"]["date"]
-    except (KeyError, TypeError):
+    except KeyError, TypeError:
         logger.warning("Missing customData.MF.massif or customData.MF.date — skipping")
         return None
 
@@ -161,7 +161,7 @@ def _fixup_envelope(
     try:
         regions: list[dict[str, str]] = properties["regions"]
         regions[0]["regionID"] = region_id
-    except (KeyError, IndexError, TypeError):
+    except KeyError, IndexError, TypeError:
         logger.warning("Missing or malformed regions list for slug %r — skipping", slug)
         return None
 

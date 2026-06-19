@@ -420,7 +420,7 @@ def _to_int_safe(val: Any) -> int | None:
         return None
     try:
         return int(val)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -1702,7 +1702,7 @@ def _parse_iso_timestamp(value: Any) -> str | None:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.isoformat()
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return None
 
 

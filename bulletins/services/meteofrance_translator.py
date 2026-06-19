@@ -948,7 +948,7 @@ def _parse_custom_data_mf(
                         "south": int(niveau_el.attrib.get("S", 0)),
                     }
                 )
-            except (ValueError, KeyError):
+            except ValueError, KeyError:
                 pass
         snow_cover = {
             "date": enneigement_date,

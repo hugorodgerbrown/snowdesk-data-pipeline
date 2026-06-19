@@ -91,7 +91,7 @@ def load_existing_dates(output_path: Path) -> set[str]:
         try:
             record = json.loads(line)
             existing.add(record["date"])
-        except (json.JSONDecodeError, KeyError):
+        except json.JSONDecodeError, KeyError:
             pass
     return existing
 
