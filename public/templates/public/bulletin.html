@@ -715,10 +715,10 @@ reachable via the SNOW-81 deep-link in the masthead.
                     {% trans "Reported today" %}
                 </h2>
                 <ul class="flex flex-wrap gap-2">
-                    {% for obs_type, count in observation_counts.items %}
+                    {% for label, count in observation_counts %}
                         <li class="flex items-center gap-1.5 rounded-pill bg-status-info-bg px-3 py-1 text-sm text-status-info-text">
                             <span class="font-medium">{{ count }}</span>
-                            <span>{{ obs_type|lower|title }}</span>
+                            <span>{{ label }}</span>
                         </li>
                     {% endfor %}
                 </ul>

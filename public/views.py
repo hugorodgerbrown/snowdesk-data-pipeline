@@ -1204,10 +1204,10 @@ def _get_observation_counts(
     request: HttpRequest,
     region: "MicroRegion",
     day: datetime.date,
-) -> "dict[str, int]":
+) -> "list[tuple[str, int]]":
     """Return per-type field-observation counts for a region on a calendar day.
 
-    Returns an empty dict when the ``field_observations`` flag is inactive
+    Returns an empty list when the ``field_observations`` flag is inactive
     (zero-overhead on historic pages and for non-flagged users).
 
     Args:
@@ -1216,15 +1216,26 @@ def _get_observation_counts(
         day: The calendar day to count observations on.
 
     Returns:
-        Mapping from observation-type value string to count, or ``{}`` when
-        the flag is inactive or no observations exist.
+        List of ``(label, count)`` pairs sorted by label, where ``label`` is
+        the human-readable ``OBSERVATION_TYPE`` label (e.g. "Wind striations").
+        Returns an empty list when the flag is inactive or no observations
+        exist.
 
     """
     if not waffle.flag_is_active(request, "field_observations"):
-        return {}
+        return []
     from observations.models import FieldObservation  # noqa: PLC0415
 
-    return FieldObservation.objects.counts_for_region_day(region, day)
+    raw: dict[str, int] = FieldObservation.objects.counts_for_region_day(region, day)
+    result: list[tuple[str, int]] = []
+    for key, count in raw.items():
+        try:
+            label = FieldObservation.OBSERVATION_TYPE(key).label
+        except ValueError:
+            label = key.replace("_", " ").title()
+        result.append((label, count))
+    result.sort(key=lambda pair: pair[0])
+    return result
 
 
 def map_view(request: HttpRequest) -> HttpResponse:
@@ -2897,8 +2908,8 @@ def _bulletin_detail_response(
     # SNOW-324: per-type field-observation counts for the current-day bulletin
     # page.  Only fetched when the flag is active; zero-overhead on historic
     # pages because the ``is_today`` guard short-circuits the query.
-    observation_counts: dict[str, int] = (
-        _get_observation_counts(request, region, page_date) if is_today else {}
+    observation_counts: list[tuple[str, int]] = (
+        _get_observation_counts(request, region, page_date) if is_today else []
     )
 
     # Emit bulletin_viewed (no-ops silently on /examples/* paths).
