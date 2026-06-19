@@ -10,9 +10,9 @@ on static-file changes.
 
 Typical workflow::
 
-    poetry run python manage.py collectstatic --noinput
+    uv run python manage.py collectstatic --noinput
     DJANGO_SETTINGS_MODULE=config.settings.perf \
-        poetry run python manage.py runserver --noreload 8765
+        uv run python manage.py runserver --noreload 8765
 
 The Lighthouse CI ``startServerCommand`` uses this module so ``npm run
 lh`` matches production-representative performance.

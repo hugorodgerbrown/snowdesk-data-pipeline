@@ -60,6 +60,6 @@ def og_locale(value: str | None) -> str:
         language = parts[0]
         territory = parts[1].upper()
         return f"{language}_{territory}"
-    except (AttributeError, IndexError):
+    except AttributeError, IndexError:
         logger.debug("og_locale: could not convert %r", value)
         return ""

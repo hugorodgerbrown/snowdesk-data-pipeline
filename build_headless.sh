@@ -6,8 +6,9 @@
 
 set -o errexit
 
-pip install poetry
-poetry install --no-interaction --no-root --only main
+# See build.sh for the rationale behind `uv sync --active --no-dev --frozen`.
+pip install uv
+uv sync --active --no-dev --frozen
 
 python manage.py migrate
 

@@ -16,7 +16,7 @@ pure-Python ray-casting implementation in
 (a FK to `core.RequestLog`) rather than being duplicated onto `Subscription`.
 
 **Why — no Shapely on the request path.** Shapely is declared as a dev-only
-dependency in `[tool.poetry.group.dev.dependencies]`. It is used lazily by
+dependency in `[dependency-groups]` `dev`. It is used lazily by
 `audit_resort_regions` (an offline management command) via `importlib`, so it
 never needs to be present at runtime. Promoting it to a production runtime
 dependency would add a compiled C extension to the Render deployment image for

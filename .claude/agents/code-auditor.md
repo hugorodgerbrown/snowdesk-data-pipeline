@@ -29,15 +29,15 @@ open, what's carried forward under "watching").
 
 ## Project context
 
-- **Stack**: Python 3.14 / Django 6.0, HTMX, Tailwind CSS v4, Poetry,
+- **Stack**: Python 3.14 / Django 6.0, HTMX, Tailwind CSS v4, uv,
   pytest + FactoryBoy + tox.
 - **Apps**: `config/`, `core/`, `regions/`, `bulletins/`, `subscriptions/`,
   `public/`, plus `analytics/` if present.
 - **Conventions are in `CLAUDE.md`** — read it. The invariants, model kit,
   management-command contract, and design-system rules there are the
   yardstick you measure drift against.
-- **`poetry` is at `~/.local/bin`** — prefix Bash calls with
-  `PATH=~/.local/bin:$PATH` if poetry isn't found.
+- **`uv` is at `~/.local/bin`** — prefix Bash calls with
+  `PATH=~/.local/bin:$PATH` if uv isn't found.
 - Tox envs mirror CI: `tox -e test` (coverage), `tox -e mypy`,
   `tox -e lint`, `tox -e django-checks`, `tox -e ds-lint`,
   `tox -e docs-lint`.

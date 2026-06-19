@@ -38,7 +38,7 @@ sheet, service worker, HTMX swaps, map).
 ## How to run locally
 
 ```bash
-poetry run tox -e e2e
+uv run tox -e e2e
 ```
 
 On first run, tox downloads Chromium (~170 MiB) via
@@ -49,8 +49,8 @@ The env is **not** in the default `tox` envlist (it takes 30+ s cold and
 is opt-in only).  To run the default suite:
 
 ```bash
-poetry run tox          # fmt, lint, mypy, django-checks, ds-lint, test
-poetry run tox -e e2e   # e2e only
+uv run tox          # fmt, lint, mypy, django-checks, ds-lint, test
+uv run tox -e e2e   # e2e only
 ```
 
 ---
@@ -112,9 +112,9 @@ wiping any data loaded at session setup time.
 
 The e2e workflow (`.github/workflows/e2e.yml`) runs on every pull request and
 every push to `main`, triggered by changes to `**/*.py`, `**/*.html`,
-`pyproject.toml`, `poetry.lock`, `tox.ini`, or the workflow file itself.
+`pyproject.toml`, `uv.lock`, `tox.ini`, or the workflow file itself.
 
-The Playwright binary cache is keyed on `poetry.lock` so cache hits are
+The Playwright binary cache is keyed on `uv.lock` so cache hits are
 common (the binary version is tied to the `playwright` package).
 
 ---

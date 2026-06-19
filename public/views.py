@@ -3563,7 +3563,7 @@ def _resolve_period_danger_from_rm(
             continue
         try:
             level = int(t.get("danger_level") or 0)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         if 1 <= level <= 5:
             levels.append(level)

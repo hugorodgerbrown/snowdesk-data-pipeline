@@ -6,9 +6,13 @@
 
 set -o errexit
 
-# Python dependencies
-pip install poetry
-poetry install --no-interaction --no-root --only main
+# Python dependencies. `--active` installs into Render's build-time
+# virtualenv (the same one Poetry installed into), so the bare
+# `python manage.py` / `gunicorn` start commands resolve without an
+# `uv run` prefix. `--no-dev` mirrors the old `--only main`; `--frozen`
+# installs strictly from uv.lock and fails if it is out of date.
+pip install uv
+uv sync --active --no-dev --frozen
 
 # Tailwind CSS build (output.css is gitignored — must be built on deploy)
 npm install

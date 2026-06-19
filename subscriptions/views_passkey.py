@@ -118,7 +118,7 @@ def passkey_auth_response(request: HttpRequest) -> JsonResponse:
 
     try:
         json.loads(credential_json)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return JsonResponse({"error": "invalid_json"}, status=400)
 
     try:

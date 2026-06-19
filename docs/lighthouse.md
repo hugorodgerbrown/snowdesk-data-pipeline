@@ -63,5 +63,5 @@ Check all of:
 - Keep heading order sequential (`h1 → h2 → h3`); do not skip levels.
   The reviewer agent will run `npm run lh` and flag regressions.
 
-**Before opening a PR**: run `npm run lh` alongside `poetry run tox`
+**Before opening a PR**: run `npm run lh` alongside `uv run tox`
 and clear both. The reviewer agent runs lh as part of its checklist.

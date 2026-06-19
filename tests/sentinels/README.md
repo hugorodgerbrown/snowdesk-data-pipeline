@@ -87,5 +87,5 @@ tests/sentinels/
 4. The smoke test in `test_sentinel_round_trip.py` is fully parametrised — it will
    automatically pick up the new `source.json` and `source.xml` without any code
    change.
-5. Run `poetry run tox -e test -- tests/sentinels/` to confirm the new sentinel
+5. Run `uv run tox -e test -- tests/sentinels/` to confirm the new sentinel
    passes before committing.

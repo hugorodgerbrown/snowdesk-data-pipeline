@@ -1031,7 +1031,7 @@ def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonRespons
 
     try:
         payload = json.loads(request.body or b"")
-    except (ValueError, json.JSONDecodeError):
+    except ValueError, json.JSONDecodeError:
         return JsonResponse({"error": "invalid_json"}, status=400)
 
     if not isinstance(payload, dict):
@@ -1050,7 +1050,7 @@ def edit_resort_save_coords(request: HttpRequest, resort_id: int) -> JsonRespons
     try:
         lat = float(raw_lat)
         lon = float(raw_lon)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return JsonResponse(
             {
                 "error": "invalid_coords",
@@ -1151,7 +1151,7 @@ def _parse_share_request(
     """
     try:
         body = json.loads(request.body or b"")
-    except (ValueError, json.JSONDecodeError):
+    except ValueError, json.JSONDecodeError:
         return JsonResponse({"error": "invalid_json"}, status=400), None, None
 
     if not isinstance(body, dict):
@@ -1175,7 +1175,7 @@ def _parse_share_request(
 
     try:
         target_date = date.fromisoformat(str(date_str))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return (
             JsonResponse(
                 {"error": "invalid_date", "detail": "date must be YYYY-MM-DD"},

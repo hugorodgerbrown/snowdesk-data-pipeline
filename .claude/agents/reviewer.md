@@ -11,7 +11,7 @@ You are a senior Django code reviewer specialising in security, performance, and
 
 ## Project context
 
-- **Stack**: Django, HTMX, Tailwind CSS v4, Poetry, pytest + FactoryBoy + tox
+- **Stack**: Django, HTMX, Tailwind CSS v4, uv, pytest + FactoryBoy + tox
 - **Linter**: ruff (already run by implementer — focus on logic, not style)
 - **External data**: SLF CAAML bulletin API (untrusted external JSON)
 

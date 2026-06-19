@@ -62,7 +62,7 @@ def parse_iso(value: str | None) -> datetime | None:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         logger.debug("parse_iso: could not parse %r", value)
         return None
 
@@ -106,7 +106,7 @@ def danger_level_key(level: int | None) -> str:
         return ""
     try:
         return _DANGER_LEVEL_TO_KEY.get(int(level), "")
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return ""
 
 
@@ -165,5 +165,5 @@ def danger_level_label(level: int | None) -> str:
         return ""
     try:
         return str(_DANGER_LEVEL_TO_LABEL.get(int(level), ""))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return ""

@@ -37,7 +37,7 @@ def _parse_json(request: HttpRequest) -> dict[str, Any]:
     try:
         data: dict[str, Any] = json.loads(request.body.decode("utf-8") or "{}")
         return data
-    except (ValueError, UnicodeDecodeError):
+    except ValueError, UnicodeDecodeError:
         return {}
 
 

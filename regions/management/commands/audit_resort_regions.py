@@ -26,10 +26,10 @@ add a hard runtime dependency on the production path.
 
 Usage:
     # Preview mismatches (default — no writes, exits non-zero if any found).
-    poetry run python manage.py audit_resort_regions
+    uv run python manage.py audit_resort_regions
 
     # Re-FK the mismatched resorts and refresh the fixture.
-    poetry run python manage.py audit_resort_regions --commit
+    uv run python manage.py audit_resort_regions --commit
 """
 
 from __future__ import annotations
@@ -169,7 +169,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(
                     "Refreshed regions/fixtures/resorts.json. "
-                    "Run: poetry run python manage.py loaddata "
+                    "Run: uv run python manage.py loaddata "
                     "regions/fixtures/resorts.json"
                 )
             )
@@ -191,7 +191,7 @@ def _build_region_polygons() -> list[tuple[str, Any]]:
     except ImportError as exc:
         raise RuntimeError(
             "audit_resort_regions requires the dev-only `shapely` dependency. "
-            "Install it with `poetry install --with dev`."
+            "Install it with `uv sync`."
         ) from exc
 
     polygons: list[tuple[str, Any]] = []

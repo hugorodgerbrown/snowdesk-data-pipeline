@@ -336,7 +336,7 @@ def _parse_aaguid(aaguid_str: str) -> _uuid.UUID | None:
     """
     try:
         parsed = _uuid.UUID(aaguid_str)
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return None
     return None if parsed.int == 0 else parsed
 

@@ -171,7 +171,7 @@ class TestCheckedInFixture:
         """The checked-in fixture file exists."""
         assert _FIXTURE_PATH.exists(), (
             f"Missing fixture: {_FIXTURE_PATH}. "
-            "Run: poetry run python manage.py build_test_data --commit"
+            "Run: uv run python manage.py build_test_data --commit"
         )
 
     def test_fixture_is_valid_json(self) -> None:

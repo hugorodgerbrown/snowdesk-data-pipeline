@@ -29,7 +29,7 @@ way they see a Lighthouse-score delta.
 
 Append a `(name, url)` tuple to `MONITORED_URLS` in
 `core/management/commands/monitor_query_counts.py`, then run
-`poetry run python manage.py monitor_query_counts --commit` to seed
+`uv run python manage.py monitor_query_counts --commit` to seed
 the new baseline row.
 
 ## When the count legitimately changes

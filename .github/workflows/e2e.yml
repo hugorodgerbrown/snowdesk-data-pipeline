@@ -4,7 +4,7 @@
 # Isolated from ci.yml so the Chromium install step and its cache are
 # scoped to this workflow and do not bloat the main CI image.
 #
-# The Playwright binary cache is keyed on poetry.lock so a new cache entry
+# The Playwright binary cache is keyed on uv.lock so a new cache entry
 # is created only when the Playwright package version changes.  Cache misses
 # fall back to a clean install (the Chromium download takes ~60 s on a
 # GitHub-hosted runner).
@@ -19,7 +19,7 @@ on:
       - "**/*.py"
       - "**/*.html"
       - "pyproject.toml"
-      - "poetry.lock"
+      - "uv.lock"
       - "tox.ini"
       - ".github/workflows/e2e.yml"
 
@@ -29,7 +29,7 @@ on:
       - "**/*.py"
       - "**/*.html"
       - "pyproject.toml"
-      - "poetry.lock"
+      - "uv.lock"
       - "tox.ini"
       - ".github/workflows/e2e.yml"
 
@@ -60,7 +60,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ hashFiles('poetry.lock') }}
+          key: playwright-chromium-${{ hashFiles('uv.lock') }}
 
       - name: Install tox and run e2e env
         run: |

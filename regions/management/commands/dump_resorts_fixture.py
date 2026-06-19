@@ -17,10 +17,10 @@ existing fixture format and keeping fixtures portable across DB resets.
 
 Usage:
     # Preview what would change (default — no writes).
-    poetry run python manage.py dump_resorts_fixture
+    uv run python manage.py dump_resorts_fixture
 
     # Actually write the updated fixture.
-    poetry run python manage.py dump_resorts_fixture --commit
+    uv run python manage.py dump_resorts_fixture --commit
 """
 
 from __future__ import annotations

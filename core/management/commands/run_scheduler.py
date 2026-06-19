@@ -65,7 +65,7 @@ class Command(BaseCommand):
 
         try:
             scheduler.start()
-        except (KeyboardInterrupt, SystemExit):
+        except KeyboardInterrupt, SystemExit:
             logger.info("run_scheduler: shutdown signal received — stopping gracefully")
             if options["verbosity"] >= 1:
                 self.stdout.write("Scheduler stopped.")

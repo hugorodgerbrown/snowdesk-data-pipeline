@@ -172,10 +172,10 @@ lands in the same PR rather than a follow-up.
 Run:
 
 ```bash
-poetry run python manage.py monitor_query_counts
+uv run python manage.py monitor_query_counts
 ```
 
-(Prefix with `PATH=~/.local/bin:$PATH` if poetry isn't on the shell's
+(Prefix with `PATH=~/.local/bin:$PATH` if uv isn't on the shell's
 PATH.) The command is read-only by default and exits non-zero on any
 mismatch against `perf/query_counts.txt`.
 

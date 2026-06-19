@@ -22,9 +22,9 @@ database.
 
 Typical use::
 
-    poetry run python manage.py diagnose_region_coverage
-    poetry run python manage.py diagnose_region_coverage --verbose-table
-    poetry run python manage.py diagnose_region_coverage --date 2026-04-15
+    uv run python manage.py diagnose_region_coverage
+    uv run python manage.py diagnose_region_coverage --verbose-table
+    uv run python manage.py diagnose_region_coverage --date 2026-04-15
 """
 
 from __future__ import annotations

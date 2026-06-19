@@ -22,7 +22,7 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
 [`dry-run-default-commands`](decisions/dry-run-default-commands.md).)
 
 1. **Sensible defaults — runs with no arguments.** The bare invocation
-   (`poetry run python manage.py <name>`) must do the most useful thing
+   (`uv run python manage.py <name>`) must do the most useful thing
    for the common case. Required positional arguments are a smell —
    prefer optional flags with defaults derived from context (current
    date, settings, etc.).
@@ -94,7 +94,7 @@ To regenerate (after a schema change, `RENDER_MODEL_VERSION` bump, or
 fixture-shape change):
 
 ```bash
-poetry run python manage.py build_test_data --commit
+uv run python manage.py build_test_data --commit
 ```
 
 Flags: `--commit` (write the fixture; omit for a read-only count summary),
@@ -133,16 +133,16 @@ incident that invalidates derived state:
 
   ```bash
   # Read-only walk — counts what would change, no DB writes.
-  poetry run python manage.py reformat_mf_comments
+  uv run python manage.py reformat_mf_comments
 
   # Persist (run on Render after merge).
-  poetry run python manage.py reformat_mf_comments --commit
+  uv run python manage.py reformat_mf_comments --commit
 
   # Single bulletin (must start with 'FR').
-  poetry run python manage.py reformat_mf_comments --bulletin-id FR-11-2026-05-18 --commit
+  uv run python manage.py reformat_mf_comments --bulletin-id FR-11-2026-05-18 --commit
 
   # Persist without refreshing day ratings.
-  poetry run python manage.py reformat_mf_comments --commit --skip-day-ratings
+  uv run python manage.py reformat_mf_comments --commit --skip-day-ratings
   ```
 
   Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500),
@@ -162,10 +162,10 @@ incident that invalidates derived state:
 
   ```bash
   # Dry-run — counts what would be populated, no DB writes.
-  poetry run python manage.py backfill_pdf_urls
+  uv run python manage.py backfill_pdf_urls
 
   # Persist (run on Render after deploying SNOW-295).
-  poetry run python manage.py backfill_pdf_urls --commit
+  uv run python manage.py backfill_pdf_urls --commit
   ```
 
   Flags: `--commit`.
@@ -182,10 +182,10 @@ incident that invalidates derived state:
 
   ```bash
   # Dry-run — counts how many bulletins would be processed.
-  poetry run python manage.py backfill_bulletin_groupings
+  uv run python manage.py backfill_bulletin_groupings
 
   # Persist (run on Render after deploying SNOW-323).
-  poetry run python manage.py backfill_bulletin_groupings --commit
+  uv run python manage.py backfill_bulletin_groupings --commit
   ```
 
   Flags: `--commit`.
@@ -216,13 +216,13 @@ incident that invalidates derived state:
 
   ```bash
   # Scan all sources.
-  poetry run python manage.py parse_wet_snow_coverage
+  uv run python manage.py parse_wet_snow_coverage
 
   # Restrict to one source.
-  poetry run python manage.py parse_wet_snow_coverage --source slf
+  uv run python manage.py parse_wet_snow_coverage --source slf
 
   # Verbose: also show already-structured count per row.
-  poetry run python manage.py parse_wet_snow_coverage --verbosity 2
+  uv run python manage.py parse_wet_snow_coverage --verbosity 2
   ```
 
   Flags: `--source {slf,albina,meteofrance}` (default: all sources).
@@ -242,35 +242,35 @@ The cron invocation for the standard nightly run is:
 #                    re-issues are refetched; duplicates are ignored)
 #   - empty DB:     SEASON_START_DATE → today (first-run backstop)
 # Useful as a "what would happen?" probe before committing.
-poetry run python manage.py fetch_bulletins --source slf
-poetry run python manage.py fetch_bulletins --source albina
-poetry run python manage.py fetch_bulletins --source meteofrance
-poetry run python manage.py fetch_bulletins --source slf albina meteofrance
+uv run python manage.py fetch_bulletins --source slf
+uv run python manage.py fetch_bulletins --source albina
+uv run python manage.py fetch_bulletins --source meteofrance
+uv run python manage.py fetch_bulletins --source slf albina meteofrance
 
 # Persist the same gentle-default window (typical cron shape).
-poetry run python manage.py fetch_bulletins --source slf albina meteofrance --commit
+uv run python manage.py fetch_bulletins --source slf albina meteofrance --commit
 
 # Today only.
-poetry run python manage.py fetch_bulletins --source slf --today --commit
-poetry run python manage.py fetch_bulletins --source albina --today --commit
-poetry run python manage.py fetch_bulletins --source meteofrance --today --commit
+uv run python manage.py fetch_bulletins --source slf --today --commit
+uv run python manage.py fetch_bulletins --source albina --today --commit
+uv run python manage.py fetch_bulletins --source meteofrance --today --commit
 
 # Single day (typical one-off shape).
-poetry run python manage.py fetch_bulletins --source slf --date 2024-06-15 --commit
+uv run python manage.py fetch_bulletins --source slf --date 2024-06-15 --commit
 
 # Explicit window — overrides the smart default. End is always today (UTC);
 # there is no --end-date flag.
-poetry run python manage.py fetch_bulletins --source slf --start-date 2024-01-01 --commit
+uv run python manage.py fetch_bulletins --source slf --start-date 2024-01-01 --commit
 
 # Re-pull existing rows.
-poetry run python manage.py fetch_bulletins --source slf albina meteofrance --commit --force
+uv run python manage.py fetch_bulletins --source slf albina meteofrance --commit --force
 
 # Capture every fetched bulletin into each source's on-disk archive
 # (deduped by bulletinID, sorted ascending by validTime.startTime).
 # Independent of --commit: combine for full-fidelity capture, or use
 # --stash alone to refresh the archive without DB writes.
-poetry run python manage.py fetch_bulletins --source slf albina meteofrance --stash
-poetry run python manage.py fetch_bulletins --source slf albina meteofrance --commit --stash
+uv run python manage.py fetch_bulletins --source slf albina meteofrance --stash
+uv run python manage.py fetch_bulletins --source slf albina meteofrance --commit --stash
 
 # Bootstrap an empty local DB against the on-disk archive instead of the
 # live API. Requires the dev server to be running (SLF/ALBINA) or a local
@@ -278,15 +278,15 @@ poetry run python manage.py fetch_bulletins --source slf albina meteofrance --co
 #   SLF:          settings.SLF_API_LOCAL_MIRROR_URL
 #   ALBINA:       settings.ALBINA_API_LOCAL_MIRROR_URL
 #   Météo-France: settings.METEOFRANCE_API_LOCAL_MIRROR_URL (file:// URI)
-poetry run python manage.py fetch_bulletins --source slf --local-mirror --commit
-poetry run python manage.py fetch_bulletins --source albina --local-mirror --commit
-poetry run python manage.py fetch_bulletins --source meteofrance --local-mirror --commit
-poetry run python manage.py fetch_bulletins --source slf albina meteofrance --local-mirror --commit
+uv run python manage.py fetch_bulletins --source slf --local-mirror --commit
+uv run python manage.py fetch_bulletins --source albina --local-mirror --commit
+uv run python manage.py fetch_bulletins --source meteofrance --local-mirror --commit
+uv run python manage.py fetch_bulletins --source slf albina meteofrance --local-mirror --commit
 
 # Multi-year backfill — pace API calls to be a good citizen on the
 # public, no-auth SLF API. The delay applies between page/CDN fetches,
 # not between individual bulletins.
-poetry run python manage.py fetch_bulletins --source slf \
+uv run python manage.py fetch_bulletins --source slf \
     --start-date 2014-11-01 --delay 5 --commit
 
 # Flags:
@@ -323,8 +323,8 @@ poetry run python manage.py fetch_bulletins --source slf \
 
 # Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
 # Read-only by default — pass --commit to persist (same convention as fetch_bulletins).
-poetry run python manage.py rebuild_render_models           # read-only
-poetry run python manage.py rebuild_render_models --commit  # persist
+uv run python manage.py rebuild_render_models           # read-only
+uv run python manage.py rebuild_render_models --commit  # persist
 
 # Flags: --commit, --all (every row), --bulletin-id <id> (single row), --batch-size N
 
@@ -334,24 +334,24 @@ poetry run python manage.py rebuild_render_models --commit  # persist
 # min_rating = max_rating = headline danger key. AM/PM fields are set whenever
 # both morning and afternoon trait levels exist. Intended as a post-deployment
 # step after a day-rating policy change. Read-only by default.
-poetry run python manage.py recompute_day_ratings                    # read-only
-poetry run python manage.py recompute_day_ratings --commit           # persist all pairs
-poetry run python manage.py recompute_day_ratings \
+uv run python manage.py recompute_day_ratings                    # read-only
+uv run python manage.py recompute_day_ratings --commit           # persist all pairs
+uv run python manage.py recompute_day_ratings \
     --start-date 2026-01-01 --end-date 2026-04-30 --commit          # narrow window
 
 # Flags: --commit, --start-date YYYY-MM-DD, --end-date YYYY-MM-DD
 
 # Compare SQL query counts against the committed baseline (SNOW-13).
 # Read-only by default — --commit rewrites perf/query_counts.txt.
-poetry run python manage.py monitor_query_counts           # CI / local gate
-poetry run python manage.py monitor_query_counts --commit  # accept new counts
+uv run python manage.py monitor_query_counts           # CI / local gate
+uv run python manage.py monitor_query_counts --commit  # accept new counts
 
 # Recompute the derived centre + bbox on L1/L2 EAWS fixtures from the
 # union of their L4 children. Run after editing regions/fixtures/eaws_CH.json
 # (e.g. when EAWS publishes a new season). Read-only by default; --commit
 # to write the consolidated fixture.
-poetry run python manage.py refresh_eaws_fixtures           # diff-only
-poetry run python manage.py refresh_eaws_fixtures --commit  # persist
+uv run python manage.py refresh_eaws_fixtures           # diff-only
+uv run python manage.py refresh_eaws_fixtures --commit  # persist
 
 # Diagnose RegionDayRating coverage gaps (SNOW-48). Pure SELECT — never
 # writes. Partitions every fixture region into A/B/C buckets:
@@ -359,9 +359,9 @@ poetry run python manage.py refresh_eaws_fixtures --commit  # persist
 #   B: appears in a raw bulletin's properties.regions but has no rating row
 #      (local-bug suspect)
 #   C: never appears in any raw bulletin (upstream-gap suspect)
-poetry run python manage.py diagnose_region_coverage                       # whole archive
-poetry run python manage.py diagnose_region_coverage --date 2026-04-15     # single day
-poetry run python manage.py diagnose_region_coverage --verbose-table       # add per-region table
+uv run python manage.py diagnose_region_coverage                       # whole archive
+uv run python manage.py diagnose_region_coverage --date 2026-04-15     # single day
+uv run python manage.py diagnose_region_coverage --verbose-table       # add per-region table
 
 # Flags: --date YYYY-MM-DD (single day), --verbose-table (per-region table)
 
@@ -371,8 +371,8 @@ poetry run python manage.py diagnose_region_coverage --verbose-table       # add
 # in the local SQLite and disappear on the next loaddata. Read-only by
 # default; --commit writes the file. Uses natural foreign keys so region
 # round-trips as ["CH-4115"] rather than a numeric pk.
-poetry run python manage.py dump_resorts_fixture           # preview diff only
-poetry run python manage.py dump_resorts_fixture --commit  # write the fixture
+uv run python manage.py dump_resorts_fixture           # preview diff only
+uv run python manage.py dump_resorts_fixture --commit  # write the fixture
 
 # Detect Resort → MicroRegion FK mismatches (SNOW-178). For every geocoded
 # Resort, builds a Point(lon, lat) and tests which MicroRegion.boundary
@@ -384,16 +384,16 @@ poetry run python manage.py dump_resorts_fixture --commit  # write the fixture
 # --commit re-FKs bucket-(b) resorts and calls dump_resorts_fixture's
 # writer to refresh regions/fixtures/resorts.json. Then run:
 #   loaddata regions/fixtures/resorts.json
-poetry run python manage.py audit_resort_regions           # detect FK drift
-poetry run python manage.py audit_resort_regions --commit  # fix FKs + fixture
+uv run python manage.py audit_resort_regions           # detect FK drift
+uv run python manage.py audit_resort_regions --commit  # fix FKs + fixture
 
 # Export a CSV of day-character labels and the inputs that feed the
 # five-rule cascade in bulletins.services.render_model.compute_day_character.
 # One row per Bulletin. Pure SELECT — defaults to stdout, --output PATH
 # writes a file. Use --lang/--start-date/--end-date to narrow the scan.
-poetry run python manage.py export_day_character_csv > dc.csv               # whole archive
-poetry run python manage.py export_day_character_csv --lang de > dc-de.csv  # one language
-poetry run python manage.py export_day_character_csv \
+uv run python manage.py export_day_character_csv > dc.csv               # whole archive
+uv run python manage.py export_day_character_csv --lang de > dc-de.csv  # one language
+uv run python manage.py export_day_character_csv \
     --start-date 2026-01-01 --end-date 2026-01-31 --lang de --output dc.csv
 
 # Flags: --output PATH, --start-date YYYY-MM-DD, --end-date YYYY-MM-DD, --lang LANG
@@ -407,11 +407,11 @@ poetry run python manage.py export_day_character_csv \
 # Produces 9 L1 MajorRegion, 21 L2 SubRegion, 149 L4 MicroRegion entries.
 # Neighbour graph computed from GeoJSON geometry via Shapely buffer-intersects.
 # Read-only by default — pass --commit to write the fixture.
-poetry run python manage.py build_switzerland_fixture          # preview only
-poetry run python manage.py build_switzerland_fixture --commit # write fixture
+uv run python manage.py build_switzerland_fixture          # preview only
+uv run python manage.py build_switzerland_fixture --commit # write fixture
 
 # Load the committed fixture into a local DB (production reloads via build.sh):
-poetry run python manage.py loaddata regions/fixtures/eaws_CH.json
+uv run python manage.py loaddata regions/fixtures/eaws_CH.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
 
@@ -421,11 +421,11 @@ poetry run python manage.py loaddata regions/fixtures/eaws_CH.json
 #   reference_data/meteofrance/liste-massifs.geojson            — MF mountain groupings
 # Produces 4 L1 MajorRegion, 4 L2 SubRegion, 35 L4 MicroRegion entries.
 # Read-only by default — pass --commit to write the fixture.
-poetry run python manage.py build_france_fixture          # preview only
-poetry run python manage.py build_france_fixture --commit # write fixture
+uv run python manage.py build_france_fixture          # preview only
+uv run python manage.py build_france_fixture --commit # write fixture
 
 # Load the committed fixture into a local DB (production reloads via build.sh):
-poetry run python manage.py loaddata regions/fixtures/eaws_FR.json
+uv run python manage.py loaddata regions/fixtures/eaws_FR.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
 
@@ -434,11 +434,11 @@ poetry run python manage.py loaddata regions/fixtures/eaws_FR.json
 #   reference_data/eaws/micro-regions/AT-02_micro-regions.geojson.json … AT-08_micro-regions.geojson.json
 # Produces 7 L1 MajorRegion (one per Austrian state), N L2 SubRegion, N L4 MicroRegion.
 # Read-only by default — pass --commit to write the fixture.
-poetry run python manage.py build_austria_fixture          # preview only
-poetry run python manage.py build_austria_fixture --commit # write fixture
+uv run python manage.py build_austria_fixture          # preview only
+uv run python manage.py build_austria_fixture --commit # write fixture
 
 # Load the committed fixture into a local DB (production reloads via build.sh):
-poetry run python manage.py loaddata regions/fixtures/eaws_AT.json
+uv run python manage.py loaddata regions/fixtures/eaws_AT.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
 
@@ -447,11 +447,11 @@ poetry run python manage.py loaddata regions/fixtures/eaws_AT.json
 #   reference_data/eaws/micro-regions/IT-21_micro-regions.geojson.json … (7 files)
 # Produces 7 L1 MajorRegion, N L2 SubRegion, N L4 MicroRegion.
 # Read-only by default — pass --commit to write the fixture.
-poetry run python manage.py build_italy_fixture          # preview only
-poetry run python manage.py build_italy_fixture --commit # write fixture
+uv run python manage.py build_italy_fixture          # preview only
+uv run python manage.py build_italy_fixture --commit # write fixture
 
 # Load the committed fixture into a local DB (production reloads via build.sh):
-poetry run python manage.py loaddata regions/fixtures/eaws_IT.json
+uv run python manage.py loaddata regions/fixtures/eaws_IT.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
 ```
@@ -493,24 +493,24 @@ invocation a useful connectivity probe.
 
 ```bash
 # Read-only probe for today — no DB writes; real API call.
-poetry run python manage.py fetch_weather
+uv run python manage.py fetch_weather
 
 # Persist today's weather for all regions.
-poetry run python manage.py fetch_weather --commit
+uv run python manage.py fetch_weather --commit
 
 # Persist weather for a specific date.
-poetry run python manage.py fetch_weather --date 2026-05-01 --commit
+uv run python manage.py fetch_weather --date 2026-05-01 --commit
 
 # Bootstrap against the on-disk archive instead of the live Open-Meteo API.
 # Requires the dev server to be running and
 # settings.WEATHER_API_LOCAL_MIRROR_BASE_URL to be configured (development.py).
-poetry run python manage.py fetch_weather --source local-mirror --commit
+uv run python manage.py fetch_weather --source local-mirror --commit
 
 # Capture today's weather to bulletins/local_mirrors/openmeteo_archive.ndjson (no DB write).
-poetry run python manage.py fetch_weather --stash
+uv run python manage.py fetch_weather --stash
 
 # Full-fidelity: persist and stash.
-poetry run python manage.py fetch_weather --commit --stash
+uv run python manage.py fetch_weather --commit --stash
 
 # Flags:
 #   --date   YYYY-MM-DD  date to fetch for; default: today (local timezone)
@@ -540,27 +540,27 @@ backfills if you start to see 429 responses.
 
 ```bash
 # Dry-run probe for a full season window (paced at 1 s/region by default).
-poetry run python manage.py backfill_weather \
+uv run python manage.py backfill_weather \
     --start 2025-12-01 --end 2026-04-30
 
 # Persist the full season.
-poetry run python manage.py backfill_weather \
+uv run python manage.py backfill_weather \
     --start 2025-12-01 --end 2026-04-30 --commit
 
 # Tighten pacing for a multi-year historical backfill.
-poetry run python manage.py backfill_weather \
+uv run python manage.py backfill_weather \
     --start 2020-11-01 --end 2025-04-30 --delay 2 --commit
 
 # Disable pacing (only if you have a paid Open-Meteo plan).
-poetry run python manage.py backfill_weather \
+uv run python manage.py backfill_weather \
     --start 2025-12-01 --end 2026-04-30 --delay 0 --commit
 
 # Replay from the local mirror (instant; dev server must be running).
-poetry run python manage.py backfill_weather \
+uv run python manage.py backfill_weather \
     --start 2026-01-01 --end 2026-01-31 --source local-mirror --commit
 
 # Capture a range to bulletins/local_mirrors/openmeteo_archive.ndjson (no DB write).
-poetry run python manage.py backfill_weather \
+uv run python manage.py backfill_weather \
     --start 2025-12-01 --end 2026-04-30 --stash
 
 # Flags:
@@ -590,7 +590,7 @@ every other command here).
   if one does not already exist. Refuses to run when `DEBUG` is `False`.
 
   ```bash
-  poetry run python manage.py dev_magic_link --email you@example.com
+  uv run python manage.py dev_magic_link --email you@example.com
   ```
 
   Flags: `--email EMAIL` (required).
@@ -606,13 +606,13 @@ every other command here).
 
   ```bash
   # Dry-run — shows what would be generated without touching disk.
-  poetry run python manage.py mint_vapid_keypair
+  uv run python manage.py mint_vapid_keypair
 
   # Generate a real keypair and write the secret file.
-  poetry run python manage.py mint_vapid_keypair --commit
+  uv run python manage.py mint_vapid_keypair --commit
 
   # Show the PEM rendering alongside the scalar (for human inspection only).
-  poetry run python manage.py mint_vapid_keypair --commit --verbosity 2
+  uv run python manage.py mint_vapid_keypair --commit --verbosity 2
   ```
 
   Flags: `--commit` (write the secret file; omit for a read-only run).

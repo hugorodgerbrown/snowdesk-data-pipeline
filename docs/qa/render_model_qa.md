@@ -4,12 +4,12 @@
 >
 > 1. All three terminals running:
 >    - Terminal 1: `npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch`
->    - Terminal 2: `poetry run python manage.py runserver`
+>    - Terminal 2: `uv run python manage.py runserver`
 >    - Terminal 3: available for management commands
-> 2. Migrations applied: `poetry run python manage.py migrate`
+> 2. Migrations applied: `uv run python manage.py migrate`
 > 3. `.env` contains `DJANGO_SETTINGS_MODULE=config.settings.development` (ensures `DEBUG=True`, which makes the day-character debug band visible at the bottom of each panel card).
 > 4. Test data loaded as described in section A below. All shell snippets assume the working directory is `/Users/hugo/Projects/snowdesk-data-pipeline`.
-> 5. A Django superuser exists for admin access: `poetry run python manage.py createsuperuser`.
+> 5. A Django superuser exists for admin access: `uv run python manage.py createsuperuser`.
 > 6. Log output is visible in Terminal 2 (runserver stdout).
 
 ---
@@ -22,7 +22,7 @@
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | In Terminal 3, run `poetry run python manage.py fetch_bulletins --date $(date +%Y-%m-%d) --commit` | Command prints `Fetching bulletins from <today> to <today>` then `Done. Run #N: X created, Y updated across 1 day(s).` |
+| 1 | In Terminal 3, run `uv run python manage.py fetch_bulletins --date $(date +%Y-%m-%d) --commit` | Command prints `Fetching bulletins from <today> to <today>` then `Done. Run #N: X created, Y updated across 1 day(s).` |
 | 2 | Open `http://localhost:8000/examples/random/` in a browser | A bulletin panel renders without errors; a danger band and at least one trait section are visible |
 | 3 | Open `http://localhost:8000/admin/bulletins/bulletin/` (log in with superuser credentials) | Bulletin rows appear with recent `issued_at` dates |
 
@@ -37,7 +37,7 @@
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | In Terminal 3, run `poetry run python manage.py shell` | Python shell opens |
+| 1 | In Terminal 3, run `uv run python manage.py shell` | Python shell opens |
 | 2 | Paste the block below (A) and press Enter | Output ends with `Done. 6 bulletins loaded.` |
 | 3 | Type `exit()` | Shell closes |
 
@@ -161,10 +161,10 @@ print("Done. 6 bulletins loaded.")
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Run `poetry run python manage.py rebuild_render_models` | Prints heading `Rebuilding render models (version=N) [READ-ONLY]` |
+| 1 | Run `uv run python manage.py rebuild_render_models` | Prints heading `Rebuilding render models (version=N) [READ-ONLY]` |
 | 2 | Read "Bulletins to process:" line | Shows `0` (all current bulletins fresh) and "Nothing to do." |
-| 3 | Manually set one bulletin's version to 0: `poetry run python manage.py shell -c "from bulletins.models import Bulletin; Bulletin.objects.filter(bulletin_id='stable-day-001').update(render_model_version=0)"` | Exits without error |
-| 4 | Re-run `poetry run python manage.py rebuild_render_models` | "Bulletins to process: 1" and "Read-only run complete — would have rebuilt 1 bulletin(s)… Pass --commit to persist." |
+| 3 | Manually set one bulletin's version to 0: `uv run python manage.py shell -c "from bulletins.models import Bulletin; Bulletin.objects.filter(bulletin_id='stable-day-001').update(render_model_version=0)"` | Exits without error |
+| 4 | Re-run `uv run python manage.py rebuild_render_models` | "Bulletins to process: 1" and "Read-only run complete — would have rebuilt 1 bulletin(s)… Pass --commit to persist." |
 | 5 | Shell check: `Bulletin.objects.get(bulletin_id="stable-day-001").render_model_version` | Prints `0` — version was not updated |
 
 **Pass**: Output says "would have rebuilt"; version remains 0.
@@ -178,11 +178,11 @@ print("Done. 6 bulletins loaded.")
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Run `poetry run python manage.py rebuild_render_models --commit` | Heading without `[READ-ONLY]` |
+| 1 | Run `uv run python manage.py rebuild_render_models --commit` | Heading without `[READ-ONLY]` |
 | 2 | Read count line | "Bulletins to process: 1" |
 | 3 | Read completion | "Rebuilt 1 bulletin(s), 0 failed." |
 | 4 | Shell check: `Bulletin.objects.get(bulletin_id="stable-day-001").render_model_version` | Prints the current `RENDER_MODEL_VERSION` |
-| 5 | Re-run `poetry run python manage.py rebuild_render_models --commit` | "Bulletins to process: 0" and "Nothing to do." |
+| 5 | Re-run `uv run python manage.py rebuild_render_models --commit` | "Bulletins to process: 0" and "Nothing to do." |
 
 **Pass**: Only stale row touched; second run finds nothing.
 
@@ -193,7 +193,7 @@ print("Done. 6 bulletins loaded.")
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Shell: `Bulletin.objects.count()` | Prints N > 0 |
-| 2 | Run `poetry run python manage.py rebuild_render_models --all --commit` | Heading `[ALL]` (no `[READ-ONLY]`) |
+| 2 | Run `uv run python manage.py rebuild_render_models --all --commit` | Heading `[ALL]` (no `[READ-ONLY]`) |
 | 3 | Count line | "Bulletins to process: N" matches step 1 |
 | 4 | Completion | "Rebuilt N bulletin(s), 0 failed." |
 | 5 | Admin: bulletin `updated_at` | Shows fresh timestamp |
@@ -206,9 +206,9 @@ print("Done. 6 bulletins loaded.")
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Run `poetry run python manage.py rebuild_render_models --bulletin-id stable-day-001 --commit` | Heading `[bulletin-id=stable-day-001]` |
+| 1 | Run `uv run python manage.py rebuild_render_models --bulletin-id stable-day-001 --commit` | Heading `[bulletin-id=stable-day-001]` |
 | 2 | Read output | "Bulletins to process: 1" then "Rebuilt 1 bulletin(s), 0 failed." |
-| 3 | Run `poetry run python manage.py rebuild_render_models --bulletin-id does-not-exist-999` | Non-zero exit with error (no `--commit` needed — id is validated up-front) |
+| 3 | Run `uv run python manage.py rebuild_render_models --bulletin-id does-not-exist-999` | Non-zero exit with error (no `--commit` needed — id is validated up-front) |
 | 4 | Read error | Contains `No bulletin found with bulletin_id='does-not-exist-999'` |
 
 **Pass**: Single-bulletin run succeeds; unknown ID raises CommandError.

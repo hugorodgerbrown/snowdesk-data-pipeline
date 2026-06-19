@@ -16,7 +16,7 @@ on:
       - "package-lock.json"
       - "lighthouserc.*"
       - "pyproject.toml"
-      - "poetry.lock"
+      - "uv.lock"
       - ".github/workflows/lighthouse.yml"
 
 concurrency:
@@ -42,11 +42,11 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install Poetry
-        run: pip install poetry
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
 
       - name: Install Python dependencies
-        run: poetry install --no-interaction
+        run: uv sync
 
       - name: Install Node dependencies
         run: npm ci
@@ -64,18 +64,18 @@ jobs:
           echo "DEFAULT_FROM_EMAIL=ci@example.com" >> .env
 
       - name: Run migrations
-        run: poetry run python manage.py migrate --noinput
+        run: uv run python manage.py migrate --noinput
 
       - name: Load fixtures
-        run: poetry run python manage.py loaddata test_data
+        run: uv run python manage.py loaddata test_data
 
       - name: Check query-count baseline (SNOW-13)
-        run: poetry run python manage.py monitor_query_counts
+        run: uv run python manage.py monitor_query_counts
 
       - name: Collect static files (perf settings — ManifestStaticFilesStorage)
         env:
           DJANGO_SETTINGS_MODULE: config.settings.perf
-        run: poetry run python manage.py collectstatic --noinput
+        run: uv run python manage.py collectstatic --noinput
 
       - name: Run Lighthouse CI
         env:

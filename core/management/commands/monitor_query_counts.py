@@ -15,10 +15,10 @@ exits non-zero so CI fails on an un-approved regression.
 Typical use::
 
     # CI / local gate: fail on regression.
-    poetry run python manage.py monitor_query_counts
+    uv run python manage.py monitor_query_counts
 
     # After an intentional change to a monitored page:
-    poetry run python manage.py monitor_query_counts --commit
+    uv run python manage.py monitor_query_counts --commit
 
 The URL list is defined in ``MONITORED_URLS`` below — add an entry when
 introducing a new page whose query count is worth watching.
@@ -89,7 +89,7 @@ BASELINE_PATH = Path(settings.BASE_DIR) / "perf" / "query_counts.txt"
 BASELINE_HEADER = (
     "# SNOW-13 query-count baseline — committed artefact.\n"
     "# Do not edit by hand; regenerate with:\n"
-    "#   poetry run python manage.py monitor_query_counts --commit\n"
+    "#   uv run python manage.py monitor_query_counts --commit\n"
     "# Format: <name> <count>\n"
 )
 

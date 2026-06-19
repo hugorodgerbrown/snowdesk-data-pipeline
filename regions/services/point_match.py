@@ -142,7 +142,7 @@ def point_in_polygon(lon: float, lat: float, geometry: dict | None) -> bool:
         logger.debug("point_in_polygon: unsupported geometry type %s", geo_type)
         return False
 
-    except (TypeError, IndexError, KeyError, AttributeError):
+    except TypeError, IndexError, KeyError, AttributeError:
         logger.debug(
             "point_in_polygon: malformed geometry — returning False",
             exc_info=True,

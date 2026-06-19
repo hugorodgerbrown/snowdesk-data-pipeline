@@ -10,7 +10,7 @@ invoked in production.
 
 Usage::
 
-    poetry run python manage.py dev_magic_link --email you@example.com
+    uv run python manage.py dev_magic_link --email you@example.com
 """
 
 from __future__ import annotations

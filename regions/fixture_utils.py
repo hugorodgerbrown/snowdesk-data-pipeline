@@ -150,7 +150,7 @@ def boundary_from_children(children: list[dict[str, Any]]) -> dict[str, Any]:
     except ImportError as exc:  # pragma: no cover — dev-only dependency
         raise RuntimeError(
             "boundary_from_children requires the dev-only `shapely` dependency. "
-            "Install it with `poetry install --with dev`."
+            "Install it with `uv sync`."
         ) from exc
 
     polys = [shp(child["boundary"]) for child in children if child.get("boundary")]
