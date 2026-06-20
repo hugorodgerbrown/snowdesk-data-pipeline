@@ -48,17 +48,34 @@
   const FORM_URL = btn.dataset.reportFormUrl;
 
   // ---------------------------------------------------------------------------
-  // Module-level draggable marker state.
+  // Module-level draggable marker state and MANUAL map-click handler.
   // ---------------------------------------------------------------------------
 
   /** @type {maplibregl.Marker|null} */
   let reportMarker = null;
+
+  /**
+   * Module-level reference to the MANUAL map-click handler so that
+   * closeSheet() can remove it via MAP.off even after the error-branch
+   * closure that registered it has gone out of scope.
+   * @type {((e: any) => void)|null}
+   */
+  let activeMapClickHandler = null;
 
   /** Remove the draggable pin from the map, if one exists. */
   function removeMarker() {
     if (reportMarker) {
       reportMarker.remove();
       reportMarker = null;
+    }
+  }
+
+  /** Remove the MANUAL map-click listener from MAP, if one is registered. */
+  function removeMapClickHandler() {
+    const map = getMap();
+    if (map && activeMapClickHandler) {
+      map.off('click', activeMapClickHandler);
+      activeMapClickHandler = null;
     }
   }
 
@@ -108,6 +125,7 @@
 
   function closeSheet() {
     removeMarker();
+    removeMapClickHandler();
     sheet.setAttribute('hidden', '');
     sheet.innerHTML = '';
   }
@@ -276,10 +294,12 @@
   document.addEventListener('htmx:afterSwap', function (event) {
     const elt = event.detail && event.detail.target;
     if (elt && elt.id === 'report-sheet') {
-      // If the swap was a confirmation (not the form re-render), clean up.
+      // If the swap was a confirmation (not the form re-render), clean up the
+      // marker and any outstanding MANUAL map-click listener.
       const form = elt.querySelector('#report-form');
       if (!form) {
         removeMarker();
+        removeMapClickHandler();
       }
     }
   });
@@ -325,11 +345,14 @@
       loadForm(null, null, null, 'MANUAL', null, null);
 
       // Wire a one-time MAP click to drop a draggable marker.
+      // Store the handler at module scope so closeSheet() can remove it if the
+      // user cancels before placing a pin (BLOCKER 2 fix).
       const map = getMap();
       if (!map) return;
 
-      function onMapClick(e) {
-        map.off('click', onMapClick);
+      activeMapClickHandler = function onMapClick(e) {
+        // Self-deregister: first click consumes the handler.
+        removeMapClickHandler();
 
         const lat = e.lngLat.lat;
         const lon = e.lngLat.lng;
@@ -343,9 +366,9 @@
 
         // Enable the problem buttons now that a location is set.
         enableProblemButtons();
-      }
+      };
 
-      map.on('click', onMapClick);
+      map.on('click', activeMapClickHandler);
     }
 
     document.addEventListener('snowdesk:geolocate', onLocate);
