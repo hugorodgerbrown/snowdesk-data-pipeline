@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# bin/bootstrap-dev-db — Seed a fresh local development database.
+#
+# Runs migrations, loads all region and resort fixtures, fetches bulletins from
+# all three providers via the local mirrors, and backfills weather across the
+# default window (latest snapshot → today), all against the local DB defined
+# in your .env.
+#
+# PREREQUISITE: the Django dev server must be running on :8000 before you
+# execute this script. The SLF, ALBINA, and Open-Meteo local mirrors are
+# served by dev-only views in the running server; Météo-France reads a local
+# directory and does not need the server, but it does need a configured
+# METEOFRANCE_API_KEY (or the local-mirror path) in your .env.
+#
+# Usage:
+#   uv run python manage.py runserver &   # in another terminal
+#   ./bin/bootstrap-dev-db
+#
+# Fully-offline alternative (no server required):
+#   uv run python manage.py loaddata bulletins/fixtures/test_data.json
+# That loads the committed test fixture which covers the Martigny-Verbier
+# region for April 2026 and is suitable for most UI work.
+
+set -o errexit
+
+echo "==> Applying migrations …"
+uv run python manage.py migrate
+
+echo "==> Loading region and resort fixtures …"
+uv run python manage.py loaddata \
+    regions/fixtures/eaws_CH.json \
+    regions/fixtures/eaws_FR.json \
+    regions/fixtures/eaws_AT.json \
+    regions/fixtures/eaws_IT.json \
+    regions/fixtures/resorts.json
+
+echo "==> Fetching bulletins from all providers (local mirror) …"
+uv run python manage.py fetch_bulletins \
+    --source slf albina meteofrance \
+    --local-mirror \
+    --commit
+
+echo "==> Fetching weather across the default window (local mirror) …"
+uv run python manage.py fetch_weather --local-mirror --commit
+
+echo ""
+echo "Bootstrap complete. Open a bulletin page to verify:"
+echo "  http://localhost:8000/ch-4115/martigny-verbier/$(date +%Y-%m-%d)/"
