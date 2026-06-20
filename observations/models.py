@@ -103,7 +103,10 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
             True when at least one matching row exists; False otherwise.
 
         """
-        user_located_sources = ["MANUAL", "GPS_REFINED"]
+        user_located_sources = [
+            FieldObservation.LOCATION_SOURCE.MANUAL,
+            FieldObservation.LOCATION_SOURCE.GPS_REFINED,
+        ]
         return self.filter(
             region=region,
             observed_at__date=day,
