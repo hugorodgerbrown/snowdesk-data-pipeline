@@ -283,6 +283,33 @@ Optional context:
                 {% endfor %}
             </ul>
         </div>
+        {# SNOW-328: "Locate me" roundel — triggers the MapLibre       #}
+        {# GeolocateControl to pan/zoom to the user's position once.  #}
+        {# The control's own button is hidden via CSS; this pill is    #}
+        {# the visible affordance. Rendered on both /map/ and /.       #}
+        <div class="map-utility-pill map-utility-pill--locate">
+            <button
+                id="locate-toggle"
+                type="button"
+                class="map-utility-button"
+                aria-label='{% trans "Locate me" %}'
+            >
+                <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                </svg>
+            </button>
+        </div>
         {# SNOW-79: The "Save offline" download button used to live    #}
         {# here. The PWA shell now caches assets on first visit via    #}
         {# stale-while-revalidate, so an explicit opt-in download is   #}
