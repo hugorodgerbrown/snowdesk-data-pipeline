@@ -1,11 +1,12 @@
 """
 observations/models.py — Database models for the observations application.
 
-Defines ``FieldObservation``: a GPS-gated field report submitted by an
-authenticated subscriber from the map page.  Each row captures the single
-observation type selected (e.g. whumpfing, pinwheels), the GPS fix
-(latitude, longitude, accuracy), the wall-clock time, and a best-effort
-resolution to the MicroRegion containing the point.
+Defines ``FieldObservation``: a field report submitted by an authenticated
+subscriber from the map page.  Each row captures the single observation type
+selected (e.g. whumpfing, pinwheels), the report location (latitude,
+longitude, accuracy), the raw device GPS fix (when available), how the
+location was determined (``location_source``), the wall-clock time, and a
+best-effort resolution to the MicroRegion containing the point.
 
 Business logic (point→region resolution, rate limiting) lives in
 ``observations/views.py`` and ``regions/services/point_match.py``.
@@ -80,6 +81,35 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
         )
         return dict(collections.Counter(types))
 
+    def user_located_exists_for_region_day(
+        self,
+        region: "MicroRegion",
+        day: datetime.date,
+    ) -> bool:
+        """Return True if any user-located report exists for region on day.
+
+        A user-located report is one with ``location_source`` set to
+        ``MANUAL`` or ``GPS_REFINED`` — i.e. the subscriber actively chose or
+        adjusted the pin rather than accepting a raw GPS fix.
+
+        Used by the bulletin page to show a public footnote when any report
+        for today's region was manually placed.
+
+        Args:
+            region: The MicroRegion to filter by.
+            day: The calendar day to filter by.
+
+        Returns:
+            True when at least one matching row exists; False otherwise.
+
+        """
+        user_located_sources = ["MANUAL", "GPS_REFINED"]
+        return self.filter(
+            region=region,
+            observed_at__date=day,
+            location_source__in=user_located_sources,
+        ).exists()
+
 
 class FieldObservationManager(models.Manager["FieldObservation"]):
     """Manager for FieldObservation exposing the custom queryset."""
@@ -105,6 +135,24 @@ class FieldObservationManager(models.Manager["FieldObservation"]):
         """
         return self.get_queryset().counts_for_region_day(region, day)
 
+    def user_located_exists_for_region_day(
+        self,
+        region: "MicroRegion",
+        day: datetime.date,
+    ) -> bool:
+        """Delegate to the queryset's user_located_exists_for_region_day method.
+
+        Args:
+            region: The MicroRegion to filter by.
+            day: The calendar day to filter by.
+
+        Returns:
+            True when at least one user-located report exists for the region
+            on the given day; False otherwise.
+
+        """
+        return self.get_queryset().user_located_exists_for_region_day(region, day)
+
 
 # ---------------------------------------------------------------------------
 # FieldObservation
@@ -112,12 +160,19 @@ class FieldObservationManager(models.Manager["FieldObservation"]):
 
 
 class FieldObservation(BaseModel):
-    """A GPS-gated field observation submitted by a subscriber from the map.
+    """A field observation submitted by a subscriber from the map.
 
     One row per report submission.  The ``observation_type`` CharField holds
     one ``OBSERVATION_TYPE`` value from the one-tap report form.
-    The ``region`` FK is best-effort — it may be null when the GPS fix
-    cannot be matched to a known MicroRegion boundary.
+    The ``region`` FK is best-effort — it may be null when the report
+    location cannot be matched to a known MicroRegion boundary.
+
+    ``location_source`` records how the report coordinate was obtained:
+    raw GPS fix (``GPS``), GPS fix manually refined by dragging the pin
+    (``GPS_REFINED``), or entirely manual placement with no GPS involved
+    (``MANUAL``).  When a raw GPS fix was available, it is stored in
+    ``gps_latitude``/``gps_longitude``; the report location (which may
+    differ after refinement) is in ``latitude``/``longitude``.
 
     Ordering is newest-first so the admin list and queryset slices show
     recent reports at the top.
@@ -138,6 +193,19 @@ class FieldObservation(BaseModel):
         FRACTURES = "FRACTURES", "Fractures"
         SHOOTING_CRACKS = "SHOOTING_CRACKS", "Shooting cracks"
 
+    class LOCATION_SOURCE(models.TextChoices):
+        """How the report coordinate was determined.
+
+        Values are UPPER_CASE identifiers; labels are in British English.
+        ``GPS``         — raw device fix accepted without adjustment.
+        ``GPS_REFINED`` — device fix obtained, then pin dragged by the user.
+        ``MANUAL``      — no GPS fix; subscriber tapped a point on the map.
+        """
+
+        GPS = "GPS", "GPS"
+        GPS_REFINED = "GPS_REFINED", "GPS (refined)"
+        MANUAL = "MANUAL", "Manual"
+
     subscriber = models.ForeignKey(
         "subscriptions.Subscriber",
         on_delete=models.CASCADE,
@@ -151,17 +219,25 @@ class FieldObservation(BaseModel):
         on_delete=models.SET_NULL,
         related_name="field_observations",
         help_text=(
-            "Best-effort MicroRegion resolved from the GPS fix. "
+            "Best-effort MicroRegion resolved from the report location. "
             "Null when the point cannot be matched to a known boundary."
         ),
     )
 
-    # GPS fix — required; the view 400s if absent (the GPS gate).
+    # Report location — the point attributed to this observation.
+    # Populated from the GPS fix (GPS path) or from a pin placed/dragged
+    # by the subscriber (GPS_REFINED / MANUAL paths).
     latitude = models.FloatField(
-        help_text="WGS-84 latitude of the GPS fix at report time.",
+        help_text=(
+            "WGS-84 latitude of the report location "
+            "(GPS fix, refined pin, or manually-placed pin)."
+        ),
     )
     longitude = models.FloatField(
-        help_text="WGS-84 longitude of the GPS fix at report time.",
+        help_text=(
+            "WGS-84 longitude of the report location "
+            "(GPS fix, refined pin, or manually-placed pin)."
+        ),
     )
     accuracy_radius_km = models.FloatField(
         null=True,
@@ -169,6 +245,35 @@ class FieldObservation(BaseModel):
         help_text=(
             "Browser-reported GPS accuracy radius in kilometres "
             "(converted from metres at the view layer)."
+        ),
+    )
+
+    # Raw device GPS fix — null when no GPS fix was obtained (MANUAL path).
+    # When present alongside a GPS_REFINED location, the pin-vs-GPS distance
+    # is recoverable from the difference between these and latitude/longitude.
+    gps_latitude = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            "WGS-84 latitude of the raw device GPS fix at report time. "
+            "Null when location_source is MANUAL (no GPS fix obtained)."
+        ),
+    )
+    gps_longitude = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            "WGS-84 longitude of the raw device GPS fix at report time. "
+            "Null when location_source is MANUAL (no GPS fix obtained)."
+        ),
+    )
+
+    location_source = models.CharField(
+        max_length=16,
+        choices=LOCATION_SOURCE.choices,
+        help_text=(
+            "How the report coordinate was determined: GPS (raw fix), "
+            "GPS_REFINED (fix then pin drag), or MANUAL (pin only, no fix)."
         ),
     )
 
