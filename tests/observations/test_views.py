@@ -141,6 +141,54 @@ class TestReportFormNoCoords:
 
 
 @pytest.mark.django_db
+class TestReportFormManualInputsPresent:
+    """MANUAL-state form always contains lat and lon hidden inputs.
+
+    Regression test for BLOCKER 1 (SNOW-330 review): the inputs must be
+    present unconditionally so that the JS ``writeFormCoords`` call can
+    populate them after a MANUAL map-click, allowing the POST to carry lat/lon.
+    """
+
+    @override_flag("field_observations", active=True)
+    def test_manual_form_contains_lat_input(self, client: Client) -> None:
+        """Form rendered without coords (MANUAL state) contains name="lat"."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+        response = client.get(FORM_URL, **HTMX_HEADERS)
+        assert response.status_code == 200
+        assert 'name="lat"' in response.content.decode()
+
+    @override_flag("field_observations", active=True)
+    def test_manual_form_contains_lon_input(self, client: Client) -> None:
+        """Form rendered without coords (MANUAL state) contains name="lon"."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+        response = client.get(FORM_URL, **HTMX_HEADERS)
+        assert response.status_code == 200
+        assert 'name="lon"' in response.content.decode()
+
+    @override_flag("field_observations", active=True)
+    def test_manual_form_lat_input_is_empty(self, client: Client) -> None:
+        """lat hidden input has an empty value when no coords are passed."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+        response = client.get(FORM_URL, **HTMX_HEADERS)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'name="lat" value=""' in content
+
+    @override_flag("field_observations", active=True)
+    def test_manual_form_lon_input_is_empty(self, client: Client) -> None:
+        """lon hidden input has an empty value when no coords are passed."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+        response = client.get(FORM_URL, **HTMX_HEADERS)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'name="lon" value=""' in content
+
+
+@pytest.mark.django_db
 class TestReportFormSuccess:
     """Successful GET returns the report form partial."""
 
