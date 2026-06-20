@@ -3055,8 +3055,29 @@ const repaintRegionsForDate = (dateKey, cache) => {
   const control = new maplibregl.GeolocateControl({
     trackUserLocation: false,
     showAccuracyCircle: true,
-    positionOptions: { enableHighAccuracy: true },
+    // maximumAge lets control.trigger() reuse the fix from the bounds pre-check
+    // below (taken moments earlier) instead of acquiring a second one.
+    positionOptions: { enableHighAccuracy: true, maximumAge: 60000 },
   });
+
+  // Transient bottom-centred toast for locate feedback (e.g. "off the map").
+  // Kept local to the locate control; report.js has its own equivalent.
+  function showLocateToast(message) {
+    const existing = document.getElementById('map-locate-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'map-locate-toast';
+    toast.setAttribute('role', 'status');
+    toast.className = [
+      'flex', 'fixed', 'bottom-4', 'left-1/2', '-translate-x-1/2', 'z-50',
+      'items-center', 'gap-3', 'max-w-md', 'rounded-full',
+      'bg-status-info-bg', 'text-status-info-text',
+      'px-4', 'py-2', 'text-sm', 'shadow-lg',
+    ].join(' ');
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 4000);
+  }
 
   // Register the control at top-right so MapLibre adds its (hidden)
   // button and stands up the internal state machine. The position
@@ -3065,11 +3086,36 @@ const repaintRegionsForDate = (dateKey, cache) => {
   MAP.addControl(control, 'top-right');
 
   btn.addEventListener('click', () => {
-    control.trigger();
+    if (!navigator.geolocation) return;
+    // Check the fix against the map's bounds BEFORE handing off to
+    // control.trigger(): MapLibre's GeolocateControl throws ("Unexpected
+    // watchState undefined") on an out-of-maxBounds point with
+    // trackUserLocation:false, and there's nowhere to fly to anyway. When the
+    // user is off the map we say so; when they're on it we trigger the control
+    // (which reuses this fix via maximumAge) for the fly + marker + circle.
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const bounds = MAP.getMaxBounds();
+        const onMap =
+          !bounds ||
+          bounds.contains([position.coords.longitude, position.coords.latitude]);
+        if (onMap) {
+          control.trigger();
+        } else {
+          showLocateToast('You are currently off the map.');
+        }
+      },
+      () => {
+        // Denial / position-unavailable — stay silent (map doesn't move),
+        // matching the original locate-pill behaviour.
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
   });
 
-  // Swallow the locate pill's geolocation errors silently — the map simply
-  // doesn't move, which is the least-surprising behaviour on denial / no fix.
+  // Swallow the control's own geolocation errors silently — by the time we
+  // call control.trigger() the fix is known-good and in bounds, so this only
+  // covers a mid-flight failure; the map simply doesn't move.
   control.on('error', () => {
     // Intentionally empty — no user-facing noise on a failed locate.
   });
