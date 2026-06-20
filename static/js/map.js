@@ -3068,37 +3068,51 @@ const repaintRegionsForDate = (dateKey, cache) => {
     control.trigger();
   });
 
-  // SNOW-324: this control is the single geolocation source for the page. The
-  // field-report flow (report.js) reuses it instead of running its own
-  // getCurrentPosition: it dispatches ``snowdesk:locate-request`` to ask for a
-  // fix, and we broadcast the outcome on ``snowdesk:geolocate`` /
-  // ``snowdesk:geolocate-error`` so any listener can react without owning the
-  // MapLibre control.
+  // Swallow the locate pill's geolocation errors silently — the map simply
+  // doesn't move, which is the least-surprising behaviour on denial / no fix.
+  control.on('error', () => {
+    // Intentionally empty — no user-facing noise on a failed locate.
+  });
+
+  // SNOW-324: answer the field-report flow's location requests. report.js
+  // dispatches ``snowdesk:locate-request`` and consumes the result on
+  // ``snowdesk:geolocate`` / ``snowdesk:geolocate-error`` — so map.js remains
+  // the single owner of geolocation and report.js never calls the API itself.
+  //
+  // This deliberately does NOT go through ``control.trigger()``: the report
+  // only needs coordinates, not a camera move, and MapLibre's GeolocateControl
+  // throws ("Unexpected watchState undefined") when a fix lands outside the
+  // map's maxBounds with trackUserLocation:false — i.e. for every location
+  // outside the Alps box (a tester in the UK, say). A plain getCurrentPosition
+  // is robust wherever the user is; out-of-region points then resolve to a
+  // null region server-side (the "we couldn't match your location" path).
   document.addEventListener('snowdesk:locate-request', () => {
-    control.trigger();
-  });
-
-  control.on('geolocate', (e) => {
-    document.dispatchEvent(
-      new CustomEvent('snowdesk:geolocate', {
-        detail: {
-          lat: e.coords.latitude,
-          lon: e.coords.longitude,
-          accuracy: e.coords.accuracy,
-        },
-      })
-    );
-  });
-
-  // The locate pill itself stays silent on failure (the map viewport simply
-  // doesn't move — least-surprising when the user declines or has no fix), but
-  // we still broadcast the error so a report flow in progress can surface it.
-  // GeolocationPositionError codes: 1 = permission denied, 2 = unavailable.
-  control.on('error', (e) => {
-    document.dispatchEvent(
-      new CustomEvent('snowdesk:geolocate-error', {
-        detail: { code: e && e.code },
-      })
+    if (!navigator.geolocation) {
+      document.dispatchEvent(
+        new CustomEvent('snowdesk:geolocate-error', { detail: { code: 2 } })
+      );
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        document.dispatchEvent(
+          new CustomEvent('snowdesk:geolocate', {
+            detail: {
+              lat: position.coords.latitude,
+              lon: position.coords.longitude,
+              accuracy: position.coords.accuracy,
+            },
+          })
+        );
+      },
+      (err) => {
+        document.dispatchEvent(
+          new CustomEvent('snowdesk:geolocate-error', {
+            detail: { code: err && err.code },
+          })
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     );
   });
 })();
