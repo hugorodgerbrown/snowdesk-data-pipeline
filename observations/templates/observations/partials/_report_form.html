@@ -30,8 +30,8 @@ Context:
     aria-label='{% trans "Field observation report" %}'
 >
     {% csrf_token %}
-    {% if lat is not None %}<input type="hidden" name="lat" value="{{ lat }}">{% endif %}
-    {% if lon is not None %}<input type="hidden" name="lon" value="{{ lon }}">{% endif %}
+    <input type="hidden" name="lat" value="{{ lat|default:'' }}">
+    <input type="hidden" name="lon" value="{{ lon|default:'' }}">
     {% if accuracy_m %}<input type="hidden" name="accuracy_m" value="{{ accuracy_m }}">{% endif %}
     <input type="hidden" name="location_source" value="{{ location_source }}">
     {% if gps_lat is not None %}<input type="hidden" name="gps_lat" value="{{ gps_lat }}">{% endif %}
