@@ -240,6 +240,25 @@ class BulletinQuerySet(models.QuerySet["Bulletin"]):
             return None
         return timezone.localtime(earliest).date()
 
+    def earliest_valid_from_date(self) -> _date | None:
+        """
+        Return the ``valid_from`` day of the oldest stored bulletin.
+
+        Used by ``fetch_weather`` to derive a sensible default start date
+        when no ``WeatherSnapshot`` rows exist yet — fetching weather from
+        the earliest bulletin date ensures the data covers every bulletin
+        already in the DB.
+
+        Returns:
+            The local-timezone ``valid_from`` day of the oldest bulletin in
+            this queryset, or ``None`` if the queryset is empty.
+
+        """
+        earliest = self.aggregate(earliest=models.Min("valid_from"))["earliest"]
+        if earliest is None:
+            return None
+        return timezone.localtime(earliest).date()
+
 
 class Bulletin(BaseModel):
     """
@@ -670,6 +689,25 @@ class WeatherSnapshotQuerySet(models.QuerySet["WeatherSnapshot"]):
 
         """
         return self.filter(valid_for_date=target_date)
+
+    def latest_date(self) -> _date | None:
+        """
+        Return the most recent ``valid_for_date`` across all snapshots.
+
+        Used by ``fetch_weather`` to derive a sensible default start date
+        when the DB already has some weather data — fetching from the
+        latest snapshot date avoids redundant re-fetches of the full
+        season.
+
+        Returns:
+            The maximum ``valid_for_date`` in this queryset, or ``None``
+            if the queryset is empty.
+
+        """
+        result: _date | None = self.aggregate(latest=models.Max("valid_for_date"))[
+            "latest"
+        ]
+        return result
 
 
 class WeatherSnapshot(BaseModel):
