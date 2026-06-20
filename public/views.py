@@ -1179,6 +1179,65 @@ def _default_region_label() -> tuple[str, str]:
     return region.name, region.name_slug
 
 
+def _subscriber_present(request: HttpRequest) -> bool:
+    """Return True when the authenticated user has a Subscriber profile.
+
+    Superusers created via ``createsuperuser`` have no Subscriber profile;
+    this check safely handles that case without raising.
+
+    Args:
+        request: The current HTTP request (user must be authenticated).
+
+    Returns:
+        True when a Subscriber profile exists for request.user.
+
+    """
+    from subscriptions.models import Subscriber  # noqa: PLC0415
+
+    try:
+        return bool(request.user.subscriber)  # type: ignore[union-attr]
+    except Subscriber.DoesNotExist:
+        return False
+
+
+def _get_observation_counts(
+    request: HttpRequest,
+    region: "MicroRegion",
+    day: datetime.date,
+) -> "list[tuple[str, int]]":
+    """Return per-type field-observation counts for a region on a calendar day.
+
+    Returns an empty list when the ``field_observations`` flag is inactive
+    (zero-overhead on historic pages and for non-flagged users).
+
+    Args:
+        request: The current HTTP request (used for waffle flag lookup).
+        region: The MicroRegion to count observations for.
+        day: The calendar day to count observations on.
+
+    Returns:
+        List of ``(label, count)`` pairs sorted by label, where ``label`` is
+        the human-readable ``OBSERVATION_TYPE`` label (e.g. "Wind striations").
+        Returns an empty list when the flag is inactive or no observations
+        exist.
+
+    """
+    if not waffle.flag_is_active(request, "field_observations"):
+        return []
+    from observations.models import FieldObservation  # noqa: PLC0415
+
+    raw: dict[str, int] = FieldObservation.objects.counts_for_region_day(region, day)
+    result: list[tuple[str, int]] = []
+    for key, count in raw.items():
+        try:
+            label = FieldObservation.OBSERVATION_TYPE(key).label
+        except ValueError:
+            label = key.replace("_", " ").title()
+        result.append((label, count))
+    result.sort(key=lambda pair: pair[0])
+    return result
+
+
 def map_view(request: HttpRequest) -> HttpResponse:
     """
     Render the interactive region-choropleth map page.
@@ -1234,6 +1293,27 @@ def map_view(request: HttpRequest) -> HttpResponse:
             }
         )
 
+    # SNOW-324: GPS-gated field-report mode — shown when the user has a
+    # Subscriber profile AND the ``field_observations`` flag is active
+    # (anonymous users and flag-less sessions stay read-only). Order matters:
+    # short-circuit on the free ``is_authenticated`` check before the
+    # Subscriber lookup and the DB-backed waffle flag check, so anonymous map
+    # loads — the common case — pay no extra queries (mirrors how the
+    # ``edit_map`` mode only checks its flag when ``?edit=resorts`` is set).
+    report_mode = (
+        request.user.is_authenticated
+        and _subscriber_present(request)
+        and waffle.flag_is_active(request, "field_observations")
+    )
+    report_context: dict[str, Any] = {"report_mode": report_mode}
+    if report_mode:
+        report_context.update(
+            {
+                "report_form_url": reverse("observations:report_form"),
+                "report_submit_url": reverse("observations:report_submit"),
+            }
+        )
+
     # SNOW-314: build the ribbon as the data carrier (season bounds, caption)
     # but DON'T pre-select a region on /map/ — the scrubber stays a plain grey
     # rail until the user taps a region, which then paints its season into the
@@ -1246,6 +1326,7 @@ def map_view(request: HttpRequest) -> HttpResponse:
         {
             **base_ctx,
             **edit_context,
+            **report_context,
             "ribbon": ribbon,
             "default_region_id": "",
             "default_region_name": "",
@@ -2828,6 +2909,13 @@ def _bulletin_detail_response(
         source_key, ("", "")
     )
 
+    # SNOW-324: per-type field-observation counts for the current-day bulletin
+    # page.  Only fetched when the flag is active; zero-overhead on historic
+    # pages because the ``is_today`` guard short-circuits the query.
+    observation_counts: list[tuple[str, int]] = (
+        _get_observation_counts(request, region, page_date) if is_today else []
+    )
+
     # Emit bulletin_viewed (no-ops silently on /examples/* paths).
     _track_bulletin_viewed(request, region, selected, panel)
 
@@ -2936,6 +3024,9 @@ def _bulletin_detail_response(
         ),
         # Bulletin headline — data-driven variant copy (SNOW-249).
         "headline": headline,
+        # SNOW-324: per-type field-observation counts for the current-day
+        # bulletin page.  Empty dict on historic pages (flag off or not today).
+        "observation_counts": observation_counts,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 

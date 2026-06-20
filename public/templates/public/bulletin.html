@@ -702,6 +702,29 @@ reachable via the SNOW-81 deep-link in the masthead.
             </section>
         {% endif %}
 
+        {# ── Field-observation counts (SNOW-324) ────────────────────── #}
+        {# Shown only on today's page when the field_observations flag is  #}
+        {# active and at least one report has been submitted for this      #}
+        {# region today.                                                   #}
+        {% if is_today and observation_counts %}
+            <section class="mt-6" aria-labelledby="obs-counts-heading">
+                <h2
+                    id="obs-counts-heading"
+                    class="mb-2 text-xs font-semibold uppercase tracking-wide text-text-3"
+                >
+                    {% trans "Reported today" %}
+                </h2>
+                <ul class="flex flex-wrap gap-2">
+                    {% for label, count in observation_counts %}
+                        <li class="flex items-center gap-1.5 rounded-pill bg-status-info-bg px-3 py-1 text-sm text-status-info-text">
+                            <span class="font-medium">{{ count }}</span>
+                            <span>{{ label }}</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
+
         {# ── Subscribe CTA (always visible) ────────────────────────── #}
         <div class="mt-6">
             {% include "subscriptions/partials/subscribe_form.html" with region_id=region.region_id %}

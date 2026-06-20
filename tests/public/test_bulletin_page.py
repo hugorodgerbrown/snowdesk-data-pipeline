@@ -5116,3 +5116,76 @@ class TestSnow291FlatButSplit:
         assert "2-" in content
         # At least one level-number chip must appear (for the all_day card).
         assert 'data-testid="level-number-chip"' in content
+
+
+# ---------------------------------------------------------------------------
+# Observation counts strip (SNOW-324)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestObservationCountsStrip:
+    """Counts strip shows human-readable labels, not raw enum keys."""
+
+    def test_counts_strip_shows_human_labels(self, client: Client) -> None:
+        """Observation counts strip renders OBSERVATION_TYPE labels, not raw keys.
+
+        WIND_STRIATIONS / SHOOTING_CRACKS are the most illustrative because their
+        raw key contains an underscore that ``lower|title`` would preserve as
+        "Wind_Striations" — the bug the fix addresses.  The view must pass
+        ``(label, count)`` pairs so the template can render "Wind striations"
+        directly.
+        """
+        from datetime import date as _date
+
+        from waffle.testutils import override_flag
+
+        region = MicroRegionFactory.create(
+            region_id="CH-9100", name="Test Region", slug="test-counts"
+        )
+        today = _date.today()
+        _make_am_bulletin(region, today)
+
+        # Fake counts: two types with underscores in their raw keys.
+        fake_counts = [
+            ("Wind striations", 3),
+            ("Shooting cracks", 1),
+        ]
+
+        url = reverse("public:region_root", kwargs={"region_id": "ch-9100"})
+        with override_flag("field_observations", active=True):
+            with patch(
+                "public.views._get_observation_counts", return_value=fake_counts
+            ):
+                response = client.get(url)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+
+        # Human labels must appear.
+        assert "Wind striations" in content
+        assert "Shooting cracks" in content
+        # Raw underscore-joined enum keys must NOT appear.
+        assert "WIND_STRIATIONS" not in content
+        assert "SHOOTING_CRACKS" not in content
+        # The underscored form the old lower|title filter produced must not appear.
+        assert "Wind_Striations" not in content
+        assert "Shooting_Cracks" not in content
+        # Counts themselves must appear.
+        assert ">3<" in content or "3" in content
+        assert ">1<" in content or "1" in content
+
+    def test_counts_strip_absent_on_historic_page(self, client: Client) -> None:
+        """Counts strip is absent on non-today pages (observation_counts is [])."""
+        region = MicroRegionFactory.create(
+            region_id="CH-9101", name="Historic Region", slug="historic-region"
+        )
+        past_day = date(2026, 3, 1)
+        _make_am_bulletin(region, past_day)
+
+        url = _url("ch-9101", "historic-region", "2026-03-01")
+        response = client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        # The section heading must not appear for historic pages.
+        assert "Reported today" not in content

@@ -70,7 +70,20 @@ in this template; no runtime context is required.
                 {% endblocktrans %}
             </p>
 
-            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2c. Session data" %}</h3>
+            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2c. Field observation reports" %}</h3>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    When you submit a field observation report from the map page, we ask your browser for a GPS fix.
+                    Your latitude, longitude, and optional accuracy radius are transmitted to Snowdesk and stored with
+                    the report so that we can match your location to an avalanche warning region. Location is captured
+                    only at the moment you tap "Report" — we never track your position in the background or between
+                    sessions. You can submit multiple reports per day; each is stored as a separate row linked to your
+                    subscriber account. Reports are displayed on the bulletin page as anonymous aggregate counts (e.g.
+                    "3 people reported whumpfing") — your name and exact coordinates are never shown publicly.
+                {% endblocktrans %}
+            </p>
+
+            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2d. Session data" %}</h3>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     We use a session cookie that is strictly necessary for the site to function. It contains no personal
@@ -79,7 +92,7 @@ in this template; no runtime context is required.
                 {% endblocktrans %}
             </p>
 
-            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2d. Server logs" %}</h3>
+            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2e. Server logs" %}</h3>
             <p>
                 {% blocktrans trimmed %}
                     Our server automatically records standard technical information when you visit: your IP address, the

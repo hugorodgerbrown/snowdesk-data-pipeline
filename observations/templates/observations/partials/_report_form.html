@@ -1,0 +1,62 @@
+{% load i18n %}
+{% comment %}
+observations/partials/_report_form.html — Field-report form partial.
+
+Rendered by ``observations.views.report_form`` (GET) and loaded into the
+report sheet on the map page by report.js after a GPS fix is obtained.
+
+One-tap UX: each problem button is a submit button with its own value.
+Tapping a button immediately submits the form with that single
+observation_type — no multi-select, no separate "Submit" button.
+
+Context:
+    region     : MicroRegion | None — best-effort match from GPS fix.
+    lat        : str — latitude string from GPS fix.
+    lon        : str — longitude string from GPS fix.
+    accuracy_m : str | None — accuracy in metres from GPS fix.
+    problems   : list[tuple[str, str]] — (value, label) pairs from OBSERVATION_TYPE.
+    submit_url : str — URL for the POST endpoint.
+{% endcomment %}
+<form
+    id="report-form"
+    hx-post="{{ submit_url }}"
+    hx-target="#report-sheet"
+    hx-swap="innerHTML"
+    class="flex flex-col gap-4"
+    aria-label='{% trans "Field observation report" %}'
+>
+    {% csrf_token %}
+    <input type="hidden" name="lat" value="{{ lat }}">
+    <input type="hidden" name="lon" value="{{ lon }}">
+    {% if accuracy_m %}<input type="hidden" name="accuracy_m" value="{{ accuracy_m }}">{% endif %}
+
+    <div class="text-sm text-text-2">
+        {% if region %}
+            {% blocktrans with name=region.name %}We think you're in <strong>{{ name }}</strong>.{% endblocktrans %}
+        {% else %}
+            {% trans "We couldn't match your location to a known region." %}
+        {% endif %}
+    </div>
+
+    <p class="text-sm font-medium text-text-1">{% trans "What did you observe?" %}</p>
+    <div class="grid grid-cols-2 gap-2">
+        {% for value, label in problems %}
+            <button
+                type="submit"
+                name="observation_type"
+                value="{{ value }}"
+                class="rounded-tag border border-border bg-card px-3 py-2 text-sm text-text-1 text-left hover:border-status-info-text hover:bg-status-info-bg transition-colors"
+            >
+                {{ label }}
+            </button>
+        {% endfor %}
+    </div>
+
+    <button
+        type="button"
+        class="text-sm font-medium rounded-tag text-text-2 border border-text-3/30 hover:text-text-1 hover:border-text-2 transition-colors px-4 py-2"
+        data-action="close-report-sheet"
+    >
+        {% trans "Cancel" %}
+    </button>
+</form>

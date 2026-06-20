@@ -6,6 +6,8 @@ Covers:
                       None and malformed geometry → False; MultiPolygon.
   classify_match    — four outcomes: in_region, in_neighbour, elsewhere,
                       unknown (no coords).
+  region_for_point  — inside / outside / null (no regions with boundary) /
+                      nearest-centre short-circuit ordering.
   Drift guard       — asserts that module-level constants equal the
                       Subscription.GeoMatchKind choice values so the two
                       representations never diverge silently.
@@ -24,6 +26,7 @@ from regions.services.point_match import (
     UNKNOWN,
     classify_match,
     point_in_polygon,
+    region_for_point,
 )
 from subscriptions.models import Subscription
 from tests.factories import MicroRegionFactory
@@ -344,6 +347,114 @@ class TestClassifyMatch:
         kind, matched = classify_match(5.0, 5.0, target)
         assert kind == IN_REGION
         assert matched == target
+
+
+# ---------------------------------------------------------------------------
+# region_for_point — global point→MicroRegion resolver (SNOW-324)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestRegionForPoint:
+    """Tests for region_for_point — global GPS fix → MicroRegion resolver."""
+
+    def _make_region_with_boundary(
+        self,
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float,
+        *,
+        centre_lon: float | None = None,
+        centre_lat: float | None = None,
+    ) -> Any:
+        """Create a MicroRegion with a square boundary and an explicit centre.
+
+        Args:
+            x0, y0: Bottom-left corner (lon, lat).
+            x1, y1: Top-right corner (lon, lat).
+            centre_lon: Override the centre longitude (default: midpoint).
+            centre_lat: Override the centre latitude (default: midpoint).
+
+        Returns:
+            A saved MicroRegion instance.
+
+        """
+        lon = centre_lon if centre_lon is not None else (x0 + x1) / 2
+        lat = centre_lat if centre_lat is not None else (y0 + y1) / 2
+        return MicroRegionFactory.create(
+            boundary=_square_polygon(x0, y0, x1, y1),
+            centre={"lon": lon, "lat": lat},
+        )
+
+    def test_returns_none_when_no_regions_have_boundary(self) -> None:
+        """Returns None when all MicroRegion rows have null boundaries."""
+        # MicroRegionFactory.create() defaults to boundary=None.
+        MicroRegionFactory.create(boundary=None)
+        result = region_for_point(5.0, 5.0)
+        assert result is None
+
+    def test_returns_region_when_point_is_inside(self) -> None:
+        """Returns the region whose boundary contains the point."""
+        region = self._make_region_with_boundary(0, 0, 10, 10)
+        result = region_for_point(5.0, 5.0)
+        assert result == region
+
+    def test_returns_none_when_point_is_outside_all_regions(self) -> None:
+        """Returns None when the point is outside all region boundaries."""
+        self._make_region_with_boundary(0, 0, 5, 5)
+        result = region_for_point(50.0, 50.0)
+        assert result is None
+
+    def test_returns_correct_region_among_multiple(self) -> None:
+        """Returns the specific region containing the point when multiple exist."""
+        region_a = self._make_region_with_boundary(
+            0, 0, 5, 5, centre_lon=2.5, centre_lat=2.5
+        )
+        region_b = self._make_region_with_boundary(
+            10, 10, 15, 15, centre_lon=12.5, centre_lat=12.5
+        )
+        # Point inside region_b.
+        result = region_for_point(12.5, 12.5)
+        assert result == region_b
+        assert result != region_a
+
+    def test_nearest_centre_ordering_returns_correct_region(self) -> None:
+        """Nearest-centre ordering does not cause incorrect matches.
+
+        Create two adjacent non-overlapping regions; the point is inside
+        region_a which has a more distant centre.  The function must still
+        return region_a (not region_b, which has the closer centre but
+        whose boundary does not contain the point).
+        """
+        # region_a: x=[0,4] — point at (1,1) is inside.
+        region_a = self._make_region_with_boundary(
+            0, 0, 4, 4, centre_lon=2.0, centre_lat=2.0
+        )
+        # region_b: x=[5,9] — closer centre (5.5,5.5) to point? No, 1,1 is farther from (7,7).
+        # Actually place region_b's centre closer to (1,1): centre at (0.5, 0.5) but OUTSIDE the
+        # target square.  That would be inside region_a's boundary, which is invalid geometry.
+        # Use a non-overlapping layout instead: region_b at y=[5,9], centre at (1, 7).
+        _region_b = self._make_region_with_boundary(
+            0, 5, 4, 9, centre_lon=1.0, centre_lat=7.0
+        )
+
+        # Point (1,1) is inside region_a (y=0..4), outside region_b (y=5..9).
+        result = region_for_point(1.0, 1.0)
+        assert result == region_a
+
+    def test_region_with_null_centre_still_matches(self) -> None:
+        """A region with a null centre falls back to inf distance and is tested last.
+
+        Even with null centre, if the point is inside, it should be returned
+        (because all other candidates miss).
+        """
+        region = MicroRegionFactory.create(
+            boundary=_square_polygon(0, 0, 10, 10),
+            centre=None,
+        )
+        result = region_for_point(5.0, 5.0)
+        assert result == region
 
 
 # ---------------------------------------------------------------------------

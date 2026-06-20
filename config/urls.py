@@ -74,4 +74,8 @@ urlpatterns.append(
         name="sitemap",
     )
 )
+# observations/ partials must be registered BEFORE ``public.urls`` because
+# the generic ``<str:region_id>/`` catch-all in public.urls would otherwise
+# swallow ``partials/report/…`` and resolve "partials" as a region_id.
+urlpatterns.append(path("", include("observations.urls")))
 urlpatterns.append(path("", include("public.urls")))

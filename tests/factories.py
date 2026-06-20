@@ -29,6 +29,7 @@ from bulletins.models import (
 )
 from bulletins.services.day_rating import DAY_RATING_VERSION
 from core.models import RequestLog
+from observations.models import FieldObservation
 from regions.models import (
     MajorRegion,
     MicroRegion,
@@ -386,3 +387,25 @@ class BulletinGroupingFactory(factory.django.DjangoModelFactory[BulletinGrouping
         }
     )
     countries = factory.LazyFunction(lambda: ["CH"])
+
+
+class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation]):
+    """Factory for FieldObservation instances.
+
+    Defaults to a CH-alpine GPS fix (Martigny area) with observation_type
+    WHUMPFING.  Override any field as needed.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = FieldObservation
+
+    subscriber = factory.SubFactory(SubscriberFactory)
+    region = factory.SubFactory(MicroRegionFactory)
+    # WGS-84 coordinates inside Martigny / CH-4115 territory.
+    latitude = 46.10
+    longitude = 7.10
+    accuracy_radius_km = None
+    observed_at = factory.LazyFunction(django_timezone.now)
+    observation_type = FieldObservation.OBSERVATION_TYPE.WHUMPFING
