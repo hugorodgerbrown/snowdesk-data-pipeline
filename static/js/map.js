@@ -3060,23 +3060,35 @@ const repaintRegionsForDate = (dateKey, cache) => {
     positionOptions: { enableHighAccuracy: true, maximumAge: 60000 },
   });
 
-  // Transient bottom-centred toast for locate feedback (e.g. "off the map").
-  // Kept local to the locate control; report.js has its own equivalent.
-  function showLocateToast(message) {
-    const existing = document.getElementById('map-locate-toast');
-    if (existing) existing.remove();
-    const toast = document.createElement('div');
-    toast.id = 'map-locate-toast';
-    toast.setAttribute('role', 'status');
-    toast.className = [
-      'flex', 'fixed', 'bottom-4', 'left-1/2', '-translate-x-1/2', 'z-50',
-      'items-center', 'gap-3', 'max-w-md', 'rounded-full',
-      'bg-status-info-bg', 'text-status-info-text',
-      'px-4', 'py-2', 'text-sm', 'shadow-lg',
-    ].join(' ');
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 4000);
+  // The off-map notification lives as a hidden element in the template
+  // (#offmap-banner). Reveal/hide it by toggling hidden↔flex (the `flex`
+  // utility would otherwise win over the HTML `hidden` attribute). On narrow
+  // viewports it's an in-flow banner that pushes the map down, so resize the
+  // map after toggling; on wide viewports it floats (sm:fixed) and resize is a
+  // harmless no-op.
+  const offMapBanner = document.getElementById('offmap-banner');
+  let offMapTimer = null;
+
+  function hideOffMapBanner() {
+    if (!offMapBanner) return;
+    clearTimeout(offMapTimer);
+    offMapBanner.classList.add('hidden');
+    offMapBanner.classList.remove('flex');
+    if (MAP) requestAnimationFrame(() => MAP.resize());
+  }
+
+  function showOffMapBanner() {
+    if (!offMapBanner) return;
+    clearTimeout(offMapTimer);
+    offMapBanner.classList.remove('hidden');
+    offMapBanner.classList.add('flex');
+    if (MAP) requestAnimationFrame(() => MAP.resize());
+    offMapTimer = setTimeout(hideOffMapBanner, 7000);
+  }
+
+  if (offMapBanner) {
+    const dismissBtn = offMapBanner.querySelector('[data-action="dismiss-offmap"]');
+    if (dismissBtn) dismissBtn.addEventListener('click', hideOffMapBanner);
   }
 
   // Register the control at top-right so MapLibre adds its (hidden)
@@ -3102,7 +3114,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         if (onMap) {
           control.trigger();
         } else {
-          showLocateToast('You are currently off the map.');
+          showOffMapBanner();
         }
       },
       () => {

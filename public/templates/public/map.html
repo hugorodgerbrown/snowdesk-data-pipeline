@@ -53,6 +53,69 @@
         --- Footer hint (reintroduce only if SNOW-34 still wants it) ---
         <div class="hint" aria-hidden="true">{% trans "Pinch to zoom · tap a region" %}</div>
     {% endcomment %}
+    {# SNOW-324: off-map notification banner. Hidden by default; map.js reveals #}
+    {# it (toggling hidden↔flex, per the sw-update-banner pattern) when the     #}
+    {# locate pill is tapped while the user is outside the map's bounds. The ×  #}
+    {# and a short timeout dismiss it. Sits between the nav and the map so it   #}
+    {# pushes the map down rather than overlaying it.                           #}
+    {# Narrow viewports: a full-width banner in flow between the nav and the   #}
+    {# map (pushes the map down). Wide viewports (sm+): a floating, rounded    #}
+    {# toast panel near the top-centre, out of flow (overlays the map).        #}
+    <div
+        id="offmap-banner"
+        role="status"
+        aria-live="polite"
+        class="hidden items-center gap-4 border-b border-border bg-card px-5 py-4 sm:fixed sm:left-1/2 sm:top-20 sm:z-50 sm:w-96 sm:-translate-x-1/2 sm:rounded-card sm:border sm:shadow-lg"
+    >
+        <span
+            class="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-text-1 text-card"
+            aria-hidden="true"
+        >
+            <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+            >
+                <path d="M5.43 5.43A8.06 8.06 0 0 0 4 10c0 6 8 12 8 12a29.94 29.94 0 0 0 5-5" />
+                <path d="M19.18 13.52A8.66 8.66 0 0 0 20 10a8 8 0 0 0-8-8 7.88 7.88 0 0 0-3.52.82" />
+                <path d="M9.13 9.13A2.78 2.78 0 0 0 9 10a3 3 0 0 0 3 3 2.78 2.78 0 0 0 .87-.13" />
+                <path d="M14.9 9.25a3 3 0 0 0-2.15-2.16" />
+                <line x1="2" x2="22" y1="2" y2="22" />
+            </svg>
+        </span>
+        <div class="min-w-0 flex-1">
+            <p class="text-base font-semibold text-text-1">{% trans "Off the map" %}</p>
+            <p class="text-sm text-text-2">
+                {% trans "Your location is outside the mapped regions." %}
+            </p>
+        </div>
+        <button
+            type="button"
+            data-action="dismiss-offmap"
+            aria-label='{% trans "Dismiss" %}'
+            class="flex-none p-1 text-text-2 hover:text-text-1"
+        >
+            <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+            </svg>
+        </button>
+    </div>
     {# SNOW-314: shared map surface (utility cluster, legend, ribbon, scrubber). #}
     {# show_intro=False — /map/ is the bare map; the intro overlay lives on /.  #}
     {% include "public/partials/_map_embed.html" with show_intro=False %}
