@@ -42,8 +42,26 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",  # noqa: F405
+        # Let a transiently-locked connection wait-and-retry rather than
+        # erroring immediately. This matters for the Playwright e2e suite,
+        # where the live-server thread and the test thread share the database;
+        # it is harmless for single-threaded unit tests and the dev server.
+        "OPTIONS": {"timeout": 20},
     }
 }
+
+# Playwright e2e tests (``tox -e e2e``) run a live server in a background
+# thread alongside the test thread. Django's default SQLite *test* database is
+# an in-memory shared-cache DB (``file:memorydb_default?mode=memory&cache=shared``);
+# its table-level shared-cache locks raise ``SQLITE_LOCKED`` ("database table
+# is locked") at the teardown ``flush`` when the server thread still holds a
+# connection — an error ``busy_timeout`` cannot retry. Point the e2e test DB at
+# a real file so connections use ordinary file locking (``SQLITE_BUSY``, which
+# the timeout above retries) instead of shared-cache table locks. Gated on
+# ``E2E_TEST_DB`` (set only by the e2e tox env) so the unit ``test`` env keeps
+# the faster in-memory database.
+if config("E2E_TEST_DB", default=False, cast=bool):
+    DATABASES["default"]["TEST"] = {"NAME": str(BASE_DIR / "e2e_test_db.sqlite3")}  # noqa: F405
 
 # # Show all SQL queries in the console during development
 # LOGGING["loggers"]["django.db.backends"] = {  # type: ignore[index]  # noqa: F405

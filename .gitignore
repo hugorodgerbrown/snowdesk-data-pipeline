@@ -27,6 +27,8 @@ static/css/output.css
 
 # Django
 db.sqlite3
+# Playwright e2e file-based test database (tox -e e2e) + its journal/WAL files
+e2e_test_db.sqlite3*
 *.log
 *.log.*
 logs/*.log
