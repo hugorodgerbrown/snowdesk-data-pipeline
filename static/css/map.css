@@ -130,6 +130,12 @@
     font-size: 13px;
     text-align: left;
     cursor: pointer;
+    /* SNOW-328: keep multi-word labels (e.g. "Bulletin groupings") on a
+       single line. The menu is shrink-to-fit (absolutely positioned, no
+       max-width), so it grows to the longest label rather than wrapping —
+       adaptive to any label length, including a future i18n pass, where a
+       fixed min-width would not be. */
+    white-space: nowrap;
 }
 
 .basemap-menu-item::before {
