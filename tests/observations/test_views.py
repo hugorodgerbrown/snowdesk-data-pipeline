@@ -3,11 +3,16 @@ tests/observations/test_views.py — Tests for observations.views.
 
 Covers:
   report_form   — flag off → 404; non-HTMX → 400; non-subscriber → 403;
-                  missing GPS → 400; returns form with region banner;
-                  returns form with "couldn't match" when no region.
+                  no coords → 200 MANUAL state (GPS gate removed SNOW-330);
+                  returns form with region banner;
+                  returns form with "couldn't match" when no region;
+                  returns form with "choose on map" status when no coords.
   report_submit — flag off → 404; non-HTMX → 400; non-subscriber → 403;
-                  missing GPS → 400; missing/invalid observation_type → 400;
-                  valid observation_type → creates row + returns confirmation;
+                  missing GPS → 400; missing/invalid location_source → 400;
+                  missing/invalid observation_type → 400;
+                  valid GPS submit → creates row + returns confirmation;
+                  GPS_REFINED submit stores differing gps vs report coords;
+                  MANUAL submit with out-of-region pin → region=None (not 400);
                   rate-limit → 429; multiple reports same day allowed.
 """
 
@@ -90,34 +95,49 @@ class TestReportFormHtmxGate:
 
 
 @pytest.mark.django_db
-class TestReportFormGpsGate:
-    """Missing or unparseable lat/lon returns 400."""
+class TestReportFormNoCoords:
+    """Missing or unparseable lat/lon renders the MANUAL path (not a 400).
+
+    SNOW-330 removed the GPS gate from report_form: no coords → form renders
+    in "choose on map" state instead of returning 400.
+    """
 
     @override_flag("field_observations", active=True)
-    def test_missing_lat_lon_returns_400(self, client: Client) -> None:
-        """No lat/lon query params → 400."""
+    def test_missing_lat_lon_returns_200(self, client: Client) -> None:
+        """No lat/lon query params → 200 with the MANUAL form state."""
         subscriber = SubscriberFactory.create()
         client.force_login(subscriber.user)
         response = client.get(FORM_URL, **HTMX_HEADERS)
-        assert response.status_code == 400
+        assert response.status_code == 200
+        assert "report-form" in response.content.decode()
 
     @override_flag("field_observations", active=True)
-    def test_missing_lon_returns_400(self, client: Client) -> None:
-        """Only lat provided → 400."""
+    def test_missing_lon_returns_200(self, client: Client) -> None:
+        """Only lat provided — treated as no valid fix → 200 MANUAL state."""
         subscriber = SubscriberFactory.create()
         client.force_login(subscriber.user)
         response = client.get(FORM_URL, {"lat": "46.1"}, **HTMX_HEADERS)
-        assert response.status_code == 400
+        assert response.status_code == 200
 
     @override_flag("field_observations", active=True)
-    def test_unparseable_lat_returns_400(self, client: Client) -> None:
-        """Non-float lat → 400."""
+    def test_unparseable_lat_returns_200(self, client: Client) -> None:
+        """Non-float lat — treated as no valid fix → 200 MANUAL state."""
         subscriber = SubscriberFactory.create()
         client.force_login(subscriber.user)
         response = client.get(
             FORM_URL, {"lat": "not-a-number", "lon": "7.1"}, **HTMX_HEADERS
         )
-        assert response.status_code == 400
+        assert response.status_code == 200
+
+    @override_flag("field_observations", active=True)
+    def test_no_coords_form_shows_manual_status_text(self, client: Client) -> None:
+        """Form without coords shows the 'choose on map' status message."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+        response = client.get(FORM_URL, **HTMX_HEADERS)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "choose a location on the map" in content
 
 
 @pytest.mark.django_db
@@ -132,7 +152,7 @@ class TestReportFormSuccess:
         with patch("observations.views.region_for_point", return_value=None):
             response = client.get(
                 FORM_URL,
-                {"lat": "46.1", "lon": "7.1"},
+                {"lat": "46.1", "lon": "7.1", "location_source": "GPS"},
                 **HTMX_HEADERS,
             )
         assert response.status_code == 200
@@ -149,7 +169,7 @@ class TestReportFormSuccess:
         with patch("observations.views.region_for_point", return_value=fake_region):
             response = client.get(
                 FORM_URL,
-                {"lat": "46.0", "lon": "7.7"},
+                {"lat": "46.0", "lon": "7.7", "location_source": "GPS"},
                 **HTMX_HEADERS,
             )
         assert response.status_code == 200
@@ -164,7 +184,7 @@ class TestReportFormSuccess:
         with patch("observations.views.region_for_point", return_value=None):
             response = client.get(
                 FORM_URL,
-                {"lat": "0.0", "lon": "0.0"},
+                {"lat": "0.0", "lon": "0.0", "location_source": "GPS"},
                 **HTMX_HEADERS,
             )
         assert response.status_code == 200
@@ -179,12 +199,33 @@ class TestReportFormSuccess:
         with patch("observations.views.region_for_point", return_value=None):
             response = client.get(
                 FORM_URL,
-                {"lat": "46.1", "lon": "7.1"},
+                {"lat": "46.1", "lon": "7.1", "location_source": "GPS"},
                 **HTMX_HEADERS,
             )
         content = response.content.decode()
         for value in FieldObservation.OBSERVATION_TYPE.values:
             assert value in content
+
+    @override_flag("field_observations", active=True)
+    def test_gps_status_text_with_coords(self, client: Client) -> None:
+        """Form with GPS coords shows 'Using current GPS location' status."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.get(
+                FORM_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": "GPS",
+                    "gps_lat": "46.1",
+                    "gps_lon": "7.1",
+                },
+                **HTMX_HEADERS,
+            )
+        assert response.status_code == 200
+        assert "Using current GPS location" in response.content.decode()
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +299,46 @@ class TestReportSubmitGpsGate:
 
 
 @pytest.mark.django_db
+class TestReportSubmitLocationSourceGate:
+    """Missing or invalid location_source returns 400."""
+
+    @override_flag("field_observations", active=True)
+    def test_missing_location_source_returns_400(self, client: Client) -> None:
+        """POST with valid GPS but no location_source → 400."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                },
+                **HTMX_HEADERS,
+            )
+        assert response.status_code == 400
+
+    @override_flag("field_observations", active=True)
+    def test_invalid_location_source_returns_400(self, client: Client) -> None:
+        """POST with an unknown location_source value → 400."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": "SATELLITE",
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                },
+                **HTMX_HEADERS,
+            )
+        assert response.status_code == 400
+
+
+@pytest.mark.django_db
 class TestReportSubmitObservationTypeGate:
     """Missing or invalid observation_type returns 400."""
 
@@ -269,7 +350,11 @@ class TestReportSubmitObservationTypeGate:
         with patch("observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
-                {"lat": "46.1", "lon": "7.1"},
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                },
                 **HTMX_HEADERS,
             )
         assert response.status_code == 400
@@ -285,6 +370,7 @@ class TestReportSubmitObservationTypeGate:
                 {
                     "lat": "46.1",
                     "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
                     "observation_type": "UNKNOWN_TYPE",
                 },
                 **HTMX_HEADERS,
@@ -298,7 +384,7 @@ class TestReportSubmitSuccess:
 
     @override_flag("field_observations", active=True)
     def test_creates_observation_row(self, client: Client) -> None:
-        """A valid POST creates exactly one FieldObservation row."""
+        """A valid GPS POST creates exactly one FieldObservation row."""
         subscriber = SubscriberFactory.create()
         client.force_login(subscriber.user)
 
@@ -308,6 +394,9 @@ class TestReportSubmitSuccess:
                 {
                     "lat": "46.1",
                     "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "gps_lat": "46.1",
+                    "gps_lon": "7.1",
                     "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
                 },
                 **HTMX_HEADERS,
@@ -318,6 +407,9 @@ class TestReportSubmitSuccess:
         obs = FieldObservation.objects.get(subscriber=subscriber)
         assert obs.latitude == 46.1
         assert obs.longitude == 7.1
+        assert obs.location_source == FieldObservation.LOCATION_SOURCE.GPS
+        assert obs.gps_latitude == 46.1
+        assert obs.gps_longitude == 7.1
         assert obs.observation_type == FieldObservation.OBSERVATION_TYPE.WHUMPFING
 
     @override_flag("field_observations", active=True)
@@ -332,6 +424,7 @@ class TestReportSubmitSuccess:
                 {
                     "lat": "46.1",
                     "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
                     "observation_type": FieldObservation.OBSERVATION_TYPE.FRACTURES,
                 },
                 **HTMX_HEADERS,
@@ -352,6 +445,7 @@ class TestReportSubmitSuccess:
                 {
                     "lat": "46.1",
                     "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
                     "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
                 },
                 **HTMX_HEADERS,
@@ -373,6 +467,7 @@ class TestReportSubmitSuccess:
                 {
                     "lat": "46.1",
                     "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
                     "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
                 },
                 **HTMX_HEADERS,
@@ -403,6 +498,7 @@ class TestReportSubmitSuccess:
                     {
                         "lat": "46.1",
                         "lon": "7.1",
+                        "location_source": FieldObservation.LOCATION_SOURCE.GPS,
                         "observation_type": obs_type,
                     },
                     **HTMX_HEADERS,
@@ -423,6 +519,7 @@ class TestReportSubmitSuccess:
                 {
                     "lat": "46.1",
                     "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
                     "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
                     "accuracy_m": "500",
                 },
@@ -431,6 +528,91 @@ class TestReportSubmitSuccess:
 
         obs = FieldObservation.objects.get(subscriber=subscriber)
         assert obs.accuracy_radius_km == pytest.approx(0.5)
+
+    @override_flag("field_observations", active=True)
+    def test_gps_refined_stores_differing_report_and_gps_coords(
+        self, client: Client
+    ) -> None:
+        """GPS_REFINED submit stores the dragged pin as report coords and the
+        original fix in gps_latitude/gps_longitude.
+        """
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.15",
+                    "lon": "7.15",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS_REFINED,
+                    "gps_lat": "46.10",
+                    "gps_lon": "7.10",
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.PINWHEELS,
+                },
+                **HTMX_HEADERS,
+            )
+
+        assert response.status_code == 200
+        obs = FieldObservation.objects.get(subscriber=subscriber)
+        assert obs.latitude == pytest.approx(46.15)
+        assert obs.longitude == pytest.approx(7.15)
+        assert obs.location_source == FieldObservation.LOCATION_SOURCE.GPS_REFINED
+        assert obs.gps_latitude == pytest.approx(46.10)
+        assert obs.gps_longitude == pytest.approx(7.10)
+
+    @override_flag("field_observations", active=True)
+    def test_manual_pin_outside_region_creates_row_with_null_region(
+        self, client: Client
+    ) -> None:
+        """A MANUAL submit whose point matches no region creates a row with
+        region=None and returns 200 — guards the dropped region-required rule.
+        """
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+
+        # region_for_point returns None for a point outside all known boundaries.
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "0.0",
+                    "lon": "0.0",
+                    "location_source": FieldObservation.LOCATION_SOURCE.MANUAL,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                },
+                **HTMX_HEADERS,
+            )
+
+        assert response.status_code == 200
+        obs = FieldObservation.objects.get(subscriber=subscriber)
+        assert obs.region is None
+        assert obs.location_source == FieldObservation.LOCATION_SOURCE.MANUAL
+        assert obs.gps_latitude is None
+        assert obs.gps_longitude is None
+
+    @override_flag("field_observations", active=True)
+    def test_manual_submit_has_null_gps_coords(self, client: Client) -> None:
+        """MANUAL path (no GPS fix) stores None for gps_latitude/gps_longitude."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+
+        with patch("observations.views.region_for_point", return_value=None):
+            client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.MANUAL,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.FRACTURES,
+                    # No gps_lat / gps_lon — MANUAL path.
+                },
+                **HTMX_HEADERS,
+            )
+
+        obs = FieldObservation.objects.get(subscriber=subscriber)
+        assert obs.gps_latitude is None
+        assert obs.gps_longitude is None
 
 
 @pytest.mark.django_db

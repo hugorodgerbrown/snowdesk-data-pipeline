@@ -4,10 +4,13 @@ observations/views.py — HTMX endpoints for the field-report feature.
 Provides two HTMX-only fragment views used by the floating Report button on
 the map page (SNOW-324):
 
-- ``report_form`` (GET)   — reads GPS fix from query params, resolves the
-  point to a MicroRegion, returns the one-tap problem-selection form.
-- ``report_submit`` (POST) — validates the single observation_type, creates
-  a FieldObservation row, returns the thank-you confirmation fragment.
+- ``report_form`` (GET)   — reads optional GPS fix and location_source from
+  query params, resolves the point to a MicroRegion when coords are present,
+  returns the one-tap problem-selection form.  No coords are required: when
+  absent the form renders in "choose on map" state (MANUAL path).
+- ``report_submit`` (POST) — validates lat/lon, location_source, and
+  observation_type; creates a FieldObservation row; returns the thank-you
+  confirmation fragment.
 
 Both endpoints are:
   - flag-gated on ``field_observations`` (404 when inactive);
@@ -112,23 +115,22 @@ def _parse_gps(lat_str: str | None, lon_str: str | None) -> tuple[float, float] 
 
 @require_htmx
 def report_form(request: HttpRequest) -> HttpResponse:
-    """Return the one-tap problem-selection form for a GPS-gated report.
+    """Return the one-tap problem-selection form for a field report.
 
-    Reads ``lat``, ``lon``, and ``accuracy`` query parameters (set by
-    ``report.js`` after a successful geolocation call).  Returns 400 if
-    either ``lat`` or ``lon`` is missing or unparseable — this is the GPS
-    gate: the form must never appear without a valid fix.
+    Reads ``lat``, ``lon``, ``accuracy``, ``location_source``, ``gps_lat``,
+    and ``gps_lon`` query parameters (set by ``report.js``).  All are optional:
+    when ``lat``/``lon`` are absent the form renders in MANUAL "choose on map"
+    state — the GPS gate has been removed so subscribers who denied location
+    can still report.
 
-    Resolves the GPS point to a MicroRegion (best-effort) via
-    ``region_for_point`` and passes it to the template so the banner can
-    show "We think you're in {region}" (or a fallback message when
-    resolution fails).
+    When coords are present, resolves the point to a MicroRegion (best-effort)
+    via ``region_for_point`` and passes it to the template for the region hint.
 
     Args:
         request: The incoming HTMX GET request.
 
     Returns:
-        Rendered ``_report_form.html`` partial, or an error response.
+        Rendered ``_report_form.html`` partial.
 
     """
     _require_field_observations_flag(request)
@@ -138,16 +140,25 @@ def report_form(request: HttpRequest) -> HttpResponse:
         return HttpResponse("Authentication required.", status=403)
 
     coords = _parse_gps(request.GET.get("lat"), request.GET.get("lon"))
-    if coords is None:
-        return HttpResponse(
-            "Valid lat and lon query parameters are required (GPS gate).",
-            status=400,
-        )
+    has_coords = coords is not None
 
-    lat, lon = coords
+    lat: float | None = None
+    lon: float | None = None
+    region = None
+
+    if coords is not None:
+        lat, lon = coords
+        region = region_for_point(lon, lat)
+
     accuracy_m = request.GET.get("accuracy")
+    location_source = request.GET.get(
+        "location_source", FieldObservation.LOCATION_SOURCE.GPS
+    )
 
-    region = region_for_point(lon, lat)
+    # Parse raw GPS fix coords (present on GPS and GPS_REFINED paths).
+    gps_coords = _parse_gps(request.GET.get("gps_lat"), request.GET.get("gps_lon"))
+    gps_lat: float | None = gps_coords[0] if gps_coords is not None else None
+    gps_lon: float | None = gps_coords[1] if gps_coords is not None else None
 
     return render(
         request,
@@ -157,6 +168,10 @@ def report_form(request: HttpRequest) -> HttpResponse:
             "lat": lat,
             "lon": lon,
             "accuracy_m": accuracy_m,
+            "has_coords": has_coords,
+            "location_source": location_source,
+            "gps_lat": gps_lat,
+            "gps_lon": gps_lon,
             "problems": FieldObservation.OBSERVATION_TYPE.choices,
             "submit_url": reverse("observations:report_submit"),
         },
@@ -170,12 +185,16 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     """Create a FieldObservation row and return the confirmation fragment.
 
     Validates the POST body:
-    - ``lat`` / ``lon`` must be present and parseable (GPS gate; 400 otherwise).
+    - ``lat`` / ``lon`` must be present and parseable (400 otherwise).
+    - ``location_source`` must be a value from ``LOCATION_SOURCE.values``
+      (400 when missing or not recognised).
     - ``observation_type`` must be a value from ``OBSERVATION_TYPE.values``
       (400 when missing or not recognised).
     - Rate-limited to 5 submissions per minute per IP (429 on excess).
 
     On success, creates the row and returns ``_report_confirmation.html``.
+    Region is best-effort — a pin outside every known boundary is accepted
+    with ``region=None``; there is no region-required rejection.
 
     Args:
         request: The incoming HTMX POST request.
@@ -198,11 +217,20 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     coords = _parse_gps(request.POST.get("lat"), request.POST.get("lon"))
     if coords is None:
         return HttpResponse(
-            "Valid lat and lon are required (GPS gate).",
+            "Valid lat and lon are required.",
             status=400,
         )
 
     lat, lon = coords
+
+    # Validate location_source.
+    valid_sources = set(FieldObservation.LOCATION_SOURCE.values)
+    location_source = request.POST.get("location_source")
+    if not location_source or location_source not in valid_sources:
+        return HttpResponse(
+            "A valid location_source is required (GPS, GPS_REFINED, or MANUAL).",
+            status=400,
+        )
 
     # Validate the single observation type.
     valid_values = set(FieldObservation.OBSERVATION_TYPE.values)
@@ -222,7 +250,12 @@ def report_submit(request: HttpRequest) -> HttpResponse:
         except ValueError, TypeError:
             accuracy_radius_km = None
 
-    # Best-effort region resolution.
+    # Parse optional raw GPS fix coords (null on MANUAL path).
+    gps_coords = _parse_gps(request.POST.get("gps_lat"), request.POST.get("gps_lon"))
+    gps_lat: float | None = gps_coords[0] if gps_coords is not None else None
+    gps_lon: float | None = gps_coords[1] if gps_coords is not None else None
+
+    # Best-effort region resolution — no region-required rejection.
     region = region_for_point(lon, lat)
 
     FieldObservation.objects.create(
@@ -231,14 +264,18 @@ def report_submit(request: HttpRequest) -> HttpResponse:
         latitude=lat,
         longitude=lon,
         accuracy_radius_km=accuracy_radius_km,
+        gps_latitude=gps_lat,
+        gps_longitude=gps_lon,
+        location_source=location_source,
         observation_type=observation_type,
     )
 
     logger.info(
-        "FieldObservation created: subscriber=%s region=%s type=%s",
+        "FieldObservation created: subscriber=%s region=%s type=%s source=%s",
         subscriber.pk,
         region.region_id if region else None,
         observation_type,
+        location_source,
     )
 
     return render(

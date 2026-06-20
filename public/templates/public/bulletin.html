@@ -722,6 +722,11 @@ reachable via the SNOW-81 deep-link in the masthead.
                         </li>
                     {% endfor %}
                 </ul>
+                {% if observation_has_user_located %}
+                    <p class="mt-2 rounded-tag bg-status-warning-bg px-3 py-1.5 text-xs text-status-warning-text">
+                        {% trans "Some reports were placed manually" %}
+                    </p>
+                {% endif %}
             </section>
         {% endif %}
 
