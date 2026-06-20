@@ -6,6 +6,9 @@ Covers:
   FieldObservationQuerySet.counts_for_region_day — single-type rows,
     multi-row aggregation, empty case, cross-region isolation,
     cross-day isolation.
+  FieldObservationQuerySet.user_located_exists_for_region_day — returns True
+    only for MANUAL/GPS_REFINED rows, False for GPS and empty.
+  LOCATION_SOURCE choices — values are UPPER_CASE.
 """
 
 from __future__ import annotations
@@ -243,3 +246,149 @@ class TestObservationTypeChoices:
         """All OBSERVATION_TYPE values are UPPER_CASE strings."""
         for value in FieldObservation.OBSERVATION_TYPE.values:
             assert value == value.upper(), f"{value!r} is not UPPER_CASE"
+
+
+@pytest.mark.django_db
+class TestLocationSourceChoices:
+    """LOCATION_SOURCE TextChoices sanity checks (SNOW-330)."""
+
+    def test_all_three_sources_present(self) -> None:
+        """GPS, GPS_REFINED, and MANUAL are present in LOCATION_SOURCE."""
+        values = FieldObservation.LOCATION_SOURCE.values
+        assert "GPS" in values
+        assert "GPS_REFINED" in values
+        assert "MANUAL" in values
+
+    def test_values_are_upper_case(self) -> None:
+        """All LOCATION_SOURCE values are UPPER_CASE strings."""
+        for value in FieldObservation.LOCATION_SOURCE.values:
+            assert value == value.upper(), f"{value!r} is not UPPER_CASE"
+
+    def test_location_source_round_trips(self) -> None:
+        """location_source is stored and retrieved correctly."""
+        obs = FieldObservation.objects.create(
+            subscriber=SubscriberFactory.create(),
+            latitude=46.10,
+            longitude=7.10,
+            location_source=FieldObservation.LOCATION_SOURCE.MANUAL,
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        obs.refresh_from_db()
+        assert obs.location_source == FieldObservation.LOCATION_SOURCE.MANUAL
+
+    def test_gps_coords_round_trip(self) -> None:
+        """gps_latitude and gps_longitude are stored and retrieved correctly."""
+        obs = FieldObservation.objects.create(
+            subscriber=SubscriberFactory.create(),
+            latitude=46.20,
+            longitude=7.20,
+            gps_latitude=46.10,
+            gps_longitude=7.10,
+            location_source=FieldObservation.LOCATION_SOURCE.GPS_REFINED,
+            observation_type=FieldObservation.OBSERVATION_TYPE.PINWHEELS,
+        )
+        obs.refresh_from_db()
+        assert obs.gps_latitude == pytest.approx(46.10)
+        assert obs.gps_longitude == pytest.approx(7.10)
+
+    def test_gps_coords_nullable(self) -> None:
+        """gps_latitude and gps_longitude may be null (MANUAL path)."""
+        obs = FieldObservation.objects.create(
+            subscriber=SubscriberFactory.create(),
+            latitude=46.10,
+            longitude=7.10,
+            gps_latitude=None,
+            gps_longitude=None,
+            location_source=FieldObservation.LOCATION_SOURCE.MANUAL,
+            observation_type=FieldObservation.OBSERVATION_TYPE.FRACTURES,
+        )
+        assert obs.gps_latitude is None
+        assert obs.gps_longitude is None
+
+
+@pytest.mark.django_db
+class TestUserLocatedExistsForRegionDay:
+    """user_located_exists_for_region_day queryset method (SNOW-330)."""
+
+    def _day(self) -> datetime.date:
+        """Return a fixed test date."""
+        return datetime.date(2026, 1, 20)
+
+    def _at(self, d: datetime.date) -> datetime.datetime:
+        """Return a tz-aware datetime for noon on date d."""
+        return datetime.datetime(d.year, d.month, d.day, 12, 0, tzinfo=UTC)
+
+    def test_returns_false_when_no_observations(self) -> None:
+        """Returns False when no observations exist for the region/day."""
+        region = MicroRegionFactory.create()
+        result = FieldObservation.objects.user_located_exists_for_region_day(
+            region, self._day()
+        )
+        assert result is False
+
+    def test_returns_false_for_gps_only_observations(self) -> None:
+        """GPS observations (not user-located) do not trigger True."""
+        region = MicroRegionFactory.create()
+        FieldObservationFactory.create(
+            region=region,
+            observed_at=self._at(self._day()),
+            location_source=FieldObservation.LOCATION_SOURCE.GPS,
+        )
+        result = FieldObservation.objects.user_located_exists_for_region_day(
+            region, self._day()
+        )
+        assert result is False
+
+    def test_returns_true_for_manual_observation(self) -> None:
+        """A MANUAL observation makes the method return True."""
+        region = MicroRegionFactory.create()
+        FieldObservationFactory.create(
+            region=region,
+            observed_at=self._at(self._day()),
+            location_source=FieldObservation.LOCATION_SOURCE.MANUAL,
+        )
+        result = FieldObservation.objects.user_located_exists_for_region_day(
+            region, self._day()
+        )
+        assert result is True
+
+    def test_returns_true_for_gps_refined_observation(self) -> None:
+        """A GPS_REFINED observation makes the method return True."""
+        region = MicroRegionFactory.create()
+        FieldObservationFactory.create(
+            region=region,
+            observed_at=self._at(self._day()),
+            location_source=FieldObservation.LOCATION_SOURCE.GPS_REFINED,
+        )
+        result = FieldObservation.objects.user_located_exists_for_region_day(
+            region, self._day()
+        )
+        assert result is True
+
+    def test_isolates_by_region(self) -> None:
+        """MANUAL observation in another region does not return True."""
+        region = MicroRegionFactory.create()
+        other_region = MicroRegionFactory.create()
+        FieldObservationFactory.create(
+            region=other_region,
+            observed_at=self._at(self._day()),
+            location_source=FieldObservation.LOCATION_SOURCE.MANUAL,
+        )
+        result = FieldObservation.objects.user_located_exists_for_region_day(
+            region, self._day()
+        )
+        assert result is False
+
+    def test_isolates_by_day(self) -> None:
+        """MANUAL observation on a different day does not return True."""
+        region = MicroRegionFactory.create()
+        other_day = self._day() + datetime.timedelta(days=1)
+        FieldObservationFactory.create(
+            region=region,
+            observed_at=self._at(other_day),
+            location_source=FieldObservation.LOCATION_SOURCE.MANUAL,
+        )
+        result = FieldObservation.objects.user_located_exists_for_region_day(
+            region, self._day()
+        )
+        assert result is False
