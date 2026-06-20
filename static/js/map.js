@@ -3059,7 +3059,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
   });
 
   // Register the control at top-right so MapLibre adds its (hidden)
-  // button and accuracy-circle marker to the map canvas.
+  // button and stands up the internal state machine. The position
+  // marker and accuracy circle are added to the map canvas once a fix
+  // is obtained, not at addControl time.
   MAP.addControl(control, 'top-right');
 
   btn.addEventListener('click', () => {
