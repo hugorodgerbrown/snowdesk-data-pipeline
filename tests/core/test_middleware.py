@@ -64,7 +64,8 @@ def test_permissions_policy_present_on_normal_response() -> None:
     policy = response["Permissions-Policy"]
     assert "camera=()" in policy
     assert "microphone=()" in policy
-    assert "geolocation=()" in policy
+    assert "geolocation=(self)" in policy
+    assert "geolocation=()" not in policy
 
 
 @pytest.mark.django_db
