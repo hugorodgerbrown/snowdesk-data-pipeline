@@ -10,8 +10,7 @@ dispatcher used by the bulletin page render:
       for the live source (falls back to the module-level URL constants). Raises
       ``CommandError`` for ``"local-mirror"`` when
       ``settings.WEATHER_API_LOCAL_MIRROR_BASE_URL`` is not configured. Imported
-      by both ``fetch_weather`` and ``backfill_weather`` commands to avoid
-      duplicating the resolver logic.
+      by the ``fetch_weather`` command to resolve the upstream URL.
 
   fetch_weather_for_region(region, target_date, *, commit, base_url, on_fetched)
       Fetches today's (or any single day's) weather for one region from the
@@ -95,8 +94,7 @@ def resolve_weather_source(source: str) -> str | None:
     module-level ``FORECAST_URL`` / ``ARCHIVE_URL`` constants, keeping the
     live path identical to its pre-flag behaviour.
 
-    Imported by both ``fetch_weather`` and ``backfill_weather`` commands so
-    the resolver logic is not duplicated.
+    Imported by the ``fetch_weather`` command to resolve the upstream URL.
 
     Args:
         source: One of ``SOURCE_LIVE`` or ``SOURCE_LOCAL_MIRROR``.

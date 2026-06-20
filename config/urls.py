@@ -15,9 +15,9 @@ When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
   namespace ``dev``), so ``fetch_bulletins --source local-mirror`` can replay
   the on-disk archive end-to-end.
 - ``/dev/openmeteo-mirror/`` — Open-Meteo weather mirror
-  (``bulletins.dev_urls_openmeteo``, namespace ``dev_om``), so ``fetch_weather
-  --source local-mirror`` and ``backfill_weather --source local-mirror`` can
-  replay ``bulletins/local_mirrors/openmeteo_archive.ndjson``.
+  (``bulletins.dev_urls_openmeteo``, namespace ``dev_om``), so
+  ``fetch_weather --local-mirror`` can replay
+  ``bulletins/local_mirrors/openmeteo_archive.ndjson``.
 - ``/dev/albina-mirror/`` — ALBINA bulletin mirror
   (``bulletins.dev_urls_albina``, namespace ``dev_albina``), so
   ``fetch_bulletins --source albina --local-mirror`` can replay

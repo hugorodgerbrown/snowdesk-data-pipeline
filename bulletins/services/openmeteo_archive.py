@@ -3,7 +3,7 @@ bulletins/services/openmeteo_archive.py — On-disk NDJSON archive of Open-Meteo
 
 Reading and writing ``bulletins/local_mirrors/openmeteo_archive.ndjson``:
 a single NDJSON file holding every weather record captured by
-``fetch_weather --stash`` or ``backfill_weather --stash`` runs.
+``fetch_weather --stash`` runs.
 
 One record per ``(region_id, date)`` pair per line. Record shape:
 
@@ -139,10 +139,10 @@ def flush_stash(
     Emits a success line to ``stdout`` and logs at INFO with ``command_name``
     so production logs remain unambiguous about which command flushed.
 
-    Shared by ``fetch_weather`` and ``backfill_weather`` to avoid duplicating
-    the implementation. Accepts Django management-command ``stdout`` /
-    ``style`` objects (typed as ``Any`` to avoid noisy management-framework
-    imports in a Django-free module).
+    Used by ``fetch_weather --stash`` to persist captured records.
+    Accepts Django management-command ``stdout`` / ``style`` objects (typed
+    as ``Any`` to avoid noisy management-framework imports in a
+    Django-free module).
 
     Args:
         path: Filesystem path to the NDJSON archive

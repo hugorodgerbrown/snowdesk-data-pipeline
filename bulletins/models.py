@@ -715,8 +715,8 @@ class WeatherSnapshot(BaseModel):
     Open-Meteo weather data for one region on one calendar day.
 
     One row per (region, valid_for_date) pair. Fetched by the
-    ``fetch_weather`` management command (today) or ``backfill_weather``
-    (historical range). Stores the WMO weather code and tz-aware
+    ``fetch_weather`` management command (forecast or historical range).
+    Stores the WMO weather code and tz-aware
     sunrise/sunset times so that downstream consumers (SNOW-98 render
     model) can determine day/night state without re-calling the API.
 
