@@ -282,7 +282,7 @@ SLF_API_BASE_URL = config(
 SLF_ARCHIVE_PATH = BASE_DIR / "bulletins" / "local_mirrors" / "slf_archive.ndjson"
 
 # On-disk archive of every Open-Meteo weather record captured by
-# ``fetch_weather --stash`` and ``backfill_weather --stash`` runs.
+# ``fetch_weather --stash`` runs.
 # NDJSON: one record per ``(region_id, date)`` pair per line, sorted
 # ascending by ``(region_id, date)``, deduped by ``(region_id, date)``
 # with the later ``captured_at`` winning. Both the stash writer and the

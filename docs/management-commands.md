@@ -1,8 +1,8 @@
 ---
 name: management-commands
-description: Command catalogue — fetch_bulletins, fetch_weather, backfill_weather, backfill_bulletin_groupings, rebuild_render_models, fixture builders
+description: Command catalogue — fetch_bulletins, fetch_weather, backfill_bulletin_groupings, rebuild_render_models, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-06-16
+last-reviewed: 2026-06-20
 ---
 
 # Management commands
@@ -190,7 +190,7 @@ incident that invalidates derived state:
 
   Flags: `--commit`.
 
-- `backfill_weather --start <YYYY-MM-DD> --end <YYYY-MM-DD> --commit` —
+- `fetch_weather --start <YYYY-MM-DD> --end <YYYY-MM-DD> --commit` —
   to fill a historical gap (e.g. after adding a new region, or
   recovering from an outage longer than a day).
 - `fetch_bulletins --source <src> --start-date <YYYY-MM-DD> --commit` —
@@ -473,18 +473,26 @@ and redeploy the worker.
 
 ---
 
-## `fetch_weather` — fetch today's Open-Meteo weather for all regions
+## `fetch_weather` — unified batch weather command (cron, backfill, bootstrap)
 
-> **Legacy batch path.** As of SNOW-159 the primary live path for per-region
-> weather data is the HTMX-triggered `public:weather_snippet` view, which
-> fires a just-in-time fetch when a bulletin page renders without a
-> `WeatherSnapshot`. `fetch_weather` is retained for manual probing and one-off
-> bulk fetches; use `backfill_weather` for historical catch-up runs.
+Canonical batch command for fetching Open-Meteo weather data. Covers
+today's forecast fetch, historical backfills, and the local-mirror
+bootstrap path. The HTMX `public:weather_snippet` lazy-load view
+remains the per-request live path for individual bulletin pages.
 
-Reads weather data from the Open-Meteo forecast API and optionally
-writes `WeatherSnapshot` rows (one per region). Read-only by default;
-the API is always called even without `--commit`, making a bare
-invocation a useful connectivity probe.
+**Default window** (no `--date`/`--start`/`--end`): start is derived
+from the first non-null of (1) the latest `WeatherSnapshot.valid_for_date`
+already in the DB, (2) the earliest `Bulletin.valid_from` date, (3)
+`settings.SEASON_START_DATE`. End defaults to today (local timezone).
+
+**Per-date routing** — the command splits the window at the day boundary
+automatically: dates strictly before today use the Open-Meteo archive
+endpoint; today uses the forecast endpoint. A single invocation therefore
+covers the entire default window correctly regardless of what is already
+in the DB.
+
+Read-only by default; the API is always called even without `--commit`,
+making a bare invocation a useful connectivity probe.
 
 > **Scheduler note:** `fetch_weather` is invoked by the `snowdesk-scheduler`
 > Background Worker via `schedule.py` — see the Operational requirements section
@@ -492,89 +500,44 @@ invocation a useful connectivity probe.
 > and redeploy the worker.
 
 ```bash
-# Read-only probe for today — no DB writes; real API call.
+# Read-only probe over the default window — no DB writes.
 uv run python manage.py fetch_weather
 
-# Persist today's weather for all regions.
+# Persist over the default window.
 uv run python manage.py fetch_weather --commit
 
 # Persist weather for a specific date.
 uv run python manage.py fetch_weather --date 2026-05-01 --commit
 
+# Persist weather for an explicit range (splits at today automatically).
+uv run python manage.py fetch_weather \
+    --start 2025-12-01 --end 2026-04-30 --commit
+
 # Bootstrap against the on-disk archive instead of the live Open-Meteo API.
 # Requires the dev server to be running and
 # settings.WEATHER_API_LOCAL_MIRROR_BASE_URL to be configured (development.py).
-uv run python manage.py fetch_weather --source local-mirror --commit
+uv run python manage.py fetch_weather --local-mirror --commit
 
-# Capture today's weather to bulletins/local_mirrors/openmeteo_archive.ndjson (no DB write).
+# Capture the default window to bulletins/local_mirrors/openmeteo_archive.ndjson.
 uv run python manage.py fetch_weather --stash
 
 # Full-fidelity: persist and stash.
 uv run python manage.py fetch_weather --commit --stash
 
-# Flags:
-#   --date   YYYY-MM-DD  date to fetch for; default: today (local timezone)
-#   --commit             persist WeatherSnapshot rows; omit for a read-only run
-#   --source {live,local-mirror}
-#                        default 'live' (real Open-Meteo forecast API).
-#                        'local-mirror' replays bulletins/local_mirrors/openmeteo_archive.ndjson
-#                        via the dev-only view; errors out if the mirror URL
-#                        setting is not configured.
-#   --stash              append fetched weather records to the on-disk archive
-```
-
----
-
-## `backfill_weather` — backfill historical weather for a date range
-
-Fetches historical weather from the Open-Meteo archive API for every
-region across a date range. Requires `--start` and `--end`. Read-only
-by default; pass `--commit` to persist.
-
-The Open-Meteo archive endpoint enforces a tight free-tier rate limit,
-so the command paces calls by default: `--delay` defaults to **1.0
-second** between successive per-region archive calls (~60 calls/minute,
-comfortably under the limit). Pass `--delay 0` to disable pacing if you
-have a paid plan or a tiny region count; raise it for very long
-backfills if you start to see 429 responses.
-
-```bash
-# Dry-run probe for a full season window (paced at 1 s/region by default).
-uv run python manage.py backfill_weather \
-    --start 2025-12-01 --end 2026-04-30
-
-# Persist the full season.
-uv run python manage.py backfill_weather \
-    --start 2025-12-01 --end 2026-04-30 --commit
-
-# Tighten pacing for a multi-year historical backfill.
-uv run python manage.py backfill_weather \
+# Tighten pacing for a long historical backfill.
+uv run python manage.py fetch_weather \
     --start 2020-11-01 --end 2025-04-30 --delay 2 --commit
 
-# Disable pacing (only if you have a paid Open-Meteo plan).
-uv run python manage.py backfill_weather \
-    --start 2025-12-01 --end 2026-04-30 --delay 0 --commit
-
-# Replay from the local mirror (instant; dev server must be running).
-uv run python manage.py backfill_weather \
-    --start 2026-01-01 --end 2026-01-31 --source local-mirror --commit
-
-# Capture a range to bulletins/local_mirrors/openmeteo_archive.ndjson (no DB write).
-uv run python manage.py backfill_weather \
-    --start 2025-12-01 --end 2026-04-30 --stash
-
 # Flags:
-#   --start  YYYY-MM-DD  first date in the range (inclusive, required)
-#   --end    YYYY-MM-DD  last date in the range (inclusive, required)
-#   --commit             persist WeatherSnapshot rows; omit for read-only
-#   --delay  SECONDS     sleep N seconds between region archive calls
-#                        (default 1.0; pass 0 to disable pacing)
-#   --source {live,local-mirror}
-#                        default 'live' (real Open-Meteo archive API).
-#                        'local-mirror' replays bulletins/local_mirrors/openmeteo_archive.ndjson
-#                        via the dev-only view; errors out if the mirror URL
-#                        setting is not configured.
-#   --stash              append fetched weather records to the on-disk archive
+#   --date         YYYY-MM-DD  single date; mutually exclusive with --start/--end
+#   --start        YYYY-MM-DD  start of window (inclusive); defaults to DB-derived
+#   --end          YYYY-MM-DD  end of window (inclusive); defaults to today
+#   --commit                   persist WeatherSnapshot rows; omit for a read-only run
+#   --local-mirror             replay from bulletins/local_mirrors/openmeteo_archive.ndjson
+#                              via the dev-only view (development.py only)
+#   --delay        SECONDS     seconds between per-region archive calls (default 1.0;
+#                              pass 0 to disable; no effect on the forecast endpoint)
+#   --stash                    append fetched weather records to the on-disk archive
 ```
 
 ## Development & one-shot setup commands
@@ -616,3 +579,39 @@ every other command here).
   ```
 
   Flags: `--commit` (write the secret file; omit for a read-only run).
+
+---
+
+## Local DB bootstrap
+
+Two paths for seeding a fresh local development database:
+
+### `bin/bootstrap-dev-db` — one-command seed (mirrors required)
+
+Runs migrate, loads all region/resort fixtures, fetches bulletins from
+all three providers, and backfills weather over the default window — all
+via the local mirrors served by the running dev server.
+
+**Prerequisite:** the Django dev server must already be running on :8000
+before you execute this script. The SLF, ALBINA, and Open-Meteo local
+mirrors are served by dev-only views in the running server.
+
+```bash
+# In one terminal — keep this running.
+uv run python manage.py runserver
+
+# In another terminal.
+./bin/bootstrap-dev-db
+```
+
+Once complete, open a bulletin page to verify:
+`http://localhost:8000/ch-4115/martigny-verbier/<today>/`
+
+### Fully-offline alternative (no server required)
+
+Load the committed test fixture, which covers the Martigny-Verbier region
+for April 2026 and is suitable for most UI work:
+
+```bash
+uv run python manage.py loaddata bulletins/fixtures/test_data.json
+```

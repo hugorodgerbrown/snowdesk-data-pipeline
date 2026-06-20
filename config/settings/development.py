@@ -137,9 +137,8 @@ ALBINA_API_LOCAL_MIRROR_URL = config(
 # Base URL of the development-only view at ``bulletins.dev_views.openmeteo_mirror``,
 # which replays ``bulletins/local_mirrors/openmeteo_archive.ndjson`` in an
 # Open-Meteo-compatible response shape. Only defined in development.py so that
-# ``fetch_weather --source local-mirror`` and ``backfill_weather --source
-# local-mirror`` error loudly if anyone tries to run them against a
-# production-like environment.
+# ``fetch_weather --local-mirror`` errors loudly if anyone tries to run it
+# against a production-like environment.
 WEATHER_API_LOCAL_MIRROR_BASE_URL = config(
     "WEATHER_API_LOCAL_MIRROR_BASE_URL",
     default="http://localhost:8000/dev/openmeteo-mirror/v1",

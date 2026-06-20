@@ -45,8 +45,9 @@ uv run python manage.py fetch_bulletins --source slf --start-date 2024-01-01 --c
 uv run python manage.py rebuild_render_models --commit
 
 # Weather (drives the bulletin header — WMO bucket + day/night state)
+# Fetch over the default window (latest snapshot → today); or pass --start/--end.
 uv run python manage.py fetch_weather --commit
-uv run python manage.py backfill_weather --start 2024-11-01 --end 2025-05-01 --commit
+uv run python manage.py fetch_weather --start 2024-11-01 --end 2025-05-01 --commit
 ```
 
 ## Stack

@@ -259,3 +259,87 @@ class TestBulletinEarliestValidToDate:
         assert Bulletin.objects.filter(lang="de").earliest_valid_to_date() == date(
             2026, 4, 13
         )
+
+
+@pytest.mark.django_db
+class TestBulletinEarliestValidFromDate:
+    """Tests for ``BulletinQuerySet.earliest_valid_from_date()``."""
+
+    def test_returns_none_when_empty(self) -> None:
+        """Empty queryset returns ``None`` rather than raising."""
+        assert Bulletin.objects.earliest_valid_from_date() is None
+
+    def test_returns_min_valid_from_day(self) -> None:
+        """Returns the ``valid_from`` day of the oldest bulletin."""
+        BulletinFactory.create(
+            issued_at=datetime(2026, 4, 15, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 15, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 16, 12, 0, tzinfo=UTC),
+        )
+        BulletinFactory.create(
+            issued_at=datetime(2026, 4, 10, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 10, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 11, 12, 0, tzinfo=UTC),
+        )
+        BulletinFactory.create(
+            issued_at=datetime(2026, 4, 12, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 12, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 13, 12, 0, tzinfo=UTC),
+        )
+
+        assert Bulletin.objects.earliest_valid_from_date() == date(2026, 4, 10)
+
+    def test_honours_queryset_filters(self) -> None:
+        """Works off the chained queryset rather than the full table."""
+        BulletinFactory.create(
+            lang="en",
+            issued_at=datetime(2026, 4, 10, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 10, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 11, 12, 0, tzinfo=UTC),
+        )
+        BulletinFactory.create(
+            lang="de",
+            issued_at=datetime(2026, 4, 5, 12, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 4, 5, 12, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 4, 6, 12, 0, tzinfo=UTC),
+        )
+
+        assert Bulletin.objects.filter(lang="en").earliest_valid_from_date() == date(
+            2026, 4, 10
+        )
+
+
+@pytest.mark.django_db
+class TestWeatherSnapshotLatestDate:
+    """Tests for ``WeatherSnapshotQuerySet.latest_date()``."""
+
+    def test_returns_none_when_empty(self) -> None:
+        """Empty queryset returns ``None`` rather than raising."""
+        from bulletins.models import WeatherSnapshot
+
+        assert WeatherSnapshot.objects.latest_date() is None
+
+    def test_returns_max_valid_for_date(self) -> None:
+        """Returns the maximum ``valid_for_date`` across snapshots."""
+        from tests.factories import WeatherSnapshotFactory
+
+        WeatherSnapshotFactory.create(valid_for_date=date(2026, 4, 10))
+        WeatherSnapshotFactory.create(valid_for_date=date(2026, 4, 20))
+        WeatherSnapshotFactory.create(valid_for_date=date(2026, 4, 15))
+
+        from bulletins.models import WeatherSnapshot
+
+        assert WeatherSnapshot.objects.latest_date() == date(2026, 4, 20)
+
+    def test_honours_queryset_filters(self) -> None:
+        """Works off the chained queryset rather than the full table."""
+        from bulletins.models import WeatherSnapshot
+        from tests.factories import MicroRegionFactory, WeatherSnapshotFactory
+
+        region_a = MicroRegionFactory.create()
+        region_b = MicroRegionFactory.create()
+        WeatherSnapshotFactory.create(region=region_a, valid_for_date=date(2026, 4, 20))
+        WeatherSnapshotFactory.create(region=region_b, valid_for_date=date(2026, 4, 10))
+
+        result = WeatherSnapshot.objects.filter(region=region_b).latest_date()
+        assert result == date(2026, 4, 10)
