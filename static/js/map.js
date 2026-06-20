@@ -3038,6 +3038,44 @@ const repaintRegionsForDate = (dateKey, cache) => {
   });
 })();
 
+// SNOW-328: Locate-me roundel — wires #locate-toggle to a MapLibre
+// GeolocateControl so clicking the pill one-shots a pan/zoom to the
+// user's current position. The control's own DOM button is hidden via
+// CSS (.maplibregl-ctrl-geolocate { display: none }) so MapLibre still
+// manages the internal state machine and the blue accuracy circle, while
+// our pill in the utility cluster is the only visible affordance.
+//
+// Permission-denied and position-unavailable errors are swallowed
+// silently — the map simply stays where it was, which is the least
+// surprising behaviour when the user declines or the device has no fix.
+(function geolocateInit() {
+  const btn = document.getElementById('locate-toggle');
+  if (!btn || !MAP) return;
+
+  const control = new maplibregl.GeolocateControl({
+    trackUserLocation: false,
+    showAccuracyCircle: true,
+    positionOptions: { enableHighAccuracy: true },
+  });
+
+  // Register the control at top-right so MapLibre adds its (hidden)
+  // button and stands up the internal state machine. The position
+  // marker and accuracy circle are added to the map canvas once a fix
+  // is obtained, not at addControl time.
+  MAP.addControl(control, 'top-right');
+
+  btn.addEventListener('click', () => {
+    control.trigger();
+  });
+
+  // Swallow geolocation errors silently. Permission-denied
+  // (GeolocationPositionError.code === 1) and position-unavailable
+  // (code === 2) both resolve by leaving the map viewport unchanged.
+  control.on('error', () => {
+    // Intentionally empty — no user-facing noise on failure.
+  });
+})();
+
 // SNOW-314: Season ribbon — the season scrubber's track doubles as the danger
 // ribbon. When a region is the focus, one decorative coloured cell per season
 // day is painted into the track (behind the thumb); a persistent readout names

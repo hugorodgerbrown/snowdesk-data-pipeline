@@ -82,6 +82,25 @@
     filter: brightness(1.04);
 }
 
+/* SNOW-328: Locate-me roundel — same geometry as the basemap pill: a
+   40×40 flex-centred circle that anchors the #locate-toggle button. No
+   popover needed; the pill is purely an icon button. */
+.map-utility-pill--locate {
+    width: 40px;
+    flex: 0 0 auto;
+    justify-content: center;
+}
+
+.map-utility-pill--locate:hover {
+    filter: brightness(1.04);
+}
+
+/* Hide the MapLibre GeolocateControl's own rendered button — our
+   #locate-toggle pill in the utility cluster is the visible affordance. */
+.maplibregl-ctrl-geolocate {
+    display: none;
+}
+
 .basemap-menu {
     position: absolute;
     top: 48px;
@@ -111,6 +130,12 @@
     font-size: 13px;
     text-align: left;
     cursor: pointer;
+    /* SNOW-328: keep multi-word labels (e.g. "Bulletin groupings") on a
+       single line. The menu is shrink-to-fit (absolutely positioned, no
+       max-width), so it grows to the longest label rather than wrapping —
+       adaptive to any label length, including a future i18n pass, where a
+       fixed min-width would not be. */
+    white-space: nowrap;
 }
 
 .basemap-menu-item::before {

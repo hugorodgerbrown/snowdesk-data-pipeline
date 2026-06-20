@@ -72,7 +72,7 @@ class SecurityHeadersMiddleware:
     _REFERRER_POLICY_DEFAULT = "strict-origin-when-cross-origin"
     _PERMISSIONS_POLICY_HEADER = "Permissions-Policy"
     _PERMISSIONS_POLICY_VALUE = (
-        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        "camera=(), microphone=(), geolocation=(self), payment=(), usb=()"
     )
 
     def __init__(
