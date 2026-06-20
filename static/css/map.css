@@ -82,6 +82,25 @@
     filter: brightness(1.04);
 }
 
+/* SNOW-328: Locate-me roundel — same geometry as the basemap pill: a
+   40×40 flex-centred circle that anchors the #locate-toggle button. No
+   popover needed; the pill is purely an icon button. */
+.map-utility-pill--locate {
+    width: 40px;
+    flex: 0 0 auto;
+    justify-content: center;
+}
+
+.map-utility-pill--locate:hover {
+    filter: brightness(1.04);
+}
+
+/* Hide the MapLibre GeolocateControl's own rendered button — our
+   #locate-toggle pill in the utility cluster is the visible affordance. */
+.maplibregl-ctrl-geolocate {
+    display: none;
+}
+
 .basemap-menu {
     position: absolute;
     top: 48px;
