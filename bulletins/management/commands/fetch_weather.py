@@ -224,7 +224,6 @@ class Command(BaseCommand):
             delay=delay,
             stash=stash,
             local_mirror=local_mirror,
-            today=today,
         )
 
         total_counts = self._fetch(
@@ -312,9 +311,10 @@ class Command(BaseCommand):
         Route the [start, end] window to archive and/or forecast endpoints.
 
         Dates strictly before today are sent to ``backfill_all_regions``
-        (Open-Meteo archive endpoint). Today and any future date are sent to
-        ``fetch_all_regions`` (Open-Meteo forecast endpoint). The two sets of
-        counts are merged into a single dict.
+        (Open-Meteo archive endpoint); today is sent to ``fetch_all_regions``
+        (Open-Meteo forecast endpoint). Dates beyond today are not fetched —
+        the forecast call only covers the current day. The two sets of counts
+        are merged into a single dict.
 
         Args:
             start:      First date of the window (inclusive).
@@ -350,7 +350,8 @@ class Command(BaseCommand):
             for key in total:
                 total[key] += counts[key]
 
-        # Today (and any future date) → forecast endpoint.
+        # Today → forecast endpoint. Dates beyond today are not fetched (the
+        # forecast call only covers the current day).
         if end >= today:
             counts = fetch_all_regions(
                 today,
@@ -413,7 +414,6 @@ class Command(BaseCommand):
         delay: float,
         stash: bool,
         local_mirror: bool,
-        today: date,
     ) -> None:
         """Write the start-of-run banner and matching log line."""
         flags: list[str] = []

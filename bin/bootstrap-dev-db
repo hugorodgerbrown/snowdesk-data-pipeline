@@ -45,4 +45,7 @@ uv run python manage.py fetch_weather --local-mirror --commit
 
 echo ""
 echo "Bootstrap complete. Open a bulletin page to verify:"
-echo "  http://localhost:8000/ch-4115/martigny-verbier/$(date +%Y-%m-%d)/"
+# Fixed canonical date — the local mirrors cover April 2026, so today's host
+# date would usually 404. CH-4115 has full detail for this day (see
+# docs/management-commands.md).
+echo "  http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/"
