@@ -8,25 +8,40 @@
  *
  * Update flow
  * -----------
- * The PWA shell SW (``static/js/sw.js``) calls ``self.skipWaiting()``
- * on install but deliberately does NOT call ``self.clients.claim()``,
- * because pairing the two with a controllerchange-based auto-reload
- * produced a tight reload loop in dev (every navigation re-triggered
- * the SW update check). Without ``claim()`` the new SW activates
- * immediately but only controls a tab on its next navigation.
+ * The contract this implements, end-user-facing: *if there is an
+ * update, you see one "Reload" message; if there is no message, you are
+ * already on the latest version.*
  *
- * To make the user aware that an update is ready, this script reveals
- * the ``#sw-update-banner`` markup baked into ``base.html`` whenever a
- * fresh SW has finished installing AND there is still an old SW
- * controlling the page (= a real update, not first-time install).
- * Clicking "Reload" navigates the page, picking up the new shell;
- * clicking × dismisses the banner for the rest of the tab's lifetime.
+ * The PWA shell SW (``static/js/sw.js``) does NOT ``skipWaiting()`` on
+ * install — a freshly-installed worker sits in the "waiting" state, and
+ * that waiting worker IS the pending update. This script reveals the
+ * ``#sw-update-banner`` markup baked into ``base.html`` whenever a fresh
+ * SW has finished installing AND an old SW still controls the page
+ * (= a real update, not a first-time install).
+ *
+ * Clicking "Reload" posts ``{ type: 'SKIP_WAITING' }`` to that waiting
+ * worker. The worker activates, calls ``clients.claim()``, and the
+ * browser fires ``controllerchange`` — at which point we reload the page
+ * exactly once (guarded by ``refreshing``) so the new shell is in
+ * control. This guarantees the tab actually moves to the new version
+ * instead of lingering on the old worker. Because the reload is gated on
+ * the user having clicked "Reload" (``userTriggeredUpdate``), a
+ * first-install ``clients.claim()`` does not reload the page, and there
+ * is no dev reload-loop.
+ *
+ * ``register`` passes ``updateViaCache: 'none'`` so the SW script is
+ * never served from the HTTP cache during an update check — a changed
+ * ``sw.js`` is always detected. We also call ``registration.update()``
+ * when the tab regains focus, so a long-open tab learns about a new
+ * version without needing a navigation.
  *
  * Errors from ``register()`` are logged but never surfaced to the
  * user — the site is fully usable without a service worker.
  *
- * i18n: every user-visible string lives in the banner template under
- * ``{% trans %}``; this script only toggles visibility.
+ * i18n: on public pages every user-visible string lives in the banner
+ * template under ``{% trans %}`` and this script only toggles visibility.
+ * The self-injected admin fallback banner carries English strings inline
+ * (the admin is staff-only and English-only), so it is the one exception.
  */
 
 (function () {
@@ -34,37 +49,112 @@
 
   if (!('serviceWorker' in navigator)) return;
 
-  const banner = document.getElementById('sw-update-banner');
+  // The installed-but-waiting worker (the pending update), captured when
+  // we show the banner so the "Reload" handler can message it.
+  let waitingWorker = null;
+  // Set true only when the user clicks "Reload", so a first-install
+  // ``clients.claim()`` (which also fires controllerchange) never reloads
+  // the page — only a user-accepted update does.
+  let userTriggeredUpdate = false;
+  // Guards against a double reload if controllerchange fires more than
+  // once.
+  let refreshing = false;
 
   /**
-   * Reveal the update banner. Toggles the ``hidden``/``flex`` Tailwind
-   * pair rather than the HTML ``hidden`` attribute, because the latter
-   * loses to any explicit ``display`` utility (e.g. ``flex``) in the
-   * cascade — Tailwind's reset does not flag the UA ``[hidden]`` rule
-   * as ``!important``.
+   * Resolve the banner element, creating one if the page didn't render
+   * the public toast partial. Public pages ship ``#sw-update-banner``
+   * (Tailwind-styled) in base.html; the Django admin — which the SW also
+   * controls (scope ``/``) — does not load the public chrome, so without
+   * this a waiting worker would go unannounced there. We self-inject an
+   * inline-styled banner (no Tailwind dependency) so the update contract
+   * holds on EVERY page the SW controls, with no exceptions. Mirrors the
+   * JS-built toast pattern in report.js.
+   *
+   * @returns {HTMLElement | null}
    */
-  function showUpdateBanner() {
+  function ensureBanner() {
+    let el = document.getElementById('sw-update-banner');
+    if (el || !document.body) return el;
+    el = document.createElement('div');
+    el.id = 'sw-update-banner';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.style.cssText =
+      'position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);' +
+      'z-index:2147483647;display:none;align-items:center;gap:.75rem;' +
+      'max-width:28rem;padding:.5rem 1rem;border-radius:9999px;' +
+      'background:#1e293b;color:#fff;font:500 14px system-ui,sans-serif;' +
+      'box-shadow:0 10px 25px rgba(0,0,0,.25);';
+    const span = document.createElement('span');
+    span.textContent = 'An updated version is available.';
+    const reload = document.createElement('button');
+    reload.type = 'button';
+    reload.dataset.action = 'reload';
+    reload.textContent = 'Reload';
+    reload.style.cssText =
+      'cursor:pointer;border:0;border-radius:9999px;background:#fff;' +
+      'color:#1e293b;padding:.25rem .75rem;font:600 12px system-ui,sans-serif;';
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.dataset.action = 'dismiss';
+    dismiss.setAttribute('aria-label', 'Dismiss');
+    dismiss.textContent = '×';
+    dismiss.style.cssText =
+      'cursor:pointer;border:0;background:transparent;color:#fff;' +
+      'opacity:.7;font-size:16px;line-height:1;';
+    el.append(span, reload, dismiss);
+    document.body.appendChild(el);
+    return el;
+  }
+
+  const banner = ensureBanner();
+
+  /**
+   * Reveal / hide the update banner via an inline ``display`` toggle.
+   * Inline display beats Tailwind's ``hidden`` utility on the template
+   * banner (specificity), and is also what the self-injected admin banner
+   * relies on — one code path for both.
+   */
+  function showUpdateBanner(worker) {
+    if (worker) waitingWorker = worker;
     if (!banner) return;
-    banner.classList.remove('hidden');
-    banner.classList.add('flex');
+    banner.style.display = 'flex';
   }
 
   function hideUpdateBanner() {
     if (!banner) return;
-    banner.classList.remove('flex');
-    banner.classList.add('hidden');
+    banner.style.display = 'none';
   }
 
   if (banner) {
     banner
       .querySelector('[data-action="reload"]')
       ?.addEventListener('click', () => {
-        location.reload();
+        // Ask the waiting worker to take over. Its activation fires
+        // ``controllerchange`` (below), which reloads the page onto the
+        // new shell. Fall back to a plain reload if we somehow have no
+        // waiting-worker reference (e.g. it already activated).
+        userTriggeredUpdate = true;
+        if (waitingWorker) {
+          waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+        } else {
+          window.location.reload();
+        }
       });
     banner
       .querySelector('[data-action="dismiss"]')
       ?.addEventListener('click', hideUpdateBanner);
   }
+
+  // The new worker called ``clients.claim()`` and now controls the page.
+  // Reload once so the new shell renders — but only if this came from the
+  // user accepting the update, so a first-install claim doesn't bounce
+  // the page on someone's very first visit.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!userTriggeredUpdate || refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
 
   /**
    * Watch a service worker for the install→installed transition. When
@@ -77,24 +167,24 @@
   function watchForInstall(sw) {
     sw.addEventListener('statechange', () => {
       if (sw.state === 'installed' && navigator.serviceWorker.controller) {
-        showUpdateBanner();
+        showUpdateBanner(sw);
       }
     });
   }
 
   navigator.serviceWorker
-    .register('/sw.js', { scope: '/' })
+    .register('/sw.js', { scope: '/', updateViaCache: 'none' })
     .then((registration) => {
       // Three entry points to "an update is ready":
-      //   1. ``waiting`` is non-null at register-time (rare with
-      //      skipWaiting, but possible if the new SW already raced past
-      //      ``installed`` before this listener attached).
+      //   1. ``waiting`` is non-null at register-time — a new worker has
+      //      already installed and is parked waiting (the common case
+      //      now that we don't auto-skipWaiting).
       //   2. ``installing`` is non-null at register-time — a SW update
       //      check started before our register() resolved.
       //   3. ``updatefound`` fires later — the common case during a
       //      normal session where the SW changes on the next deploy.
       if (registration.waiting && navigator.serviceWorker.controller) {
-        showUpdateBanner();
+        showUpdateBanner(registration.waiting);
       }
       if (registration.installing) {
         watchForInstall(registration.installing);
@@ -102,6 +192,15 @@
       registration.addEventListener('updatefound', () => {
         if (registration.installing) {
           watchForInstall(registration.installing);
+        }
+      });
+
+      // Surface an update promptly for a tab left open across a deploy:
+      // re-check when the tab regains focus. ``update()`` is a no-op when
+      // ``sw.js`` is unchanged — so no banner means you really are latest.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          registration.update().catch(() => {});
         }
       });
     })

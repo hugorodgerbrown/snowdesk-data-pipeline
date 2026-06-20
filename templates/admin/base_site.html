@@ -1,0 +1,36 @@
+{% extends "admin/base.html" %}
+{% load static i18n %}
+{% comment %}
+templates/admin/base_site.html — Project override of the Django admin base.
+
+Reproduces the stock ``title`` / ``branding`` / ``nav-global`` blocks
+(verbatim from Django's shipped admin/base_site.html) so the admin chrome
+is unchanged, and adds one thing: it loads ``sw_register.js`` in the
+footer block.
+
+Why: the PWA service worker is registered with scope ``/`` and therefore
+controls admin pages too. Without this, a waiting worker (a pending
+update) would show in DevTools but never surface a "Reload" message on an
+admin page, because the admin doesn't load the public chrome. The update
+contract is "an update always shows a message" with no exceptions, so the
+registration/banner script must run here as well. ``sw_register.js``
+self-injects an inline-styled banner when the public toast markup is
+absent (as it is in admin).
+{% endcomment %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} |
+    {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+    <div id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:_('Django administration') }}</a></div>
+    {% if user.is_anonymous %}
+        {% include "admin/color_theme_toggle.html" %}
+    {% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}
+
+{% block footer %}
+    {{ block.super }}
+    <script defer src="{% static 'js/sw_register.js' %}"></script>
+{% endblock %}
