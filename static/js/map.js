@@ -3068,11 +3068,38 @@ const repaintRegionsForDate = (dateKey, cache) => {
     control.trigger();
   });
 
-  // Swallow geolocation errors silently. Permission-denied
-  // (GeolocationPositionError.code === 1) and position-unavailable
-  // (code === 2) both resolve by leaving the map viewport unchanged.
-  control.on('error', () => {
-    // Intentionally empty — no user-facing noise on failure.
+  // SNOW-324: this control is the single geolocation source for the page. The
+  // field-report flow (report.js) reuses it instead of running its own
+  // getCurrentPosition: it dispatches ``snowdesk:locate-request`` to ask for a
+  // fix, and we broadcast the outcome on ``snowdesk:geolocate`` /
+  // ``snowdesk:geolocate-error`` so any listener can react without owning the
+  // MapLibre control.
+  document.addEventListener('snowdesk:locate-request', () => {
+    control.trigger();
+  });
+
+  control.on('geolocate', (e) => {
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:geolocate', {
+        detail: {
+          lat: e.coords.latitude,
+          lon: e.coords.longitude,
+          accuracy: e.coords.accuracy,
+        },
+      })
+    );
+  });
+
+  // The locate pill itself stays silent on failure (the map viewport simply
+  // doesn't move — least-surprising when the user declines or has no fix), but
+  // we still broadcast the error so a report flow in progress can surface it.
+  // GeolocationPositionError codes: 1 = permission denied, 2 = unavailable.
+  control.on('error', (e) => {
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:geolocate-error', {
+        detail: { code: e && e.code },
+      })
+    );
   });
 })();
 

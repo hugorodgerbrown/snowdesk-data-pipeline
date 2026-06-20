@@ -7,20 +7,23 @@
  *
  * Flow:
  *   1. User taps the floating #report-btn.
- *   2. We call navigator.geolocation.getCurrentPosition.
- *   3a. On success: fire an HTMX GET to report_form_url with lat/lon/accuracy
- *       as query parameters; open #report-sheet to show the form.
- *   3b. On denial/error: show a toast explaining that location is required
- *       and do NOT open the form (GPS gate — no fix, no form).
+ *   2. We reuse the page's single geolocation source — SNOW-328's MapLibre
+ *      GeolocateControl, owned by map.js — by dispatching
+ *      ``snowdesk:locate-request`` and awaiting the position it broadcasts on
+ *      ``snowdesk:geolocate`` (or ``snowdesk:geolocate-error``).
+ *   3a. On a fix: fire an HTMX GET to report_form_url with lat/lon/accuracy
+ *       as query parameters; the sheet (opened on tap) swaps to the form.
+ *   3b. On denial/error/timeout: show a toast explaining that location is
+ *       required and close the sheet (GPS gate — no fix, no form).
  *   4. The HTMX form POSTs to report_submit_url; on success HTMX swaps
  *       #report-sheet with the confirmation fragment.
  *   5. "Cancel" / "Close" buttons in the partials carry
  *      data-action="close-report-sheet" — we delegate to that from here.
  *
- * Secure-context note: navigator.geolocation is available on localhost
- * (treated as a secure context by all modern browsers) and on production
- * HTTPS. It is never available on plain HTTP origins, but Snowdesk is
- * HTTPS-only in production.
+ * Geolocation lives entirely in map.js's GeolocateControl (one permission
+ * grant, one accuracy circle); report.js never calls navigator.geolocation
+ * directly. The control needs a secure context — fine on localhost and on
+ * production HTTPS.
  */
 
 (function () {
@@ -92,54 +95,73 @@
   });
 
   // ---------------------------------------------------------------------------
-  // Geolocation → HTMX
+  // Geolocation (via SNOW-328's GeolocateControl) → HTMX
+  //
+  // We don't call navigator.geolocation here. On tap we ask map.js's control
+  // for a fix (snowdesk:locate-request) and wait for the position it
+  // broadcasts (snowdesk:geolocate) or the error (snowdesk:geolocate-error).
   // ---------------------------------------------------------------------------
 
+  function loadForm(lat, lon, accuracy) {
+    const params = new URLSearchParams({ lat: lat, lon: lon });
+    if (accuracy != null) params.set('accuracy', accuracy);
+    htmx.ajax('GET', FORM_URL + '?' + params.toString(), {
+      target: '#report-sheet',
+      swap: 'innerHTML',
+    });
+  }
+
+  function errorMessage(code) {
+    if (code === 1) {
+      return 'Location access was denied. We need your location to record where you observed — it is only used while you are reporting.';
+    }
+    if (code === 2) {
+      return 'Your location is currently unavailable. Please try again outdoors.';
+    }
+    return 'Could not get your location. Please try again.';
+  }
+
+  // Guard against re-entrant taps while a fix is pending.
+  let locating = false;
+
   btn.addEventListener('click', function () {
-    if (!navigator.geolocation) {
-      showToast('Location is not supported by your browser.');
-      return;
+    if (locating) return;
+    locating = true;
+
+    // Open the sheet immediately with a locating state so the tap feels
+    // responsive while the control acquires a fix.
+    openSheet();
+    sheet.innerHTML = '<p class="py-4 text-center text-sm text-text-2">Finding your location…</p>';
+
+    function cleanup() {
+      locating = false;
+      clearTimeout(timer);
+      document.removeEventListener('snowdesk:geolocate', onLocate);
+      document.removeEventListener('snowdesk:geolocate-error', onError);
     }
 
-    navigator.geolocation.getCurrentPosition(
-      // Success callback.
-      function (position) {
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
-        const accuracy = position.coords.accuracy; // metres
+    function onLocate(event) {
+      cleanup();
+      const d = event.detail || {};
+      loadForm(d.lat, d.lon, d.accuracy);
+    }
 
-        const params = new URLSearchParams({ lat: lat, lon: lon });
-        if (accuracy != null) params.set('accuracy', accuracy);
+    function onError(event) {
+      cleanup();
+      closeSheet();
+      showToast(errorMessage(event.detail && event.detail.code));
+    }
 
-        const url = FORM_URL + '?' + params.toString();
+    document.addEventListener('snowdesk:geolocate', onLocate);
+    document.addEventListener('snowdesk:geolocate-error', onError);
 
-        // Load the report form into the sheet via HTMX.
-        // htmx.ajax fires a GET and swaps the response into the target element.
-        openSheet();
-        // Show a loading indicator inside the sheet.
-        sheet.innerHTML = '<p class="py-4 text-center text-sm text-text-2">Loading…</p>';
+    // Safety net: if the control never answers (failed to initialise, or the
+    // device hangs without a fix), don't leave the sheet stuck on "Finding…".
+    const timer = setTimeout(function () {
+      onError({ detail: { code: 3 } });
+    }, 20000);
 
-        htmx.ajax('GET', url, {
-          target: '#report-sheet',
-          swap: 'innerHTML',
-        });
-      },
-
-      // Error callback — GPS denied or unavailable.
-      function (error) {
-        let message;
-        if (error.code === error.PERMISSION_DENIED) {
-          message = 'Location access was denied. We need your location to record where you observed — it is only used while you are reporting.';
-        } else if (error.code === error.POSITION_UNAVAILABLE) {
-          message = 'Your location is currently unavailable. Please try again outdoors.';
-        } else {
-          message = 'Could not get your location. Please try again.';
-        }
-        showToast(message);
-      },
-
-      // Options — accept a cached fix up to 60 s old; time out after 10 s.
-      { maximumAge: 60000, timeout: 10000 }
-    );
+    // Ask SNOW-328's GeolocateControl (owned by map.js) for a fresh fix.
+    document.dispatchEvent(new CustomEvent('snowdesk:locate-request'));
   });
 }());
