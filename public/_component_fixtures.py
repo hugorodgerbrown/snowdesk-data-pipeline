@@ -1186,6 +1186,7 @@ def _make_rating_card(
     frequency_label: str | None = None,
     stability_label: str | None = None,
     danger_patterns: list[dict[str, str]] | None = None,
+    prose_mentions_spatial: bool = False,
 ) -> dict[str, Any]:
     """Build one rating-block card dict in the shape ``_rating_block.html`` expects."""
     return {
@@ -1208,6 +1209,7 @@ def _make_rating_card(
         "frequency_label": frequency_label,
         "stability_label": stability_label,
         "danger_patterns": danger_patterns or [],
+        "prose_mentions_spatial": prose_mentions_spatial,
     }
 
 
@@ -1345,14 +1347,13 @@ RATING_BLOCK_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
-        "caption": "Prose only — no structured terrain",
-        "solo": True,
+        "caption": "Wet snow · prose mentions scope",
         "context": {
             "card": _make_rating_card(
-                category="dry",
+                category="wet",
                 danger_level=2,
                 danger_level_key="moderate",
-                problem_type="new_snow",
+                problem_type="wet_snow",
                 time_period="all_day",
                 aspects=[],
                 elevation=_ElevationBounds(
@@ -1361,14 +1362,38 @@ RATING_BLOCK_VARIANTS: tuple[dict[str, Any], ...] = (
                     display="",
                     bound_type="",
                 ),
-                label="New snow",
+                label="Wet snow",
                 time_period_label="",
                 core_zone_text="",
+                prose_mentions_spatial=True,
                 comment_html=(
-                    "<p>Fresh snowfall overnight — additional loading on "
-                    "an already weak snowpack. Exercise caution at all "
-                    "elevations.</p>"
+                    "<p>Wet-snow slides likely on steep north-facing slopes "
+                    "between approximately 2000 and 2400 m.</p>"
                 ),
+            ),
+        },
+    },
+    {
+        "caption": "Wet snow · no spatial scope",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wet_snow",
+                time_period="all_day",
+                aspects=[],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="",
+                    display="",
+                    bound_type="",
+                ),
+                label="Wet snow",
+                time_period_label="",
+                core_zone_text="",
+                prose_mentions_spatial=False,
+                comment_html="<p>Moist snow slides expected as the day warms.</p>",
             ),
         },
     },

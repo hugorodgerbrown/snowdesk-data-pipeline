@@ -867,10 +867,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         label="Rating block",
         description=(
             "Problem card for the bulletin page — danger-band header, aspect/elevation "
-            "row, and prose comment. Seven variants cover every EAWS problem type at a "
+            "row, and prose comment. Eight variants cover every EAWS problem type at a "
             "representative danger level: new snow, wind slab, persistent weak layers, "
-            "cornices (dry), wet snow, gliding snow (wet), and a prose-only card with "
-            "no structured terrain."
+            "cornices (dry), wet snow, gliding snow (wet), plus two prose-only "
+            "empty-state variants — scope mentioned ('See description below') vs "
+            "no scope ('All aspects · all elevations')."
         ),
         kind="components",
         partial="public/_rating_block.html",
