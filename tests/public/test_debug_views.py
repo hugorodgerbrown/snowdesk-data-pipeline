@@ -391,6 +391,11 @@ class TestRatingBlockPanel:
         # The panel renders each variant twice (light + dark themes), so the
         # expected count is 11 structured cards × 2 theme passes = 22.
         assert body.count('data-testid="aspect-elevation-row"') == 22  # noqa: PLR2004
+        # The two prose-only variants drive the empty-state branches: one with
+        # prose_mentions_spatial=True (fallback row) and one without (all-scope
+        # row). Each renders once per theme pass, so both appear twice.
+        assert body.count('data-testid="aspect-elevation-fallback"') == 2  # noqa: PLR2004
+        assert body.count('data-testid="aspect-elevation-allscope"') == 2  # noqa: PLR2004
         # Verify the problem_type set is exactly the six we declared (both
         # prose-only variants use wet_snow, so the set collapses to 6).
         assert expected_problem_types == {
