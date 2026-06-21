@@ -393,7 +393,7 @@ class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation
     """Factory for FieldObservation instances.
 
     Defaults to a CH-alpine GPS fix (Martigny area) with observation_type
-    WHUMPFING.  Override any field as needed.
+    WHUMPFING and location_source GPS.  Override any field as needed.
     """
 
     class Meta:
@@ -407,5 +407,9 @@ class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation
     latitude = 46.10
     longitude = 7.10
     accuracy_radius_km = None
+    # Raw GPS fix — defaults to None (gps_lat/gps_lon not set separately).
+    gps_latitude = None
+    gps_longitude = None
+    location_source = FieldObservation.LOCATION_SOURCE.GPS
     observed_at = factory.LazyFunction(django_timezone.now)
     observation_type = FieldObservation.OBSERVATION_TYPE.WHUMPFING

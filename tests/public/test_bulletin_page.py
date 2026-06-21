@@ -5189,3 +5189,65 @@ class TestObservationCountsStrip:
         content = response.content.decode()
         # The section heading must not appear for historic pages.
         assert "Reported today" not in content
+
+    def test_user_located_footnote_shown_when_manual_report_exists(
+        self, client: Client
+    ) -> None:
+        """Footnote 'Some reports were placed manually' appears when a user-located
+        report exists for this region today.
+        """
+        from datetime import date as _date
+
+        from waffle.testutils import override_flag
+
+        region = MicroRegionFactory.create(
+            region_id="CH-9102", name="Footnote Region", slug="footnote-region"
+        )
+        today = _date.today()
+        _make_am_bulletin(region, today)
+
+        fake_counts = [("Whumpfing", 2)]
+
+        url = reverse("public:region_root", kwargs={"region_id": "ch-9102"})
+        with override_flag("field_observations", active=True):
+            with patch(
+                "public.views._get_observation_counts", return_value=fake_counts
+            ):
+                with patch(
+                    "public.views._get_observation_has_user_located", return_value=True
+                ):
+                    response = client.get(url)
+
+        assert response.status_code == 200
+        assert "Some reports were placed manually" in response.content.decode()
+
+    def test_user_located_footnote_absent_when_no_manual_reports(
+        self, client: Client
+    ) -> None:
+        """Footnote is absent when no user-located (MANUAL/GPS_REFINED) reports
+        exist for this region today.
+        """
+        from datetime import date as _date
+
+        from waffle.testutils import override_flag
+
+        region = MicroRegionFactory.create(
+            region_id="CH-9103", name="GPS Only Region", slug="gps-only-region"
+        )
+        today = _date.today()
+        _make_am_bulletin(region, today)
+
+        fake_counts = [("Whumpfing", 1)]
+
+        url = reverse("public:region_root", kwargs={"region_id": "ch-9103"})
+        with override_flag("field_observations", active=True):
+            with patch(
+                "public.views._get_observation_counts", return_value=fake_counts
+            ):
+                with patch(
+                    "public.views._get_observation_has_user_located", return_value=False
+                ):
+                    response = client.get(url)
+
+        assert response.status_code == 200
+        assert "Some reports were placed manually" not in response.content.decode()

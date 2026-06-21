@@ -3,19 +3,23 @@
 observations/partials/_report_form.html — Field-report form partial.
 
 Rendered by ``observations.views.report_form`` (GET) and loaded into the
-report sheet on the map page by report.js after a GPS fix is obtained.
+report sheet on the map page by report.js.
 
 One-tap UX: each problem button is a submit button with its own value.
 Tapping a button immediately submits the form with that single
 observation_type — no multi-select, no separate "Submit" button.
 
 Context:
-    region     : MicroRegion | None — best-effort match from GPS fix.
-    lat        : str — latitude string from GPS fix.
-    lon        : str — longitude string from GPS fix.
-    accuracy_m : str | None — accuracy in metres from GPS fix.
-    problems   : list[tuple[str, str]] — (value, label) pairs from OBSERVATION_TYPE.
-    submit_url : str — URL for the POST endpoint.
+    region          : MicroRegion | None — best-effort match from report location.
+    lat             : float | None — report latitude (None on MANUAL pending path).
+    lon             : float | None — report longitude (None on MANUAL pending path).
+    accuracy_m      : str | None — accuracy in metres from GPS fix.
+    has_coords      : bool — True when lat/lon are present (GPS or GPS_REFINED).
+    location_source : str — one of GPS, GPS_REFINED, MANUAL.
+    gps_lat         : float | None — raw device GPS latitude (None on MANUAL path).
+    gps_lon         : float | None — raw device GPS longitude (None on MANUAL path).
+    problems        : list[tuple[str, str]] — (value, label) pairs from OBSERVATION_TYPE.
+    submit_url      : str — URL for the POST endpoint.
 {% endcomment %}
 <form
     id="report-form"
@@ -26,15 +30,37 @@ Context:
     aria-label='{% trans "Field observation report" %}'
 >
     {% csrf_token %}
-    <input type="hidden" name="lat" value="{{ lat }}">
-    <input type="hidden" name="lon" value="{{ lon }}">
+    <input type="hidden" name="lat" value="{{ lat|default:'' }}">
+    <input type="hidden" name="lon" value="{{ lon|default:'' }}">
     {% if accuracy_m %}<input type="hidden" name="accuracy_m" value="{{ accuracy_m }}">{% endif %}
+    <input type="hidden" name="location_source" value="{{ location_source }}">
+    {% if gps_lat is not None %}<input type="hidden" name="gps_lat" value="{{ gps_lat }}">{% endif %}
+    {% if gps_lon is not None %}<input type="hidden" name="gps_lon" value="{{ gps_lon }}">{% endif %}
 
-    <div class="text-sm text-text-2">
-        {% if region %}
-            {% blocktrans with name=region.name %}We think you're in <strong>{{ name }}</strong>.{% endblocktrans %}
-        {% else %}
-            {% trans "We couldn't match your location to a known region." %}
+    <div class="flex items-start justify-between gap-2 text-sm">
+        <span class="text-text-2">
+            {% if has_coords %}
+                {% if location_source == "GPS" or location_source == "GPS_REFINED" %}
+                    {% trans "Using current GPS location" %}
+                {% endif %}
+                {% if region %}
+                    &mdash; {% blocktrans with name=region.name %}We think you're in <strong
+                        >{{ name }}</strong>.{% endblocktrans %}
+                {% else %}
+                    &mdash; {% trans "We couldn't match your location to a known region." %}
+                {% endif %}
+            {% else %}
+                {% trans "GPS not available — choose a location on the map" %}
+            {% endif %}
+        </span>
+        {% if has_coords %}
+            <button
+                type="button"
+                class="shrink-0 text-xs font-medium text-text-3 underline hover:text-text-1"
+                data-action="refine-location"
+            >
+                {% trans "Refine location" %}
+            </button>
         {% endif %}
     </div>
 
@@ -45,7 +71,10 @@ Context:
                 type="submit"
                 name="observation_type"
                 value="{{ value }}"
-                class="rounded-tag border border-border bg-card px-3 py-2 text-sm text-text-1 text-left hover:border-status-info-text hover:bg-status-info-bg transition-colors"
+                {% if not has_coords %}
+                    disabled
+                {% endif %}
+                class="rounded-tag border border-border bg-card px-3 py-2 text-sm text-text-1 text-left hover:border-status-info-text hover:bg-status-info-bg transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
                 {{ label }}
             </button>

@@ -1238,6 +1238,34 @@ def _get_observation_counts(
     return result
 
 
+def _get_observation_has_user_located(
+    request: HttpRequest,
+    region: "MicroRegion",
+    day: datetime.date,
+) -> bool:
+    """Return True if any user-located report exists for region on day.
+
+    Guards behind the ``field_observations`` waffle flag and behind ``is_today``
+    (only the calling site invokes this on today's bulletin page).  Returns
+    False when the flag is inactive — zero overhead on historic pages.
+
+    Args:
+        request: The current HTTP request (used for waffle flag lookup).
+        region: The MicroRegion to check.
+        day: The calendar day to check.
+
+    Returns:
+        True when at least one MANUAL or GPS_REFINED report exists for the
+        region on the given day and the flag is active.
+
+    """
+    if not waffle.flag_is_active(request, "field_observations"):
+        return False
+    from observations.models import FieldObservation  # noqa: PLC0415
+
+    return FieldObservation.objects.user_located_exists_for_region_day(region, day)
+
+
 def map_view(request: HttpRequest) -> HttpResponse:
     """
     Render the interactive region-choropleth map page.
@@ -2916,6 +2944,15 @@ def _bulletin_detail_response(
         _get_observation_counts(request, region, page_date) if is_today else []
     )
 
+    # SNOW-330: whether any user-located (MANUAL or GPS_REFINED) report exists
+    # for this region today.  Drives the public footnote under the counts strip.
+    # Only fetched when flag is active and page is today.
+    observation_has_user_located: bool = (
+        _get_observation_has_user_located(request, region, page_date)
+        if is_today
+        else False
+    )
+
     # Emit bulletin_viewed (no-ops silently on /examples/* paths).
     _track_bulletin_viewed(request, region, selected, panel)
 
@@ -3027,6 +3064,10 @@ def _bulletin_detail_response(
         # SNOW-324: per-type field-observation counts for the current-day
         # bulletin page.  Empty dict on historic pages (flag off or not today).
         "observation_counts": observation_counts,
+        # SNOW-330: True when any user-located (MANUAL/GPS_REFINED) report
+        # exists for this region today.  Drives a public footnote under the
+        # counts strip.  False on historic pages or when flag is inactive.
+        "observation_has_user_located": observation_has_user_located,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 

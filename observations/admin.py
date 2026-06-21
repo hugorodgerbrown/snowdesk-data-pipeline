@@ -27,13 +27,16 @@ class FieldObservationAdmin(admin.ModelAdmin):
         "subscriber",
         "region",
         "observation_type",
+        "location_source",
         "observed_at",
         "latitude",
         "longitude",
+        "gps_latitude",
+        "gps_longitude",
         "accuracy_radius_km",
         "created_at",
     ]
-    list_filter = ["region", "observation_type", "observed_at"]
+    list_filter = ["region", "observation_type", "location_source", "observed_at"]
     search_fields = ["subscriber__user__email", "region__name", "region__region_id"]
     ordering = ["-observed_at"]
     readonly_fields = [
@@ -44,6 +47,9 @@ class FieldObservationAdmin(admin.ModelAdmin):
         "latitude",
         "longitude",
         "accuracy_radius_km",
+        "gps_latitude",
+        "gps_longitude",
+        "location_source",
         "observed_at",
         "observation_type",
         "created_at",
