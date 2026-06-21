@@ -385,7 +385,7 @@ class TestPasskeyCredentialModel:
     def test_str_returns_email_and_name(self) -> None:
         passkey = PasskeyCredentialFactory.create(name="My passkey")
         assert "My passkey" in str(passkey)
-        assert passkey.subscriber.user.email in str(passkey)
+        assert passkey.user.email in str(passkey)
 
     def test_to_string_matches_str(self) -> None:
         passkey = PasskeyCredentialFactory.create()
@@ -406,10 +406,10 @@ class TestPasskeyCredentialModel:
         with pytest.raises(IntegrityError):
             PasskeyCredentialFactory.create(credential_id="unique-cred")
 
-    def test_cascade_deletes_with_subscriber(self) -> None:
+    def test_cascade_deletes_with_user(self) -> None:
         passkey = PasskeyCredentialFactory.create()
         pk = passkey.pk
-        passkey.subscriber.delete()
+        passkey.user.delete()
         assert not PasskeyCredential.objects.filter(pk=pk).exists()
 
     def test_default_sign_count_is_zero(self) -> None:
@@ -456,12 +456,12 @@ class TestPasskeyCredentialModel:
 class TestPasskeyCredentialQuerySet:
     """Tests for PasskeyCredentialQuerySet custom methods."""
 
-    def test_for_subscriber_returns_correct_passkeys(self) -> None:
+    def test_for_user_returns_correct_passkeys(self) -> None:
         sub_a = SubscriberFactory.create()
         sub_b = SubscriberFactory.create()
-        pk_a = PasskeyCredentialFactory.create(subscriber=sub_a)
-        PasskeyCredentialFactory.create(subscriber=sub_b)
-        result = PasskeyCredential.objects.for_subscriber(sub_a)
+        pk_a = PasskeyCredentialFactory.create(user=sub_a.user)
+        PasskeyCredentialFactory.create(user=sub_b.user)
+        result = PasskeyCredential.objects.for_user(sub_a.user)
         assert list(result) == [pk_a]
 
     def test_by_credential_id_finds_exact_match(self) -> None:
@@ -484,5 +484,5 @@ class TestSubscriberHasPasskeys:
 
     def test_returns_true_when_passkey_exists(self) -> None:
         sub = SubscriberFactory.create()
-        PasskeyCredentialFactory.create(subscriber=sub)
+        PasskeyCredentialFactory.create(user=sub.user)
         assert sub.has_passkeys() is True

@@ -168,7 +168,7 @@ registered platform passkeys with delete buttons. A destructive
                         {% trans "Passkeys" %}
                     </h2>
 
-                    {% with passkeys=subscriber.passkeys.all %}
+                    {% with passkeys=request.user.passkeys.all %}
                         {% if just_confirmed and not passkeys %}
                             {# Prominent first-time registration prompt #}
                             {% card padding="px-5 py-4" extra="mb-4" %}
