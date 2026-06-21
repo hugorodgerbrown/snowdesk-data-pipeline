@@ -30,7 +30,9 @@ bulletins/       Everything that originates from provider APIs — the models
                  commands (see docs/management-commands.md), and their admin
                  classes
 subscriptions/   Signed-token subscription flow (see docs/subscriptions.md);
-                 also owns the custom ``Subscriber`` user model
+                 owns the ``Subscriber`` profile model (OneToOne to auth.User,
+                 not AUTH_USER_MODEL itself) and ``PasskeyCredential`` (FK
+                 to auth.User — any authenticated user can register passkeys)
 public/          Public-facing bulletin site
   api.py         Plain JsonResponse endpoints consumed by the map page
   api_urls.py    URL routing for /api/ (namespace: api:)

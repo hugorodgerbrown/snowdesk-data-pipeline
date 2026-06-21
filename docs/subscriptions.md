@@ -2,7 +2,7 @@
 name: subscriptions
 description: Subscriber/Subscription models, signed-token flow (TimestampSigner salts), A=B byte-equality invariant, rate limits
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-06-21
 ---
 
 # Subscriptions
@@ -59,12 +59,12 @@ Production uses `DatabaseCache` (`LOCATION = "django_cache"`) so rate-limit coun
 
 **Account page** — `account_view` is dual-purpose: the first click on a pending subscriber's link flips `status → active` and stamps `confirmed_at`; re-clicks within the 24h window are idempotent (no double-stamp). Stores `subscriber_uuid` in the session so the manage page skips the email-entry step for the same browser session.
 
-**Passkeys (WebAuthn)** — returning subscribers can sign in without an email round-trip:
+**Passkeys (WebAuthn)** — users can sign in without an email round-trip:
 
-- `PasskeyCredential` (`subscriptions/models.py`) — one row per registered passkey per device; stores the base64url `credential_id`, raw COSE `public_key` bytes, `sign_count` (clone detection), `aaguid`, and `device_type` (`platform` / `cross-platform`). FK to `Subscriber`, `on_delete=CASCADE`.
+- `PasskeyCredential` (`subscriptions/models.py`) — one row per registered passkey per device; stores the base64url `credential_id`, raw COSE `public_key` bytes, `sign_count` (clone detection), `aaguid`, and `device_type` (`platform` / `cross-platform`). FK to `auth.User` (`on_delete=CASCADE`). Any authenticated `auth.User` — including staff/superusers without a `Subscriber` profile — can register and use passkeys. The WebAuthn user handle is an unsalted SHA-256 digest of the user's primary key (stable, non-PII, within the 64-byte limit; see the SNOW-334 plan for the full rationale).
 - `/subscribe/sign-in/` (`sign_in`) — GET renders the email form with passkey conditional UI; POST (rate-limited 3/min) always returns the same "check your inbox" response whether or not the email is known.
-- JSON API endpoints (`subscriptions/views_passkey.py`): `/subscribe/webauthn/auth-request/` (GET, challenge), `/subscribe/webauthn/auth-response/` (POST, verifies `navigator.credentials.get()` and logs in via Django auth; 10/min), `/subscribe/webauthn/register-request/` (GET), `/subscribe/webauthn/register-response/` (POST, persists the new credential; 10/min).
-- `/subscribe/manage/passkeys/<uuid>/delete/` (`passkey_delete`) — HTMX POST, hard-deletes one passkey for the authenticated subscriber (5/min).
+- JSON API endpoints (`subscriptions/views_passkey.py`): `/subscribe/webauthn/auth-request/` (GET, challenge), `/subscribe/webauthn/auth-response/` (POST, verifies `navigator.credentials.get()` and logs the `auth.User` in via Django auth; 10/min), `/subscribe/webauthn/register-request/` (GET, requires `request.user.is_authenticated`), `/subscribe/webauthn/register-response/` (POST, persists the new credential; 10/min).
+- `/subscribe/manage/passkeys/<uuid>/delete/` (`passkey_delete`) — HTMX POST, hard-deletes one passkey for the authenticated user (scoped to `user=request.user`; 5/min).
 - Signed account-access tokens remain the fallback (and bootstrap) path: a subscriber registers a passkey only after first authenticating via an emailed account link, and unsubscribe tokens are unaffected.
 - Server config: `WEBAUTHN_RP_ID` / `WEBAUTHN_RP_NAME` / `WEBAUTHN_ORIGIN` env vars (see `render.yaml`).
 
