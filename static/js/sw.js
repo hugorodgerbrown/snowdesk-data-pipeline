@@ -34,15 +34,34 @@
  *     date) window via query parameters — a stale entry can never be
  *     served for the wrong day, since date rollover changes the URL.
  *
+ * Update contract (the important part)
+ * -------------------------------------
+ * The goal is a contract a non-technical user can rely on: *if there is
+ * an update, you see one "Reload" message; if there is no message, you
+ * are already on the latest version.* No silent swaps, no stale tab that
+ * never catches up.
+ *
+ * To make that true the worker does NOT call ``skipWaiting()`` on
+ * install. A freshly-installed worker sits in the "waiting" state — that
+ * waiting worker IS the pending update, and ``sw_register.js`` shows the
+ * banner for exactly that condition. The worker only activates when the
+ * page tells it to, by posting ``{ type: 'SKIP_WAITING' }`` (the user
+ * clicked "Reload"). On ``activate`` it then calls ``clients.claim()`` so
+ * it takes control of every open tab immediately; that fires
+ * ``controllerchange`` in the page, which does ONE guarded reload onto
+ * the new shell. Because activation is user-driven, claiming here cannot
+ * reproduce the dev reload-loop the previous design hit — that loop
+ * required auto-skipWaiting on install, which we no longer do.
+ *
  * Cache version
  * -------------
- * Bump ``CACHE_VERSION`` whenever the cache contract changes (e.g. a
- * new asset class added, or a rule that would cause stale entries to
- * be re-served incorrectly under the new fetch logic). On
- * ``activate``, every cache key not matching the current version is
- * deleted so old SW deploys leave nothing behind. The version is also
- * surfaced via a ``message`` handler so devtools can confirm which SW
- * version is in control.
+ * Bump ``CACHE_VERSION`` whenever the shell changes — a new version
+ * string changes the bytes of this script, which is what makes the
+ * browser detect the update and surface the banner. On ``activate``,
+ * every cache key not matching the current version is deleted so old SW
+ * deploys leave nothing behind. The version is also surfaced via a
+ * ``message`` handler so devtools can confirm which SW version is in
+ * control.
  *
  * Scope
  * -----
@@ -56,7 +75,7 @@
 
 'use strict';
 
-const CACHE_VERSION = 'snowdesk-shell-v7';
+const CACHE_VERSION = 'snowdesk-shell-v8';
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
@@ -130,9 +149,11 @@ self.addEventListener('install', (event) => {
       await cache.addAll(PRECACHE_URLS);
     })(),
   );
-  // Skip the "waiting" phase so the new SW takes over on the next
-  // page load without forcing the user to close every open tab.
-  self.skipWaiting();
+  // Deliberately NOT calling self.skipWaiting() here. The new worker
+  // stays "waiting" until the page posts SKIP_WAITING (the user clicked
+  // "Reload" on the update banner). A waiting worker is exactly what the
+  // banner means by "an update is available" — activating silently would
+  // break that contract. See the message handler below.
 });
 
 // ---------------------------------------------------------------------------
@@ -157,12 +178,16 @@ self.addEventListener('activate', (event) => {
         .filter((name) => name !== CACHE_VERSION)
         .map((name) => caches.delete(name));
       await Promise.all(deletions);
-      // Deliberately NOT calling ``self.clients.claim()`` — pairing it
-      // with ``skipWaiting`` and a controllerchange-based auto-reload in
-      // ``sw_register.js`` produces a tight reload loop in dev, where the
-      // browser-side SW update check fires on every navigation. Letting
-      // the new SW take control on the next natural navigation gives the
-      // same end-state without the loop.
+      // Take control of every open client the moment we activate. This is
+      // safe now precisely because we no longer auto-skipWaiting on
+      // install: activation only happens after the user opts into the
+      // update (SKIP_WAITING) or after every tab has closed, so claiming
+      // can't drive the dev reload-loop the old design avoided. Claiming
+      // fires ``controllerchange`` in the page, which sw_register.js turns
+      // into exactly one reload onto the new shell — guaranteeing the tab
+      // actually moves to the new version rather than lingering on the old
+      // worker.
+      await self.clients.claim();
     })(),
   );
 });
@@ -270,6 +295,12 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('message', (event) => {
   if (event.data === 'version') {
     event.source?.postMessage({ type: 'version', version: CACHE_VERSION });
+  }
+  // The page sends this when the user clicks "Reload" on the update
+  // banner. Activating the waiting worker triggers ``activate`` (and its
+  // ``clients.claim()``), which hands control to this new shell.
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
   }
 });
 
