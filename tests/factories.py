@@ -302,14 +302,19 @@ class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):
 
 
 class PasskeyCredentialFactory(factory.django.DjangoModelFactory[PasskeyCredential]):
-    """Factory for PasskeyCredential instances."""
+    """Factory for PasskeyCredential instances.
+
+    Passkeys are keyed to auth.User (not to Subscriber), so the factory uses
+    UserFactory as its subfactory.  If you need a passkey for a subscriber,
+    pass ``user=subscriber.user`` at the call site.
+    """
 
     class Meta:
         """Factory metadata."""
 
         model = PasskeyCredential
 
-    subscriber = factory.SubFactory(SubscriberFactory)
+    user = factory.SubFactory(UserFactory)
     credential_id = factory.Sequence(lambda n: f"cred-id-{n:04d}")
     public_key = b"\x00" * 77
     sign_count = 0

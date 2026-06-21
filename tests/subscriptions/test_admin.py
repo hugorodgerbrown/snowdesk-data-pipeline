@@ -6,6 +6,7 @@ Covers:
   - That get_search_results finds subscribers via partial email search
     (icontains) through each of the three admins — verifying the SNOW-313
     acceptance criterion that email lookup goes via user__email.
+  - PasskeyCredentialAdmin search now goes via user__email (SNOW-334).
 """
 
 from typing import Any
@@ -25,6 +26,7 @@ from tests.factories import (
     PasskeyCredentialFactory,
     SubscriberFactory,
     SubscriptionFactory,
+    UserFactory,
 )
 
 
@@ -48,9 +50,9 @@ class TestAdminSearchFieldsConfig:
         assert "region__region_id" in admin.search_fields
 
     def test_passkey_credential_admin_search_fields(self) -> None:
-        """PasskeyCredentialAdmin.search_fields includes 'subscriber__user__email' and 'name'."""
+        """PasskeyCredentialAdmin.search_fields includes 'user__email' and 'name'."""
         admin = PasskeyCredentialAdmin(PasskeyCredential, AdminSite())
-        assert "subscriber__user__email" in admin.search_fields
+        assert "user__email" in admin.search_fields
         assert "name" in admin.search_fields
 
 
@@ -147,11 +149,15 @@ class TestPasskeyCredentialAdminSearch:
         return PasskeyCredentialAdmin(PasskeyCredential, AdminSite())
 
     def test_partial_subscriber_email_finds_passkey(self) -> None:
-        """Partial email fragment finds passkeys via subscriber__user__email icontains."""
-        sub = SubscriberFactory.create(user__email="alice@example.com")
-        passkey = PasskeyCredentialFactory.create(subscriber=sub)
-        other = SubscriberFactory.create(user__email="bob@example.com")
-        PasskeyCredentialFactory.create(subscriber=other)
+        """Partial email fragment finds passkeys via user__email icontains."""
+        user_alice = UserFactory.create(
+            email="alice@example.com", username="alice@example.com"
+        )
+        passkey = PasskeyCredentialFactory.create(user=user_alice)
+        user_bob = UserFactory.create(
+            email="bob@example.com", username="bob@example.com"
+        )
+        PasskeyCredentialFactory.create(user=user_bob)
 
         admin = self._admin()
         qs, _ = admin.get_search_results(
@@ -163,7 +169,9 @@ class TestPasskeyCredentialAdminSearch:
 
     def test_name_search_still_works(self) -> None:
         """A passkey name fragment still matches via search_fields."""
-        passkey = PasskeyCredentialFactory.create(name="My iPhone passkey")
+        passkey = PasskeyCredentialFactory.create(
+            user=UserFactory.create(), name="My iPhone passkey"
+        )
 
         admin = self._admin()
         qs, _ = admin.get_search_results(

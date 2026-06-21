@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-06-21
 ---
 
 # Glossary — domain terms to code symbols
@@ -74,10 +74,10 @@ L3 is deliberately skipped. All in `regions/models.py`.
 
 | Term | Meaning | Code |
 |------|---------|------|
-| Subscriber | The custom user model (`AUTH_USER_MODEL`) — email-keyed, pending/active status | `subscriptions/models.py` |
+| Subscriber | Profile model (`OneToOne` to `auth.User`) — tracks subscription lifecycle (pending/active) for an email that has opted in to bulletin alerts. `AUTH_USER_MODEL` is Django's built-in `auth.User`; `Subscriber` is a domain profile, not the user model | `subscriptions/models.py` |
 | Subscription | (Subscriber, MicroRegion) pair driving bulletin emails | `subscriptions/models.py` |
 | Signed token | `TimestampSigner` tokens for account access (expiring) and unsubscribe (permanent, encodes `email\|region_id`) | `subscriptions/services/token.py` |
-| PasskeyCredential | WebAuthn platform passkey for a subscriber | `subscriptions/models.py` |
+| PasskeyCredential | WebAuthn platform passkey for an `auth.User` (FK to `User`, not `Subscriber` — any authenticated user, including staff without a Subscriber profile, can register one) | `subscriptions/models.py` |
 | PushSubscription | Web Push endpoint (spike) | `subscriptions/models.py` |
 | BulletinShare / BulletinShareClick | Tokenised short share URL and its per-follow click log | `bulletins/models.py` |
 | RequestLog | Request-context snapshot (geo, UA, referer) captured at sign-up/sign-in/subscribe/share-click | `core/models.py` |

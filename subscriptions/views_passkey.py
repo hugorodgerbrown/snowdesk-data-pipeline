@@ -5,15 +5,19 @@ Provides five endpoints that back the browser's WebAuthn API calls:
 
   passkey_auth_request     GET  — return authentication options (challenge).
   passkey_auth_response    POST — verify navigator.credentials.get() response;
-                                  log the subscriber in via Django auth on success.
+                                  log the user in via Django auth on success.
   passkey_register_request GET  — return registration options (challenge).
   passkey_register_response POST — verify navigator.credentials.create() response;
                                    persist the new PasskeyCredential.
   passkey_delete           POST — hard-delete one PasskeyCredential for the
-                                  authenticated subscriber (HTMX).
+                                  authenticated user (HTMX).
 
 All WebAuthn endpoints consume and produce JSON.  The ``passkey_delete`` view
 returns empty 200; HTMX handles DOM removal via ``hx-swap="outerHTML"``.
+
+Registration and delete are gated on ``request.user.is_authenticated`` so any
+authenticated ``auth.User`` — including staff/superusers without a Subscriber
+profile — can manage passkeys.
 
 Rate limiting:
   passkey_auth_response:     10 requests/min per IP.
@@ -34,7 +38,7 @@ from django_ratelimit.decorators import ratelimit
 
 from core.decorators import require_htmx
 
-from .models import PasskeyCredential, Subscriber
+from .models import PasskeyCredential
 from .services.passkey import (
     PasskeyError,
     PasskeyUnknownCredentialError,
@@ -47,20 +51,6 @@ from .services.passkey import (
 logger = logging.getLogger(__name__)
 
 _TOKEN_BACKEND = "subscriptions.backends.TokenBackend"  # noqa: S105 — backend path, not a password
-
-
-def _get_subscriber(request: HttpRequest) -> Subscriber | None:
-    """Return the authenticated Subscriber profile from request.user, or None.
-
-    Returns None for anonymous users and for authenticated staff users who have
-    no Subscriber profile (e.g. superusers created via createsuperuser).
-    """
-    if not request.user.is_authenticated:
-        return None
-    try:
-        return request.user.subscriber
-    except Subscriber.DoesNotExist:
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +82,7 @@ def passkey_auth_request(request: HttpRequest) -> JsonResponse:
 @ratelimit(key="ip", rate="10/m", block=False)
 def passkey_auth_response(request: HttpRequest) -> JsonResponse:
     """
-    Verify a navigator.credentials.get() response and log the subscriber in.
+    Verify a navigator.credentials.get() response and log the user in.
 
     On success: calls ``django.contrib.auth.login()`` to establish the
     Django session and returns a JSON response containing ``{"ok": true}``.
@@ -122,7 +112,7 @@ def passkey_auth_response(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "invalid_json"}, status=400)
 
     try:
-        subscriber = _verify_auth_response(credential_json, request.session)
+        user = _verify_auth_response(credential_json, request.session)
     except PasskeyUnknownCredentialError as exc:
         return JsonResponse(
             {"error": "unknown_credential", "credentialId": exc.credential_id},
@@ -132,8 +122,8 @@ def passkey_auth_response(request: HttpRequest) -> JsonResponse:
         logger.info("Passkey auth failed: %s", exc)
         return JsonResponse({"error": "verification_failed"}, status=400)
 
-    login(request, subscriber.user, backend=_TOKEN_BACKEND)
-    logger.info("Subscriber pk=%s signed in via passkey", subscriber.pk)
+    login(request, user, backend=_TOKEN_BACKEND)
+    logger.info("User pk=%s signed in via passkey", user.pk)
     return JsonResponse({"ok": True})
 
 
@@ -147,7 +137,8 @@ def passkey_register_request(request: HttpRequest) -> JsonResponse:
     """
     Return WebAuthn registration options for navigator.credentials.create().
 
-    Requires authentication; returns 403 if unauthenticated.
+    Requires authentication; returns 403 if unauthenticated.  Any authenticated
+    auth.User (including staff without a Subscriber profile) may register a passkey.
 
     Args:
         request: Incoming GET request.
@@ -156,11 +147,10 @@ def passkey_register_request(request: HttpRequest) -> JsonResponse:
         JSON response containing PublicKeyCredentialCreationOptions, or 403.
 
     """
-    subscriber = _get_subscriber(request)
-    if subscriber is None:
+    if not request.user.is_authenticated:
         return JsonResponse({"error": "unauthenticated"}, status=403)
 
-    options = _gen_reg_opts(subscriber, request.session)
+    options = _gen_reg_opts(request.user, request.session)
     return JsonResponse(options)
 
 
@@ -185,8 +175,7 @@ def passkey_register_response(request: HttpRequest) -> JsonResponse:
     if getattr(request, "limited", False):
         return JsonResponse({"error": "rate_limited"}, status=429)
 
-    subscriber = _get_subscriber(request)
-    if subscriber is None:
+    if not request.user.is_authenticated:
         return JsonResponse({"error": "unauthenticated"}, status=403)
 
     credential_json = request.body.decode("utf-8")
@@ -195,11 +184,11 @@ def passkey_register_response(request: HttpRequest) -> JsonResponse:
 
     try:
         passkey = verify_and_save_registration(
-            credential_json, request.session, subscriber
+            credential_json, request.session, request.user
         )
     except PasskeyError as exc:
         logger.info(
-            "Passkey registration failed for subscriber pk=%s: %s", subscriber.pk, exc
+            "Passkey registration failed for user pk=%s: %s", request.user.pk, exc
         )
         return JsonResponse({"error": str(exc)}, status=400)
 
@@ -225,7 +214,7 @@ def passkey_register_response(request: HttpRequest) -> JsonResponse:
 @ratelimit(key="ip", rate="5/m", block=False)
 def passkey_delete(request: HttpRequest, passkey_uuid: str) -> HttpResponse:
     """
-    Hard-delete a specific PasskeyCredential for the authenticated subscriber.
+    Hard-delete a specific PasskeyCredential for the authenticated user.
 
     Returns an empty 200 so HTMX can remove the credential card from the DOM
     via ``hx-swap="outerHTML"``.
@@ -244,19 +233,18 @@ def passkey_delete(request: HttpRequest, passkey_uuid: str) -> HttpResponse:
     if getattr(request, "limited", False):
         return HttpResponse(status=429)
 
-    subscriber = _get_subscriber(request)
-    if subscriber is None:
+    if not request.user.is_authenticated:
         return HttpResponse(status=403)
 
     passkey = get_object_or_404(
         PasskeyCredential,
         uuid=passkey_uuid,
-        subscriber=subscriber,
+        user=request.user,
     )
     passkey.delete()
     logger.info(
-        "Subscriber pk=%s deleted passkey %s",
-        subscriber.pk,
+        "User pk=%s deleted passkey %s",
+        request.user.pk,
         passkey_uuid,
     )
     return HttpResponse(status=200)

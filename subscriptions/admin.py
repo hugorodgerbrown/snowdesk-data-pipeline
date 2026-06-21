@@ -6,17 +6,20 @@ and PushSubscription records so that operators can inspect and manage newsletter
 subscriptions, registered passkeys, and Web Push subscriptions without direct
 database access.
 
-User accounts (auth.User) are managed via the standard Django UserAdmin
-registered by django.contrib.auth's own admin, so that staff password
-management works — this module does not re-register it.  SubscriberAdmin is a
-plain ModelAdmin that surfaces the subscription lifecycle fields (status,
-confirmed_at) and exposes the linked User's email as a read-only display field.
+``PasskeyCredential`` has a FK to ``auth.User``, so its inline appears on a
+custom ``UserAdmin`` (not on ``SubscriberAdmin``).  This module unregisters the
+default ``User`` admin and registers a custom subclass with ``PasskeyCredentialInline``
+attached.
+
+``SubscriberAdmin`` retains the ``SubscriptionInline``; passkeys are now on
+``UserAdmin``.
 """
 
 import logging
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import UserAdmin as _BaseUserAdmin
 
 from .models import PasskeyCredential, PushSubscription, Subscriber, Subscription
 
@@ -35,7 +38,7 @@ class SubscriptionInline(admin.TabularInline):
 
 
 class PasskeyCredentialInline(admin.TabularInline):
-    """Inline display of registered passkeys on the Subscriber admin page."""
+    """Inline display of registered passkeys on the User admin page."""
 
     model = PasskeyCredential
     extra = 0
@@ -105,7 +108,23 @@ class SubscriberAdmin(admin.ModelAdmin):
         "confirmed_at",
         "acquisition_request",
     ]
-    inlines = [SubscriptionInline, PasskeyCredentialInline]
+    inlines = [SubscriptionInline]
+
+
+class SnowdeskUserAdmin(_BaseUserAdmin):
+    """Custom UserAdmin that exposes registered passkeys as an inline.
+
+    Passkeys are keyed to auth.User (not to Subscriber), so the inline belongs
+    here rather than on SubscriberAdmin.  All other UserAdmin behaviour is
+    inherited unchanged.
+    """
+
+    inlines = [PasskeyCredentialInline]
+
+
+# Replace the default UserAdmin with our custom one so passkeys are visible.
+admin.site.unregister(User)
+admin.site.register(User, SnowdeskUserAdmin)
 
 
 @admin.register(Subscription)
@@ -153,7 +172,7 @@ class PasskeyCredentialAdmin(admin.ModelAdmin):
     """Admin view for PasskeyCredential."""
 
     list_display = [
-        "subscriber",
+        "user",
         "name",
         "device_type",
         "backed_up",
@@ -161,8 +180,8 @@ class PasskeyCredentialAdmin(admin.ModelAdmin):
         "created_at",
     ]
     list_filter = ["device_type", "backed_up"]
-    list_select_related = ["subscriber", "subscriber__user"]
-    search_fields = ["subscriber__user__email", "name"]
+    list_select_related = ["user"]
+    search_fields = ["user__email", "name"]
     readonly_fields = [
         "uuid",
         "credential_id",

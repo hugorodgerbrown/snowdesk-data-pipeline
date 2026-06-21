@@ -10,7 +10,7 @@ Defines the following concrete models:
   User.email; ``Subscriber`` carries only domain-specific fields.
 - Subscription: links a Subscriber to a specific MicroRegion so that
   notifications can be scoped to the regions the subscriber cares about.
-- PasskeyCredential: a WebAuthn platform passkey registered by a Subscriber,
+- PasskeyCredential: a WebAuthn platform passkey registered by a User,
   storing the FIDO2 public key and metadata needed to verify future sign-ins.
 - PushSubscription: a Web Push (VAPID) subscription for a Subscriber.
 
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -28,6 +29,9 @@ from django.db import models
 
 from core.models import BaseModel
 from subscriptions.aaguids import lookup as _aaguid_lookup
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +207,7 @@ class Subscriber(BaseModel):
 
     def has_passkeys(self) -> bool:
         """Return True if this subscriber has at least one registered passkey."""
-        return self.passkeys.exists()
+        return self.user.passkeys.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -327,9 +331,9 @@ class Subscription(models.Model):
 class PasskeyCredentialQuerySet(models.QuerySet["PasskeyCredential"]):
     """Custom queryset for PasskeyCredential."""
 
-    def for_subscriber(self, subscriber: Subscriber) -> PasskeyCredentialQuerySet:
-        """Return all passkeys belonging to the given subscriber."""
-        return self.filter(subscriber=subscriber)
+    def for_user(self, user: "User") -> PasskeyCredentialQuerySet:
+        """Return all passkeys belonging to the given auth.User."""
+        return self.filter(user=user)
 
     def by_credential_id(self, credential_id: str) -> PasskeyCredentialQuerySet:
         """Return passkeys matching the given base64url credential ID."""
@@ -338,10 +342,10 @@ class PasskeyCredentialQuerySet(models.QuerySet["PasskeyCredential"]):
 
 class PasskeyCredential(models.Model):
     """
-    A WebAuthn platform passkey registered by a Subscriber.
+    A WebAuthn platform passkey registered by a User (auth.User).
 
     Stores the FIDO2 public key and metadata needed to verify future sign-ins.
-    A subscriber may register multiple passkeys — one per device.
+    A user may register multiple passkeys — one per device.
 
     ``credential_id`` is the base64url-encoded credential identifier returned
     by the browser's WebAuthn API and is used as the lookup key during
@@ -364,8 +368,8 @@ class PasskeyCredential(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    subscriber = models.ForeignKey(
-        Subscriber,
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="passkeys",
     )
@@ -413,7 +417,7 @@ class PasskeyCredential(models.Model):
 
     def to_string(self) -> str:
         """Return a human-readable representation."""
-        return f"{self.subscriber.user.email} — {self.display_name}"
+        return f"{self.user.email} — {self.display_name}"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""

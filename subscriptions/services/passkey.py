@@ -6,7 +6,7 @@ Wraps the py_webauthn library to provide four high-level operations:
   generate_registration_options   Build creation options for credentials.create().
   verify_and_save_registration    Verify the response and persist PasskeyCredential.
   generate_authentication_options Build request options for credentials.get().
-  verify_authentication_response  Verify the response and return the Subscriber.
+  verify_authentication_response  Verify the response and return the auth.User.
 
 Challenges are stored in the Django session between the "generate" and
 "verify" steps; each session key is cleared after use to prevent replay.
@@ -17,6 +17,7 @@ python-decouple).  See WEBAUTHN_RP_ID / WEBAUTHN_RP_NAME / WEBAUTHN_ORIGIN.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import uuid as _uuid
@@ -24,6 +25,7 @@ from typing import Any, cast
 
 import webauthn
 from django.conf import settings
+from django.contrib.auth.models import User
 from django.contrib.sessions.backends.base import SessionBase
 from django.utils import timezone
 from webauthn.authentication.verify_authentication_response import (
@@ -39,7 +41,7 @@ from webauthn.helpers.structs import (
 )
 from webauthn.registration.verify_registration_response import VerifiedRegistration
 
-from subscriptions.models import PasskeyCredential, Subscriber
+from subscriptions.models import PasskeyCredential
 
 logger = logging.getLogger(__name__)
 
@@ -81,18 +83,20 @@ def _origin() -> str:
 # ---------------------------------------------------------------------------
 
 
-def generate_registration_options(
-    subscriber: Subscriber, session: SessionBase
-) -> dict[str, Any]:
+def generate_registration_options(user: User, session: SessionBase) -> dict[str, Any]:
     """
-    Generate WebAuthn credential creation options for the given subscriber.
+    Generate WebAuthn credential creation options for the given auth.User.
 
-    Populates ``exclude_credentials`` from the subscriber's existing passkeys
+    Populates ``exclude_credentials`` from the user's existing passkeys
     so the browser can prevent duplicate registrations on the same device.
     Stores the challenge in the session for later verification.
 
+    The WebAuthn user handle is an unsalted SHA-256 digest of the user's
+    primary key (stable, non-PII, within the 64-byte limit).  See the
+    "User handle decision" in the SNOW-334 plan for the full rationale.
+
     Args:
-        subscriber: The authenticated subscriber requesting registration.
+        user: The authenticated auth.User requesting registration.
         session: The Django session store to persist the challenge.
 
     Returns:
@@ -101,15 +105,15 @@ def generate_registration_options(
     """
     existing = [
         PublicKeyCredentialDescriptor(id=base64url_to_bytes(pk.credential_id))
-        for pk in subscriber.passkeys.all()
+        for pk in user.passkeys.all()
     ]
 
     options = webauthn.generate_registration_options(
         rp_id=_rp_id(),
         rp_name=_rp_name(),
-        user_id=str(subscriber.uuid).encode(),
-        user_name=subscriber.user.email,
-        user_display_name=subscriber.user.email,
+        user_id=hashlib.sha256(str(user.pk).encode()).digest(),
+        user_name=user.email,
+        user_display_name=user.email,
         authenticator_selection=AuthenticatorSelectionCriteria(
             authenticator_attachment=AuthenticatorAttachment.PLATFORM,
             resident_key=ResidentKeyRequirement.REQUIRED,
@@ -127,7 +131,7 @@ def generate_registration_options(
 def verify_and_save_registration(
     credential_json: str,
     session: SessionBase,
-    subscriber: Subscriber,
+    user: User,
 ) -> PasskeyCredential:
     """
     Verify a WebAuthn registration response and persist the new PasskeyCredential.
@@ -138,14 +142,14 @@ def verify_and_save_registration(
     Args:
         credential_json: The JSON string returned by navigator.credentials.create().
         session: The Django session store holding the challenge.
-        subscriber: The authenticated subscriber completing registration.
+        user: The authenticated auth.User completing registration.
 
     Returns:
         The newly created PasskeyCredential.
 
     Raises:
         PasskeyError: If the challenge is missing, verification fails, or the
-            credential ID is already registered to another subscriber.
+            credential ID is already registered to another user.
 
     """
     encoded_challenge = session.get(_SESSION_REG_CHALLENGE)
@@ -180,7 +184,7 @@ def verify_and_save_registration(
     name = _auto_name(aaguid, result.credential_backed_up)
 
     passkey = PasskeyCredential.objects.create(
-        subscriber=subscriber,
+        user=user,
         credential_id=credential_id,
         public_key=result.credential_public_key,
         sign_count=result.sign_count,
@@ -190,8 +194,8 @@ def verify_and_save_registration(
         backed_up=result.credential_backed_up,
     )
     logger.info(
-        "Passkey registered for subscriber pk=%s (device_type=%s)",
-        subscriber.pk,
+        "Passkey registered for user pk=%s (device_type=%s)",
+        user.pk,
         device_type,
     )
     return passkey
@@ -205,29 +209,29 @@ def verify_and_save_registration(
 def generate_authentication_options(
     session: SessionBase,
     *,
-    subscriber: Subscriber | None = None,
+    user: User | None = None,
 ) -> dict[str, Any]:
     """
     Generate WebAuthn credential request options.
 
-    When ``subscriber`` is provided the options include their specific
-    credential IDs (targeted authentication).  When omitted the options use
-    an empty ``allow_credentials`` list, enabling conditional UI / passkey
-    autofill — the browser presents all applicable passkeys to the user.
+    When ``user`` is provided the options include their specific credential IDs
+    (targeted authentication).  When omitted the options use an empty
+    ``allow_credentials`` list, enabling conditional UI / passkey autofill —
+    the browser presents all applicable passkeys to the user.
 
     Args:
         session: The Django session store to persist the challenge.
-        subscriber: Optional subscriber for targeted authentication.
+        user: Optional auth.User for targeted authentication.
 
     Returns:
         JSON-serialisable dict of PublicKeyCredentialRequestOptions.
 
     """
     allow_credentials: list[PublicKeyCredentialDescriptor] | None = None
-    if subscriber is not None:
+    if user is not None:
         allow_credentials = [
             PublicKeyCredentialDescriptor(id=base64url_to_bytes(pk.credential_id))
-            for pk in subscriber.passkeys.all()
+            for pk in user.passkeys.all()
         ]
 
     options = webauthn.generate_authentication_options(
@@ -244,20 +248,20 @@ def generate_authentication_options(
 def verify_authentication_response(
     credential_json: str,
     session: SessionBase,
-) -> Subscriber:
+) -> User:
     """
-    Verify a WebAuthn authentication response and return the authenticated Subscriber.
+    Verify a WebAuthn authentication response and return the authenticated User.
 
     Looks up the PasskeyCredential by credential ID from the response JSON,
     calls the py_webauthn verifier, updates ``sign_count`` and ``last_used_at``,
-    and returns the associated Subscriber.
+    and returns the associated auth.User.
 
     Args:
         credential_json: The JSON string returned by navigator.credentials.get().
         session: The Django session store holding the challenge.
 
     Returns:
-        The authenticated Subscriber.
+        The authenticated auth.User.
 
     Raises:
         PasskeyError: If the challenge is missing, credential is unknown,
@@ -276,7 +280,7 @@ def verify_authentication_response(
         raise PasskeyError("Malformed credential JSON.") from exc
 
     try:
-        passkey = PasskeyCredential.objects.select_related("subscriber").get(
+        passkey = PasskeyCredential.objects.select_related("user").get(
             credential_id=raw_id
         )
     except PasskeyCredential.DoesNotExist:
@@ -310,10 +314,10 @@ def verify_authentication_response(
     )
 
     logger.info(
-        "Passkey authentication successful for subscriber pk=%s",
-        passkey.subscriber_id,
+        "Passkey authentication successful for user pk=%s",
+        passkey.user_id,
     )
-    return passkey.subscriber
+    return passkey.user
 
 
 # ---------------------------------------------------------------------------
