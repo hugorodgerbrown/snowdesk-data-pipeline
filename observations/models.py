@@ -2,7 +2,7 @@
 observations/models.py — Database models for the observations application.
 
 Defines ``FieldObservation``: a field report submitted by an authenticated
-subscriber from the map page.  Each row captures the single observation type
+user from the map page.  Each row captures the single observation type
 selected (e.g. whumpfing, pinwheels), the report location (latitude,
 longitude, accuracy), the raw device GPS fix (when available), how the
 location was determined (``location_source``), the wall-clock time, and a
@@ -19,6 +19,7 @@ import datetime
 import logging
 from typing import TYPE_CHECKING
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -163,7 +164,7 @@ class FieldObservationManager(models.Manager["FieldObservation"]):
 
 
 class FieldObservation(BaseModel):
-    """A field observation submitted by a subscriber from the map.
+    """A field observation submitted by an authenticated user from the map.
 
     One row per report submission.  The ``observation_type`` CharField holds
     one ``OBSERVATION_TYPE`` value from the one-tap report form.
@@ -202,18 +203,18 @@ class FieldObservation(BaseModel):
         Values are UPPER_CASE identifiers; labels are in British English.
         ``GPS``         — raw device fix accepted without adjustment.
         ``GPS_REFINED`` — device fix obtained, then pin dragged by the user.
-        ``MANUAL``      — no GPS fix; subscriber tapped a point on the map.
+        ``MANUAL``      — no GPS fix; user tapped a point on the map.
         """
 
         GPS = "GPS", "GPS"
         GPS_REFINED = "GPS_REFINED", "GPS (refined)"
         MANUAL = "MANUAL", "Manual"
 
-    subscriber = models.ForeignKey(
-        "subscriptions.Subscriber",
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="field_observations",
-        help_text="Subscriber who submitted this report.",
+        help_text="User who submitted this report.",
     )
     region = models.ForeignKey(
         "regions.MicroRegion",
@@ -289,7 +290,7 @@ class FieldObservation(BaseModel):
         max_length=32,
         choices=OBSERVATION_TYPE.choices,
         help_text=(
-            "Single OBSERVATION_TYPE value reported by the subscriber "
+            "Single OBSERVATION_TYPE value reported by the user "
             "(e.g. WHUMPFING).  To report two problems, submit two reports."
         ),
     )
@@ -304,12 +305,12 @@ class FieldObservation(BaseModel):
     def to_string(self) -> str:
         """Return a concise human-readable description of this observation.
 
-        Format: ``"{subscriber} @ {region} on {date}: {type label}"``
+        Format: ``"{user} @ {region} on {date}: {type label}"``
         """
         region_label = self.region.name if self.region is not None else "unknown region"
         date_label = self.observed_at.strftime("%Y-%m-%d")
         type_label = self.get_observation_type_display()
-        return f"{self.subscriber} @ {region_label} on {date_label}: {type_label}"
+        return f"{self.user} @ {region_label} on {date_label}: {type_label}"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""

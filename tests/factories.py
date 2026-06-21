@@ -401,7 +401,7 @@ class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation
 
         model = FieldObservation
 
-    subscriber = factory.SubFactory(SubscriberFactory)
+    user = factory.SubFactory(UserFactory)
     region = factory.SubFactory(MicroRegionFactory)
     # WGS-84 coordinates inside Martigny / CH-4115 territory.
     latitude = 46.10

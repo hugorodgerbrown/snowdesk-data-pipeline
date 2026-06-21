@@ -3,7 +3,8 @@ tests/observations/test_admin.py — Admin registration smoke test for observati
 
 Verifies that FieldObservation is registered with Django admin and that the
 admin class has the expected configuration, including the SNOW-330 fields
-(location_source, gps_latitude, gps_longitude).
+(location_source, gps_latitude, gps_longitude) and the SNOW-333 user FK
+(replacing the old subscriber FK).
 """
 
 from __future__ import annotations
@@ -26,10 +27,15 @@ class TestFieldObservationAdminRegistration:
         registered = admin.site._registry[FieldObservation]
         assert isinstance(registered, FieldObservationAdmin)
 
-    def test_list_display_includes_subscriber(self) -> None:
-        """list_display includes subscriber for easy identification."""
+    def test_list_display_includes_user(self) -> None:
+        """list_display includes user for easy identification (SNOW-333)."""
         registered = admin.site._registry[FieldObservation]
-        assert "subscriber" in registered.list_display
+        assert "user" in registered.list_display
+
+    def test_list_display_excludes_subscriber(self) -> None:
+        """list_display no longer includes the old subscriber field (SNOW-333)."""
+        registered = admin.site._registry[FieldObservation]
+        assert "subscriber" not in registered.list_display
 
     def test_list_display_includes_observation_type(self) -> None:
         """list_display includes observation_type (singular)."""
@@ -52,10 +58,15 @@ class TestFieldObservationAdminRegistration:
         registered = admin.site._registry[FieldObservation]
         assert "location_source" in registered.list_filter
 
-    def test_readonly_fields_includes_subscriber(self) -> None:
-        """subscriber is read-only (no editing user-generated content)."""
+    def test_readonly_fields_includes_user(self) -> None:
+        """user is read-only (no editing user-generated content) (SNOW-333)."""
         registered = admin.site._registry[FieldObservation]
-        assert "subscriber" in registered.readonly_fields
+        assert "user" in registered.readonly_fields
+
+    def test_readonly_fields_excludes_subscriber(self) -> None:
+        """readonly_fields no longer references the old subscriber field (SNOW-333)."""
+        registered = admin.site._registry[FieldObservation]
+        assert "subscriber" not in registered.readonly_fields
 
     def test_readonly_fields_includes_coordinates(self) -> None:
         """latitude and longitude are read-only."""
@@ -73,3 +84,8 @@ class TestFieldObservationAdminRegistration:
         registered = admin.site._registry[FieldObservation]
         assert "gps_latitude" in registered.readonly_fields
         assert "gps_longitude" in registered.readonly_fields
+
+    def test_search_fields_includes_user_email(self) -> None:
+        """search_fields includes user__email for lookup by email (SNOW-333)."""
+        registered = admin.site._registry[FieldObservation]
+        assert "user__email" in registered.search_fields

@@ -24,7 +24,7 @@ class FieldObservationAdmin(admin.ModelAdmin):
     """
 
     list_display = [
-        "subscriber",
+        "user",
         "region",
         "observation_type",
         "location_source",
@@ -37,12 +37,12 @@ class FieldObservationAdmin(admin.ModelAdmin):
         "created_at",
     ]
     list_filter = ["region", "observation_type", "location_source", "observed_at"]
-    search_fields = ["subscriber__user__email", "region__name", "region__region_id"]
+    search_fields = ["user__email", "region__name", "region__region_id"]
     ordering = ["-observed_at"]
     readonly_fields = [
         "id",
         "uuid",
-        "subscriber",
+        "user",
         "region",
         "latitude",
         "longitude",
