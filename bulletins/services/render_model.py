@@ -122,9 +122,11 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Protocol
 
+from django.utils.html import strip_tags as _strip_tags
 from django.utils.translation import gettext_lazy as _
 
 import bulletins.services.prose.en  # noqa: F401 — registers "en" parser side-effect
@@ -203,6 +205,90 @@ _HARD_TO_READ_PROBLEMS: frozenset[str] = frozenset(
 )
 
 _TREELINE_TOKEN = "treeline"  # noqa: S105 — not a password; schema token
+
+# ---------------------------------------------------------------------------
+# Prose spatial detection (SNOW-263)
+# Regexes compiled once at module load for efficiency.  All matches are
+# case-insensitive on the stripped lower-cased text, except the
+# single-letter compass abbreviations which are matched against the
+# ORIGINAL case to avoid spurious hits from common lower-case words.
+# ---------------------------------------------------------------------------
+
+# Cardinal directions (north, south, east, west) and combinations.
+_RE_CARDINALS: re.Pattern[str] = re.compile(
+    r"\b(north|south|east|west)\b", re.IGNORECASE
+)
+# Compound compass abbreviations (NE, SE, SW, NW) — case-insensitive safe
+# because "ne" / "se" etc. do not appear as English words.
+_RE_COMPASS_COMPOUND: re.Pattern[str] = re.compile(r"\b(NE|SE|SW|NW)\b")
+# Single-letter compass abbreviations (N, S, E, W) as isolated tokens.
+# Matched against ORIGINAL-case text to avoid "e.g.", "a", etc.
+_RE_COMPASS_SINGLE: re.Pattern[str] = re.compile(r"\b[NSEW]\b")
+# Elevation tokens: a 3–4-digit number followed by m/metres/meters.
+_RE_ELEVATION_M: re.Pattern[str] = re.compile(
+    r"\b\d{3,4}\s?(m|metres|meters)\b", re.IGNORECASE
+)
+# Proximity words adjacent to a number (e.g. "above 2200 m", "below treeline").
+_RE_ELEVATION_ADJACENT: re.Pattern[str] = re.compile(
+    r"\b(above|below|between)\s+\d+", re.IGNORECASE
+)
+# Treeline vocabulary.
+_RE_TREELINE: re.Pattern[str] = re.compile(
+    r"\b(treeline|tree\s+line|timberline)\b", re.IGNORECASE
+)
+# Altitude / elevation vocabulary.
+_RE_ALTITUDE_VOCAB: re.Pattern[str] = re.compile(
+    r"\b(altitude|elevations?|aspects?)\b", re.IGNORECASE
+)
+
+
+_CASE_SENSITIVE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    _RE_COMPASS_COMPOUND,
+    _RE_COMPASS_SINGLE,
+)
+
+_CASE_INSENSITIVE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    _RE_CARDINALS,
+    _RE_ELEVATION_M,
+    _RE_ELEVATION_ADJACENT,
+    _RE_TREELINE,
+    _RE_ALTITUDE_VOCAB,
+)
+
+
+def detect_prose_spatial(comment_html: str) -> bool:
+    """
+    Return True when comment_html appears to describe spatial scope.
+
+    Strips HTML tags, then searches for cardinal directions, compass
+    abbreviations, elevation tokens (e.g. "2400 m"), treeline vocabulary,
+    altitude/elevation keywords, and aspect vocabulary.  The function is
+    biased toward false positives: returning True for an uncertain snippet
+    degrades gracefully to a "See description below" message, while a false
+    negative would wrongly assert "All aspects · all elevations".
+
+    The generic template "Moist snow slides expected as the day warms." must
+    return False (no direction, no number+m, no treeline, no altitude, no
+    aspect tokens).
+
+    Args:
+        comment_html: Raw HTML comment text from the problem card.
+
+    Returns:
+        True when any spatial token is detected.
+
+    """
+    if not comment_html:
+        return False
+    original = _strip_tags(comment_html)
+    plain = original.lower()
+    # Case-sensitive patterns run against original text so single-letter compass
+    # abbreviations (N, S, E, W) do not collide with common lower-case words.
+    if any(p.search(original) for p in _CASE_SENSITIVE_PATTERNS):
+        return True
+    # Case-insensitive patterns run against lower-cased plain text.
+    return any(p.search(plain) for p in _CASE_INSENSITIVE_PATTERNS)
+
 
 # ---------------------------------------------------------------------------
 # Title fallbacks — (category, time_period) → display string

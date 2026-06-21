@@ -88,6 +88,7 @@ from bulletins.services.render_model import (
     compute_day_character,
     compute_period_transition,
     derive_problem_family,
+    detect_prose_spatial,
 )
 from bulletins.services.weather_display import build_weather_display
 from bulletins.services.weather_fetcher import (
@@ -4309,6 +4310,7 @@ def _build_single_trait_card(
         "frequency_label": frequency_label,
         "stability_label": stability_label,
         "danger_patterns": normalised_patterns,
+        "prose_mentions_spatial": first.get("prose_mentions_spatial", False),
     }
 
 
@@ -4638,6 +4640,7 @@ def _enrich_render_model_problem(
         "field_guidance": field_guidance,
         "hide_comment": hide_comment,
         "danger_level_css": danger_level_css,
+        "prose_mentions_spatial": detect_prose_spatial(comment_html),
     }
 
 
