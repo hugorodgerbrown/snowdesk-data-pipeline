@@ -26,7 +26,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pytest_django.fixtures import SettingsWrapper
 
-from subscriptions.models import PasskeyCredential
+from subscriptions.models import PasskeyCredential, Subscriber
 from subscriptions.services.passkey import (
     PasskeyError,
     PasskeyUnknownCredentialError,
@@ -518,7 +518,7 @@ class TestStaffUserWithoutSubscriber:
         ):
             passkey = verify_and_save_registration("{}", session, user)
         assert passkey.user == user
-        assert not hasattr(user, "subscriber") or True  # no Subscriber required
+        assert not Subscriber.objects.filter(user=user).exists()
 
     def test_authentication_returns_staff_user(self) -> None:
         """verify_authentication_response returns the auth.User directly (no Subscriber hop)."""

@@ -82,7 +82,7 @@ def passkey_auth_request(request: HttpRequest) -> JsonResponse:
 @ratelimit(key="ip", rate="10/m", block=False)
 def passkey_auth_response(request: HttpRequest) -> JsonResponse:
     """
-    Verify a navigator.credentials.get() response and log the subscriber in.
+    Verify a navigator.credentials.get() response and log the user in.
 
     On success: calls ``django.contrib.auth.login()`` to establish the
     Django session and returns a JSON response containing ``{"ok": true}``.
