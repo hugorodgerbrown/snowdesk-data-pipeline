@@ -1398,6 +1398,137 @@ class TestRatingBlockGrouping:
 
 
 # ---------------------------------------------------------------------------
+# Test: prose-only empty-state three-way branches (SNOW-263)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestProseOnlyEmptyState:
+    """
+    Prose-only problems (no structured aspects or elevation) render one of
+    two empty-state rows depending on whether detect_prose_spatial fires:
+
+    - prose mentions scope  → data-testid="aspect-elevation-fallback"
+    - no spatial scope      → data-testid="aspect-elevation-allscope"
+    - structured data       → data-testid="aspect-elevation-row" (regression)
+    """
+
+    def test_structured_geography_shows_aspect_elevation_row(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Problem with aspects and elevation → the structured rose/chip row."""
+        day = date(2026, 3, 15)
+        rm = _render_model_with_traits(
+            [
+                _dry_trait_problems(
+                    [
+                        _problem(
+                            aspects=["N", "NE"],
+                            elevation={"lower": 2200, "upper": None, "treeline": False},
+                        )
+                    ]
+                )
+            ]
+        )
+        raw = _raw_data_with_problems([_raw_problem()])
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data=raw,
+        )
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="aspect-elevation-row"' in content
+        assert 'data-testid="aspect-elevation-fallback"' not in content
+        assert 'data-testid="aspect-elevation-allscope"' not in content
+
+    def test_prose_mentions_spatial_shows_fallback_row(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Prose-only problem whose comment mentions scope → 'See description below'."""
+        day = date(2026, 3, 15)
+        # comment_html includes north-facing and an elevation token so
+        # detect_prose_spatial returns True.
+        spatial_comment = (
+            "<p>Wet-snow slides likely on steep north-facing slopes "
+            "between approximately 2000 and 2400 m.</p>"
+        )
+        rm = _render_model_with_traits(
+            [
+                {
+                    "category": "wet",
+                    "time_period": "all_day",
+                    "title": "Wet avalanches",
+                    "geography": {"source": "prose_only"},
+                    "problems": [
+                        _problem_no_geo(
+                            problem_type="wet_snow", comment_html=spatial_comment
+                        )
+                    ],
+                    "prose": None,
+                    "danger_level": 2,
+                }
+            ]
+        )
+        raw = _raw_data_with_problems(
+            [_raw_problem_no_geo(problem_type="wet_snow", comment=spatial_comment)]
+        )
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data=raw,
+        )
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="aspect-elevation-fallback"' in content
+        assert "See description below" in content
+        assert 'data-testid="aspect-elevation-row"' not in content
+        assert 'data-testid="aspect-elevation-allscope"' not in content
+
+    def test_no_spatial_scope_shows_allscope_row(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Prose-only problem with generic comment → 'All aspects · all elevations'."""
+        day = date(2026, 3, 15)
+        # Generic no-scope template; detect_prose_spatial must return False.
+        generic_comment = "<p>Moist snow slides expected as the day warms.</p>"
+        rm = _render_model_with_traits(
+            [
+                {
+                    "category": "wet",
+                    "time_period": "all_day",
+                    "title": "Wet avalanches",
+                    "geography": {"source": "prose_only"},
+                    "problems": [
+                        _problem_no_geo(
+                            problem_type="wet_snow", comment_html=generic_comment
+                        )
+                    ],
+                    "prose": None,
+                    "danger_level": 2,
+                }
+            ]
+        )
+        raw = _raw_data_with_problems(
+            [_raw_problem_no_geo(problem_type="wet_snow", comment=generic_comment)]
+        )
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+            raw_data=raw,
+        )
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="aspect-elevation-allscope"' in content
+        assert "All aspects" in content
+        assert 'data-testid="aspect-elevation-row"' not in content
+        assert 'data-testid="aspect-elevation-fallback"' not in content
+
+
+# ---------------------------------------------------------------------------
 # Test: aggregation-driven card ordering and titles (SNOW-135)
 # ---------------------------------------------------------------------------
 
