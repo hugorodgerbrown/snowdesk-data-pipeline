@@ -2,12 +2,14 @@
 tests/observations/test_views.py — Tests for observations.views.
 
 Covers:
-  report_form   — flag off → 404; non-HTMX → 400; non-subscriber → 403;
+  report_form   — flag off → 404; non-HTMX → 400; anonymous → 403;
+                  authenticated user without Subscriber profile → 200;
                   no coords → 200 MANUAL state (GPS gate removed SNOW-330);
                   returns form with region banner;
                   returns form with "couldn't match" when no region;
                   returns form with "choose on map" status when no coords.
-  report_submit — flag off → 404; non-HTMX → 400; non-subscriber → 403;
+  report_submit — flag off → 404; non-HTMX → 400; anonymous → 403;
+                  authenticated user without Subscriber profile → 200 + creates row;
                   missing GPS → 400; missing/invalid location_source → 400;
                   missing/invalid observation_type → 400;
                   valid GPS submit → creates row + returns confirmation;
@@ -51,33 +53,31 @@ HTMX_HEADERS: dict[str, Any] = {"HTTP_HX_REQUEST": "true"}
 
 @pytest.mark.django_db
 class TestReportFormFlagGate:
-    """Flag-off → 404; non-subscriber → 403."""
+    """Flag-off → 404; anonymous → 403."""
 
     @override_flag("field_observations", active=False)
     def test_flag_off_returns_404(self, client: Client) -> None:
         """When field_observations flag is inactive, GET returns 404."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 404
 
     @override_flag("field_observations", active=True)
-    def test_flag_on_anonymous_gets_4xx(self, client: Client) -> None:
-        """Anonymous users are rejected (subscriber gate or flag evaluates False).
-
-        Waffle may return False for anonymous requests without a session;
-        either 403 or 404 is correct — the user is blocked.
-        """
-        response = client.get(FORM_URL, **HTMX_HEADERS)
-        assert response.status_code in (403, 404)
-
-    @override_flag("field_observations", active=True)
-    def test_flag_on_no_subscriber_profile_returns_403(self, client: Client) -> None:
-        """Staff user without Subscriber profile gets 403."""
-        user = UserFactory.create(is_staff=True)
-        client.force_login(user)
+    def test_flag_on_anonymous_gets_403(self, client: Client) -> None:
+        """Anonymous users are rejected with 403."""
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 403
+
+    @override_flag("field_observations", active=True)
+    def test_authenticated_user_without_subscriber_profile_gets_200(
+        self, client: Client
+    ) -> None:
+        """Authenticated user with no Subscriber profile gets 200 (SNOW-333)."""
+        user = UserFactory.create(is_staff=False)
+        client.force_login(user)
+        response = client.get(FORM_URL, **HTMX_HEADERS)
+        assert response.status_code == 200
 
 
 @pytest.mark.django_db
@@ -87,8 +87,8 @@ class TestReportFormHtmxGate:
     @override_flag("field_observations", active=True)
     def test_non_htmx_returns_400(self, client: Client) -> None:
         """A plain GET without HX-Request returns 400."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         # No HTMX_HEADERS — plain request.
         response = client.get(FORM_URL)
         assert response.status_code == 400
@@ -105,8 +105,8 @@ class TestReportFormNoCoords:
     @override_flag("field_observations", active=True)
     def test_missing_lat_lon_returns_200(self, client: Client) -> None:
         """No lat/lon query params → 200 with the MANUAL form state."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 200
         assert "report-form" in response.content.decode()
@@ -114,16 +114,16 @@ class TestReportFormNoCoords:
     @override_flag("field_observations", active=True)
     def test_missing_lon_returns_200(self, client: Client) -> None:
         """Only lat provided — treated as no valid fix → 200 MANUAL state."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.get(FORM_URL, {"lat": "46.1"}, **HTMX_HEADERS)
         assert response.status_code == 200
 
     @override_flag("field_observations", active=True)
     def test_unparseable_lat_returns_200(self, client: Client) -> None:
         """Non-float lat — treated as no valid fix → 200 MANUAL state."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.get(
             FORM_URL, {"lat": "not-a-number", "lon": "7.1"}, **HTMX_HEADERS
         )
@@ -132,8 +132,8 @@ class TestReportFormNoCoords:
     @override_flag("field_observations", active=True)
     def test_no_coords_form_shows_manual_status_text(self, client: Client) -> None:
         """Form without coords shows the 'choose on map' status message."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 200
         content = response.content.decode()
@@ -152,8 +152,8 @@ class TestReportFormManualInputsPresent:
     @override_flag("field_observations", active=True)
     def test_manual_form_contains_lat_input(self, client: Client) -> None:
         """Form rendered without coords (MANUAL state) contains name="lat"."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 200
         assert 'name="lat"' in response.content.decode()
@@ -161,8 +161,8 @@ class TestReportFormManualInputsPresent:
     @override_flag("field_observations", active=True)
     def test_manual_form_contains_lon_input(self, client: Client) -> None:
         """Form rendered without coords (MANUAL state) contains name="lon"."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 200
         assert 'name="lon"' in response.content.decode()
@@ -170,8 +170,8 @@ class TestReportFormManualInputsPresent:
     @override_flag("field_observations", active=True)
     def test_manual_form_lat_input_is_empty(self, client: Client) -> None:
         """lat hidden input has an empty value when no coords are passed."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 200
         content = response.content.decode()
@@ -180,8 +180,8 @@ class TestReportFormManualInputsPresent:
     @override_flag("field_observations", active=True)
     def test_manual_form_lon_input_is_empty(self, client: Client) -> None:
         """lon hidden input has an empty value when no coords are passed."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.get(FORM_URL, **HTMX_HEADERS)
         assert response.status_code == 200
         content = response.content.decode()
@@ -194,9 +194,9 @@ class TestReportFormSuccess:
 
     @override_flag("field_observations", active=True)
     def test_returns_200_with_form(self, client: Client) -> None:
-        """Valid lat/lon with flag active + subscriber returns 200."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        """Valid lat/lon with flag active + authenticated user returns 200."""
+        user = UserFactory.create()
+        client.force_login(user)
         with patch("observations.views.region_for_point", return_value=None):
             response = client.get(
                 FORM_URL,
@@ -210,8 +210,8 @@ class TestReportFormSuccess:
     @override_flag("field_observations", active=True)
     def test_returns_region_banner_when_matched(self, client: Client) -> None:
         """Region banner appears when region_for_point returns a region."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         fake_region = MicroRegionFactory.create(name="Zermatt-Saas")
         with patch("observations.views.region_for_point", return_value=fake_region):
@@ -226,8 +226,8 @@ class TestReportFormSuccess:
     @override_flag("field_observations", active=True)
     def test_returns_fallback_banner_when_no_region(self, client: Client) -> None:
         """'couldn't match' text appears when region_for_point returns None."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         with patch("observations.views.region_for_point", return_value=None):
             response = client.get(
@@ -241,8 +241,8 @@ class TestReportFormSuccess:
     @override_flag("field_observations", active=True)
     def test_form_contains_problem_buttons(self, client: Client) -> None:
         """Each OBSERVATION_TYPE value appears as a submit button in the form."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         with patch("observations.views.region_for_point", return_value=None):
             response = client.get(
@@ -257,8 +257,8 @@ class TestReportFormSuccess:
     @override_flag("field_observations", active=True)
     def test_gps_status_text_with_coords(self, client: Client) -> None:
         """Form with GPS coords shows 'Using current GPS location' status."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         with patch("observations.views.region_for_point", return_value=None):
             response = client.get(
@@ -283,13 +283,13 @@ class TestReportFormSuccess:
 
 @pytest.mark.django_db
 class TestReportSubmitFlagGate:
-    """Flag-off → 404; non-subscriber → 403."""
+    """Flag-off → 404; anonymous → 403."""
 
     @override_flag("field_observations", active=False)
     def test_flag_off_returns_404(self, client: Client) -> None:
         """POST with flag inactive returns 404."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.post(
             SUBMIT_URL,
             {"lat": "46.1", "lon": "7.1"},
@@ -298,14 +298,14 @@ class TestReportSubmitFlagGate:
         assert response.status_code == 404
 
     @override_flag("field_observations", active=True)
-    def test_anonymous_gets_4xx(self, client: Client) -> None:
-        """Anonymous POST with flag active gets rejected."""
+    def test_anonymous_gets_403(self, client: Client) -> None:
+        """Anonymous POST with flag active gets 403."""
         response = client.post(
             SUBMIT_URL,
             {"lat": "46.1", "lon": "7.1"},
             **HTMX_HEADERS,
         )
-        assert response.status_code in (403, 404)
+        assert response.status_code == 403
 
 
 @pytest.mark.django_db
@@ -315,8 +315,8 @@ class TestReportSubmitHtmxGate:
     @override_flag("field_observations", active=True)
     def test_non_htmx_returns_400(self, client: Client) -> None:
         """POST without HX-Request returns 400."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.post(SUBMIT_URL, {"lat": "46.1", "lon": "7.1"})
         assert response.status_code == 400
 
@@ -328,16 +328,16 @@ class TestReportSubmitGpsGate:
     @override_flag("field_observations", active=True)
     def test_missing_gps_returns_400(self, client: Client) -> None:
         """POST with no lat/lon → 400."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.post(SUBMIT_URL, {}, **HTMX_HEADERS)
         assert response.status_code == 400
 
     @override_flag("field_observations", active=True)
     def test_unparseable_lon_returns_400(self, client: Client) -> None:
         """Non-float lon → 400."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         response = client.post(
             SUBMIT_URL,
             {"lat": "46.1", "lon": "bad"},
@@ -353,8 +353,8 @@ class TestReportSubmitLocationSourceGate:
     @override_flag("field_observations", active=True)
     def test_missing_location_source_returns_400(self, client: Client) -> None:
         """POST with valid GPS but no location_source → 400."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         with patch("observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
@@ -370,8 +370,8 @@ class TestReportSubmitLocationSourceGate:
     @override_flag("field_observations", active=True)
     def test_invalid_location_source_returns_400(self, client: Client) -> None:
         """POST with an unknown location_source value → 400."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         with patch("observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
@@ -393,8 +393,8 @@ class TestReportSubmitObservationTypeGate:
     @override_flag("field_observations", active=True)
     def test_missing_observation_type_returns_400(self, client: Client) -> None:
         """POST with valid GPS but no observation_type → 400."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         with patch("observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
@@ -410,8 +410,8 @@ class TestReportSubmitObservationTypeGate:
     @override_flag("field_observations", active=True)
     def test_invalid_observation_type_returns_400(self, client: Client) -> None:
         """POST with an unknown observation_type value → 400."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
         with patch("observations.views.region_for_point", return_value=None):
             response = client.post(
                 SUBMIT_URL,
@@ -433,8 +433,8 @@ class TestReportSubmitSuccess:
     @override_flag("field_observations", active=True)
     def test_creates_observation_row(self, client: Client) -> None:
         """A valid GPS POST creates exactly one FieldObservation row."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         with patch("observations.views.region_for_point", return_value=None):
             response = client.post(
@@ -451,8 +451,8 @@ class TestReportSubmitSuccess:
             )
 
         assert response.status_code == 200
-        assert FieldObservation.objects.filter(subscriber=subscriber).count() == 1
-        obs = FieldObservation.objects.get(subscriber=subscriber)
+        assert FieldObservation.objects.filter(user=user).count() == 1
+        obs = FieldObservation.objects.get(user=user)
         assert obs.latitude == 46.1
         assert obs.longitude == 7.1
         assert obs.location_source == FieldObservation.LOCATION_SOURCE.GPS
@@ -461,10 +461,34 @@ class TestReportSubmitSuccess:
         assert obs.observation_type == FieldObservation.OBSERVATION_TYPE.WHUMPFING
 
     @override_flag("field_observations", active=True)
+    def test_authenticated_user_without_subscriber_creates_row(
+        self, client: Client
+    ) -> None:
+        """Authenticated user without a Subscriber profile can submit (SNOW-333)."""
+        user = UserFactory.create(is_staff=False)
+        client.force_login(user)
+
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                },
+                **HTMX_HEADERS,
+            )
+
+        assert response.status_code == 200
+        obs = FieldObservation.objects.get(user=user)
+        assert obs.user == user
+
+    @override_flag("field_observations", active=True)
     def test_stores_the_submitted_type(self, client: Client) -> None:
         """The stored observation_type matches what was submitted."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         with patch("observations.views.region_for_point", return_value=None):
             client.post(
@@ -478,14 +502,14 @@ class TestReportSubmitSuccess:
                 **HTMX_HEADERS,
             )
 
-        obs = FieldObservation.objects.get(subscriber=subscriber)
+        obs = FieldObservation.objects.get(user=user)
         assert obs.observation_type == FieldObservation.OBSERVATION_TYPE.FRACTURES
 
     @override_flag("field_observations", active=True)
     def test_returns_confirmation_partial(self, client: Client) -> None:
         """Valid POST returns the thank-you confirmation fragment."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         with patch("observations.views.region_for_point", return_value=None):
             response = client.post(
@@ -505,8 +529,8 @@ class TestReportSubmitSuccess:
     @override_flag("field_observations", active=True)
     def test_confirmation_shows_region_name(self, client: Client) -> None:
         """Confirmation fragment includes region name when matched."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         region = MicroRegionFactory.create(name="Verbier")
         with patch("observations.views.region_for_point", return_value=region):
@@ -526,13 +550,13 @@ class TestReportSubmitSuccess:
 
     @override_flag("field_observations", active=True)
     def test_multiple_reports_same_day_allowed(self, client: Client) -> None:
-        """Multiple reports from the same subscriber on the same day are all created.
+        """Multiple reports from the same user on the same day are all created.
 
         To report two problems the user submits two reports — each with a
         different observation_type.
         """
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         types = [
             FieldObservation.OBSERVATION_TYPE.WHUMPFING,
@@ -553,13 +577,13 @@ class TestReportSubmitSuccess:
                 )
             assert resp.status_code == 200
 
-        assert FieldObservation.objects.filter(subscriber=subscriber).count() == 3
+        assert FieldObservation.objects.filter(user=user).count() == 3
 
     @override_flag("field_observations", active=True)
     def test_accuracy_converted_metres_to_km(self, client: Client) -> None:
         """accuracy_m in metres is stored as accuracy_radius_km (divided by 1000)."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         with patch("observations.views.region_for_point", return_value=None):
             client.post(
@@ -574,7 +598,7 @@ class TestReportSubmitSuccess:
                 **HTMX_HEADERS,
             )
 
-        obs = FieldObservation.objects.get(subscriber=subscriber)
+        obs = FieldObservation.objects.get(user=user)
         assert obs.accuracy_radius_km == pytest.approx(0.5)
 
     @override_flag("field_observations", active=True)
@@ -584,8 +608,8 @@ class TestReportSubmitSuccess:
         """GPS_REFINED submit stores the dragged pin as report coords and the
         original fix in gps_latitude/gps_longitude.
         """
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         with patch("observations.views.region_for_point", return_value=None):
             response = client.post(
@@ -602,7 +626,7 @@ class TestReportSubmitSuccess:
             )
 
         assert response.status_code == 200
-        obs = FieldObservation.objects.get(subscriber=subscriber)
+        obs = FieldObservation.objects.get(user=user)
         assert obs.latitude == pytest.approx(46.15)
         assert obs.longitude == pytest.approx(7.15)
         assert obs.location_source == FieldObservation.LOCATION_SOURCE.GPS_REFINED
@@ -616,8 +640,8 @@ class TestReportSubmitSuccess:
         """A MANUAL submit whose point matches no region creates a row with
         region=None and returns 200 — guards the dropped region-required rule.
         """
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         # region_for_point returns None for a point outside all known boundaries.
         with patch("observations.views.region_for_point", return_value=None):
@@ -633,7 +657,7 @@ class TestReportSubmitSuccess:
             )
 
         assert response.status_code == 200
-        obs = FieldObservation.objects.get(subscriber=subscriber)
+        obs = FieldObservation.objects.get(user=user)
         assert obs.region is None
         assert obs.location_source == FieldObservation.LOCATION_SOURCE.MANUAL
         assert obs.gps_latitude is None
@@ -642,8 +666,8 @@ class TestReportSubmitSuccess:
     @override_flag("field_observations", active=True)
     def test_manual_submit_has_null_gps_coords(self, client: Client) -> None:
         """MANUAL path (no GPS fix) stores None for gps_latitude/gps_longitude."""
-        subscriber = SubscriberFactory.create()
-        client.force_login(subscriber.user)
+        user = UserFactory.create()
+        client.force_login(user)
 
         with patch("observations.views.region_for_point", return_value=None):
             client.post(
@@ -658,7 +682,7 @@ class TestReportSubmitSuccess:
                 **HTMX_HEADERS,
             )
 
-        obs = FieldObservation.objects.get(subscriber=subscriber)
+        obs = FieldObservation.objects.get(user=user)
         assert obs.gps_latitude is None
         assert obs.gps_longitude is None
 
@@ -675,7 +699,7 @@ class TestReportSubmitRateLimit:
         request that has ``limited=True`` pre-set, bypassing decorator
         machinery while still exercising the view's own branch.
         """
-        subscriber = SubscriberFactory.create()
+        user = UserFactory.create()
 
         from django.contrib.sessions.backends.db import SessionStore  # noqa: PLC0415
         from django.test import RequestFactory  # noqa: PLC0415
@@ -688,7 +712,7 @@ class TestReportSubmitRateLimit:
             HTTP_HX_REQUEST="true",
         )
         request.limited = True  # type: ignore[attr-defined]
-        request.user = subscriber.user
+        request.user = user
         request.session = SessionStore()
 
         # Apply HTMX middleware so request.htmx is populated.
@@ -700,12 +724,46 @@ class TestReportSubmitRateLimit:
         htmx_mw = HtmxMiddleware(lambda r: _HR())
         htmx_mw(request)
 
-        # Exercise the 429 branch by patching the gate helpers to pass.
+        # Exercise the 429 branch by patching the gate helper to pass.
         with patch(
             "observations.views._require_field_observations_flag", return_value=None
         ):
-            with patch("observations.views._get_subscriber", return_value=subscriber):
-                from observations.views import report_submit  # noqa: PLC0415
+            from observations.views import report_submit  # noqa: PLC0415
 
-                resp = report_submit(request)
-                assert resp.status_code == 429
+            resp = report_submit(request)
+            assert resp.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# SNOW-333: SubscriberFactory-based tests (backward compat).
+#
+# Tests that pass a Subscriber's underlying user to force_login — these verify
+# that Subscriber users (who still have a linked User) can also submit reports.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestReportSubmitSubscriberUser:
+    """Subscriber users (who have a linked User record) can submit reports."""
+
+    @override_flag("field_observations", active=True)
+    def test_subscriber_user_can_submit(self, client: Client) -> None:
+        """A Subscriber's linked user can submit a field report."""
+        subscriber = SubscriberFactory.create()
+        client.force_login(subscriber.user)
+
+        with patch("observations.views.region_for_point", return_value=None):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                },
+                **HTMX_HEADERS,
+            )
+
+        assert response.status_code == 200
+        obs = FieldObservation.objects.get(user=subscriber.user)
+        assert obs.user == subscriber.user

@@ -14,7 +14,7 @@ the map page (SNOW-324):
 
 Both endpoints are:
   - flag-gated on ``field_observations`` (404 when inactive);
-  - subscriber-gated (403 for anonymous / non-subscriber users);
+  - authentication-gated (403 for anonymous users);
   - ``@require_htmx`` (400 for non-HTMX requests).
 
 ``report_submit`` additionally applies django-ratelimit (5/m per IP, block=False)
@@ -35,7 +35,6 @@ from django_ratelimit.decorators import ratelimit
 from core.decorators import require_htmx
 from observations.models import FieldObservation
 from regions.services.point_match import region_for_point
-from subscriptions.models import Subscriber
 
 logger = logging.getLogger(__name__)
 
@@ -64,27 +63,6 @@ def _require_field_observations_flag(request: HttpRequest) -> None:
 
     if not waffle.flag_is_active(request, "field_observations"):
         raise Http404("field_observations flag is inactive for this request.")
-
-
-def _get_subscriber(request: HttpRequest) -> Subscriber | None:
-    """Return the authenticated Subscriber profile from request.user, or None.
-
-    Returns None for anonymous users and for authenticated staff users who
-    have no Subscriber profile (e.g. superusers created via createsuperuser).
-
-    Args:
-        request: The current HTTP request.
-
-    Returns:
-        The Subscriber instance, or None.
-
-    """
-    if not request.user.is_authenticated:
-        return None
-    try:
-        return request.user.subscriber
-    except Subscriber.DoesNotExist:
-        return None
 
 
 def _parse_gps(lat_str: str | None, lon_str: str | None) -> tuple[float, float] | None:
@@ -120,7 +98,7 @@ def report_form(request: HttpRequest) -> HttpResponse:
     Reads ``lat``, ``lon``, ``accuracy``, ``location_source``, ``gps_lat``,
     and ``gps_lon`` query parameters (set by ``report.js``).  All are optional:
     when ``lat``/``lon`` are absent the form renders in MANUAL "choose on map"
-    state — the GPS gate has been removed so subscribers who denied location
+    state — the GPS gate has been removed so users who denied location
     can still report.
 
     When coords are present, resolves the point to a MicroRegion (best-effort)
@@ -135,8 +113,7 @@ def report_form(request: HttpRequest) -> HttpResponse:
     """
     _require_field_observations_flag(request)
 
-    subscriber = _get_subscriber(request)
-    if subscriber is None:
+    if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
     coords = _parse_gps(request.GET.get("lat"), request.GET.get("lon"))
@@ -205,8 +182,7 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     """
     _require_field_observations_flag(request)
 
-    subscriber = _get_subscriber(request)
-    if subscriber is None:
+    if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
     if getattr(request, "limited", False):
@@ -259,7 +235,7 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     region = region_for_point(lon, lat)
 
     FieldObservation.objects.create(
-        subscriber=subscriber,
+        user=request.user,
         region=region,
         latitude=lat,
         longitude=lon,
@@ -271,8 +247,8 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     )
 
     logger.info(
-        "FieldObservation created: subscriber=%s region=%s type=%s source=%s",
-        subscriber.pk,
+        "FieldObservation created: user=%s region=%s type=%s source=%s",
+        request.user.pk,
         region.region_id if region else None,
         observation_type,
         location_source,

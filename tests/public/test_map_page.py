@@ -23,6 +23,7 @@ from tests.factories import (
     MicroRegionFactory,
     RegionDayRatingFactory,
     SubscriberFactory,
+    UserFactory,
 )
 
 
@@ -396,12 +397,22 @@ def test_report_button_not_shown_when_flag_off() -> None:
 
 @pytest.mark.django_db
 @override_flag("field_observations", active=True)
-def test_report_button_not_shown_for_anonymous() -> None:
-    """Report button is absent for anonymous users even when flag is active."""
+def test_report_button_shown_for_anonymous_with_signin_cta() -> None:
+    """Report button is shown for anonymous users when flag is active (SNOW-333).
+
+    Anonymous users see the button but are directed to sign in — report_eligible
+    is False and data-signin-url is populated so report.js renders a CTA instead
+    of the geolocation flow.
+    """
     client = Client()
     response = client.get(reverse("public:map"))
     content = response.content.decode()
-    assert "report-btn" not in content
+    # Button must be present so anonymous users can tap and see the sign-in CTA.
+    assert "report-btn" in content
+    # report_eligible must be false so JS branches to the CTA path.
+    assert 'data-report-eligible="false"' in content
+    # sign-in URL must be present so JS can build the CTA link.
+    assert "data-signin-url" in content
 
 
 @pytest.mark.django_db
@@ -428,3 +439,16 @@ def test_report_js_not_loaded_when_flag_off() -> None:
     response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert "report.js" not in content
+
+
+@pytest.mark.django_db
+@override_flag("field_observations", active=True)
+def test_report_eligible_true_for_authenticated_user() -> None:
+    """Authenticated user has report_eligible=True in the rendered button (SNOW-333)."""
+    user = UserFactory.create()
+    client = Client()
+    client.force_login(user)
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "report-btn" in content
+    assert 'data-report-eligible="true"' in content

@@ -707,11 +707,14 @@ def home(request: HttpRequest) -> HttpResponse:
         },
     )
 
+    report_ctx = _report_context(request)
+
     return render(
         request,
         "public/home.html",
         {
             **base_ctx,
+            **report_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
             "default_region_name": default_region_name,
@@ -1179,25 +1182,40 @@ def _default_region_label() -> tuple[str, str]:
     return region.name, region.name_slug
 
 
-def _subscriber_present(request: HttpRequest) -> bool:
-    """Return True when the authenticated user has a Subscriber profile.
+def _report_context(request: HttpRequest) -> dict[str, Any]:
+    """Build the template context dict for the field-report affordance.
 
-    Superusers created via ``createsuperuser`` have no Subscriber profile;
-    this check safely handles that case without raising.
+    ``report_visible`` is True when the ``field_observations`` waffle flag is
+    active — this controls whether the roundel and sheet are rendered at all.
+    ``report_eligible`` is True when the user is authenticated — eligible users
+    get the report flow; anonymous users get a sign-in CTA.
+
+    When ``report_visible`` is True the dict also includes the HTMX endpoint
+    URLs and a sign-in URL for the anonymous CTA.
 
     Args:
-        request: The current HTTP request (user must be authenticated).
+        request: The current HTTP request.
 
     Returns:
-        True when a Subscriber profile exists for request.user.
+        Dict with ``report_visible``, ``report_eligible``, and (when visible)
+        ``report_form_url``, ``report_submit_url``, ``report_signin_url``.
 
     """
-    from subscriptions.models import Subscriber  # noqa: PLC0415
-
-    try:
-        return bool(request.user.subscriber)  # type: ignore[union-attr]
-    except Subscriber.DoesNotExist:
-        return False
+    report_visible = waffle.flag_is_active(request, "field_observations")
+    report_eligible = request.user.is_authenticated
+    ctx: dict[str, Any] = {
+        "report_visible": report_visible,
+        "report_eligible": report_eligible,
+    }
+    if report_visible:
+        ctx.update(
+            {
+                "report_form_url": reverse("observations:report_form"),
+                "report_submit_url": reverse("observations:report_submit"),
+                "report_signin_url": reverse("subscriptions:sign_in"),
+            }
+        )
+    return ctx
 
 
 def _get_observation_counts(
@@ -1321,26 +1339,9 @@ def map_view(request: HttpRequest) -> HttpResponse:
             }
         )
 
-    # SNOW-324: GPS-gated field-report mode — shown when the user has a
-    # Subscriber profile AND the ``field_observations`` flag is active
-    # (anonymous users and flag-less sessions stay read-only). Order matters:
-    # short-circuit on the free ``is_authenticated`` check before the
-    # Subscriber lookup and the DB-backed waffle flag check, so anonymous map
-    # loads — the common case — pay no extra queries (mirrors how the
-    # ``edit_map`` mode only checks its flag when ``?edit=resorts`` is set).
-    report_mode = (
-        request.user.is_authenticated
-        and _subscriber_present(request)
-        and waffle.flag_is_active(request, "field_observations")
-    )
-    report_context: dict[str, Any] = {"report_mode": report_mode}
-    if report_mode:
-        report_context.update(
-            {
-                "report_form_url": reverse("observations:report_form"),
-                "report_submit_url": reverse("observations:report_submit"),
-            }
-        )
+    # SNOW-333: report context — visible to all when the flag is active;
+    # eligibility is gated on authentication only (no Subscriber profile needed).
+    report_ctx = _report_context(request)
 
     # SNOW-314: build the ribbon as the data carrier (season bounds, caption)
     # but DON'T pre-select a region on /map/ — the scrubber stays a plain grey
@@ -1354,7 +1355,7 @@ def map_view(request: HttpRequest) -> HttpResponse:
         {
             **base_ctx,
             **edit_context,
-            **report_context,
+            **report_ctx,
             "ribbon": ribbon,
             "default_region_id": "",
             "default_region_name": "",

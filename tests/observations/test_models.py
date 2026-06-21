@@ -23,7 +23,7 @@ from observations.models import FieldObservation
 from tests.factories import (
     FieldObservationFactory,
     MicroRegionFactory,
-    SubscriberFactory,
+    UserFactory,
 )
 
 
@@ -34,7 +34,7 @@ class TestFieldObservationFields:
     def test_observation_type_round_trips(self) -> None:
         """observation_type is stored and retrieved correctly."""
         obs = FieldObservation.objects.create(
-            subscriber=SubscriberFactory.create(),
+            user=UserFactory.create(),
             latitude=46.10,
             longitude=7.10,
             observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
@@ -53,7 +53,7 @@ class TestFieldObservationFields:
     def test_region_is_nullable(self) -> None:
         """region FK may be null (best-effort)."""
         obs = FieldObservation.objects.create(
-            subscriber=SubscriberFactory.create(),
+            user=UserFactory.create(),
             latitude=46.10,
             longitude=7.10,
             observation_type=FieldObservation.OBSERVATION_TYPE.PINWHEELS,
@@ -69,14 +69,14 @@ class TestFieldObservationFields:
     def test_ordering_is_newest_first(self) -> None:
         """Queryset is ordered -observed_at (newest first)."""
         region = MicroRegionFactory.create()
-        subscriber = SubscriberFactory.create()
+        user = UserFactory.create()
         early = FieldObservationFactory.create(
-            subscriber=subscriber,
+            user=user,
             region=region,
             observed_at=timezone.now() - datetime.timedelta(hours=2),
         )
         late = FieldObservationFactory.create(
-            subscriber=subscriber,
+            user=user,
             region=region,
             observed_at=timezone.now(),
         )
@@ -267,7 +267,7 @@ class TestLocationSourceChoices:
     def test_location_source_round_trips(self) -> None:
         """location_source is stored and retrieved correctly."""
         obs = FieldObservation.objects.create(
-            subscriber=SubscriberFactory.create(),
+            user=UserFactory.create(),
             latitude=46.10,
             longitude=7.10,
             location_source=FieldObservation.LOCATION_SOURCE.MANUAL,
@@ -279,7 +279,7 @@ class TestLocationSourceChoices:
     def test_gps_coords_round_trip(self) -> None:
         """gps_latitude and gps_longitude are stored and retrieved correctly."""
         obs = FieldObservation.objects.create(
-            subscriber=SubscriberFactory.create(),
+            user=UserFactory.create(),
             latitude=46.20,
             longitude=7.20,
             gps_latitude=46.10,
@@ -294,7 +294,7 @@ class TestLocationSourceChoices:
     def test_gps_coords_nullable(self) -> None:
         """gps_latitude and gps_longitude may be null (MANUAL path)."""
         obs = FieldObservation.objects.create(
-            subscriber=SubscriberFactory.create(),
+            user=UserFactory.create(),
             latitude=46.10,
             longitude=7.10,
             gps_latitude=None,

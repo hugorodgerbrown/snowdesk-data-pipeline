@@ -451,19 +451,19 @@ Optional context:
         <div class="season-scrubber-loading">{% trans "Season data loading…" %}</div>
         {% include "public/partials/_season_scrubber_controls.html" %}
     </div>
-    {# SNOW-324: field-report roundel — same glass control as the search /   #}
-    {# layers cluster, anchored inside #map and floated above the scrubber    #}
-    {# (level with the date pill) so it never overlaps the timeline. Only     #}
-    {# rendered when the view sets report_mode (/map/ for a flagged           #}
-    {# subscriber); the homepage embed leaves it off. The warning-triangle    #}
-    {# icon is tinted amber to stand out as the report-a-hazard action.       #}
-    {% if report_mode %}
+    {# SNOW-333: field-report roundel — rendered when the flag is active       #}
+    {# (report_visible) regardless of authentication state. data-report-eligible #}
+    {# lets report.js branch: eligible users get the report form; anonymous    #}
+    {# users get a sign-in CTA via data-signin-url.                           #}
+    {% if report_visible %}
         <div class="map-utility-pill map-report-control">
             <button
                 id="report-btn"
                 type="button"
                 class="map-utility-button"
                 data-report-form-url="{{ report_form_url }}"
+                data-report-eligible="{{ report_eligible|yesno:'true,false' }}"
+                data-signin-url="{{ report_signin_url }}"
                 aria-label='{% trans "Report a field observation" %}'
             >
                 <svg
