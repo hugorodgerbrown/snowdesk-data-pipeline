@@ -36,9 +36,13 @@ Renders:
      pictogram (encodes kind + level) alongside the problem name, an
      optional level-number chip (``card.level_number``, e.g. "2-"), and
      an optional time chip.
-  2. Aspect / elevation row — only when the problem carries structured
-     aspects or elevation data.  aria-label uses SLF's coreZoneText when
-     present for screen readers.  Absent for prose-only problems.
+  2. Aspect / elevation row — three-way conditional on card.prose_mentions_spatial:
+     (a) structured data present (card.aspects or card.elevation) → the aspect
+         rose and elevation chip render verbatim (data-testid="aspect-elevation-row").
+     (b) prose-only and card.prose_mentions_spatial=True → a row reading
+         "See description below" (data-testid="aspect-elevation-fallback").
+     (c) prose-only and card.prose_mentions_spatial=False → a row reading
+         "All aspects · all elevations" (data-testid="aspect-elevation-allscope").
   3. EAWS matrix row — only when any of size / frequency / stability is
      present (ALBINA-only). One chip per axis. Skipped entirely for SLF
      and MeteoFrance cards, whose source data carries none of these.
@@ -130,9 +134,11 @@ Renders:
     </div>
 
     {# ── Aspect / elevation row ──────────────────────────────────────────── #}
-    {# Shown only when the problem has structured aspects or elevation data. #}
-    {# aria-label uses SLF's coreZoneText when present — a pre-formatted    #}
-    {# summary of aspect + elevation for screen readers.                    #}
+    {# Three-way conditional driven by card.prose_mentions_spatial:          #}
+    {#   (a) structured data → rose + elevation chip                         #}
+    {#   (b) prose mentions scope → "See description below"                  #}
+    {#   (c) no scope → "All aspects · all elevations"                       #}
+    {# aria-label uses SLF's coreZoneText when present (branch a only).     #}
     {% if card.aspects or card.elevation %}
         <div
             class="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card"
@@ -159,6 +165,20 @@ Renders:
                     <span class="text-xs text-text-2">{{ card.elevation.display }}</span>
                 </div>
             {% endif %}
+        </div>
+    {% elif card.prose_mentions_spatial %}
+        <div
+            class="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card"
+            data-testid="aspect-elevation-fallback"
+        >
+            <span class="text-xs text-text-2">{% trans "See description below" %}</span>
+        </div>
+    {% else %}
+        <div
+            class="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card"
+            data-testid="aspect-elevation-allscope"
+        >
+            <span class="text-xs text-text-2">{% trans "All aspects · all elevations" %}</span>
         </div>
     {% endif %}
 
