@@ -41,6 +41,8 @@ og_tags) and loads home_intro.js in addition to the map assets.
     {# SNOW-314: shared map surface with intro overlay enabled.          #}
     {# The _map_embed partial renders #home-intro when show_intro=True.  #}
     {% include "public/partials/_map_embed.html" with show_intro=True %}
+    {# SNOW-333: field-report sheet + JS — shared with map.html.        #}
+    {% include "public/partials/_report_surface.html" %}
 {% endblock %}
 
 {% block extra_js %}

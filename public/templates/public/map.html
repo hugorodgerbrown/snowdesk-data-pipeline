@@ -122,20 +122,9 @@
     {# The edit-resorts panel stays in map.html — it is /map/-only and is  #}
     {# intentionally excluded from the shared _map_embed partial.          #}
     {% if edit_mode %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
-    {# SNOW-324: the field-report roundel lives in _map_embed.html (inside    #}
-    {# #map, so it floats above the season scrubber rather than overlapping   #}
-    {# it). Only the sheet — a viewport-anchored bottom panel — stays here;   #}
-    {# report.js (loaded below) wires the roundel to it.                      #}
-    {% if report_mode %}
-        {# Sheet container — hidden until report.js opens it.                 #}
-        <div
-            id="report-sheet"
-            hidden
-            class="fixed bottom-0 left-0 right-0 z-40 rounded-t-card border-t border-border bg-card px-4 pb-8 pt-4 [box-shadow:var(--shadow-glass)] sm:left-auto sm:right-4 sm:bottom-4 sm:w-96 sm:rounded-card sm:border"
-            aria-label='{% trans "Field observation report" %}'
-        >
-        </div>
-    {% endif %}
+    {# SNOW-333: field-report sheet + JS — shared with home.html via this     #}
+    {# partial. The roundel lives in _map_embed.html (inside #map).           #}
+    {% include "public/partials/_report_surface.html" %}
 {% endblock %}
 
 {% block extra_js %}
@@ -145,12 +134,6 @@
     <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-79: SW registration moved to base.html; offline.js retired. #}
     {% if edit_mode %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
-    {# SNOW-324: field-report JS — geolocation + HTMX sheet opener. The map  #}
-    {# page is otherwise MapLibre-driven and does not load htmx, so pull it  #}
-    {# in here (before report.js, which calls htmx.ajax and whose swapped-in #}
-    {# form submits via hx-post). Both deferred → execute in document order. #}
-    {% if report_mode %}
-        <script defer src="{% static 'js/htmx.min.js' %}"></script>
-        <script defer src="{% static 'js/report.js' %}"></script>
-    {% endif %}
+    {# SNOW-333: report sheet + htmx/report.js are now in _report_surface.html #}
+    {# (included in the content block above) so they are shared with home.html. #}
 {% endblock %}

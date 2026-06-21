@@ -1,18 +1,22 @@
 /*
- * static/js/report.js — SNOW-330 field-report affordance with manual location.
+ * static/js/report.js — SNOW-333 field-report affordance with auth gate.
  *
- * Loaded only when the map page is rendered with ``report_mode=True``
- * (i.e. the ``field_observations`` waffle flag is active for the current
- * user AND the user has a Subscriber profile).
+ * Loaded when the field_observations flag is active (report_visible=True),
+ * regardless of whether the user is authenticated.  The button carries two
+ * data attributes that drive the branching:
  *
- * Flow:
+ *   data-report-eligible="true|false"  — True for authenticated users.
+ *   data-signin-url="<url>"            — Sign-in page URL for the anon CTA.
+ *   data-report-form-url="<url>"       — HTMX form endpoint (eligible only).
+ *
+ * Flow when eligible (authenticated):
  *   1. User taps the floating #report-btn.
  *   2. We reuse the page's single geolocation source — SNOW-328's MapLibre
  *      GeolocateControl, owned by map.js — by dispatching
  *      ``snowdesk:locate-request`` and awaiting the position it broadcasts on
  *      ``snowdesk:geolocate`` (or ``snowdesk:geolocate-error``).
  *
- * Location-source state machine:
+ * Location-source state machine (eligible path):
  *   GPS path (fix obtained):
  *     snowdesk:geolocate → loadForm(lat, lon, accuracy, 'GPS', gpsLat, gpsLon)
  *     Form renders with "Using current GPS location" + Refine button.
@@ -27,6 +31,10 @@
  *
  *   Safety-net timeout (20 s with no GPS answer):
  *     Route into MANUAL path rather than closing the sheet.
+ *
+ * Flow when not eligible (anonymous):
+ *   Tap opens the sheet with a sign-in / sign-up CTA pointing at the
+ *   sign-in page (data-signin-url). No geolocation attempt is made.
  *
  *   Error handling:
  *     htmx:responseError on the report form → showToast with server message.
@@ -46,6 +54,8 @@
   if (!btn || !sheet) return;
 
   const FORM_URL = btn.dataset.reportFormUrl;
+  const SIGNIN_URL = btn.dataset.signinUrl;
+  const IS_ELIGIBLE = btn.dataset.reportEligible === 'true';
 
   // ---------------------------------------------------------------------------
   // Module-level draggable marker state and MANUAL map-click handler.
@@ -316,6 +326,22 @@
   let locating = false;
 
   btn.addEventListener('click', function () {
+    // Anonymous users: open the sheet with a sign-in CTA; no geolocation.
+    if (!IS_ELIGIBLE) {
+      openSheet();
+      if (SIGNIN_URL) {
+        sheet.innerHTML =
+          '<div class="px-2 py-4">' +
+          '<p class="text-sm text-text-2 mb-3">Sign in to submit a field observation.</p>' +
+          '<a href="' + SIGNIN_URL + '" class="block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4">Sign in</a>' +
+          '</div>';
+      } else {
+        sheet.innerHTML =
+          '<p class="px-2 py-4 text-sm text-text-2">Sign in to submit a field observation.</p>';
+      }
+      return;
+    }
+
     if (locating) return;
     locating = true;
 
