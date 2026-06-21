@@ -90,7 +90,7 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
         """Return True if any user-located report exists for region on day.
 
         A user-located report is one with ``location_source`` set to
-        ``MANUAL`` or ``GPS_REFINED`` — i.e. the subscriber actively chose or
+        ``MANUAL`` or ``GPS_REFINED`` — i.e. the user actively chose or
         adjusted the pin rather than accepting a raw GPS fix.
 
         Used by the bulletin page to show a public footnote when any report
@@ -230,7 +230,7 @@ class FieldObservation(BaseModel):
 
     # Report location — the point attributed to this observation.
     # Populated from the GPS fix (GPS path) or from a pin placed/dragged
-    # by the subscriber (GPS_REFINED / MANUAL paths).
+    # by the user (GPS_REFINED / MANUAL paths).
     latitude = models.FloatField(
         help_text=(
             "WGS-84 latitude of the report location "

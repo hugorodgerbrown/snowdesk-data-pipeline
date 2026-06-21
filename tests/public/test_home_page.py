@@ -25,8 +25,14 @@ from django.core.management import call_command
 from django.test import Client, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
+from waffle.testutils import override_flag
 
-from tests.factories import BulletinFactory, MicroRegionFactory, RegionDayRatingFactory
+from tests.factories import (
+    BulletinFactory,
+    MicroRegionFactory,
+    RegionDayRatingFactory,
+    SubscriberFactory,
+)
 
 
 @pytest.mark.django_db
@@ -359,3 +365,40 @@ def test_sample_bulletin_url_returns_200() -> None:
         f"Expected 200 from {url} but got {response.status_code}. "
         "The sample-bulletin CTA must always land on a valid bulletin."
     )
+
+
+@pytest.mark.django_db
+class TestHomePageReportButtonParity:
+    """The homepage embeds the same map surface as /map/, so the field-report
+    control must render identically on both — they are indistinguishable to a
+    user (SNOW-330). Guards against the report context being wired into
+    map_view but not home().
+    """
+
+    @override_flag("field_observations", active=False)
+    def test_report_button_absent_when_flag_off(self) -> None:
+        """No report button on the homepage when the flag is inactive."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        assert "report-btn" not in content
+
+    @override_flag("field_observations", active=True)
+    def test_report_button_shown_for_anonymous_with_flag(self) -> None:
+        """Homepage shows the report button for anonymous users (parity with /map/)."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        assert "report-btn" in content
+        assert 'data-report-eligible="false"' in content
+        # Anonymous users carry the sign-in URL so report.js can render the
+        # sign-in CTA in place of the report form.
+        assert "data-signin-url" in content
+
+    @override_flag("field_observations", active=True)
+    def test_report_button_eligible_for_subscriber(self) -> None:
+        """Homepage marks the button eligible for a logged-in subscriber."""
+        subscriber = SubscriberFactory.create()
+        client = Client(SERVER_NAME="localhost")
+        client.force_login(subscriber.user)
+        content = client.get(reverse("public:home")).content.decode()
+        assert "report-btn" in content
+        assert 'data-report-eligible="true"' in content
