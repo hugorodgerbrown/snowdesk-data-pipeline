@@ -8,10 +8,13 @@ Covers:
   - Off-season note present when is_offseason is True.
   - sample_bulletin_url resolves to the CH-4115 2026-02-17 URL.
   - The sample-bulletin URL itself returns 200 (against test_data fixture).
-  - #season-ribbon carries empty data-default-region-* attributes (no pre-selection).
-  - The offmap-banner (#offmap-banner) is present on /.
-  - GET /map/ returns 301 to / (query strings forwarded).
-  - Edit-mode: /?edit=resorts + edit_map flag renders the edit panel.
+  - #season-ribbon carries data-default-region-name and -slug on homepage
+    (CH-4115 pre-selection, retained — SNOW-342).
+  - #season-ribbon carries data-default-subregion-name and -major-name (SNOW-342).
+  - _default_region_label() returns a 4-tuple (SNOW-342).
+  - The offmap-banner (#offmap-banner) is present on / (moved from map.html).
+  - GET /map/ returns 301 to / (query strings forwarded — SNOW-344).
+  - Edit-mode: /?edit=resorts + edit_map flag renders the edit panel (SNOW-344).
 """
 
 from __future__ import annotations
@@ -25,10 +28,13 @@ from django.urls import reverse
 from freezegun import freeze_time
 from waffle.testutils import override_flag
 
+from public.views import _default_region_label
 from tests.factories import (
     BulletinFactory,
+    MajorRegionFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
+    SubRegionFactory,
     SubscriberFactory,
 )
 
@@ -93,8 +99,14 @@ class TestHomePageBasic:
         )
         assert response.context["sample_bulletin_url"] == expected
 
-    def test_home_sample_bulletin_link_in_html(self) -> None:
-        """The sample-bulletin URL appears in the rendered HTML."""
+    def test_home_sample_bulletin_link_not_in_html(self) -> None:
+        """The sample-bulletin CTA link is no longer rendered in the HTML (SNOW-342).
+
+        The prototype removed the "View a sample bulletin →" anchor from the
+        intro overlay actions.  sample_bulletin_url is still passed to the
+        context (tested above) in case it is needed by a future feature, but it
+        is not rendered as an <a> in the current template.
+        """
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
@@ -106,7 +118,7 @@ class TestHomePageBasic:
                 "date_str": "2026-02-17",
             },
         )
-        assert expected in content
+        assert expected not in content
 
     def test_home_loads_map_assets(self) -> None:
         """The homepage loads maplibre, map.css, map.js, and home_intro.js."""
@@ -229,13 +241,14 @@ class TestHomePageReadoutData:
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     @freeze_time("2026-02-17")
-    def test_homepage_ribbon_has_empty_region_defaults(self) -> None:
-        """#season-ribbon on / carries empty data-default-region-name and -slug.
+    def test_homepage_ribbon_has_region_defaults(self) -> None:
+        """#season-ribbon on / carries the CH-4115 data-default-region-name and -slug.
 
-        SNOW-344: the homepage no longer pre-selects CH-4115. The readout and
-        scrubber track start neutral so the user's first tap is the activation
-        point. Requires CH-4115 and a RegionDayRating row so the ribbon block
-        renders (the template skips the block when ribbon is falsy).
+        SNOW-342: the homepage pre-selects CH-4115 so the readout chip and
+        breadcrumb are correct on first paint. SNOW-344 consolidated /map/ into
+        / but kept this pre-selection. Requires CH-4115 and a RegionDayRating
+        row so the ribbon block renders (the template skips the block when
+        ribbon is falsy).
         """
         region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
         bulletin = BulletinFactory.create()
@@ -247,16 +260,16 @@ class TestHomePageReadoutData:
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert 'data-default-region-name=""' in content
-        assert 'data-default-region-slug=""' in content
+        assert 'data-default-region-name="Martigny Verbier"' in content
+        assert 'data-default-region-slug="martigny-verbier"' in content
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     @freeze_time("2026-02-17")
-    def test_region_readout_is_anchor_element(self) -> None:
-        """#region-readout is rendered as an <a> element for the bulletin CTA.
+    def test_region_readout_is_div_element(self) -> None:
+        """#region-readout is rendered as a <div> (info-only chip; SNOW-342).
 
-        Requires CH-4115 and a RegionDayRating row so the ribbon block renders
-        (the template skips the {% if ribbon %} block when ribbon is falsy).
+        The bulletin link is the separate #region-readout-action roundel.
+        Requires CH-4115 and a RegionDayRating row so the ribbon block renders.
         """
         region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
         bulletin = BulletinFactory.create()
@@ -268,7 +281,152 @@ class TestHomePageReadoutData:
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert '<a id="region-readout"' in content
+        assert '<div id="region-readout"' in content
+        assert 'id="region-readout-action"' in content
+
+
+@pytest.mark.django_db
+class TestHomePageBreadcrumbData:
+    """SNOW-342: #season-ribbon carries data-default-subregion-name and -major-name.
+
+    The readout chip's breadcrumb (Major › Minor › Micro) is seeded from these
+    data attributes so it is correct on first paint before any region-selected
+    event fires.
+    """
+
+    def _make_ch4115(self, *, subregion_name_en: str, major_name_en: str) -> None:
+        """Create CH-4115 with the given L2/L1 names wired up."""
+        ch_major = MajorRegionFactory.create(
+            prefix="CH-4",
+            country="CH",
+            name_en=major_name_en,
+        )
+        sub = SubRegionFactory.create(
+            prefix="CH-41",
+            major=ch_major,
+            name_en=subregion_name_en,
+        )
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            name="Martigny Verbier",
+            subregion=sub,
+        )
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    @freeze_time("2026-02-17")
+    def test_homepage_ribbon_carries_subregion_name(self) -> None:
+        """#season-ribbon has data-default-subregion-name on the homepage."""
+        self._make_ch4115(subregion_name_en="Lower Valais", major_name_en="Wallis")
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'data-default-subregion-name="Lower Valais"' in content
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    @freeze_time("2026-02-17")
+    def test_homepage_ribbon_carries_major_name(self) -> None:
+        """#season-ribbon has data-default-major-name on the homepage."""
+        self._make_ch4115(subregion_name_en="Lower Valais", major_name_en="Wallis")
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'data-default-major-name="Wallis"' in content
+
+
+@pytest.mark.django_db
+class TestDefaultRegionLabel:
+    """Unit tests for _default_region_label() (SNOW-342).
+
+    The function is imported directly so behaviour can be tested without an
+    HTTP round-trip.  It returns a 4-tuple (name, slug, subregion_name,
+    major_name) and four empty strings when CH-4115 is absent from the DB.
+    """
+
+    def test_returns_four_empty_strings_when_region_absent(self) -> None:
+        """Returns four empty strings when CH-4115 does not exist."""
+        result = _default_region_label()
+        assert result == ("", "", "", "")
+
+    def test_returns_name_and_slug(self) -> None:
+        """Returns the micro-region name and slug as the first two elements."""
+        ch_major = MajorRegionFactory.create(
+            prefix="CH-4", country="CH", name_en="Wallis"
+        )
+        sub = SubRegionFactory.create(
+            prefix="CH-41",
+            major=ch_major,
+            name_en="Lower Valais",
+        )
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            name="Martigny Verbier",
+            subregion=sub,
+        )
+        name, slug, _sub, _major = _default_region_label()
+        assert name == "Martigny Verbier"
+        assert slug == "martigny-verbier"
+
+    def test_returns_subregion_and_major_names(self) -> None:
+        """Returns the L2 subregion name and L1 major name as the last two elements."""
+        ch_major = MajorRegionFactory.create(
+            prefix="CH-4",
+            country="CH",
+            name_en="Wallis",
+            name_native="Valais",
+        )
+        sub = SubRegionFactory.create(
+            prefix="CH-41",
+            major=ch_major,
+            name_en="Lower Valais",
+        )
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            name="Martigny Verbier",
+            subregion=sub,
+        )
+        _name, _slug, subregion_name, major_name = _default_region_label()
+        assert subregion_name == "Lower Valais"
+        assert major_name == "Wallis"
+
+    def test_major_falls_back_to_native_name_when_no_en(self) -> None:
+        """major_name falls back to name_native when name_en is empty."""
+        ch_major = MajorRegionFactory.create(
+            prefix="CH-4",
+            country="CH",
+            name_en="",
+            name_native="Valais",
+        )
+        sub = SubRegionFactory.create(
+            prefix="CH-41",
+            major=ch_major,
+            name_en="Lower Valais",
+        )
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            name="Martigny Verbier",
+            subregion=sub,
+        )
+        _name, _slug, _sub, major_name = _default_region_label()
+        assert major_name == "Valais"
+
+    def test_subregion_name_suppressed_when_equals_prefix(self) -> None:
+        """subregion_name is empty when name_en equals the prefix (placeholder)."""
+        ch_major = MajorRegionFactory.create(
+            prefix="CH-4", country="CH", name_en="Wallis"
+        )
+        sub = SubRegionFactory.create(
+            prefix="CH-41",
+            major=ch_major,
+            # placeholder: name_en == prefix
+            name_en="CH-41",
+        )
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            name="Martigny Verbier",
+            subregion=sub,
+        )
+        _name, _slug, subregion_name, _major = _default_region_label()
+        assert subregion_name == ""
 
 
 @pytest.mark.django_db

@@ -374,6 +374,12 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
         subregion_name = (
             sub.name_en if sub.name_en and sub.name_en != sub.prefix else ""
         )
+        # SNOW-314 prototype: L1 major-region display name, so the season-header
+        # readout can build a Major (L1) › Minor (L2) › Micro (L4) breadcrumb
+        # that mirrors the visible map overlays without a second fetch. Mirrors
+        # the popup breadcrumb's field choice (_region_tooltip.html): English
+        # name with the native name as fallback.
+        major_name = sub.major.name_en or sub.major.name_native
         features.append(
             {
                 "type": "Feature",
@@ -387,6 +393,7 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
                     "slug": region.name_slug,
                     "country": sub.major.country,
                     "subregion_name": subregion_name,
+                    "major_name": major_name,
                     # SNOW-54: True when the pipeline has ever produced a rating
                     # for this region; False for permanently-uncovered regions
                     # (e.g. Swiss Lowlands / Jura, non-EUREGIO AT/IT areas).

@@ -27,6 +27,8 @@ active-day highlight in sync.
         data-season-end="{{ season_end|date:'Y-m-d' }}"
         data-default-region-id="{{ default_region_id }}"
         data-default-region-name="{{ default_region_name|default:'' }}"
+        data-default-subregion-name="{{ default_subregion_name|default:'' }}"
+        data-default-major-name="{{ default_major_name|default:'' }}"
         data-default-region-slug="{{ default_region_slug|default:'' }}"
         data-default-date="{{ today|date:'Y-m-d' }}"
         aria-label="{% blocktrans trimmed with label=ribbon.season_label %}Season {{ label }} danger ribbon{% endblocktrans %}"
@@ -34,18 +36,53 @@ active-day highlight in sync.
     >
         <div class="ribbon-header">
             {% comment %}
-            Persistent focused-region readout (SNOW-314): names the region whose
-            season is painted into the scrubber track, shows its danger for the
-            currently-scrubbed day, and — when a region is focused — IS the link
-            to that region+date's bulletin (the "View bulletin →" CTA). map.js
-            sets the href and toggles .has-region; cache-fed so it survives
-            playback, replacing the old map popup as the way into the bulletin.
-            With no region focused it degrades to a plain (non-link) date chip.
+            Persistent focused-region readout (SNOW-314, redesigned SNOW-342):
+            names the region whose season is painted into the scrubber track and
+            shows its danger swatch for the currently-scrubbed day. The chip is
+            info-only (a <div>); the bulletin link is the separate
+            #region-readout-action roundel below. map.js fills the date/swatch/
+            breadcrumb text and toggles .has-region; cache-fed so it survives
+            playback. With no region focused it degrades to a plain date chip.
             {% endcomment %}
-            <a id="region-readout" class="region-readout" aria-live="polite" hidden>
-                <span class="region-readout-name"></span>
-                <span class="region-readout-danger"></span>
-                <span class="region-readout-cta" aria-hidden="true">{% trans "View bulletin" %} →</span>
+            {# PROTOTYPE (homepage rework): chip reads date · colour-swatch     #}
+            {# divider · region name. The mono date matches the popup format    #}
+            {# ("18 May 2026"); the swatch is the danger colour and doubles as  #}
+            {# the divider between date and name. map.js fills the date/name    #}
+            {# text and the swatch background. The pill is now an info display; #}
+            {# the bulletin link is the separate action roundel below.          #}
+            <div id="region-readout" class="region-readout" aria-live="polite" hidden>
+                <span class="region-readout-date"></span>
+                <span class="region-readout-swatch" aria-hidden="true"></span>
+                {# region name as a Major › Minor › Micro breadcrumb: the    #}
+                {# crumbs prefix (L1/L2) mirrors the visible map overlays and #}
+                {# is hidden on mobile; the leaf (L4 micro) is always shown.  #}
+                <span class="region-readout-name"><span class="region-readout-crumbs"></span><span
+                        class="region-readout-leaf"
+                    ></span></span>
+            </div>
+            {# View-bulletin action: a roundel holding just an arrow, with a   #}
+            {# "View bulletin" tooltip. Shown only when a region is focused    #}
+            {# (CSS sibling rule); map.js sets its href to the dated bulletin. #}
+            <a
+                id="region-readout-action"
+                class="region-readout-action"
+                title="{% trans 'View bulletin' %}"
+                aria-label="{% trans 'View bulletin' %}"
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M5 12h14" />
+                    <path d="m13 6 6 6-6 6" />
+                </svg>
             </a>
         </div>
     </div>
