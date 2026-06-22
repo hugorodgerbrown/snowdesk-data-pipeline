@@ -13,7 +13,7 @@ redirect target is an SVG at a URL containing ``favicon``.
 from __future__ import annotations
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 
 # Every test in this module hits the live URL via Django's test client. The
 # request passes through the project middleware stack, and CSP's per-request
@@ -49,3 +49,26 @@ def test_favicon_ico_has_cache_control_header() -> None:
     """The redirect carries a one-day ``Cache-Control`` header."""
     response = Client().get("/favicon.ico", follow=False)
     assert response["Cache-Control"] == "public, max-age=86400"
+
+
+@override_settings(POSTHOG_API_KEY="phc_test")
+def test_favicon_ico_no_cookie_vary_with_analytics_enabled() -> None:
+    """SNOW-338 regression: Vary: Cookie absent on /favicon.ico when PostHog is active.
+
+    When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
+    read request.user to tag identities, causing SessionMiddleware to append
+    Vary: Cookie and defeat Cache-Control: public CDN caching.
+    The _POSTHOG_EXEMPT_PATHS exemption in config/settings/base.py prevents
+    that access for this endpoint.
+    """
+    for path in ("/favicon.ico", "/favicon.ico/"):
+        response = Client().get(path, follow=False)
+        assert "public" in response.get("Cache-Control", ""), (
+            f"{path}: Expected public in Cache-Control; "
+            f"got: {response.get('Cache-Control', '')!r}"
+        )
+        vary = response.get("Vary", "")
+        assert "Cookie" not in vary, (
+            f"{path}: Vary: Cookie must not be set even with analytics enabled; "
+            f"got: {vary!r}"
+        )

@@ -242,7 +242,7 @@ def test_ratings_vary_no_cookie_with_analytics_enabled() -> None:
     When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
     read request.user to tag identities, causing SessionMiddleware to append
     Vary: Cookie and defeat Cache-Control: public CDN caching.
-    The _POSTHOG_EXEMPT_API_PATHS exemption in config/settings/base.py prevents
+    The _POSTHOG_EXEMPT_PATHS exemption in config/settings/base.py prevents
     that access for this endpoint.
     """
     response = Client().get(reverse("api:ratings"))
@@ -264,7 +264,7 @@ def test_geojson_no_cookie_vary_with_analytics_enabled(url_name: str) -> None:
     When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
     read request.user to tag identities, causing SessionMiddleware to append
     Vary: Cookie and defeat Cache-Control: public CDN caching.
-    The _POSTHOG_EXEMPT_API_PATHS exemption in config/settings/base.py prevents
+    The _POSTHOG_EXEMPT_PATHS exemption in config/settings/base.py prevents
     that access for these endpoints.
     """
     url = reverse(url_name) + "?country=ch"
@@ -295,7 +295,7 @@ def test_remaining_cacheable_endpoints_no_cookie_vary_with_analytics_enabled(
 ) -> None:
     """SNOW-299 regression: the remaining exempt cacheable endpoints stay Cookie-free.
 
-    Completes the key-on coverage of _POSTHOG_EXEMPT_API_PATHS — the three
+    Completes the key-on coverage of _POSTHOG_EXEMPT_PATHS — the three
     paths not exercised by the ratings/GeoJSON regression tests above. With
     POSTHOG_API_KEY set, PosthogContextMiddleware would otherwise read
     request.user and let SessionMiddleware append Vary: Cookie, defeating the

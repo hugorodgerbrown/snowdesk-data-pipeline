@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from django.conf import settings
 from django.test import Client, override_settings
 
@@ -215,4 +216,25 @@ def test_maskable_icon_is_opaque() -> None:
         "It must be opaque RGB so Android's adaptive-icon mask doesn't leak "
         "transparency at the masked corners. "
         "Regenerate via `npm run build:icons` after fixing bin/build-pwa-icons."
+    )
+
+
+@pytest.mark.django_db
+@override_settings(POSTHOG_API_KEY="phc_test")
+def test_manifest_no_cookie_vary_with_analytics_enabled() -> None:
+    """SNOW-338 regression: Vary: Cookie absent on /manifest.webmanifest when PostHog is active.
+
+    When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
+    read request.user to tag identities, causing SessionMiddleware to append
+    Vary: Cookie and defeat Cache-Control: public CDN caching.
+    The _POSTHOG_EXEMPT_PATHS exemption in config/settings/base.py prevents
+    that access for this endpoint.
+    """
+    response = Client().get("/manifest.webmanifest")
+    assert "public" in response.get("Cache-Control", ""), (
+        f"Expected public in Cache-Control; got: {response.get('Cache-Control', '')!r}"
+    )
+    vary = response.get("Vary", "")
+    assert "Cookie" not in vary, (
+        f"Vary: Cookie must not be set even with analytics enabled; got: {vary!r}"
     )

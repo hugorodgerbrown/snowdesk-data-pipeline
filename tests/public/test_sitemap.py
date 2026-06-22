@@ -16,7 +16,7 @@ from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -151,3 +151,30 @@ class TestSitemapContents:
         content = response.content.decode()
         assert "ch-2222" in content
         assert "ch-3333" not in content
+
+
+@override_settings(POSTHOG_API_KEY="phc_test")
+def test_sitemap_path_is_posthog_exempt() -> None:
+    """SNOW-338 regression: /sitemap.xml is exempt from PosthogContextMiddleware.
+
+    When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would read
+    request.user for identity tagging — which, for any path that doesn't
+    already trigger session access, would cause SessionMiddleware to append
+    Vary: Cookie.  The _POSTHOG_EXEMPT_PATHS set in config/settings/base.py
+    prevents that access by having _posthog_request_filter return False for
+    this path.
+
+    Note: Django's own sitemap framework independently marks the session as
+    accessed (for CSRF/sites lookups), so Vary: Cookie appears on the
+    sitemap regardless of PostHog. The exemption here ensures PostHog does
+    not add a further distinct source of that header.
+    """
+    from config.settings.base import _posthog_request_filter
+
+    class _FakeRequest:
+        path = "/sitemap.xml"
+
+    assert _posthog_request_filter(_FakeRequest()) is False, (
+        "/sitemap.xml must be exempt from PosthogContextMiddleware "
+        "(i.e. _posthog_request_filter must return False for it)"
+    )
