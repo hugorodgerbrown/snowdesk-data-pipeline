@@ -114,6 +114,57 @@ from .season_calendar import (
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# TendencyOutlook — directional outlook block (ALBINA tendency)
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class TendencyOutlook:
+    """Directional outlook block derived from ALBINA tendency data.
+
+    Carries the arrow glyph, human-readable label, optional target date
+    (raw ISO string to be formatted by the template), and optional
+    highlights prose for the outlook block below Section 3b.
+
+    Attributes:
+        tendency_type: CAAML tendency type string (``steady`` / ``increasing``
+            / ``decreasing``), or ``None`` for the neutral fallback.
+        arrow: Unicode arrow glyph (→ / ↗ / ↘) or empty string for neutral.
+        label: Human-readable label (translatable string).
+        valid_until: Raw ISO-8601 string for the target date, or ``None``.
+        highlights: Forecaster-authored tendency lead prose, or empty string.
+
+    """
+
+    tendency_type: str | None
+    arrow: str
+    label: str | Promise
+    valid_until: str | None
+    highlights: str
+
+
+# CAAML tendency_type canonical values (lowercase per the stored render model).
+_TENDENCY_STEADY = "steady"
+_TENDENCY_INCREASING = "increasing"
+_TENDENCY_DECREASING = "decreasing"
+
+# Arrow glyphs keyed on canonical tendency_type values.
+_TENDENCY_ARROW: dict[str, str] = {
+    _TENDENCY_STEADY: "→",
+    _TENDENCY_INCREASING: "↗",
+    _TENDENCY_DECREASING: "↘",
+}
+
+# Translatable labels keyed on canonical tendency_type values.
+_TENDENCY_LABEL: dict[str, Promise] = {
+    _TENDENCY_STEADY: _("Constant avalanche danger"),
+    _TENDENCY_INCREASING: _("Increasing avalanche danger"),
+    _TENDENCY_DECREASING: _("Decreasing avalanche danger"),
+}
+
+
 # Mapping from CAAML danger-level keywords to display metadata.
 # Colours taken from EAWS website - https://www.avalanches.org/downloads/#avalanche-danger-scale
 _DANGER_MAP: dict[str, dict[str, Any]] = {
@@ -4866,6 +4917,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "problem_cards": problem_cards,
     }
     panel["day_character"] = _resolve_day_lead(raw_render_model)
+    panel["tendency_outlook"] = _resolve_tendency_outlook(raw_render_model)
     return panel
 
 
@@ -4873,16 +4925,11 @@ def _resolve_day_lead(raw_render_model: dict[str, Any]) -> DayCharacter:
     """
     Return the eyebrow callout to show above the rating blocks.
 
-    SLF bulletins carry no top-of-bulletin tendency summary, so we
-    classify the day via the five-rule cascade in ``compute_day_character``
-    (Stable / Manageable / Hard-to-read / Widespread / Dangerous).
-
-    ALBINA bulletins, by contrast, ship a short editorial lead projected
-    into ``render_model["prose"]["tendency_lead"]`` — a forecaster-authored
-    one-liner describing how the day is expected to play out. When that lead
-    is present, use it verbatim and suppress the computed label. The callout
-    template renders the label as a bold prefix when non-empty and as a
-    single explainer paragraph when empty.
+    All bulletin sources are classified via the five-rule cascade in
+    ``compute_day_character`` (Stable / Manageable / Hard-to-read /
+    Widespread / Dangerous).  ALBINA bulletins previously used
+    ``tendency_lead`` prose as the callout; that prose now feeds the
+    dedicated :func:`_resolve_tendency_outlook` block instead.
 
     Args:
         raw_render_model: The render model dict as returned by
@@ -4892,11 +4939,63 @@ def _resolve_day_lead(raw_render_model: dict[str, Any]) -> DayCharacter:
     Returns:
         A :class:`DayCharacter` with label and explainer fields populated.
 
+    """
+    return compute_day_character(raw_render_model)
+
+
+def _resolve_tendency_outlook(
+    raw_render_model: dict[str, Any],
+) -> TendencyOutlook | None:
+    """
+    Build a :class:`TendencyOutlook` from the render model's tendency block.
+
+    Returns ``None`` (no warning) when no tendency data is present or when
+    ``tendency_type`` is ``None`` — the normal SLF / no-tendency case.
+
+    For a non-``None`` but unrecognised ``tendency_type``, a warning is
+    logged and a neutral fallback outlook is returned (no directional arrow,
+    generic label) so the unknown value is surfaced rather than silently
+    dropped.
+
+    Args:
+        raw_render_model: The render model dict as stored in
+            ``Bulletin.render_model``.
+
+    Returns:
+        A :class:`TendencyOutlook` instance, or ``None`` when the block
+        should be suppressed.
 
     """
-    tendency_lead: str | None = (raw_render_model.get("prose") or {}).get(
-        "tendency_lead"
+    prose: dict[str, Any] = raw_render_model.get("prose") or {}
+    tendency_list: list[dict[str, Any]] = prose.get("tendency") or []
+    if not tendency_list:
+        return None
+
+    first: dict[str, Any] = tendency_list[0]
+    tendency_type: str | None = first.get("tendency_type")
+    if tendency_type is None:
+        return None
+
+    valid_until: str | None = first.get("valid_until")
+    highlights: str = prose.get("tendency_lead") or ""
+
+    if tendency_type not in _TENDENCY_ARROW:
+        logger.warning(
+            "_resolve_tendency_outlook: unknown tendency_type %r — neutral fallback",
+            tendency_type,
+        )
+        return TendencyOutlook(
+            tendency_type=tendency_type,
+            arrow="",
+            label=_("Avalanche danger outlook"),
+            valid_until=valid_until,
+            highlights=highlights,
+        )
+
+    return TendencyOutlook(
+        tendency_type=tendency_type,
+        arrow=_TENDENCY_ARROW[tendency_type],
+        label=_TENDENCY_LABEL[tendency_type],
+        valid_until=valid_until,
+        highlights=highlights,
     )
-    if tendency_lead and tendency_lead.strip():
-        return DayCharacter(label="", explainer=tendency_lead)
-    return compute_day_character(raw_render_model)
