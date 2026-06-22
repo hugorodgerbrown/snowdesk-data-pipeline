@@ -413,89 +413,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // if the source is still around (defensive, MapLibre normally drops
   // sources during setStyle but this lets a future ``diff`` setStyle
   // strategy land without breaking us).
-  // SNOW-54: permanently-uncovered regions are marked with a grid of small
-  // dots. A ``fill-pattern`` was rejected because MapLibre anchors patterns in
-  // tile units and scales them between zoom levels — the dots would grow as you
-  // zoomed in. Instead the dots are real point features rendered by a ``circle``
-  // layer, whose ``circle-radius`` is pinned to screen pixels and so never
-  // scales with zoom. The points sit on a fixed *geographic* lattice, so the
-  // dots stay the same size at every zoom: tightly packed (reading as a faint
-  // shade) when zoomed out, resolving into discrete dots when zoomed in.
-  const UNCOVERED_DOT_COLOUR  = '#b5b5b5';  // only a touch darker than no_rating
-  const UNCOVERED_DOT_RADIUS  = 1.4;        // screen px, constant across zoom
-  const UNCOVERED_DOT_SPACING = 0.02;       // degrees between lattice points
-
-  // Ray-casting point-in-ring test (even-odd rule). ``ring`` is a closed list
-  // of [lng, lat] pairs.
-  const _pointInRing = (lng, lat, ring) => {
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const xi = ring[i][0], yi = ring[i][1];
-      const xj = ring[j][0], yj = ring[j][1];
-      const hit = (yi > lat) !== (yj > lat)
-        && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
-      if (hit) inside = !inside;
-    }
-    return inside;
-  };
-
-  // Point-in-polygon for a GeoJSON polygon's ring set: inside the outer ring
-  // (rings[0]) and outside every hole (rings[1..]).
-  const _pointInPolygon = (lng, lat, rings) => {
-    if (!_pointInRing(lng, lat, rings[0])) return false;
-    for (let k = 1; k < rings.length; k++) {
-      if (_pointInRing(lng, lat, rings[k])) return false;
-    }
-    return true;
-  };
-
-  // Build the dot-lattice point FeatureCollection for every uncovered region in
-  // ``fc`` (``properties.covered === false``). Each point carries the parent
-  // region's ``country`` so applyCountryFilters can hide it with its country
-  // toggle. Snapping the lattice to a global origin keeps dots aligned across
-  // adjacent regions. Recomputed whenever the regions source data changes.
-  const _buildUncoveredDotGrid = (fc) => {
-    const features = [];
-    const S = UNCOVERED_DOT_SPACING;
-    if (fc && fc.features) {
-      for (const f of fc.features) {
-        if (!f.properties || f.properties.covered !== false || !f.geometry) continue;
-        const country = f.properties.country;
-        const g = f.geometry;
-        const polys = g.type === 'Polygon' ? [g.coordinates]
-          : g.type === 'MultiPolygon' ? g.coordinates : [];
-        for (const rings of polys) {
-          const outer = rings[0];
-          if (!outer || !outer.length) continue;
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          for (const [x, y] of outer) {
-            if (x < minX) minX = x; if (x > maxX) maxX = x;
-            if (y < minY) minY = y; if (y > maxY) maxY = y;
-          }
-          const x0 = Math.ceil(minX / S) * S, y0 = Math.ceil(minY / S) * S;
-          for (let x = x0; x <= maxX; x += S) {
-            for (let y = y0; y <= maxY; y += S) {
-              if (_pointInPolygon(x, y, rings)) {
-                features.push({
-                  type: 'Feature',
-                  geometry: { type: 'Point', coordinates: [x, y] },
-                  properties: { country },
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-    return { type: 'FeatureCollection', features };
-  };
-
-  // Rebuild the uncovered-dots source from the current region features. Called
-  // on initial install, on every lazy country merge, and on basemap re-install.
-  const refreshUncoveredDots = (fc) => {
-    const src = map.getSource('regions-uncovered-dots');
-    if (src) src.setData(_buildUncoveredDotGrid(fc));
-  };
+  // SNOW-54: solid fill for permanently-uncovered regions (those the pipeline
+  // never rates). A touch darker than no_rating (#e0e0e0) so an uncovered area
+  // reads as a distinct flat grey rather than "no bulletin today" — applied in
+  // the regions-fill paint below, keyed on the static ``covered`` property.
+  const UNCOVERED_FILL_COLOUR = '#b5b5b5';
 
   const installRegionsLayers = (geojson) => {
     if (map.getSource('regions')) return;
@@ -508,20 +430,29 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // Every region's rating is written via setFeatureState at boot and
     // on every scrubber/timelapse frame; unset state resolves to null,
     // which falls through the ``match`` arms to the default no_rating colour.
+    //
+    // SNOW-54: permanently-uncovered regions (static ``covered === false``
+    // property from the API) get a distinct flat grey instead of no_rating.
+    // The case checks ``covered`` first; these regions never carry a rating, so
+    // ordering is safe and the rating ``match`` handles every covered region.
     map.addLayer({
       id: 'regions-fill',
       type: 'fill',
       source: 'regions',
       paint: {
         'fill-color': [
-          'match',
-          ['feature-state', 'rating'],
-          'low',          RATING_COLOURS.low,
-          'moderate',     RATING_COLOURS.moderate,
-          'considerable', RATING_COLOURS.considerable,
-          'high',         RATING_COLOURS.high,
-          'very_high',    RATING_COLOURS.very_high,
-          RATING_COLOURS.no_rating,
+          'case',
+          ['==', ['get', 'covered'], false], UNCOVERED_FILL_COLOUR,
+          [
+            'match',
+            ['feature-state', 'rating'],
+            'low',          RATING_COLOURS.low,
+            'moderate',     RATING_COLOURS.moderate,
+            'considerable', RATING_COLOURS.considerable,
+            'high',         RATING_COLOURS.high,
+            'very_high',    RATING_COLOURS.very_high,
+            RATING_COLOURS.no_rating,
+          ],
         ],
         'fill-opacity': [
           'case',
@@ -535,38 +466,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
       },
     });
     BASE_LAYER_FILTERS['regions-fill'] = map.getFilter('regions-fill') ?? null;
-
-    // SNOW-54: dot overlay for permanently-uncovered regions.
-    //
-    // A separate point source holds the dot lattice (rebuilt from the region
-    // features by _buildUncoveredDotGrid). The circle layer sits immediately
-    // above `regions-fill` so the dots read over the grey fill but stay below
-    // the outline, selection-ring, and label layers. Constant ``circle-radius``
-    // keeps every dot the same screen size at all zooms, and the layer never
-    // touches feature-state (rating/selected/previewing), so the choropleth and
-    // repaintRegionsForDate are untouched. The points carry ``country`` so
-    // applyCountryFilters hides them with their country toggle.
-    map.addSource('regions-uncovered-dots', {
-      type: 'geojson',
-      data: _buildUncoveredDotGrid(geojson),
-    });
-    map.addLayer({
-      id: 'regions-fill-uncovered',
-      type: 'circle',
-      source: 'regions-uncovered-dots',
-      paint: {
-        'circle-radius': UNCOVERED_DOT_RADIUS,
-        'circle-color': UNCOVERED_DOT_COLOUR,
-        'circle-opacity': 0.9,
-        // No stroke — a hairline ring would re-introduce a zoom-dependent look.
-        'circle-stroke-width': 0,
-      },
-    });
-    // No base filter: the source contains only uncovered points, and each point
-    // carries ``country`` so applyCountryFilters applies the country filter
-    // alone. Explicit null keeps the applyCountryFilters composition branch
-    // (``base ? ['all', base, cf] : cf``) on the no-base path.
-    BASE_LAYER_FILTERS['regions-fill-uncovered'] = null;
 
     // Outline — base unselected ring.
     //
@@ -979,11 +878,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       ? ['match', ['get', 'country'], enabled, true, false]
       : ['==', false, true];
     const layerIds = [
-      // SNOW-54: 'regions-fill-uncovered' (the uncovered-dots circle layer) has
-      // no base filter, but its points carry ``country`` and must be
-      // country-filtered too, else toggling a country off leaves its dots
-      // visible as a ghost overlay over a blank map.
-      'regions-fill', 'regions-fill-uncovered', 'regions-line', 'regions-label',
+      'regions-fill', 'regions-line', 'regions-label',
       'sub-regions-line', 'sub-regions-label',
       'major-regions-line', 'major-regions-label',
     ];
@@ -1056,9 +951,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
         };
         const regionsSource = map.getSource('regions');
         if (regionsSource) regionsSource.setData(geojsonCache);
-        // SNOW-54: rebuild the uncovered-dot lattice so the newly-merged
-        // country's permanently-uncovered regions get dotted too.
-        refreshUncoveredDots(geojsonCache);
         // Notify the search section so it can extend the index with the
         // newly-loaded regions (snowdesk:regions-loaded listener in the
         // search block is idempotent via INDEXED_REGIONS).
