@@ -1383,6 +1383,12 @@ def map_view(request: HttpRequest) -> HttpResponse:
     Returns:
         The rendered map page.
 
+    Context:
+        is_offseason — bool: True when today is past the season end.
+            Drives the persistent ``#map-offseason-note`` chip in
+            ``_map_embed.html`` so a returning off-season visitor sees
+            the archive notice even after dismissing ``#home-intro``.
+
     """
     today = datetime.date.today()
     base_ctx = _base_map_context(today)
@@ -1416,6 +1422,11 @@ def map_view(request: HttpRequest) -> HttpResponse:
     # track. The homepage, by contrast, pre-selects CH-4115 (see home()).
     ribbon = _build_default_ribbon(today)
 
+    # SNOW-343: mirror the is_offseason flag from home() so the persistent
+    # archive chip in _map_embed.html is visible on /map/ after intro dismissal.
+    season_end: datetime.date = base_ctx["season_end"]
+    is_offseason = today > season_end
+
     return render(
         request,
         "public/map.html",
@@ -1424,6 +1435,7 @@ def map_view(request: HttpRequest) -> HttpResponse:
             **edit_context,
             **report_ctx,
             "ribbon": ribbon,
+            "is_offseason": is_offseason,
             "default_region_id": "",
             "default_region_name": "",
             "default_region_slug": "",
