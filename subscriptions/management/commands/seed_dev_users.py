@@ -77,6 +77,8 @@ class Command(BaseCommand):
                 "is_superuser": True,
             },
         )
+        # PASSWORD is an intentional dev-only constant (DEBUG-gated above); the
+        # unvalidated-password semgrep rule is excluded project-wide (see tox.ini).
         user_super.set_password(PASSWORD)
         user_super.save()
 
