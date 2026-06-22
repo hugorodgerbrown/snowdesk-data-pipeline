@@ -173,6 +173,11 @@ def ratings(request: HttpRequest) -> JsonResponse:
     hits to one per cache window. The HTTP ``Cache-Control: public,
     max-age=300`` header is applied by the ``@cache_control`` decorator.
 
+    The ``@vary_on_headers("Accept-Encoding")`` decorator is necessary but
+    not sufficient on its own — ``Vary: Cookie`` is only reliably absent
+    because this path is exempt from ``PosthogContextMiddleware`` via
+    ``_POSTHOG_EXEMPT_API_PATHS`` in ``config/settings/base.py`` (SNOW-299).
+
     Errors:
         400 — unknown country code.
         400 — malformed ``?d=`` date string.
@@ -317,7 +322,11 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
     The ``@cache_control(public=True, max_age=86400)`` + ``@vary_on_headers``
     pair prevents Django's ``SessionMiddleware`` from appending
     ``Vary: Cookie`` on the response.  Region geometry is fixture-backed and
-    anonymous — it is safe to cache publicly for 24 hours.
+    anonymous — it is safe to cache publicly for 24 hours.  ``Vary: Cookie``
+    is also suppressed by exempting this path from ``PosthogContextMiddleware``
+    via ``_POSTHOG_EXEMPT_API_PATHS`` in ``config/settings/base.py``
+    (SNOW-299) — without that exemption the middleware would read
+    ``request.user`` and cause ``SessionMiddleware`` to append the header.
 
     Args:
         request: The incoming HTTP request.
