@@ -413,43 +413,40 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // if the source is still around (defensive, MapLibre normally drops
   // sources during setStyle but this lets a future ``diff`` setStyle
   // strategy land without breaking us).
-  // SNOW-54: diagonal cross-hatch stripe colour for permanently-uncovered regions.
-  // Darker than no_rating (#e0e0e0) so the pattern reads clearly at 0.55 fill-opacity.
-  const UNCOVERED_HATCH_COLOUR = '#9a9a9a';
+  // SNOW-54: dot-pattern colour for permanently-uncovered regions. Darker than
+  // no_rating (#e0e0e0) so the pattern reads clearly at 0.55 fill-opacity.
+  const UNCOVERED_DOT_COLOUR = '#9a9a9a';
 
-  // Build a cross-hatch SDF image for permanently-uncovered region tiles. The
-  // image is 8×8 pixels with a transparent background and a single diagonal
-  // stripe rendered in UNCOVERED_HATCH_COLOUR. MapLibre addImage accepts a
-  // plain {width, height, data: Uint8ClampedArray (RGBA)} object.
+  // Build a polka-dot image for permanently-uncovered region tiles. The image
+  // is 8×8 pixels with a transparent background and a single centred dot in
+  // UNCOVERED_DOT_COLOUR, tiled by MapLibre's ``fill-pattern`` into a regular
+  // dot grid. addImage accepts a plain {width, height, data: Uint8ClampedArray
+  // (RGBA)} object.
   //
   // The function is called at the top of installRegionsLayers, before the
   // ``map.getSource('regions')`` early-return guard. A basemap style switch
   // wipes all custom images, so the image must be re-registered each time the
   // layers are re-installed; placing the call before the guard also keeps it
   // correct should a future diff-based setStyle leave the source in place.
-  const _registerUncoveredHatchImage = () => {
-    if (map.hasImage('region-uncovered-hatch')) return;
+  const _registerUncoveredDotImage = () => {
+    if (map.hasImage('region-uncovered-dots')) return;
     const SIZE = 8;
     const canvas = document.createElement('canvas');
     canvas.width  = SIZE;
     canvas.height = SIZE;
     const ctx = canvas.getContext('2d');
-    // Parse UNCOVERED_HATCH_COLOUR (#rrggbb) to RGBA components.
-    const r = parseInt(UNCOVERED_HATCH_COLOUR.slice(1, 3), 16);
-    const g = parseInt(UNCOVERED_HATCH_COLOUR.slice(3, 5), 16);
-    const b = parseInt(UNCOVERED_HATCH_COLOUR.slice(5, 7), 16);
+    // Parse UNCOVERED_DOT_COLOUR (#rrggbb) to RGBA components.
+    const r = parseInt(UNCOVERED_DOT_COLOUR.slice(1, 3), 16);
+    const g = parseInt(UNCOVERED_DOT_COLOUR.slice(3, 5), 16);
+    const b = parseInt(UNCOVERED_DOT_COLOUR.slice(5, 7), 16);
     ctx.clearRect(0, 0, SIZE, SIZE);
-    // Draw a 2-pixel-wide diagonal stripe from top-left to bottom-right.
-    ctx.strokeStyle = `rgb(${r},${g},${b})`;
-    ctx.lineWidth   = 2;
+    // Draw a single filled dot centred in the tile; tiling yields a dot grid.
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
     ctx.beginPath();
-    ctx.moveTo(-1, 1);
-    ctx.lineTo(SIZE + 1, SIZE + 1);
-    ctx.moveTo(-1, SIZE + 1);
-    ctx.lineTo(SIZE + 1, 2 * SIZE + 1);
-    ctx.stroke();
+    ctx.arc(SIZE / 2, SIZE / 2, 1.7, 0, 2 * Math.PI);
+    ctx.fill();
     const imageData = ctx.getImageData(0, 0, SIZE, SIZE);
-    map.addImage('region-uncovered-hatch', {
+    map.addImage('region-uncovered-dots', {
       width:  SIZE,
       height: SIZE,
       data:   imageData.data,
@@ -457,9 +454,9 @@ const repaintRegionsForDate = (dateKey, cache) => {
   };
 
   const installRegionsLayers = (geojson) => {
-    // SNOW-54: register the hatch image before the early-return guard so it
+    // SNOW-54: register the dot image before the early-return guard so it
     // survives basemap style switches (which wipe all custom images/layers).
-    _registerUncoveredHatchImage();
+    _registerUncoveredDotImage();
 
     if (map.getSource('regions')) return;
     map.addSource('regions', { type: 'geojson', data: geojson });
@@ -499,7 +496,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     });
     BASE_LAYER_FILTERS['regions-fill'] = map.getFilter('regions-fill') ?? null;
 
-    // SNOW-54: cross-hatch overlay for permanently-uncovered regions.
+    // SNOW-54: dot-pattern overlay for permanently-uncovered regions.
     //
     // Sits immediately above `regions-fill` so it overlays the grey fill
     // but remains below the outline, selection-ring, and label layers.
@@ -513,7 +510,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       source: 'regions',
       filter: _uncoveredFilter,
       paint: {
-        'fill-pattern': 'region-uncovered-hatch',
+        'fill-pattern': 'region-uncovered-dots',
       },
     });
     BASE_LAYER_FILTERS['regions-fill-uncovered'] = _uncoveredFilter;
@@ -931,7 +928,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     const layerIds = [
       // SNOW-54: 'regions-fill-uncovered' carries a base ``covered == false``
       // filter; it must be country-filtered too, else toggling a country off
-      // leaves its cross-hatch tiles visible as ghost overlays over a blank map.
+      // leaves its dotted tiles visible as ghost overlays over a blank map.
       'regions-fill', 'regions-fill-uncovered', 'regions-line', 'regions-label',
       'sub-regions-line', 'sub-regions-label',
       'major-regions-line', 'major-regions-label',
