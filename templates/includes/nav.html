@@ -36,7 +36,7 @@ season_trigger : bool, optional
 Usage
 -----
     {% include "includes/nav.html" %}
-    {% include "includes/nav.html" with back_url="/map/" back_label="Map" %}
+    {% include "includes/nav.html" with back_url="/" back_label="Map" %}
     {% include "includes/nav.html" with back_url=map_url back_label="Map" season_trigger=True %}
 {% endcomment %}
 {% load i18n %}
@@ -233,7 +233,7 @@ Usage
                         <li role="none">
                             <a
                                 role="menuitem"
-                                href="{% url 'public:map' %}?edit=resorts"
+                                href="{% url 'public:home' %}?edit=resorts"
                                 class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag"
                             >
                                 {% trans "Edit map" %}

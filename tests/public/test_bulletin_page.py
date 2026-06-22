@@ -2895,17 +2895,23 @@ class TestMapBackLink:
     def test_dated_bulletin_includes_date_and_fragment(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
     ) -> None:
-        """A dated bulletin URL produces a map link with ``?d=`` and ``#``."""
+        """A dated bulletin URL produces a map back-link with ``?d=`` and ``#``.
+
+        SNOW-344: the map page is now / so the back-link points there.
+        """
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'href="/map/?d=2026-03-15#CH-4115"' in content
+        assert 'href="/?d=2026-03-15#CH-4115"' in content
 
     def test_today_bulletin_omits_date_query_string(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """Today's bulletin URL produces a map link with fragment only, no ``?d=``."""
+        """Today's bulletin URL produces a map back-link with fragment only, no ``?d=``.
+
+        SNOW-344: the map page is now / so the back-link points there.
+        """
         today = date.today()
         _make_am_bulletin(region, today)
         # Use the region_root form (/<region_id>/) — it resolves to today without
@@ -2914,13 +2920,15 @@ class TestMapBackLink:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'href="/map/#CH-4115"' in content
+        assert 'href="/#CH-4115"' in content
         # Confirm the date query string is absent from the nav map link.
-        # The fragment-only form is unambiguous: /map/#CH-4115 never carries ?d=.
-        assert "/map/?d=" not in content
+        assert "/?d=" not in content
 
     def test_empty_state_includes_date_and_fragment(self, client: Client) -> None:
-        """The empty-state (no bulletin) page still produces a dated map link."""
+        """The empty-state (no bulletin) page still produces a dated map back-link.
+
+        SNOW-344: the map page is now / so the back-link points there.
+        """
         # Use a region whose slug matches the URL component to avoid a slug-
         # correction redirect. ``slugify("Test Region")`` → ``test-region``, so
         # pass ``"test-region"`` as both the factory slug and the URL segment.
@@ -2931,7 +2939,7 @@ class TestMapBackLink:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'href="/map/?d=2025-12-01#CH-9999"' in content
+        assert 'href="/?d=2025-12-01#CH-9999"' in content
 
 
 # ---------------------------------------------------------------------------

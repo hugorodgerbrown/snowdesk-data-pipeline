@@ -33,8 +33,13 @@ def baseline_path(tmp_path: Path) -> Iterator[Path]:
 
 @pytest.fixture
 def monitored_urls() -> Iterator[list[tuple[str, str]]]:
-    """Restrict the monitored URL list to a minimal, always-available pair."""
-    minimal = [("home", "/"), ("map", "/map/")]
+    """Restrict the monitored URL list to a minimal, always-available entry.
+
+    SNOW-344: /map/ is now a 301 redirect and is no longer in the monitored
+    list. Use only the home route so the command-mechanism test exercises a
+    real 200 response.
+    """
+    minimal = [("home", "/")]
     with patch.object(cmd_module, "_build_monitored_urls", return_value=minimal):
         yield minimal
 
@@ -55,7 +60,7 @@ def test_commit_writes_baseline(
         if line and not line.startswith("#")
     ]
     names = {line[0] for line in lines}
-    assert names == {"home", "map"}
+    assert names == {"home"}
     for _, count_str in lines:
         assert int(count_str) >= 0
 
@@ -78,7 +83,7 @@ def test_read_only_fails_on_mismatch(
     baseline_path: Path, monitored_urls: list[tuple[str, str]]
 ) -> None:
     """Baseline with deliberately wrong numbers triggers CommandError."""
-    baseline_path.write_text("home 999\nmap 999\n")
+    baseline_path.write_text("home 999\n")
     with pytest.raises(CommandError, match="differ from the baseline"):
         call_command("monitor_query_counts", stdout=StringIO())
 
