@@ -2,7 +2,7 @@
 #
 # Runs ``tox -e ds-lint`` (template design-token guard) and
 # ``tox -e docs-lint`` (docs frontmatter + CLAUDE.md routing guard) on every
-# pull request and push to main that touches templates, docs, the router,
+# pull request and push to main/release that touches templates, docs, the router,
 # or the linters themselves. Isolated from ci.yml so docs- and
 # template-only changes get a fast, focused gate without triggering the
 # full Python matrix.
@@ -13,6 +13,7 @@ on:
   push:
     branches:
       - main
+      - release
     paths:
       - "**/*.html"
       - "docs/**"

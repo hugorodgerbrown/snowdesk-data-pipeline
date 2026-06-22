@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# bin/cut-release — Open a release PR (main → release) for a production deploy.
+#
+# Staging deploys on every merge to `main`; production deploys when the
+# `release` branch advances. This script opens the "release PR" that moves
+# `main` onto `release`. Merging that PR triggers the production deploy and
+# the Release workflow (see docs/deployment.md).
+#
+# The PR body lists every `SNOW-xx` ticket that is on `main` but not yet on
+# `release` — i.e. the tickets this release ships. It does NOT use the
+# `Closes SNOW-xx` magic string: those tickets already closed in Linear
+# when they merged to `main`. The ticket list is informational.
+#
+# Dry-run by default — prints the PR it would open. Pass --commit to open it.
+#
+# Usage:
+#   bin/cut-release            # dry run: print the title, ticket list, body
+#   bin/cut-release --commit   # actually open the PR via gh
+#
+# Requires the `gh` CLI, authenticated, with the repo as origin.
+
+set -euo pipefail
+
+COMMIT=0
+case "${1:-}" in
+    --commit) COMMIT=1 ;;
+    "") ;;
+    *)
+        echo "Usage: $0 [--commit]" >&2
+        exit 64  # EX_USAGE
+        ;;
+esac
+
+if ! command -v gh >/dev/null 2>&1; then
+    echo "Error: gh CLI not found on PATH." >&2
+    exit 69  # EX_UNAVAILABLE
+fi
+
+echo "Fetching origin (branches + tags)…"
+git fetch origin --tags --quiet
+
+if ! git rev-parse --verify --quiet origin/main >/dev/null; then
+    echo "Error: origin/main not found." >&2
+    exit 1
+fi
+
+# Determine the comparison base for the ticket list:
+#   1. origin/release if it exists (the normal case);
+#   2. else the most recent CalVer release tag (YYYY.MM.DD[.N]);
+#   3. else nothing — this is the first release, so list every ticket.
+BASE=""
+if git rev-parse --verify --quiet origin/release >/dev/null; then
+    BASE="origin/release"
+else
+    LAST_TAG="$(git tag --list '20*.*.*' --sort=-creatordate | head -n1)"
+    [[ -n "$LAST_TAG" ]] && BASE="$LAST_TAG"
+fi
+
+if [[ -n "$BASE" ]]; then
+    RANGE="${BASE}..origin/main"
+    echo "Comparing ${BASE} → origin/main"
+else
+    RANGE="origin/main"
+    echo "No release branch or tag found — listing all tickets on origin/main"
+fi
+
+# Extract unique SNOW-xx references from the commit subjects in range.
+TICKETS="$(git log "$RANGE" --format='%s' \
+    | grep -oE 'SNOW-[0-9]+' \
+    | sort -u -t- -k2 -n || true)"
+
+TITLE="Release $(date -u +'%Y.%m.%d')"
+
+if [[ -n "$TICKETS" ]]; then
+    TICKET_LINES="$(while read -r t; do echo "- ${t}"; done <<<"$TICKETS")"
+else
+    TICKET_LINES="- (no SNOW tickets found in range)"
+fi
+
+BODY="$(cat <<EOF
+Release to production: merges \`main\` onto \`release\`, triggering the
+production deploy and the Release workflow.
+
+## Tickets in this release
+
+${TICKET_LINES}
+
+---
+🤖 Opened with bin/cut-release
+EOF
+)"
+
+if [[ "$COMMIT" -eq 0 ]]; then
+    echo
+    echo "DRY RUN — would open this PR (pass --commit to do it):"
+    echo "  base:  release"
+    echo "  head:  main"
+    echo "  title: ${TITLE}"
+    echo
+    echo "$BODY"
+    exit 0
+fi
+
+echo "Opening release PR…"
+gh pr create \
+    --base release \
+    --head main \
+    --title "$TITLE" \
+    --body "$BODY"

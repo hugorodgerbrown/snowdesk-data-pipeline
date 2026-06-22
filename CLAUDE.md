@@ -296,6 +296,27 @@ name or PR body.
 Full lifecycle, entry points, scoping-comment contract, and PR body template:
 [`docs/linear-workflow.md`](docs/linear-workflow.md).
 
+## Path to live
+
+Deploys are split across two branches (hosted on Render):
+
+- **`main` → Staging** — every merge auto-deploys one web dyno.
+- **`release` → Production** — three services (web + scheduler + task
+  worker, one shared DB) deploy when a **release PR** (`main` → `release`)
+  merges. `release` is branch-protected; move it only via that PR.
+
+Merging a release PR also fires [`release.yml`](.github/workflows/release.yml),
+which tags the commit **CalVer** (`YYYY.MM.DD`, `.N` for a second release
+the same day) and creates a GitHub Release. The auto-generated notes list
+the merged PRs — `SNOW-xx:` titles make the Release the record of which
+tickets reached production. Linear `Done` still fires on merge to `main`
+(work complete, on staging); production shipment is the GitHub Release.
+
+Staging and production use **separate databases** — `build.sh` migrates on
+every deploy, so staging must never point at the production DB. Open a
+release with `bin/cut-release` (dry-run by default). Full flow, Render
+topology, and one-time setup: [`docs/deployment.md`](docs/deployment.md).
+
 ## Invariants
 
 These must hold at all times. The QA agent and security-auditor check for
@@ -361,6 +382,7 @@ Read these when working in the relevant area:
 | Client-side Playwright tests (`tox -e e2e`) | [`docs/client-side-tests.md`](docs/client-side-tests.md) |
 | Manual testing scenarios | [`docs/testing-scenarios.md`](docs/testing-scenarios.md) |
 | Existing in-house packages to reuse | [`docs/useful-repos.md`](docs/useful-repos.md) |
+| Path to live (staging/production branch split, releases) | [`docs/deployment.md`](docs/deployment.md) |
 | Linear workflow (full lifecycle) | [`docs/linear-workflow.md`](docs/linear-workflow.md) |
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |
 | Async operations (background threads, failure modes) | [`docs/async-operations.md`](docs/async-operations.md) |

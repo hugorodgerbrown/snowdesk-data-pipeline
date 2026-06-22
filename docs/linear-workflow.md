@@ -27,7 +27,14 @@ without manual nudging:
 | `Ready for dev`| Scoping comment posted; approach settled                  | Chat (MCP)   |
 | `In Progress`  | Local branch created at start of implementation           | Code (MCP)   |
 | `In Review`    | PR opened against `main`                                  | GitHub integration |
-| `Done`         | PR merged                                                 | GitHub integration |
+| `Done`         | PR merged to `main`                                       | GitHub integration |
+
+`Done` means the PR merged to `main` — the work is complete and on
+**staging**. It does **not** mean the ticket has shipped to production:
+production deploys only when a release PR moves `main` onto the `release`
+branch. Which tickets reached production is recorded in the **GitHub
+Release** created on each production deploy (CalVer tag, notes generated
+from the `SNOW-xx:` PR titles). See [`deployment.md`](deployment.md).
 
 Status moves up to and including `In Progress` happen via the Linear
 MCP — Chat creates and scopes tickets through `Ready for dev`, then
