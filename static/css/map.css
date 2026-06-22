@@ -1236,8 +1236,37 @@
     margin: 0 0 12px;
 }
 
+/* SNOW-343: persistent off-season archive chip — bottom-left of #map,
+   beside the 32px (i) legend toggle. Left offset clears the toggle (32px)
+   plus an 8px gap; bottom matches .map-legend so they share a baseline.
+   pointer-events: none so map clicks pass through. */
+.map-offseason-note {
+    position: absolute;
+    left: calc(env(safe-area-inset-left, 0px) + 52px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
+    z-index: 3;
+    height: 28px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-3);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    white-space: nowrap;
+    max-width: calc(100% - 120px);
+    pointer-events: none;
+    user-select: none;
+}
+
 /* Off-season reference line inside the intro card — rendered only when
-   is_offseason is True; points at the persistent #map-offseason-note pill. */
+   is_offseason is True. The persistent chip (.map-offseason-note) is the
+   bottom-left counterpart that survives #home-intro dismissal. */
 .home-intro-offseason-ref {
     font-size: 11px;
     line-height: 1.4;

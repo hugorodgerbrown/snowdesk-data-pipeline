@@ -22,6 +22,10 @@ Optional context:
   show_intro          — bool (default False): when True, renders the
                         #home-intro overlay inside #map.
   is_offseason        — bool: True when today is past the season end.
+                        Drives the persistent #map-offseason-note chip
+                        (bottom-left, beside the legend toggle) so that
+                        returning off-season visitors see the archive
+                        notice even after dismissing #home-intro.
   sample_bulletin_url — str: passed to context but no longer rendered
                         (the sample-bulletin CTA was removed in SNOW-342).
 {% endcomment %}
@@ -432,6 +436,14 @@ Optional context:
             </svg>
         </button>
     </div>
+    {% if is_offseason %}
+        {# SNOW-343: persistent off-season archive chip — survives #home-intro #}
+        {# dismissal so a returning off-season visitor is never shown archive  #}
+        {# danger as live. Bottom-left, beside the legend toggle.              #}
+        <div id="map-offseason-note" class="map-offseason-note" role="note">
+            {% trans "Showing 2025/26 season archive" %}
+        </div>
+    {% endif %}
     {# SNOW-314: Season ribbon — flat horizontal strip of one cell per day, #}
     {# coloured by peak danger for the selected region (default CH-4115). #}
     {# Positioned above the scrubber. Requires ribbon context from view.  #}
