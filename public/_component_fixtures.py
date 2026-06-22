@@ -1074,6 +1074,64 @@ DAY_CHARACTER_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# ── Tendency outlook (SNOW-296) ─────────────────────────────────────────────
+# One variant per canonical tendency_type (steady / increasing / decreasing),
+# plus one neutral fallback variant (unknown type).  Each context dict
+# contains an ``outlook`` key shaped like a TendencyOutlook instance —
+# matching the ``with outlook=panel.tendency_outlook only`` include call.
+
+TENDENCY_OUTLOOK_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Steady — constant danger",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="steady",
+                arrow="→",
+                label="Constant avalanche danger",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="Conditions remain broadly stable.",
+            ),
+        },
+    },
+    {
+        "caption": "Increasing danger",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="increasing",
+                arrow="↗",
+                label="Increasing avalanche danger",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="Fresh snow and wind will increase the hazard tomorrow.",
+            ),
+        },
+    },
+    {
+        "caption": "Decreasing danger",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="decreasing",
+                arrow="↘",
+                label="Decreasing avalanche danger",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="",
+            ),
+        },
+    },
+    {
+        "caption": "Neutral fallback — unknown tendency_type",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="unknown_future_value",
+                arrow="",
+                label="Avalanche danger outlook",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="",
+            ),
+        },
+    },
+)
+
+
 # ── Nav (SNOW-201) ──────────────────────────────────────────────────────────
 # Covers the four meaningful states of the persistent top bar:
 # bare logo, back-link variant, season-trigger variant, and authed subscriber.
