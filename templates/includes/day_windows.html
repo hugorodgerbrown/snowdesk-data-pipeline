@@ -32,6 +32,7 @@ Required context:
                 {% if w.elevation_bounds %}
                     <span class="dw-elev" data-testid="day-window-elevation-icon">
                         {# elevation_icon returns a fixed SVG built from bound_type; safe to render unescaped. #}
+                        <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
                         {{ w.elevation_bounds|elevation_icon:28|safe }}
                     </span>
                 {% endif %}
