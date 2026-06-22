@@ -9,10 +9,9 @@
     },
     {
       "name": "Django dev server (preview)",
-      "runtimeExecutable": ".venv/bin/python",
+      "runtimeExecutable": "sh",
       "autoport": true,
-      "runtimeArgs": ["manage.py", "runserver", "$PORT"],
-      "port": 8765
+      "runtimeArgs": ["-c", "exec .venv/bin/python manage.py runserver \"0.0.0.0:$PORT\""]
     },
     {
       "name": "Tailwind CSS watcher",
