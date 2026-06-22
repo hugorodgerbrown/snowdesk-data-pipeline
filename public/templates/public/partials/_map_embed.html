@@ -3,10 +3,9 @@
 public/partials/_map_embed.html — Shared map surface partial.
 
 Encapsulates the full #map DOM (utility cluster, legend, ribbon, scrubber)
-so it can be included from both /map/ (map.html) and / (home.html) without
-duplicating the markup.  The {% if edit_mode %} resort-edit panel is
-intentionally excluded — it is rendered directly in map.html after this
-include, keeping the edit-mode concern out of the shared surface.
+included from / (home.html).  The {% if edit_mode %} resort-edit panel is
+intentionally excluded — it is rendered from home.html after this include
+(/?edit=resorts), keeping the edit-mode concern out of the shared surface.
 
 Context expected from the including template:
   default_basemap_key — str: settings.BASEMAP fallback key.

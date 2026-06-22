@@ -51,7 +51,7 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
-| `edit_map` | `superusers=True` | The in-map resort editor at `/map/?edit=resorts` and its API endpoints (`/api/edit/resorts/queue/`, `/api/edit/resorts/<id>/coords/`). | SNOW-86 (test case for the mechanism); first consumer is SNOW-74. |
+| `edit_map` | `superusers=True` | The in-map resort editor at `/?edit=resorts` and its API endpoints (`/api/edit/resorts/queue/`, `/api/edit/resorts/<id>/coords/`). | SNOW-86 (test case for the mechanism); first consumer is SNOW-74. |
 
 Keep this table up to date as new flags land.
 
@@ -176,7 +176,7 @@ The change takes effect on the next request — there's no cache to bust.
 which lets you force a flag's value for the current request via
 querystring:
 
-* `https://localhost:8000/map/?edit=resorts&dwf_edit_map=1` — flag
+* `https://localhost:8000/?edit=resorts&dwf_edit_map=1` — flag
   forced **on** for this request, regardless of the DB row.
 * `…&dwf_edit_map=0` — forced **off**.
 

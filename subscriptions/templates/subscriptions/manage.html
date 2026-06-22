@@ -9,7 +9,7 @@ reached).
 Shows one card per subscribed region, ordered by region name. Each card
 shows the region name, region ID, and resort list. A per-region "Remove"
 button POSTs to subscriptions:remove_region via HTMX. A "Choose more
-regions on the map" link routes to /map/. A passkeys section lists
+regions on the map" link routes to /. A passkeys section lists
 registered platform passkeys with delete buttons. A destructive
 "Unsubscribe from all alerts" button hard-deletes the subscriber.
 {% endcomment %}
@@ -72,7 +72,7 @@ registered platform passkeys with delete buttons. A destructive
                                 <div class="flex items-center gap-2 flex-wrap">
                                     {# Flag-badge anchor — opens the map drawer for this region #}
                                     <a
-                                        href="{% url 'public:map' %}#{{ subscription.region.region_id }}"
+                                        href="{% url 'public:home' %}#{{ subscription.region.region_id }}"
                                         class="inline-flex items-center gap-1 font-mono text-xs text-text-3 border border-text-3/30 rounded-pill px-1.5 py-0.5 shrink-0 hover:text-text-1 hover:border-text-2 transition-colors"
                                         aria-label="{% blocktrans with region=subscription.region.name %}View {{ region }} on the map{% endblocktrans %}"
                                     >
@@ -149,7 +149,7 @@ registered platform passkeys with delete buttons. A destructive
                 {# Map CTA — choose more regions #}
                 <div class="mt-2 mb-10">
                     <a
-                        href="{% url 'public:map' %}"
+                        href="{% url 'public:home' %}"
                         class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
                     >
                         {% trans "Choose more regions on the map →" %}

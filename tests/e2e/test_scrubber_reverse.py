@@ -50,9 +50,12 @@ def _route_season_ratings(route: Route) -> None:
 
 
 def _navigate_and_wait(page: Page, live_server_url: str) -> None:
-    """Navigate to /map/ and wait for the scrubber to be ready."""
+    """Navigate to / (the canonical map page) and wait for the scrubber to be ready.
+
+    SNOW-344: /map/ now redirects to /; navigate directly to /.
+    """
     page.route(f"{live_server_url}/api/ratings/*", _route_season_ratings)
-    page.goto(f"{live_server_url}/map/")
+    page.goto(f"{live_server_url}/")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_selector(
         "#season-scrubber[data-state='ready']",

@@ -72,7 +72,6 @@ def _build_monitored_urls() -> list[tuple[str, str]]:
     today = datetime.date.today().isoformat()
     return [
         ("home", "/"),
-        ("map", "/map/"),
         ("api_ratings", f"/api/ratings/?d={today}&country=ch"),
         ("api_resorts_by_region", "/api/resorts-by-region/"),
         ("api_regions_geojson", "/api/regions.geojson?country=ch"),

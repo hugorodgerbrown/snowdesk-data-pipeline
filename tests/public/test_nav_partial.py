@@ -56,7 +56,7 @@ class TestNavAdminMenu:
         assert 'id="admin-menu"' in html
         assert reverse("public:components_index") in html
         assert reverse("public:push_demo") in html
-        assert reverse("public:map") + "?edit=resorts" in html
+        assert reverse("public:home") + "?edit=resorts" in html
         assert reverse("admin:index") in html
 
     def test_non_staff_sees_no_admin_menu(

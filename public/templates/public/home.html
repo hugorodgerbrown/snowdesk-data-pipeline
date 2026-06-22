@@ -1,14 +1,18 @@
 {% extends "public/base.html" %}
 {% load i18n static %}
 {% comment %}
-public/templates/public/home.html — Map-as-homepage (SNOW-314).
+public/templates/public/home.html — Canonical interactive map page (SNOW-344).
 
-The homepage is the full-frame map with a dismissable landing overlay
-(#home-intro). The map surface is shared with /map/ via the
-_map_embed.html partial (show_intro=True adds the overlay inside #map).
+SNOW-314: the homepage is the full-frame map with a dismissable landing overlay
+(#home-intro). The map surface uses the _map_embed.html partial
+(show_intro=True adds the overlay inside #map).
 
-This template owns homepage-specific metadata (title, meta_description,
-og_tags) and loads home_intro.js in addition to the map assets.
+SNOW-344: /map/ now permanently redirects here, so this template handles all
+map-page traffic. The offmap-banner, edit-resorts panel, and edit-resorts JS
+(previously in map.html) are now included here.
+
+This template owns the page metadata (title, meta_description, og_tags)
+and loads home_intro.js in addition to the shared map assets.
 {% endcomment %}
 
 {% block title %}{% trans "Snowdesk — Swiss avalanche bulletins" %}{% endblock %}
@@ -38,10 +42,75 @@ og_tags) and loads home_intro.js in addition to the map assets.
 {% endblock %}
 
 {% block content %}
+    {# SNOW-324: off-map notification banner. Hidden by default; map.js reveals #}
+    {# it (toggling hidden↔flex, per the sw-update-banner pattern) when the     #}
+    {# locate pill is tapped while the user is outside the map's bounds. The ×  #}
+    {# and a short timeout dismiss it. Sits between the nav and the map so it   #}
+    {# pushes the map down rather than overlaying it.                           #}
+    {# Narrow viewports: a full-width banner in flow between the nav and the   #}
+    {# map (pushes the map down). Wide viewports (sm+): a floating, rounded    #}
+    {# toast panel near the top-centre, out of flow (overlays the map).        #}
+    <div
+        id="offmap-banner"
+        role="status"
+        aria-live="polite"
+        class="hidden items-center gap-4 border-b border-border bg-card px-5 py-4 sm:fixed sm:left-1/2 sm:top-20 sm:z-50 sm:w-96 sm:-translate-x-1/2 sm:rounded-card sm:border sm:shadow-lg"
+    >
+        <span
+            class="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-text-1 text-card"
+            aria-hidden="true"
+        >
+            <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+            >
+                <path d="M5.43 5.43A8.06 8.06 0 0 0 4 10c0 6 8 12 8 12a29.94 29.94 0 0 0 5-5" />
+                <path d="M19.18 13.52A8.66 8.66 0 0 0 20 10a8 8 0 0 0-8-8 7.88 7.88 0 0 0-3.52.82" />
+                <path d="M9.13 9.13A2.78 2.78 0 0 0 9 10a3 3 0 0 0 3 3 2.78 2.78 0 0 0 .87-.13" />
+                <path d="M14.9 9.25a3 3 0 0 0-2.15-2.16" />
+                <line x1="2" x2="22" y1="2" y2="22" />
+            </svg>
+        </span>
+        <div class="min-w-0 flex-1">
+            <p class="text-base font-semibold text-text-1">{% trans "Off the map" %}</p>
+            <p class="text-sm text-text-2">
+                {% trans "Your location is outside the mapped regions." %}
+            </p>
+        </div>
+        <button
+            type="button"
+            data-action="dismiss-offmap"
+            aria-label='{% trans "Dismiss" %}'
+            class="flex-none p-1 text-text-2 hover:text-text-1"
+        >
+            <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+            </svg>
+        </button>
+    </div>
     {# SNOW-314: shared map surface with intro overlay enabled.          #}
     {# The _map_embed partial renders #home-intro when show_intro=True.  #}
     {% include "public/partials/_map_embed.html" with show_intro=True %}
-    {# SNOW-333: field-report sheet + JS — shared with map.html.        #}
+    {# SNOW-344: edit-resorts panel (moved from map.html).               #}
+    {% if edit_mode %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
+    {# SNOW-333: field-report sheet + JS — shared with the map surface.  #}
     {% include "public/partials/_report_surface.html" %}
 {% endblock %}
 
@@ -50,4 +119,6 @@ og_tags) and loads home_intro.js in addition to the map assets.
     <script defer src="{% static 'js/map.js' %}"></script>
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
+    {# SNOW-344: edit-resorts JS (moved from map.html). #}
+    {% if edit_mode %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
 {% endblock %}

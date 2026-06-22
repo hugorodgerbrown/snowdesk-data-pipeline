@@ -2,8 +2,8 @@
 public/templates/public/base.html — Canonical layout for the public site.
 
 Pulled out of bulletin.html (the "most complete, use as base" page flagged
-in SNOW-9). Every public page except /map/ extends this template; the map
-page owns its full viewport and keeps its own doctype for that reason.
+in SNOW-9). Every public page extends this template, including home.html (which
+hosts the map at /).
 Subscription pages also extend this file indirectly via
 subscriptions/templates/subscriptions/base.html.
 

@@ -122,12 +122,12 @@ the wordmark always links home.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/ | Nav bar visible at the top with a "Snowdesk" wordmark (18px); no back link |
-| 2 | Navigate to http://localhost:8000/map/ | Same nav bar visible above the map frame; no back link |
+| 2 | Navigate to http://localhost:8000/ (the map) | Same nav bar visible above the map frame; no back link |
 | 3 | Navigate to http://localhost:8000/CH-4115/verbier/ | Nav bar shows a left-chevron + "Map" link, a thin vertical divider, and the "Snowdesk" wordmark at a smaller size (15px) |
 | 4 | Navigate to http://localhost:8000/CH-4115/season/ | Nav bar again shows "← Map" and the wordmark |
 | 5 | Navigate to http://localhost:8000/CH-4115/ (random/recent bulletins) | Nav bar again shows "← Map" and the wordmark |
 | 6 | Click the "Snowdesk" wordmark from any of the pages above | Browser navigates to http://localhost:8000/ |
-| 7 | From a bulletin page, click the "← Map" back link | Browser navigates to http://localhost:8000/map/ |
+| 7 | From a bulletin page, click the "← Map" back link | Browser navigates to http://localhost:8000/ |
 
 ### Scenario N2: Nav border spans the full viewport
 
@@ -145,7 +145,7 @@ inner content stays aligned with the body copy.
 
 ### Scenario M1: Load the map and see today's choropleth
 
-**Goal**: Verify the /map/ page renders all regions, colours them by today's
+**Goal**: Verify the map page renders all regions, colours them by today's
 danger rating, and shows the legend.
 
 **Preconditions**: Bulletins for today have been fetched
@@ -154,7 +154,7 @@ and regions/resorts fixtures are loaded.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/map/ | MapLibre basemap of Switzerland renders centred on the Alps; Swiss region polygons are overlaid and filled in danger-level colours |
+| 1 | Navigate to http://localhost:8000/ | MapLibre basemap of Switzerland renders centred on the Alps; Swiss region polygons are overlaid and filled in danger-level colours |
 | 2 | Locate the legend | A "Today" legend is visible with four swatch rows: "Low (1)" green-yellow, "Moderate (2)" yellow, "Considerable (3)" orange, "High (4)" red |
 | 3 | Locate the hint text | Footer hint reads "Pinch to zoom · tap a region" |
 | 4 | Check regions without today's bulletin | Rendered in grey (no_rating colour) — not missing |
@@ -167,12 +167,12 @@ resorts, and a working CTA to the bulletin page.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | On http://localhost:8000/map/, click a region with a bulletin (e.g. Verbier / CH-4115) | A bottom sheet slides up from the page bottom |
+| 1 | On http://localhost:8000/, click a region with a bulletin (e.g. Verbier / CH-4115) | A bottom sheet slides up from the page bottom |
 | 2 | Read the sheet title | Shows the region name (e.g. "Verbier") |
 | 3 | Read the sheet body | Shows today's danger rating and any linked resort names |
 | 4 | Locate the CTA | "Read today's bulletin →" link visible at the bottom of the sheet |
 | 5 | Click the CTA | Browser navigates to the region's bulletin page for today (e.g. `/CH-4115/verbier/`) |
-| 6 | Return to /map/ and click a different region | Sheet content updates; the newly selected region's outline thickens and darkens |
+| 6 | Return to / and click a different region | Sheet content updates; the newly selected region's outline thickens and darkens |
 | 7 | Click the × close button on the sheet | Sheet dismisses; the region's selection outline is removed |
 
 ### Scenario M3: Regions with no bulletin render as no_rating
@@ -183,7 +183,7 @@ and the sheet reflects that.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | In the Django shell, delete today's bulletins for one region (e.g. `RegionBulletin.objects.filter(region__region_id='CH-4115', ...)`) | Bulletins removed |
-| 2 | Reload http://localhost:8000/map/ | That region renders in grey |
+| 2 | Reload http://localhost:8000/ | That region renders in grey |
 | 3 | Click the region | Sheet opens; danger rating shows as "no rating" / unavailable |
 
 ### Scenario M4: Debug mode reveals region IDs
@@ -193,9 +193,9 @@ and region IDs in the sheet.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/map/?debug=1 | Map loads; a small "debug · press d" pill visible top-right |
+| 1 | Navigate to http://localhost:8000/?debug=1 | Map loads; a small "debug · press d" pill visible top-right |
 | 2 | Click a region | Sheet shows the SLF region identifier (e.g. "CH-4115") in a monospace debug line beneath the region name |
-| 3 | Navigate to http://localhost:8000/map/ (without the debug flag) | Debug pill is hidden |
+| 3 | Navigate to http://localhost:8000/ (without the debug flag) | Debug pill is hidden |
 | 4 | Press `d` on the keyboard | Debug pill appears and the sheet's region-id line becomes visible |
 
 ---
@@ -206,11 +206,11 @@ and region IDs in the sheet.
 
 **Goal**: Verify the autocomplete finds a Swiss avalanche region by name.
 
-**Preconditions**: /map/ has fully loaded (regions + resorts + summaries).
+**Preconditions**: the map page has fully loaded (regions + resorts + summaries).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | On http://localhost:8000/map/, click into the search input placeholder "Find a region or resort" | Input receives focus |
+| 1 | On http://localhost:8000/, click into the search input placeholder "Find a region or resort" | Input receives focus |
 | 2 | Type `Graubünden` | A dropdown appears below the input with up to eight results; a row for "Graubünden" is visible with a "Region" badge |
 | 3 | Click the "Graubünden" row | Dropdown closes; the map pans/zooms to the region and its bottom sheet opens with today's rating |
 
@@ -270,7 +270,7 @@ both hits appear and the badge makes the distinction obvious.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/ | Homepage loads with two CTAs side by side |
-| 2 | Click "Explore the map →" | Browser navigates to http://localhost:8000/map/ and the choropleth loads |
+| 2 | Click "Explore the map →" | Browser navigates to http://localhost:8000/ and the choropleth loads |
 
 ---
 
