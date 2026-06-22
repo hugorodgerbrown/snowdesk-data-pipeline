@@ -1,5 +1,8 @@
 """
-tests/public/test_map_page.py — Tests for the /map/ page view.
+tests/public/test_map_page.py — Tests for the canonical map page (/).
+
+SNOW-344: /map/ is now a 301 redirect to /; all tests that previously
+targeted /map/ now target / (via reverse("public:home")).
 
 Narrow scope: the page resolves, the three API endpoint URLs are baked
 into the markup via data-* attributes, and the static JS/CSS links are
@@ -29,9 +32,9 @@ from tests.factories import (
 
 @pytest.mark.django_db
 def test_map_page_renders() -> None:
-    """GET /map/ returns 200 and contains the map container."""
+    """GET / returns 200 and contains the map container."""
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     assert response.status_code == 200
     content = response.content.decode()
     assert 'id="map"' in content
@@ -56,7 +59,7 @@ def test_map_page_injects_api_urls() -> None:
     data-ratings-url pointing at the unified /api/ratings/ endpoint.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert f'data-regions-url="{reverse("api:regions_geojson")}"' in content
     assert f'data-ratings-url="{reverse("api:ratings")}"' in content
@@ -76,7 +79,7 @@ def test_map_element_has_season_end_attribute() -> None:
     RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 5))
 
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
 
     # Verify the attribute sits on the #map div, not only on #season-scrubber.
@@ -94,7 +97,7 @@ def test_map_page_renders_resorts_overlay_toggle() -> None:
     Default is ``aria-checked="false"`` — the layer opens hidden.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert 'data-overlay-key="resorts"' in content
     assert "Resorts" in content
@@ -110,7 +113,7 @@ def test_map_page_renders_resorts_overlay_toggle() -> None:
 def test_map_page_renders_resorts_legend_entry() -> None:
     """SNOW-78: the danger-scale legend includes a Resorts entry."""
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert 'data-testid="map-legend-resorts"' in content
     assert "map-legend-pin" in content
@@ -120,7 +123,7 @@ def test_map_page_renders_resorts_legend_entry() -> None:
 def test_map_page_loads_assets() -> None:
     """The page references the MapLibre library, the map CSS, and map JS."""
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert "maplibre-gl" in content
     assert "/static/css/map.css" in content
@@ -137,7 +140,7 @@ def test_map_page_injects_default_basemap_key() -> None:
     that has since been removed from the catalogue.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert 'data-default-basemap-key="swisstopo_winter"' in content
 
@@ -152,7 +155,7 @@ def test_map_page_renders_basemap_picker() -> None:
     pin the contract — JS resolves the active option at runtime.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert 'id="basemap-pill"' in content
     assert 'id="basemap-menu"' in content
@@ -169,7 +172,7 @@ def test_map_view_passes_basemap_catalogue() -> None:
     the catalogue from settings inline.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     ctx = response.context
     assert "basemaps" in ctx
     assert "default_basemap_key" in ctx
@@ -182,7 +185,7 @@ def test_map_view_passes_basemap_catalogue() -> None:
 @pytest.mark.django_db
 def test_map_page_accepts_date_query_param() -> None:
     """
-    SNOW-47: ``/map/?d=YYYY-MM-DD`` still 200s. The selected date is
+    SNOW-47: ``/?d=YYYY-MM-DD`` still 200s. The selected date is
     consumed entirely by JS (which reads ``location.search`` after the
     page loads), so the only server-side guarantee is that the page
     doesn't reject or strip the query string. The scrubber data
@@ -190,7 +193,7 @@ def test_map_page_accepts_date_query_param() -> None:
     present in the rendered markup.
     """
     client = Client()
-    response = client.get(reverse("public:map") + "?d=2026-02-15")
+    response = client.get(reverse("public:home") + "?d=2026-02-15")
     assert response.status_code == 200
     content = response.content.decode()
     assert "data-season-start=" in content
@@ -209,7 +212,7 @@ def test_map_page_renders_unified_time_controls() -> None:
     (#region-readout) which is part of the season ribbon.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert 'id="scrubber-play"' in content
     assert 'id="map-date-pill"' not in content
@@ -227,7 +230,7 @@ def test_map_page_renders_timelapse_transport_buttons() -> None:
     are absent.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert 'id="scrubber-skip-start"' in content
     assert 'id="scrubber-reverse"' in content
@@ -251,7 +254,7 @@ def test_map_page_no_offline_toggle_or_precache_url() -> None:
     stale data" reports that motivated this rewrite.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert 'id="offline-toggle"' not in content
     assert "data-offline-manifest-url" not in content
@@ -260,9 +263,9 @@ def test_map_page_no_offline_toggle_or_precache_url() -> None:
 
 @pytest.mark.django_db
 def test_map_page_inherits_pwa_manifest_link() -> None:
-    """SNOW-79: every public page (incl. /map/) links the manifest from base.html."""
+    """SNOW-79: every public page (incl. /) links the manifest from base.html."""
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert 'rel="manifest"' in content
     assert "manifest.webmanifest" in content
@@ -277,7 +280,7 @@ def test_map_page_loads_vendored_maplibre_assets() -> None:
     no longer depends on an external CDN at runtime or in the CSP allow-list.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert "maplibre-gl.min" in content
     assert "maplibre-gl.css" in content
@@ -294,7 +297,7 @@ def test_map_page_renders_scrubber_loading_state() -> None:
     pre-existing nodes regardless of fetch timing.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert 'data-state="loading"' in content
     assert "season-scrubber-loading" in content
@@ -315,7 +318,7 @@ def test_map_layer_menu_section_order() -> None:
     reorder only; all items and their data-* attributes are unchanged.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
 
     # Each label is unique in the rendered output; assert relative order.
@@ -357,7 +360,7 @@ class TestMapPageDataDrivenSeasonBounds:
         RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 5))
 
         client = Client()
-        response = client.get(reverse("public:map"))
+        response = client.get(reverse("public:home"))
         content = response.content.decode()
 
         assert 'data-season-start="2025-12-10"' in content
@@ -370,7 +373,7 @@ class TestMapPageDataDrivenSeasonBounds:
         and data-season-end fall back to the calendar Nov 1 / May 31 window.
         """
         client = Client()
-        response = client.get(reverse("public:map"))
+        response = client.get(reverse("public:home"))
         content = response.content.decode()
 
         # Calendar fallback for the 2025/2026 season
@@ -390,7 +393,7 @@ def test_report_button_not_shown_when_flag_off() -> None:
     subscriber = SubscriberFactory.create()
     client = Client()
     client.force_login(subscriber.user)
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert "report-btn" not in content
 
@@ -405,7 +408,7 @@ def test_report_button_shown_for_anonymous_with_signin_cta() -> None:
     of the geolocation flow.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     # Button must be present so anonymous users can tap and see the sign-in CTA.
     assert "report-btn" in content
@@ -422,7 +425,7 @@ def test_report_button_shown_for_subscriber_with_flag() -> None:
     subscriber = SubscriberFactory.create()
     client = Client()
     client.force_login(subscriber.user)
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert "report-btn" in content
     assert "report-sheet" in content
@@ -436,7 +439,7 @@ def test_report_js_not_loaded_when_flag_off() -> None:
     subscriber = SubscriberFactory.create()
     client = Client()
     client.force_login(subscriber.user)
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert "report.js" not in content
 
@@ -448,7 +451,7 @@ def test_report_eligible_true_for_authenticated_user() -> None:
     user = UserFactory.create()
     client = Client()
     client.force_login(user)
-    response = client.get(reverse("public:map"))
+    response = client.get(reverse("public:home"))
     content = response.content.decode()
     assert "report-btn" in content
     assert 'data-report-eligible="true"' in content

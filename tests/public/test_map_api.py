@@ -242,7 +242,7 @@ def test_ratings_vary_no_cookie_with_analytics_enabled() -> None:
     When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
     read request.user to tag identities, causing SessionMiddleware to append
     Vary: Cookie and defeat Cache-Control: public CDN caching.
-    The _POSTHOG_EXEMPT_API_PATHS exemption in config/settings/base.py prevents
+    The _POSTHOG_EXEMPT_PATHS exemption in config/settings/base.py prevents
     that access for this endpoint.
     """
     response = Client().get(reverse("api:ratings"))
@@ -264,7 +264,7 @@ def test_geojson_no_cookie_vary_with_analytics_enabled(url_name: str) -> None:
     When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
     read request.user to tag identities, causing SessionMiddleware to append
     Vary: Cookie and defeat Cache-Control: public CDN caching.
-    The _POSTHOG_EXEMPT_API_PATHS exemption in config/settings/base.py prevents
+    The _POSTHOG_EXEMPT_PATHS exemption in config/settings/base.py prevents
     that access for these endpoints.
     """
     url = reverse(url_name) + "?country=ch"
@@ -295,7 +295,7 @@ def test_remaining_cacheable_endpoints_no_cookie_vary_with_analytics_enabled(
 ) -> None:
     """SNOW-299 regression: the remaining exempt cacheable endpoints stay Cookie-free.
 
-    Completes the key-on coverage of _POSTHOG_EXEMPT_API_PATHS — the three
+    Completes the key-on coverage of _POSTHOG_EXEMPT_PATHS — the three
     paths not exercised by the ratings/GeoJSON regression tests above. With
     POSTHOG_API_KEY set, PosthogContextMiddleware would otherwise read
     request.user and let SessionMiddleware append Vary: Cookie, defeating the
@@ -417,6 +417,62 @@ def test_regions_geojson_returns_feature_collection() -> None:
     at_response = client.get(reverse("api:regions_geojson") + "?country=at")
     at_by_id = {f["properties"]["id"]: f for f in at_response.json()["features"]}
     assert at_by_id["AT-02-01-01"]["properties"]["subregion_name"] == ""
+
+
+@pytest.mark.django_db
+def test_regions_geojson_features_carry_major_name() -> None:
+    """SNOW-342: each feature's properties include the L1 major-region name.
+
+    The season-header readout uses major_name to build the Major › Minor › Micro
+    breadcrumb without a second fetch. The CH feature should carry the English
+    name of its MajorRegion; the AT feature uses name_en as well (no placeholder
+    suppression logic applies at L1).
+    """
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+        ],
+    }
+    ch_major = MajorRegionFactory.create(
+        prefix="CH-4",
+        country="CH",
+        name_en="Wallis",
+        name_native="Valais",
+    )
+    sub_ch = SubRegionFactory.create(prefix="CH-41", major=ch_major)
+    MicroRegionFactory.create(
+        region_id="CH-4115",
+        name="Valais",
+        slug="ch-4115",
+        boundary=boundary,
+        subregion=sub_ch,
+    )
+
+    at_major = MajorRegionFactory.create(
+        prefix="AT-02",
+        country="AT",
+        name_en="Styria",
+        name_native="Steiermark",
+    )
+    sub_at = SubRegionFactory.create(prefix="AT-02-01", major=at_major)
+    MicroRegionFactory.create(
+        region_id="AT-02-01-01",
+        name="AT-02-01-01",
+        slug="at-02-01-01",
+        boundary=boundary,
+        subregion=sub_at,
+    )
+
+    client = Client()
+    ch_data = client.get(reverse("api:regions_geojson") + "?country=ch").json()
+    by_id = {f["properties"]["id"]: f for f in ch_data["features"]}
+    assert by_id["CH-4115"]["properties"]["major_name"] == "Wallis"
+
+    # AT region: name_en present → used as major_name.
+    at_data = client.get(reverse("api:regions_geojson") + "?country=at").json()
+    at_by_id = {f["properties"]["id"]: f for f in at_data["features"]}
+    assert at_by_id["AT-02-01-01"]["properties"]["major_name"] == "Styria"
 
 
 @pytest.mark.django_db

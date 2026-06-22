@@ -51,7 +51,9 @@ def _route_season_ratings(route: Route) -> None:
 
 
 def _setup_routes(page: Page, live_server_url: str) -> None:
-    """Stub the ratings endpoint before navigating to /map/.
+    """Stub the ratings endpoint before navigating to /.
+
+    SNOW-344: /map/ now redirects to /; stub against / directly.
 
     Only the ratings endpoint is stubbed.  Everything else (basemap
     tiles, regions GeoJSON) is left as-is — MapLibre's 'load' event never
@@ -71,9 +73,12 @@ def _wait_for_scrubber_ready(page: Page, timeout: float = 15_000) -> None:
 
 
 def _navigate_and_wait(page: Page, live_server_url: str) -> None:
-    """Navigate to /map/ and wait for the scrubber to be ready."""
+    """Navigate to / (the canonical map page) and wait for the scrubber to be ready.
+
+    SNOW-344: /map/ now redirects to /; navigate directly to /.
+    """
     _setup_routes(page, live_server_url)
-    page.goto(f"{live_server_url}/map/")
+    page.goto(f"{live_server_url}/")
     page.wait_for_load_state("domcontentloaded")
     _wait_for_scrubber_ready(page)
 
@@ -186,10 +191,9 @@ def test_date_changed_updates_region_readout(
 ) -> None:
     """``snowdesk:date-changed`` updates the date shown in the region readout.
 
-    On ``/map/`` no region is focused, so ``seasonRibbonInit`` renders the
-    readout as a date-only chip (visible, ``.has-region`` absent — no region
-    name, no danger swatch). It is NOT hidden: the date is always shown as a
-    minimal scrubbed-date display. ``seasonRibbonInit`` listens to
+    On ``/`` CH-4115 is pre-selected (SNOW-342), so ``seasonRibbonInit``
+    renders the readout with ``.has-region`` (region name + danger swatch)
+    alongside the scrubbed-date display. ``seasonRibbonInit`` listens to
     ``snowdesk:date-changed`` and re-runs ``updateReadout()``, so the chip's
     date text tracks the scrubbed day. This runs without a loaded MapLibre map.
     """
@@ -201,20 +205,20 @@ def test_date_changed_updates_region_readout(
     readout = page.locator("#region-readout")
     assert readout.count() == 1, "#region-readout element must be present"
 
-    # No region focused on /map/ → the readout is a visible, date-only chip.
+    # CH-4115 pre-selected on / → the readout is a visible, region-focused chip.
     page.wait_for_function(
         "() => { const r = document.getElementById('region-readout');"
         " return r && !r.hasAttribute('hidden'); }"
     )
-    assert "has-region" not in (readout.get_attribute("class") or ""), (
-        "with no region focused the readout should be a date-only chip (no .has-region)"
+    assert "has-region" in (readout.get_attribute("class") or ""), (
+        "with CH-4115 pre-selected the readout should be region-focused (.has-region)"
     )
 
-    # date-changed updates the displayed date text (formatDateLong → "APR 8 2026").
+    # date-changed updates the displayed date text (formatDatePopup → "8 Apr 2026").
     _dispatch_date_changed(page, "2026-04-08")
     page.wait_for_timeout(150)
 
-    date_text = page.locator("#region-readout .region-readout-danger").inner_text()
+    date_text = page.locator("#region-readout .region-readout-date").inner_text()
     assert "2026" in date_text and "8" in date_text, (
         f"readout date should update to the dispatched day; got {date_text!r}"
     )

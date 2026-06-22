@@ -187,7 +187,7 @@ def ratings(request: HttpRequest) -> JsonResponse:
     The ``@vary_on_headers("Accept-Encoding")`` decorator is necessary but
     not sufficient on its own — ``Vary: Cookie`` is only reliably absent
     because this path is exempt from ``PosthogContextMiddleware`` via
-    ``_POSTHOG_EXEMPT_API_PATHS`` in ``config/settings/base.py`` (SNOW-299).
+    ``_POSTHOG_EXEMPT_PATHS`` in ``config/settings/base.py`` (SNOW-299).
 
     Errors:
         400 — unknown country code.
@@ -335,7 +335,7 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
     ``Vary: Cookie`` on the response.  Region geometry is fixture-backed and
     anonymous — it is safe to cache publicly for 24 hours.  ``Vary: Cookie``
     is also suppressed by exempting this path from ``PosthogContextMiddleware``
-    via ``_POSTHOG_EXEMPT_API_PATHS`` in ``config/settings/base.py``
+    via ``_POSTHOG_EXEMPT_PATHS`` in ``config/settings/base.py``
     (SNOW-299) — without that exemption the middleware would read
     ``request.user`` and cause ``SessionMiddleware`` to append the header.
 
@@ -374,6 +374,12 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
         subregion_name = (
             sub.name_en if sub.name_en and sub.name_en != sub.prefix else ""
         )
+        # SNOW-314 prototype: L1 major-region display name, so the season-header
+        # readout can build a Major (L1) › Minor (L2) › Micro (L4) breadcrumb
+        # that mirrors the visible map overlays without a second fetch. Mirrors
+        # the popup breadcrumb's field choice (_region_tooltip.html): English
+        # name with the native name as fallback.
+        major_name = sub.major.name_en or sub.major.name_native
         features.append(
             {
                 "type": "Feature",
@@ -387,6 +393,7 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
                     "slug": region.name_slug,
                     "country": sub.major.country,
                     "subregion_name": subregion_name,
+                    "major_name": major_name,
                     # SNOW-54: True when the pipeline has ever produced a rating
                     # for this region; False for permanently-uncovered regions
                     # (e.g. Swiss Lowlands / Jura, non-EUREGIO AT/IT areas).

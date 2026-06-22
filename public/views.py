@@ -2,7 +2,7 @@
 public/views.py — Views for the public-facing bulletin site.
 
 URL structure:
-  /                                          Marketing homepage.
+  /                                          Interactive map homepage (canonical).
   /examples/random/                          Random bulletin (rendered inline).
   /examples/category/<danger_level>/         Random bulletin by danger level.
   /random/                                   Deprecated → /examples/random/.
@@ -10,6 +10,10 @@ URL structure:
   /<region_id>/<slug>/                       Today's bulletin for a region.
   /<region_id>/<slug>/<date>/                Bulletin for a specific date.
   /<region_id>/season/                       Full-season page (up to 100 panels).
+
+SNOW-344: ``/map/`` is a permanent 301 redirect to ``/``; ``map_view``
+has been removed. Edit-resorts mode (``?edit=resorts``) now lives in
+``home()`` directly.
 
 Each page represents a single day, identified by the bulletin's ``valid_to``
 date.  Two bulletins may cover a day: an evening issue (valid from ~16:00 the
@@ -712,22 +716,38 @@ def _get_name_slug(region: MicroRegion) -> str:
 
 def home(request: HttpRequest) -> HttpResponse:
     """
-    Render the map-as-homepage.
+    Render the canonical interactive map page.
 
-    SNOW-314: the homepage is now the full-frame map with a dismissable
-    landing overlay (``#home-intro``). The map surface is identical to
-    ``/map/`` — same basemap picker, scrubber, ribbon, and season data —
-    but the overlay provides identity, a factual one-liner, an off-season
-    note when today is past the season end, and a sample-bulletin link so
-    first-time visitors can explore without tapping a region.
+    SNOW-314: the homepage is the full-frame map with a dismissable landing
+    overlay (``#home-intro``). SNOW-344: ``/map/`` now permanently redirects
+    here, so this view handles all map-page traffic.
+
+    Edit mode: when ``?edit=resorts`` is in the query string **and** the
+    ``edit_map`` waffle flag is active for the request user, the page renders
+    the resort-coordinate-edit panel (SNOW-74 / SNOW-86). When the flag is
+    off the query string is silently ignored.
+
+    CH-4115 (Martigny / Verbier) is pre-selected so the readout chip and
+    breadcrumb are correct on first paint (SNOW-342); the scrubber paints that
+    region's season into the track. The intro overlay provides identity, a
+    factual one-liner, an off-season note when today is past the season end,
+    and a sample-bulletin link so first-time visitors can explore.
 
     Context:
       ``ribbon``              — default-region (CH-4115) SeasonRibbon or None.
       ``default_region_id``   — str: "CH-4115".
-      ``show_intro``          — True (the overlay renders on home but not /map/).
+      ``default_region_name`` — str: the pre-selected region's display name.
+      ``default_region_slug`` — str: the pre-selected region's bulletin slug.
+      ``default_subregion_name`` — str: L2 sub-region name for the breadcrumb.
+      ``default_major_name``  — str: L1 major-region name for the breadcrumb.
+      ``show_intro``          — True (the overlay renders on the homepage).
       ``is_offseason``        — True when today is past the active season end.
       ``sample_bulletin_url`` — resolved URL for CH-4115 2026-02-17 (High-danger
                                 day, verified 200 in test_data), via reverse().
+      ``edit_mode``           — True when resort-edit mode is active.
+      ``edit_queue_url``      — URL for the edit queue API (only when edit_mode).
+      ``edit_save_url_template`` — Save URL with ``__ID__`` placeholder (edit_mode).
+      ``edit_resorts_geojson_url`` — URL for the resorts GeoJSON endpoint (edit_mode).
 
     Args:
         request: The incoming HTTP request.
@@ -739,9 +759,14 @@ def home(request: HttpRequest) -> HttpResponse:
     today = datetime.date.today()
     base_ctx = _base_map_context(today)
     ribbon = _build_default_ribbon(today)
-    # Name + slug of the pre-selected default region (CH-4115) for the readout
-    # chip and its "view bulletin" link.
-    default_region_name, default_region_slug = _default_region_label()
+    # Name + slug + L2/L1 parents of the pre-selected default region (CH-4115)
+    # for the readout chip, its "view bulletin" link, and its breadcrumb.
+    (
+        default_region_name,
+        default_region_slug,
+        default_subregion_name,
+        default_major_name,
+    ) = _default_region_label()
 
     # The season is considered "off" when today is past the season_end bound
     # already narrowed to actual data in _base_map_context().
@@ -759,6 +784,28 @@ def home(request: HttpRequest) -> HttpResponse:
         },
     )
 
+    # SNOW-344 (merged from map_view): resort-edit mode when the querystring
+    # and the edit_map waffle flag both agree. Silently ignored when the flag
+    # is off so the URL is safe to bookmark.
+    edit_mode = request.GET.get("edit") == "resorts" and waffle.flag_is_active(
+        request, "edit_map"
+    )
+    edit_context: dict[str, Any] = {"edit_mode": edit_mode}
+    if edit_mode:
+        # The save URL contains an :resort_id placeholder — same trick as
+        # the region_summary URL in static/js/map.js: reverse with a
+        # dummy id, then string-replace at runtime in the JS.
+        save_url_template = reverse("api:edit_resort_save_coords", args=[0]).replace(
+            "/0/", "/__ID__/"
+        )
+        edit_context.update(
+            {
+                "edit_queue_url": reverse("api:edit_resorts_queue"),
+                "edit_save_url_template": save_url_template,
+                "edit_resorts_geojson_url": reverse("api:resorts_geojson"),
+            }
+        )
+
     report_ctx = _report_context(request)
 
     return render(
@@ -766,11 +813,14 @@ def home(request: HttpRequest) -> HttpResponse:
         "public/home.html",
         {
             **base_ctx,
+            **edit_context,
             **report_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
             "default_region_name": default_region_name,
             "default_region_slug": default_region_slug,
+            "default_subregion_name": default_subregion_name,
+            "default_major_name": default_major_name,
             "show_intro": True,
             "is_offseason": is_offseason,
             "sample_bulletin_url": sample_bulletin_url,
@@ -1139,9 +1189,9 @@ def _basemaps_for_picker() -> list[dict[str, Any]]:
 
 
 # SNOW-314: The default region whose season ribbon is server-rendered at
-# first paint on both / and /map/. CH-4115 (Martigny / Verbier) is the
-# canonical preview region — it has the richest test-data coverage and
-# represents a central Swiss backcountry area that most users recognise.
+# first paint on /. CH-4115 (Martigny / Verbier) is the canonical preview
+# region — it has the richest test-data coverage and represents a central
+# Swiss backcountry area that most users recognise.
 _DEFAULT_RIBBON_REGION_ID = "CH-4115"
 
 
@@ -1149,8 +1199,8 @@ def _base_map_context(today: datetime.date) -> dict[str, Any]:
     """
     Build the shared map context for the season scrubber and ribbon.
 
-    Extracted from ``map_view`` so that ``home()`` can embed the full map
-    surface without duplicating the season-window + basemap logic.
+    Shared between ``home()`` (the canonical map page) and any other view
+    that embeds the full map surface.
 
     The season window is narrowed to the actual ``RegionDayRating`` data
     bounds when rows exist (SNOW-173), and falls back to the calendar Nov 1 /
@@ -1213,25 +1263,33 @@ def _build_default_ribbon(
     return build_season_ribbon(region, today)
 
 
-def _default_region_label() -> tuple[str, str]:
+def _default_region_label() -> tuple[str, str, str, str]:
     """
-    Return the display name and bulletin-URL slug of the default ribbon region.
+    Return the name, slug, and L2/L1 parent names of the default ribbon region.
 
     Used to seed the persistent region-readout chip on the homepage, where
-    CH-4115 is pre-selected: the name labels the chip and the slug builds its
-    "view bulletin" link. One query for both. Returns ``("", "")`` when the
-    region is absent (empty DB) so the readout simply stays hidden.
+    CH-4115 is pre-selected: the name labels the chip, the slug builds its
+    "view bulletin" link, and the sub-region (L2) / major (L1) names seed the
+    breadcrumb so it is correct on first paint — before any region-selected
+    event fires. One query for all four (the parents are select_related).
+    Returns ``("", "", "", "")`` when the region is absent (empty DB) so the
+    readout simply stays hidden.
 
     Returns:
-        A ``(name, name_slug)`` tuple, or ``("", "")`` if the region does not
-        exist.
+        A ``(name, name_slug, subregion_name, major_name)`` tuple, or four empty
+        strings if the region does not exist.
 
     """
     try:
-        region = MicroRegion.objects.get_by_natural_key(_DEFAULT_RIBBON_REGION_ID)
+        region = MicroRegion.objects.select_related(
+            "subregion__major"
+        ).get_by_natural_key(_DEFAULT_RIBBON_REGION_ID)
     except MicroRegion.DoesNotExist:
-        return "", ""
-    return region.name, region.name_slug
+        return "", "", "", ""
+    sub = region.subregion
+    subregion_name = sub.name_en if sub.name_en and sub.name_en != sub.prefix else ""
+    major_name = sub.major.name_en or sub.major.name_native
+    return region.name, region.name_slug, subregion_name, major_name
 
 
 def _report_context(request: HttpRequest) -> dict[str, Any]:
@@ -1334,86 +1392,6 @@ def _get_observation_has_user_located(
     from observations.models import FieldObservation  # noqa: PLC0415
 
     return FieldObservation.objects.user_located_exists_for_region_day(region, day)
-
-
-def map_view(request: HttpRequest) -> HttpResponse:
-    """
-    Render the interactive region-choropleth map page.
-
-    The page is a MapLibre GL JS client that fetches three JSON
-    endpoints (``/api/regions.geojson``, ``/api/ratings/``,
-    ``/api/resorts-by-region/``) and colours each region by today's
-    danger rating. The map template is a standalone page today but the
-    DOM is structured so it can be embedded inside the marketing
-    homepage later.
-
-    The basemap layer picker (SNOW-58) is fed two pieces of context:
-    ``basemaps`` — an ordered list of ``{key, label, url}`` dicts built
-    from ``settings.BASEMAP_STYLES`` × ``_BASEMAP_LABELS`` — and
-    ``default_basemap_key`` (``settings.BASEMAP``), the env-resolved
-    fallback used when localStorage is empty or names a basemap that
-    has since been removed from the catalogue.
-
-    SNOW-74 — when ``?edit=resorts`` is on the URL **and** the
-    ``edit_map`` waffle flag is active for the request user (SNOW-86),
-    the page boots into resort-edit mode: the side panel is rendered,
-    ``static/js/map_edit_resorts.js`` is loaded, and the API URLs
-    powering it are passed through context. When the flag is off the
-    query string is silently ignored — the flag check lives at the
-    API endpoints themselves as well.
-
-    Args:
-        request: The incoming HTTP request.
-
-    Returns:
-        The rendered map page.
-
-    """
-    today = datetime.date.today()
-    base_ctx = _base_map_context(today)
-
-    edit_mode = request.GET.get("edit") == "resorts" and waffle.flag_is_active(
-        request, "edit_map"
-    )
-    edit_context: dict[str, Any] = {"edit_mode": edit_mode}
-    if edit_mode:
-        # The save URL contains an :resort_id placeholder — same trick as
-        # the region_summary URL in static/js/map.js: reverse with a
-        # dummy id, then string-replace at runtime in the JS.
-        save_url_template = reverse("api:edit_resort_save_coords", args=[0]).replace(
-            "/0/", "/__ID__/"
-        )
-        edit_context.update(
-            {
-                "edit_queue_url": reverse("api:edit_resorts_queue"),
-                "edit_save_url_template": save_url_template,
-                "edit_resorts_geojson_url": reverse("api:resorts_geojson"),
-            }
-        )
-
-    # SNOW-333: report context — visible to all when the flag is active;
-    # eligibility is gated on authentication only (no Subscriber profile needed).
-    report_ctx = _report_context(request)
-
-    # SNOW-314: build the ribbon as the data carrier (season bounds, caption)
-    # but DON'T pre-select a region on /map/ — the scrubber stays a plain grey
-    # rail until the user taps a region, which then paints its season into the
-    # track. The homepage, by contrast, pre-selects CH-4115 (see home()).
-    ribbon = _build_default_ribbon(today)
-
-    return render(
-        request,
-        "public/map.html",
-        {
-            **base_ctx,
-            **edit_context,
-            **report_ctx,
-            "ribbon": ribbon,
-            "default_region_id": "",
-            "default_region_name": "",
-            "default_region_slug": "",
-        },
-    )
 
 
 def serve_sw(request: HttpRequest) -> HttpResponse:
@@ -1630,9 +1608,8 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         "",
         "## Pages",
         "",
-        f"- [Home]({link('public:home')}): site overview and entry point.",
-        f"- [Avalanche map]({link('public:map')}): interactive choropleth of "
-        "current danger ratings by region.",
+        f"- [Avalanche map]({link('public:home')}): interactive choropleth of "
+        "current danger ratings by region; also the site entry point.",
         f"- [How to read a bulletin]({link('public:how_to_read_bulletin')}): "
         "reference guide to the SLF danger scale, avalanche problems, and the "
         "aspect/elevation rose.",
@@ -2451,17 +2428,22 @@ def _build_map_url(
     today so the query string would be redundant. The URL fragment always
     carries the region ID so the map opens the region sheet at peek (SNOW-183).
 
+    SNOW-344: resolves to ``/`` (the canonical map page) because
+    ``public:map`` now redirects there. The back-link URL is used only for
+    display and navigation, not for server round-trips, so the redirect is
+    transparent.
+
     Args:
         region_id: The canonical EAWS region identifier (e.g. ``"CH-4115"``).
         target_date: Calendar day the bulletin page represents.
         today: Current date; used to decide whether to include ``?d=``.
 
     Returns:
-        A relative URL string such as ``"/map/#CH-4115"`` or
-        ``"/map/?d=2025-01-20#CH-4115"``.
+        A relative URL string such as ``"/#CH-4115"`` or
+        ``"/?d=2025-01-20#CH-4115"``.
 
     """
-    base = reverse("public:map")
+    base = reverse("public:home")
     if target_date == today:
         return f"{base}#{region_id}"
     return f"{base}?d={target_date.isoformat()}#{region_id}"

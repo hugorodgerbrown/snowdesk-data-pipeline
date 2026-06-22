@@ -61,23 +61,49 @@ def test_llms_lists_data_endpoints() -> None:
 
 
 def test_llms_links_are_absolute_and_host_pinned() -> None:
-    """Every Markdown link uses an absolute URL built from SITE_BASE_URL."""
+    """Every Markdown link uses an absolute URL built from SITE_BASE_URL.
+
+    SNOW-344: the avalanche-map bullet now links to / not /map/.
+    """
     with override_settings(SITE_BASE_URL="https://snowdesk.info"):
         body = _body()
-    assert "https://snowdesk.info/map/" in body
+    assert "[Avalanche map](https://snowdesk.info/)" in body
     assert "https://snowdesk.info/api/ratings/" in body
     # No environment-relative paths leaked in as bare links.
     assert "](/" not in body
 
 
 def test_llms_url_derives_from_site_base_url() -> None:
-    """Links are host-pinned per environment, not hard-coded to production."""
+    """Links are host-pinned per environment, not hard-coded to production.
+
+    SNOW-344: the avalanche-map bullet now links to / not /map/.
+    """
     with override_settings(SITE_BASE_URL="http://localhost:8000"):
         body = _body()
-    assert "http://localhost:8000/map/" in body
+    assert "[Avalanche map](http://localhost:8000/)" in body
 
 
 def test_llms_is_cacheable() -> None:
     """A short public Cache-Control header is set so agents can cache the index."""
     response = Client().get("/llms.txt")
     assert "max-age" in response["Cache-Control"]
+
+
+@override_settings(POSTHOG_API_KEY="phc_test")
+def test_llms_no_cookie_vary_with_analytics_enabled() -> None:
+    """SNOW-338 regression: Vary: Cookie absent on /llms.txt even when PostHog is active.
+
+    When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
+    read request.user to tag identities, causing SessionMiddleware to append
+    Vary: Cookie and defeat Cache-Control: public CDN caching.
+    The _POSTHOG_EXEMPT_PATHS exemption in config/settings/base.py prevents
+    that access for this endpoint.
+    """
+    response = Client().get("/llms.txt")
+    assert "public" in response.get("Cache-Control", ""), (
+        f"Expected public in Cache-Control; got: {response.get('Cache-Control', '')!r}"
+    )
+    vary = response.get("Vary", "")
+    assert "Cookie" not in vary, (
+        f"Vary: Cookie must not be set even with analytics enabled; got: {vary!r}"
+    )

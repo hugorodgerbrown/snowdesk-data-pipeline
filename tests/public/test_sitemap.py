@@ -16,7 +16,7 @@ from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -151,3 +151,46 @@ class TestSitemapContents:
         content = response.content.decode()
         assert "ch-2222" in content
         assert "ch-3333" not in content
+
+
+@pytest.mark.django_db
+@override_settings(POSTHOG_API_KEY="phc_test")
+def test_sitemap_path_is_not_posthog_exempt(client: Client) -> None:
+    """SNOW-338: /sitemap.xml is deliberately NOT in _POSTHOG_EXEMPT_PATHS.
+
+    Unlike robots.txt / llms.txt / manifest / favicon, the sitemap is not a
+    valid target for the PostHog-exemption mechanism:
+
+    * it sets no ``Cache-Control: public`` header, so it is not a
+      shared-cacheable surface in the first place; and
+    * its ``Vary: Cookie`` header is added by the sitemap-view middleware
+      path, not by PosthogContextMiddleware — it persists even with
+      POSTHOG_API_KEY unset.
+
+    Exempting it from PostHog would therefore be dead config: it would
+    neither remove ``Vary: Cookie`` nor make the response cacheable.  Making
+    the sitemap a genuine public-cacheable surface is tracked in SNOW-340.
+
+    This test guards the decision: the request filter must return True for
+    /sitemap.xml when a key is set (i.e. the path is NOT short-circuited),
+    and the response still carries Vary: Cookie with no public Cache-Control.
+    """
+    from config.settings.base import _posthog_request_filter
+
+    class _FakeRequest:
+        path = "/sitemap.xml"
+
+    assert _posthog_request_filter(_FakeRequest()) is True, (
+        "/sitemap.xml must NOT be exempt from PosthogContextMiddleware — "
+        "exempting it is dead config (see SNOW-340)"
+    )
+
+    response = client.get(reverse("sitemap"))
+    assert "public" not in response.get("Cache-Control", ""), (
+        "sitemap currently sets no public Cache-Control; if this changes, "
+        "revisit SNOW-340 and the exemption decision"
+    )
+    assert "Cookie" in response.get("Vary", ""), (
+        "sitemap Vary: Cookie originates outside PostHog; if this changes, "
+        "revisit SNOW-340"
+    )

@@ -171,7 +171,8 @@ class TestGlobalSiteFooter:
         assert b'data-testid="site-footer"' in response.content
 
     def test_map_renders_footer(self, client: Client) -> None:
-        response = client.get(reverse("public:map"))
+        """The canonical map page (/) carries the site footer (SNOW-344: was /map/)."""
+        response = client.get(reverse("public:home"))
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
 
@@ -202,7 +203,7 @@ class TestGlobalSiteFooter:
 # inline source + feedback block (expanded-slf-attribution). That block
 # was removed when the expanded fragment was rewritten to show structural
 # region info rather than bulletin content. Attribution is now fully
-# covered by the global site footer on ``/map/``.
+# covered by the global site footer on ``/`` (SNOW-344: /map/ redirects there).
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +225,11 @@ class TestRegionExpandedAttribution:
     """
 
     def test_map_page_carries_slf_footer(self, client: Client) -> None:
-        """The /map/ page carries the global SLF attribution footer."""
-        response = client.get(reverse("public:map"))
+        """The canonical map page (/) carries the global SLF attribution footer.
+
+        SNOW-344: /map/ is now a 301 redirect; the live map page is /.
+        """
+        response = client.get(reverse("public:home"))
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
         assert b"slf.ch" in response.content
@@ -259,15 +263,21 @@ class TestMapLegendAttribution:
     """
 
     def test_map_legend_names_all_providers(self, client: Client) -> None:
-        """The map legend contains links to all three avalanche data providers."""
-        response = client.get(reverse("public:map"))
+        """The map legend contains links to all three avalanche data providers.
+
+        SNOW-344: /map/ is now a 301 redirect; the live map page is /.
+        """
+        response = client.get(reverse("public:home"))
         assert response.status_code == 200
         assert b"slf.ch" in response.content
         assert b"avalanche.report" in response.content
         assert "Météo-France".encode() in response.content
 
     def test_map_legend_links_to_colophon(self, client: Client) -> None:
-        """The map legend links to /colophon/ for full attribution."""
-        response = client.get(reverse("public:map"))
+        """The map legend links to /colophon/ for full attribution.
+
+        SNOW-344: /map/ is now a 301 redirect; the live map page is /.
+        """
+        response = client.get(reverse("public:home"))
         assert response.status_code == 200
         assert reverse("public:colophon").encode() in response.content

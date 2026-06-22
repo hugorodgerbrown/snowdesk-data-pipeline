@@ -220,19 +220,33 @@ POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES = config(
 )
 
 
-# Paths of cacheable public API endpoints that must be exempt from
+# Paths of cacheable public endpoints that must be exempt from
 # PosthogContextMiddleware. The middleware reads ``request.user`` to tag
 # identities whenever an API key is set; that access marks the session as
 # accessed, causing ``SessionMiddleware.process_response`` to append
 # ``Vary: Cookie`` to the response — which defeats the
 # ``Cache-Control: public`` CDN caching these anonymous, high-volume
-# map-data endpoints are designed for.  Returning False from the filter
+# endpoints are designed for.  Returning False from the filter
 # short-circuits the middleware before ``request.user`` is touched.
+#
+# DESIGN DECISION — request-phase path filter vs. response-phase predicate:
+# The session is accessed at *request* time (when PosthogContextMiddleware
+# reads ``request.user``), so the ``Vary: Cookie`` header is already baked
+# into the response before any response-phase middleware can inspect
+# ``Cache-Control: public``.  A response-phase predicate keyed on
+# ``Cache-Control: public`` therefore cannot prevent the corruption — it
+# would see the header too late.  Stripping ``Vary: Cookie`` in a
+# post-hoc middleware would be fragile (it could mask legitimate variation
+# on other public pages).  The only correct fix is a *request-phase* path
+# filter, which is what ``_posthog_request_filter`` below implements.
 #
 # SNOW-299: keep this set in sync with the ``@cache_control(public=True)``
 # GET endpoints declared in ``public/api_urls.py``.
-_POSTHOG_EXEMPT_API_PATHS: frozenset[str] = frozenset(
+# SNOW-338: also keep in sync with the ``Cache-Control: public`` static
+# routes declared in ``config/urls.py``.
+_POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
     {
+        # Map-data JSON/GeoJSON API endpoints (public/api_urls.py) — SNOW-299.
         "/api/ratings/",
         "/api/resorts-by-region/",
         "/api/resorts.geojson",
@@ -240,6 +254,20 @@ _POSTHOG_EXEMPT_API_PATHS: frozenset[str] = frozenset(
         "/api/major-regions.geojson",
         "/api/sub-regions.geojson",
         "/api/bulletin-groupings.geojson",
+        # Static public-good documents (config/urls.py) — SNOW-338.
+        "/robots.txt",
+        "/llms.txt",
+        "/manifest.webmanifest",
+        # Favicon has two routes: bare path and trailing-slash variant.
+        "/favicon.ico",
+        "/favicon.ico/",
+        # NOTE — ``/sitemap.xml`` is deliberately NOT listed.  It sets no
+        # ``Cache-Control: public`` header, and its ``Vary: Cookie`` is added
+        # by Django's sitemap-view middleware path, not PosthogContextMiddleware
+        # (verified: the header persists with POSTHOG_API_KEY unset).  Exempting
+        # it from PostHog would therefore be dead config — it would not remove
+        # the header nor make the response cacheable.  Making the sitemap a
+        # genuine public-cacheable surface is tracked separately (SNOW-340).
     }
 )
 
@@ -254,8 +282,8 @@ def _posthog_request_filter(request: object) -> bool:
     Short-circuits on two conditions (returning False skips the middleware):
 
     1. ``POSTHOG_API_KEY`` is empty — no analytics in dev/test.
-    2. The request path is in ``_POSTHOG_EXEMPT_API_PATHS`` — SNOW-299:
-       these cacheable map-data endpoints must not trigger a ``request.user``
+    2. The request path is in ``_POSTHOG_EXEMPT_PATHS`` — SNOW-299/SNOW-338:
+       these cacheable public endpoints must not trigger a ``request.user``
        access, which would cause ``SessionMiddleware`` to append
        ``Vary: Cookie`` and defeat ``Cache-Control: public`` CDN caching.
 
@@ -266,7 +294,7 @@ def _posthog_request_filter(request: object) -> bool:
 
     if not (getattr(_s, "POSTHOG_API_KEY", "") or "").strip():
         return False
-    return getattr(request, "path", "") not in _POSTHOG_EXEMPT_API_PATHS
+    return getattr(request, "path", "") not in _POSTHOG_EXEMPT_PATHS
 
 
 POSTHOG_MW_REQUEST_FILTER = _posthog_request_filter

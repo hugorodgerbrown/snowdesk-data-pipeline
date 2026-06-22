@@ -1,17 +1,17 @@
 ---
 name: map-and-api
-description: /map/ MapLibre choropleth, season scrubber, basemap picker, and the /api/ JSON endpoints (ratings, geojson, summary, bulletin-groupings)
+description: / (public:home) MapLibre choropleth, season scrubber, basemap picker, and /api/ endpoints (ratings, geojson, summary, bulletin-groupings)
 status: current
 last-reviewed: 2026-06-16
 ---
 
 # Map page and JSON API
 
-`/map/` (`public:map`) renders a MapLibre GL JS choropleth of Swiss avalanche
+`/` (`public:home`) renders a MapLibre GL JS choropleth of Swiss avalanche
 regions. Tapping a region opens a bottom sheet with today's danger rating,
-resort list, and a CTA to the full bulletin. The template (`public/templates/public/map.html`)
-is standalone — it does not extend `base.html`. Static assets are
-`static/js/map.js` and `static/css/map.css`.
+resort list, and a CTA to the full bulletin. `/map/` permanently redirects
+here (301, query string forwarded). The template (`public/templates/public/home.html`)
+extends `base.html`. Static assets are `static/js/map.js` and `static/css/map.css`.
 
 The map JS reads endpoint URLs from `data-*` attributes on the `#map` element,
 so `{% url %}` in the template remains the single source of truth for all three
@@ -59,7 +59,7 @@ the session via `getSeasonRatings()` in `static/js/map.js` — first scrub
 pays the round-trip; subsequent scrubs and timelapse playback render
 from the in-memory cache.
 
-**Route ordering**: `/map/` is registered before `<str:region_id>/` in
+**Route ordering**: `/map/` (the redirect) is registered before `<str:region_id>/` in
 `public/urls.py`. Do not reorder these — Django matches URL patterns
 top-to-bottom and the generic region pattern would swallow `/map/` if it
 appeared first.
@@ -91,7 +91,7 @@ documented separately in [`nav_implementation_spec.md`](nav_implementation_spec.
 
 ## Edit-resorts mode (SNOW-74) — gated on the `edit_map` waffle flag
 
-`/map/?edit=resorts` enters resort-coordinate-edit mode when the
+`/?edit=resorts` enters resort-coordinate-edit mode when the
 `edit_map` waffle flag is active for the request user (SNOW-86; see
 [`feature-flags.md`](feature-flags.md)). The page renders a right-hand panel with a
 queue of resorts that need geocoding (`Resort.objects.needs_geocoding()`

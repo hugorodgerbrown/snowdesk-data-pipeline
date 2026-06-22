@@ -1,19 +1,20 @@
 """
-tests/public/test_home_page.py — Tests for the SNOW-314 map-as-homepage.
+tests/public/test_home_page.py — Tests for the canonical map homepage (SNOW-344).
 
 Covers:
-  - GET / returns 200.
-  - The map container (#map) is rendered.
+  - GET / returns 200 with the map container (#map).
   - The intro overlay (#home-intro) is rendered (show_intro=True).
   - The season ribbon (#season-ribbon) is present when data exists.
   - Off-season note present when is_offseason is True.
   - sample_bulletin_url resolves to the CH-4115 2026-02-17 URL.
   - The sample-bulletin URL itself returns 200 (against test_data fixture).
-  - Homepage <title> is distinct from /map/ title.
-  - #season-ribbon carries data-default-region-name and -slug on homepage.
-  - #season-ribbon carries empty defaults on /map/.
-  - /map/ regression: still 200, scrubber present, #season-ribbon present,
-    no #home-intro.
+  - #season-ribbon carries data-default-region-name and -slug on homepage
+    (CH-4115 pre-selection, retained — SNOW-342).
+  - #season-ribbon carries data-default-subregion-name and -major-name (SNOW-342).
+  - _default_region_label() returns a 4-tuple (SNOW-342).
+  - The offmap-banner (#offmap-banner) is present on / (moved from map.html).
+  - GET /map/ returns 301 to / (query strings forwarded — SNOW-344).
+  - Edit-mode: /?edit=resorts + edit_map flag renders the edit panel (SNOW-344).
 """
 
 from __future__ import annotations
@@ -27,10 +28,13 @@ from django.urls import reverse
 from freezegun import freeze_time
 from waffle.testutils import override_flag
 
+from public.views import _default_region_label
 from tests.factories import (
     BulletinFactory,
+    MajorRegionFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
+    SubRegionFactory,
     SubscriberFactory,
 )
 
@@ -59,29 +63,26 @@ class TestHomePageBasic:
         content = response.content.decode()
         assert 'id="home-intro"' in content
 
-    def test_map_page_has_no_intro_overlay(self) -> None:
-        """/map/ does not render #home-intro (show_intro=False)."""
+    def test_home_renders_offmap_banner(self) -> None:
+        """The #offmap-banner element is present on / (moved from map.html in SNOW-344)."""
         client = Client()
-        response = client.get(reverse("public:map"))
+        response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert 'id="home-intro"' not in content
+        assert 'id="offmap-banner"' in content
 
-    def test_home_title_distinct_from_map_title(self) -> None:
-        """The homepage <title> is different from the /map/ page <title>."""
+    def test_map_redirect_returns_301_to_home(self) -> None:
+        """/map/ returns a 301 to / (SNOW-344)."""
         client = Client()
-        home_title_start = (
-            client.get(reverse("public:home")).content.decode().index("<title>")
-        )
-        map_title_start = (
-            client.get(reverse("public:map")).content.decode().index("<title>")
-        )
-        home_title = client.get(reverse("public:home")).content.decode()[
-            home_title_start : home_title_start + 120
-        ]
-        map_title = client.get(reverse("public:map")).content.decode()[
-            map_title_start : map_title_start + 120
-        ]
-        assert home_title != map_title
+        response = client.get("/map/")
+        assert response.status_code == 301
+        assert response["Location"] == "/"
+
+    def test_map_redirect_forwards_query_string(self) -> None:
+        """/map/?d=2026-01-15 redirects to /?d=2026-01-15 (query_string=True)."""
+        client = Client()
+        response = client.get("/map/?d=2026-01-15")
+        assert response.status_code == 301
+        assert response["Location"] == "/?d=2026-01-15"
 
     def test_home_sample_bulletin_url_in_context(self) -> None:
         """home() passes sample_bulletin_url pointing to CH-4115 2026-02-17."""
@@ -98,8 +99,14 @@ class TestHomePageBasic:
         )
         assert response.context["sample_bulletin_url"] == expected
 
-    def test_home_sample_bulletin_link_in_html(self) -> None:
-        """The sample-bulletin URL appears in the rendered HTML."""
+    def test_home_sample_bulletin_link_not_in_html(self) -> None:
+        """The sample-bulletin CTA link is no longer rendered in the HTML (SNOW-342).
+
+        The prototype removed the "View a sample bulletin →" anchor from the
+        intro overlay actions.  sample_bulletin_url is still passed to the
+        context (tested above) in case it is needed by a future feature, but it
+        is not rendered as an <a> in the current template.
+        """
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
@@ -111,7 +118,7 @@ class TestHomePageBasic:
                 "date_str": "2026-02-17",
             },
         )
-        assert expected in content
+        assert expected not in content
 
     def test_home_loads_map_assets(self) -> None:
         """The homepage loads maplibre, map.css, map.js, and home_intro.js."""
@@ -126,7 +133,7 @@ class TestHomePageBasic:
 
 @pytest.mark.django_db
 class TestHomePageOffseason:
-    """Tests for the off-season note in the intro overlay."""
+    """Tests for the off-season note in the intro overlay and the persistent chip."""
 
     @freeze_time("2026-06-15")  # past the May 31 season end
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
@@ -136,6 +143,15 @@ class TestHomePageOffseason:
         response = client.get(reverse("public:home"))
         content = response.content.decode()
         assert "home-intro-offseason-ref" in content
+
+    @freeze_time("2026-06-15")  # past the May 31 season end
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    def test_persistent_chip_present_when_past_season_end(self) -> None:
+        """SNOW-343: persistent #map-offseason-note chip is present on / when off-season."""
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'id="map-offseason-note"' in content
 
     @freeze_time("2026-03-10")  # today is past data_end when no data exists after Feb
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
@@ -161,6 +177,22 @@ class TestHomePageOffseason:
         response = client.get(reverse("public:home"))
         content = response.content.decode()
         assert "home-intro-offseason-ref" not in content
+
+    @freeze_time("2026-03-10")  # within active season
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    def test_persistent_chip_absent_during_season(self) -> None:
+        """SNOW-343: persistent #map-offseason-note chip is absent on / when in-season."""
+        region = MicroRegionFactory.create(region_id="CH-5500")
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 3, 15),
+            source_bulletin=bulletin,
+        )
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'id="map-offseason-note"' not in content
 
 
 @pytest.mark.django_db
@@ -212,8 +244,8 @@ class TestHomePageRibbon:
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     @freeze_time("2026-02-17")
-    def test_map_page_ribbon_present(self) -> None:
-        """/map/ also renders #season-ribbon (ribbon is a shared map feature)."""
+    def test_home_ribbon_present_when_data_exists(self) -> None:
+        """#season-ribbon is present on / when CH-4115 has season data."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         bulletin = BulletinFactory.create()
         RegionDayRatingFactory.create(
@@ -223,7 +255,7 @@ class TestHomePageRibbon:
             source_bulletin=bulletin,
         )
         client = Client()
-        response = client.get(reverse("public:map"))
+        response = client.get(reverse("public:home"))
         content = response.content.decode()
         assert 'id="season-ribbon"' in content
 
@@ -234,59 +266,35 @@ class TestHomePageReadoutData:
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     @freeze_time("2026-02-17")
-    def test_homepage_ribbon_carries_region_name(self) -> None:
-        """#season-ribbon has data-default-region-name on the homepage."""
-        MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
+    def test_homepage_ribbon_has_region_defaults(self) -> None:
+        """#season-ribbon on / carries the CH-4115 data-default-region-name and -slug.
+
+        SNOW-342: the homepage pre-selects CH-4115 so the readout chip and
+        breadcrumb are correct on first paint. SNOW-344 consolidated /map/ into
+        / but kept this pre-selection. Requires CH-4115 and a RegionDayRating
+        row so the ribbon block renders (the template skips the block when
+        ribbon is falsy).
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 2, 17),
+            source_bulletin=bulletin,
+        )
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
         assert 'data-default-region-name="Martigny Verbier"' in content
-
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-    @freeze_time("2026-02-17")
-    def test_homepage_ribbon_carries_region_slug(self) -> None:
-        """#season-ribbon has data-default-region-slug on the homepage.
-
-        ``name_slug`` is derived from ``slugify(name)``; factory receives
-        ``name`` so the property returns the expected slug value.
-        """
-        # slugify("Martigny Verbier") == "martigny-verbier"
-        MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
-        client = Client()
-        response = client.get(reverse("public:home"))
-        content = response.content.decode()
         assert 'data-default-region-slug="martigny-verbier"' in content
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     @freeze_time("2026-02-17")
-    def test_map_page_ribbon_has_empty_region_defaults(self) -> None:
-        """#season-ribbon on /map/ carries empty data-default-region-name and -slug.
+    def test_region_readout_is_div_element(self) -> None:
+        """#region-readout is rendered as a <div> (info-only chip; SNOW-342).
 
-        /map/ never pre-selects a region — the readout and track start empty
-        so the user's first tap is the activation point.  Requires CH-4115 to
-        exist so the ribbon renders (the template skips the block when ribbon is
-        falsy), and a RegionDayRating row so the ribbon has at least one day.
-        """
-        region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
-        bulletin = BulletinFactory.create()
-        RegionDayRatingFactory.create(
-            region=region,
-            date=datetime.date(2026, 2, 17),
-            source_bulletin=bulletin,
-        )
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
-        assert 'data-default-region-name=""' in content
-        assert 'data-default-region-slug=""' in content
-
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-    @freeze_time("2026-02-17")
-    def test_region_readout_is_anchor_element(self) -> None:
-        """#region-readout is rendered as an <a> element for the bulletin CTA.
-
-        Requires CH-4115 and a RegionDayRating row so the ribbon block renders
-        (the template skips the {% if ribbon %} block when ribbon is falsy).
+        The bulletin link is the separate #region-readout-action roundel.
+        Requires CH-4115 and a RegionDayRating row so the ribbon block renders.
         """
         region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
         bulletin = BulletinFactory.create()
@@ -298,46 +306,185 @@ class TestHomePageReadoutData:
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert '<a id="region-readout"' in content
+        assert '<div id="region-readout"' in content
+        assert 'id="region-readout-action"' in content
 
 
 @pytest.mark.django_db
-class TestMapViewRegression:
-    """Regression tests: /map/ is behaviour-preserved after SNOW-314."""
+class TestHomePageBreadcrumbData:
+    """SNOW-342: #season-ribbon carries data-default-subregion-name and -major-name.
 
-    def test_map_still_returns_200(self) -> None:
-        """GET /map/ returns HTTP 200."""
+    The readout chip's breadcrumb (Major › Minor › Micro) is seeded from these
+    data attributes so it is correct on first paint before any region-selected
+    event fires.
+    """
+
+    def _make_ch4115(self, *, subregion_name_en: str, major_name_en: str) -> None:
+        """Create CH-4115 with the given L2/L1 names wired up."""
+        ch_major = MajorRegionFactory.create(
+            prefix="CH-4",
+            country="CH",
+            name_en=major_name_en,
+        )
+        sub = SubRegionFactory.create(
+            prefix="CH-41",
+            major=ch_major,
+            name_en=subregion_name_en,
+        )
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            name="Martigny Verbier",
+            subregion=sub,
+        )
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    @freeze_time("2026-02-17")
+    def test_homepage_ribbon_carries_subregion_name(self) -> None:
+        """#season-ribbon has data-default-subregion-name on the homepage."""
+        self._make_ch4115(subregion_name_en="Lower Valais", major_name_en="Wallis")
         client = Client()
-        response = client.get(reverse("public:map"))
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'data-default-subregion-name="Lower Valais"' in content
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    @freeze_time("2026-02-17")
+    def test_homepage_ribbon_carries_major_name(self) -> None:
+        """#season-ribbon has data-default-major-name on the homepage."""
+        self._make_ch4115(subregion_name_en="Lower Valais", major_name_en="Wallis")
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'data-default-major-name="Wallis"' in content
+
+
+@pytest.mark.django_db
+class TestDefaultRegionLabel:
+    """Unit tests for _default_region_label() (SNOW-342).
+
+    The function is imported directly so behaviour can be tested without an
+    HTTP round-trip.  It returns a 4-tuple (name, slug, subregion_name,
+    major_name) and four empty strings when CH-4115 is absent from the DB.
+    """
+
+    def test_returns_four_empty_strings_when_region_absent(self) -> None:
+        """Returns four empty strings when CH-4115 does not exist."""
+        result = _default_region_label()
+        assert result == ("", "", "", "")
+
+    def test_returns_name_and_slug(self) -> None:
+        """Returns the micro-region name and slug as the first two elements."""
+        ch_major = MajorRegionFactory.create(
+            prefix="CH-4", country="CH", name_en="Wallis"
+        )
+        sub = SubRegionFactory.create(
+            prefix="CH-41",
+            major=ch_major,
+            name_en="Lower Valais",
+        )
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            name="Martigny Verbier",
+            subregion=sub,
+        )
+        name, slug, _sub, _major = _default_region_label()
+        assert name == "Martigny Verbier"
+        assert slug == "martigny-verbier"
+
+    def test_returns_subregion_and_major_names(self) -> None:
+        """Returns the L2 subregion name and L1 major name as the last two elements."""
+        ch_major = MajorRegionFactory.create(
+            prefix="CH-4",
+            country="CH",
+            name_en="Wallis",
+            name_native="Valais",
+        )
+        sub = SubRegionFactory.create(
+            prefix="CH-41",
+            major=ch_major,
+            name_en="Lower Valais",
+        )
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            name="Martigny Verbier",
+            subregion=sub,
+        )
+        _name, _slug, subregion_name, major_name = _default_region_label()
+        assert subregion_name == "Lower Valais"
+        assert major_name == "Wallis"
+
+    def test_major_falls_back_to_native_name_when_no_en(self) -> None:
+        """major_name falls back to name_native when name_en is empty."""
+        ch_major = MajorRegionFactory.create(
+            prefix="CH-4",
+            country="CH",
+            name_en="",
+            name_native="Valais",
+        )
+        sub = SubRegionFactory.create(
+            prefix="CH-41",
+            major=ch_major,
+            name_en="Lower Valais",
+        )
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            name="Martigny Verbier",
+            subregion=sub,
+        )
+        _name, _slug, _sub, major_name = _default_region_label()
+        assert major_name == "Valais"
+
+    def test_subregion_name_suppressed_when_equals_prefix(self) -> None:
+        """subregion_name is empty when name_en equals the prefix (placeholder)."""
+        ch_major = MajorRegionFactory.create(
+            prefix="CH-4", country="CH", name_en="Wallis"
+        )
+        sub = SubRegionFactory.create(
+            prefix="CH-41",
+            major=ch_major,
+            # placeholder: name_en == prefix
+            name_en="CH-41",
+        )
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            name="Martigny Verbier",
+            subregion=sub,
+        )
+        _name, _slug, subregion_name, _major = _default_region_label()
+        assert subregion_name == ""
+
+
+@pytest.mark.django_db
+class TestMapRedirect:
+    """SNOW-344: /map/ is now a permanent 301 redirect to /."""
+
+    def test_map_redirect_is_permanent(self) -> None:
+        """GET /map/ returns 301 (permanent redirect)."""
+        client = Client()
+        response = client.get("/map/")
+        assert response.status_code == 301
+
+    def test_map_redirect_target_is_home(self) -> None:
+        """/map/ redirects to / (the canonical map page)."""
+        client = Client()
+        response = client.get("/map/")
+        assert response["Location"] == "/"
+
+    def test_map_redirect_forwards_query_string(self) -> None:
+        """/map/?d=2026-01-15 redirects to /?d=2026-01-15."""
+        client = Client()
+        response = client.get("/map/?d=2026-01-15")
+        assert response.status_code == 301
+        assert response["Location"] == "/?d=2026-01-15"
+
+    def test_map_redirect_followed_renders_map(self) -> None:
+        """Following the /map/ redirect lands on the live map page."""
+        client = Client()
+        response = client.get("/map/", follow=True)
         assert response.status_code == 200
-
-    def test_map_scrubber_present(self) -> None:
-        """The season scrubber is still present on /map/."""
-        client = Client()
-        response = client.get(reverse("public:map"))
         content = response.content.decode()
-        assert 'id="season-scrubber"' in content
-
-    def test_map_has_no_home_intro(self) -> None:
-        """The /map/ page does not render the intro overlay."""
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
-        assert 'id="home-intro"' not in content
-
-    def test_map_loads_map_js(self) -> None:
-        """map.js is still loaded on /map/."""
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
-        assert "/static/js/map.js" in content
-
-    def test_map_does_not_load_home_intro_js(self) -> None:
-        """/map/ does not load home_intro.js (that's a homepage-only script)."""
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
-        assert "home_intro.js" not in content
+        assert 'id="map"' in content
+        assert 'id="home-intro"' in content
 
 
 @pytest.mark.django_db(transaction=True)
@@ -368,11 +515,44 @@ def test_sample_bulletin_url_returns_200() -> None:
 
 
 @pytest.mark.django_db
+class TestHomeEditMode:
+    """SNOW-344: /?edit=resorts + edit_map flag gates the edit-resorts panel.
+
+    Mirrors the TestMapViewEditMode suite that previously lived against
+    map_view (tests/public/test_edit_resorts_api.py). The same rules
+    apply now that home() absorbs the edit-resorts context block.
+    """
+
+    @override_flag("edit_map", active=True)
+    def test_query_string_with_flag_renders_panel(self) -> None:
+        """/?edit=resorts + flag active shows the edit-resorts panel."""
+        client = Client()
+        response = client.get(reverse("public:home") + "?edit=resorts")
+        assert response.status_code == 200
+        assert b"edit-resorts-panel" in response.content
+
+    @override_flag("edit_map", active=False)
+    def test_query_string_without_flag_silent_fallback(self) -> None:
+        """/?edit=resorts + flag inactive renders the normal map (no panel)."""
+        client = Client()
+        response = client.get(reverse("public:home") + "?edit=resorts")
+        assert response.status_code == 200
+        assert b"edit-resorts-panel" not in response.content
+
+    @override_flag("edit_map", active=True)
+    def test_no_query_string_does_not_render_panel(self) -> None:
+        """Without ?edit=resorts the panel is absent even when the flag is on."""
+        client = Client()
+        response = client.get(reverse("public:home"))
+        assert response.status_code == 200
+        assert b"edit-resorts-panel" not in response.content
+
+
+@pytest.mark.django_db
 class TestHomePageReportButtonParity:
-    """The homepage embeds the same map surface as /map/, so the field-report
-    control must render identically on both — they are indistinguishable to a
-    user (SNOW-330). Guards against the report context being wired into
-    map_view but not home().
+    """The field-report control is present on / (SNOW-330 / SNOW-344).
+
+    Guards against the report context not being propagated into home().
     """
 
     @override_flag("field_observations", active=False)
