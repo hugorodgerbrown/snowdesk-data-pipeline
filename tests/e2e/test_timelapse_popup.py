@@ -51,7 +51,9 @@ def _route_season_ratings(route: Route) -> None:
 
 
 def _setup_routes(page: Page, live_server_url: str) -> None:
-    """Stub the ratings endpoint before navigating to /map/.
+    """Stub the ratings endpoint before navigating to /.
+
+    SNOW-344: /map/ now redirects to /; stub against / directly.
 
     Only the ratings endpoint is stubbed.  Everything else (basemap
     tiles, regions GeoJSON) is left as-is — MapLibre's 'load' event never
@@ -71,9 +73,12 @@ def _wait_for_scrubber_ready(page: Page, timeout: float = 15_000) -> None:
 
 
 def _navigate_and_wait(page: Page, live_server_url: str) -> None:
-    """Navigate to /map/ and wait for the scrubber to be ready."""
+    """Navigate to / (the canonical map page) and wait for the scrubber to be ready.
+
+    SNOW-344: /map/ now redirects to /; navigate directly to /.
+    """
     _setup_routes(page, live_server_url)
-    page.goto(f"{live_server_url}/map/")
+    page.goto(f"{live_server_url}/")
     page.wait_for_load_state("domcontentloaded")
     _wait_for_scrubber_ready(page)
 
@@ -186,7 +191,7 @@ def test_date_changed_updates_region_readout(
 ) -> None:
     """``snowdesk:date-changed`` updates the date shown in the region readout.
 
-    On ``/map/`` no region is focused, so ``seasonRibbonInit`` renders the
+    On ``/`` no region is focused, so ``seasonRibbonInit`` renders the
     readout as a date-only chip (visible, ``.has-region`` absent — no region
     name, no danger swatch). It is NOT hidden: the date is always shown as a
     minimal scrubbed-date display. ``seasonRibbonInit`` listens to

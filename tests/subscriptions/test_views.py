@@ -1229,12 +1229,15 @@ class TestManageViewAuthenticated:
         assert reverse("subscriptions:sign_in") in response["Location"]
 
     def test_get_shows_map_cta_link(self) -> None:
-        """Authenticated manage page contains the 'Choose more regions on the map' link."""
+        """Authenticated manage page contains the 'Choose more regions on the map' link.
+
+        SNOW-344: link now points at / (the canonical map page).
+        """
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
         response = client.get(reverse("subscriptions:manage"))
         assert b"map" in response.content.lower()
-        assert b"/map/" in response.content
+        assert b'href="/"' in response.content
 
     def test_card_shows_bulletin_link(self) -> None:
         """Each card links to the region's evergreen bulletin URL with today's date label."""
@@ -1254,7 +1257,10 @@ class TestManageViewAuthenticated:
         assert b"Open bulletin for" in response.content
 
     def test_card_shows_map_link(self) -> None:
-        """Each card contains a direct link to /map/#<region_id> using the raw (uppercase) region_id."""
+        """Each card contains a direct link to /#<region_id> using the raw (uppercase) region_id.
+
+        SNOW-344: the map URL is now / not /map/.
+        """
         subscriber = SubscriberFactory.create()
         region = MicroRegionFactory.create(region_id="CH-1234")
         SubscriptionFactory.create(subscriber=subscriber, region=region)
@@ -1262,7 +1268,7 @@ class TestManageViewAuthenticated:
         response = client.get(reverse("subscriptions:manage"))
 
         assert response.status_code == 200
-        assert b"/map/#CH-1234" in response.content
+        assert b"/#CH-1234" in response.content
 
     def test_card_shows_breadcrumb(self) -> None:
         """Each card renders the L1 (MajorRegion) and L2 (SubRegion) names in the breadcrumb."""

@@ -714,15 +714,15 @@ class TestMapViewEditMode:
     """Boot the panel only when querystring and ``edit_map`` flag both agree.
 
     Both the ``?edit=resorts`` querystring **and** the ``edit_map``
-    waffle flag must be present for ``map_view`` to render the
-    edit-resorts panel (SNOW-86).
+    waffle flag must be present for ``home()`` to render the
+    edit-resorts panel (SNOW-86 / SNOW-344: moved from map_view to home()).
     """
 
     @override_flag("edit_map", active=True)
     def test_query_string_with_flag_renders_panel(self) -> None:
         """``?edit=resorts`` + flag active shows the panel."""
         client = Client()
-        resp = client.get(reverse("public:map") + "?edit=resorts")
+        resp = client.get(reverse("public:home") + "?edit=resorts")
         assert resp.status_code == 200
         assert b"edit-resorts-panel" in resp.content
 
@@ -730,7 +730,7 @@ class TestMapViewEditMode:
     def test_query_string_without_flag_silent_fallback(self) -> None:
         """``?edit=resorts`` + flag inactive renders the normal map."""
         client = Client()
-        resp = client.get(reverse("public:map") + "?edit=resorts")
+        resp = client.get(reverse("public:home") + "?edit=resorts")
         assert resp.status_code == 200
         assert b"edit-resorts-panel" not in resp.content
 
@@ -738,6 +738,6 @@ class TestMapViewEditMode:
     def test_no_query_string_does_not_render_panel(self) -> None:
         """Without the querystring, the panel is absent even when the flag is on."""
         client = Client()
-        resp = client.get(reverse("public:map"))
+        resp = client.get(reverse("public:home"))
         assert resp.status_code == 200
         assert b"edit-resorts-panel" not in resp.content

@@ -40,8 +40,11 @@ def test_csp_header_present_on_home_page() -> None:
 
 @pytest.mark.django_db
 def test_csp_header_present_on_map_page() -> None:
-    """The map page carries a report-only CSP header."""
-    response = Client().get("/map/")
+    """The canonical map page (/) carries a report-only CSP header.
+
+    SNOW-344: /map/ is now a 301 redirect; the live map page is /.
+    """
+    response = Client().get("/")
     assert response.status_code == 200
     assert REPORT_ONLY_HEADER in response.headers
 
@@ -49,7 +52,7 @@ def test_csp_header_present_on_map_page() -> None:
 @pytest.mark.django_db
 def test_csp_allows_maplibre_tile_origin() -> None:
     """The baseline policy allowlists the MapLibre tile origin in connect-src."""
-    response = Client().get("/map/")
+    response = Client().get("/")
     policy = _csp(response)
     assert "connect-src" in policy
     assert "https://tiles.openfreemap.org" in policy
@@ -70,7 +73,7 @@ def test_csp_contains_script_nonce() -> None:
 @pytest.mark.django_db
 def test_csp_worker_src_allows_blob_and_self() -> None:
     """worker-src covers blob: (MapLibre) and 'self' (our /sw.js)."""
-    response = Client().get("/map/")
+    response = Client().get("/")
     policy = _csp(response)
     assert "worker-src" in policy
     assert "blob:" in policy
@@ -133,12 +136,12 @@ def test_csp_no_unpkg_origin() -> None:
     htmx and MapLibre GL are vendored into static/ (SNOW-169), so there is no
     longer any reason to allowlist the unpkg CDN in script-src or style-src.
     """
-    for path in ("/", "/map/"):
-        response = Client().get(path)
-        policy = _csp(response)
-        assert "unpkg.com" not in policy, (
-            f"unpkg.com unexpectedly present in CSP header for {path}: {policy}"
-        )
+    # SNOW-344: /map/ is now a 301 redirect; only test the live page at /.
+    response = Client().get("/")
+    policy = _csp(response)
+    assert "unpkg.com" not in policy, (
+        f"unpkg.com unexpectedly present in CSP header for /: {policy}"
+    )
 
 
 @pytest.mark.django_db

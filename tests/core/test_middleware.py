@@ -35,9 +35,8 @@ def test_header_absent_when_disabled() -> None:
 @override_settings(QUERY_COUNT_HEADER_ENABLED=True)
 def test_header_counts_queries_on_db_view() -> None:
     """A view that touches the DB reports a count >= 1."""
-    # /map/ is a template-only view but the session + auth middleware
-    # may not issue queries either. Use an API endpoint that is known to
-    # query the database.
+    # SNOW-344: /map/ is now a 301 redirect; use an API endpoint that is
+    # known to query the database.
     response = Client().get("/api/regions.geojson?country=ch")
     assert response.status_code == 200
     assert int(response["X-DB-Query-Count"]) >= 1
