@@ -29,7 +29,7 @@ import pytest
 from django.core.cache import cache
 from django.db import connection
 from django.test import Client
-from django.test.utils import CaptureQueriesContext
+from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
 
 from bulletins.models import RegionDayRating
@@ -232,6 +232,86 @@ def test_ratings_vary_accept_encoding_not_cookie() -> None:
     vary = response.get("Vary", "")
     assert "Accept-Encoding" in vary
     assert "Cookie" not in vary
+
+
+@pytest.mark.django_db
+@override_settings(POSTHOG_API_KEY="phc_test")
+def test_ratings_vary_no_cookie_with_analytics_enabled() -> None:
+    """SNOW-299 regression: Vary: Cookie absent on ratings even when PostHog is active.
+
+    When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
+    read request.user to tag identities, causing SessionMiddleware to append
+    Vary: Cookie and defeat Cache-Control: public CDN caching.
+    The _POSTHOG_EXEMPT_API_PATHS exemption in config/settings/base.py prevents
+    that access for this endpoint.
+    """
+    response = Client().get(reverse("api:ratings"))
+    assert response.status_code == 200
+    vary = response.get("Vary", "")
+    assert "Accept-Encoding" in vary
+    assert "Cookie" not in vary
+
+
+@pytest.mark.django_db
+@override_settings(POSTHOG_API_KEY="phc_test")
+@pytest.mark.parametrize(
+    "url_name",
+    ["api:regions_geojson", "api:major_regions_geojson", "api:sub_regions_geojson"],
+)
+def test_geojson_no_cookie_vary_with_analytics_enabled(url_name: str) -> None:
+    """SNOW-299 regression: Vary: Cookie absent on GeoJSON endpoints when PostHog is active.
+
+    When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
+    read request.user to tag identities, causing SessionMiddleware to append
+    Vary: Cookie and defeat Cache-Control: public CDN caching.
+    The _POSTHOG_EXEMPT_API_PATHS exemption in config/settings/base.py prevents
+    that access for these endpoints.
+    """
+    url = reverse(url_name) + "?country=ch"
+    response = Client().get(url)
+    assert response.status_code == 200
+    vary = response.get("Vary", "")
+    assert "Accept-Encoding" in vary, (
+        f"Expected Accept-Encoding in Vary with analytics enabled; got: {vary!r}"
+    )
+    assert "Cookie" not in vary, (
+        f"Vary: Cookie must not be set even with analytics enabled; got: {vary!r}"
+    )
+
+
+@pytest.mark.django_db
+@override_settings(POSTHOG_API_KEY="phc_test")
+@pytest.mark.parametrize(
+    "url",
+    [
+        "api:resorts_by_region",
+        "api:resorts_geojson",
+        # bulletin_groupings requires a ?d= param to return 200.
+        "api:bulletin_groupings_geojson?d=2026-01-15",
+    ],
+)
+def test_remaining_cacheable_endpoints_no_cookie_vary_with_analytics_enabled(
+    url: str,
+) -> None:
+    """SNOW-299 regression: the remaining exempt cacheable endpoints stay Cookie-free.
+
+    Completes the key-on coverage of _POSTHOG_EXEMPT_API_PATHS — the three
+    paths not exercised by the ratings/GeoJSON regression tests above. With
+    POSTHOG_API_KEY set, PosthogContextMiddleware would otherwise read
+    request.user and let SessionMiddleware append Vary: Cookie, defeating the
+    Cache-Control: public CDN caching these endpoints set.
+    """
+    name, _, query = url.partition("?")
+    target = reverse(name) + (f"?{query}" if query else "")
+    response = Client().get(target)
+    assert response.status_code == 200
+    vary = response.get("Vary", "")
+    assert "Accept-Encoding" in vary, (
+        f"Expected Accept-Encoding in Vary with analytics enabled; got: {vary!r}"
+    )
+    assert "Cookie" not in vary, (
+        f"Vary: Cookie must not be set even with analytics enabled; got: {vary!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
