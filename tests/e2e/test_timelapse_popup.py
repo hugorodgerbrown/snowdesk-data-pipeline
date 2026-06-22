@@ -191,10 +191,9 @@ def test_date_changed_updates_region_readout(
 ) -> None:
     """``snowdesk:date-changed`` updates the date shown in the region readout.
 
-    On ``/`` no region is focused, so ``seasonRibbonInit`` renders the
-    readout as a date-only chip (visible, ``.has-region`` absent — no region
-    name, no danger swatch). It is NOT hidden: the date is always shown as a
-    minimal scrubbed-date display. ``seasonRibbonInit`` listens to
+    On ``/`` CH-4115 is pre-selected (SNOW-342), so ``seasonRibbonInit``
+    renders the readout with ``.has-region`` (region name + danger swatch)
+    alongside the scrubbed-date display. ``seasonRibbonInit`` listens to
     ``snowdesk:date-changed`` and re-runs ``updateReadout()``, so the chip's
     date text tracks the scrubbed day. This runs without a loaded MapLibre map.
     """
@@ -206,13 +205,13 @@ def test_date_changed_updates_region_readout(
     readout = page.locator("#region-readout")
     assert readout.count() == 1, "#region-readout element must be present"
 
-    # No region focused on /map/ → the readout is a visible, date-only chip.
+    # CH-4115 pre-selected on / → the readout is a visible, region-focused chip.
     page.wait_for_function(
         "() => { const r = document.getElementById('region-readout');"
         " return r && !r.hasAttribute('hidden'); }"
     )
-    assert "has-region" not in (readout.get_attribute("class") or ""), (
-        "with no region focused the readout should be a date-only chip (no .has-region)"
+    assert "has-region" in (readout.get_attribute("class") or ""), (
+        "with CH-4115 pre-selected the readout should be region-focused (.has-region)"
     )
 
     # date-changed updates the displayed date text (formatDatePopup → "8 Apr 2026").
