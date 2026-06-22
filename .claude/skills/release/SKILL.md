@@ -8,7 +8,7 @@ description: |
   "cut a release", "ship to production", "do a release", or "release to
   prod". Do NOT use for a normal feature PR onto main (that is the
   `implement` skill), or for scoping/implementing a ticket.
-allowed-tools: Bash, Read, Skill
+allowed-tools: Bash, Read, Write, Skill, EnterPlanMode, ExitPlanMode
 ---
 
 # Cut a Snowdesk release
@@ -49,22 +49,73 @@ Run these and stop with a clear message if any fails:
   (`gh run list --branch main --limit 1`). If the head commit's checks are
   failing or pending, surface it and ask before continuing.
 
-### 2. Preview the release
+### 2. Build the release preview as a plan
 
-Run the existing helper in dry-run to show the tickets that will ship:
+The preview doubles as the PR body, so compose it as GitHub-flavored
+markdown and present it in the **plan pane** — it renders there exactly as
+GitHub will render the PR, and approving the plan is the go-ahead to open
+the PR with that body verbatim.
+
+1. Collect the commits this release ships. Use the same comparison base
+   `bin/cut-release` uses — `origin/release` when it exists (the normal
+   case), else the most recent CalVer tag, else all of `origin/main`:
+
+   ```bash
+   git log origin/release..origin/main --format='%s'
+   ```
+
+2. Compose the PR body as markdown, rendering the tickets as a **table** —
+   one row per `SNOW-xx` ticket, the **Change** column taken from the commit
+   subject with the `SNOW-NN:` prefix stripped. Fold commits that share a
+   ticket into one row (cite each PR number, e.g. `(#309, #315)`); put any
+   ticketless commits in a final row with an em-dash (`—`) ticket. Shape:
+
+   ```markdown
+   Release to production: merges `main` onto `release`, triggering the
+   production deploy and the Release workflow.
+
+   ## Tickets in this release
+
+   | Ticket | Change |
+   |--------|--------|
+   | SNOW-54 | Distinguish permanently-uncovered regions from no_rating tiles (#310) |
+   | SNOW-298 | Day Risk Profile elevation glyph (#309, #315) |
+   | — | chore: add /release skill (#316) |
+
+   ---
+   🤖 Opened with bin/cut-release
+   ```
+
+3. Write the composed markdown to `/tmp/release-pr-body.md` (Write), then
+   present **its exact contents** as the plan via `ExitPlanMode`. The plan
+   *is* the PR body — put nothing in the plan that should not appear on the
+   PR.
+
+4. Keep operational context out of the plan. State the computed CalVer tag
+   (step 5 algorithm) and the "merging redeploys production on Render"
+   warning in your chat message around the plan, not inside it.
+
+### 3. Open (or update) the release PR
+
+Once the plan is approved, open the PR with the **captured** body — never
+regenerate it, so the PR matches the approved plan byte-for-byte. First
+check whether a release PR is already open against `release`:
 
 ```bash
-bin/cut-release          # prints title + SNOW-xx ticket list, opens nothing
+gh pr list --base release --state open
 ```
 
-Show the user the ticket list and the computed CalVer tag for today (see
-step 5 for the algorithm). Confirm before opening the PR.
+- None open → open it with the captured body:
 
-### 3. Open the release PR
+  ```bash
+  bin/cut-release --commit --body-file /tmp/release-pr-body.md
+  ```
 
-```bash
-bin/cut-release --commit   # opens the main → release PR via gh
-```
+- One already open → reuse it; set its body to the approved markdown:
+
+  ```bash
+  gh pr edit <number> --body-file /tmp/release-pr-body.md
+  ```
 
 The `release` branch is branch-protected, so the merge goes through GitHub,
 not a direct push. Print the PR URL.

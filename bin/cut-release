@@ -14,22 +14,43 @@
 # Dry-run by default — prints the PR it would open. Pass --commit to open it.
 #
 # Usage:
-#   bin/cut-release            # dry run: print the title, ticket list, body
-#   bin/cut-release --commit   # actually open the PR via gh
+#   bin/cut-release                         # dry run: print title, tickets, body
+#   bin/cut-release --commit                # actually open the PR via gh
+#   bin/cut-release --commit --body-file F  # open the PR using F as the body
+#
+# --body-file lets a caller (the `release` skill) supply a pre-composed PR
+# body — the approved plan markdown — in place of the generated ticket list,
+# so the opened PR matches what the caller previewed byte-for-byte.
 #
 # Requires the `gh` CLI, authenticated, with the repo as origin.
 
 set -euo pipefail
 
 COMMIT=0
-case "${1:-}" in
-    --commit) COMMIT=1 ;;
-    "") ;;
-    *)
-        echo "Usage: $0 [--commit]" >&2
-        exit 64  # EX_USAGE
-        ;;
-esac
+BODY_FILE=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --commit) COMMIT=1 ;;
+        --body-file)
+            shift
+            BODY_FILE="${1:-}"
+            if [[ -z "$BODY_FILE" ]]; then
+                echo "Error: --body-file requires a path." >&2
+                exit 64  # EX_USAGE
+            fi
+            ;;
+        *)
+            echo "Usage: $0 [--commit] [--body-file FILE]" >&2
+            exit 64  # EX_USAGE
+            ;;
+    esac
+    shift
+done
+
+if [[ -n "$BODY_FILE" && ! -f "$BODY_FILE" ]]; then
+    echo "Error: body file not found: ${BODY_FILE}" >&2
+    exit 66  # EX_NOINPUT
+fi
 
 if ! command -v gh >/dev/null 2>&1; then
     echo "Error: gh CLI not found on PATH." >&2
@@ -90,12 +111,18 @@ ${TICKET_LINES}
 EOF
 )"
 
+# A caller-supplied body (the approved plan) wins over the generated one.
+if [[ -n "$BODY_FILE" ]]; then
+    BODY="$(cat "$BODY_FILE")"
+fi
+
 if [[ "$COMMIT" -eq 0 ]]; then
     echo
     echo "DRY RUN — would open this PR (pass --commit to do it):"
     echo "  base:  release"
     echo "  head:  main"
     echo "  title: ${TITLE}"
+    [[ -n "$BODY_FILE" ]] && echo "  body:  ${BODY_FILE}"
     echo
     echo "$BODY"
     exit 0
