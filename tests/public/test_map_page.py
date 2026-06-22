@@ -20,6 +20,7 @@ from freezegun import freeze_time
 from waffle.testutils import override_flag
 
 from tests.factories import (
+    BulletinFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
     SubscriberFactory,
@@ -452,3 +453,48 @@ def test_report_eligible_true_for_authenticated_user() -> None:
     content = response.content.decode()
     assert "report-btn" in content
     assert 'data-report-eligible="true"' in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-343: persistent off-season archive chip on /map/
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestMapPageOffseason:
+    """SNOW-343: persistent #map-offseason-note chip on /map/.
+
+    The chip is the first off-season signal that map_view emits — it must
+    survive #home-intro dismissal (which only affects / with show_intro=True)
+    so a returning off-season visitor on /map/ always sees the archive notice.
+    """
+
+    @freeze_time("2026-06-15")  # past the May 31 season end
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    def test_persistent_chip_present_when_past_season_end(self) -> None:
+        """SNOW-343: #map-offseason-note chip is rendered on /map/ when off-season."""
+        client = Client()
+        response = client.get(reverse("public:map"))
+        content = response.content.decode()
+        assert 'id="map-offseason-note"' in content
+
+    @freeze_time("2026-03-10")  # within active season
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    def test_persistent_chip_absent_during_season(self) -> None:
+        """SNOW-343: #map-offseason-note chip is absent on /map/ when in-season.
+
+        Uses today=2026-03-10 with data through 2026-03-15 so season_end is
+        data-narrowed to 2026-03-15 > today, meaning is_offseason=False.
+        """
+        region = MicroRegionFactory.create(region_id="CH-5500")
+        bulletin = BulletinFactory.create()
+        # data_end will be 2026-03-15; today (2026-03-10) < data_end → in-season.
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 3, 15),
+            source_bulletin=bulletin,
+        )
+        client = Client()
+        response = client.get(reverse("public:map"))
+        content = response.content.decode()
+        assert 'id="map-offseason-note"' not in content
