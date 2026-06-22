@@ -210,7 +210,7 @@ def test_date_changed_updates_region_readout(
         "with no region focused the readout should be a date-only chip (no .has-region)"
     )
 
-    # date-changed updates the displayed date text (formatDateLong → "APR 8 2026").
+    # date-changed updates the displayed date text (formatDatePopup → "8 Apr 2026").
     _dispatch_date_changed(page, "2026-04-08")
     page.wait_for_timeout(150)
 

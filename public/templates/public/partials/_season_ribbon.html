@@ -36,13 +36,13 @@ active-day highlight in sync.
     >
         <div class="ribbon-header">
             {% comment %}
-            Persistent focused-region readout (SNOW-314): names the region whose
-            season is painted into the scrubber track, shows its danger for the
-            currently-scrubbed day, and — when a region is focused — IS the link
-            to that region+date's bulletin (the "View bulletin →" CTA). map.js
-            sets the href and toggles .has-region; cache-fed so it survives
-            playback, replacing the old map popup as the way into the bulletin.
-            With no region focused it degrades to a plain (non-link) date chip.
+            Persistent focused-region readout (SNOW-314, redesigned SNOW-342):
+            names the region whose season is painted into the scrubber track and
+            shows its danger swatch for the currently-scrubbed day. The chip is
+            info-only (a <div>); the bulletin link is the separate
+            #region-readout-action roundel below. map.js fills the date/swatch/
+            breadcrumb text and toggles .has-region; cache-fed so it survives
+            playback. With no region focused it degrades to a plain date chip.
             {% endcomment %}
             {# PROTOTYPE (homepage rework): chip reads date · colour-swatch     #}
             {# divider · region name. The mono date matches the popup format    #}

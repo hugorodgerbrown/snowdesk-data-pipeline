@@ -3225,7 +3225,6 @@ const repaintRegionsForDate = (dateKey, cache) => {
   if (!fill || !trackEl) return;
 
   const readoutEl = document.getElementById('region-readout');
-  const readoutName = readoutEl && readoutEl.querySelector('.region-readout-name');
   const readoutDate =
     readoutEl && readoutEl.querySelector('.region-readout-date');
   const readoutSwatch =
@@ -3351,7 +3350,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (!dateKey) return;
     // SNOW-314 prototype: day-first, title-case date ("18 May 2026") matching
     // the popup card; deliberately not the uppercase scrubber format.
-    readoutDate.textContent = formatDatePopup(dateKey);
+    if (readoutDate) readoutDate.textContent = formatDatePopup(dateKey);
     const hasRegion = !!(regionId && regionName);
     readoutEl.classList.toggle('has-region', hasRegion);
     if (hasRegion) {
