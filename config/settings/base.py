@@ -258,10 +258,16 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         "/robots.txt",
         "/llms.txt",
         "/manifest.webmanifest",
-        "/sitemap.xml",
         # Favicon has two routes: bare path and trailing-slash variant.
         "/favicon.ico",
         "/favicon.ico/",
+        # NOTE — ``/sitemap.xml`` is deliberately NOT listed.  It sets no
+        # ``Cache-Control: public`` header, and its ``Vary: Cookie`` is added
+        # by Django's sitemap-view middleware path, not PosthogContextMiddleware
+        # (verified: the header persists with POSTHOG_API_KEY unset).  Exempting
+        # it from PostHog would therefore be dead config — it would not remove
+        # the header nor make the response cacheable.  Making the sitemap a
+        # genuine public-cacheable surface is tracked separately (SNOW-340).
     }
 )
 

@@ -153,28 +153,44 @@ class TestSitemapContents:
         assert "ch-3333" not in content
 
 
+@pytest.mark.django_db
 @override_settings(POSTHOG_API_KEY="phc_test")
-def test_sitemap_path_is_posthog_exempt() -> None:
-    """SNOW-338 regression: /sitemap.xml is exempt from PosthogContextMiddleware.
+def test_sitemap_path_is_not_posthog_exempt(client: Client) -> None:
+    """SNOW-338: /sitemap.xml is deliberately NOT in _POSTHOG_EXEMPT_PATHS.
 
-    When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would read
-    request.user for identity tagging — which, for any path that doesn't
-    already trigger session access, would cause SessionMiddleware to append
-    Vary: Cookie.  The _POSTHOG_EXEMPT_PATHS set in config/settings/base.py
-    prevents that access by having _posthog_request_filter return False for
-    this path.
+    Unlike robots.txt / llms.txt / manifest / favicon, the sitemap is not a
+    valid target for the PostHog-exemption mechanism:
 
-    Note: Django's own sitemap framework independently marks the session as
-    accessed (for CSRF/sites lookups), so Vary: Cookie appears on the
-    sitemap regardless of PostHog. The exemption here ensures PostHog does
-    not add a further distinct source of that header.
+    * it sets no ``Cache-Control: public`` header, so it is not a
+      shared-cacheable surface in the first place; and
+    * its ``Vary: Cookie`` header is added by the sitemap-view middleware
+      path, not by PosthogContextMiddleware — it persists even with
+      POSTHOG_API_KEY unset.
+
+    Exempting it from PostHog would therefore be dead config: it would
+    neither remove ``Vary: Cookie`` nor make the response cacheable.  Making
+    the sitemap a genuine public-cacheable surface is tracked in SNOW-340.
+
+    This test guards the decision: the request filter must return True for
+    /sitemap.xml when a key is set (i.e. the path is NOT short-circuited),
+    and the response still carries Vary: Cookie with no public Cache-Control.
     """
     from config.settings.base import _posthog_request_filter
 
     class _FakeRequest:
         path = "/sitemap.xml"
 
-    assert _posthog_request_filter(_FakeRequest()) is False, (
-        "/sitemap.xml must be exempt from PosthogContextMiddleware "
-        "(i.e. _posthog_request_filter must return False for it)"
+    assert _posthog_request_filter(_FakeRequest()) is True, (
+        "/sitemap.xml must NOT be exempt from PosthogContextMiddleware — "
+        "exempting it is dead config (see SNOW-340)"
+    )
+
+    response = client.get(reverse("sitemap"))
+    assert "public" not in response.get("Cache-Control", ""), (
+        "sitemap currently sets no public Cache-Control; if this changes, "
+        "revisit SNOW-340 and the exemption decision"
+    )
+    assert "Cookie" in response.get("Vary", ""), (
+        "sitemap Vary: Cookie originates outside PostHog; if this changes, "
+        "revisit SNOW-340"
     )

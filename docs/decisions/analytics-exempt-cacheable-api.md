@@ -17,8 +17,20 @@ The set covers two categories:
 - **Map-data JSON/GeoJSON API endpoints** (`/api/ratings/`, `/api/regions.geojson`,
   etc.) — added in SNOW-299.
 - **Static public-good documents** (`/robots.txt`, `/llms.txt`,
-  `/manifest.webmanifest`, `/sitemap.xml`, `/favicon.ico`, `/favicon.ico/`) —
-  added in SNOW-338.
+  `/manifest.webmanifest`, `/favicon.ico`, `/favicon.ico/`) — added in
+  SNOW-338. All set `Cache-Control: public` and read no per-user state, so
+  the exemption fully removes `Vary: Cookie` from their responses.
+
+**`/sitemap.xml` is deliberately excluded.** During SNOW-338 it was verified
+empirically that `/sitemap.xml` (a) sets **no** `Cache-Control` header at all —
+so it is not a shared-cacheable surface — and (b) carries `Vary: Cookie` from
+the sitemap-view middleware path **regardless of PostHog**: the header persists
+with `POSTHOG_API_KEY` unset, and the sitemap view itself does not access the
+session. Exempting it from `PosthogContextMiddleware` would therefore be dead
+config — it would neither strip `Vary: Cookie` nor make the response cacheable.
+Making the sitemap a genuine public-cacheable surface (set `Cache-Control:
+public` and eliminate the non-PostHog `Vary: Cookie` source) is tracked in
+SNOW-340.
 
 **Why.** `PosthogContextMiddleware` reads `request.user` for identity tagging
 whenever `POSTHOG_API_KEY` is non-empty (i.e. in production). That access
@@ -51,5 +63,6 @@ exempt set must be kept in sync with the `@cache_control(public=True)` GET
 endpoints in `public/api_urls.py` and the `Cache-Control: public` static routes
 in `config/urls.py`. The behaviour is regression-tested with
 `@override_settings(POSTHOG_API_KEY="phc_test")` in
-`tests/public/test_map_api.py` (API endpoints) and in the corresponding test
-files for each static route (SNOW-338).
+`tests/public/test_map_api.py` (API endpoints) and in the per-surface test
+files for each static route (SNOW-338). `tests/public/test_sitemap.py`
+additionally guards the deliberate *non*-exemption of `/sitemap.xml`.
