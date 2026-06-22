@@ -53,6 +53,7 @@ from public._component_fixtures import (
     STATUS_PAGE_VARIANTS,
     SUBSCRIBE_FORM_VARIANTS,
     SUBSCRIBE_OUTCOMES_VARIANTS,
+    TENDENCY_OUTLOOK_VARIANTS,
     TOAST_VARIANTS,
     WEATHER_HEADER_VARIANTS,
 )
@@ -750,6 +751,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/day_character_callout.html",
         variants=DAY_CHARACTER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="tendency-outlook",
+        label="Tendency outlook",
+        description=(
+            "Directional outlook card for ALBINA bulletins. Shows a Unicode "
+            "arrow (→ / ↗ / ↘), a bold danger-direction label, the target "
+            "date, and optional forecaster highlights prose. Suppressed for "
+            "SLF bulletins and any bulletin without a tendency_type."
+        ),
+        kind="components",
+        partial="includes/_tendency_outlook.html",
+        variants=TENDENCY_OUTLOOK_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
