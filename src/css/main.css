@@ -1009,6 +1009,20 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   text-wrap: pretty;
 }
 
+/* —— Day-windows elevation glyph — mountain above/below indicator ———
+   Rendered beside the .dw-tile on a banded row (SNOW-298). The SVG comes
+   from the shared elevation_icon filter (same glyph as the problem-card
+   aspect/elevation row); this wrapper just stops it shrinking and keeps it
+   vertically centred against the level tile.
+   ————————————————————————————————————————— */
+
+.dw-elev {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+
 /* —— HTMX indicator —————————————————————————
    Any element with class="htmx-indicator" is hidden by default and
    revealed while its associated hx-request is in flight.  Mirrors the

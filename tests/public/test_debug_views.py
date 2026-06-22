@@ -195,13 +195,15 @@ class TestComponentLibraryPanel:
     def test_day_windows_panel_renders_expected_variants(
         self, htmx_staff_client: Client
     ) -> None:
-        """The day-windows panel ships five variants matching the scope contract.
+        """The day-windows panel ships seven variants matching the scope contract.
 
         Variant 1: all-day level grid (five rows stepping low → very_high).
         Variant 2: all-day with sublevel modifier (considerable−).
         Variant 3: cross-category later (all_day low + later moderate).
         Variant 4: within-category later (all_day considerable− + later considerable).
-        Variant 5: MF elevation split (all_day low below / moderate above 2500 m).
+        Variant 5: numeric-pivot bands (considerable below / moderate above, glyphs).
+        Variant 6: treeline-pivot bands (low below / considerable above, glyphs).
+        Variant 7: high-severity bands (considerable below / high above, glyphs).
         Asserting both the context shape and rendered HTML guards against drift
         in either the fixture or the ``include_variant`` plumbing.
         """
@@ -210,9 +212,9 @@ class TestComponentLibraryPanel:
 
         active = response.context["active"]
         assert active.slug == "day-windows"
-        assert len(active.variants) == 5
+        assert len(active.variants) == 7
 
-        # Variant 1 — all-day, five EAWS levels.
+        # Variant 1 — all-day, five EAWS levels (single rows, no glyph).
         v1_windows = active.variants[0]["context"]["day_windows"]
         assert [w["level_key"] for w in v1_windows] == [
             "low",
@@ -223,6 +225,7 @@ class TestComponentLibraryPanel:
         ]
         assert {w["type"] for w in v1_windows} == {"all_day"}
         assert {w["pill_label"] for w in v1_windows} == {"All day"}
+        assert all("elevation_bounds" not in w for w in v1_windows)
 
         # Variant 2 — all-day with sublevel modifier.
         v2_windows = active.variants[1]["context"]["day_windows"]
@@ -237,7 +240,7 @@ class TestComponentLibraryPanel:
             ("later", "moderate"),
         ]
 
-        # Variant 4 — within-category later (all_day considerable− + later considerable).
+        # Variant 4 — within-category later.
         v4_windows = active.variants[3]["context"]["day_windows"]
         assert [(w["type"], w["level_key"]) for w in v4_windows] == [
             ("all_day", "considerable"),
@@ -245,24 +248,31 @@ class TestComponentLibraryPanel:
         ]
         assert v4_windows[0]["level_number"] == "3-"
 
-        # Variant 5 — MF elevation split (all_day low below / moderate above 2500 m).
+        # Variant 5 — numeric-pivot bands (two rows, lower then upper, glyphs).
         v5_windows = active.variants[4]["context"]["day_windows"]
-        assert [(w["type"], w["level_key"]) for w in v5_windows] == [
-            ("all_day", "low"),
-            ("all_day", "moderate"),
+        assert [w["level_key"] for w in v5_windows] == ["considerable", "moderate"]
+        assert all("2500" in w["caption"] for w in v5_windows)
+        assert [w["elevation_bounds"].bound_type for w in v5_windows] == [
+            "UPPER",
+            "LOWER",
         ]
-        assert v5_windows[0]["caption"] == "below 2500 m"
-        assert v5_windows[1]["caption"] == "above 2500 m"
 
-        # Rendered HTML — confirms include_variant reached the partial and
-        # that the level_css → CSS class mapping (``very_high`` → ``lv-very-high``)
-        # survives the round-trip.
+        # Variant 6 — treeline-pivot bands.
+        v6_windows = active.variants[5]["context"]["day_windows"]
+        assert [w["level_key"] for w in v6_windows] == ["low", "considerable"]
+        assert all("treeline" in w["caption"] for w in v6_windows)
+
+        # Rendered HTML — confirms include_variant reached the partial, that the
+        # level_css → CSS class mapping (``very_high`` → ``lv-very-high``)
+        # survives the round-trip, and that banded rows render the glyph.
         body = response.content.decode()
         assert "lv-low" in body
         assert "lv-very-high" in body
         assert 'data-window="later"' in body
         assert ">All day<" in body
         assert ">Later<" in body
+        # Banded variants render the mountain elevation glyph.
+        assert 'data-testid="day-window-elevation-icon"' in body
 
     def test_unknown_slug_returns_404(self, htmx_staff_client: Client) -> None:
         """Slugs that don't appear in any library group 404."""

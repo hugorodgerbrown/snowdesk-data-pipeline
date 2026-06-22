@@ -236,10 +236,17 @@ def _make_window(
     pill_label: str,
     modifier: str = "",
     caption: str = "",
+    bound_type: str = "",
 ) -> dict[str, Any]:
-    """Build one day-window row dict for the component-library fixture."""
+    """Build one day-window row dict for the component-library fixture.
+
+    Pass ``bound_type`` (``"LOWER"`` = above a pivot, ``"UPPER"`` = below)
+    for a banded row — it attaches an ``elevation_bounds`` namespace so the
+    ``elevation_icon`` filter renders the mountain glyph (SNOW-298). Single
+    rows leave it unset, matching ``_build_day_windows`` output.
+    """
     meta = _DAY_WINDOW_LEVEL_META[level_key]
-    return {
+    row: dict[str, Any] = {
         "type": period,
         "level_key": level_key,
         "level_css": level_key.replace("_", "-"),
@@ -248,26 +255,37 @@ def _make_window(
         "caption": caption,
         "pill_label": pill_label,
     }
+    if bound_type:
+        # elevation_icon only reads .bound_type; a lightweight namespace
+        # keeps the fixture self-contained (no import of the views dataclass).
+        row["elevation_bounds"] = SimpleNamespace(bound_type=bound_type)
+    return row
 
 
 def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
     """Build the day-windows variant matrix.
 
-    Five stacked variants:
+    Seven stacked variants:
 
     * **All-day, level grid** — five synthetic ``all_day`` rows stepping
-      ``low → very_high`` so tile + label contrast is reviewable across
-      the whole EAWS scale on one screen. Not a realistic bulletin
-      (real bulletins have at most two windows) — a comparison harness.
+      ``low → very_high`` so tile + label contrast is reviewable across the
+      whole EAWS scale on one screen.  Not a realistic bulletin (real
+      bulletins have at most two windows) — a comparison harness.
     * **All-day with sublevel modifier** — one ``all_day`` row at
       considerable with a ``−`` modifier (badge reads ``3−``).
     * **Cross-category later** — ``all_day`` low + ``later`` moderate,
       the most common two-row shape in the bulletin sample.
     * **Within-category later** — ``all_day`` considerable−  + ``later``
       considerable (badge differential shows the intra-band rise).
-    * **MF elevation split** — two ``all_day`` rows with distinct danger
-      levels and elevation captions, representing Météo-France style
-      "low below 2500 m / moderate above 2500 m" bulletins (SNOW-293).
+    * **Numeric-pivot bands** — two ``all_day`` rows split by elevation,
+      ``considerable`` below 2500 m and ``moderate`` above, each carrying the
+      mountain elevation glyph. Represents Météo-France / ALBINA style
+      banded bulletins (SNOW-298). Re-purposes the previous "MF elevation
+      split" fixture.
+    * **Treeline-pivot bands** — two ``all_day`` rows using "below treeline"
+      and "above treeline" captions (ALBINA treeline-pivot style).
+    * **Considerable below / high above bands** — higher-severity banded
+      pair to exercise the orange → red tile colouring.
     """
     all_day_grid = [
         _make_window("all_day", "low", "All day"),
@@ -287,10 +305,46 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
         _make_window("all_day", "considerable", "All day", modifier="-"),
         _make_window("later", "considerable", "Later"),
     ]
-    # Météo-France style: two all_day rows split by elevation band.
-    mf_elevation_split = [
-        _make_window("all_day", "low", "All day", caption="below 2500 m"),
-        _make_window("all_day", "moderate", "All day", caption="above 2500 m"),
+    # Numeric-pivot bands: considerable below 2500 m / moderate above 2500 m.
+    # Re-purposed from the previous "MF elevation split" fixture. Lower band
+    # first (below → UPPER bound), then upper band (above → LOWER bound).
+    numeric_pivot_bands = [
+        _make_window(
+            "all_day",
+            "considerable",
+            "All day",
+            caption="below 2500 m",
+            bound_type="UPPER",
+        ),
+        _make_window(
+            "all_day", "moderate", "All day", caption="above 2500 m", bound_type="LOWER"
+        ),
+    ]
+    # Treeline-pivot bands: low below treeline / considerable above treeline.
+    treeline_pivot_bands = [
+        _make_window(
+            "all_day", "low", "All day", caption="below treeline", bound_type="UPPER"
+        ),
+        _make_window(
+            "all_day",
+            "considerable",
+            "All day",
+            caption="above treeline",
+            bound_type="LOWER",
+        ),
+    ]
+    # Higher-severity pair: considerable below / high above.
+    high_severity_bands = [
+        _make_window(
+            "all_day",
+            "considerable",
+            "All day",
+            caption="below 2200 m",
+            bound_type="UPPER",
+        ),
+        _make_window(
+            "all_day", "high", "All day", caption="above 2200 m", bound_type="LOWER"
+        ),
     ]
     return (
         {
@@ -310,8 +364,16 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
             "context": {"day_windows": within_category},
         },
         {
-            "caption": "MF elevation split · low below 2500 m / moderate above 2500 m",
-            "context": {"day_windows": mf_elevation_split},
+            "caption": "Numeric-pivot bands · considerable / moderate at 2500 m",
+            "context": {"day_windows": numeric_pivot_bands},
+        },
+        {
+            "caption": "Treeline bands · low below / considerable above treeline",
+            "context": {"day_windows": treeline_pivot_bands},
+        },
+        {
+            "caption": "High-severity bands · considerable below 2200 m / high above",
+            "context": {"day_windows": high_severity_bands},
         },
     )
 
@@ -1074,6 +1136,64 @@ DAY_CHARACTER_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# ── Tendency outlook (SNOW-296) ─────────────────────────────────────────────
+# One variant per canonical tendency_type (steady / increasing / decreasing),
+# plus one neutral fallback variant (unknown type).  Each context dict
+# contains an ``outlook`` key shaped like a TendencyOutlook instance —
+# matching the ``with outlook=panel.tendency_outlook only`` include call.
+
+TENDENCY_OUTLOOK_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Steady — constant danger",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="steady",
+                arrow="→",
+                label="Constant avalanche danger",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="Conditions remain broadly stable.",
+            ),
+        },
+    },
+    {
+        "caption": "Increasing danger",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="increasing",
+                arrow="↗",
+                label="Increasing avalanche danger",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="Fresh snow and wind will increase the hazard tomorrow.",
+            ),
+        },
+    },
+    {
+        "caption": "Decreasing danger",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="decreasing",
+                arrow="↘",
+                label="Decreasing avalanche danger",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="",
+            ),
+        },
+    },
+    {
+        "caption": "Neutral fallback — unknown tendency_type",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="unknown_future_value",
+                arrow="",
+                label="Avalanche danger outlook",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="",
+            ),
+        },
+    },
+)
+
+
 # ── Nav (SNOW-201) ──────────────────────────────────────────────────────────
 # Covers the four meaningful states of the persistent top bar:
 # bare logo, back-link variant, season-trigger variant, and authed subscriber.
@@ -1583,6 +1703,23 @@ REGION_TOOLTIP_VARIANTS: tuple[dict[str, Any], ...] = (
             "bulletin_url": "",
             "country_name": "Switzerland",
             "target_date": _TOOLTIP_DATE,
+            "covered": True,
+            "provider_name": "SLF",
+        },
+    },
+    {
+        # SNOW-54: permanently-uncovered region (e.g. Swiss Lowlands / Jura).
+        # The pipeline has no RegionDayRating rows for this area, so the tooltip
+        # explains the upstream gap rather than showing the generic "no bulletin" label.
+        "caption": "Permanently uncovered (SLF — Swiss Lowlands)",
+        "context": {
+            "region": _TOOLTIP_REGION,
+            "day_rating": None,
+            "bulletin_url": "",
+            "country_name": "Switzerland",
+            "target_date": _TOOLTIP_DATE,
+            "covered": False,
+            "provider_name": "SLF",
         },
     },
 )

@@ -2401,6 +2401,242 @@ class TestMFElevationBandSplitBulletinPage:
 
 
 # ---------------------------------------------------------------------------
+# Test: day-window elevation bounds — band metadata for the glyph
+# ---------------------------------------------------------------------------
+
+
+class TestDayWindowsElevationBounds:
+    """Unit tests for the elevation metadata attached to banded day-window rows.
+
+    Banded periods attach an ``ElevationBounds`` (carrying a ``bound_type``)
+    to each row so the panel can render the mountain elevation glyph via the
+    ``elevation_icon`` filter; single rows leave it unset. ``bound_type`` is
+    ``LOWER`` for an "above X" band and ``UPPER`` for a "below X" band.
+    """
+
+    def _rm_rating(
+        self,
+        key: str,
+        *,
+        lower: int | None = None,
+        upper: int | None = None,
+        treeline_side: str | None = None,
+    ) -> dict[str, Any]:
+        """Build a single projected ``danger.ratings`` entry."""
+        elevation: dict[str, Any] | None = None
+        if lower is not None or upper is not None or treeline_side is not None:
+            elevation = {
+                "lower": lower,
+                "upper": upper,
+                "treeline": treeline_side is not None,
+                "treeline_side": treeline_side,
+            }
+        return {
+            "period": "all_day",
+            "key": key,
+            "subdivision": None,
+            "elevation": elevation,
+        }
+
+    def test_above_band_is_lower_bound_type(self) -> None:
+        """A lowerBound-only band ("above X") resolves to bound_type LOWER."""
+        from public.views import _rm_elevation_bounds
+
+        bounds = _rm_elevation_bounds(
+            {"lower": 2400, "upper": None, "treeline": False, "treeline_side": None}
+        )
+        assert bounds.bound_type == "LOWER"
+        assert "above" in bounds.display
+
+    def test_below_band_is_upper_bound_type(self) -> None:
+        """An upperBound-only band ("below X") resolves to bound_type UPPER."""
+        from public.views import _rm_elevation_bounds
+
+        bounds = _rm_elevation_bounds(
+            {"lower": None, "upper": 2400, "treeline": False, "treeline_side": None}
+        )
+        assert bounds.bound_type == "UPPER"
+        assert "below" in bounds.display
+
+    def test_treeline_side_is_reconstructed(self) -> None:
+        """The treeline token is put back on the correct bound for the glyph."""
+        from public.views import _rm_elevation_bounds
+
+        above = _rm_elevation_bounds(
+            {"lower": None, "upper": None, "treeline": True, "treeline_side": "lower"}
+        )
+        assert above.bound_type == "LOWER"
+        assert "treeline" in above.display
+        below = _rm_elevation_bounds(
+            {"lower": None, "upper": None, "treeline": True, "treeline_side": "upper"}
+        )
+        assert below.bound_type == "UPPER"
+        assert "treeline" in below.display
+
+    def test_empty_elevation_is_falsey(self) -> None:
+        """A missing elevation yields an empty (falsey) ElevationBounds."""
+        from public.views import _rm_elevation_bounds
+
+        assert not _rm_elevation_bounds(None)
+
+    def test_banded_rows_carry_elevation_bounds(self) -> None:
+        """Each row of a banded pair carries an ElevationBounds with a bound_type."""
+        from public.views import _day_windows_from_rm_ratings
+
+        rows = _day_windows_from_rm_ratings(
+            [
+                self._rm_rating("considerable", lower=2400),  # above 2400
+                self._rm_rating("moderate", upper=2400),  # below 2400
+            ]
+        )
+        assert len(rows) == 2
+        bound_types = {row["elevation_bounds"].bound_type for row in rows}
+        assert bound_types == {"LOWER", "UPPER"}
+
+    def test_single_row_has_no_elevation_bounds(self) -> None:
+        """An unbanded (single) row leaves ``elevation_bounds`` unset — no glyph."""
+        from public.views import _day_windows_from_rm_ratings
+
+        rows = _day_windows_from_rm_ratings([self._rm_rating("moderate")])
+        assert len(rows) == 1
+        assert "elevation_bounds" not in rows[0]
+
+
+# ---------------------------------------------------------------------------
+# Test: banded full-page render — two glyph rows vs plain chip
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestDayWindowsBandedRender:
+    """Full-page render assertions for the banded elevation path.
+
+    Banded bulletins (two same-type rows from ``_rows_for_period``) render two
+    chip rows, each carrying the mountain elevation glyph
+    (``data-testid="day-window-elevation-icon"``); single-band bulletins keep
+    the plain chip row with no glyph (SNOW-298).
+    """
+
+    def _make_banded_bulletin(self, region: MicroRegion) -> Bulletin:
+        """Create a bulletin with two all_day elevation-band ratings."""
+        from bulletins.services.render_model import RENDER_MODEL_VERSION
+
+        day = date(2026, 3, 15)
+        vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
+        vt = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
+        rm = {
+            "version": RENDER_MODEL_VERSION,
+            "source": "meteofrance",
+            "danger": {
+                "key": "moderate",
+                "number": "2",
+                "subdivision": None,
+                "ratings": [
+                    {
+                        "period": "all_day",
+                        "key": "low",
+                        "subdivision": None,
+                        "elevation": {
+                            "lower": None,
+                            "upper": 2400,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                    {
+                        "period": "all_day",
+                        "key": "moderate",
+                        "subdivision": None,
+                        "elevation": {
+                            "lower": 2400,
+                            "upper": None,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                ],
+            },
+            "danger_patterns": [],
+            "traits": [],
+            "snowpack_structure": None,
+            "metadata": {
+                "publication_time": "2026-03-15T06:00:00+00:00",
+                "valid_from": "2026-03-15T06:00:00+00:00",
+                "valid_until": "2026-03-15T15:00:00+00:00",
+                "next_update": None,
+                "unscheduled": False,
+                "lang": "fr",
+            },
+            "prose": {
+                "snowpack_structure": None,
+                "weather_review": None,
+                "weather_forecast": None,
+                "tendency": [],
+                "avalanche_activity": {"highlights": "", "comment": ""},
+                "tendency_lead": None,
+            },
+        }
+        bulletin = BulletinFactory.create(
+            issued_at=vf - timedelta(minutes=30),
+            valid_from=vf,
+            valid_to=vt,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin,
+            region=region,
+            region_name_at_time=region.name,
+        )
+        return bulletin
+
+    def test_banded_bulletin_renders_two_rows_with_glyphs(self, client: Client) -> None:
+        """A banded bulletin renders two chip rows, each with the elevation glyph."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        self._make_banded_bulletin(region)
+        url = _url("ch-4115", region.slug, "2026-03-15")
+        response = client.get(url, follow=True)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert content.count('data-testid="day-window-row"') == 2
+        assert content.count('data-testid="day-window-elevation-icon"') == 2
+        # The old pyramid markup must be gone.
+        assert 'data-testid="day-window-pyramid"' not in content
+
+    def test_banded_bulletin_tiles_carry_band_lv_classes(self, client: Client) -> None:
+        """Each banded row keeps its EAWS-coloured level tile (``dw-tile lv-*``)."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        self._make_banded_bulletin(region)
+        url = _url("ch-4115", region.slug, "2026-03-15")
+        response = client.get(url, follow=True)
+        content = response.content.decode()
+        assert "dw-tile lv-low" in content
+        assert "dw-tile lv-moderate" in content
+
+    def test_banded_bulletin_captions_render(self, client: Client) -> None:
+        """The elevation captions (built from the pivot, '2400') still render."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        self._make_banded_bulletin(region)
+        url = _url("ch-4115", region.slug, "2026-03-15")
+        response = client.get(url, follow=True)
+        content = response.content.decode()
+        assert "2400" in content
+
+    def test_unbanded_bulletin_renders_chip_row_without_glyph(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A single-band bulletin keeps the chip row and renders no elevation glyph."""
+        day = date(2026, 3, 19)
+        raw = _raw_data_with_ratings([_rating("moderate", "all_day")])
+        _make_am_bulletin(region, day, raw_data=raw)
+        url = _url("ch-4115", "valais", "2026-03-19")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="day-window-row"' in content
+        assert 'data-testid="day-window-elevation-icon"' not in content
+
+
+# ---------------------------------------------------------------------------
 # Test: bulletin page content — subregion names, day-risk panel
 # ---------------------------------------------------------------------------
 
@@ -4632,17 +4868,25 @@ class TestAlbinaBandHeadings:
         )
         content = client.get(url).content.decode()
 
-        # Only the two banded rows must appear; the stray 'low' is suppressed.
-        row_count = content.count('data-testid="day-window-row"')
-        assert row_count == 2, f"Expected 2 day-window rows, got {row_count}"
+        # The two banded all_day rows render as two chip rows, each with the
+        # elevation glyph — the stray unbanded 'low' is suppressed upstream.
+        assert content.count('data-testid="day-window-row"') == 2, (
+            "Expected the two surviving banded ratings to render two rows"
+        )
+        assert 'data-testid="day-window-pyramid"' not in content
 
         # Extract the day-windows panel section for targeted assertions.
         panel_start = content.index('data-testid="day-windows-panel"')
         panel_end = content.index('data-testid="avalanche-problems-heading"')
         panel_html = content[panel_start:panel_end]
 
-        # No low/level-1 tile must appear inside the panel.
-        assert "lv-low" not in panel_html, "Suppressed 'low' rating leaked into panel"
+        # Both surviving rows carry the elevation glyph.
+        assert panel_html.count('data-testid="day-window-elevation-icon"') == 2
+
+        # The suppressed 'low' (level 1) rating must not appear in the panel.
+        assert "lv-low" not in panel_html, (
+            "Suppressed 'low' rating leaked into the day-windows panel"
+        )
 
         # The masthead headline must still be Considerable (level 3) — suppression
         # must not alter the headline danger computed outside this function.
@@ -4944,10 +5188,12 @@ class TestDayCharacterNoLeadingPeriod:
         client: Client,
         region: MicroRegion,
     ) -> None:
-        """ALBINA bulletins using tendency_lead produce no stray leading period.
+        """ALBINA bulletins now show the computed day-character label, not tendency_lead.
 
-        When _resolve_day_lead returns DayCharacter(label="", explainer=<text>),
-        the callout must not render ". <text>" — the period must be absent.
+        After SNOW-296, _resolve_day_lead always delegates to compute_day_character.
+        The tendency_lead prose moves to the tendency outlook block, not the callout.
+        The callout must show the computed label (e.g. "Manageable day") and must
+        not show the tendency_lead text in the day-character callout area.
         """
         day = date(2026, 4, 15)
         rm = _render_model_with_traits(
@@ -4995,12 +5241,16 @@ class TestDayCharacterNoLeadingPeriod:
         )
         content = client.get(url).content.decode()
 
-        # The explainer text should appear.
-        assert "Increase in danger during the day." in content
+        # The computed day-character label must be present (wet_snow at moderate → Manageable).
+        assert 'data-testid="day-character-label"' in content
+        assert "Manageable day" in content
 
-        # The callout must not start with a bare period.
-        assert ". Increase in danger" not in content
-        assert 'data-testid="day-character-label"' not in content
+        # The tendency_lead text must NOT appear anywhere on the page: the
+        # callout no longer renders it, and with no tendency entry the outlook
+        # block is suppressed. (Outlook-block highlights rendering is covered
+        # by TestTendencyOutlook.test_highlights_render_as_supporting_text.)
+        assert 'data-testid="day-character-explainer"' in content
+        assert "Increase in danger during the day." not in content
 
     def test_slf_bulletin_still_renders_label_and_period(
         self,
@@ -5382,3 +5632,209 @@ class TestObservationCountsStrip:
 
         assert response.status_code == 200
         assert "Some reports were placed manually" not in response.content.decode()
+
+
+# ---------------------------------------------------------------------------
+# SNOW-296 — tendency outlook block (ALBINA directional arrow + label)
+# ---------------------------------------------------------------------------
+
+
+def _albina_tendency_render_model(
+    tendency_type: str | None,
+    valid_until: str | None = "2026-04-16T23:59:59+00:00",
+    tendency_lead: str = "Conditions will change tomorrow.",
+) -> dict:
+    """Build an ALBINA-style render model with a tendency entry."""
+    tendency_entry: dict = {
+        "comment": "",
+        "tendency_type": tendency_type,
+        "valid_from": "2026-04-15T00:00:00+00:00",
+        "valid_until": valid_until,
+    }
+    return _render_model_with_traits(
+        [
+            {
+                "category": "wet",
+                "time_period": "all_day",
+                "title": "Wet avalanches",
+                "geography": {"source": "problems"},
+                "problems": [
+                    {
+                        "problem_type": "wet_snow",
+                        "comment_html": "",
+                        "aspects": ["S", "SW"],
+                        "elevation": None,
+                        "time_period": "all_day",
+                        "core_zone_text": None,
+                        "danger_rating_value": "moderate",
+                        "avalanche_type": None,
+                        "avalanche_size": None,
+                        "frequency": None,
+                        "snowpack_stability": None,
+                    }
+                ],
+                "prose": None,
+                "danger_level": 2,
+            }
+        ],
+        prose={
+            "tendency": [tendency_entry],
+            "tendency_lead": tendency_lead,
+        },
+    )
+
+
+@pytest.mark.django_db
+class TestTendencyOutlook:
+    """Tests for the SNOW-296 tendency outlook block."""
+
+    @pytest.fixture
+    def albina_region(self) -> MicroRegion:
+        """Return an ALBINA-type micro region."""
+        major = MajorRegionFactory.create(prefix="AT-7")
+        sub = SubRegionFactory.create(prefix="AT-72", major=major)
+        return MicroRegionFactory.create(region_id="at-07-22", subregion=sub)
+
+    def _make_bulletin(
+        self, region: MicroRegion, rm: dict, day: date | None = None
+    ) -> str:
+        """Create a bulletin and return the rendered page content."""
+        _day = day or date(2026, 4, 15)
+        rm["source"] = "albina"
+        _make_am_bulletin(
+            region, _day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "at-07-22",
+                "slug": region.name_slug,
+                "date_str": "2026-04-15",
+            },
+        )
+        return Client().get(url).content.decode()
+
+    def test_steady_arrow_and_label(self, albina_region: MicroRegion) -> None:
+        """tendency_type='steady' renders → arrow and 'Constant avalanche danger'."""
+        rm = _albina_tendency_render_model("steady")
+        content = self._make_bulletin(albina_region, rm)
+        assert 'data-testid="tendency-outlook"' in content
+        assert 'data-testid="tendency-outlook-arrow"' in content
+        assert "→" in content
+        assert "Constant avalanche danger" in content
+
+    def test_increasing_arrow_and_label(self, albina_region: MicroRegion) -> None:
+        """tendency_type='increasing' renders ↗ arrow and 'Increasing avalanche danger'."""
+        rm = _albina_tendency_render_model("increasing")
+        content = self._make_bulletin(albina_region, rm)
+        assert 'data-testid="tendency-outlook"' in content
+        assert "↗" in content
+        assert "Increasing avalanche danger" in content
+
+    def test_decreasing_arrow_and_label(self, albina_region: MicroRegion) -> None:
+        """tendency_type='decreasing' renders ↘ arrow and 'Decreasing avalanche danger'."""
+        rm = _albina_tendency_render_model("decreasing")
+        content = self._make_bulletin(albina_region, rm)
+        assert 'data-testid="tendency-outlook"' in content
+        assert "↘" in content
+        assert "Decreasing avalanche danger" in content
+
+    def test_valid_until_renders_as_formatted_date(
+        self, albina_region: MicroRegion
+    ) -> None:
+        """valid_until ISO string renders as a formatted date in the outlook block."""
+        rm = _albina_tendency_render_model(
+            "increasing", valid_until="2026-04-16T23:59:59+00:00"
+        )
+        content = self._make_bulletin(albina_region, rm)
+        assert 'data-testid="tendency-outlook-date"' in content
+        # parse_iso|date:"j F Y" → "16 April 2026"
+        assert "16 April 2026" in content
+
+    def test_highlights_render_as_supporting_text(
+        self, albina_region: MicroRegion
+    ) -> None:
+        """tendency_lead prose renders as supporting text inside the outlook block."""
+        rm = _albina_tendency_render_model(
+            "steady", tendency_lead="Stay cautious on north-facing slopes."
+        )
+        content = self._make_bulletin(albina_region, rm)
+        assert 'data-testid="tendency-outlook"' in content
+        assert "Stay cautious on north-facing slopes." in content
+
+    def test_outlook_suppressed_when_no_tendency(
+        self, albina_region: MicroRegion
+    ) -> None:
+        """When tendency list is empty, the outlook block is suppressed."""
+        rm = _render_model_with_traits(
+            [
+                {
+                    "category": "dry",
+                    "time_period": "all_day",
+                    "title": "Dry avalanches",
+                    "geography": {"source": "problems"},
+                    "problems": [
+                        {
+                            "problem_type": "wind_slab",
+                            "comment_html": "",
+                            "aspects": ["N"],
+                            "elevation": {
+                                "lower": 2200,
+                                "upper": None,
+                                "treeline": False,
+                            },
+                            "time_period": "all_day",
+                            "core_zone_text": None,
+                            "danger_rating_value": "moderate",
+                            "avalanche_type": None,
+                            "avalanche_size": None,
+                            "frequency": None,
+                            "snowpack_stability": None,
+                        }
+                    ],
+                    "prose": None,
+                    "danger_level": 2,
+                }
+            ],
+            prose={"tendency": [], "tendency_lead": None},
+        )
+        content = self._make_bulletin(albina_region, rm)
+        assert 'data-testid="tendency-outlook"' not in content
+
+    def test_outlook_suppressed_when_tendency_type_is_none(
+        self, albina_region: MicroRegion
+    ) -> None:
+        """tendency_type=None suppresses the outlook block (no warning)."""
+        rm = _albina_tendency_render_model(None)
+        content = self._make_bulletin(albina_region, rm)
+        assert 'data-testid="tendency-outlook"' not in content
+
+    def test_unknown_tendency_type_renders_neutral_fallback_and_logs_warning(
+        self, albina_region: MicroRegion, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An unknown tendency_type renders a neutral fallback and logs a warning."""
+        import logging
+
+        rm = _albina_tendency_render_model("future_unknown_type")
+        with caplog.at_level(logging.WARNING, logger="public.views"):
+            content = self._make_bulletin(albina_region, rm)
+
+        # The outlook block must still render (neutral fallback, not suppressed).
+        assert 'data-testid="tendency-outlook"' in content
+        assert "Avalanche danger outlook" in content
+        # No directional arrow for the neutral fallback.
+        assert 'data-testid="tendency-outlook-arrow"' not in content
+        # A warning must have been emitted.
+        assert any(
+            "unknown tendency_type" in r.message and "future_unknown_type" in r.message
+            for r in caplog.records
+        )
+
+    def test_outlook_collapsible_not_shown_for_albina_empty_comment(
+        self, albina_region: MicroRegion
+    ) -> None:
+        """ALBINA tendency with empty comment does not show the collapsible Outlook panel."""
+        rm = _albina_tendency_render_model("increasing")
+        content = self._make_bulletin(albina_region, rm)
+        # The tendency panel (collapsible) must not appear.
+        assert 'data-testid="tendency-panel"' not in content

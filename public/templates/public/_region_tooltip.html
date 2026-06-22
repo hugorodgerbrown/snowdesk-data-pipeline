@@ -21,11 +21,15 @@ Content:
      "No bulletin available for…" label is shown instead.
 
 Context variables expected:
-  region      — MicroRegion instance, with subregion__major select_related.
-  day_rating  — RegionDayRating instance for the displayed date, or None.
-  bulletin_url — Absolute URL for the day's bulletin (dated or evergreen).
-  country_name — Human-readable country name (e.g. "Switzerland").
-  target_date  — datetime.date for the displayed day.
+  region        — MicroRegion instance, with subregion__major select_related.
+  day_rating    — RegionDayRating instance for the displayed date, or None.
+  bulletin_url  — Absolute URL for the day's bulletin (dated or evergreen).
+  country_name  — Human-readable country name (e.g. "Switzerland").
+  target_date   — datetime.date for the displayed day.
+  covered       — bool; True when the pipeline has ever rated this region.
+                  False for permanently-uncovered regions (e.g. Swiss Lowlands).
+  provider_name — Human-readable provider label (e.g. "SLF", "ALBINA",
+                  "Météo-France") for the uncovered tooltip copy.
 {% endcomment %}
 {% load i18n snowdesk_time static %}
 
@@ -60,9 +64,17 @@ Context variables expected:
             {% blocktrans with d=target_date|date:"j M Y" trimmed %}Open bulletin for {{ d }} →{% endblocktrans %}
         </a>
     {% else %}
-        <p class="region-tooltip-no-bulletin" data-testid="region-tooltip-no-bulletin">
-            {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for {{ d }}{% endblocktrans %}
-        </p>
+        {% if not covered %}
+            <p class="region-tooltip-no-bulletin" data-testid="region-tooltip-uncovered">
+                {% blocktrans with p=provider_name trimmed %}Avalanche data is not published by {{ p }} for this
+                    area{% endblocktrans %}
+            </p>
+        {% else %}
+            <p class="region-tooltip-no-bulletin" data-testid="region-tooltip-no-bulletin">
+                {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
+                    {{ d }}{% endblocktrans %}
+            </p>
+        {% endif %}
     {% endif %}
     <div class="region-tooltip-editorial" data-testid="region-tooltip-editorial"></div>
 </div>

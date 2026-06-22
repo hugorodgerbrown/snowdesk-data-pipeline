@@ -1,0 +1,43 @@
+{% comment %}
+  templates/includes/_tendency_outlook.html — Directional outlook block for ALBINA bulletins.
+
+  Renders the tendency outlook card: a Unicode directional arrow, a bold label,
+  an optional target date, and optional forecaster-authored highlights prose.
+
+  Context:
+    outlook — TendencyOutlook instance (or dict) with attributes:
+      .arrow        — Unicode glyph (→ / ↗ / ↘) or empty string for neutral fallback
+      .label        — Human-readable label (e.g. "Increasing avalanche danger")
+      .valid_until  — Raw ISO-8601 date string for the target day, or None
+      .highlights   — Forecaster prose (may be empty string)
+
+  Called as:
+    {% include "includes/_tendency_outlook.html" with outlook=panel.tendency_outlook only %}
+{% endcomment %}
+{% load snowdesk_time %}
+<div
+    class="rounded-card border border-border bg-card px-4 py-4"
+    data-testid="tendency-outlook"
+>
+    <p class="flex items-center gap-2 text-sm font-semibold text-text-1 mb-1">
+        {% if outlook.arrow %}
+            <span
+                aria-hidden="true"
+                class="text-base leading-none"
+                data-testid="tendency-outlook-arrow"
+            >{{ outlook.arrow }}</span>
+        {% endif %}
+        <span data-testid="tendency-outlook-label">{{ outlook.label }}</span>
+    </p>
+    {% if outlook.valid_until %}
+        <p
+            class="text-xs text-text-3 mb-2"
+            data-testid="tendency-outlook-date"
+        >
+            {{ outlook.valid_until|parse_iso|date:"j F Y" }}
+        </p>
+    {% endif %}
+    {% if outlook.highlights %}
+        <p class="text-sm leading-prose text-text-2">{{ outlook.highlights }}</p>
+    {% endif %}
+</div>

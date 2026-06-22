@@ -2,9 +2,18 @@
 #
 # Documentation only — Blueprint auto-sync is NOT enabled. Changes to the
 # live deployment are still made via the Render dashboard; this file is the
-# checked-in record of that configuration so the production topology
-# (one web service, two background workers, env-var wiring) is discoverable
-# from the repo.
+# checked-in record of that configuration so the deployment topology
+# (services, deploy branches, env-var wiring) is discoverable from the repo.
+#
+# Path-to-live (SNOW-339): deploys are split across two branches.
+#   * `main`    → Staging   — one web service, auto-deploys on every merge.
+#   * `release` → Production — three services, deploys when the `release`
+#                 branch advances (a release PR merges). All three track
+#                 the SAME branch so they always run the same commit
+#                 against the shared production database.
+# Staging and production use SEPARATE Postgres databases. This matters
+# because build.sh runs `migrate` + `loaddata` on every deploy — a staging
+# deploy must never touch the production schema. Full flow: docs/deployment.md.
 #
 # Originally exported from Render on 2026-05-22. Corrections / additions
 # applied against the raw export:
@@ -16,6 +25,8 @@
 #     consumed in production.
 #   * snowdesk-scheduler (SNOW-238): replaced snowdesk-cron-bulletins and
 #     snowdesk-cron-weather with a single long-running APScheduler worker.
+#   * SNOW-339: pinned the production services to `branch: release` and
+#     added the Staging environment (web only, tracking `main`).
 #
 # Env vars marked `sync: false` must be set manually in the Render
 # dashboard — they are not auto-populated from a Blueprint import.
@@ -32,6 +43,7 @@ projects:
             repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
             plan: starter
             region: frankfurt
+            branch: release
             buildCommand: . ./build.sh
             startCommand: gunicorn config.wsgi
             domains:
@@ -57,6 +69,7 @@ projects:
             repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
             plan: starter
             region: frankfurt
+            branch: release
             buildCommand: ./build_headless.sh
             startCommand: python manage.py run_scheduler
             autoDeployTrigger: commit
@@ -71,8 +84,40 @@ projects:
             repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
             plan: starter
             region: frankfurt
+            branch: release
             buildCommand: ./build_headless.sh
             startCommand: python manage.py db_worker
             autoDeployTrigger: commit
             envVars:
               - fromGroup: Django App Settings
+
+      - name: Staging
+        # Single web dyno, auto-deploys from `main`. No scheduler and no
+        # task worker — staging does not ingest bulletins or send queued
+        # email on its own; seed its database with a manual `fetch_bulletins`
+        # run when test data is needed. Wired to its own Postgres and its
+        # own env group (separate SECRET_KEY, DATABASE_URL, ALLOWED_HOSTS,
+        # email target) — never the production database.
+        services:
+          - type: web
+            name: snowdesk-website-staging
+            runtime: python
+            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
+            plan: starter
+            region: frankfurt
+            branch: main
+            buildCommand: . ./build.sh
+            startCommand: gunicorn config.wsgi
+            autoDeployTrigger: commit
+            envVars:
+              - key: METEOFRANCE_API_KEY
+                sync: false
+              - key: CSP_REPORT_ONLY
+                sync: false
+              - key: WEBAUTHN_ORIGIN
+                sync: false
+              - key: WEBAUTHN_RP_NAME
+                sync: false
+              - key: WEBAUTHN_RP_ID
+                sync: false
+              - fromGroup: Django App Settings (Staging)

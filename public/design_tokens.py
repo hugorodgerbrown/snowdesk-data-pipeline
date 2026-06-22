@@ -53,6 +53,7 @@ from public._component_fixtures import (
     STATUS_PAGE_VARIANTS,
     SUBSCRIBE_FORM_VARIANTS,
     SUBSCRIBE_OUTCOMES_VARIANTS,
+    TENDENCY_OUTLOOK_VARIANTS,
     TOAST_VARIANTS,
     WEATHER_HEADER_VARIANTS,
 )
@@ -688,8 +689,14 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         description=(
             "Per-window EAWS rating panel — one row per validTimePeriod with "
             "a coloured danger-level tile, label and time-window pill. "
-            "Variants cover the all-day case (≈95% of bulletins) across "
-            "every danger level plus a realistic split-day layout."
+            "Banded periods (ALBINA / Météo-France with two elevation-split "
+            "danger levels in one period) emit a row per band, each carrying "
+            "the mountain elevation glyph beside the tile to mark the "
+            "above/below band (SNOW-298); single-band periods (SLF; "
+            "constant-danger ALBINA) omit the glyph. Variants cover the "
+            "all-day case (≈95% of bulletins) across every danger level, a "
+            "realistic split-day layout, and numeric- and treeline-pivot "
+            "banded examples."
         ),
         kind="components",
         partial="includes/day_windows.html",
@@ -750,6 +757,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/day_character_callout.html",
         variants=DAY_CHARACTER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="tendency-outlook",
+        label="Tendency outlook",
+        description=(
+            "Directional outlook card for ALBINA bulletins. Shows a Unicode "
+            "arrow (→ / ↗ / ↘), a bold danger-direction label, the target "
+            "date, and optional forecaster highlights prose. Suppressed for "
+            "SLF bulletins and any bulletin without a tendency_type."
+        ),
+        kind="components",
+        partial="includes/_tendency_outlook.html",
+        variants=TENDENCY_OUTLOOK_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

@@ -1,0 +1,23 @@
+# .github/release.yml — Configuration for GitHub's auto-generated release
+# notes, consumed by `gh release create --generate-notes` in
+# `.github/workflows/release.yml`.
+#
+# The release notes are the production-deploy record: every merged PR
+# between the previous release and this one is listed, and because PR
+# titles carry the `SNOW-xx:` prefix the shipped tickets surface
+# automatically. Dependency-bot and release-bot PRs are excluded as noise.
+#
+# Categories below match on *GitHub* PR labels (not Linear labels). The
+# repo does not label PRs today, so everything lands under "What's
+# changed". If GitHub PR labels are adopted later, add titled categories
+# above the catch-all to group the list.
+
+changelog:
+  exclude:
+    authors:
+      - dependabot
+      - github-actions
+  categories:
+    - title: What's changed
+      labels:
+        - "*"
