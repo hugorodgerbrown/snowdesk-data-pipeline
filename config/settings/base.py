@@ -220,19 +220,53 @@ POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES = config(
 )
 
 
+# Paths of cacheable public API endpoints that must be exempt from
+# PosthogContextMiddleware. The middleware reads ``request.user`` to tag
+# identities whenever an API key is set; that access marks the session as
+# accessed, causing ``SessionMiddleware.process_response`` to append
+# ``Vary: Cookie`` to the response — which defeats the
+# ``Cache-Control: public`` CDN caching these anonymous, high-volume
+# map-data endpoints are designed for.  Returning False from the filter
+# short-circuits the middleware before ``request.user`` is touched.
+#
+# SNOW-299: keep this set in sync with the ``@cache_control(public=True)``
+# GET endpoints declared in ``public/api_urls.py``.
+_POSTHOG_EXEMPT_API_PATHS: frozenset[str] = frozenset(
+    {
+        "/api/ratings/",
+        "/api/resorts-by-region/",
+        "/api/resorts.geojson",
+        "/api/regions.geojson",
+        "/api/major-regions.geojson",
+        "/api/sub-regions.geojson",
+        "/api/bulletin-groupings.geojson",
+    }
+)
+
+
 # Skip the middleware entirely when no API key is configured — avoids
 # per-request context and tag work in dev/test with no key.
 # The function is called at request time — importing django.conf.settings
 # inside it is safe and reads the live value so @override_settings works.
 def _posthog_request_filter(request: object) -> bool:
-    """Return True only when POSTHOG_API_KEY is non-empty.
+    """Return True only when POSTHOG_API_KEY is non-empty and the path is not exempt.
+
+    Short-circuits on two conditions (returning False skips the middleware):
+
+    1. ``POSTHOG_API_KEY`` is empty — no analytics in dev/test.
+    2. The request path is in ``_POSTHOG_EXEMPT_API_PATHS`` — SNOW-299:
+       these cacheable map-data endpoints must not trigger a ``request.user``
+       access, which would cause ``SessionMiddleware`` to append
+       ``Vary: Cookie`` and defeat ``Cache-Control: public`` CDN caching.
 
     Reads ``django.conf.settings`` at call time so that ``@override_settings``
     in tests takes effect without capturing a stale module-level binding.
     """
     from django.conf import settings as _s  # noqa: PLC0415 — intentional late import
 
-    return bool((getattr(_s, "POSTHOG_API_KEY", "") or "").strip())
+    if not (getattr(_s, "POSTHOG_API_KEY", "") or "").strip():
+        return False
+    return getattr(request, "path", "") not in _POSTHOG_EXEMPT_API_PATHS
 
 
 POSTHOG_MW_REQUEST_FILTER = _posthog_request_filter
