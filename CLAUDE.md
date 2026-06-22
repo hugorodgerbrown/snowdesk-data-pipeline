@@ -62,6 +62,10 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch
 uv run python manage.py runserver
 ```
 
+In a Claude worktree `bin/init-worktree` runs automatically and seeds
+`db.sqlite3` from fixtures + dev users — see [`docs/worktrees.md`](docs/worktrees.md)
+for credentials and the force-reseed procedure.
+
 ## Dependency management
 
 Use **uv** (`uv add`, `uv add --dev`, `uv lock --upgrade`).
@@ -388,3 +392,4 @@ Read these when working in the relevant area:
 | Async operations (background threads, failure modes) | [`docs/async-operations.md`](docs/async-operations.md) |
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
+| Worktree DB seeding, dev credentials, test_data coverage | [`docs/worktrees.md`](docs/worktrees.md) |
