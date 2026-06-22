@@ -2,8 +2,8 @@
 public/urls.py — URL routing for the public bulletin site.
 
 URL structure:
-  /                                            Marketing homepage.
-  /map/                                        Interactive region-choropleth map.
+  /                                            Interactive map homepage (canonical).
+  /map/                                        Permanent 301 redirect to /.
   /terms/                                      SLF data-licence acknowledgement
                                                + Snowdesk liability disclaimer.
   /examples/random/                            Renders a random bulletin inline
@@ -26,12 +26,18 @@ the inbound path doesn't already match. Every render emits a
 ``<link rel="canonical">`` pointing at the form-3 canonical URL so SEO
 collapses all three forms into one indexed destination.
 
-The ``/map/``, ``/terms/`` and ``/examples/`` routes are registered before
+``/map/`` is a permanent (301) redirect to ``/`` so existing bookmarks and
+inbound links are preserved; query strings (e.g. ``?d=``) are forwarded.
+The name ``map`` is kept so ``{% url 'public:map' %}`` still resolves
+(to the redirect URL) and existing reverse calls continue to work.
+
+The ``/terms/`` and ``/examples/`` routes are registered before
 the generic ``<region_id:region_id>/<slug:slug>/`` pattern so Django's URL
 resolver matches the literal suffixes first.
 """
 
 from django.urls import path
+from django.views.generic import RedirectView
 
 from . import debug_views, views
 
@@ -39,7 +45,13 @@ app_name = "public"
 
 urlpatterns = [
     path("", views.home, name="home"),
-    path("map/", views.map_view, name="map"),
+    # SNOW-344: /map/ is now a permanent redirect to /; the name is kept so
+    # existing reverse() calls and {% url 'public:map' %} still resolve.
+    path(
+        "map/",
+        RedirectView.as_view(url="/", permanent=True, query_string=True),
+        name="map",
+    ),
     # SLF data-licence acknowledgement page — registered before generic
     # <str:region_id>/ patterns so "terms" never resolves as a region_id.
     path("terms/", views.terms, name="terms"),

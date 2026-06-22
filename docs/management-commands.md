@@ -367,7 +367,7 @@ uv run python manage.py diagnose_region_coverage --verbose-table       # add per
 
 # Re-emit pipeline/fixtures/resorts.json from the current DB rows (SNOW-74).
 # Use after a session of placing resort coordinates via the in-map editor
-# at /map/?edit=resorts (DEBUG only) — without this step, edits live only
+# at /?edit=resorts (DEBUG only) — without this step, edits live only
 # in the local SQLite and disappear on the next loaddata. Read-only by
 # default; --commit writes the file. Uses natural foreign keys so region
 # round-trips as ["CH-4115"] rather than a numeric pk.
