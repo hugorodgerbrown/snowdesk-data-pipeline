@@ -1,0 +1,72 @@
+# .github/workflows/release.yml — Tag and record a production release.
+#
+# Fires when the `release` branch advances, which happens when a release PR
+# (main → release) merges — the same event that triggers the production
+# deploy on Render. The job computes a CalVer tag for today
+# (YYYY.MM.DD, with a `.N` suffix when more than one release ships in a
+# single day) and creates a GitHub Release with auto-generated notes.
+#
+# The generated notes list every merged PR since the previous release.
+# Because PR titles carry the `SNOW-xx:` prefix, the shipped tickets are
+# recorded in the release — that is how we track when a ticket reaches
+# production. Note categorisation/exclusions live in `.github/release.yml`.
+
+name: Release
+
+on:
+  push:
+    branches:
+      - release
+
+# Never run two release jobs at once, and never cancel one mid-flight —
+# cancelling after a tag is created would leave a tag with no Release.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag and create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          # Full history + tags so the CalVer dedup and the generated
+          # notes (which diff against the previous tag) both work.
+          fetch-depth: 0
+
+      - name: Compute CalVer tag
+        id: calver
+        run: |
+          date=$(date -u +'%Y.%m.%d')
+          # Existing tags for today: the bare date and any `.N` variants.
+          existing=$(git tag --list "${date}" "${date}.*")
+          if [ -z "$existing" ]; then
+            tag="$date"
+          else
+            # Pick the next free suffix. The bare date counts as `.1`.
+            max=1
+            for t in $existing; do
+              suffix="${t#"${date}"}"   # "" for the bare date, ".N" otherwise
+              suffix="${suffix#.}"       # "" or "N"
+              n="${suffix:-1}"
+              if [ "$n" -ge "$max" ]; then max="$n"; fi
+            done
+            tag="${date}.$((max + 1))"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Computed release tag: $tag"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.calver.outputs.tag }}" \
+            --target "${{ github.sha }}" \
+            --title "${{ steps.calver.outputs.tag }}" \
+            --generate-notes

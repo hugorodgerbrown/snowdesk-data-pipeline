@@ -1,6 +1,6 @@
 # .github/workflows/e2e.yml — End-to-end browser tests (Playwright / Chromium).
 #
-# Runs the ``tox -e e2e`` env on every pull-request and push to main.
+# Runs the ``tox -e e2e`` env on every pull-request and push to main/release.
 # Isolated from ci.yml so the Chromium install step and its cache are
 # scoped to this workflow and do not bloat the main CI image.
 #
@@ -15,6 +15,7 @@ on:
   push:
     branches:
       - main
+      - release
     paths:
       - "**/*.py"
       - "**/*.html"
