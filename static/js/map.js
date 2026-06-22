@@ -1635,6 +1635,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
           region_id: props.regionID,
           region_name: props.name || props.regionID,
           region_slug: props.slug || '',
+          // SNOW-314 prototype: L2 (sub) + L1 (major) names so the season-header
+          // readout can build a breadcrumb mirroring the visible map overlays.
+          subregion_name: props.subregion_name || '',
+          major_name: props.major_name || '',
         },
       }));
 
@@ -1695,7 +1699,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       const tgt = e.originalEvent && e.originalEvent.target;
       if (
         tgt && tgt.closest &&
-        tgt.closest('.season-scrubber, #map-utility-cluster, #map-legend, #home-intro')
+        tgt.closest('.season-scrubber, #map-utility-cluster, #map-controls-br, #map-legend, #home-intro')
       ) {
         return;
       }
@@ -2959,6 +2963,14 @@ const repaintRegionsForDate = (dateKey, cache) => {
         const next = item.getAttribute('aria-checked') !== 'true';
         item.setAttribute('aria-checked', next ? 'true' : 'false');
 
+        // SNOW-314 prototype: notify the season-header readout so its breadcrumb
+        // mirrors which region tiers are visible (l1=Major, l2=Minor, l4=Micro).
+        if (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'l4') {
+          document.dispatchEvent(new CustomEvent('snowdesk:overlays-changed', {
+            detail: { key: overlayKey, visible: next },
+          }));
+        }
+
         // SNOW-172: handle country.* toggles by delegating to the main IIFE
         // via a CustomEvent. countryState / ensureCountryLoaded / applyCountryFilters
         // are all scoped to the main IIFE and are not accessible here.
@@ -3213,9 +3225,17 @@ const repaintRegionsForDate = (dateKey, cache) => {
   if (!fill || !trackEl) return;
 
   const readoutEl = document.getElementById('region-readout');
-  const readoutName = readoutEl && readoutEl.querySelector('.region-readout-name');
   const readoutDate =
-    readoutEl && readoutEl.querySelector('.region-readout-danger');
+    readoutEl && readoutEl.querySelector('.region-readout-date');
+  const readoutSwatch =
+    readoutEl && readoutEl.querySelector('.region-readout-swatch');
+  const readoutCrumbs =
+    readoutEl && readoutEl.querySelector('.region-readout-crumbs');
+  const readoutLeaf =
+    readoutEl && readoutEl.querySelector('.region-readout-leaf');
+  // The "view bulletin" action is now a separate roundel (sibling of the
+  // readout pill), not the pill itself; it carries the bulletin href.
+  const readoutAction = document.getElementById('region-readout-action');
 
   // Convert the int rating from the ratings cache to a key string.
   const intToKey = (n) => {
@@ -3230,6 +3250,23 @@ const repaintRegionsForDate = (dateKey, cache) => {
   let regionName = ribbonEl.dataset.defaultRegionName || null;
   let regionSlug = ribbonEl.dataset.defaultRegionSlug || null;
   let dateKey = ribbonEl.dataset.defaultDate || null;
+  // SNOW-314 prototype: L2 (sub) + L1 (major) names for the breadcrumb. Seeded
+  // from data attributes for the pre-selected region, then overwritten on every
+  // region-selected event (which carries the full hierarchy).
+  let regionSubName = ribbonEl.dataset.defaultSubregionName || '';
+  let regionMajorName = ribbonEl.dataset.defaultMajorName || '';
+  // Which region tiers are visible on the map (l1=Major, l2=Minor); the chip
+  // breadcrumb mirrors these. Seeded from the persisted overlay state, updated
+  // on snowdesk:overlays-changed. l4 (micro) is the always-shown leaf.
+  const readOverlay = (k, dflt) => {
+    try {
+      const v = localStorage.getItem('snowdesk.map.overlay.' + k);
+      return v === null ? dflt : v === 'true';
+    } catch (_) {
+      return dflt;
+    }
+  };
+  const overlayVisible = { l1: readOverlay('l1', false), l2: readOverlay('l2', false) };
 
   // Paint one decorative cell per CALENDAR DAY across [seasonStart, seasonEnd]
   // for the focused region into the scrubber track. One cell per day (not per
@@ -3311,31 +3348,49 @@ const repaintRegionsForDate = (dateKey, cache) => {
     if (!readoutEl) return;
     readoutEl.hidden = !dateKey;
     if (!dateKey) return;
-    readoutDate.textContent = formatDateLong(dateKey);
+    // SNOW-314 prototype: day-first, title-case date ("18 May 2026") matching
+    // the popup card; deliberately not the uppercase scrubber format.
+    if (readoutDate) readoutDate.textContent = formatDatePopup(dateKey);
     const hasRegion = !!(regionId && regionName);
     readoutEl.classList.toggle('has-region', hasRegion);
     if (hasRegion) {
-      readoutName.textContent = regionName;
+      // Breadcrumb: Major (L1) › Minor (L2) › Micro (L4, the leaf), including
+      // only the tiers currently visible on the map. The leaf is always shown.
+      if (readoutLeaf) readoutLeaf.textContent = regionName;
+      if (readoutCrumbs) {
+        const crumbs = [];
+        if (overlayVisible.l1 && regionMajorName) crumbs.push(regionMajorName);
+        if (overlayVisible.l2 && regionSubName) crumbs.push(regionSubName);
+        readoutCrumbs.textContent = crumbs.length ? crumbs.join(' › ') + ' › ' : '';
+      }
       const ratingInt = cache && cache[dateKey] ? cache[dateKey][regionId] : null;
       const key = intToKey(ratingInt);
-      readoutDate.style.setProperty(
-        '--readout-swatch',
-        key === 'no_rating' ? 'transparent' : 'var(--color-eaws-' + key.replace(/_/g, '-') + ')',
-      );
-      // Make the pill the bulletin CTA: /<region_id>/<slug>/<date>/. Region id
-      // is lowercased to match the canonical URL form.
-      if (regionSlug) {
-        readoutEl.setAttribute(
-          'href',
-          '/' + regionId.toLowerCase() + '/' + regionSlug + '/' + dateKey + '/',
-        );
-      } else {
-        readoutEl.removeAttribute('href');
+      // The swatch is its own element (a colour block that divides date from
+      // name), not a pseudo-element on the date.
+      if (readoutSwatch) {
+        readoutSwatch.style.background =
+          key === 'no_rating' ? 'transparent' : 'var(--color-eaws-' + key.replace(/_/g, '-') + ')';
+      }
+      // Point the action roundel at the bulletin: /<region_id>/<slug>/<date>/.
+      // Region id is lowercased to match the canonical URL form. The roundel is
+      // shown via CSS (#region-readout.has-region ~ .region-readout-action).
+      if (readoutAction) {
+        if (regionSlug) {
+          readoutAction.setAttribute(
+            'href',
+            '/' + regionId.toLowerCase() + '/' + regionSlug + '/' + dateKey + '/',
+          );
+        } else {
+          readoutAction.removeAttribute('href');
+        }
       }
     } else {
-      readoutName.textContent = '';
-      readoutDate.style.setProperty('--readout-swatch', 'transparent');
-      readoutEl.removeAttribute('href');
+      // Clear the leaf/crumbs text (not the wrapper's textContent, which would
+      // detach the cached child spans).
+      if (readoutLeaf) readoutLeaf.textContent = '';
+      if (readoutCrumbs) readoutCrumbs.textContent = '';
+      if (readoutSwatch) readoutSwatch.style.background = 'transparent';
+      if (readoutAction) readoutAction.removeAttribute('href');
     }
   };
 
@@ -3350,7 +3405,19 @@ const repaintRegionsForDate = (dateKey, cache) => {
     regionId = (e.detail && e.detail.region_id) || null;
     regionName = (e.detail && e.detail.region_name) || null;
     regionSlug = (e.detail && e.detail.region_slug) || null;
+    regionSubName = (e.detail && e.detail.subregion_name) || '';
+    regionMajorName = (e.detail && e.detail.major_name) || '';
     refresh();
+  });
+
+  // SNOW-314 prototype: a Major/Minor overlay toggle changes which breadcrumb
+  // tiers are shown. Re-render the readout in place (the region is unchanged).
+  document.addEventListener('snowdesk:overlays-changed', (e) => {
+    const key = e.detail && e.detail.key;
+    if (key === 'l1' || key === 'l2') {
+      overlayVisible[key] = !!(e.detail && e.detail.visible);
+      updateReadout();
+    }
   });
 
   // Scrubber commit / live drag preview → update the readout's date, and

@@ -45,6 +45,21 @@
     gap: 8px;
 }
 
+/* PROTOTYPE (homepage rework): bottom-right control stack — layers + locate
+   pills in the conventional map-control corner, stacked vertically above the
+   report roundel (which sits at bottom:60px). 108px clears the 40px report
+   pill plus an 8px gap. */
+.map-controls-br {
+    position: absolute;
+    right: calc(env(safe-area-inset-right, 0px) + 12px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 108px);
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
 .map-utility-pill {
     display: inline-flex;
     align-items: center;
@@ -95,20 +110,41 @@
     filter: brightness(1.04);
 }
 
-/* Hide the MapLibre GeolocateControl's own rendered button — our
-   #locate-toggle pill in the utility cluster is the visible affordance. */
+/* Hide the MapLibre GeolocateControl's own rendered control — our
+   #locate-toggle pill is the visible affordance. Hiding only the button left
+   the empty .maplibregl-ctrl-group wrapper (a white box with a shadow) visible
+   as a ghost in the top-right corner; it was previously masked by the utility
+   cluster but is exposed once that no longer covers the corner. Hide the whole
+   group — the control still works, it's triggered programmatically from the
+   pill, not via this button. The button rule stays as a :has() fallback. */
 .maplibregl-ctrl-geolocate {
+    display: none;
+}
+
+.maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate) {
     display: none;
 }
 
 .basemap-menu {
     position: absolute;
-    top: 48px;
-    right: 0;
+    /* PROTOTYPE: the basemap pill lives in the bottom-right stack, so the menu
+       opens to the LEFT of the roundel column and is bottom-anchored —
+       mirroring the info panel, which opens to the right of the bottom-left
+       (i). right:48px clears the 40px pill + 8px gap. bottom:-96px drops the
+       menu's lower edge down past the locate pill (40px) + gap (8px) + the
+       report-roundel offset so it lines up with the legend/report baseline
+       (bottom:60px) — the safe-area inset cancels out — giving the menu the
+       full screen height to grow into. */
+    right: 48px;
+    bottom: -96px;
     margin: 0;
     padding: 4px;
     list-style: none;
     min-width: 148px;
+    /* Anchored at the bottom baseline, the menu grows upward over the full
+       viewport; cap its height so the top never clips, leaving a top margin. */
+    max-height: calc(100dvh - 96px);
+    overflow-y: auto;
     background: var(--color-card);
     border: 0.5px solid var(--color-border);
     border-radius: 12px;
@@ -448,8 +484,10 @@
 
 .map-legend {
     position: absolute;
+    /* PROTOTYPE (homepage rework): (i) legend moves to the bottom-left corner,
+       horizontally level with the report roundel (bottom:60px). */
     left: calc(env(safe-area-inset-left, 0px) + 12px);
-    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
     z-index: 3;
     display: flex;
     align-items: center;
@@ -512,9 +550,10 @@
 
 .map-legend-card {
     position: absolute;
-    /* Anchor to the right of the (i) toggle, top-aligned with it. */
+    /* PROTOTYPE: anchor to the right of the (i) toggle, bottom-aligned so the
+       card grows upward from the bottom-left corner. */
     left: 40px;              /* 32px button + 8px gap */
-    top: 0;
+    bottom: 0;
     min-width: 200px;
     max-width: 260px;
     padding: 10px 12px;
@@ -982,26 +1021,31 @@
    snowdesk:scrub-to to drive the scrubber and recolour the choropleth.
    ————————————————————————————————————————————————————————— */
 
-/* The ribbon is a sibling of #season-scrubber inside #map (which is
-   position:relative via MapLibre). It sits above the scrubber pill:
-   the scrubber's bottom edge is 5px + safe-area from the viewport bottom,
-   the pill itself is ~40px tall, and the ribbon header + track add ~36px.
-   Using a fixed bottom offset keeps the ribbon visually anchored above the
-   scrubber without depending on scrubber height in CSS. */
+/* PROTOTYPE (homepage rework): the season header (#region-readout) moves
+   from the bottom — where it sat above the scrubber — to the top bar,
+   centred between the (i) legend toggle (top-left) and the utility cluster
+   (top-right). Since SNOW-314 this container holds only the readout chip
+   (the per-day colour cells live in .scrubber-ribbon inside the scrubber),
+   so repositioning it relocates the header alone; the scrubber stays put.
+   z-index 3 keeps it above the choropleth and level with the legend. */
 .season-ribbon {
     position: absolute;
-    bottom: calc(54px + env(safe-area-inset-bottom, 0px));
-    left: 12px;
-    right: 12px;
-    z-index: 2;
+    /* PROTOTYPE (homepage rework): season header pulled to the top-left,
+       vertically centred against the 40px search roundel (top:12px) so the
+       location readout and the search sit on one line with the row between
+       them free. */
+    top: calc(env(safe-area-inset-top, 0px) + 18px);
+    left: calc(env(safe-area-inset-left, 0px) + 12px);
+    z-index: 3;
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 3px;
 }
 
 .ribbon-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
     padding: 0 2px;
 }
@@ -1030,28 +1074,9 @@
     border: 0.5px solid var(--border);
     border-radius: 999px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-    /* When a region is focused the pill is an <a> to the bulletin. */
-    text-decoration: none;
+    /* PROTOTYPE (homepage rework): the pill is now an info display (a <div>);
+       the bulletin link is the separate .region-readout-action roundel. */
     color: var(--ink);
-    transition: box-shadow 120ms ease, background 120ms ease;
-}
-
-/* Focused → the whole pill is the bulletin CTA: pressable, with a hover lift
-   that signals clickability. */
-.region-readout.has-region {
-    cursor: pointer;
-}
-
-.region-readout.has-region:hover,
-.region-readout.has-region:focus-visible {
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .region-readout {
-        transition: none;
-    }
 }
 
 .region-readout-name {
@@ -1059,45 +1084,88 @@
     color: var(--ink);
 }
 
-/* The action affordance — "View bulletin →", set off by a divider so it reads
-   as the tappable part of the pill. Shown only when a region is focused. */
-.region-readout-cta {
-    font-weight: 600;
-    color: var(--ink);
-    padding-left: 8px;
-    border-left: 0.5px solid var(--border);
-}
-
-.region-readout.has-region:hover .region-readout-cta {
-    text-decoration: underline;
-}
-
-/* No region focused → date-only: drop the (empty) name, the danger swatch,
-   and the CTA so the chip reads as a plain date. */
-.region-readout:not(.has-region) .region-readout-name,
-.region-readout:not(.has-region) .region-readout-cta {
-    display: none;
-}
-
-.region-readout:not(.has-region) .region-readout-danger::before {
-    display: none;
-}
-
-/* Danger label carries a leading colour swatch via a pseudo-element; the
-   swatch colour is set inline by map.js from the EAWS rating token. */
-.region-readout-danger {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+/* PROTOTYPE (homepage rework): breadcrumb prefix (Major › Minor ›) — muted and
+   regular weight so the micro-region leaf carries the emphasis. Hidden on
+   mobile (see the max-width:640px block below). */
+.region-readout-crumbs {
+    font-weight: 400;
     color: var(--muted);
 }
 
-.region-readout-danger::before {
-    content: "";
-    width: 8px;
-    height: 8px;
+.region-readout-leaf {
+    font-weight: 600;
+    color: var(--ink);
+}
+
+/* PROTOTYPE (homepage rework): the "view bulletin" action is a separate
+   roundel (a glass circle with an arrow + a "View bulletin" tooltip), sitting
+   to the right of the readout pill. Hidden by default; shown only when a region
+   is focused (the sibling rule below), so there is always a bulletin to open. */
+.region-readout-action {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.75);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--border);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    text-decoration: none;
+    transition: box-shadow 120ms ease, background 120ms ease;
+}
+
+#region-readout.has-region ~ .region-readout-action {
+    display: inline-flex;
+}
+
+.region-readout-action:hover,
+.region-readout-action:focus-visible {
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .region-readout-action {
+        transition: none;
+    }
+}
+
+/* PROTOTYPE (homepage rework): on narrow viewports the breadcrumb prefix
+   (Major › Minor ›) is dropped below 640px so the chip clears the search
+   roundel; the leaf and the action roundel stay. */
+@media (max-width: 640px) {
+    .region-readout-crumbs {
+        display: none;
+    }
+}
+
+/* No region focused → date-only: drop the swatch and name so the chip reads as
+   a plain date (the action roundel is already hidden by its own sibling rule). */
+.region-readout:not(.has-region) .region-readout-swatch,
+.region-readout:not(.has-region) .region-readout-name {
+    display: none;
+}
+
+/* PROTOTYPE (homepage rework): the date leads the chip — mono, fixed-width
+   (the readout is mono throughout), and muted so the region name carries the
+   emphasis. */
+.region-readout-date {
+    color: var(--muted);
+}
+
+/* Colour block dividing the date from the region name; the background is the
+   EAWS danger colour, set inline by map.js (transparent when no_rating). */
+.region-readout-swatch {
+    width: 10px;
+    height: 10px;
+    flex: 0 0 auto;
     border-radius: 2px;
-    background: var(--readout-swatch, transparent);
+    background: transparent;
     box-shadow: inset 0 0 0 0.5px var(--border);
 }
 
