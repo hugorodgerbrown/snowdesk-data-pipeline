@@ -5001,19 +5001,12 @@ class TestDayCharacterNoLeadingPeriod:
         assert 'data-testid="day-character-label"' in content
         assert "Manageable day" in content
 
-        # The tendency_lead text must NOT appear in the day-character callout.
-        # It moves to the tendency outlook block instead.
+        # The tendency_lead text must NOT appear anywhere on the page: the
+        # callout no longer renders it, and with no tendency entry the outlook
+        # block is suppressed. (Outlook-block highlights rendering is covered
+        # by TestTendencyOutlook.test_highlights_render_as_supporting_text.)
         assert 'data-testid="day-character-explainer"' in content
-        # The callout explainer must not contain the tendency_lead prose.
-        import re
-
-        callout_match = re.search(
-            r'data-testid="day-character-explainer"[^>]*>(.*?)</span>',
-            content,
-            re.DOTALL,
-        )
-        assert callout_match is not None
-        assert "Increase in danger during the day." not in callout_match.group(1)
+        assert "Increase in danger during the day." not in content
 
     def test_slf_bulletin_still_renders_label_and_period(
         self,
