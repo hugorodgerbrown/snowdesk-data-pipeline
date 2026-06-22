@@ -4865,9 +4865,12 @@ class TestAlbinaBandHeadings:
         panel_end = content.index('data-testid="avalanche-problems-heading"')
         panel_html = content[panel_start:panel_end]
 
-        # No low/level-1 segment must appear inside the panel.
+        # No low/level-1 segment or numeral must appear inside the panel.
         assert "dp-seg lv-low" not in panel_html, (
-            "Suppressed 'low' rating leaked into panel"
+            "Suppressed 'low' rating polygon leaked into panel"
+        )
+        assert "dp-num lv-low" not in panel_html, (
+            "Suppressed 'low' rating numeral leaked into panel"
         )
 
         # The masthead headline must still be Considerable (level 3) — suppression

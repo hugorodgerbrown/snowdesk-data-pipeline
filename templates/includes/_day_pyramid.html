@@ -23,8 +23,7 @@ Required context (passed via {% include … with group=g %}):
   group.upper       — row dict for the high-elevation band:
                         level_css, level_number, level_label, caption
 {% endcomment %}
-<div class="dp-row dw-row" data-testid="day-window-pyramid" data-window="{{ group.type }}">
-    {# ds-lint-allow: SVG geometry attributes (viewBox, d, x, y, etc.) are not design tokens #}
+<div class="dw-row" data-testid="day-window-pyramid" data-window="{{ group.type }}">
     <svg class="dp-svg" viewBox="0 0 48 56" width="48" height="56" aria-hidden="true">
         {# Base triangle — lower band fills the whole mountain shape #}
         <polygon

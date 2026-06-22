@@ -1011,22 +1011,13 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 
 /* —— Day-windows elevation pyramid — two-tone mountain silhouette ———
    Rendered by _day_pyramid.html for banded periods (SNOW-298). Sits
-   inside the same .dw-panel card as .dw-row; .dp-row reuses the
-   .dw-row layout so spacing is visually identical.
+   inside the same .dw-panel card as .dw-row; layout and spacing come
+   from .dw-row (no separate .dp-row class needed).
 
    .dp-seg.lv-*  — SVG polygon fill using EAWS danger-scale tokens
    .dp-num.lv-*  — SVG text fill using EAWS foreground tokens
    .dp-divide    — horizontal line marking the elevation split boundary
    ————————————————————————————————————————— */
-
-.dp-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border-top: 1px solid var(--color-border);
-}
-.dp-row:first-child { border-top: 0; }
 
 .dp-svg {
   flex-shrink: 0;
