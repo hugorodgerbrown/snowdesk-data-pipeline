@@ -413,15 +413,16 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // if the source is still around (defensive, MapLibre normally drops
   // sources during setStyle but this lets a future ``diff`` setStyle
   // strategy land without breaking us).
-  // SNOW-54: dot-pattern colour for permanently-uncovered regions. Darker than
-  // no_rating (#e0e0e0) so the pattern reads clearly at 0.55 fill-opacity.
-  const UNCOVERED_DOT_COLOUR = '#9a9a9a';
+  // SNOW-54: dot-pattern colour for permanently-uncovered regions. Only a touch
+  // darker than no_rating (#e0e0e0) so the dots whisper rather than shout at
+  // 0.55 fill-opacity.
+  const UNCOVERED_DOT_COLOUR = '#bdbdbd';
 
   // Build a polka-dot image for permanently-uncovered region tiles. The image
-  // is 8×8 pixels with a transparent background and a single centred dot in
-  // UNCOVERED_DOT_COLOUR, tiled by MapLibre's ``fill-pattern`` into a regular
-  // dot grid. addImage accepts a plain {width, height, data: Uint8ClampedArray
-  // (RGBA)} object.
+  // is 12×12 pixels with a transparent background and a single small centred
+  // dot in UNCOVERED_DOT_COLOUR, tiled by MapLibre's ``fill-pattern`` into a
+  // sparse dot grid. addImage accepts a plain {width, height, data:
+  // Uint8ClampedArray (RGBA)} object.
   //
   // The function is called at the top of installRegionsLayers, before the
   // ``map.getSource('regions')`` early-return guard. A basemap style switch
@@ -430,7 +431,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // correct should a future diff-based setStyle leave the source in place.
   const _registerUncoveredDotImage = () => {
     if (map.hasImage('region-uncovered-dots')) return;
-    const SIZE = 8;
+    const SIZE = 12;
     const canvas = document.createElement('canvas');
     canvas.width  = SIZE;
     canvas.height = SIZE;
@@ -443,7 +444,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // Draw a single filled dot centred in the tile; tiling yields a dot grid.
     ctx.fillStyle = `rgb(${r},${g},${b})`;
     ctx.beginPath();
-    ctx.arc(SIZE / 2, SIZE / 2, 1.7, 0, 2 * Math.PI);
+    ctx.arc(SIZE / 2, SIZE / 2, 1.1, 0, 2 * Math.PI);
     ctx.fill();
     const imageData = ctx.getImageData(0, 0, SIZE, SIZE);
     map.addImage('region-uncovered-dots', {
