@@ -1165,12 +1165,20 @@ def test_regions_geojson_query_count() -> None:
         region_id="CH-4116", slug="ch-4116", subregion=ch_sub, boundary=boundary
     )
 
+    # SNOW-54: pre-warm the coverage cache so the view's covered_region_ids()
+    # call is served from cache and the captured query count reflects only the
+    # region SELECT (the autouse clear_ratings_cache fixture empties it first).
+    from bulletins.services.coverage import covered_region_ids
+
+    covered_region_ids()
+
     client = Client()
     with CaptureQueriesContext(connection) as ctx:
         response = client.get(reverse("api:regions_geojson") + "?country=ch")
     assert response.status_code == 200
-    # One SELECT with select_related joins — single query regardless of feature count.
-    assert len(ctx.captured_queries) <= 2
+    # One SELECT with select_related joins — single query regardless of feature
+    # count; coverage is pre-warmed above so it adds none.
+    assert len(ctx.captured_queries) <= 1
 
 
 # ---------------------------------------------------------------------------

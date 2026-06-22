@@ -422,9 +422,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // stripe rendered in UNCOVERED_HATCH_COLOUR. MapLibre addImage accepts a
   // plain {width, height, data: Uint8ClampedArray (RGBA)} object.
   //
-  // The function is called inside installRegionsLayers (before the early-return
-  // guard) so the image is always present when the fill-pattern layer needs it,
-  // including after a basemap style switch wipes all custom images.
+  // The function is called at the top of installRegionsLayers, before the
+  // ``map.getSource('regions')`` early-return guard. A basemap style switch
+  // wipes all custom images, so the image must be re-registered each time the
+  // layers are re-installed; placing the call before the guard also keeps it
+  // correct should a future diff-based setStyle leave the source in place.
   const _registerUncoveredHatchImage = () => {
     if (map.hasImage('region-uncovered-hatch')) return;
     const SIZE = 8;
@@ -927,7 +929,10 @@ const repaintRegionsForDate = (dateKey, cache) => {
       ? ['match', ['get', 'country'], enabled, true, false]
       : ['==', false, true];
     const layerIds = [
-      'regions-fill', 'regions-line', 'regions-label',
+      // SNOW-54: 'regions-fill-uncovered' carries a base ``covered == false``
+      // filter; it must be country-filtered too, else toggling a country off
+      // leaves its cross-hatch tiles visible as ghost overlays over a blank map.
+      'regions-fill', 'regions-fill-uncovered', 'regions-line', 'regions-label',
       'sub-regions-line', 'sub-regions-label',
       'major-regions-line', 'major-regions-label',
     ];
