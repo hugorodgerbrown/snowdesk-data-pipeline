@@ -2401,106 +2401,120 @@ class TestMFElevationBandSplitBulletinPage:
 
 
 # ---------------------------------------------------------------------------
-# Test: _group_day_windows — unit tests for the grouping pass
+# Test: day-window elevation bounds — band metadata for the glyph
 # ---------------------------------------------------------------------------
 
 
-class TestGroupDayWindows:
-    """Unit tests for ``_group_day_windows`` in public/views.py.
+class TestDayWindowsElevationBounds:
+    """Unit tests for the elevation metadata attached to banded day-window rows.
 
-    The function takes a flat list of row dicts (as returned by
-    ``_build_day_windows``) and folds consecutive same-type rows into
-    ``banded`` group dicts, wrapping the rest as ``single`` groups.
+    Banded periods attach an ``ElevationBounds`` (carrying a ``bound_type``)
+    to each row so the panel can render the mountain elevation glyph via the
+    ``elevation_icon`` filter; single rows leave it unset. ``bound_type`` is
+    ``LOWER`` for an "above X" band and ``UPPER`` for a "below X" band.
     """
 
-    def _row(self, period: str, level_key: str, caption: str = "") -> dict[str, Any]:
-        """Build a minimal day-window row dict."""
+    def _rm_rating(
+        self,
+        key: str,
+        *,
+        lower: int | None = None,
+        upper: int | None = None,
+        treeline_side: str | None = None,
+    ) -> dict[str, Any]:
+        """Build a single projected ``danger.ratings`` entry."""
+        elevation: dict[str, Any] | None = None
+        if lower is not None or upper is not None or treeline_side is not None:
+            elevation = {
+                "lower": lower,
+                "upper": upper,
+                "treeline": treeline_side is not None,
+                "treeline_side": treeline_side,
+            }
         return {
-            "type": period,
-            "level_key": level_key,
-            "level_css": level_key.replace("_", "-"),
-            "level_label": level_key.title(),
-            "level_number": "1",
-            "caption": caption,
-            "pill_label": period.replace("_", " ").title(),
+            "period": "all_day",
+            "key": key,
+            "subdivision": None,
+            "elevation": elevation,
         }
 
-    def test_single_row_becomes_single_group(self) -> None:
-        """A single row wraps into a ``single`` group with the row intact."""
-        from public.views import _group_day_windows
+    def test_above_band_is_lower_bound_type(self) -> None:
+        """A lowerBound-only band ("above X") resolves to bound_type LOWER."""
+        from public.views import _rm_elevation_bounds
 
-        row = self._row("all_day", "moderate")
-        groups = _group_day_windows([row])
-        assert len(groups) == 1
-        assert groups[0]["kind"] == "single"
-        assert groups[0]["row"] is row
+        bounds = _rm_elevation_bounds(
+            {"lower": 2400, "upper": None, "treeline": False, "treeline_side": None}
+        )
+        assert bounds.bound_type == "LOWER"
+        assert "above" in bounds.display
 
-    def test_banded_pair_becomes_one_banded_group(self) -> None:
-        """Two consecutive same-type rows fold into one ``banded`` group."""
-        from public.views import _group_day_windows
+    def test_below_band_is_upper_bound_type(self) -> None:
+        """An upperBound-only band ("below X") resolves to bound_type UPPER."""
+        from public.views import _rm_elevation_bounds
 
-        lower = self._row("all_day", "low", caption="below 2400 m")
-        upper = self._row("all_day", "moderate", caption="above 2400 m")
-        groups = _group_day_windows([lower, upper])
-        assert len(groups) == 1
-        g = groups[0]
-        assert g["kind"] == "banded"
-        assert g["type"] == "all_day"
-        assert g["lower"] is lower
-        assert g["upper"] is upper
+        bounds = _rm_elevation_bounds(
+            {"lower": None, "upper": 2400, "treeline": False, "treeline_side": None}
+        )
+        assert bounds.bound_type == "UPPER"
+        assert "below" in bounds.display
 
-    def test_banded_group_pill_label_comes_from_first_row(self) -> None:
-        """``pill_label`` on a banded group is taken from the first (lower) row."""
-        from public.views import _group_day_windows
+    def test_treeline_side_is_reconstructed(self) -> None:
+        """The treeline token is put back on the correct bound for the glyph."""
+        from public.views import _rm_elevation_bounds
 
-        lower = self._row("all_day", "low", caption="below 2400 m")
-        upper = self._row("all_day", "moderate", caption="above 2400 m")
-        groups = _group_day_windows([lower, upper])
-        assert groups[0]["pill_label"] == lower["pill_label"]
+        above = _rm_elevation_bounds(
+            {"lower": None, "upper": None, "treeline": True, "treeline_side": "lower"}
+        )
+        assert above.bound_type == "LOWER"
+        assert "treeline" in above.display
+        below = _rm_elevation_bounds(
+            {"lower": None, "upper": None, "treeline": True, "treeline_side": "upper"}
+        )
+        assert below.bound_type == "UPPER"
+        assert "treeline" in below.display
 
-    def test_two_distinct_periods_produce_two_single_groups(self) -> None:
-        """``all_day`` + ``later`` with different types → two single groups."""
-        from public.views import _group_day_windows
+    def test_empty_elevation_is_falsey(self) -> None:
+        """A missing elevation yields an empty (falsey) ElevationBounds."""
+        from public.views import _rm_elevation_bounds
 
-        all_day = self._row("all_day", "moderate")
-        later = self._row("later", "considerable")
-        groups = _group_day_windows([all_day, later])
-        assert len(groups) == 2
-        assert groups[0]["kind"] == "single"
-        assert groups[0]["row"] is all_day
-        assert groups[1]["kind"] == "single"
-        assert groups[1]["row"] is later
+        assert not _rm_elevation_bounds(None)
 
-    def test_single_interspersed_rows_stay_single(self) -> None:
-        """Rows that alternate types are each wrapped as single groups."""
-        from public.views import _group_day_windows
+    def test_banded_rows_carry_elevation_bounds(self) -> None:
+        """Each row of a banded pair carries an ElevationBounds with a bound_type."""
+        from public.views import _day_windows_from_rm_ratings
 
-        earlier = self._row("earlier", "low")
-        later = self._row("later", "moderate")
-        groups = _group_day_windows([earlier, later])
-        assert len(groups) == 2
-        for g in groups:
-            assert g["kind"] == "single"
+        rows = _day_windows_from_rm_ratings(
+            [
+                self._rm_rating("considerable", lower=2400),  # above 2400
+                self._rm_rating("moderate", upper=2400),  # below 2400
+            ]
+        )
+        assert len(rows) == 2
+        bound_types = {row["elevation_bounds"].bound_type for row in rows}
+        assert bound_types == {"LOWER", "UPPER"}
 
-    def test_empty_list_returns_empty(self) -> None:
-        """An empty input list returns an empty output list."""
-        from public.views import _group_day_windows
+    def test_single_row_has_no_elevation_bounds(self) -> None:
+        """An unbanded (single) row leaves ``elevation_bounds`` unset — no glyph."""
+        from public.views import _day_windows_from_rm_ratings
 
-        assert _group_day_windows([]) == []
+        rows = _day_windows_from_rm_ratings([self._rm_rating("moderate")])
+        assert len(rows) == 1
+        assert "elevation_bounds" not in rows[0]
 
 
 # ---------------------------------------------------------------------------
-# Test: banded full-page render — pyramid vs chip
+# Test: banded full-page render — two glyph rows vs plain chip
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestDayWindowsPyramidRender:
-    """Full-page render assertions for the elevation-pyramid path.
+class TestDayWindowsBandedRender:
+    """Full-page render assertions for the banded elevation path.
 
-    Banded bulletins (two same-type rows from ``_rows_for_period``) must
-    render a pyramid partial (``data-testid="day-window-pyramid"``); single-
-    band bulletins must keep the chip row (``data-testid="day-window-row"``).
+    Banded bulletins (two same-type rows from ``_rows_for_period``) render two
+    chip rows, each carrying the mountain elevation glyph
+    (``data-testid="day-window-elevation-icon"``); single-band bulletins keep
+    the plain chip row with no glyph (SNOW-298).
     """
 
     def _make_banded_bulletin(self, region: MicroRegion) -> Bulletin:
@@ -2576,28 +2590,31 @@ class TestDayWindowsPyramidRender:
         )
         return bulletin
 
-    def test_banded_bulletin_renders_pyramid(self, client: Client) -> None:
-        """A banded (two same-type elevation rows) bulletin renders the pyramid partial."""
+    def test_banded_bulletin_renders_two_rows_with_glyphs(self, client: Client) -> None:
+        """A banded bulletin renders two chip rows, each with the elevation glyph."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         self._make_banded_bulletin(region)
         url = _url("ch-4115", region.slug, "2026-03-15")
         response = client.get(url, follow=True)
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'data-testid="day-window-pyramid"' in content
+        assert content.count('data-testid="day-window-row"') == 2
+        assert content.count('data-testid="day-window-elevation-icon"') == 2
+        # The old pyramid markup must be gone.
+        assert 'data-testid="day-window-pyramid"' not in content
 
-    def test_banded_bulletin_pyramid_has_segment_classes(self, client: Client) -> None:
-        """The pyramid SVG carries ``dp-seg lv-*`` classes for both elevation bands."""
+    def test_banded_bulletin_tiles_carry_band_lv_classes(self, client: Client) -> None:
+        """Each banded row keeps its EAWS-coloured level tile (``dw-tile lv-*``)."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         self._make_banded_bulletin(region)
         url = _url("ch-4115", region.slug, "2026-03-15")
         response = client.get(url, follow=True)
         content = response.content.decode()
-        assert "dp-seg lv-low" in content
-        assert "dp-seg lv-moderate" in content
+        assert "dw-tile lv-low" in content
+        assert "dw-tile lv-moderate" in content
 
-    def test_banded_bulletin_pyramid_captions_render(self, client: Client) -> None:
-        """The elevation captions ('below 2400 m' / 'above 2400 m') appear in the pyramid."""
+    def test_banded_bulletin_captions_render(self, client: Client) -> None:
+        """The elevation captions (built from the pivot, '2400') still render."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         self._make_banded_bulletin(region)
         url = _url("ch-4115", region.slug, "2026-03-15")
@@ -2605,10 +2622,10 @@ class TestDayWindowsPyramidRender:
         content = response.content.decode()
         assert "2400" in content
 
-    def test_unbanded_bulletin_renders_chip_row_not_pyramid(
+    def test_unbanded_bulletin_renders_chip_row_without_glyph(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """A single-band bulletin keeps the chip row; no pyramid partial renders."""
+        """A single-band bulletin keeps the chip row and renders no elevation glyph."""
         day = date(2026, 3, 19)
         raw = _raw_data_with_ratings([_rating("moderate", "all_day")])
         _make_am_bulletin(region, day, raw_data=raw)
@@ -2616,7 +2633,7 @@ class TestDayWindowsPyramidRender:
         response = client.get(url)
         content = response.content.decode()
         assert 'data-testid="day-window-row"' in content
-        assert 'data-testid="day-window-pyramid"' not in content
+        assert 'data-testid="day-window-elevation-icon"' not in content
 
 
 # ---------------------------------------------------------------------------
@@ -4851,26 +4868,24 @@ class TestAlbinaBandHeadings:
         )
         content = client.get(url).content.decode()
 
-        # The two banded all_day rows now render as a single pyramid (not two
-        # chip rows) — the stray unbanded 'low' is suppressed upstream.
-        assert 'data-testid="day-window-pyramid"' in content, (
-            "Expected the two banded ratings to render a pyramid"
+        # The two banded all_day rows render as two chip rows, each with the
+        # elevation glyph — the stray unbanded 'low' is suppressed upstream.
+        assert content.count('data-testid="day-window-row"') == 2, (
+            "Expected the two surviving banded ratings to render two rows"
         )
-        assert content.count('data-testid="day-window-row"') == 0, (
-            "No chip rows expected when all_day renders as a pyramid"
-        )
+        assert 'data-testid="day-window-pyramid"' not in content
 
         # Extract the day-windows panel section for targeted assertions.
         panel_start = content.index('data-testid="day-windows-panel"')
         panel_end = content.index('data-testid="avalanche-problems-heading"')
         panel_html = content[panel_start:panel_end]
 
-        # No low/level-1 segment or numeral must appear inside the panel.
-        assert "dp-seg lv-low" not in panel_html, (
-            "Suppressed 'low' rating polygon leaked into panel"
-        )
-        assert "dp-num lv-low" not in panel_html, (
-            "Suppressed 'low' rating numeral leaked into panel"
+        # Both surviving rows carry the elevation glyph.
+        assert panel_html.count('data-testid="day-window-elevation-icon"') == 2
+
+        # The suppressed 'low' (level 1) rating must not appear in the panel.
+        assert "lv-low" not in panel_html, (
+            "Suppressed 'low' rating leaked into the day-windows panel"
         )
 
         # The masthead headline must still be Considerable (level 3) — suppression

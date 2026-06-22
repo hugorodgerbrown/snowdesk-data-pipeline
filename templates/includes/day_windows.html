@@ -1,52 +1,46 @@
-{% load i18n %}
+{% load i18n card_tags %}
 {% comment %}
 templates/includes/day_windows.html — Day Windows panel (SNOW-70, SNOW-248, SNOW-298).
 
 Frozen design from design_handoff_day_windows/components-day-windows.html.
 Sits between the bulletin masthead's day strip and the first rating
-block. One entry per validTimePeriod (earlier / all_day / later).
+block. One row per validTimePeriod (earlier / all_day / later); pure
+type + colour, no problem icons (those are the rating blocks' job).
 
-Context:
-  day_windows       — list[dict] built by _build_day_windows() and then
-                      grouped by _group_day_windows() in views.py.
-                      Each entry is a group dict with one of two shapes:
+Elevation-banded periods (ALBINA / Météo-France) emit two rows for the
+same period — one per band — each carrying an ``elevation_bounds`` object.
+When present, the standard mountain elevation glyph renders beside the
+level tile (band shaded above/below the pivot), mirroring the problem-card
+aspect/elevation row. Single-band periods (all SLF, constant-danger ALBINA)
+leave ``elevation_bounds`` unset and render the plain chip row (SNOW-298).
 
-                      single group:
-                        kind        — "single"
-                        row         — row dict carrying type, level_key,
-                                      level_css, level_label, level_number,
-                                      caption, pill_label
-
-                      banded group (two elevation bands, same period):
-                        kind        — "banded"
-                        type        — validTimePeriod string
-                        pill_label  — time chip text
-                        upper       — row dict for the high-elevation band
-                        lower       — row dict for the low-elevation band
-
-                      Banded groups render the mountain-silhouette pyramid
-                      partial (_day_pyramid.html); single groups render the
-                      original dw-row chip layout.
-
+Required context:
+  day_windows       — list[dict] built by _build_day_windows() in views.py;
+                      each entry carries type, level_key, level_css,
+                      level_label, level_number, caption, pill_label, and —
+                      for banded rows only — elevation_bounds (an
+                      ElevationBounds with a bound_type for the glyph).
   period_transition — PeriodTransition dataclass or None (SNOW-248). Used
                       by the Day Risk Profile caption in bulletin.html;
                       not consumed by this template directly.
 {% endcomment %}
 {% if day_windows %}
     <section class="dw-panel" aria-label="{% trans 'Avalanche conditions by window' %}" data-testid="day-windows-panel">
-        {% for g in day_windows %}
-            {% if g.kind == "banded" %}
-                {% include "includes/_day_pyramid.html" with group=g %}
-            {% else %}
-                <div class="dw-row" data-testid="day-window-row" data-window="{{ g.row.type }}">
-                    <div class="dw-tile lv-{{ g.row.level_css }}" aria-hidden="true">{{ g.row.level_number }}</div>
-                    <div class="dw-body">
-                        <div class="dw-level">{{ g.row.level_label }}</div>
-                        {% if g.row.caption %}<div class="dw-caption">{{ g.row.caption }}</div>{% endif %}
-                    </div>
-                    {% include "includes/_chip.html" with text=g.row.pill_label variant="time" data_testid="day-window-pill" %}
+        {% for w in day_windows %}
+            <div class="dw-row" data-testid="day-window-row" data-window="{{ w.type }}">
+                <div class="dw-tile lv-{{ w.level_css }}" aria-hidden="true">{{ w.level_number }}</div>
+                {% if w.elevation_bounds %}
+                    <span class="dw-elev" data-testid="day-window-elevation-icon">
+                        {# elevation_icon returns a fixed SVG built from bound_type; safe to render unescaped. #}
+                        {{ w.elevation_bounds|elevation_icon:28|safe }}
+                    </span>
+                {% endif %}
+                <div class="dw-body">
+                    <div class="dw-level">{{ w.level_label }}</div>
+                    {% if w.caption %}<div class="dw-caption">{{ w.caption }}</div>{% endif %}
                 </div>
-            {% endif %}
+                {% include "includes/_chip.html" with text=w.pill_label variant="time" data_testid="day-window-pill" %}
+            </div>
         {% endfor %}
     </section>
 {% endif %}

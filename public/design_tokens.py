@@ -689,13 +689,14 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         description=(
             "Per-window EAWS rating panel — one row per validTimePeriod with "
             "a coloured danger-level tile, label and time-window pill. "
-            "Single-band periods (SLF; constant-danger ALBINA) render the "
-            "original chip-row layout; banded periods (ALBINA / Météo-France "
-            "with two elevation-split danger levels in one period) render a "
-            "two-tone mountain-silhouette elevation pyramid (SNOW-298). "
-            "Variants cover the all-day case (≈95% of bulletins) across "
-            "every danger level, a realistic split-day layout, and numeric- "
-            "and treeline-pivot pyramid examples."
+            "Banded periods (ALBINA / Météo-France with two elevation-split "
+            "danger levels in one period) emit a row per band, each carrying "
+            "the mountain elevation glyph beside the tile to mark the "
+            "above/below band (SNOW-298); single-band periods (SLF; "
+            "constant-danger ALBINA) omit the glyph. Variants cover the "
+            "all-day case (≈95% of bulletins) across every danger level, a "
+            "realistic split-day layout, and numeric- and treeline-pivot "
+            "banded examples."
         ),
         kind="components",
         partial="includes/day_windows.html",
