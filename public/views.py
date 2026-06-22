@@ -1251,27 +1251,6 @@ def _build_default_ribbon(
     return build_season_ribbon(region, today)
 
 
-def _default_region_label() -> tuple[str, str]:
-    """
-    Return the display name and bulletin-URL slug of the default ribbon region.
-
-    Used to seed the persistent region-readout chip on the homepage, where
-    CH-4115 is pre-selected: the name labels the chip and the slug builds its
-    "view bulletin" link. One query for both. Returns ``("", "")`` when the
-    region is absent (empty DB) so the readout simply stays hidden.
-
-    Returns:
-        A ``(name, name_slug)`` tuple, or ``("", "")`` if the region does not
-        exist.
-
-    """
-    try:
-        region = MicroRegion.objects.get_by_natural_key(_DEFAULT_RIBBON_REGION_ID)
-    except MicroRegion.DoesNotExist:
-        return "", ""
-    return region.name, region.name_slug
-
-
 def _report_context(request: HttpRequest) -> dict[str, Any]:
     """Build the template context dict for the field-report affordance.
 

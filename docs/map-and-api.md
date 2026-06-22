@@ -1,6 +1,6 @@
 ---
 name: map-and-api
-description: /map/ MapLibre choropleth, season scrubber, basemap picker, and the /api/ JSON endpoints (ratings, geojson, summary, bulletin-groupings)
+description: / (public:home) MapLibre choropleth, season scrubber, basemap picker, and /api/ endpoints (ratings, geojson, summary, bulletin-groupings)
 status: current
 last-reviewed: 2026-06-16
 ---

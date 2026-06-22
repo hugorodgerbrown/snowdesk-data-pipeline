@@ -67,7 +67,7 @@ def test_llms_links_are_absolute_and_host_pinned() -> None:
     """
     with override_settings(SITE_BASE_URL="https://snowdesk.info"):
         body = _body()
-    assert "https://snowdesk.info/" in body
+    assert "[Avalanche map](https://snowdesk.info/)" in body
     assert "https://snowdesk.info/api/ratings/" in body
     # No environment-relative paths leaked in as bare links.
     assert "](/" not in body
@@ -80,7 +80,7 @@ def test_llms_url_derives_from_site_base_url() -> None:
     """
     with override_settings(SITE_BASE_URL="http://localhost:8000"):
         body = _body()
-    assert "http://localhost:8000/" in body
+    assert "[Avalanche map](http://localhost:8000/)" in body
 
 
 def test_llms_is_cacheable() -> None:
