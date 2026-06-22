@@ -739,9 +739,14 @@ def home(request: HttpRequest) -> HttpResponse:
     today = datetime.date.today()
     base_ctx = _base_map_context(today)
     ribbon = _build_default_ribbon(today)
-    # Name + slug of the pre-selected default region (CH-4115) for the readout
-    # chip and its "view bulletin" link.
-    default_region_name, default_region_slug = _default_region_label()
+    # Name + slug + L2/L1 parents of the pre-selected default region (CH-4115)
+    # for the readout chip, its "view bulletin" link, and its breadcrumb.
+    (
+        default_region_name,
+        default_region_slug,
+        default_subregion_name,
+        default_major_name,
+    ) = _default_region_label()
 
     # The season is considered "off" when today is past the season_end bound
     # already narrowed to actual data in _base_map_context().
@@ -771,6 +776,8 @@ def home(request: HttpRequest) -> HttpResponse:
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
             "default_region_name": default_region_name,
             "default_region_slug": default_region_slug,
+            "default_subregion_name": default_subregion_name,
+            "default_major_name": default_major_name,
             "show_intro": True,
             "is_offseason": is_offseason,
             "sample_bulletin_url": sample_bulletin_url,
@@ -1213,25 +1220,33 @@ def _build_default_ribbon(
     return build_season_ribbon(region, today)
 
 
-def _default_region_label() -> tuple[str, str]:
+def _default_region_label() -> tuple[str, str, str, str]:
     """
-    Return the display name and bulletin-URL slug of the default ribbon region.
+    Return the name, slug, and L2/L1 parent names of the default ribbon region.
 
     Used to seed the persistent region-readout chip on the homepage, where
-    CH-4115 is pre-selected: the name labels the chip and the slug builds its
-    "view bulletin" link. One query for both. Returns ``("", "")`` when the
-    region is absent (empty DB) so the readout simply stays hidden.
+    CH-4115 is pre-selected: the name labels the chip, the slug builds its
+    "view bulletin" link, and the sub-region (L2) / major (L1) names seed the
+    breadcrumb so it is correct on first paint — before any region-selected
+    event fires. One query for all four (the parents are select_related).
+    Returns ``("", "", "", "")`` when the region is absent (empty DB) so the
+    readout simply stays hidden.
 
     Returns:
-        A ``(name, name_slug)`` tuple, or ``("", "")`` if the region does not
-        exist.
+        A ``(name, name_slug, subregion_name, major_name)`` tuple, or four empty
+        strings if the region does not exist.
 
     """
     try:
-        region = MicroRegion.objects.get_by_natural_key(_DEFAULT_RIBBON_REGION_ID)
+        region = MicroRegion.objects.select_related(
+            "subregion__major"
+        ).get_by_natural_key(_DEFAULT_RIBBON_REGION_ID)
     except MicroRegion.DoesNotExist:
-        return "", ""
-    return region.name, region.name_slug
+        return "", "", "", ""
+    sub = region.subregion
+    subregion_name = sub.name_en if sub.name_en and sub.name_en != sub.prefix else ""
+    major_name = sub.major.name_en or sub.major.name_native
+    return region.name, region.name_slug, subregion_name, major_name
 
 
 def _report_context(request: HttpRequest) -> dict[str, Any]:
@@ -1412,6 +1427,8 @@ def map_view(request: HttpRequest) -> HttpResponse:
             "default_region_id": "",
             "default_region_name": "",
             "default_region_slug": "",
+            "default_subregion_name": "",
+            "default_major_name": "",
         },
     )
 

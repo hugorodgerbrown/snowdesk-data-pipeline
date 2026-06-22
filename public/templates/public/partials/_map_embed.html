@@ -82,6 +82,13 @@ Optional context:
                 role="combobox"
             >
         </div>
+        <ul id="search-results" class="search-results" role="listbox" hidden></ul>
+    </div>
+    {# PROTOTYPE (homepage rework): bottom-right control stack — the layers  #}
+    {# and locate pills move to the conventional map-control corner, stacked #}
+    {# above the report roundel. map.js binds these by their own ids, so the #}
+    {# relocation is DOM-only; #map-controls-br is added to the click guard.  #}
+    <div class="map-controls-br" id="map-controls-br">
         {# SNOW-58: basemap layer picker — Google-Maps-style stacked-layers   #}
         {# pill that opens a popover of basemap options. Choice persists in   #}
         {# localStorage; selecting a value calls maplibre setStyle() and JS   #}
@@ -305,12 +312,6 @@ Optional context:
                 </svg>
             </button>
         </div>
-        {# SNOW-79: The "Save offline" download button used to live    #}
-        {# here. The PWA shell now caches assets on first visit via    #}
-        {# stale-while-revalidate, so an explicit opt-in download is   #}
-        {# no longer needed (and was the source of "stuck on stale     #}
-        {# data" reports). Removed wholesale.                          #}
-        <ul id="search-results" class="search-results" role="listbox" hidden></ul>
     </div>
     {% comment %}
     Map info panel (SNOW-38, redesigned SNOW-230). A single (i) toggle
@@ -495,22 +496,16 @@ Optional context:
                     <span class="home-intro-wordmark">Snowdesk</span>
                 </div>
                 <p class="home-intro-tagline">
-                    {% trans "Avalanche bulletins for backcountry skiers — tap a region to explore." %}
+                    {% trans "Avalanche danger across the Alps — by region, aspect and elevation. Tap a region for today's bulletin." %}
                 </p>
                 {% if is_offseason %}
                     {# Off-season honesty (launch requirement): the data shown is #}
-                    {# archive, not live. Carried here in the intro now that the  #}
-                    {# standalone note has been removed.                          #}
+                    {# archive, not live. Carried in the first-visit panel.       #}
                     <p class="home-intro-offseason-ref">
                         {% trans "Showing the 2025/26 season archive — live bulletins resume in November." %}
                     </p>
                 {% endif %}
                 <div class="home-intro-actions">
-                    {% if sample_bulletin_url %}
-                        <a href="{{ sample_bulletin_url }}" class="home-intro-sample-link">
-                            {% trans "View a sample bulletin →" %}
-                        </a>
-                    {% endif %}
                     <button
                         id="home-intro-dismiss"
                         type="button"
