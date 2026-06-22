@@ -1,0 +1,72 @@
+{% comment %}
+templates/includes/_day_pyramid.html — Elevation danger pyramid (SNOW-298).
+
+Renders a two-tone mountain-silhouette SVG for ALBINA / Météo-France
+bulletins where a single validTimePeriod carries two distinct danger levels
+split by elevation band (e.g. considerable below 2400 m / moderate above
+2400 m).
+
+The SVG uses two triangles drawn in sequence:
+  1. A full-height base triangle (lower-band colour fills the whole shape).
+  2. An apex triangle overlaid on the top portion (upper-band colour).
+A horizontal dividing line marks the split boundary.
+
+Fills come from CSS classes (.dp-seg.lv-*) backed by --color-eaws-* tokens —
+no raw hex values in this template. Numerals use .dp-num.lv-* which maps to
+--color-eaws-*-fg.
+
+Required context (passed via {% include … with group=g %}):
+  group.type        — validTimePeriod string (e.g. "all_day")
+  group.pill_label  — text for the time chip (e.g. "All day")
+  group.lower       — row dict for the low-elevation band:
+                        level_css, level_number, level_label, caption
+  group.upper       — row dict for the high-elevation band:
+                        level_css, level_number, level_label, caption
+{% endcomment %}
+<div class="dw-row" data-testid="day-window-pyramid" data-window="{{ group.type }}">
+    <svg class="dp-svg" viewBox="0 0 48 56" width="48" height="56" aria-hidden="true">
+        {# Base triangle — lower band fills the whole mountain shape #}
+        <polygon
+            class="dp-seg lv-{{ group.lower.level_css }}"
+            points="24,2 46,54 2,54"
+        />
+        {# Apex triangle — upper band overlaid on the top portion #}
+        <polygon
+            class="dp-seg lv-{{ group.upper.level_css }}"
+            points="24,2 35,30 13,30"
+        />
+        {# Dividing line at the elevation split boundary #}
+        <line class="dp-divide" x1="13" y1="30" x2="35" y2="30" />
+        {# Level numeral — upper band, centred in the apex region #}
+        <text
+            class="dp-num lv-{{ group.upper.level_css }}"
+            x="24"
+            y="22"
+            text-anchor="middle"
+            dominant-baseline="central"
+        >
+            {{ group.upper.level_number }}
+        </text>
+        {# Level numeral — lower band, centred in the base region #}
+        <text
+            class="dp-num lv-{{ group.lower.level_css }}"
+            x="24"
+            y="43"
+            text-anchor="middle"
+            dominant-baseline="central"
+        >
+            {{ group.lower.level_number }}
+        </text>
+    </svg>
+    <div class="dp-body">
+        <div class="dp-band">
+            <span class="dp-level">{{ group.upper.level_label }}</span>
+            {% if group.upper.caption %}<span class="dp-caption">{{ group.upper.caption }}</span>{% endif %}
+        </div>
+        <div class="dp-band">
+            <span class="dp-level">{{ group.lower.level_label }}</span>
+            {% if group.lower.caption %}<span class="dp-caption">{{ group.lower.caption }}</span>{% endif %}
+        </div>
+    </div>
+    {% include "includes/_chip.html" with text=group.pill_label variant="time" data_testid="day-window-pill" %}
+</div>

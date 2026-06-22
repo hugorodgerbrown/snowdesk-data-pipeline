@@ -195,13 +195,15 @@ class TestComponentLibraryPanel:
     def test_day_windows_panel_renders_expected_variants(
         self, htmx_staff_client: Client
     ) -> None:
-        """The day-windows panel ships five variants matching the scope contract.
+        """The day-windows panel ships seven variants matching the scope contract.
 
-        Variant 1: all-day level grid (five rows stepping low → very_high).
+        Variant 1: all-day level grid (five single groups stepping low → very_high).
         Variant 2: all-day with sublevel modifier (considerable−).
         Variant 3: cross-category later (all_day low + later moderate).
         Variant 4: within-category later (all_day considerable− + later considerable).
-        Variant 5: MF elevation split (all_day low below / moderate above 2500 m).
+        Variant 5: numeric-pivot pyramid (banded group, considerable below / moderate above).
+        Variant 6: treeline-pivot pyramid (banded group, low below / considerable above).
+        Variant 7: high-severity pyramid (banded group, considerable below / high above).
         Asserting both the context shape and rendered HTML guards against drift
         in either the fixture or the ``include_variant`` plumbing.
         """
@@ -210,49 +212,62 @@ class TestComponentLibraryPanel:
 
         active = response.context["active"]
         assert active.slug == "day-windows"
-        assert len(active.variants) == 5
+        assert len(active.variants) == 7
 
-        # Variant 1 — all-day, five EAWS levels.
+        # Variant 1 — all-day, five EAWS levels (single groups).
         v1_windows = active.variants[0]["context"]["day_windows"]
-        assert [w["level_key"] for w in v1_windows] == [
+        assert [g["row"]["level_key"] for g in v1_windows] == [
             "low",
             "moderate",
             "considerable",
             "high",
             "very_high",
         ]
-        assert {w["type"] for w in v1_windows} == {"all_day"}
-        assert {w["pill_label"] for w in v1_windows} == {"All day"}
+        assert all(g["kind"] == "single" for g in v1_windows)
+        assert {g["row"]["type"] for g in v1_windows} == {"all_day"}
+        assert {g["row"]["pill_label"] for g in v1_windows} == {"All day"}
 
         # Variant 2 — all-day with sublevel modifier.
         v2_windows = active.variants[1]["context"]["day_windows"]
         assert len(v2_windows) == 1
-        assert v2_windows[0]["level_key"] == "considerable"
-        assert v2_windows[0]["level_number"] == "3-"
+        assert v2_windows[0]["kind"] == "single"
+        assert v2_windows[0]["row"]["level_key"] == "considerable"
+        assert v2_windows[0]["row"]["level_number"] == "3-"
 
         # Variant 3 — cross-category later (all_day low + later moderate).
         v3_windows = active.variants[2]["context"]["day_windows"]
-        assert [(w["type"], w["level_key"]) for w in v3_windows] == [
+        assert [(g["row"]["type"], g["row"]["level_key"]) for g in v3_windows] == [
             ("all_day", "low"),
             ("later", "moderate"),
         ]
 
-        # Variant 4 — within-category later (all_day considerable− + later considerable).
+        # Variant 4 — within-category later.
         v4_windows = active.variants[3]["context"]["day_windows"]
-        assert [(w["type"], w["level_key"]) for w in v4_windows] == [
+        assert [(g["row"]["type"], g["row"]["level_key"]) for g in v4_windows] == [
             ("all_day", "considerable"),
             ("later", "considerable"),
         ]
-        assert v4_windows[0]["level_number"] == "3-"
+        assert v4_windows[0]["row"]["level_number"] == "3-"
 
-        # Variant 5 — MF elevation split (all_day low below / moderate above 2500 m).
+        # Variant 5 — numeric-pivot pyramid (banded group).
         v5_windows = active.variants[4]["context"]["day_windows"]
-        assert [(w["type"], w["level_key"]) for w in v5_windows] == [
-            ("all_day", "low"),
-            ("all_day", "moderate"),
-        ]
-        assert v5_windows[0]["caption"] == "below 2500 m"
-        assert v5_windows[1]["caption"] == "above 2500 m"
+        assert len(v5_windows) == 1
+        g5 = v5_windows[0]
+        assert g5["kind"] == "banded"
+        assert g5["lower"]["level_key"] == "considerable"
+        assert g5["upper"]["level_key"] == "moderate"
+        assert "2500" in g5["lower"]["caption"]
+        assert "2500" in g5["upper"]["caption"]
+
+        # Variant 6 — treeline-pivot pyramid (banded group).
+        v6_windows = active.variants[5]["context"]["day_windows"]
+        assert len(v6_windows) == 1
+        g6 = v6_windows[0]
+        assert g6["kind"] == "banded"
+        assert g6["lower"]["level_key"] == "low"
+        assert g6["upper"]["level_key"] == "considerable"
+        assert "treeline" in g6["lower"]["caption"]
+        assert "treeline" in g6["upper"]["caption"]
 
         # Rendered HTML — confirms include_variant reached the partial and
         # that the level_css → CSS class mapping (``very_high`` → ``lv-very-high``)
@@ -263,6 +278,8 @@ class TestComponentLibraryPanel:
         assert 'data-window="later"' in body
         assert ">All day<" in body
         assert ">Later<" in body
+        # Pyramid variant renders.
+        assert 'data-testid="day-window-pyramid"' in body
 
     def test_unknown_slug_returns_404(self, htmx_staff_client: Client) -> None:
         """Slugs that don't appear in any library group 404."""

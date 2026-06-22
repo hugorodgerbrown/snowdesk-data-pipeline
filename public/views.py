@@ -2375,6 +2375,66 @@ def _build_day_windows(
     return _day_windows_from_raw_ratings(bulletin)
 
 
+def _group_day_windows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fold flat day-window rows into group dicts for template rendering.
+
+    Consecutive rows that share the same ``type`` (validTimePeriod) are
+    combined into a single ``banded`` group so the template can render them
+    as a two-tone elevation pyramid instead of two stacked chip rows.  All
+    other rows are wrapped in a ``single`` group unchanged.
+
+    This function is a pure presentation pass that sits between
+    :func:`_build_day_windows` (which always returns flat rows) and the
+    ``day_windows.html`` template.  It does not alter any row dict; it only
+    wraps or groups them.
+
+    Group shapes:
+
+    * ``{"kind": "single", "row": <row dict>}`` — one row, rendered as the
+      existing ``dw-row`` chip layout.
+    * ``{"kind": "banded", "type": <period>, "pill_label": <str>,
+        "upper": <row dict>, "lower": <row dict>}`` — two consecutive
+      same-type rows; ``lower`` is the first row (low-elevation band, as
+      emitted by :func:`_rows_for_period` after its elevation sort), and
+      ``upper`` is the last row (high-elevation band).  For a run of length
+      ≥3 the same lower/upper convention holds, but only the pyramid for
+      ``lower``/``upper`` is rendered — the intermediate rows are discarded,
+      which is safe because runs of length >2 are not present in any known
+      provider today.
+
+    Args:
+        rows: Flat list of row dicts as returned by ``_build_day_windows``.
+
+    Returns:
+        List of group dicts, one per validTimePeriod (single or banded).
+
+    """
+    groups: list[dict[str, Any]] = []
+    i = 0
+    while i < len(rows):
+        current = rows[i]
+        period = current.get("type")
+        # Find the run of consecutive rows sharing the same period type.
+        run_end = i + 1
+        while run_end < len(rows) and rows[run_end].get("type") == period:
+            run_end += 1
+        run = rows[i:run_end]
+        if len(run) >= 2:
+            groups.append(
+                {
+                    "kind": "banded",
+                    "type": period,
+                    "pill_label": current.get("pill_label", ""),
+                    "lower": run[0],
+                    "upper": run[-1],
+                }
+            )
+        else:
+            groups.append({"kind": "single", "row": current})
+        i = run_end
+    return groups
+
+
 def _build_canonical_url(
     request: HttpRequest,
     region: MicroRegion,
@@ -2975,8 +3035,8 @@ def _bulletin_detail_response(
 
     panel = _build_panel_context(selected)
 
-    day_windows: list[dict[str, Any]] = _build_day_windows(
-        selected, render_model=panel.get("render_model")
+    day_windows: list[dict[str, Any]] = _group_day_windows(
+        _build_day_windows(selected, render_model=panel.get("render_model"))
     )
 
     season_calendar = season_header(today)
