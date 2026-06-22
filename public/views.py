@@ -2112,29 +2112,52 @@ def _max_rm_rank_in(ratings: list[dict[str, Any]]) -> tuple[int, int]:
     )
 
 
-def _rm_elevation_caption(rm_elev: dict[str, Any] | None) -> str:
-    """Render a projected elevation dict as a short human caption.
+def _rm_caaml_elevation(rm_elev: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Reconstruct CAAML lower/upper bounds from a projected elevation dict.
 
-    Reconstructs the CAAML lower/upper bounds from the projection — including
-    putting the ``"treeline"`` token back on the bound it originally lived on
-    (recorded by ``_parse_elevation`` in ``treeline_side``) — then delegates
-    to :func:`_elevation_display` so the captions match the wording used in
-    the problem-card aspect/elevation row. Returns ``""`` when no bounds
-    survive (e.g. both bounds absent or older render models that predate the
+    The render model's projected elevation keeps only the numeric bound on
+    each side plus a ``treeline_side`` marker recording which bound the
+    ``"treeline"`` token originally lived on (recorded by ``_parse_elevation``).
+    This helper rebuilds the CAAML-shaped ``{"lowerBound", "upperBound"}`` dict
+    — putting ``"treeline"`` back on the correct side — so the shared
+    :func:`_format_elevation` machinery can derive both the caption wording and
+    the ``bound_type`` used for icon selection. Returns ``None`` when no bounds
+    survive (e.g. both bounds absent, or older render models predating the
     ``treeline_side`` field).
     """
     if not rm_elev:
-        return ""
-    lower = rm_elev.get("lower")
-    upper = rm_elev.get("upper")
+        return None
+    caaml_lower: Any = rm_elev.get("lower")
+    caaml_upper: Any = rm_elev.get("upper")
     treeline_side = rm_elev.get("treeline_side")
-    caaml_lower: Any = lower
-    caaml_upper: Any = upper
     if treeline_side == "lower":
         caaml_lower = "treeline"
     elif treeline_side == "upper":
         caaml_upper = "treeline"
-    return _elevation_display(caaml_lower, caaml_upper)
+    return {"lowerBound": caaml_lower, "upperBound": caaml_upper}
+
+
+def _rm_elevation_bounds(rm_elev: dict[str, Any] | None) -> ElevationBounds:
+    """Build :class:`ElevationBounds` for a projected elevation dict.
+
+    Reconstructs the CAAML bounds via :func:`_rm_caaml_elevation` then defers
+    to :func:`_format_elevation`, so the caption wording matches the
+    problem-card aspect/elevation row. The returned object also carries a
+    ``bound_type`` (``LOWER`` = "above", ``UPPER`` = "below", ``BOTH``), which
+    the day-windows panel feeds to the ``elevation_icon`` filter to pick the
+    mountain glyph for a banded row. Empty (falsey) when no bounds survive.
+    """
+    return _format_elevation(_rm_caaml_elevation(rm_elev))
+
+
+def _rm_elevation_caption(rm_elev: dict[str, Any] | None) -> str:
+    """Render a projected elevation dict as a short human caption.
+
+    Thin wrapper over :func:`_rm_elevation_bounds` returning just the formatted
+    display string (``"below 2400m"``, ``"above treeline"`` …). Returns ``""``
+    when no bounds survive.
+    """
+    return _rm_elevation_bounds(rm_elev).display
 
 
 def _elevation_sort_key(rating: dict[str, Any]) -> tuple[int, int]:
@@ -2237,7 +2260,11 @@ def _rows_for_period(
     rows: list[dict[str, Any]] = []
     for r in sorted(period_ratings, key=_elevation_sort_key):
         row = _day_window_row_from_rm(r)
-        row["caption"] = _rm_elevation_caption(r.get("elevation"))
+        bounds = _rm_elevation_bounds(r.get("elevation"))
+        row["caption"] = bounds.display
+        # The mountain glyph beside the level tile is driven by bound_type;
+        # only banded rows carry it (single SLF rows leave caption empty).
+        row["elevation_bounds"] = bounds
         rows.append(row)
     return rows
 
@@ -2373,66 +2400,6 @@ def _build_day_windows(
     # Fallback: read raw dangerRatings from CAAML properties.
     # Used for bulletins that predate the danger.ratings projection (v4 and earlier).
     return _day_windows_from_raw_ratings(bulletin)
-
-
-def _group_day_windows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Fold flat day-window rows into group dicts for template rendering.
-
-    Consecutive rows that share the same ``type`` (validTimePeriod) are
-    combined into a single ``banded`` group so the template can render them
-    as a two-tone elevation pyramid instead of two stacked chip rows.  All
-    other rows are wrapped in a ``single`` group unchanged.
-
-    This function is a pure presentation pass that sits between
-    :func:`_build_day_windows` (which always returns flat rows) and the
-    ``day_windows.html`` template.  It does not alter any row dict; it only
-    wraps or groups them.
-
-    Group shapes:
-
-    * ``{"kind": "single", "row": <row dict>}`` — one row, rendered as the
-      existing ``dw-row`` chip layout.
-    * ``{"kind": "banded", "type": <period>, "pill_label": <str>,
-        "upper": <row dict>, "lower": <row dict>}`` — two consecutive
-      same-type rows; ``lower`` is the first row (low-elevation band, as
-      emitted by :func:`_rows_for_period` after its elevation sort), and
-      ``upper`` is the last row (high-elevation band).  For a run of length
-      ≥3 the same lower/upper convention holds, but only the pyramid for
-      ``lower``/``upper`` is rendered — the intermediate rows are discarded,
-      which is safe because runs of length >2 are not present in any known
-      provider today.
-
-    Args:
-        rows: Flat list of row dicts as returned by ``_build_day_windows``.
-
-    Returns:
-        List of group dicts, one per validTimePeriod (single or banded).
-
-    """
-    groups: list[dict[str, Any]] = []
-    i = 0
-    while i < len(rows):
-        current = rows[i]
-        period = current.get("type")
-        # Find the run of consecutive rows sharing the same period type.
-        run_end = i + 1
-        while run_end < len(rows) and rows[run_end].get("type") == period:
-            run_end += 1
-        run = rows[i:run_end]
-        if len(run) >= 2:
-            groups.append(
-                {
-                    "kind": "banded",
-                    "type": period,
-                    "pill_label": current.get("pill_label", ""),
-                    "lower": run[0],
-                    "upper": run[-1],
-                }
-            )
-        else:
-            groups.append({"kind": "single", "row": current})
-        i = run_end
-    return groups
 
 
 def _build_canonical_url(
@@ -3035,8 +3002,8 @@ def _bulletin_detail_response(
 
     panel = _build_panel_context(selected)
 
-    day_windows: list[dict[str, Any]] = _group_day_windows(
-        _build_day_windows(selected, render_model=panel.get("render_model"))
+    day_windows: list[dict[str, Any]] = _build_day_windows(
+        selected, render_model=panel.get("render_model")
     )
 
     season_calendar = season_header(today)
