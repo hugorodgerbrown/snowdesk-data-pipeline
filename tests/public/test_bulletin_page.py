@@ -2401,6 +2401,225 @@ class TestMFElevationBandSplitBulletinPage:
 
 
 # ---------------------------------------------------------------------------
+# Test: _group_day_windows — unit tests for the grouping pass
+# ---------------------------------------------------------------------------
+
+
+class TestGroupDayWindows:
+    """Unit tests for ``_group_day_windows`` in public/views.py.
+
+    The function takes a flat list of row dicts (as returned by
+    ``_build_day_windows``) and folds consecutive same-type rows into
+    ``banded`` group dicts, wrapping the rest as ``single`` groups.
+    """
+
+    def _row(self, period: str, level_key: str, caption: str = "") -> dict[str, Any]:
+        """Build a minimal day-window row dict."""
+        return {
+            "type": period,
+            "level_key": level_key,
+            "level_css": level_key.replace("_", "-"),
+            "level_label": level_key.title(),
+            "level_number": "1",
+            "caption": caption,
+            "pill_label": period.replace("_", " ").title(),
+        }
+
+    def test_single_row_becomes_single_group(self) -> None:
+        """A single row wraps into a ``single`` group with the row intact."""
+        from public.views import _group_day_windows
+
+        row = self._row("all_day", "moderate")
+        groups = _group_day_windows([row])
+        assert len(groups) == 1
+        assert groups[0]["kind"] == "single"
+        assert groups[0]["row"] is row
+
+    def test_banded_pair_becomes_one_banded_group(self) -> None:
+        """Two consecutive same-type rows fold into one ``banded`` group."""
+        from public.views import _group_day_windows
+
+        lower = self._row("all_day", "low", caption="below 2400 m")
+        upper = self._row("all_day", "moderate", caption="above 2400 m")
+        groups = _group_day_windows([lower, upper])
+        assert len(groups) == 1
+        g = groups[0]
+        assert g["kind"] == "banded"
+        assert g["type"] == "all_day"
+        assert g["lower"] is lower
+        assert g["upper"] is upper
+
+    def test_banded_group_pill_label_comes_from_first_row(self) -> None:
+        """``pill_label`` on a banded group is taken from the first (lower) row."""
+        from public.views import _group_day_windows
+
+        lower = self._row("all_day", "low", caption="below 2400 m")
+        upper = self._row("all_day", "moderate", caption="above 2400 m")
+        groups = _group_day_windows([lower, upper])
+        assert groups[0]["pill_label"] == lower["pill_label"]
+
+    def test_two_distinct_periods_produce_two_single_groups(self) -> None:
+        """``all_day`` + ``later`` with different types → two single groups."""
+        from public.views import _group_day_windows
+
+        all_day = self._row("all_day", "moderate")
+        later = self._row("later", "considerable")
+        groups = _group_day_windows([all_day, later])
+        assert len(groups) == 2
+        assert groups[0]["kind"] == "single"
+        assert groups[0]["row"] is all_day
+        assert groups[1]["kind"] == "single"
+        assert groups[1]["row"] is later
+
+    def test_single_interspersed_rows_stay_single(self) -> None:
+        """Rows that alternate types are each wrapped as single groups."""
+        from public.views import _group_day_windows
+
+        earlier = self._row("earlier", "low")
+        later = self._row("later", "moderate")
+        groups = _group_day_windows([earlier, later])
+        assert len(groups) == 2
+        for g in groups:
+            assert g["kind"] == "single"
+
+    def test_empty_list_returns_empty(self) -> None:
+        """An empty input list returns an empty output list."""
+        from public.views import _group_day_windows
+
+        assert _group_day_windows([]) == []
+
+
+# ---------------------------------------------------------------------------
+# Test: banded full-page render — pyramid vs chip
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestDayWindowsPyramidRender:
+    """Full-page render assertions for the elevation-pyramid path.
+
+    Banded bulletins (two same-type rows from ``_rows_for_period``) must
+    render a pyramid partial (``data-testid="day-window-pyramid"``); single-
+    band bulletins must keep the chip row (``data-testid="day-window-row"``).
+    """
+
+    def _make_banded_bulletin(self, region: MicroRegion) -> Bulletin:
+        """Create a bulletin with two all_day elevation-band ratings."""
+        from bulletins.services.render_model import RENDER_MODEL_VERSION
+
+        day = date(2026, 3, 15)
+        vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
+        vt = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
+        rm = {
+            "version": RENDER_MODEL_VERSION,
+            "source": "meteofrance",
+            "danger": {
+                "key": "moderate",
+                "number": "2",
+                "subdivision": None,
+                "ratings": [
+                    {
+                        "period": "all_day",
+                        "key": "low",
+                        "subdivision": None,
+                        "elevation": {
+                            "lower": None,
+                            "upper": 2400,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                    {
+                        "period": "all_day",
+                        "key": "moderate",
+                        "subdivision": None,
+                        "elevation": {
+                            "lower": 2400,
+                            "upper": None,
+                            "treeline": False,
+                            "treeline_side": None,
+                        },
+                    },
+                ],
+            },
+            "danger_patterns": [],
+            "traits": [],
+            "snowpack_structure": None,
+            "metadata": {
+                "publication_time": "2026-03-15T06:00:00+00:00",
+                "valid_from": "2026-03-15T06:00:00+00:00",
+                "valid_until": "2026-03-15T15:00:00+00:00",
+                "next_update": None,
+                "unscheduled": False,
+                "lang": "fr",
+            },
+            "prose": {
+                "snowpack_structure": None,
+                "weather_review": None,
+                "weather_forecast": None,
+                "tendency": [],
+                "avalanche_activity": {"highlights": "", "comment": ""},
+                "tendency_lead": None,
+            },
+        }
+        bulletin = BulletinFactory.create(
+            issued_at=vf - timedelta(minutes=30),
+            valid_from=vf,
+            valid_to=vt,
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin,
+            region=region,
+            region_name_at_time=region.name,
+        )
+        return bulletin
+
+    def test_banded_bulletin_renders_pyramid(self, client: Client) -> None:
+        """A banded (two same-type elevation rows) bulletin renders the pyramid partial."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        self._make_banded_bulletin(region)
+        url = _url("ch-4115", region.slug, "2026-03-15")
+        response = client.get(url, follow=True)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'data-testid="day-window-pyramid"' in content
+
+    def test_banded_bulletin_pyramid_has_segment_classes(self, client: Client) -> None:
+        """The pyramid SVG carries ``dp-seg lv-*`` classes for both elevation bands."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        self._make_banded_bulletin(region)
+        url = _url("ch-4115", region.slug, "2026-03-15")
+        response = client.get(url, follow=True)
+        content = response.content.decode()
+        assert "dp-seg lv-low" in content
+        assert "dp-seg lv-moderate" in content
+
+    def test_banded_bulletin_pyramid_captions_render(self, client: Client) -> None:
+        """The elevation captions ('below 2400 m' / 'above 2400 m') appear in the pyramid."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        self._make_banded_bulletin(region)
+        url = _url("ch-4115", region.slug, "2026-03-15")
+        response = client.get(url, follow=True)
+        content = response.content.decode()
+        assert "2400" in content
+
+    def test_unbanded_bulletin_renders_chip_row_not_pyramid(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A single-band bulletin keeps the chip row; no pyramid partial renders."""
+        day = date(2026, 3, 19)
+        raw = _raw_data_with_ratings([_rating("moderate", "all_day")])
+        _make_am_bulletin(region, day, raw_data=raw)
+        url = _url("ch-4115", "valais", "2026-03-19")
+        response = client.get(url)
+        content = response.content.decode()
+        assert 'data-testid="day-window-row"' in content
+        assert 'data-testid="day-window-pyramid"' not in content
+
+
+# ---------------------------------------------------------------------------
 # Test: bulletin page content — subregion names, day-risk panel
 # ---------------------------------------------------------------------------
 
@@ -4632,17 +4851,24 @@ class TestAlbinaBandHeadings:
         )
         content = client.get(url).content.decode()
 
-        # Only the two banded rows must appear; the stray 'low' is suppressed.
-        row_count = content.count('data-testid="day-window-row"')
-        assert row_count == 2, f"Expected 2 day-window rows, got {row_count}"
+        # The two banded all_day rows now render as a single pyramid (not two
+        # chip rows) — the stray unbanded 'low' is suppressed upstream.
+        assert 'data-testid="day-window-pyramid"' in content, (
+            "Expected the two banded ratings to render a pyramid"
+        )
+        assert content.count('data-testid="day-window-row"') == 0, (
+            "No chip rows expected when all_day renders as a pyramid"
+        )
 
         # Extract the day-windows panel section for targeted assertions.
         panel_start = content.index('data-testid="day-windows-panel"')
         panel_end = content.index('data-testid="avalanche-problems-heading"')
         panel_html = content[panel_start:panel_end]
 
-        # No low/level-1 tile must appear inside the panel.
-        assert "lv-low" not in panel_html, "Suppressed 'low' rating leaked into panel"
+        # No low/level-1 segment must appear inside the panel.
+        assert "dp-seg lv-low" not in panel_html, (
+            "Suppressed 'low' rating leaked into panel"
+        )
 
         # The masthead headline must still be Considerable (level 3) — suppression
         # must not alter the headline danger computed outside this function.
