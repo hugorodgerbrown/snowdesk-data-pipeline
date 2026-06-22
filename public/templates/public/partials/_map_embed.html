@@ -491,7 +491,10 @@ Optional context:
         {# Dismissed by clicking the overlay or a button; localStorage key      #}
         {# 'snowdesk.home.intro' persists the dismissed state. /#about hash     #}
         {# forces it open. home_intro.js owns the behaviour.                    #}
-        <div id="home-intro" class="home-intro" aria-modal="false" role="complementary">
+        {# aria-modal is only valid on role="dialog"/"alertdialog"; the panel is #}
+        {# role="complementary" (non-blocking, map stays interactive behind it),  #}
+        {# so the attribute is dropped — it was an axe aria-allowed-attr failure. #}
+        <div id="home-intro" class="home-intro" role="complementary">
             <div class="home-intro-card">
                 <div class="home-intro-identity">
                     <span class="home-intro-wordmark">Snowdesk</span>
