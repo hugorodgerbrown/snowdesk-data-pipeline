@@ -1583,6 +1583,23 @@ REGION_TOOLTIP_VARIANTS: tuple[dict[str, Any], ...] = (
             "bulletin_url": "",
             "country_name": "Switzerland",
             "target_date": _TOOLTIP_DATE,
+            "covered": True,
+            "provider_name": "SLF",
+        },
+    },
+    {
+        # SNOW-54: permanently-uncovered region (e.g. Swiss Lowlands / Jura).
+        # The pipeline has no RegionDayRating rows for this area, so the tooltip
+        # explains the upstream gap rather than showing the generic "no bulletin" label.
+        "caption": "Permanently uncovered (SLF — Swiss Lowlands)",
+        "context": {
+            "region": _TOOLTIP_REGION,
+            "day_rating": None,
+            "bulletin_url": "",
+            "country_name": "Switzerland",
+            "target_date": _TOOLTIP_DATE,
+            "covered": False,
+            "provider_name": "SLF",
         },
     },
 )

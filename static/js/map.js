@@ -413,6 +413,12 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // if the source is still around (defensive, MapLibre normally drops
   // sources during setStyle but this lets a future ``diff`` setStyle
   // strategy land without breaking us).
+  // SNOW-54: solid fill for permanently-uncovered regions (those the pipeline
+  // never rates). A touch darker than no_rating (#e0e0e0) so an uncovered area
+  // reads as a distinct flat grey rather than "no bulletin today" — applied in
+  // the regions-fill paint below, keyed on the static ``covered`` property.
+  const UNCOVERED_FILL_COLOUR = '#b5b5b5';
+
   const installRegionsLayers = (geojson) => {
     if (map.getSource('regions')) return;
     map.addSource('regions', { type: 'geojson', data: geojson });
@@ -424,20 +430,29 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // Every region's rating is written via setFeatureState at boot and
     // on every scrubber/timelapse frame; unset state resolves to null,
     // which falls through the ``match`` arms to the default no_rating colour.
+    //
+    // SNOW-54: permanently-uncovered regions (static ``covered === false``
+    // property from the API) get a distinct flat grey instead of no_rating.
+    // The case checks ``covered`` first; these regions never carry a rating, so
+    // ordering is safe and the rating ``match`` handles every covered region.
     map.addLayer({
       id: 'regions-fill',
       type: 'fill',
       source: 'regions',
       paint: {
         'fill-color': [
-          'match',
-          ['feature-state', 'rating'],
-          'low',          RATING_COLOURS.low,
-          'moderate',     RATING_COLOURS.moderate,
-          'considerable', RATING_COLOURS.considerable,
-          'high',         RATING_COLOURS.high,
-          'very_high',    RATING_COLOURS.very_high,
-          RATING_COLOURS.no_rating,
+          'case',
+          ['==', ['get', 'covered'], false], UNCOVERED_FILL_COLOUR,
+          [
+            'match',
+            ['feature-state', 'rating'],
+            'low',          RATING_COLOURS.low,
+            'moderate',     RATING_COLOURS.moderate,
+            'considerable', RATING_COLOURS.considerable,
+            'high',         RATING_COLOURS.high,
+            'very_high',    RATING_COLOURS.very_high,
+            RATING_COLOURS.no_rating,
+          ],
         ],
         'fill-opacity': [
           'case',
