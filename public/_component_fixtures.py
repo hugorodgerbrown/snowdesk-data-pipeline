@@ -250,47 +250,101 @@ def _make_window(
     }
 
 
+def _single_group(row: dict[str, Any]) -> dict[str, Any]:
+    """Wrap one row dict into a single group for the day_windows template."""
+    return {"kind": "single", "row": row}
+
+
+def _banded_group(
+    lower: dict[str, Any],
+    upper: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a banded group dict from a lower-band and upper-band row.
+
+    ``lower`` is the low-elevation band (emitted first by
+    ``_rows_for_period`` after its elevation sort); ``upper`` is the
+    high-elevation band.
+    """
+    return {
+        "kind": "banded",
+        "type": lower["type"],
+        "pill_label": lower["pill_label"],
+        "lower": lower,
+        "upper": upper,
+    }
+
+
 def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
     """Build the day-windows variant matrix.
 
-    Five stacked variants:
+    Seven stacked variants:
 
-    * **All-day, level grid** — five synthetic ``all_day`` rows stepping
-      ``low → very_high`` so tile + label contrast is reviewable across
-      the whole EAWS scale on one screen. Not a realistic bulletin
+    * **All-day, level grid** — five synthetic ``all_day`` single groups
+      stepping ``low → very_high`` so tile + label contrast is reviewable
+      across the whole EAWS scale on one screen.  Not a realistic bulletin
       (real bulletins have at most two windows) — a comparison harness.
-    * **All-day with sublevel modifier** — one ``all_day`` row at
+    * **All-day with sublevel modifier** — one ``all_day`` single group at
       considerable with a ``−`` modifier (badge reads ``3−``).
     * **Cross-category later** — ``all_day`` low + ``later`` moderate,
       the most common two-row shape in the bulletin sample.
     * **Within-category later** — ``all_day`` considerable−  + ``later``
       considerable (badge differential shows the intra-band rise).
-    * **MF elevation split** — two ``all_day`` rows with distinct danger
-      levels and elevation captions, representing Météo-France style
-      "low below 2500 m / moderate above 2500 m" bulletins (SNOW-293).
+    * **Numeric-pivot pyramid** — one ``banded`` group with ``considerable``
+      below 2500 m and ``moderate`` above 2500 m, representing Météo-France /
+      ALBINA style "low below X m / moderate above X m" bulletins (SNOW-298).
+      Re-purposes the previous "MF elevation split" fixture.
+    * **Treeline-pivot pyramid** — one ``banded`` group using "below treeline"
+      and "above treeline" captions (ALBINA treeline-pivot style).
+    * **Considerable below / high above pyramid** — higher-severity banded
+      pair to exercise the orange → red segment colouring.
     """
     all_day_grid = [
-        _make_window("all_day", "low", "All day"),
-        _make_window("all_day", "moderate", "All day"),
-        _make_window("all_day", "considerable", "All day"),
-        _make_window("all_day", "high", "All day"),
-        _make_window("all_day", "very_high", "All day"),
+        _single_group(_make_window("all_day", "low", "All day")),
+        _single_group(_make_window("all_day", "moderate", "All day")),
+        _single_group(_make_window("all_day", "considerable", "All day")),
+        _single_group(_make_window("all_day", "high", "All day")),
+        _single_group(_make_window("all_day", "very_high", "All day")),
     ]
     all_day_sublevel = [
-        _make_window("all_day", "considerable", "All day", modifier="-"),
+        _single_group(_make_window("all_day", "considerable", "All day", modifier="-")),
     ]
     cross_category = [
-        _make_window("all_day", "low", "All day"),
-        _make_window("later", "moderate", "Later"),
+        _single_group(_make_window("all_day", "low", "All day")),
+        _single_group(_make_window("later", "moderate", "Later")),
     ]
     within_category = [
-        _make_window("all_day", "considerable", "All day", modifier="-"),
-        _make_window("later", "considerable", "Later"),
+        _single_group(_make_window("all_day", "considerable", "All day", modifier="-")),
+        _single_group(_make_window("later", "considerable", "Later")),
     ]
-    # Météo-France style: two all_day rows split by elevation band.
-    mf_elevation_split = [
-        _make_window("all_day", "low", "All day", caption="below 2500 m"),
-        _make_window("all_day", "moderate", "All day", caption="above 2500 m"),
+    # Numeric-pivot pyramid: considerable below 2500 m / moderate above 2500 m.
+    # Re-purposed from the previous "MF elevation split" fixture.
+    numeric_pivot_pyramid = [
+        _banded_group(
+            lower=_make_window(
+                "all_day", "considerable", "All day", caption="below 2500 m"
+            ),
+            upper=_make_window(
+                "all_day", "moderate", "All day", caption="above 2500 m"
+            ),
+        ),
+    ]
+    # Treeline-pivot pyramid: low below treeline / considerable above treeline.
+    treeline_pivot_pyramid = [
+        _banded_group(
+            lower=_make_window("all_day", "low", "All day", caption="below treeline"),
+            upper=_make_window(
+                "all_day", "considerable", "All day", caption="above treeline"
+            ),
+        ),
+    ]
+    # Higher-severity pair: considerable below / high above.
+    high_severity_pyramid = [
+        _banded_group(
+            lower=_make_window(
+                "all_day", "considerable", "All day", caption="below 2200 m"
+            ),
+            upper=_make_window("all_day", "high", "All day", caption="above 2200 m"),
+        ),
     ]
     return (
         {
@@ -310,8 +364,16 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
             "context": {"day_windows": within_category},
         },
         {
-            "caption": "MF elevation split · low below 2500 m / moderate above 2500 m",
-            "context": {"day_windows": mf_elevation_split},
+            "caption": "Numeric-pivot pyramid · considerable ↓2500 m / moderate above",
+            "context": {"day_windows": numeric_pivot_pyramid},
+        },
+        {
+            "caption": "Treeline pyramid · low below / considerable above treeline",
+            "context": {"day_windows": treeline_pivot_pyramid},
+        },
+        {
+            "caption": "High-severity pyramid · considerable below 2200 m / high above",
+            "context": {"day_windows": high_severity_pyramid},
         },
     )
 
@@ -1845,8 +1907,8 @@ def _build_period_transition_variants() -> tuple[dict[str, Any], ...]:
                 "period_transition_chip": slf_escalating_chip,
                 "period_transition": slf_escalating_transition,
                 "day_windows": [
-                    _dw("all_day", "moderate", "All day"),
-                    _dw("later", "considerable", "Later"),
+                    _single_group(_dw("all_day", "moderate", "All day")),
+                    _single_group(_dw("later", "considerable", "Later")),
                 ],
             },
         },
@@ -1865,8 +1927,8 @@ def _build_period_transition_variants() -> tuple[dict[str, Any], ...]:
                 "period_transition_chip": slf_deescalating_chip,
                 "period_transition": slf_deescalating_transition,
                 "day_windows": [
-                    _dw("all_day", "considerable", "All day"),
-                    _dw("later", "moderate", "Later"),
+                    _single_group(_dw("all_day", "considerable", "All day")),
+                    _single_group(_dw("later", "moderate", "Later")),
                 ],
             },
         },
@@ -1887,8 +1949,8 @@ def _build_period_transition_variants() -> tuple[dict[str, Any], ...]:
                 "period_transition_chip": None,
                 "period_transition": slf_flat_split_transition,
                 "day_windows": [
-                    _dw("all_day", "considerable", "All day"),
-                    _dw("later", "considerable", "Later"),
+                    _single_group(_dw("all_day", "considerable", "All day")),
+                    _single_group(_dw("later", "considerable", "Later")),
                 ],
             },
         },
@@ -1907,8 +1969,8 @@ def _build_period_transition_variants() -> tuple[dict[str, Any], ...]:
                 "period_transition_chip": euregio_chip,
                 "period_transition": euregio_transition,
                 "day_windows": [
-                    _dw("earlier", "low", "Earlier"),
-                    _dw("later", "moderate", "Later"),
+                    _single_group(_dw("earlier", "low", "Earlier")),
+                    _single_group(_dw("later", "moderate", "Later")),
                 ],
             },
         },
