@@ -1009,6 +1009,77 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   text-wrap: pretty;
 }
 
+/* —— Day-windows elevation pyramid — two-tone mountain silhouette ———
+   Rendered by _day_pyramid.html for banded periods (SNOW-298). Sits
+   inside the same .dw-panel card as .dw-row; .dp-row reuses the
+   .dw-row layout so spacing is visually identical.
+
+   .dp-seg.lv-*  — SVG polygon fill using EAWS danger-scale tokens
+   .dp-num.lv-*  — SVG text fill using EAWS foreground tokens
+   .dp-divide    — horizontal line marking the elevation split boundary
+   ————————————————————————————————————————— */
+
+.dp-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--color-border);
+}
+.dp-row:first-child { border-top: 0; }
+
+.dp-svg {
+  flex-shrink: 0;
+}
+
+/* Polygon fills — one per EAWS level */
+.dp-seg.lv-low          { fill: var(--color-eaws-low); }
+.dp-seg.lv-moderate     { fill: var(--color-eaws-moderate); }
+.dp-seg.lv-considerable { fill: var(--color-eaws-considerable); }
+.dp-seg.lv-high         { fill: var(--color-eaws-high); }
+.dp-seg.lv-very-high    { fill: var(--color-eaws-very-high); }
+
+/* Numeral fills — foreground colour on saturated EAWS tile background */
+.dp-num.lv-low          { fill: var(--color-eaws-low-fg);          font-size: 11px; font-weight: 700; }
+.dp-num.lv-moderate     { fill: var(--color-eaws-moderate-fg);     font-size: 11px; font-weight: 700; }
+.dp-num.lv-considerable { fill: var(--color-eaws-considerable-fg); font-size: 11px; font-weight: 700; }
+.dp-num.lv-high         { fill: var(--color-eaws-high-fg);         font-size: 11px; font-weight: 700; }
+.dp-num.lv-very-high    { fill: var(--color-eaws-very-high-fg);    font-size: 11px; font-weight: 700; }
+
+/* Dividing line between the two elevation bands */
+.dp-divide {
+  stroke: var(--color-card);
+  stroke-width: 1.5;
+}
+
+/* Caption column beside the pyramid */
+.dp-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dp-band {
+  display: flex;
+  flex-direction: column;
+}
+
+.dp-level {
+  font-size: 13px;
+  color: var(--color-text-1);
+  font-weight: 600;
+}
+
+.dp-caption {
+  font-size: 13px;
+  color: var(--color-text-3);
+  font-weight: 400;
+  text-wrap: pretty;
+}
+
+
 /* —— HTMX indicator —————————————————————————
    Any element with class="htmx-indicator" is hidden by default and
    revealed while its associated hx-request is in flight.  Mirrors the
