@@ -52,6 +52,7 @@ from django.views.decorators.vary import vary_on_headers
 from django_ratelimit.decorators import ratelimit
 
 from bulletins.models import Bulletin, BulletinGrouping, BulletinShare, RegionDayRating
+from bulletins.services.coverage import covered_region_ids
 from regions.models import (
     MajorRegion,
     MicroRegion,
@@ -72,6 +73,16 @@ COUNTRY_NAMES: dict[str, str] = {
     "FR": "France",
     "AT": "Austria",
     "IT": "Italy",
+}
+
+# ISO 3166-1 alpha-2 → avalanche provider label mapping. Used by the region
+# tooltip to identify the upstream data publisher for permanently-uncovered
+# regions. Météo-France retains its accent — it is a proper noun.
+_PROVIDER_BY_COUNTRY: dict[str, str] = {
+    "CH": "SLF",
+    "AT": "ALBINA",
+    "IT": "ALBINA",
+    "FR": "Météo-France",
 }
 
 # Valid values for the mandatory ?country= query param on GeoJSON endpoints.
@@ -334,6 +345,7 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
         )
 
     features: list[dict[str, Any]] = []
+    covered = covered_region_ids()
     qs = (
         MicroRegion.objects.filter(
             subregion__major__country=country_param,
@@ -366,6 +378,10 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
                     "slug": region.name_slug,
                     "country": sub.major.country,
                     "subregion_name": subregion_name,
+                    # SNOW-54: True when the pipeline has ever produced a rating
+                    # for this region; False for permanently-uncovered regions
+                    # (e.g. Swiss Lowlands / Jura, non-EUREGIO AT/IT areas).
+                    "covered": region.region_id in covered,
                 },
             }
         )
@@ -687,6 +703,10 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
         region.subregion.major.country, region.subregion.major.country
     )
 
+    # SNOW-54: resolve coverage and provider label for the tooltip branch.
+    covered = region.region_id in covered_region_ids()
+    provider_name = _PROVIDER_BY_COUNTRY.get(region.subregion.major.country, "")
+
     level = day_rating.max_rating if day_rating else "no_rating"
 
     return JsonResponse(
@@ -699,6 +719,8 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
                     "bulletin_url": bulletin_url,
                     "country_name": country_name,
                     "target_date": target_date,
+                    "covered": covered,
+                    "provider_name": provider_name,
                 },
                 request=request,
             ),

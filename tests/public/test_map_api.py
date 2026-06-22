@@ -537,18 +537,31 @@ def test_region_summary_unknown_region_returns_404() -> None:
 
 @pytest.mark.django_db
 def test_region_summary_query_count() -> None:
-    """The tooltip view issues at most 2 DB queries."""
+    """The tooltip view issues at most 2 DB queries when the coverage cache is warm.
+
+    SNOW-54: covered_region_ids() adds one query on a cold cache, so we
+    pre-warm it before the measured block to keep the assertion deterministic.
+    The warm-cache path issues zero additional queries.
+    """
+    from bulletins.services.coverage import covered_region_ids
+
     major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_native="Wallis")
     sub = SubRegionFactory.create(
         prefix="CH-41", major=major, name_native="Lower Valais"
     )
     MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115", subregion=sub)
+
+    # Pre-warm the coverage cache so the view's covered_region_ids() call is free.
+    cache.clear()
+    covered_region_ids()
+
     client = Client()
     with CaptureQueriesContext(connection) as ctx:
         response = client.get(reverse("api:region_summary", args=["ch-4115"]))
     assert response.status_code == 200
     # Queries: region + subregion + major join (1), RegionDayRating lookup (1).
     # The resorts prefetch was dropped in SNOW-174 when the resort list was removed.
+    # Coverage cache is pre-warmed, so covered_region_ids() adds 0 queries.
     assert len(ctx.captured_queries) <= 2
 
 
@@ -1195,18 +1208,32 @@ def test_region_summary_no_bulletin_shows_favicon_icon() -> None:
 
 @pytest.mark.django_db
 def test_region_summary_no_bulletin_shows_no_bulletin_text() -> None:
-    """When no RegionDayRating exists, the tooltip shows "No bulletin available" text."""
+    """A covered region with no rating on the queried date shows "No bulletin available" text.
+
+    SNOW-54: the "no bulletin" path requires the region to be covered (at least
+    one RegionDayRating exists for it).  A rating on a different date makes
+    the region covered; querying an unrated date then exercises the
+    "covered but no rating today" branch.
+    """
     major = MajorRegionFactory.create(prefix="FR-3", country="FR", name_en="Pyrenees")
     sub = SubRegionFactory.create(prefix="FR-3A", major=major, name_en="Pyrenees")
-    MicroRegionFactory.create(
+    region = MicroRegionFactory.create(
         region_id="FR-68",
         name="Haute-Tarentaise",
         slug="fr-68",
         subregion=sub,
     )
+    # Create a rating on a different date so the region is covered.
+    cache.clear()
+    RegionDayRatingFactory.create(
+        region=region,
+        date=dt.date(2026, 1, 10),
+        max_rating=RegionDayRating.Rating.LOW,
+    )
 
     client = Client()
     response = client.get(
+        # Query a date with no rating → "no bulletin available" branch.
         reverse("api:region_summary", args=["fr-68"]) + "?d=2026-01-15"
     )
     assert response.status_code == 200
@@ -1221,14 +1248,25 @@ def test_region_summary_no_bulletin_shows_no_bulletin_text() -> None:
 
 @pytest.mark.django_db
 def test_region_summary_no_bulletin_testid_present() -> None:
-    """The no-bulletin element carries the region-tooltip-no-bulletin test id."""
+    """A covered region with no rating on the queried date carries the no-bulletin test id.
+
+    SNOW-54: making the region covered (a rating exists on another date) ensures
+    the "no bulletin available" branch is taken, not the uncovered branch.
+    """
     major = MajorRegionFactory.create(prefix="FR-3", country="FR", name_en="Pyrenees")
     sub = SubRegionFactory.create(prefix="FR-3A", major=major, name_en="Pyrenees")
-    MicroRegionFactory.create(
+    region = MicroRegionFactory.create(
         region_id="FR-68",
         name="Haute-Tarentaise",
         slug="fr-68",
         subregion=sub,
+    )
+    # Make the region covered so the "no bulletin" path applies.
+    cache.clear()
+    RegionDayRatingFactory.create(
+        region=region,
+        date=dt.date(2026, 1, 10),
+        max_rating=RegionDayRating.Rating.LOW,
     )
 
     client = Client()
@@ -1533,3 +1571,112 @@ def test_groupings_query_count() -> None:
     assert response.status_code == 200
     # One select_related query; any more indicates an N+1 regression.
     assert len(ctx.captured_queries) <= 3
+
+
+# ---------------------------------------------------------------------------
+# SNOW-54 — coverage property on regions_geojson / region_summary
+# ---------------------------------------------------------------------------
+
+
+def _make_ch_region(
+    region_id: str = "CH-4115",
+) -> tuple[object, object]:
+    """Return (major, region) for a minimal CH micro-region."""
+    major = MajorRegionFactory.create(
+        prefix="CH-4",
+        country="CH",
+        name_native="Wallis",
+        name_en="Valais",
+    )
+    sub = SubRegionFactory.create(
+        prefix="CH-41",
+        major=major,
+        name_native="Bas-Valais",
+        name_en="Lower Valais",
+    )
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+        ],
+    }
+    region = MicroRegionFactory.create(
+        region_id=region_id,
+        name="Test Region",
+        slug=region_id.lower(),
+        boundary=boundary,
+        subregion=sub,
+    )
+    return major, region
+
+
+@pytest.mark.django_db
+def test_regions_geojson_covered_property_true_for_rated_region() -> None:
+    """SNOW-54: a feature for a region with a RegionDayRating has covered=True."""
+    cache.clear()
+    _, region = _make_ch_region("CH-4115")
+    RegionDayRatingFactory.create(
+        region=region,
+        date=dt.date(2026, 1, 15),
+        max_rating=RegionDayRating.Rating.LOW,
+    )
+
+    client = Client()
+    response = client.get(reverse("api:regions_geojson") + "?country=ch")
+    assert response.status_code == 200
+    by_id = {f["properties"]["id"]: f for f in response.json()["features"]}
+    assert by_id["CH-4115"]["properties"]["covered"] is True
+
+
+@pytest.mark.django_db
+def test_regions_geojson_covered_property_false_for_unrated_region() -> None:
+    """SNOW-54: a feature for a region with no RegionDayRating has covered=False."""
+    cache.clear()
+    _make_ch_region("CH-9311")  # no rating created
+
+    client = Client()
+    response = client.get(reverse("api:regions_geojson") + "?country=ch")
+    assert response.status_code == 200
+    by_id = {f["properties"]["id"]: f for f in response.json()["features"]}
+    assert by_id["CH-9311"]["properties"]["covered"] is False
+
+
+@pytest.mark.django_db
+def test_region_summary_uncovered_region_shows_gap_tooltip() -> None:
+    """SNOW-54: an uncovered region renders the provider-gap tooltip copy."""
+    cache.clear()
+    _, region = _make_ch_region("CH-9311")
+    # No RegionDayRating for CH-9311 → uncovered.
+
+    client = Client()
+    response = client.get(
+        reverse("api:region_summary", args=["ch-9311"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert 'data-testid="region-tooltip-uncovered"' in html
+    assert "SLF" in html
+    assert 'data-testid="region-tooltip-no-bulletin"' not in html
+
+
+@pytest.mark.django_db
+def test_region_summary_covered_no_rating_shows_no_bulletin_tooltip() -> None:
+    """SNOW-54: a covered region with no rating on the queried date shows 'no bulletin'."""
+    cache.clear()
+    _, region = _make_ch_region("CH-4115")
+    # Create a rating on a different date so the region is covered, but not today.
+    RegionDayRatingFactory.create(
+        region=region,
+        date=dt.date(2026, 1, 10),
+        max_rating=RegionDayRating.Rating.LOW,
+    )
+
+    client = Client()
+    response = client.get(
+        # Query a date with no rating.
+        reverse("api:region_summary", args=["ch-4115"]) + "?d=2026-01-15"
+    )
+    assert response.status_code == 200
+    html = response.json()["html"]
+    assert 'data-testid="region-tooltip-no-bulletin"' in html
+    assert 'data-testid="region-tooltip-uncovered"' not in html
