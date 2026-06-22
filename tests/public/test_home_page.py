@@ -133,7 +133,7 @@ class TestHomePageBasic:
 
 @pytest.mark.django_db
 class TestHomePageOffseason:
-    """Tests for the off-season note in the intro overlay."""
+    """Tests for the off-season note in the intro overlay and the persistent chip."""
 
     @freeze_time("2026-06-15")  # past the May 31 season end
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
@@ -143,6 +143,15 @@ class TestHomePageOffseason:
         response = client.get(reverse("public:home"))
         content = response.content.decode()
         assert "home-intro-offseason-ref" in content
+
+    @freeze_time("2026-06-15")  # past the May 31 season end
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    def test_persistent_chip_present_when_past_season_end(self) -> None:
+        """SNOW-343: persistent #map-offseason-note chip is present on / when off-season."""
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'id="map-offseason-note"' in content
 
     @freeze_time("2026-03-10")  # today is past data_end when no data exists after Feb
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
@@ -168,6 +177,22 @@ class TestHomePageOffseason:
         response = client.get(reverse("public:home"))
         content = response.content.decode()
         assert "home-intro-offseason-ref" not in content
+
+    @freeze_time("2026-03-10")  # within active season
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    def test_persistent_chip_absent_during_season(self) -> None:
+        """SNOW-343: persistent #map-offseason-note chip is absent on / when in-season."""
+        region = MicroRegionFactory.create(region_id="CH-5500")
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 3, 15),
+            source_bulletin=bulletin,
+        )
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'id="map-offseason-note"' not in content
 
 
 @pytest.mark.django_db
