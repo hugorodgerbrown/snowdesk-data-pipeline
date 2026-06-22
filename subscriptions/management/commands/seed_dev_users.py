@@ -22,6 +22,7 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from django.conf import settings
@@ -31,6 +32,8 @@ from django.utils import timezone
 
 from regions.models import MicroRegion
 from subscriptions.models import Subscriber, Subscription
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Dev-only credentials — documented in docs/worktrees.md
@@ -114,7 +117,19 @@ class Command(BaseCommand):
         # Subscription to CH-4115                                              #
         # ------------------------------------------------------------------ #
 
-        region = MicroRegion.objects.get(region_id=SUBSCRIBED_REGION_ID)
+        try:
+            region = MicroRegion.objects.get(region_id=SUBSCRIBED_REGION_ID)
+        except MicroRegion.DoesNotExist:
+            logger.error(
+                "MicroRegion %s not found — run "
+                "'uv run python manage.py loaddata test_data' first.",
+                SUBSCRIBED_REGION_ID,
+            )
+            raise CommandError(
+                f"MicroRegion {SUBSCRIBED_REGION_ID!r} does not exist. "
+                "Seed the database first: "
+                "uv run python manage.py loaddata test_data"
+            )
         _subscription, created_sub = Subscription.objects.get_or_create(
             subscriber=subscriber,
             region=region,

@@ -558,6 +558,23 @@ every other command here).
 
   Flags: `--email EMAIL` (required).
 
+- `seed_dev_users` — creates (or updates) two well-known local development
+  accounts in a fresh worktree database: a Django superuser
+  (`admin@snowdesk.dev`) for the `/admin/` interface, and an active
+  region-subscribed normal user (`dev@snowdesk.dev`) with a `Subscription`
+  to CH-4115 (Martigny-Verbier). Both accounts are set to the shared dev
+  password documented in `docs/worktrees.md`. **Writes by design** — this
+  command is the documented carve-out from the "never alter data by default"
+  rule; it exists solely to populate a development database and is gated to
+  `DEBUG=True` so it cannot be invoked in production. Idempotent: safe to
+  re-run. See `docs/worktrees.md` for credentials.
+
+  ```bash
+  uv run python manage.py seed_dev_users
+  ```
+
+  No flags (runs with no arguments; `--verbosity` respected for progress output).
+
 - `mint_vapid_keypair` — generates a VAPID P-256 keypair for Web Push
   and writes the raw private scalar (single-line URL-safe-base64) to the
   secret file at `VAPID_PRIVATE_KEY_PATH`. Dry-run by default; pass
