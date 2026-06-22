@@ -4,15 +4,18 @@
 #
 # Worktrees share git history with the main repo but nothing else: no .env,
 # no .venv, no db.sqlite3, no compiled CSS. Without this script every new
-# worktree means manual setup — copy .env, set up the venv, migrate the DB,
-# load fixtures, run rebuild_render_models — before Django will boot.
+# worktree means manual setup before Django will boot.
 #
 # This script picks the right strategy per asset:
 #   - .env, .venv  → symlink to the main repo (slow-changing, identical
 #                    across worktrees; one source of truth).
-#   - db.sqlite3   → copy from the main repo (mutable per-worktree state;
-#                    SQLite + concurrent writers from multiple Django
-#                    servers would clash, so don't share).
+#   - db.sqlite3   → seeded from committed fixtures + dev users (guarantees
+#                    every worktree has the same data as CI; avoids drift that
+#                    breaks the SNOW-13 query-count baseline). Recipe:
+#                      1. migrate --noinput
+#                      2. loaddata test_data
+#                      3. seed_dev_users
+#                    See docs/worktrees.md for credentials and reseed steps.
 #
 # Idempotent: skips assets that already exist locally. Wired up via
 # the PostToolUse:EnterWorktree hook in .claude/settings.json so it
@@ -21,6 +24,10 @@
 # Refuses to run from the main worktree itself.
 
 set -euo pipefail
+
+# Print a loud banner on any unhandled error so failures are visible even
+# when the caller wraps this script with ``|| true``.
+trap 'echo "init-worktree: FAILED at line $LINENO — worktree may be only partly initialised" >&2' ERR
 
 # Resolve repo root for whichever worktree the caller is in. ``git
 # rev-parse --show-toplevel`` works from a worktree and returns its own
@@ -56,23 +63,21 @@ link_if_missing() {
     actions=$((actions + 1))
 }
 
-copy_if_missing() {
-    local name=$1
-    if [ -e "$name" ]; then
+seed_db_if_missing() {
+    if [ -e "db.sqlite3" ]; then
         return
     fi
-    if [ ! -e "$main_repo/$name" ]; then
-        echo "init-worktree: $main_repo/$name does not exist, skipping" >&2
-        return
-    fi
-    cp "$main_repo/$name" "$name"
-    echo "init-worktree: copied $name from $main_repo/$name"
+    echo "init-worktree: seeding db.sqlite3 from fixtures (migrate + loaddata + seed_dev_users)"
+    uv run python manage.py migrate --noinput
+    uv run python manage.py loaddata test_data
+    uv run python manage.py seed_dev_users
+    echo "init-worktree: db.sqlite3 seeded"
     actions=$((actions + 1))
 }
 
 link_if_missing .env
 link_if_missing .venv
-copy_if_missing db.sqlite3
+seed_db_if_missing
 
 # Silent on a fully-set-up worktree; only announces when the worktree
 # actually needed bootstrapping.
