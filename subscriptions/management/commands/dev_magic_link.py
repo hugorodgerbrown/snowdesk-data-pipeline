@@ -15,6 +15,7 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 from argparse import ArgumentParser
 from typing import Any
 
@@ -24,6 +25,8 @@ from django.utils import timezone
 
 from subscriptions.models import Subscriber
 from subscriptions.services.token import SALT_ACCOUNT_ACCESS, generate_token
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
