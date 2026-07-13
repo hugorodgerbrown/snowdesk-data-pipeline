@@ -1134,8 +1134,14 @@ def how_to_read_bulletin(request: HttpRequest) -> HttpResponse:
 # than in settings so the picker UI stays close to the view that renders it.
 _BASEMAP_LABELS: dict[str, Promise] = {
     "openfreemap_liberty": _("Standard"),
-    "swisstopo_winter": _("Winter"),
-    "swisstopo_light": _("Light"),
+    # National mapping-agency basemaps. Each covers only its own country
+    # (blank elsewhere), so labels carry the ISO country suffix to set the
+    # expectation. ``swisstopo_light`` stays in BASEMAP_STYLES as a BASEMAP=
+    # env override but is intentionally omitted here so it no longer appears
+    # in the picker.
+    "swisstopo_winter": _("Swisstopo (CH)"),
+    "ign_plan": _("IGN (FR)"),
+    "basemap_at": _("basemap.at (AT)"),
 }
 
 

@@ -39,6 +39,32 @@ let BOOT_DATE_KEY = null;
 // this file owns the button wiring; selectFeature reads this flag.
 let AUTOZOOM = false;
 
+// basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
+// uses a relative ``tile/{z}/{y}/{x}.pbf`` path that MapLibre cannot resolve
+// (it throws "Failed to construct 'Request': Failed to parse URL from tile/…"),
+// so nothing paints. Such styles must be fetched and their sources rewritten to
+// absolute tile URLs before ``setStyle`` sees them. IGN and swisstopo publish
+// MapLibre-native styles that load straight from their URL, so this only kicks
+// in for the keys listed here.
+const ESRI_BASEMAP_KEYS = new Set(['basemap_at']);
+
+// Resolve a basemap (key, url) to a value ``setStyle``/the Map constructor
+// accepts. Native basemaps pass through as the URL string. ESRI basemaps are
+// fetched and each vector source's relative ``url`` is swapped for an absolute
+// ``tiles`` template following the ArcGIS VectorTileServer convention
+// (``<service>/tile/{z}/{y}/{x}.pbf``). Returns a Promise in the ESRI case.
+async function resolveBasemapStyle(key, url) {
+  if (!ESRI_BASEMAP_KEYS.has(key)) return url;
+  const style = await (await fetch(url)).json();
+  for (const src of Object.values(style.sources || {})) {
+    if (src && src.type === 'vector' && src.url && !src.tiles) {
+      src.tiles = [src.url.replace(/\/?$/, '/') + 'tile/{z}/{y}/{x}.pbf'];
+      delete src.url;
+    }
+  }
+  return style;
+}
+
 // True while timelapse playback is running. Set directly by timelapseInit()'s
 // start() and stop() functions; after each mutation those functions also
 // dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
@@ -339,7 +365,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // full-bleed (previously the frame was a fixed 390px phone mock).
   const map = new maplibregl.Map({
     container: 'map',
-    style: initialBasemapUrl,
+    // ESRI basemaps (see resolveBasemapStyle) can't be handed to the
+    // constructor synchronously — boot them with an empty style and swap
+    // the fetched+rewritten style in once it resolves (below). Native
+    // basemaps load directly from their URL.
+    style: ESRI_BASEMAP_KEYS.has(initialBasemapKey)
+      ? { version: 8, sources: {}, layers: [] }
+      : initialBasemapUrl,
     bounds: [[5.9, 45.8], [10.5, 47.9]],
     fitBoundsOptions: { padding: 20 },
     minZoom: 4,
@@ -358,6 +390,13 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
+
+  // Swap in the resolved ESRI style once fetched (no-op for native
+  // basemaps, which already loaded from their URL in the constructor).
+  if (ESRI_BASEMAP_KEYS.has(initialBasemapKey)) {
+    resolveBasemapStyle(initialBasemapKey, initialBasemapUrl)
+      .then((style) => map.setStyle(style));
+  }
 
   // SNOW-230: render tile attribution inside the unified map-info panel
   // rather than as a separate MapLibre corner control. We walk the active
@@ -3038,7 +3077,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
         );
       }
       setMenuOpen(false);
-      MAP.setStyle(url);
+      resolveBasemapStyle(key, url).then((style) => MAP.setStyle(style));
     });
   }
 })();
