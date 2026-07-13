@@ -159,9 +159,12 @@ def test_map_page_renders_basemap_picker() -> None:
     content = response.content.decode()
     assert 'id="basemap-pill"' in content
     assert 'id="basemap-menu"' in content
-    for key in ("openfreemap_liberty", "swisstopo_winter", "swisstopo_light"):
+    for key in ("openfreemap_liberty", "swisstopo_winter", "ign_plan", "basemap_at"):
         assert f'data-basemap-key="{key}"' in content
         assert f'data-basemap-url="{settings.BASEMAP_STYLES[key]}"' in content
+    # ``swisstopo_light`` stays in BASEMAP_STYLES as a BASEMAP= env override
+    # but is intentionally excluded from the picker (SNOW-367).
+    assert 'data-basemap-key="swisstopo_light"' not in content
 
 
 @pytest.mark.django_db
@@ -177,7 +180,9 @@ def test_map_view_passes_basemap_catalogue() -> None:
     assert "basemaps" in ctx
     assert "default_basemap_key" in ctx
     keys = [bm["key"] for bm in ctx["basemaps"]]
-    assert keys == ["openfreemap_liberty", "swisstopo_winter", "swisstopo_light"]
+    assert keys == ["openfreemap_liberty", "swisstopo_winter", "ign_plan", "basemap_at"]
+    labels = [str(bm["label"]) for bm in ctx["basemaps"]]
+    assert labels == ["Standard", "Swisstopo (CH)", "IGN (FR)", "basemap.at (AT)"]
     assert all({"key", "label", "url"} <= set(bm) for bm in ctx["basemaps"])
     assert ctx["default_basemap_key"] == settings.BASEMAP
 

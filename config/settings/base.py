@@ -493,6 +493,12 @@ CSP_DEFAULTS = {
     "connect-src": [
         "'self'",
         "https://tiles.openfreemap.org",
+        # swisstopo winter/light styles + tiles.
+        "https://vectortiles.geo.admin.ch",
+        # Regional national basemaps: IGN Plan IGN (France) and
+        # basemap.at (Austria) — style JSON, vector tiles, sprites, glyphs.
+        "https://data.geopf.fr",
+        "https://mapsneu.wien.gv.at",
     ],
     "manifest-src": ["'self'"],
     "report-uri": ["{report_uri}"],
@@ -623,6 +629,19 @@ BASEMAP_STYLES = {
         "https://vectortiles.geo.admin.ch/styles/"
         "ch.swisstopo.lightbasemap.vt/style.json"
     ),
+    # Regional national basemaps — a per-country equivalent to the
+    # swisstopo styles (which cover CH only). Both are self-contained
+    # MapLibre v8 style JSONs (absolute sprite/glyph URLs), free and
+    # token-less. Coverage is national — outside their country they render
+    # blank, so they are a comparison aid, not a replacement for the global
+    # Standard style. IGN "Plan IGN" covers France; basemap.at covers Austria.
+    # Italy (South Tyrol / Trentino) publishes only raster WMTS, which needs a
+    # hand-built style object rather than a URL, so it is not included here.
+    "ign_plan": (
+        "https://data.geopf.fr/annexes/ressources/vectorTiles/styles/"
+        "PLAN.IGN/standard.json"
+    ),
+    "basemap_at": "https://mapsneu.wien.gv.at/basemapvectorneu/root.json",
 }
 
 BASEMAP = config("BASEMAP", default="openfreemap_liberty")
