@@ -1,4 +1,4 @@
-"""Tests for core.middleware — QueryCountMiddleware and SecurityHeadersMiddleware."""
+"""Tests for core.middleware — Query, Security, and AppVersion header middleware."""
 
 from __future__ import annotations
 
@@ -100,3 +100,49 @@ def test_view_override_takes_precedence_over_middleware_default() -> None:
     # Must be no-referrer, not the middleware default.
     assert response["Referrer-Policy"] == "no-referrer"
     assert response["Referrer-Policy"] != "strict-origin-when-cross-origin"
+
+
+# ---------------------------------------------------------------------------
+# AppVersionHeaderMiddleware (SNOW-369, spec §5.3 / §12.2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@override_settings(
+    APP_VERSION="2026.07.15.testabc", APP_MIN_VERSION="2026.07.01.baseln"
+)
+def test_app_version_headers_present_on_page_response() -> None:
+    """Every response carries X-App-Version and X-App-Min-Version.
+
+    The PWA client parses these on every response, not just on
+    ``/api/version`` polls — see spec §5.3.
+    """
+    response = Client().get("/")
+    assert response["X-App-Version"] == "2026.07.15.testabc"
+    assert response["X-App-Min-Version"] == "2026.07.01.baseln"
+
+
+@pytest.mark.django_db
+@override_settings(
+    APP_VERSION="2026.07.15.testabc", APP_MIN_VERSION="2026.07.01.baseln"
+)
+def test_app_version_headers_present_on_api_response() -> None:
+    """Non-page (JSON API) responses also carry the version headers."""
+    response = Client().get("/api/regions.geojson?country=ch")
+    assert response.status_code == 200
+    assert response["X-App-Version"] == "2026.07.15.testabc"
+    assert response["X-App-Min-Version"] == "2026.07.01.baseln"
+
+
+@pytest.mark.django_db
+@override_settings(APP_MIN_VERSION="")
+def test_app_min_version_empty_string_is_still_sent() -> None:
+    """Empty ``APP_MIN_VERSION`` still emits the header — client treats "" as no min.
+
+    Guarding against a client that would confuse an empty-string min
+    ("no minimum enforced") with a missing header ("older server that
+    doesn't know about this contract"). The middleware always stamps.
+    """
+    response = Client().get("/")
+    assert "X-App-Min-Version" in response
+    assert response["X-App-Min-Version"] == ""

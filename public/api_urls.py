@@ -14,6 +14,11 @@ from . import api
 app_name = "api"
 
 urlpatterns = [
+    # PWA shell contract — server-authoritative version + kill-switch state
+    # consumed by the client on cold start / every 15 min while active
+    # (spec §5.2 / §5.10 / SNOW-369 / SNOW-372).
+    path("version", api.version, name="version"),
+    path("sw-config", api.sw_config, name="sw_config"),
     # Share-create endpoint (SNOW-217). POST only; returns a tokenised short URL.
     path("bulletins/share/", api.share_create, name="share_create"),
     # SNOW-239: unified ratings endpoint. Replaces today-summaries + season-ratings.
