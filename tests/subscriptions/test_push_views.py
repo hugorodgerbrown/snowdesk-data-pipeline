@@ -151,6 +151,36 @@ class TestPushRegister:
         assert response.status_code == 400
         assert response.json()["ok"] is False
 
+    def test_invalid_json_body_treated_as_missing_fields(
+        self, staff_client: Client
+    ) -> None:
+        """A body that is not valid JSON is treated as an empty payload → 400.
+
+        Guards `_parse_json`'s ``except (ValueError, UnicodeDecodeError)`` branch:
+        ValueError covers ``json.loads`` on malformed JSON, UnicodeDecodeError
+        covers a body that isn't UTF-8. Both cases must not 500 — they degrade
+        to the "missing fields" 400 response.
+        """
+        response = staff_client.post(
+            _REGISTER_URL,
+            data=b"not-json-at-all-{",
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        assert response.json()["ok"] is False
+
+    def test_non_utf8_body_treated_as_missing_fields(
+        self, staff_client: Client
+    ) -> None:
+        """A body that isn't UTF-8 falls through the UnicodeDecodeError branch to 400."""
+        response = staff_client.post(
+            _REGISTER_URL,
+            data=b"\xff\xfe\xfd",
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        assert response.json()["ok"] is False
+
     def test_duplicate_endpoint_upserts_not_duplicates(
         self, staff_client: Client
     ) -> None:
