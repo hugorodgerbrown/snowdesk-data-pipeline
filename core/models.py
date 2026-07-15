@@ -5,20 +5,30 @@ Holds ``BaseModel`` so concrete-model apps (``regions``, ``bulletins``,
 ``subscriptions``, …) share a single source of truth for the standard
 fields without depending on each other.
 
-Also provides ``RequestLog`` — a concrete model that captures request
-context (IP, geo, locale, UA, referer, session) at explicit inflection
-points (sign-up, sign-in, subscribe, share-click). Other domain models
-attach to it via FK so historical geo/language data is available for
-all downstream analytical work.
+Also provides:
+
+* ``RequestLog`` — a concrete model that captures request context
+  (IP, geo, locale, UA, referer, session) at explicit inflection
+  points (sign-up, sign-in, subscribe, share-click). Other domain
+  models attach to it via FK so historical geo/language data is
+  available for all downstream analytical work.
+* ``IdempotencyRecord`` — cache table backing
+  ``core.idempotency.IdempotencyMiddleware`` (SNOW-371). One row per
+  ``Idempotency-Key`` seen on a state-changing request, storing the
+  original response so a replay within the 24h retention window
+  returns the same result without re-invoking the view.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from django.db import models
+from django.http import HttpResponse
+from django.utils import timezone
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -301,3 +311,177 @@ class RequestLog(BaseModel):
                 "longitude",
             ]
         )
+
+
+# ---------------------------------------------------------------------------
+# IdempotencyRecord (SNOW-371 — spec §5.5 / §12.3)
+# ---------------------------------------------------------------------------
+
+
+class IdempotencyRecordQuerySet(models.QuerySet["IdempotencyRecord"]):
+    """Custom queryset for IdempotencyRecord."""
+
+    def live(self) -> "IdempotencyRecordQuerySet":
+        """Return only records whose retention window has not expired."""
+        return self.filter(expires_at__gt=timezone.now())
+
+
+class IdempotencyRecordManager(models.Manager["IdempotencyRecord"]):
+    """Manager for IdempotencyRecord with the ``record()`` factory."""
+
+    def get_queryset(self) -> IdempotencyRecordQuerySet:
+        """Return the custom queryset."""
+        return IdempotencyRecordQuerySet(self.model, using=self._db)
+
+    def live(self) -> IdempotencyRecordQuerySet:
+        """Shortcut for ``get_queryset().live()``."""
+        return self.get_queryset().live()
+
+    def get_live(self, key: str) -> "IdempotencyRecord | None":
+        """Return the unexpired record for ``key`` or None if missing.
+
+        A single indexed lookup — ``key`` is unique so ``get()`` is safe.
+        Callers use the return value to short-circuit and replay the
+        original response.
+        """
+        try:
+            return self.live().get(key=key)
+        except self.model.DoesNotExist:
+            return None
+
+    def record(
+        self,
+        *,
+        key: str,
+        method: str,
+        path: str,
+        response: HttpResponse,
+        ttl: timedelta,
+    ) -> "IdempotencyRecord":
+        """Persist a fresh record capturing the completed response.
+
+        Args:
+            key: The Idempotency-Key header value from the request.
+            method: HTTP method (POST/PATCH/PUT/DELETE).
+            path: Request path — stored for diagnostic value only, never
+                used in cache lookup.
+            response: The completed response to cache. Non-streaming
+                only; the middleware filters streaming responses out
+                upstream.
+            ttl: Retention window. The row is queryable via ``live()``
+                until ``created_at + ttl`` passes.
+
+        Returns:
+            The newly created row.
+
+        """
+        body: bytes = bytes(response.content)
+        content_type: str = str(response.get("Content-Type", ""))
+        return self.create(
+            key=key,
+            method=method,
+            path=path[:2048],
+            response_status=response.status_code,
+            response_body=body,
+            response_content_type=content_type[:255],
+            expires_at=timezone.now() + ttl,
+        )
+
+
+class IdempotencyRecord(BaseModel):
+    """One cached response per ``Idempotency-Key`` value.
+
+    Populated by ``core.idempotency.IdempotencyMiddleware`` when a
+    state-changing request completes with a non-5xx response. A replay
+    of the same key within the retention window is served verbatim from
+    this row without re-invoking the view — so the PWA mutation queue
+    can retry after a connectivity blip without duplicating side effects.
+
+    Rows are queryable via ``objects.live()``; expired rows are
+    intentionally left in place for now — a purge job is a follow-up.
+    """
+
+    key = models.CharField(
+        max_length=128,
+        unique=True,
+        db_index=True,
+        help_text=(
+            "The client-supplied Idempotency-Key header value. Opaque to "
+            "the server; typically a uuid4. Unique — a replay hits the "
+            "same row."
+        ),
+    )
+    method = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        help_text="HTTP method of the original request (POST/PATCH/PUT/DELETE).",
+    )
+    path = models.CharField(
+        max_length=2048,
+        blank=True,
+        default="",
+        help_text="Request path of the original request, for diagnostic use.",
+    )
+    response_status = models.PositiveSmallIntegerField(
+        help_text="HTTP status code of the cached response.",
+    )
+    response_body = models.BinaryField(
+        default=b"",
+        help_text="Raw response body bytes, replayed verbatim on cache hit.",
+    )
+    response_content_type = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Content-Type header of the cached response.",
+    )
+    expires_at = models.DateTimeField(
+        db_index=True,
+        help_text=(
+            "When the cached response stops being served. After this "
+            "timestamp a replay with the same key re-executes the view."
+        ),
+    )
+
+    objects = IdempotencyRecordManager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["expires_at"]),
+        ]
+
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this record."""
+        redacted = self.key[:8] + "…" if len(self.key) > 8 else self.key
+        return f"{self.method} {self.path} key={redacted} status={self.response_status}"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+    def is_live(self) -> bool:
+        """Return True when the record has not yet expired."""
+        return self.expires_at > timezone.now()
+
+    def build_response(self) -> HttpResponse:
+        """Return a fresh HttpResponse reconstructed from the cached row.
+
+        The response carries the original status, Content-Type, and body.
+        Other headers (Set-Cookie, cache headers, HX-Redirect…) are NOT
+        replayed — those are typically session-scoped or one-shot and
+        replaying them can produce surprises. A cached POST that logged
+        the user in the first time will not re-log them in on a replay.
+        The client's mutation queue reconciles state via a subsequent
+        GET, so this is the safer default.
+        """
+        body: bytes = bytes(self.response_body)
+        response = HttpResponse(
+            content=body,
+            status=int(self.response_status),
+            content_type=self.response_content_type or None,
+        )
+        return response
