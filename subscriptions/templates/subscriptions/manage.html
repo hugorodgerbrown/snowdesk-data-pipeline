@@ -232,6 +232,31 @@ registered platform passkeys with delete buttons. A destructive
                 </div>
 
                 {% comment %}
+                    SNOW-378: Reset local data escape hatch.
+                    Discoverable, not hidden. Wipes cached bulletins,
+                    the SW, cache storage, IndexedDB, and web storage;
+                    the server-side subscription is untouched. Copy
+                    lives here in the template so the visible label +
+                    helper line can be translated; the confirmation
+                    dialog message lives in pwa_reset.js.
+                {% endcomment %}
+                <div class="border-t border-border pt-8 flex flex-col gap-2">
+                    <button
+                        type="button"
+                        data-pwa-reset-trigger
+                        class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors self-start"
+                    >
+                        {% trans "Reset local data on this device" %}
+                    </button>
+                    <p class="text-xs text-text-3">
+                        {% blocktrans trimmed %}
+                            Clears cached bulletins, offline data, and saved preferences on this device. Your
+                            subscription is not affected.
+                        {% endblocktrans %}
+                    </p>
+                </div>
+
+                {% comment %}
                     Destructive account deletion — visually separated,
                     small, muted.  hx-confirm stays here: deleting the
                     whole account is irreversible.
@@ -251,6 +276,8 @@ registered platform passkeys with delete buttons. A destructive
             {% comment %}
                 Passkey + HTMX error handling scripts.
             {% endcomment %}
+            {# SNOW-378: reset-local-data escape hatch — wires the [data-pwa-reset-trigger] button above. #}
+            <script src="{% static 'js/pwa_reset.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
             <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
             <script nonce="{{ request.csp_nonce }}">
                 (function () {
