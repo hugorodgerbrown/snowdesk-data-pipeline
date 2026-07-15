@@ -39,6 +39,7 @@ from public.views import (
     serve_manifest,
     serve_robots,
     serve_sw,
+    serve_sw_kill,
 )
 
 urlpatterns = [
@@ -47,6 +48,10 @@ urlpatterns = [
     path("api/", include("public.api_urls")),
     path("csp/", include("csp.urls")),
     path("sw.js", serve_sw, name="service_worker"),
+    # Kill-switch SW (SNOW-373, spec §6.3 Mechanism B). Always present so
+    # ops can point ``SW_URL=/sw-kill.js`` in Render env when the real SW
+    # needs evicting cohort-wide without a code deploy.
+    path("sw-kill.js", serve_sw_kill, name="service_worker_kill"),
     path("manifest.webmanifest", serve_manifest, name="web_manifest"),
     path("robots.txt", serve_robots, name="robots"),
     path("llms.txt", serve_llms_txt, name="llms_txt"),

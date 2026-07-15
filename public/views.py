@@ -1400,6 +1400,38 @@ def _get_observation_has_user_located(
     return FieldObservation.objects.user_located_exists_for_region_day(region, day)
 
 
+def _serve_sw_file(static_relative_path: str) -> HttpResponse:
+    """Read a service-worker script off disk and wrap it in SW-required headers.
+
+    Shared helper for ``serve_sw`` (the real PWA shell SW at ``/sw.js``)
+    and ``serve_sw_kill`` (the kill-switch SW at ``/sw-kill.js``, SNOW-373).
+    Both need identical response headers — the only difference is which
+    file they read.
+
+    Args:
+        static_relative_path: Path relative to the ``static/`` root, e.g.
+            ``"js/sw.js"`` or ``"js/sw-kill.js"``.
+
+    Returns:
+        An ``HttpResponse`` with the SW body, ``Service-Worker-Allowed: /``,
+        and ``Cache-Control: no-cache``.
+
+    Raises:
+        Http404: If the requested file isn't found by the staticfiles
+            finders.
+
+    """
+    path = finders.find(static_relative_path)
+    if path is None:
+        raise Http404("Service worker script not found.")
+    with open(path, encoding="utf-8") as fh:
+        content = fh.read()
+    response = HttpResponse(content, content_type="application/javascript")
+    response["Service-Worker-Allowed"] = "/"
+    response["Cache-Control"] = "no-cache"
+    return response
+
+
 def serve_sw(request: HttpRequest) -> HttpResponse:
     """
     Serve the service worker script from the root URL path (``/sw.js``).
@@ -1421,15 +1453,36 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
         Http404: If ``js/sw.js`` is not found by staticfiles finders.
 
     """
-    path = finders.find("js/sw.js")
-    if path is None:
-        raise Http404("Service worker script not found.")
-    with open(path, encoding="utf-8") as fh:
-        content = fh.read()
-    response = HttpResponse(content, content_type="application/javascript")
-    response["Service-Worker-Allowed"] = "/"
-    response["Cache-Control"] = "no-cache"
-    return response
+    return _serve_sw_file("js/sw.js")
+
+
+def serve_sw_kill(request: HttpRequest) -> HttpResponse:
+    """
+    Serve the kill-switch service worker at ``/sw-kill.js`` (SNOW-373).
+
+    Mechanism B of the two-mechanism kill switch (spec §6.3, §6.4). Ops
+    activates it by pointing ``SW_URL=/sw-kill.js`` in Render env — the
+    ``sw_register.js`` config gate then registers this file instead of
+    the real ``/sw.js``, and on activate it wipes caches + IndexedDB and
+    unregisters itself. See ``static/js/sw-kill.js`` for the full
+    behaviour.
+
+    Same header contract as ``serve_sw`` — root scope, no-cache — because
+    once a client is on this SW it must revalidate on every visit so a
+    subsequent config flip back to the real ``/sw.js`` picks up promptly.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        An ``HttpResponse`` with the kill-switch SW script body and the
+        required headers.
+
+    Raises:
+        Http404: If ``js/sw-kill.js`` is not found by staticfiles finders.
+
+    """
+    return _serve_sw_file("js/sw-kill.js")
 
 
 def serve_manifest(request: HttpRequest) -> HttpResponse:
