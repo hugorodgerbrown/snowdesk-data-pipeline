@@ -263,7 +263,12 @@ def test_map_page_no_offline_toggle_or_precache_url() -> None:
     content = response.content.decode()
     assert 'id="offline-toggle"' not in content
     assert "data-offline-manifest-url" not in content
-    assert "offline.js" not in content
+    # The SNOW-9 opt-in was ``static/js/offline.js`` — a bare filename with
+    # no prefix. The assertion is anchored on that closing quote so the
+    # newer PWA scripts (``pwa_offline.js``, SNOW-377) whose names happen
+    # to end with ``offline.js`` do not falsely trip it.
+    assert '/offline.js"' not in content
+    assert "'offline.js'" not in content
 
 
 @pytest.mark.django_db
