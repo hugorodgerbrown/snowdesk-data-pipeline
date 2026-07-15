@@ -8,7 +8,7 @@ read from the environment via python-decouple.
 """
 
 import logging
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from decouple import config
@@ -40,6 +40,40 @@ RELEASE_VERSION = config(
     "RELEASE_VERSION",
     default=config("RENDER_GIT_COMMIT", default="dev"),
 )
+
+# ---------------------------------------------------------------------------
+# PWA version + kill-switch contract (SNOW-369, SNOW-372)
+# ---------------------------------------------------------------------------
+# Server-authoritative version + kill-switch state consumed by the PWA:
+#
+#   ``APP_VERSION``     — current build the server is serving. Reuses
+#                         ``RELEASE_VERSION`` so an existing deploy pipeline
+#                         only has to set one env var.
+#   ``APP_MIN_VERSION`` — minimum client build the server will accept.
+#                         Any client below this must force-update. Empty
+#                         string disables the check (default), which is
+#                         the correct behaviour until we have a client
+#                         population to gate against.
+#   ``APP_RELEASED_AT`` — ISO-8601 timestamp of when the current build was
+#                         released. Defaults to process boot time on Render
+#                         (matching deploy time within seconds); an explicit
+#                         env var can override for deterministic tests.
+#   ``SW_URL``          — path the client registers as its service worker.
+#                         Flipping to ``/sw-kill.js`` swaps every client
+#                         onto the kill-switch SW without a deploy
+#                         (spec §6.4 Mechanism A escalation).
+#   ``SW_KILL``         — when true, ``/api/sw-config`` returns kill=true
+#                         and the client unregisters its SW without
+#                         registering a new one.
+
+APP_VERSION: str = RELEASE_VERSION
+APP_MIN_VERSION: str = config("APP_MIN_VERSION", default="")
+APP_RELEASED_AT: str = config(
+    "APP_RELEASED_AT",
+    default=datetime.now(UTC).isoformat(timespec="seconds"),
+)
+SW_URL: str = config("SW_URL", default="/sw.js")
+SW_KILL: bool = config("SW_KILL", default=False, cast=bool)
 
 # ---------------------------------------------------------------------------
 # Application definition
@@ -104,6 +138,10 @@ MIDDLEWARE = [
     # Per-view overrides (e.g. no-referrer on token-bearing views) are
     # applied by the view itself before this middleware runs.
     "core.middleware.SecurityHeadersMiddleware",
+    # Stamps X-App-Version and X-App-Min-Version on every response so the
+    # PWA client can detect a forced-update state on any response, not just
+    # a poll of /api/version (SNOW-369, spec §5.3).
+    "core.middleware.AppVersionHeaderMiddleware",
     # django-csp-plus. NonceMiddleware populates request.csp_nonce (used by
     # inline <script nonce="…"> tags in templates); HeaderMiddleware emits
     # the Content-Security-Policy(-Report-Only) header. The nonce middleware
