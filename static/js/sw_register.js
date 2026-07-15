@@ -6,6 +6,29 @@
  * install prompts, which only appear after the page is served by an
  * SW with a manifest carrying valid icons.
  *
+ * Kill-switch config gate (SNOW-373, spec §6.2 Mechanism A)
+ * ---------------------------------------------------------
+ * Before registering any SW we fetch ``/api/sw-config`` (SNOW-372) —
+ * ``cache: 'no-store'`` so ops sees the live value. Two possible
+ * outcomes drive the branch:
+ *
+ *   - ``{kill: true}``  → unregister every SW on this origin and stop.
+ *     The next navigation goes straight to the network. Nothing on the
+ *     origin is served through a SW until ops flips ``kill`` back.
+ *
+ *   - ``{kill: false, sw_url: <path>}`` → register the SW URL the
+ *     config returned. Defaults to ``/sw.js``; ops can flip it to
+ *     ``/sw-kill.js`` (Mechanism B, ``static/js/sw-kill.js``) to swap
+ *     every installed client onto the wipe-and-unregister worker
+ *     without a code deploy.
+ *
+ * If ``/api/sw-config`` is unreachable (server down, network dropped),
+ * fall back to ``{sw_url: '/sw.js', kill: false}`` — the failure mode
+ * of the config endpoint must never block SW registration on a working
+ * server. Non-reachability is the state the endpoint would report
+ * before the SNOW-372 deploy, so this also handles the transition
+ * gracefully.
+ *
  * Update flow
  * -----------
  * The contract this implements, end-user-facing: *if there is an
@@ -172,39 +195,76 @@
     });
   }
 
-  navigator.serviceWorker
-    .register('/sw.js', { scope: '/', updateViaCache: 'none' })
-    .then((registration) => {
-      // Three entry points to "an update is ready":
-      //   1. ``waiting`` is non-null at register-time — a new worker has
-      //      already installed and is parked waiting (the common case
-      //      now that we don't auto-skipWaiting).
-      //   2. ``installing`` is non-null at register-time — a SW update
-      //      check started before our register() resolved.
-      //   3. ``updatefound`` fires later — the common case during a
-      //      normal session where the SW changes on the next deploy.
-      if (registration.waiting && navigator.serviceWorker.controller) {
-        showUpdateBanner(registration.waiting);
-      }
-      if (registration.installing) {
-        watchForInstall(registration.installing);
-      }
-      registration.addEventListener('updatefound', () => {
+  /**
+   * Ask the server whether the SW should be registered and, if so, from
+   * which URL. See the header comment for the two branches. Failure to
+   * reach the endpoint falls back to registering the default ``/sw.js``.
+   *
+   * @returns {Promise<{sw_url: string, kill: boolean}>}
+   */
+  async function fetchSwConfig() {
+    try {
+      const res = await fetch('/api/sw-config', { cache: 'no-store' });
+      if (!res.ok) throw new Error('sw-config non-2xx: ' + res.status);
+      const json = await res.json();
+      return {
+        sw_url: typeof json.sw_url === 'string' ? json.sw_url : '/sw.js',
+        kill: json.kill === true,
+      };
+    } catch (_err) {
+      return { sw_url: '/sw.js', kill: false };
+    }
+  }
+
+  fetchSwConfig().then((config) => {
+    if (config.kill) {
+      // Mechanism A activated. Unregister every SW on this origin so the
+      // next navigation runs without a controller. We don't touch caches
+      // here — that's the kill-switch SW's job when the flip goes through
+      // Mechanism B (``/sw-kill.js``). This path just gets the SW out of
+      // the way; the user can hard-refresh to clear anything else.
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+        .catch((err) => console.error('[sw] kill unregister failed:', err));
+      return;
+    }
+
+    navigator.serviceWorker
+      .register(config.sw_url, { scope: '/', updateViaCache: 'none' })
+      .then((registration) => {
+        // Three entry points to "an update is ready":
+        //   1. ``waiting`` is non-null at register-time — a new worker has
+        //      already installed and is parked waiting (the common case
+        //      now that we don't auto-skipWaiting).
+        //   2. ``installing`` is non-null at register-time — a SW update
+        //      check started before our register() resolved.
+        //   3. ``updatefound`` fires later — the common case during a
+        //      normal session where the SW changes on the next deploy.
+        if (registration.waiting && navigator.serviceWorker.controller) {
+          showUpdateBanner(registration.waiting);
+        }
         if (registration.installing) {
           watchForInstall(registration.installing);
         }
-      });
+        registration.addEventListener('updatefound', () => {
+          if (registration.installing) {
+            watchForInstall(registration.installing);
+          }
+        });
 
-      // Surface an update promptly for a tab left open across a deploy:
-      // re-check when the tab regains focus. ``update()`` is a no-op when
-      // ``sw.js`` is unchanged — so no banner means you really are latest.
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-          registration.update().catch(() => {});
-        }
+        // Surface an update promptly for a tab left open across a deploy:
+        // re-check when the tab regains focus. ``update()`` is a no-op when
+        // the SW script is unchanged — so no banner means you really are
+        // latest.
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            registration.update().catch(() => {});
+          }
+        });
+      })
+      .catch((err) => {
+        console.error('[sw] registration failed:', err);
       });
-    })
-    .catch((err) => {
-      console.error('[sw] registration failed:', err);
-    });
+  });
 })();

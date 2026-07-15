@@ -1,8 +1,8 @@
 ---
 name: offline-map
-description: PWA shell — sw.js cache strategy, update banner, manifest icons/screenshots, installability checklist, CACHE_VERSION
+description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch Mechanism A/B, update banner, manifest icons, CACHE_VERSION
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-07-15
 ---
 
 # PWA shell
@@ -128,6 +128,78 @@ map shell + tiles) was retired in SNOW-79 — it didn't deliver any
 benefit until the user clicked, was the source of "stuck on stale
 data" reports, and the install affordance never materialised because
 the manifest had no icons.
+
+## Kill switch
+
+Two-mechanism eviction path for a broken SW deploy. Both are always
+present so the escalation path is one env-var flip, not a code change
+(spec §6, SNOW-372 + SNOW-373).
+
+### Mechanism A — server toggle
+
+`sw_register.js` fetches `/api/sw-config` (`cache: 'no-store'`) before
+it ever calls `register()`. The endpoint reads two settings:
+
+| Setting | Purpose |
+|---------|---------|
+| `SW_URL`  | Path the client registers as its SW. Defaults to `/sw.js`. |
+| `SW_KILL` | When true, `/api/sw-config` returns `{"kill": true}` and the client unregisters every SW on the origin without registering a new one. |
+
+Both are Render env vars — flipping either takes effect on the client's
+next launch, no deploy required. `SW_KILL=true` is the "kill and stop"
+path; setting `SW_URL=/sw-kill.js` is the "kill and wipe" path
+(see Mechanism B). If `/api/sw-config` is unreachable, the client falls
+back to `{sw_url: "/sw.js", kill: false}` — a broken config endpoint
+must never block SW registration on an otherwise-healthy origin.
+
+### Mechanism B — kill-switch SW
+
+`static/js/sw-kill.js` is a pre-tested SW served at `/sw-kill.js`
+(same headers as `/sw.js`: `Service-Worker-Allowed: /`,
+`Cache-Control: no-cache`). It has no `fetch` handler — absence of one
+makes the browser bypass the SW entirely for network requests, so the
+moment it activates page traffic goes straight to the network.
+
+On `activate` it:
+
+1. Deletes every Cache Storage entry.
+2. Deletes every IndexedDB database (spec §6.3 default — Snowdesk has
+   no critical unsynced client-side writes that would warrant the
+   sync-then-wipe variant).
+3. Calls `registration.unregister()` — the next navigation runs with
+   no controller.
+4. `client.navigate(client.url)` on every open tab so the user sees a
+   working page immediately.
+
+### When to use which
+
+| Symptom | Mechanism |
+|---------|-----------|
+| Real SW is fine but you want it gone (bandwidth issue, telemetry cutover) | A — set `SW_KILL=true` |
+| Real SW has poisoned Cache Storage or IndexedDB across the cohort | A + B — set `SW_URL=/sw-kill.js` then `SW_KILL=true` after clients have all rolled through it |
+| Real SW is so broken clients never run `sw_register.js` (rare — the register script is one deferred `<script>` tag) | Deploy a fix as normal; Mechanism B doesn't help here because there's no working script to load it |
+
+### Testing the kill switch
+
+Do this at least once per major SW change in staging (spec §6.5 —
+"Untested kill switches do not exist"):
+
+1. Install the staging PWA on a device.
+2. In Render, flip `SW_KILL=true`. Wait for restart.
+3. Reload the staging page. `sw_register.js` should hit `/api/sw-config`,
+   see `kill: true`, and unregister the SW. DevTools → Application →
+   Service Workers should show no active worker for the origin.
+4. Flip `SW_KILL=false` back. Next reload re-registers the real SW.
+
+For Mechanism B specifically:
+
+1. Install the staging PWA. Populate Cache Storage / IndexedDB with
+   anything (visit a few pages, wait for the SW to cache assets).
+2. Flip `SW_URL=/sw-kill.js` (leave `SW_KILL=false`). Wait for restart.
+3. Reload. `sw_register.js` registers `/sw-kill.js`, which activates
+   and wipes storage — DevTools → Application should show empty
+   caches and no IndexedDB DBs.
+4. Flip `SW_URL=/sw.js` back to recover normal operation.
 
 ## Installability checklist
 
