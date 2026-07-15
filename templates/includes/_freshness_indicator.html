@@ -1,0 +1,40 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_freshness_indicator.html — Freshness dot + timestamp.
+
+Renders a small dot ● + timestamp pair to communicate how fresh the
+underlying data is. Uses the design-token status palette:
+
+    state="fresh"  → status-success dot ● (data within max-age)
+    state="stale"  → status-warning dot ● (past max-age, still usable)
+    state="unsafe" → status-error dot ● (past unsafe-after; view should
+                                          block or badly discount)
+
+Context:
+    state         : "fresh" | "stale" | "unsafe" (required)
+    generated_at  : datetime (required, timezone-aware) — used to format
+                    the tooltip, machine-readable timestamp, and the
+                    visible "Updated HH:MM DD/MM" label.
+
+Spec §10.2 / §10.7 — no lying green tick on unverified data.
+{% endcomment %}
+<span
+    class="inline-flex items-center gap-1.5 text-caption font-mono text-text-3"
+    data-testid="freshness-indicator"
+    data-freshness-state="{{ state }}"
+    data-generated-at="{{ generated_at|date:'c' }}"
+    title="{% blocktrans with ts=generated_at|date:'Y-m-d H:i T' %}Data generated at {{ ts }}{% endblocktrans %}"
+>
+    {% if state == 'fresh' %}
+        <span aria-hidden="true" class="w-2 h-2 rounded-full bg-status-success-text"></span>
+        <span class="sr-only">{% trans "Fresh:" %}</span>
+    {% elif state == 'stale' %}
+        <span aria-hidden="true" class="w-2 h-2 rounded-full bg-status-warning-text"></span>
+        <span class="sr-only">{% trans "Stale but usable:" %}</span>
+    {% else %}
+        <span aria-hidden="true" class="w-2 h-2 rounded-full bg-status-error-text"></span>
+        <span class="sr-only">{% trans "Unsafe — do not rely on:" %}</span>
+    {% endif %}
+    <span data-role="freshness-label">{% blocktrans with ts=generated_at|date:'H:i d/m' %}Updated
+            {{ ts }}{% endblocktrans %}</span>
+</span>

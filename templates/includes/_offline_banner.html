@@ -1,0 +1,42 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_offline_banner.html — Persistent offline / freshness banner.
+
+Rendered hidden by base.html on every public page. Revealed by
+static/js/pwa_offline.js when:
+
+  * ``navigator.onLine === false``, or
+  * a fetch / HTMX request just failed with a network error.
+
+Copy shows the dataset freshness read from ``X-Data-Generated-At`` (SNOW-370)
+on the most recent successful response. The empty-timestamp initial state
+reads "No connection — cached data shown"; once a response has been seen
+we bake in the "Last updated HH:MM DD/MM" suffix.
+
+Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
+{% endcomment %}
+<div
+    id="pwa-offline-banner"
+    role="status"
+    aria-live="polite"
+    class="hidden fixed top-0 inset-x-0 z-[9998] bg-status-warning-bg text-status-warning-text border-b border-border px-4 py-2 text-sm"
+>
+    <div class="max-w-4xl mx-auto flex items-center gap-2">
+        <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            class="w-4 h-4 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+        >
+            <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M12 20h.01M2.42 8.577a13 13 0 0119.16 0M5.879 11.879a8 8 0 0112.242 0M9.172 14.828a4 4 0 015.656 0"
+            />
+        </svg>
+        <span data-role="offline-message">{% trans "No connection — showing cached data." %}</span>
+        <span data-role="offline-freshness" class="ml-auto font-mono text-xs opacity-80"></span>
+    </div>
+</div>
