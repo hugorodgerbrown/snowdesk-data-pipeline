@@ -41,7 +41,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.9 | Two-mechanism kill switch — Mechanism A            | SNOW-372      | `/api/sw-config` returns `{sw_url, kill}` from `SW_URL` / `SW_KILL` settings                      |
 | 12.9 | Two-mechanism kill switch — Mechanism B            | SNOW-373      | `static/js/sw-kill.js` served at `/sw-kill.js`; wipes storage on activate then unregisters        |
 | 12.10| Client obeys server version verdict                | SNOW-374      | `static/js/pwa_version_check.js` wraps `fetch` + hooks `htmx:afterOnLoad`; `_pwa_update_modal.html` |
-| 12.11| First-party client telemetry (server + buffer)     | SNOW-381 / SNOW-385 | Server: `analytics/views.py::telemetry_receive`, `analytics/signals.py`. Client: `static/js/telemetry.js` on the SNOW-375 `queue:events` store. |
+| 12.11| First-party client telemetry (server + buffer + emit wiring) | SNOW-381 / SNOW-385 / SNOW-384 | Server: `analytics/views.py::telemetry_receive`, `analytics/signals.py`. Client: `static/js/telemetry.js` on the SNOW-375 `queue:events` store. Emit call sites: see [`telemetry-pipeline.md`](telemetry-pipeline.md#consumer-wire-up). |
 
 ## Version + freshness contract
 
@@ -177,9 +177,13 @@ into the IndexedDB `meta:app` store.
 Not yet shipped (tracked as separate SNOW-368 children):
 
 - **SNOW-376** — Client mutation queue with exponential backoff and
-  Background Sync. Now unblocked (SNOW-375 shipped).
-- **SNOW-384** — PostHog dashboards and alerts backed by SNOW-381 /
-  SNOW-385.
+  Background Sync. Now unblocked (SNOW-375 shipped); the
+  `window.pwaMutationQueue` surface it will sit behind is stubbed
+  (SNOW-384 — see below).
+- The actual PostHog dashboard/alert *configuration* (charts, saved
+  insights, alert thresholds) building on top of the SNOW-384 signal —
+  deliberately out of that ticket's pivoted scope ("plumbing, not
+  PostHog UI work").
 
 Shipped from the observability + IndexedDB track:
 
@@ -201,6 +205,16 @@ Shipped from the observability + IndexedDB track:
   re-verification backed by the SNOW-375 `meta:app` store, and a VAPID
   subject Django system check. See
   [`push-notifications.md`](push-notifications.md).
+- **SNOW-384** — Wires every remaining `pwa.*` emit call site so the
+  eight §16.4 PostHog dashboards are buildable off real signal:
+  `client_version` + a self-contained `POSTHOG_API_KEY` gate on every
+  server-side signal; the SW→page telemetry message bridge
+  (`sw.js` / `sw-kill.js` → `sw_register.js`); the install funnel, kill
+  switch, forced-update, freshness, and reset-forced client emits; and a
+  `window.pwaMutationQueue` no-op stub ahead of SNOW-376. See
+  [`telemetry-pipeline.md`](telemetry-pipeline.md) for the full
+  call-site table. PostHog dashboard/alert configuration itself is a
+  separate, still-open follow-up.
 
 Non-negotiables the deferred tickets cover:
 

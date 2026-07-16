@@ -119,17 +119,40 @@ synthetic PostHog distinct_id `_server`.
 | `pwa.push.gone_410` | Same | Push service returns 410 (subscription lost) |
 | `pwa.idempotency.replay` | `core/idempotency.py::IdempotencyMiddleware` | Cache hit — same `Idempotency-Key` seen twice |
 
+Every server-side signal (SNOW-384) carries a `client_version` property
+read from the `X-Client-Version` request header
+(`request.headers.get("X-Client-Version", "")`), or threaded in by the
+caller when no request is in scope — `push_service.py::dispatch_push`
+runs inside the `_worker_dispatch_push` background task, so
+`push_views.py::push_test` reads the header and passes it through
+`enqueue_push(sub, payload, client_version)`. No client currently sends
+`X-Client-Version`, so the property is `""` in practice until a
+client-side change starts sending it — the server-side plumbing is in
+place regardless. `pwa.sw_config.hit` additionally carries a `reason`
+property when `kill=true`, sourced from `settings.SW_KILL` (the only
+kill trigger today — a fixed string `"env_kill_switch"`; a future
+second trigger should add its own reason string).
+
 ## Rollout / off-switch
 
-- The endpoint is a no-op when `POSTHOG_API_KEY` is unset — dev / test
-  environments accept `POST /api/telemetry` and 204 without contacting
-  PostHog. This is the same behaviour as the existing
-  `analytics.track()` wrapper.
+- `emit_server_signal` (`analytics/signals.py`) checks
+  `settings.POSTHOG_API_KEY` itself before calling `analytics.track()`
+  — logged at DEBUG, no-op when unset. The `/api/telemetry` receiver
+  (`analytics/views.py::_posthog_configured`) does the same immediately
+  after schema validation: dev / test environments still accept
+  `POST /api/telemetry` and 204 without contacting PostHog, but the
+  per-event forward loop (and the PII check normally performed inside
+  `analytics.track()`) is skipped entirely rather than relying solely on
+  `analytics.track()`'s own internal no-op — see SNOW-384.
 - To halt event forwarding in production without a deploy, unset
   `POSTHOG_API_KEY` in the Render environment; the receiver continues
   to accept and 204 (client sees no error), but nothing reaches PostHog.
 - The five server-side signal emitters follow the same rule — no key,
   no forwarding.
+- Neither gate affects the client's ability to write to `queue:events`
+  locally — that buffering is entirely client-side
+  (`static/js/telemetry.js`), independent of whether the server
+  forwards anything.
 
 ## Client-side (SNOW-385)
 
@@ -209,20 +232,42 @@ Currently:
 
 Existing PWA scripts call `window.pwaTelemetry?.emit(...)` at their
 event points. Optional chaining because these scripts are loaded on
-admin pages too where telemetry.js is not.
+admin pages too where telemetry.js is not. Every SW-originated event
+(`sw.js`, `sw-kill.js`) is wired via a message bridge rather than a
+direct call, since a service worker has no `window` — see the note
+below the table.
 
 | Call site | Event(s) |
 |-----------|----------|
-| `static/js/pwa_reset.js::resetLocalData` | `pwa.reset.user_initiated` |
+| `static/js/pwa_reset.js::resetLocalData` | `pwa.reset.user_initiated` (default) / `pwa.reset.forced` (called with `forced=true`) |
+| `static/js/db.js::_enterResetRequired` (Reset Required overlay CTA) | Calls `resetLocalData(true)` → `pwa.reset.forced` |
 | `static/js/push_demo.js::reverifyPushSubscription` | `pwa.push.subscription_lost` |
-| — future SNOW-374 hook — | `pwa.forced_update.triggered` |
-| — future SNOW-379 hook — | `pwa.install.prompted/.accepted/.dismissed/.completed` |
-| — future SNOW-377 hook — | `pwa.freshness.fresh/.stale/.unsafe` |
-| — future SNOW-79 hook — | `pwa.sw.installed/.activated/.update_available/.update_applied` |
+| `static/js/pwa_version_check.js::showBlockingModal` | `pwa.forced_update.triggered` — wired at `analytics.schema` §16.2, fired from both the min-version-mismatch and 24h-escalation callers; `properties.trigger` distinguishes them |
+| `static/js/pwa_install.js` | `pwa.install.prompted` (`revealBanner`) / `.accepted` (accepted `userChoice`) / `.dismissed` (`dismissBanner`) / `.completed` (`onInstalled`) / `.notifications_granted` (the iOS `Notification.permission` check inside `onInstalled`) |
+| `templates/includes/_freshness_indicator.html` (inline `<script>`) | `pwa.freshness.fresh` / `.stale` / `.unsafe` — sourced from the partial's own `state` render context (server-computed by `core.freshness.freshness_state`); the partial isn't included on a live page yet (design-system component), so the hook fires wherever/whenever a future template adopts it |
+| `static/js/sw.js` (via the message bridge) | `pwa.sw.installed` (`install`) / `.activated` (`activate`) / `.activation_failed` (caught `activate` error) / `.fetch_undefined` (`_guardedRespond` — a strategy function resolving to a non-`Response`) / `pwa.push.received` (`push`) / `.shown` (after `showNotification()` resolves) / `.opened` (`notificationclick`) |
+| `static/js/sw_register.js` | `pwa.sw.update_available` (`showUpdateBanner`, once per distinct waiting worker) / `.update_applied` (the SW-driven `controllerchange` reload path) / `pwa.kill_switch.activated` with `properties.mechanism: 'a'` (the pre-register kill fetch — `fetchSwConfig()` returning `kill: true`) |
+| `static/js/sw-kill.js` (via the message bridge) | `pwa.kill_switch.activated` with `properties.mechanism: 'b'` (Mechanism B's own activate-time wipe, just ahead of the per-client `navigate()` calls) |
+| `static/js/mutation_queue.js` (stub, SNOW-376 fills in the real queue) | `pwa.mutation.enqueued` / `.drained` / `.failed_permanent` — every method is a no-op today; call sites adopting `window.pwaMutationQueue` now get telemetry for free once SNOW-376 lands |
+| `static/js/db.js::_checkStorageEstimate` (cold-start, inside `open()`'s `onsuccess`) | `pwa.storage.evicted_probable` — conservative heuristic (implausibly low `navigator.storage.estimate()` quota, or zero usage alongside a surviving `pwa.install.installed_at` localStorage marker); `TODO(SNOW-XXX)` in the source marks it for tightening once real eviction cases surface |
 
-`pwa_reset.js` and `push_demo.js::reverifyPushSubscription` (SNOW-380) are
-wired in this slice — the other one-liners land alongside their respective
-consumer tickets so the emit points match the design of each interaction.
+**SW → page message bridge** (SNOW-384): `sw.js` and `sw-kill.js` run in
+a service-worker context with no `window`, so they cannot call
+`window.pwaTelemetry` directly. Both post
+`{type: 'pwa-telemetry', event, properties}` to every client they
+control (`clients.matchAll(...).then(cs => cs.forEach(c => c.postMessage(...)))`,
+or a single client via `event.clientId` for fetch-scoped events).
+`sw_register.js` carries one `navigator.serviceWorker.addEventListener
+('message', ...)` listener that forwards any such message —
+regardless of which SW script sent it — to
+`window.pwaTelemetry.emit(event, properties)`. The envelope-level
+context fields (`platform`, `install_state`, `sw_state`,
+`client_version`, …) are attached by `telemetry.js` from
+`window.pwaDb.context()` on the page side, so the SW side only needs to
+supply the event name and any event-specific properties.
+
+`pwa_reset.js` and `push_demo.js::reverifyPushSubscription` (SNOW-380) were
+wired in the SNOW-385 slice; every remaining row landed with SNOW-384.
 `reverifyPushSubscription` fires on every page load where `meta:app`'s
 `push.subscribed_before` flag is true, whether re-verification recovers the
 subscription or not — see [`push-notifications.md`](push-notifications.md#mechanism-field-lifecycle)
@@ -237,6 +282,31 @@ for the `reason` values it sends.
 4. Opt-out drops standard events; critical events fire with null ids.
 5. First `isOptIn()` call persists the computed default to `meta:app`.
 6. `setOptIn(true)` writes through.
+
+(That file disables `navigator.serviceWorker` via an init script —
+localhost is a secure context in the Playwright harness, so the real
+`sw.js` genuinely installs and, since SNOW-384, posts its own telemetry;
+this file tests `telemetry.js` in isolation from the SW lifecycle.)
+
+`tests/e2e/test_pwa_client_signals.py` (SNOW-384) covers every consumer
+wire-up above that doesn't require a real installed + activated service
+worker: the message bridge itself (simulated via a `MessageEvent`
+dispatched on `navigator.serviceWorker`), Mechanism-A kill switch, the
+install funnel, forced-update escalation, the freshness indicator, the
+`mutation_queue.js` stub, and the storage-eviction heuristic.
+
+**Not covered by Playwright** — no reliable way to drive a real
+install → waiting → activate cycle deterministically in this harness:
+`pwa.sw.installed` / `.activated` / `.activation_failed` /
+`.update_available` / `.update_applied` / `.fetch_undefined`,
+`pwa.push.received` / `.shown` / `.opened`, and Mechanism B's
+`pwa.kill_switch.activated` (`sw-kill.js`). The message-bridge mechanism
+itself IS exercised by `test_pwa_client_signals.py` (a simulated
+`MessageEvent`), so these are lower-risk than an untested code path —
+but the real SW lifecycle triggers for them should still be
+spot-checked manually (devtools Application → Service Workers,
+`queue:events` inspection) before relying on the dashboards for these
+specific events.
 
 ## See also
 
