@@ -264,8 +264,25 @@
     }
   }
 
+  /**
+   * Draw 16 bytes of CSPRNG entropy and hex-encode them. Used as a
+   * fallback session_id generator on runtimes without
+   * ``crypto.randomUUID`` (older mobile Safari). Deliberately avoids
+   * ``Math.random`` — CodeQL flags it as insecure in identity-adjacent
+   * contexts and there's no legitimate use of it here.
+   */
+  function _randomHex() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    let out = '';
+    for (let i = 0; i < bytes.length; i++) {
+      out += bytes[i].toString(16).padStart(2, '0');
+    }
+    return out;
+  }
+
   function _sessionId() {
-    // Random-ish UUID scoped to the tab; regenerates on tab close.
+    // Tab-scoped random identifier; regenerates on tab close.
     try {
       const KEY = 'pwa.telemetry.session_id';
       const existing = sessionStorage.getItem(KEY);
@@ -273,14 +290,21 @@
       const uuid =
         typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
-          : String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+          : _randomHex();
       sessionStorage.setItem(KEY, uuid);
       return uuid;
     } catch (_e) {
       // Safari private-mode: sessionStorage throws on set. Fall back
       // to a per-page-load random value — telemetry still groups by
       // this key within a single page but not across reloads.
-      return 'anon-' + Math.random().toString(36).slice(2);
+      try {
+        return 'anon-' + _randomHex();
+      } catch (_e2) {
+        // No crypto either — return a fixed sentinel so telemetry
+        // doesn't crash. Distinct per-tab identity is lost; the shared
+        // sentinel is caught by the "unknown user_id" branch downstream.
+        return 'anon-unavailable';
+      }
     }
   }
 

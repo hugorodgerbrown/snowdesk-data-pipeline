@@ -308,9 +308,19 @@
    * Drain the buffer to the server. Serialised — a call while one is
    * in flight returns the same promise so overlapping triggers can't
    * double-POST the same rows.
+   *
+   * @param {object} [opts]
+   * @param {boolean} [opts.keepalive]  Set to true only on the
+   *   ``pagehide`` trigger. Playwright's ``page.route`` interceptor
+   *   cannot see ``keepalive`` fetches — the browser sends them
+   *   outside the normal fetch pipeline — so leaving keepalive on by
+   *   default would silently bypass tests. The pagehide path needs it
+   *   because a normal fetch would be cancelled when the tab tears
+   *   down; every other trigger runs while the tab is still alive.
    */
-  function flush() {
+  function flush(opts) {
     if (_flushInFlight) return _flushInFlight;
+    const keepalive = !!(opts && opts.keepalive);
     _flushInFlight = (async () => {
       try {
         if (
@@ -329,15 +339,15 @@
         });
         let response;
         try {
-          response = await fetch(ENDPOINT, {
+          const init = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ events }),
-            // ``keepalive`` lets the request survive a foreground →
-            // background transition; capped at ~64 KiB body by browsers,
-            // well above our batch cap.
-            keepalive: true,
-          });
+          };
+          if (keepalive) {
+            init.keepalive = true;
+          }
+          response = await fetch(ENDPOINT, init);
         } catch (_networkErr) {
           // Network failure — leave rows in place for the next trigger.
           return;
@@ -396,11 +406,12 @@
       // Non-fatal.
     }
     try {
-      // Best-effort drain on ``pagehide`` — sendBeacon-style keepalive
-      // fetch, no waiting. This is the only place we drain regardless
-      // of visibility, because the tab is about to disappear.
+      // Best-effort drain on ``pagehide`` — the ONLY trigger that
+      // needs ``keepalive: true`` because a normal fetch would be
+      // cancelled as the tab tears down. This is also the only place
+      // we drain regardless of visibility.
       window.addEventListener('pagehide', () => {
-        flush().catch(() => {});
+        flush({ keepalive: true }).catch(() => {});
       });
     } catch (_e) {
       // Non-fatal.
