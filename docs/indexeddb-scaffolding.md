@@ -36,7 +36,7 @@ never removed.
 | `queue:mutations`  | `id`            | true          | SNOW-376 mutation queue      |
 | `queue:events`     | `id`            | true          | SNOW-385 telemetry buffer    |
 | `meta:sync`        | `resource`      | false         | last-sync timestamps         |
-| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in |
+| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before` |
 
 `data:*` is a reserved namespace for cached server-data copies; nothing
 has landed under it yet. When a consumer adds one, bump `DB_VERSION` +
@@ -135,5 +135,6 @@ the wipe covers it even without the enumeration API.
   of `queue:events` and `context()` (SNOW-385).
 - [`offline-first.md`](offline-first.md) — the umbrella non-negotiables
   index.
-- [`push-notifications.md`](push-notifications.md) — future consumer
-  of `meta:app` for VAPID subscription state.
+- [`push-notifications.md`](push-notifications.md) — consumer of
+  `meta:app` (`push.subscribed_before` key, SNOW-380) for launch-time
+  Web Push subscription re-verification.

@@ -6,9 +6,22 @@ payload to the push service URL stored on a PushSubscription. Returns a
 small status dict; never raises — callers iterate over many rows and want
 per-row outcomes, not a halt on the first 410 Gone.
 
-If the push service returns 404 or 410, the subscription is dead (user
-removed permission, uninstalled the PWA, cleared site data). We drop the
-DB row in that case so the next test run doesn't keep paying for it.
+404 vs 410 (SNOW-380, spec §8): a 404 means the endpoint URL itself is
+wrong (a rare transport-layer error) and the row is hard-deleted. A 410
+means the push service has confirmed the subscription is gone (permission
+revoked, PWA uninstalled, site data cleared) — the row is *soft*-deleted
+by setting ``inactive_at`` so the client-side re-verification loop
+(``static/js/push_demo.js::reverifyPushSubscription``) has a record to
+reconcile against on next launch; a successful resubscribe overwrites the
+same endpoint (or creates a fresh row for a new one) via
+``update_or_create`` in ``push_register``.
+
+The outgoing wire payload also branches on ``sub.mechanism``: the ``sw``
+path (every browser today) keeps the existing ``{title, body, url}`` shape
+that the service worker's ``push`` event handler parses in JS. The
+``declarative`` path (Apple's Declarative Web Push, iOS 18.4+) requires a
+fixed JSON shape the OS renders without running any JS — see
+``_build_wire_payload`` and ``docs/push-notifications.md``.
 
 ``enqueue_push(sub, payload)`` is the async entry point: it enqueues a
 ``_worker_dispatch_push`` task via django-tasks so the actual pywebpush
@@ -21,6 +34,7 @@ import json
 import logging
 from typing import Any
 
+from django.utils import timezone
 from django_tasks import task
 from pywebpush import WebPushException, webpush
 
@@ -33,33 +47,72 @@ from subscriptions.push_config import (
 
 logger = logging.getLogger(__name__)
 
+# Apple's Declarative Web Push version tag — see
+# https://webkit.org/blog/16535/meet-declarative-web-push/. Fixed value;
+# not expected to change independently of a full payload-shape revision.
+_DECLARATIVE_WEB_PUSH_VERSION = 8030
+
+
+def _build_wire_payload(
+    sub: PushSubscription, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the JSON payload to encrypt, shaped for ``sub.mechanism``.
+
+    ``sw`` subscriptions keep the existing ``{title, body, url}`` shape
+    that the service worker's ``push`` event handler expects.
+
+    ``declarative`` subscriptions get Apple's Declarative Web Push shape —
+    the OS renders the notification directly from this JSON without
+    running the service worker, so the keys are fixed by Apple's spec
+    rather than by our own JS.
+    """
+    if sub.mechanism == PushSubscription.Mechanism.DECLARATIVE:
+        return {
+            "web_push": _DECLARATIVE_WEB_PUSH_VERSION,
+            "notification": {
+                "title": payload.get("title", "Snowdesk"),
+                "body": payload.get("body", ""),
+                "navigate": payload.get("url", "/"),
+            },
+        }
+    return payload
+
 
 def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, Any]:
     """Send one Web Push and return a per-row outcome dict."""
+    wire_payload = _build_wire_payload(sub, payload)
     try:
         response = webpush(
             subscription_info=sub.to_dict(),
-            data=json.dumps(payload),
+            data=json.dumps(wire_payload),
             vapid_private_key=VAPID_PRIVATE_KEY,
             vapid_claims={"sub": VAPID_CLAIM_EMAIL},
             ttl=60,
         )
     except WebPushException as exc:
         status = exc.response.status_code if exc.response is not None else None
-        if status in {404, 410}:
-            logger.info(
-                "dropping dead push subscription pk=%s endpoint=%.30s… (%s)",
-                sub.pk,
-                sub.endpoint,
-                status,
-            )
-            sub.delete()
+        if status == 410:
+            # SNOW-380: soft-delete — the client-side re-verification loop
+            # reconciles against this row on next launch.
             # SNOW-381 (spec §16.2): 410 Gone is the "subscription lost"
             # signal the observability dashboard reconciles against
-            # client-side pwa.push.subscription_lost. 404 is dropped
-            # the same way but is a much rarer transport error.
-            if status == 410:
-                emit_server_signal("pwa.push.gone_410", {"subscription_pk": sub.pk})
+            # client-side pwa.push.subscription_lost. Emit before the save
+            # so sub.pk is unambiguous in the event payload.
+            emit_server_signal("pwa.push.gone_410", {"subscription_pk": sub.pk})
+            logger.info(
+                "marking push subscription pk=%s endpoint=%.30s… inactive (410)",
+                sub.pk,
+                sub.endpoint,
+            )
+            sub.inactive_at = timezone.now()
+            sub.save(update_fields=["inactive_at"])
+        elif status == 404:
+            logger.info(
+                "dropping dead push subscription pk=%s endpoint=%.30s… (404)",
+                sub.pk,
+                sub.endpoint,
+            )
+            sub.delete()
         logger.warning(
             "webpush failed for push subscription pk=%s endpoint=%.30s…: %s",
             sub.pk,

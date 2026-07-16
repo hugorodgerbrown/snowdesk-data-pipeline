@@ -201,8 +201,8 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
     are readonly so the admin is purely a diagnostic surface.
     """
 
-    list_display = ["endpoint", "subscriber", "created_at", "last_used_at"]
-    list_filter = ["created_at"]
+    list_display = ["endpoint", "subscriber", "mechanism", "created_at", "last_used_at"]
+    list_filter = ["created_at", "inactive_at"]
     list_select_related = ["subscriber", "subscriber__user"]
     ordering = ["-created_at"]
     readonly_fields = [
@@ -213,6 +213,8 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
         "auth",
         "user_agent",
         "last_used_at",
+        "mechanism",
+        "inactive_at",
         "created_at",
         "updated_at",
     ]

@@ -214,14 +214,19 @@ admin pages too where telemetry.js is not.
 | Call site | Event(s) |
 |-----------|----------|
 | `static/js/pwa_reset.js::resetLocalData` | `pwa.reset.user_initiated` |
+| `static/js/push_demo.js::reverifyPushSubscription` | `pwa.push.subscription_lost` |
 | — future SNOW-374 hook — | `pwa.forced_update.triggered` |
 | — future SNOW-379 hook — | `pwa.install.prompted/.accepted/.dismissed/.completed` |
 | — future SNOW-377 hook — | `pwa.freshness.fresh/.stale/.unsafe` |
 | — future SNOW-79 hook — | `pwa.sw.installed/.activated/.update_available/.update_applied` |
 
-Only `pwa_reset.js` is wired in this slice — the other one-liners
-land alongside their respective consumer tickets so the emit points
-match the design of each interaction.
+`pwa_reset.js` and `push_demo.js::reverifyPushSubscription` (SNOW-380) are
+wired in this slice — the other one-liners land alongside their respective
+consumer tickets so the emit points match the design of each interaction.
+`reverifyPushSubscription` fires on every page load where `meta:app`'s
+`push.subscribed_before` flag is true, whether re-verification recovers the
+subscription or not — see [`push-notifications.md`](push-notifications.md#mechanism-field-lifecycle)
+for the `reason` values it sends.
 
 ### Tests
 

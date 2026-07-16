@@ -181,6 +181,37 @@ class TestPushRegister:
         assert response.status_code == 400
         assert response.json()["ok"] is False
 
+    def test_mechanism_from_body_is_persisted(self, staff_client: Client) -> None:
+        """A 'mechanism' field in the POST body is persisted on the row."""
+        body: dict[str, Any] = {
+            "endpoint": "https://push.example.com/declarative-endpoint",
+            "keys": {"p256dh": "test-p256dh-key", "auth": "test-auth-secret"},
+            "mechanism": "declarative",
+        }
+        response = _post_json(staff_client, _REGISTER_URL, body)
+        assert response.status_code == 200
+        sub = PushSubscription.objects.get(endpoint=body["endpoint"])
+        assert sub.mechanism == PushSubscription.Mechanism.DECLARATIVE
+
+    def test_omitted_mechanism_defaults_to_sw(self, staff_client: Client) -> None:
+        """A missing 'mechanism' field defaults to 'sw'."""
+        response = _post_json(staff_client, _REGISTER_URL, _REGISTER_BODY)
+        assert response.status_code == 200
+        sub = PushSubscription.objects.get(endpoint=_REGISTER_BODY["endpoint"])
+        assert sub.mechanism == PushSubscription.Mechanism.SW
+
+    def test_invalid_mechanism_returns_400(self, staff_client: Client) -> None:
+        """An unrecognised 'mechanism' value is rejected with 400."""
+        body: dict[str, Any] = {
+            "endpoint": "https://push.example.com/bad-mechanism-endpoint",
+            "keys": {"p256dh": "test-p256dh-key", "auth": "test-auth-secret"},
+            "mechanism": "carrier-pigeon",
+        }
+        response = _post_json(staff_client, _REGISTER_URL, body)
+        assert response.status_code == 400
+        assert response.json()["ok"] is False
+        assert not PushSubscription.objects.filter(endpoint=body["endpoint"]).exists()
+
     def test_duplicate_endpoint_upserts_not_duplicates(
         self, staff_client: Client
     ) -> None:
@@ -326,6 +357,23 @@ class TestPushTest:
         assert response.status_code == 200
         assert mock_enqueue.call_count == 2
         assert response.json() == {"ok": True, "enqueued": 2}
+
+    def test_inactive_subscriptions_are_skipped(self, staff_client: Client) -> None:
+        """Rows with ``inactive_at`` set are excluded from the fan-out.
+
+        Without this filter, ``push_test`` would keep hammering
+        already-dead endpoints and produce spurious ``pwa.push.gone_410``
+        signals against the SNOW-381 observability dashboard.
+        """
+        from django.utils import timezone
+
+        PushSubscriptionFactory.create()
+        PushSubscriptionFactory.create(inactive_at=timezone.now())
+        with patch("subscriptions.push_views.enqueue_push") as mock_enqueue:
+            response = _post_json(staff_client, _TEST_URL, {})
+        assert response.status_code == 200
+        assert mock_enqueue.call_count == 1
+        assert response.json() == {"ok": True, "enqueued": 1}
 
 
 # ---------------------------------------------------------------------------

@@ -1,10 +1,14 @@
 """
 tests/subscriptions/test_push_service.py — Tests for dispatch_push and the async worker.
 
-Patches pywebpush.webpush to test three branches:
+Patches pywebpush.webpush to test several branches:
   - 201 happy path: row survives, returns {ok: True, status: 201}.
-  - WebPushException with 410 (subscription gone): row deleted, returns {ok: False}.
+  - WebPushException with 410 (subscription gone): row soft-deleted
+    (inactive_at set, not removed), returns {ok: False}.
+  - WebPushException with 404 (transport error): row hard-deleted,
+    returns {ok: False}.
   - WebPushException with 500 (transient error): row survives, returns {ok: False}.
+  - Declarative vs sw payload shape (SNOW-380).
   - SNOW-311 caplog regression: log records contain pk=, never the subscriber email.
 
 Also tests _worker_dispatch_push (SNOW-319):
@@ -14,10 +18,12 @@ Also tests _worker_dispatch_push (SNOW-319):
 
 from __future__ import annotations
 
+import json
 import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.utils import timezone
 from pywebpush import WebPushException
 
 from subscriptions.models import PushSubscription
@@ -48,19 +54,40 @@ class TestDispatchPush:
         # Row must still exist.
         assert PushSubscription.objects.filter(pk=sub.pk).exists()
 
-    def test_410_deletes_dead_subscription(self) -> None:
-        """A 410 WebPushException deletes the row and returns {ok: False}."""
+    def test_dispatch_push_410_marks_inactive(self) -> None:
+        """A 410 WebPushException soft-deletes: inactive_at set, row not deleted.
+
+        SNOW-380: 410 Gone means the push service has confirmed the
+        subscription is dead, but the row is kept (marked inactive) so the
+        client-side re-verification loop has something to reconcile
+        against, rather than hard-deleted.
+        """
+        # Factory default (inactive_at=None) is covered by
+        # test_push_models.py::test_inactive_at_defaults_to_none; not
+        # re-asserted here because mypy narrows the field's type after an
+        # `is None` check and flags the later `is not None` check below as
+        # unreachable.
         sub = PushSubscriptionFactory.create()
+        before = timezone.now()
         exc = _make_webpush_exception(410)
-        with patch("subscriptions.push_service.webpush", side_effect=exc):
+        with (
+            patch("subscriptions.push_service.webpush", side_effect=exc),
+            patch("subscriptions.push_service.emit_server_signal") as mock_emit,
+        ):
             result = dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
         assert result["ok"] is False
         assert result["status"] == 410
-        # Row must be deleted.
-        assert not PushSubscription.objects.filter(pk=sub.pk).exists()
+        # Row must still exist, now marked inactive.
+        sub.refresh_from_db()
+        assert sub.inactive_at is not None
+        assert sub.inactive_at >= before
+        mock_emit.assert_any_call("pwa.push.gone_410", {"subscription_pk": sub.pk})
 
-    def test_404_also_deletes_dead_subscription(self) -> None:
-        """A 404 WebPushException also deletes the row (equivalent to 410)."""
+    def test_dispatch_push_404_still_deletes(self) -> None:
+        """A 404 WebPushException still hard-deletes the row (equivalent to
+        the pre-SNOW-380 behaviour) — 404 is a transport-layer error, not a
+        confirmed-gone signal, so there's nothing useful to reconcile.
+        """
         sub = PushSubscriptionFactory.create()
         exc = _make_webpush_exception(404)
         with patch("subscriptions.push_service.webpush", side_effect=exc):
@@ -102,6 +129,44 @@ class TestDispatchPush:
             dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
         _, call_kwargs = mock_webpush.call_args
         assert call_kwargs["subscription_info"] == sub.to_dict()
+
+    def test_dispatch_push_sw_payload_unchanged(self) -> None:
+        """A 'sw' subscription still gets the plain {title, body, url} shape."""
+        sub = PushSubscriptionFactory.create(mechanism=PushSubscription.Mechanism.SW)
+        payload = {"title": "Hi", "body": "Test", "url": "/somewhere"}
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        with patch(
+            "subscriptions.push_service.webpush", return_value=mock_response
+        ) as mock_webpush:
+            dispatch_push(sub, payload)
+        _, call_kwargs = mock_webpush.call_args
+        assert json.loads(call_kwargs["data"]) == payload
+
+    def test_dispatch_push_declarative_payload_shape(self) -> None:
+        """A 'declarative' subscription gets Apple's Declarative Web Push shape,
+        not the sw {title, body, url} shape.
+        """
+        sub = PushSubscriptionFactory.create(
+            mechanism=PushSubscription.Mechanism.DECLARATIVE
+        )
+        payload = {"title": "Hi", "body": "Test", "url": "/somewhere"}
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        with patch(
+            "subscriptions.push_service.webpush", return_value=mock_response
+        ) as mock_webpush:
+            dispatch_push(sub, payload)
+        _, call_kwargs = mock_webpush.call_args
+        sent = json.loads(call_kwargs["data"])
+        assert sent == {
+            "web_push": 8030,
+            "notification": {
+                "title": "Hi",
+                "body": "Test",
+                "navigate": "/somewhere",
+            },
+        }
 
 
 # ---------------------------------------------------------------------------

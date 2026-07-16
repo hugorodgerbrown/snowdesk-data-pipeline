@@ -178,8 +178,6 @@ Not yet shipped (tracked as separate SNOW-368 children):
 
 - **SNOW-376** — Client mutation queue with exponential backoff and
   Background Sync. Now unblocked (SNOW-375 shipped).
-- **SNOW-380** — Declarative Web Push, subscription re-verification,
-  410 Gone handling.
 - **SNOW-384** — PostHog dashboards and alerts backed by SNOW-381 /
   SNOW-385.
 
@@ -198,6 +196,11 @@ Shipped from the observability + IndexedDB track:
   (`static/js/telemetry.js`) using the SNOW-375 `queue:events` store;
   `sendBeacon` fast path for critical events; opt-in/out toggle with
   EU-default. See [`telemetry-pipeline.md`](telemetry-pipeline.md).
+- **SNOW-380** — Declarative Web Push (`PushSubscription.mechanism`),
+  410 Gone soft-delete (`inactive_at`) with launch-time client-side
+  re-verification backed by the SNOW-375 `meta:app` store, and a VAPID
+  subject Django system check. See
+  [`push-notifications.md`](push-notifications.md).
 
 Non-negotiables the deferred tickets cover:
 

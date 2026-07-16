@@ -436,6 +436,16 @@ class PushSubscriptionQuerySet(models.QuerySet["PushSubscription"]):
         """Return all push subscriptions belonging to the given subscriber."""
         return self.filter(subscriber=subscriber)
 
+    def active(self) -> PushSubscriptionQuerySet:
+        """Return only subscriptions that have not been marked inactive.
+
+        A row is marked inactive (``inactive_at`` set) when the push service
+        returns 410 Gone — the subscription is soft-deleted rather than
+        dropped so the client-side re-verification loop (SNOW-380) has a
+        record to reconcile against.
+        """
+        return self.filter(inactive_at__isnull=True)
+
 
 class PushSubscription(models.Model):
     """
@@ -450,7 +460,25 @@ class PushSubscription(models.Model):
     the ``/_push-demo/`` page (which uses ``staff_member_required``, not
     the regular subscriber session) can opt their device in without
     needing a regular subscriber account first.
+
+    ``mechanism`` records which browser API produced the subscription: the
+    ``sw`` (service-worker parsed) path used by every browser today, or the
+    ``declarative`` (Apple's Declarative Web Push, iOS 18.4+) path where the
+    OS itself renders the notification from a fixed payload shape without
+    running JS. ``dispatch_push`` branches on this field to build the
+    correct payload.
+
+    ``inactive_at`` is set when the push service reports the subscription
+    is gone (410) rather than deleting the row outright — see
+    ``subscriptions/push_service.py::dispatch_push``. A 404 (rarer, usually
+    a transport-layer error) still hard-deletes the row.
     """
+
+    class Mechanism(models.TextChoices):
+        """Which browser API produced this subscription."""
+
+        SW = "sw", "Service worker"
+        DECLARATIVE = "declarative", "Declarative Web Push"
 
     id = models.BigAutoField(primary_key=True)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -469,6 +497,17 @@ class PushSubscription(models.Model):
     auth = models.CharField(max_length=64)
     user_agent = models.CharField(max_length=512, blank=True, default="")
     last_used_at = models.DateTimeField(null=True, blank=True)
+    mechanism = models.CharField(
+        max_length=16,
+        choices=Mechanism.choices,
+        default=Mechanism.SW,
+        help_text="Which browser API produced this subscription (sw or declarative).",
+    )
+    inactive_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Set when the push service reports 410 Gone. Null while live.",
+    )
 
     objects: PushSubscriptionQuerySet = PushSubscriptionQuerySet.as_manager()  # type: ignore[assignment]
 
