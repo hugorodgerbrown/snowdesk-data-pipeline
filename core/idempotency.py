@@ -114,6 +114,17 @@ class IdempotencyMiddleware:
                 _redact_key(key),
                 cached.response_status,
             )
+            # SNOW-381 (spec §16.2): observability dashboards need a
+            # PostHog-visible counter for cache-served replays so we can
+            # measure how often the queue drain retries the same key.
+            # Deferred import — analytics.signals pulls in the analytics
+            # app which shouldn't load at middleware-import time.
+            from analytics.signals import emit_server_signal  # noqa: PLC0415
+
+            emit_server_signal(
+                "pwa.idempotency.replay",
+                {"view": _view_name(request), "status": cached.response_status},
+            )
             return cached.build_response()
 
         response = self.get_response(request)

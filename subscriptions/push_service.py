@@ -24,6 +24,7 @@ from typing import Any
 from django_tasks import task
 from pywebpush import WebPushException, webpush
 
+from analytics.signals import emit_server_signal
 from subscriptions.models import PushSubscription
 from subscriptions.push_config import (
     VAPID_CLAIM_EMAIL,
@@ -53,6 +54,12 @@ def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, A
                 status,
             )
             sub.delete()
+            # SNOW-381 (spec §16.2): 410 Gone is the "subscription lost"
+            # signal the observability dashboard reconciles against
+            # client-side pwa.push.subscription_lost. 404 is dropped
+            # the same way but is a much rarer transport error.
+            if status == 410:
+                emit_server_signal("pwa.push.gone_410", {"subscription_pk": sub.pk})
         logger.warning(
             "webpush failed for push subscription pk=%s endpoint=%.30s…: %s",
             sub.pk,
@@ -60,6 +67,13 @@ def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, A
             exc,
         )
         return {"ok": False, "status": status, "error": str(exc)}
+    # SNOW-381 (spec §16.2): server-side half of the push funnel; the
+    # client emits pwa.push.received / .shown / .opened as the message
+    # progresses.
+    emit_server_signal(
+        "pwa.push.sent",
+        {"subscription_pk": sub.pk, "status": response.status_code},
+    )
     return {"ok": True, "status": response.status_code}
 
 

@@ -1,6 +1,6 @@
 ---
 name: offline-first
-description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version + freshness + idempotency + reset + install
+description: Offline-first PWA compliance index — spec §12 non-negotiables → code; version + freshness + idempotency + reset + install + telemetry
 status: current
 last-reviewed: 2026-07-16
 ---
@@ -181,16 +181,25 @@ Not yet shipped (tracked as separate SNOW-368 children):
   Background Sync.
 - **SNOW-380** — Declarative Web Push, subscription re-verification,
   410 Gone handling.
-- **SNOW-381** — First-party telemetry pipeline (server receiver +
-  IndexedDB event buffer + `sendBeacon` for critical events).
+- **SNOW-381 (client-side)** — IndexedDB event buffer + `sendBeacon`
+  fast path for critical events. Blocked on SNOW-375.
 - **SNOW-384** — PostHog dashboards and alerts backed by SNOW-381.
+
+Shipped from the observability track:
+
+- **SNOW-381 (server-side)** — `/api/telemetry` receiver,
+  `analytics/schema.py` envelope validation, and the five §16.2
+  server-side signals (`pwa.version.endpoint.hit`, `pwa.sw_config.hit`,
+  `pwa.push.sent`, `pwa.push.gone_410`, `pwa.idempotency.replay`)
+  wired into their existing call sites. See
+  [`telemetry-pipeline.md`](telemetry-pipeline.md).
 
 Non-negotiables the deferred tickets cover:
 
-| §    | Requirement                        | Ticket        |
-|------|------------------------------------|---------------|
-| 12.4 | Mutation queue with Idempotency-Key | SNOW-376      |
-| 12.11| First-party client telemetry        | SNOW-381      |
+| §    | Requirement                        | Ticket                  |
+|------|------------------------------------|-------------------------|
+| 12.4 | Mutation queue with Idempotency-Key | SNOW-376                |
+| 12.11| First-party client telemetry        | SNOW-381 (client-side)  |
 
 ## See also
 

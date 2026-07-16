@@ -45,6 +45,11 @@ from public.views import (
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("subscribe/", include("subscriptions.urls")),
+    # /api/telemetry must be listed BEFORE the public api_urls include so
+    # Django resolves it against the analytics namespace rather than
+    # falling through to public.api_urls (which does not define it).
+    # SNOW-381: first-party telemetry receiver (spec §16).
+    path("api/telemetry", include("analytics.urls")),
     path("api/", include("public.api_urls")),
     path("csp/", include("csp.urls")),
     path("sw.js", serve_sw, name="service_worker"),
