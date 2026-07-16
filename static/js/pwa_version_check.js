@@ -90,13 +90,19 @@
   /**
    * Reveal the existing soft update banner. Delegates to whatever
    * sw_register.js has wired up — we do not manage the banner's DOM
-   * ourselves so the two flows stay in sync.
+   * ourselves so the two flows stay in sync. The public partial reveals
+   * via ``hidden`` class toggle; the admin fallback (data-fallback="1",
+   * inline-styled) uses ``display: flex`` instead — mirror the same fork
+   * sw_register.js uses in ``showUpdateBanner``.
    */
   function showSoftBanner() {
     const banner = document.getElementById('sw-update-banner');
     if (!banner) return;
-    banner.style.display = 'flex';
-    banner.classList.remove('hidden');
+    if (banner.dataset.fallback === '1') {
+      banner.style.display = 'flex';
+    } else {
+      banner.classList.remove('hidden');
+    }
     try {
       if (!localStorage.getItem(FIRST_SHOWN_KEY)) {
         localStorage.setItem(FIRST_SHOWN_KEY, String(Date.now()));
