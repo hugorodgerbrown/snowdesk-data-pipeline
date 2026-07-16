@@ -52,6 +52,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
 from django_ratelimit.decorators import ratelimit
 
+from analytics.signals import emit_server_signal
 from bulletins.models import Bulletin, BulletinGrouping, BulletinShare, RegionDayRating
 from bulletins.services.coverage import covered_region_ids
 from core.freshness import apply_freshness_headers
@@ -1377,6 +1378,10 @@ def version(request: HttpRequest) -> JsonResponse:
         }
     )
     response["Cache-Control"] = "public, max-age=60"
+    # SNOW-381 (spec §16.2): capture the endpoint hit so the observability
+    # dashboards can chart poll cadence and detect clients that stop
+    # phoning home.
+    emit_server_signal("pwa.version.endpoint.hit")
     return response
 
 
@@ -1400,4 +1405,10 @@ def sw_config(request: HttpRequest) -> JsonResponse:
         }
     )
     response["Cache-Control"] = "no-store"
+    # SNOW-381 (spec §16.2): capture the endpoint hit so we can spot
+    # SW-registration attempts that never proceed to install/activate.
+    emit_server_signal(
+        "pwa.sw_config.hit",
+        {"sw_url": settings.SW_URL, "kill": bool(settings.SW_KILL)},
+    )
     return response
