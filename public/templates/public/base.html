@@ -126,6 +126,12 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# above the shell's build, or when the soft banner has escalated    #}
         {# past its 24h grace window on cold launch.                          #}
         {% include "includes/_pwa_update_modal.html" %}
+        {# SNOW-379: install-prompt banners. Two hidden divs (Android /     #}
+        {# iOS); pwa_install.js reveals the platform-appropriate one once   #}
+        {# the meaningful-action threshold is met (2 distinct regions       #}
+        {# viewed or >30s engaged) and the 30-day dismiss cool-off has       #}
+        {# elapsed.                                                          #}
+        {% include "includes/_pwa_install_prompt.html" %}
         {# SNOW-79: register the PWA shell SW from every public page. #}
         <script src="{% static 'js/sw_register.js' %}" defer></script>
         {# SNOW-374: version-check runs on every JS-issued fetch + HTMX XHR. #}
@@ -133,6 +139,10 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# SNOW-377: connection-state UI. Wraps fetch + HTMX so freshness    #}
         {# headers feed the banner and network failures reveal it.          #}
         <script src="{% static 'js/pwa_offline.js' %}" defer></script>
+        {# SNOW-379: install-prompt orchestration. Captures                  #}
+        {# beforeinstallprompt on Chromium; shows an iOS Share-icon guide   #}
+        {# on iOS Safari once engagement threshold is met.                   #}
+        <script src="{% static 'js/pwa_install.js' %}" defer></script>
         {% block extra_js %}{% endblock %}
     </body>
 </html>

@@ -1,0 +1,118 @@
+{% load i18n static %}
+{% comment %}
+templates/includes/_pwa_install_prompt.html — Install-nudge banners.
+
+Two hidden banners rendered on every public page, revealed by
+static/js/pwa_install.js once the meaningful-action threshold is met
+(spec §9.1). Only one is ever shown per session — the JS picks
+platform-appropriate.
+
+  * #pwa-install-banner — Android / desktop Chromium. "Install"
+    triggers the deferred beforeinstallprompt.
+  * #pwa-install-ios    — iOS Safari. Shows a static Share → Add to
+    Home Screen illustration (SVG inline, no external asset).
+
+Both use design tokens (bg-card, text-text-1/2, border-border,
+rounded-card) and _button.html for the primary CTA.
+{% endcomment %}
+<div
+    id="pwa-install-banner"
+    role="dialog"
+    aria-labelledby="pwa-install-title"
+    class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[9997] w-[calc(100vw-2rem)] max-w-md"
+>
+    <div class="bg-card text-text-1 rounded-card border border-border shadow-glass p-4 flex items-start gap-3">
+        <div class="flex-1 min-w-0">
+            <p id="pwa-install-title" class="text-sm font-semibold">
+                {% trans "Install Snowdesk" %}
+            </p>
+            <p class="text-xs text-text-2 mt-0.5">
+                {% blocktrans trimmed %}
+                    Add Snowdesk to your home screen for one-tap access and notifications when a new bulletin lands.
+                {% endblocktrans %}
+            </p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+            {% include "includes/_button.html" with variant="primary" size="compact" button_type="button" button_id="pwa-install-accept" extra_classes="whitespace-nowrap" label=_("Install") %}
+            <button
+                type="button"
+                data-action="dismiss"
+                aria-label="{% trans 'Dismiss' %}"
+                class="text-text-3 hover:text-text-1 text-lg leading-none px-2"
+            >
+                &times;
+            </button>
+        </div>
+    </div>
+</div>
+
+<div
+    id="pwa-install-ios"
+    role="dialog"
+    aria-labelledby="pwa-install-ios-title"
+    class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[9997] w-[calc(100vw-2rem)] max-w-md"
+>
+    <div class="bg-card text-text-1 rounded-card border border-border shadow-glass p-4">
+        <div class="flex items-start justify-between gap-3">
+            <p id="pwa-install-ios-title" class="text-sm font-semibold">
+                {% trans "Add Snowdesk to your Home Screen" %}
+            </p>
+            <button
+                type="button"
+                data-action="dismiss"
+                aria-label="{% trans 'Dismiss' %}"
+                class="text-text-3 hover:text-text-1 text-lg leading-none px-2"
+            >
+                &times;
+            </button>
+        </div>
+        <p class="text-xs text-text-2 mt-1">
+            {% blocktrans trimmed %}
+                Tap the Share icon, then choose <b>Add to Home Screen</b>. Home-screen installs unlock notifications and
+                offline access.
+            {% endblocktrans %}
+        </p>
+        <div class="mt-3 flex items-center justify-center gap-3 text-text-2">
+            {# Inline SVG: minimal Share icon → arrow → home-screen tile. #}
+            {# aria-hidden — the surrounding copy carries the semantics.   #}
+            <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                aria-hidden="true"
+            >
+                <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M12 3v13.5m0-13.5-3 3m3-3 3 3M4.5 12v6a2.25 2.25 0 0 0 2.25 2.25h10.5A2.25 2.25 0 0 0 19.5 18v-6"
+                />
+            </svg>
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                aria-hidden="true"
+            >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 12h16m-6-6 6 6-6 6" />
+            </svg>
+            <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                aria-hidden="true"
+            >
+                <rect x="4" y="4" width="16" height="16" rx="3" ry="3" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8M8 12h8" />
+            </svg>
+        </div>
+    </div>
+</div>
