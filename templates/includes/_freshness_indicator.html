@@ -38,3 +38,23 @@ Spec §10.2 / §10.7 — no lying green tick on unverified data.
     <span data-role="freshness-label">{% blocktrans with ts=generated_at|date:'H:i d/m' %}Updated
             {{ ts }}{% endblocktrans %}</span>
 </span>
+{# SNOW-384: the freshness state is only known here — this partial's own  #}
+{# render context — so the pwa.freshness.{fresh,stale,unsafe} signal is   #}
+{# emitted right where the state is computed, per instance rendered. Uses #}
+{# ``currentScript.previousElementSibling`` rather than an id lookup so   #}
+{# multiple instances of this partial on one page (e.g. several map       #}
+{# tooltips) each report their own state correctly.                      #}
+<script nonce="{{ request.csp_nonce }}">
+    (function () {
+      try {
+        var el = document.currentScript.previousElementSibling;
+        var state = el && el.getAttribute('data-freshness-state');
+        if (state !== 'fresh' && state !== 'stale' && state !== 'unsafe') return;
+        window.pwaTelemetry?.emit('pwa.freshness.' + state, {
+          generated_at: el.getAttribute('data-generated-at'),
+        });
+      } catch (_err) {
+        // Telemetry must never break the freshness indicator.
+      }
+    })();
+</script>

@@ -82,7 +82,10 @@
       if (cta && typeof window.pwaResetLocalData === 'function') {
         cta.addEventListener('click', (evt) => {
           evt.preventDefault();
-          window.pwaResetLocalData().catch(() => window.location.reload());
+          // SNOW-384: forced=true — the user didn't elect to reset, the
+          // app forced their hand by entering an unrecoverable state.
+          // Reports pwa.reset.forced instead of pwa.reset.user_initiated.
+          window.pwaResetLocalData(true).catch(() => window.location.reload());
         });
       }
     } catch (_e) {
@@ -115,6 +118,67 @@
       if (!db.objectStoreNames.contains(name)) {
         db.createObjectStore(name, opts);
       }
+    }
+  }
+
+  /**
+   * SNOW-384: cold-start storage-pressure check. Fire-and-forget — never
+   * awaited by ``open()`` callers, since it's diagnostic only and must
+   * not add latency to every consumer of the DB.
+   *
+   * TODO(SNOW-XXX): tighten the heuristic once real eviction cases
+   * surface. Today it is deliberately conservative to avoid false
+   * positives on ordinary first-ever visits (where zero usage and a
+   * modest quota are both completely normal):
+   *
+   *   - ``quota`` implausibly small for any browser to hand out under
+   *     normal conditions (< 5 MB) — most browsers grant a meaningful
+   *     fraction of free disk space; a value this low suggests the OS
+   *     / browser is under real storage pressure.
+   *   - ``usage`` is exactly 0 AND this device has an independent
+   *     localStorage marker (``pwa.install.installed_at``, written by
+   *     ``pwa_install.js``) proving the PWA was previously installed —
+   *     i.e. writes were expected to exist. localStorage and IndexedDB
+   *     are evicted somewhat independently, so a surviving localStorage
+   *     marker alongside a wiped IndexedDB is a plausible eviction
+   *     signal rather than "first visit, nothing written yet".
+   */
+  function _checkStorageEstimate() {
+    try {
+      if (!('storage' in navigator) || typeof navigator.storage.estimate !== 'function') {
+        return;
+      }
+      navigator.storage
+        .estimate()
+        .then((estimate) => {
+          const quota = estimate && estimate.quota;
+          const usage = estimate && estimate.usage;
+          const MIN_PLAUSIBLE_QUOTA_BYTES = 5 * 1024 * 1024;
+          const quotaSuspiciouslyLow =
+            typeof quota === 'number' && quota > 0 && quota < MIN_PLAUSIBLE_QUOTA_BYTES;
+          let hadPriorInstall = false;
+          try {
+            hadPriorInstall = !!localStorage.getItem('pwa.install.installed_at');
+          } catch (_e) {
+            // Storage unavailable — treat as no prior-install evidence.
+          }
+          const usageZeroAfterInstall = hadPriorInstall && usage === 0;
+          if (quotaSuspiciouslyLow || usageZeroAfterInstall) {
+            try {
+              window.pwaTelemetry?.emit('pwa.storage.evicted_probable', {
+                quota,
+                usage,
+              });
+            } catch (_e) {
+              // Ignore — telemetry must never affect DB open.
+            }
+          }
+        })
+        .catch(() => {
+          // storage.estimate() rejected — nothing to report.
+        });
+    } catch (_e) {
+      // Non-fatal — this check is diagnostic only.
     }
   }
 
@@ -167,6 +231,11 @@
           reject(new Error('reset_required'));
           return;
         }
+        // SNOW-384: cold-start storage-pressure check — fire-and-forget,
+        // runs once per successful open() (this handler fires exactly
+        // once per indexedDB.open() call; _dbPromise memoisation means
+        // open() itself is only actually invoked once per page load).
+        _checkStorageEstimate();
         resolve(req.result);
       };
       req.onerror = () => {

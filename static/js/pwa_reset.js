@@ -20,8 +20,10 @@
  *   (4) Clear ``localStorage`` and ``sessionStorage``.
  *   (5) Reload the page.
  *
- * Emits a ``pwa.reset.user_initiated`` console INFO for now; SNOW-381
- * will bind it to the first-party telemetry pipeline once that lands.
+ * Emits ``pwa.reset.user_initiated`` (manage-page button, this file's own
+ * ``[data-pwa-reset-trigger]`` binding) or ``pwa.reset.forced`` (the
+ * ``db.js`` Reset Required overlay CTA, called with ``forced=true`` —
+ * SNOW-384) via ``window.pwaTelemetry?.emit``.
  *
  * The reset is idempotent — calling it twice does the same work twice
  * and lands on the same page. A confirmation dialog (``window.confirm``)
@@ -47,8 +49,17 @@
    * Run the full six-step wipe. Every step swallows its own errors —
    * we always want the reload to happen. Returns a promise that
    * resolves once the reload has been scheduled.
+   *
+   * @param {boolean} [forced] SNOW-384 — true when the reset was not an
+   *   elective user action but was forced by the app entering an
+   *   unrecoverable state (today: ``db.js``'s Reset Required overlay,
+   *   ``[data-pwa-reset-required-cta]``, after an IndexedDB migration
+   *   failure). Selects which telemetry event fires:
+   *   ``pwa.reset.forced`` vs ``pwa.reset.user_initiated``. Defaults to
+   *   ``false`` so every existing caller (the manage-page button, via
+   *   ``bindTrigger`` below) keeps reporting user-initiated.
    */
-  async function resetLocalData() {
+  async function resetLocalData(forced) {
     // (1) Service workers.
     try {
       if ('serviceWorker' in navigator) {
@@ -110,12 +121,15 @@
       // Non-fatal.
     }
 
-    // Telemetry — SNOW-385. Emits a critical event, so telemetry.js
+    // Telemetry — SNOW-385 / SNOW-384. Both pwa.reset.forced and
+    // pwa.reset.user_initiated are critical events, so telemetry.js
     // fires ``sendBeacon`` immediately (even opt-out clients still send
     // the signal, spec §16.6). Optional chaining because this file is
     // loaded on admin pages too, where telemetry.js is not.
     try {
-      window.pwaTelemetry?.emit('pwa.reset.user_initiated');
+      window.pwaTelemetry?.emit(
+        forced ? 'pwa.reset.forced' : 'pwa.reset.user_initiated',
+      );
     } catch (_err) {
       // Ignore — analytics must never break the reset flow.
     }
