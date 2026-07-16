@@ -58,6 +58,25 @@ class TestEmitServerSignal:
             emit_server_signal("pwa.push.sent", {"subscription_pk": 1})
         mock_capture.assert_not_called()
 
+    @override_settings(POSTHOG_API_KEY="")
+    def test_analytics_track_not_called_when_key_empty(self) -> None:
+        """SNOW-384: the gate lives in emit_server_signal itself — it never
+        even calls ``analytics.track()`` when the key is unset, rather than
+        relying solely on ``track()``'s own internal no-op.
+        """
+        with patch("analytics.signals.analytics.track") as mock_track:
+            emit_server_signal("pwa.push.sent", {"subscription_pk": 1})
+        mock_track.assert_not_called()
+
+    @override_settings(POSTHOG_API_KEY="test-key")
+    def test_analytics_track_called_when_key_set(self) -> None:
+        """SNOW-384: with a key configured, ``analytics.track()`` is called."""
+        with patch("analytics.signals.analytics.track") as mock_track:
+            emit_server_signal("pwa.push.sent", {"subscription_pk": 1})
+        mock_track.assert_called_once_with(
+            "pwa.push.sent", SERVER_DISTINCT_ID, {"subscription_pk": 1}
+        )
+
 
 class TestVersionEndpointSignal:
     """/api/version fires ``pwa.version.endpoint.hit``."""
@@ -80,7 +99,9 @@ class TestSwConfigSignal:
     @override_settings(SW_URL="/sw.js", SW_KILL=False)
     def test_get_sw_config_emits_signal(self) -> None:
         with patch("posthog.capture") as mock_capture:
-            response = Client().get("/api/sw-config")
+            response = Client().get(
+                "/api/sw-config", HTTP_X_CLIENT_VERSION="2026.07.16.abc"
+            )
         assert response.status_code == 200
         hits = [
             c
@@ -88,7 +109,40 @@ class TestSwConfigSignal:
             if c.kwargs["event"] == "pwa.sw_config.hit"
         ]
         assert len(hits) == 1
-        assert hits[0].kwargs["properties"] == {"sw_url": "/sw.js", "kill": False}
+        assert hits[0].kwargs["properties"] == {
+            "sw_url": "/sw.js",
+            "kill": False,
+            "client_version": "2026.07.16.abc",
+        }
+
+    @pytest.mark.django_db
+    @_POSTHOG
+    @override_settings(SW_URL="/sw-kill.js", SW_KILL=True)
+    def test_get_sw_config_emits_reason_when_killed(self) -> None:
+        """SNOW-384: ``reason`` is stamped only when ``kill`` is true."""
+        with patch("posthog.capture") as mock_capture:
+            Client().get("/api/sw-config")
+        hits = [
+            c
+            for c in mock_capture.call_args_list
+            if c.kwargs["event"] == "pwa.sw_config.hit"
+        ]
+        assert len(hits) == 1
+        assert hits[0].kwargs["properties"]["reason"] == "env_kill_switch"
+
+    @pytest.mark.django_db
+    @_POSTHOG
+    def test_get_version_emits_client_version_property(self) -> None:
+        """SNOW-384: client_version is read off the X-Client-Version header."""
+        with patch("posthog.capture") as mock_capture:
+            Client().get("/api/version", HTTP_X_CLIENT_VERSION="2026.07.16.abc")
+        hits = [
+            c
+            for c in mock_capture.call_args_list
+            if c.kwargs["event"] == "pwa.version.endpoint.hit"
+        ]
+        assert len(hits) == 1
+        assert hits[0].kwargs["properties"] == {"client_version": "2026.07.16.abc"}
 
 
 class TestPushSentSignals:
@@ -115,6 +169,34 @@ class TestPushSentSignals:
         assert result["ok"] is True
         events = [c.kwargs["event"] for c in mock_capture.call_args_list]
         assert "pwa.push.sent" in events
+
+    @pytest.mark.django_db
+    @_POSTHOG
+    def test_success_threads_client_version(self) -> None:
+        """SNOW-384: client_version passed to dispatch_push lands in properties."""
+        from subscriptions.push_service import dispatch_push
+        from tests.factories import PushSubscriptionFactory
+
+        sub = PushSubscriptionFactory.create()
+
+        class _FakeResp:
+            status_code = 201
+
+        with (
+            patch("subscriptions.push_service.webpush", return_value=_FakeResp()),
+            patch("posthog.capture") as mock_capture,
+        ):
+            dispatch_push(
+                sub, {"title": "t", "body": "b"}, client_version="2026.07.16.abc"
+            )
+
+        hits = [
+            c
+            for c in mock_capture.call_args_list
+            if c.kwargs["event"] == "pwa.push.sent"
+        ]
+        assert len(hits) == 1
+        assert hits[0].kwargs["properties"]["client_version"] == "2026.07.16.abc"
 
     @pytest.mark.django_db
     @_POSTHOG

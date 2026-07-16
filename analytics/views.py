@@ -22,6 +22,7 @@ import json
 import logging
 from typing import cast
 
+from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -56,6 +57,60 @@ def _error(status: int, code: str) -> JsonResponse:
 
     """
     return JsonResponse({"error": code}, status=status)
+
+
+def _posthog_configured() -> bool:
+    """Return True when ``settings.POSTHOG_API_KEY`` is a non-empty string.
+
+    Read at call time (not module import time) so ``@override_settings``
+    in tests takes effect immediately — matches the pattern used by
+    ``config.settings.base._posthog_request_filter`` and
+    ``analytics.signals.emit_server_signal``.
+    """
+    return bool((getattr(settings, "POSTHOG_API_KEY", "") or "").strip())
+
+
+def _parse_events(
+    request: HttpRequest,
+) -> tuple[JsonResponse, None] | tuple[None, list[dict[str, object]]]:
+    """Validate content-type, size, JSON body, and envelope schema.
+
+    Returns either ``(error_response, None)`` on the first validation
+    failure, or ``(None, events)`` once the request body has been reduced
+    to a validated list of envelope dicts. Split out of
+    ``telemetry_receive`` purely to keep that view's cyclomatic complexity
+    within the project's lint threshold — no behavioural change from the
+    inline version.
+
+    Args:
+        request: The incoming POST request.
+
+    Returns:
+        A ``(error_response, None)`` or ``(None, events)`` pair.
+
+    """
+    content_type = (request.content_type or "").lower()
+    if content_type != "application/json" and not content_type.endswith("+json"):
+        return _error(415, "unsupported_media_type"), None
+
+    if len(request.body) > MAX_PAYLOAD_BYTES:
+        return _error(413, "payload_too_large"), None
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        # Full exception detail is logged server-side; the response body
+        # carries only the machine code so no stack info flows out.
+        logger.info("telemetry invalid_json: %s", exc)
+        return _error(400, "invalid_json"), None
+
+    try:
+        events = parse_payload(payload)
+    except TelemetrySchemaError as exc:
+        logger.info("telemetry invalid_envelope: %s", exc)
+        return _error(400, "invalid_envelope"), None
+
+    return None, events
 
 
 # The receiver has no side effect beyond forwarding to PostHog and
@@ -101,30 +156,32 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
         on malformed input.
 
     """
-    content_type = (request.content_type or "").lower()
-    if content_type != "application/json" and not content_type.endswith("+json"):
-        return _error(415, "unsupported_media_type")
-
-    if len(request.body) > MAX_PAYLOAD_BYTES:
-        return _error(413, "payload_too_large")
-
     if getattr(request, "limited", False):
         logger.info("telemetry rate-limited ip=%s", _client_ip(request))
         return HttpResponse(status=204)
 
-    try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        # Full exception detail is logged server-side; the response body
-        # carries only the machine code so no stack info flows out.
-        logger.info("telemetry invalid_json: %s", exc)
-        return _error(400, "invalid_json")
+    error_response, maybe_events = _parse_events(request)
+    if error_response is not None:
+        return error_response
+    # ``_parse_events`` guarantees a non-None events list whenever
+    # error_response is None; the cast narrows for mypy the same way
+    # ``ratings()`` elsewhere in the codebase narrows a tuple return.
+    events = cast("list[dict[str, object]]", maybe_events)
 
-    try:
-        events = parse_payload(payload)
-    except TelemetrySchemaError as exc:
-        logger.info("telemetry invalid_envelope: %s", exc)
-        return _error(400, "invalid_envelope")
+    # SNOW-384: no PostHog key configured (dev/test, or an unconfigured
+    # deploy) — the client still gets its 204 so ``queue:events`` drains
+    # normally client-side (telemetry.js's local buffering is a purely
+    # client-side concern, unaffected either way); there is simply
+    # nothing to forward server-side. Schema validation above already
+    # ran; the per-event PII check normally performed inside
+    # ``analytics.track()`` is skipped along with the capture call it
+    # would have guarded — there is no PostHog send for it to protect
+    # once the key is absent.
+    if not _posthog_configured():
+        logger.debug(
+            "telemetry dropped (POSTHOG_API_KEY unset): events=%d", len(events)
+        )
+        return HttpResponse(status=204)
 
     forwarded = 0
     for event in events:

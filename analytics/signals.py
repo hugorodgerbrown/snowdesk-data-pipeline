@@ -21,11 +21,21 @@ Signals are no-ops when ``POSTHOG_API_KEY`` is empty, and any exception
 from the PostHog client is caught by ``analytics.track()`` and logged
 without propagating — matching the existing analytics contract that
 event capture must never break a request.
+
+SNOW-384: the empty-key check is duplicated here (``analytics.track()``
+already no-ops internally on the same condition) so this module is
+self-contained — a caller reading this file doesn't need to trace into
+``analytics.track()`` to understand why nothing reaches PostHog in
+dev/test. The duplication is deliberate, not drift.
 """
 
 from __future__ import annotations
 
+import logging
+
 import analytics
+
+logger = logging.getLogger(__name__)
 
 # Synthetic distinct_id for events originated by the server rather than
 # by a real user. PostHog requires a distinct_id on every capture; using
@@ -37,6 +47,10 @@ SERVER_DISTINCT_ID: str = "_server"
 def emit_server_signal(event: str, properties: dict[str, object] | None = None) -> None:
     """Capture one server-originated PWA signal to PostHog.
 
+    No-op when ``settings.POSTHOG_API_KEY`` is empty or unset — logged at
+    DEBUG rather than silently swallowed, so a dev/test run can confirm
+    signals would have fired without needing a real PostHog key.
+
     Args:
         event: The event name — one of the spec §16.2 signals listed in
             this module's docstring. Not enforced here (adding a new one
@@ -45,4 +59,16 @@ def emit_server_signal(event: str, properties: dict[str, object] | None = None) 
             the PII keys blocked by ``analytics.track()``.
 
     """
+    # Deferred import — mirrors the pattern in analytics/__init__.py and
+    # config/settings/base.py's _posthog_request_filter: reading
+    # django.conf.settings at call time (not import time) means
+    # @override_settings in tests takes effect immediately.
+    from django.conf import settings  # noqa: PLC0415 — intentional late import
+
+    api_key: str = (getattr(settings, "POSTHOG_API_KEY", "") or "").strip()
+    if not api_key:
+        logger.debug(
+            "emit_server_signal no-op (POSTHOG_API_KEY unset): event=%s", event
+        )
+        return
     analytics.track(event, SERVER_DISTINCT_ID, properties or {})

@@ -1381,7 +1381,14 @@ def version(request: HttpRequest) -> JsonResponse:
     # SNOW-381 (spec §16.2): capture the endpoint hit so the observability
     # dashboards can chart poll cadence and detect clients that stop
     # phoning home.
-    emit_server_signal("pwa.version.endpoint.hit")
+    # SNOW-384: client_version is read from the X-Client-Version request
+    # header (absent today — no client currently sends it — so this is
+    # "" in practice until a client-side change starts sending it; the
+    # server-side plumbing is in place regardless).
+    emit_server_signal(
+        "pwa.version.endpoint.hit",
+        {"client_version": request.headers.get("X-Client-Version", "")},
+    )
     return response
 
 
@@ -1407,8 +1414,20 @@ def sw_config(request: HttpRequest) -> JsonResponse:
     response["Cache-Control"] = "no-store"
     # SNOW-381 (spec §16.2): capture the endpoint hit so we can spot
     # SW-registration attempts that never proceed to install/activate.
-    emit_server_signal(
-        "pwa.sw_config.hit",
-        {"sw_url": settings.SW_URL, "kill": bool(settings.SW_KILL)},
-    )
+    kill = bool(settings.SW_KILL)
+    sw_config_properties: dict[str, object] = {
+        "sw_url": settings.SW_URL,
+        "kill": kill,
+        # SNOW-384: client_version — see the identical note on
+        # ``version()`` above; empty until a client sends the header.
+        "client_version": request.headers.get("X-Client-Version", ""),
+    }
+    if kill:
+        # SNOW-384: "reason" identifies what drove the kill decision.
+        # ``SW_KILL`` (config/settings/base.py) is the only kill trigger
+        # today, so the reason is a fixed string. If a second trigger is
+        # ever added (e.g. a per-version kill list), give it its own
+        # reason string here rather than overloading this one.
+        sw_config_properties["reason"] = "env_kill_switch"
+    emit_server_signal("pwa.sw_config.hit", sw_config_properties)
     return response

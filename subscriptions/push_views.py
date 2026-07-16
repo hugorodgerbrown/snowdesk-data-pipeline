@@ -126,9 +126,13 @@ def push_test(request: HttpRequest) -> HttpResponse:
         "url": data.get("url", "/"),
     }
 
+    # SNOW-384: thread client_version through to the background dispatch —
+    # the worker has no request of its own to read the header from.
+    client_version = request.headers.get("X-Client-Version", "")
+
     count = 0
     for sub in qs:
-        enqueue_push(sub, payload)
+        enqueue_push(sub, payload, client_version)
         count += 1
 
     return JsonResponse({"ok": True, "enqueued": count})

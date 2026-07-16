@@ -346,6 +346,26 @@ class TestPushTest:
         assert data == {"ok": True, "enqueued": 1}
         mock_enqueue.assert_called_once()
 
+    def test_client_version_header_threaded_to_enqueue_push(
+        self, staff_client: Client
+    ) -> None:
+        """SNOW-384: the X-Client-Version request header reaches enqueue_push."""
+        push_sub = PushSubscriptionFactory.create(
+            endpoint="https://push.example.com/test-target-2"
+        )
+        body = {"endpoint": push_sub.endpoint}
+        with patch("subscriptions.push_views.enqueue_push") as mock_enqueue:
+            response = staff_client.post(
+                _TEST_URL,
+                data=json.dumps(body),
+                content_type="application/json",
+                HTTP_X_CLIENT_VERSION="2026.07.16.abc",
+            )
+        assert response.status_code == 200
+        mock_enqueue.assert_called_once_with(
+            push_sub, mock_enqueue.call_args[0][1], "2026.07.16.abc"
+        )
+
     def test_enqueue_push_called_for_every_matching_row(
         self, staff_client: Client
     ) -> None:

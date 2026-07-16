@@ -78,8 +78,21 @@ def _build_wire_payload(
     return payload
 
 
-def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, Any]:
-    """Send one Web Push and return a per-row outcome dict."""
+def dispatch_push(
+    sub: PushSubscription, payload: dict[str, Any], client_version: str = ""
+) -> dict[str, Any]:
+    """Send one Web Push and return a per-row outcome dict.
+
+    Args:
+        sub: The subscription to deliver to.
+        payload: Push payload dict (``title``, ``body``, ``url``).
+        client_version: SNOW-384 — threaded in from the caller rather than
+            read off a request, because dispatch runs inside a background
+            task (``_worker_dispatch_push``) with no request in scope.
+            Defaults to ``""`` when the caller has no value to pass (e.g.
+            a future non-request-triggered push send).
+
+    """
     wire_payload = _build_wire_payload(sub, payload)
     try:
         response = webpush(
@@ -98,7 +111,10 @@ def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, A
             # signal the observability dashboard reconciles against
             # client-side pwa.push.subscription_lost. Emit before the save
             # so sub.pk is unambiguous in the event payload.
-            emit_server_signal("pwa.push.gone_410", {"subscription_pk": sub.pk})
+            emit_server_signal(
+                "pwa.push.gone_410",
+                {"subscription_pk": sub.pk, "client_version": client_version},
+            )
             logger.info(
                 "marking push subscription pk=%s endpoint=%.30s… inactive (410)",
                 sub.pk,
@@ -125,7 +141,11 @@ def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, A
     # progresses.
     emit_server_signal(
         "pwa.push.sent",
-        {"subscription_pk": sub.pk, "status": response.status_code},
+        {
+            "subscription_pk": sub.pk,
+            "status": response.status_code,
+            "client_version": client_version,
+        },
     )
     return {"ok": True, "status": response.status_code}
 
@@ -137,7 +157,9 @@ def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, A
 
 
 @task()
-def _worker_dispatch_push(sub_pk: int, payload: dict[str, Any]) -> None:
+def _worker_dispatch_push(
+    sub_pk: int, payload: dict[str, Any], client_version: str = ""
+) -> None:
     """
     Background worker: load a PushSubscription by PK and dispatch the push.
 
@@ -155,6 +177,9 @@ def _worker_dispatch_push(sub_pk: int, payload: dict[str, Any]) -> None:
     Args:
         sub_pk: Primary key of the ``PushSubscription`` to deliver to.
         payload: Push payload dict (``title``, ``body``, ``url``).
+        client_version: SNOW-384 — carried through from ``enqueue_push``
+            (which reads it off the triggering request) since this worker
+            has no request of its own.
 
     """
     try:
@@ -165,7 +190,7 @@ def _worker_dispatch_push(sub_pk: int, payload: dict[str, Any]) -> None:
             sub_pk,
         )
         return
-    dispatch_push(sub, payload)
+    dispatch_push(sub, payload, client_version)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +198,9 @@ def _worker_dispatch_push(sub_pk: int, payload: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def enqueue_push(sub: PushSubscription, payload: dict[str, Any]) -> None:
+def enqueue_push(
+    sub: PushSubscription, payload: dict[str, Any], client_version: str = ""
+) -> None:
     """
     Enqueue a Web Push delivery for ``sub`` to run off the request cycle.
 
@@ -184,6 +211,9 @@ def enqueue_push(sub: PushSubscription, payload: dict[str, Any]) -> None:
     Args:
         sub: The ``PushSubscription`` to deliver to.
         payload: Push payload dict (``title``, ``body``, ``url``).
+        client_version: SNOW-384 — the ``X-Client-Version`` header off the
+            request that triggered this send, if any. Defaults to ``""``
+            for callers with no request in scope.
 
     """
-    _worker_dispatch_push.enqueue(sub.pk, payload)
+    _worker_dispatch_push.enqueue(sub.pk, payload, client_version)

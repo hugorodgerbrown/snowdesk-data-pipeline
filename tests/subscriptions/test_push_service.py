@@ -81,7 +81,10 @@ class TestDispatchPush:
         sub.refresh_from_db()
         assert sub.inactive_at is not None
         assert sub.inactive_at >= before
-        mock_emit.assert_any_call("pwa.push.gone_410", {"subscription_pk": sub.pk})
+        mock_emit.assert_any_call(
+            "pwa.push.gone_410",
+            {"subscription_pk": sub.pk, "client_version": ""},
+        )
 
     def test_dispatch_push_404_still_deletes(self) -> None:
         """A 404 WebPushException still hard-deletes the row (equivalent to
@@ -242,6 +245,15 @@ class TestWorkerDispatchPush:
         with patch("subscriptions.push_service.dispatch_push") as mock_dispatch:
             _worker_dispatch_push.call(999999, payload)
         mock_dispatch.assert_not_called()
+
+    def test_threads_client_version_to_dispatch_push(self) -> None:
+        """SNOW-384: client_version passed to the worker reaches dispatch_push."""
+        sub = PushSubscriptionFactory.create()
+        payload = {"title": "Hi", "body": "Test", "url": "/"}
+        with patch("subscriptions.push_service.dispatch_push") as mock_dispatch:
+            _worker_dispatch_push.call(sub.pk, payload, "2026.07.16.abc")
+        call_args = mock_dispatch.call_args
+        assert call_args[0][2] == "2026.07.16.abc"
 
     def test_does_not_exist_log_contains_pk_not_email(
         self,
