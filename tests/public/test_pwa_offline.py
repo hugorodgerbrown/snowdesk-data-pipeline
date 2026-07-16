@@ -88,8 +88,18 @@ def _render(template: str, ctx: dict) -> str:
 
 
 def test_freshness_tag_returns_state_string() -> None:
-    """The tag can be assigned via ``as`` and rendered inline."""
-    generated = _NOW - timedelta(hours=1)
+    """The tag can be assigned via ``as`` and rendered inline.
+
+    The template tag reads the current time from ``django.utils.timezone.now()``
+    at render time, so ``generated`` must be relative to the real "now"
+    rather than the module-level ``_NOW`` fixture — which is a fixed
+    2026-07-15 value used for the classifier tests, and would put
+    ``generated`` more than 24h in the past when the calendar rolls
+    forward.
+    """
+    from django.utils import timezone as django_timezone
+
+    generated = django_timezone.now() - timedelta(hours=1)
     out = _render(
         "{% load pwa_freshness %}{% freshness_state generated as s %}{{ s }}",
         {"generated": generated},
