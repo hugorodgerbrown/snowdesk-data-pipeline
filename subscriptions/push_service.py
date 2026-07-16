@@ -1,10 +1,15 @@
 """
 subscriptions/push_service.py — Wrap pywebpush for the spike.
 
-Single function ``dispatch_push(sub, payload)`` that encrypts and POSTs the
-payload to the push service URL stored on a PushSubscription. Returns a
-small status dict; never raises — callers iterate over many rows and want
-per-row outcomes, not a halt on the first 410 Gone.
+Single function ``dispatch_push(sub, payload, client_version="")`` that
+encrypts and POSTs the payload to the push service URL stored on a
+PushSubscription. Returns a small status dict; never raises — callers
+iterate over many rows and want per-row outcomes, not a halt on the first
+410 Gone. ``client_version`` is threaded through onto the server-side
+``pwa.push.sent`` / ``pwa.push.gone_410`` telemetry signals so PostHog's
+version-distribution and push-health dashboards can filter by client build
+(SNOW-384); the value comes from the ``X-Client-Version`` request header
+in the caller's context.
 
 404 vs 410 (SNOW-380, spec §8): a 404 means the endpoint URL itself is
 wrong (a rare transport-layer error) and the row is hard-deleted. A 410
@@ -23,9 +28,12 @@ that the service worker's ``push`` event handler parses in JS. The
 fixed JSON shape the OS renders without running any JS — see
 ``_build_wire_payload`` and ``docs/push-notifications.md``.
 
-``enqueue_push(sub, payload)`` is the async entry point: it enqueues a
-``_worker_dispatch_push`` task via django-tasks so the actual pywebpush
-HTTP round-trip runs off the request cycle (SNOW-319).
+``enqueue_push(sub, payload, client_version="")`` is the async entry
+point: it enqueues a ``_worker_dispatch_push`` task via django-tasks so
+the actual pywebpush HTTP round-trip runs off the request cycle
+(SNOW-319). ``client_version`` is captured at enqueue time and passed
+through to the worker so the dispatched telemetry carries the same
+value regardless of when the task actually runs.
 """
 
 from __future__ import annotations

@@ -197,8 +197,10 @@ self.addEventListener('install', (event) => {
       // miss (e.g. user opens a never-visited page while offline).
       const cache = await caches.open(CACHE_VERSION);
       await cache.addAll(PRECACHE_URLS);
-      // SNOW-384: the browser fires 'install' exactly once per new SW
-      // script — no extra gating needed for idempotency here.
+      // SNOW-384: the browser fires 'install' once per successful
+      // install cycle (a failed install can retry). Emitting after
+      // cache.addAll() resolves means we only record successful
+      // installs, so no extra idempotency guard is needed.
       _postTelemetry('pwa.sw.installed', { cache_version: CACHE_VERSION });
     })(),
   );

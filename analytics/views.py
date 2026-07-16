@@ -152,8 +152,11 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
         request: The incoming POST request.
 
     Returns:
-        204 No Content on success or when rate-limited; 400 / 413 / 415
-        on malformed input.
+        204 No Content on success, when rate-limited, or when the
+        PostHog API key is unset. 400 / 413 / 415 on malformed input.
+        The rate-limit short-circuit runs *before* input validation, so
+        a rate-limited request with a bad content-type still gets 204
+        (less information leaked to an abuser).
 
     """
     if getattr(request, "limited", False):

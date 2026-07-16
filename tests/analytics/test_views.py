@@ -344,6 +344,10 @@ class TestReceiverNoPostHogKey:
         assert response.status_code == 204
         mock_track.assert_not_called()
 
+
+class TestReceiverKeyGatePositive:
+    """SNOW-384: with a key configured, the forward loop still runs."""
+
     @_POSTHOG
     def test_analytics_track_called_when_key_set(self) -> None:
         """SNOW-384: with a key configured, the forward loop still runs."""
