@@ -119,7 +119,12 @@ class TestPushSentSignals:
     @pytest.mark.django_db
     @_POSTHOG
     def test_410_emits_push_gone(self) -> None:
-        """A 410 response fires pwa.push.gone_410 and drops the subscription."""
+        """A 410 response fires pwa.push.gone_410 and soft-deletes the subscription.
+
+        SNOW-380: 410 marks the row inactive (``inactive_at`` set) rather
+        than deleting it, so the client-side re-verification loop has a
+        record to reconcile against.
+        """
         from pywebpush import WebPushException
 
         from subscriptions.push_service import dispatch_push
@@ -144,10 +149,11 @@ class TestPushSentSignals:
         assert result["status"] == 410
         events = [c.kwargs["event"] for c in mock_capture.call_args_list]
         assert "pwa.push.gone_410" in events
-        # Subscription row was removed.
+        # Subscription row is kept but marked inactive.
         from subscriptions.models import PushSubscription
 
-        assert not PushSubscription.objects.filter(pk=sub_pk).exists()
+        row = PushSubscription.objects.get(pk=sub_pk)
+        assert row.inactive_at is not None
 
 
 class TestIdempotencyReplaySignal:
