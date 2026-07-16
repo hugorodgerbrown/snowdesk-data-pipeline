@@ -136,6 +136,56 @@ const STATIC_PATHS = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
+// Telemetry bridge (SNOW-384)
+// ---------------------------------------------------------------------------
+//
+// A service worker has no ``window`` — ``window.pwaTelemetry`` (SNOW-385,
+// static/js/telemetry.js) is unreachable from here. Instead we post a
+// ``{type: 'pwa-telemetry', event, properties}`` message to the client(s)
+// this worker controls; ``sw_register.js`` carries a matching
+// ``navigator.serviceWorker.addEventListener('message', ...)`` listener
+// that forwards it to ``window.pwaTelemetry.emit(event, properties)``. The
+// envelope-level context fields (platform, install_state, sw_state,
+// client_version, …) are attached by ``telemetry.js`` on the page side from
+// ``window.pwaDb.context()`` — this helper only needs to supply the event
+// name and any event-specific properties.
+//
+// Best-effort throughout: telemetry must never affect SW lifecycle
+// behaviour, so every step here is wrapped and swallows its own errors.
+//
+// @param {string} eventName
+// @param {object} [properties]
+// @param {string} [clientId] Target a single client (e.g. the ``fetch``
+//   event's originating client) rather than broadcasting to every open tab.
+function _postTelemetry(eventName, properties, clientId) {
+  const message = { type: 'pwa-telemetry', event: eventName, properties: properties || {} };
+  const send = (client) => {
+    try {
+      client.postMessage(message);
+    } catch (_err) {
+      // Ignore — a torn-down client is not worth retrying for telemetry.
+    }
+  };
+  try {
+    if (clientId) {
+      self.clients
+        .get(clientId)
+        .then((client) => {
+          if (client) send(client);
+        })
+        .catch(() => {});
+      return;
+    }
+    self.clients
+      .matchAll({ includeUncontrolled: true, type: 'window' })
+      .then((all) => all.forEach(send))
+      .catch(() => {});
+  } catch (_err) {
+    // Non-fatal — telemetry must never break the SW lifecycle.
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Lifecycle — install
 // ---------------------------------------------------------------------------
 
@@ -147,6 +197,9 @@ self.addEventListener('install', (event) => {
       // miss (e.g. user opens a never-visited page while offline).
       const cache = await caches.open(CACHE_VERSION);
       await cache.addAll(PRECACHE_URLS);
+      // SNOW-384: the browser fires 'install' exactly once per new SW
+      // script — no extra gating needed for idempotency here.
+      _postTelemetry('pwa.sw.installed', { cache_version: CACHE_VERSION });
     })(),
   );
   // Deliberately NOT calling self.skipWaiting() here. The new worker
@@ -163,31 +216,45 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      // Reap caches from earlier SW versions so disk doesn't grow.
-      // Use ``startsWith('snowdesk-shell-')`` rather than a strict
-      // equality check so legacy ``map-shell-*`` caches from the
-      // SNOW-9 precache controller also get cleared on first install
-      // of the SNOW-79 SW (see the catch-all sweep below).
-      const cacheNames = await caches.keys();
-      const deletions = cacheNames
-        .filter(
-          (name) =>
-            name.startsWith('snowdesk-shell-') ||
-            name.startsWith('map-shell-'),
-        )
-        .filter((name) => name !== CACHE_VERSION)
-        .map((name) => caches.delete(name));
-      await Promise.all(deletions);
-      // Take control of every open client the moment we activate. This is
-      // safe now precisely because we no longer auto-skipWaiting on
-      // install: activation only happens after the user opts into the
-      // update (SKIP_WAITING) or after every tab has closed, so claiming
-      // can't drive the dev reload-loop the old design avoided. Claiming
-      // fires ``controllerchange`` in the page, which sw_register.js turns
-      // into exactly one reload onto the new shell — guaranteeing the tab
-      // actually moves to the new version rather than lingering on the old
-      // worker.
-      await self.clients.claim();
+      try {
+        // Reap caches from earlier SW versions so disk doesn't grow.
+        // Use ``startsWith('snowdesk-shell-')`` rather than a strict
+        // equality check so legacy ``map-shell-*`` caches from the
+        // SNOW-9 precache controller also get cleared on first install
+        // of the SNOW-79 SW (see the catch-all sweep below).
+        const cacheNames = await caches.keys();
+        const deletions = cacheNames
+          .filter(
+            (name) =>
+              name.startsWith('snowdesk-shell-') ||
+              name.startsWith('map-shell-'),
+          )
+          .filter((name) => name !== CACHE_VERSION)
+          .map((name) => caches.delete(name));
+        await Promise.all(deletions);
+        // Take control of every open client the moment we activate. This is
+        // safe now precisely because we no longer auto-skipWaiting on
+        // install: activation only happens after the user opts into the
+        // update (SKIP_WAITING) or after every tab has closed, so claiming
+        // can't drive the dev reload-loop the old design avoided. Claiming
+        // fires ``controllerchange`` in the page, which sw_register.js turns
+        // into exactly one reload onto the new shell — guaranteeing the tab
+        // actually moves to the new version rather than lingering on the old
+        // worker.
+        await self.clients.claim();
+        // SNOW-384: the browser fires 'activate' exactly once per SW
+        // instance — no extra gating needed for idempotency here.
+        _postTelemetry('pwa.sw.activated', { cache_version: CACHE_VERSION });
+      } catch (err) {
+        // SNOW-384: pwa.sw.activation_failed is a critical event
+        // (telemetry.js CRITICAL_EVENTS) — fires sendBeacon immediately
+        // once forwarded by sw_register.js.
+        _postTelemetry('pwa.sw.activation_failed', {
+          cache_version: CACHE_VERSION,
+          message: String((err && err.message) || err || 'unknown'),
+        });
+        throw err;
+      }
     })(),
   );
 });
@@ -276,12 +343,55 @@ async function _networkFirst(request) {
   }
 }
 
+/**
+ * Wrap a strategy promise so an unexpected ``undefined`` / non-Response
+ * resolution — which would otherwise surface to the page as a raw
+ * network error with no diagnostic trail — is caught, reported via the
+ * SNOW-384 telemetry bridge, and replaced with a same-request network
+ * fetch so the navigation/asset load still has a chance to succeed.
+ *
+ * Both ``_staleWhileRevalidate`` and ``_networkFirst`` always resolve to
+ * a ``Response`` today; this is a defensive guard against a future
+ * regression in either function, not a documented current failure mode.
+ *
+ * @param {Promise<Response>} responsePromise
+ * @param {Request} request
+ * @param {string} [clientId]
+ * @returns {Promise<Response>}
+ */
+async function _guardedRespond(responsePromise, request, clientId) {
+  const response = await responsePromise;
+  if (!response || typeof response.status !== 'number') {
+    // SNOW-384: pwa.sw.fetch_undefined is a critical event — sendBeacon
+    // fires immediately once sw_register.js forwards it.
+    _postTelemetry(
+      'pwa.sw.fetch_undefined',
+      { url: request.url, mode: request.mode },
+      clientId,
+    );
+    return fetch(request);
+  }
+  return response;
+}
+
 self.addEventListener('fetch', (event) => {
   const strategy = _classify(event.request);
   if (strategy === 'static') {
-    event.respondWith(_staleWhileRevalidate(event.request));
+    event.respondWith(
+      _guardedRespond(
+        _staleWhileRevalidate(event.request),
+        event.request,
+        event.clientId,
+      ),
+    );
   } else if (strategy === 'navigate') {
-    event.respondWith(_networkFirst(event.request));
+    event.respondWith(
+      _guardedRespond(
+        _networkFirst(event.request),
+        event.request,
+        event.clientId,
+      ),
+    );
   }
   // 'network' → fall through to the default browser fetch. No
   // event.respondWith() call means the request is never seen by the
@@ -322,19 +432,35 @@ self.addEventListener('push', (event) => {
       payload.body = event.data.text();
     }
   }
-  const promise = self.registration.showNotification(payload.title, {
-    body: payload.body,
-    icon: '/static/icons/pwa/icon-192.png',
-    badge: '/static/icons/pwa/icon-192.png',
-    data: { url: payload.url },
-    tag: 'snowdesk-push',
-  });
+  // SNOW-384: pwa.push.received is the client half of the push funnel
+  // (server half: pwa.push.sent / pwa.push.gone_410 in push_service.py).
+  // One 'push' event = one occurrence, so this fires exactly once per
+  // delivered message — naturally idempotent.
+  _postTelemetry('pwa.push.received', { url: payload.url });
+  const promise = self.registration
+    .showNotification(payload.title, {
+      body: payload.body,
+      icon: '/static/icons/pwa/icon-192.png',
+      badge: '/static/icons/pwa/icon-192.png',
+      data: { url: payload.url },
+      tag: 'snowdesk-push',
+    })
+    .then(() => {
+      // SNOW-384: emitted only after showNotification's promise
+      // resolves, so a suppressed/failed notification (denied
+      // permission, browser quirk) does not falsely report "shown".
+      _postTelemetry('pwa.push.shown', { url: payload.url });
+    });
   event.waitUntil(promise);
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const target = event.notification.data?.url || '/';
+  // SNOW-384: one click = one occurrence. Emitted unconditionally on
+  // click, ahead of the focus/openWindow race below, so the signal
+  // isn't lost if the focus/navigate branch throws.
+  _postTelemetry('pwa.push.opened', { url: target });
   const promise = (async () => {
     const all = await self.clients.matchAll({
       type: 'window',

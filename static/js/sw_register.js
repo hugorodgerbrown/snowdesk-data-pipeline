@@ -95,6 +95,27 @@
   // Guards against a double reload if controllerchange fires more than
   // once.
   let refreshing = false;
+  // SNOW-384: idempotency guard for pwa.sw.update_available — showUpdateBanner
+  // can be reached from three entry points (registration.waiting at
+  // register-time, registration.installing, and updatefound); this
+  // ensures the telemetry event fires once per distinct waiting worker
+  // rather than once per entry point that happens to observe it.
+  let announcedUpdateWorker = null;
+
+  // SNOW-384: SW → page telemetry bridge. sw.js (and sw-kill.js) have no
+  // ``window`` and so cannot call ``window.pwaTelemetry`` directly; they
+  // instead post ``{type: 'pwa-telemetry', event, properties}`` to every
+  // client they control. This single listener forwards any such message,
+  // regardless of which SW script sent it, to ``window.pwaTelemetry.emit``.
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    const data = event.data;
+    if (!data || data.type !== 'pwa-telemetry' || !data.event) return;
+    try {
+      window.pwaTelemetry?.emit(data.event, data.properties || {});
+    } catch (_err) {
+      // Ignore — telemetry must never break the SW message channel.
+    }
+  });
 
   /**
    * Resolve the banner element, creating one if the page didn't render
@@ -168,6 +189,16 @@
    */
   function showUpdateBanner(worker) {
     if (worker) waitingWorker = worker;
+    // SNOW-384: emit once per distinct waiting worker, not once per call
+    // site that happens to observe it (see announcedUpdateWorker above).
+    if (worker && worker !== announcedUpdateWorker) {
+      announcedUpdateWorker = worker;
+      try {
+        window.pwaTelemetry?.emit('pwa.sw.update_available', {});
+      } catch (_err) {
+        // Ignore — telemetry must never break the update banner.
+      }
+    }
     if (!banner) return;
     if (banner.dataset.fallback === '1') {
       banner.style.display = 'flex';
@@ -269,6 +300,15 @@
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!userTriggeredUpdate || refreshing) return;
     refreshing = true;
+    // SNOW-384: best-effort — the reload immediately below can tear the
+    // page down before the async emit() (IndexedDB write) settles. This
+    // mirrors the same race telemetry.js accepts for other reload-adjacent
+    // events; there is no synchronous alternative here.
+    try {
+      window.pwaTelemetry?.emit('pwa.sw.update_applied', {});
+    } catch (_err) {
+      // Ignore — telemetry must never block the reload.
+    }
     window.location.reload();
   });
 
@@ -311,6 +351,17 @@
 
   fetchSwConfig().then((config) => {
     if (config.kill) {
+      // SNOW-384: Mechanism A's kill decision — this IS the "pre-register
+      // kill fetch" point: the client learns to kill before it has ever
+      // registered a SW this session. Critical event (CRITICAL_EVENTS in
+      // telemetry.js) so it fires via sendBeacon immediately.
+      try {
+        window.pwaTelemetry?.emit('pwa.kill_switch.activated', {
+          mechanism: 'a',
+        });
+      } catch (_err) {
+        // Ignore — telemetry must never block the kill switch.
+      }
       // Mechanism A activated. Unregister every SW on this origin so the
       // next navigation runs without a controller. We don't touch caches
       // here — that's the kill-switch SW's job when the flip goes through
