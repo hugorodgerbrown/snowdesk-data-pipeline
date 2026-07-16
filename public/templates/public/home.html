@@ -43,8 +43,9 @@ and loads home_intro.js in addition to the shared map assets.
 
 {% block content %}
     {# SNOW-324: off-map notification banner. Hidden by default; map.js reveals #}
-    {# it (toggling hidden↔flex, per the sw-update-banner pattern) when the     #}
-    {# locate pill is tapped while the user is outside the map's bounds. The ×  #}
+    {# it (toggling hidden↔flex — the `flex` utility would otherwise win over   #}
+    {# the HTML5 `hidden` attribute in the cascade) when the locate pill is    #}
+    {# tapped while the user is outside the map's bounds. The ×                #}
     {# and a short timeout dismiss it. Sits between the nav and the map so it   #}
     {# pushes the map down rather than overlaying it.                           #}
     {# Narrow viewports: a full-width banner in flow between the nav and the   #}

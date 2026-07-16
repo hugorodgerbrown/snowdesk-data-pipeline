@@ -1,6 +1,6 @@
 ---
 name: offline-map
-description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch Mechanism A/B, update banner, manifest icons, CACHE_VERSION
+description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch Mechanism A/B, _sw_update_banner, manifest icons, CACHE_VERSION
 status: current
 last-reviewed: 2026-07-16
 ---
@@ -22,7 +22,7 @@ manifest icons.
 |------|------|
 | `public.views.serve_manifest` | Web app manifest, served at `/manifest.webmanifest` with `Content-Type: application/manifest+json`. Declares name, `id`, `lang`, `description`, `categories`, icons, screenshots, theme/background colour, plus absolute `start_url`, `scope`, and `id` derived from `settings.SITE_BASE_URL` so each environment has a stable canonical identity (`http://localhost:8000` in dev, `https://snowdesk.info` in prod). Linked from `public/templates/public/base.html` via `{% url 'web_manifest' %}`. |
 | `static/js/sw.js` | The service worker itself. Stale-while-revalidate for static shell + the regions GeoJSON; network-first for HTML navigations (with a pre-cached `/static/offline.html` fallback); network-only for everything else. |
-| `static/js/sw_register.js` | Registers `/sw.js` at root scope on every public page. Loaded `defer` from `base.html`. Also drives the `#sw-update-banner` (see "Update strategy" below). |
+| `static/js/sw_register.js` | Registers `/sw.js` at root scope on every public page. Loaded `defer` from `base.html`. Also drives the `#sw-update-banner` (rendered from `templates/includes/_sw_update_banner.html`; see "Update strategy" below). |
 | `static/offline.html` | Branded fallback page returned by the SW when an HTML navigation fails AND no cached copy exists (SNOW-118). Inline-styled, zero external assets. |
 | `public/views.py::serve_sw` | Serves `/sw.js` with the `Service-Worker-Allowed: /` and `Cache-Control: no-cache` headers required for root-scope control + prompt SW updates. URL is registered in `public/urls.py`. |
 | `static/icons/pwa/` | Manifest icons: 192, 512, 512 maskable, and a 180×180 opaque `apple-touch-icon-180.png` for iOS home-screen launching (SNOW-118). Generated from `static/favicon.svg` by `bin/build-pwa-icons`. |
@@ -43,22 +43,35 @@ click-time, so a first-install `clients.claim()` never causes a reload
 on someone's very first visit — and there is no dev reload loop.
 
 To surface the pending update to the user, `sw_register.js` reveals a
-fixed bottom banner (`#sw-update-banner` in `base.html`) whenever a freshly
-installed SW is waiting and the page is still controlled by the old one. The
-banner offers two actions:
+fixed bottom banner (`#sw-update-banner`, rendered by
+`templates/includes/_sw_update_banner.html` and included from `base.html`)
+whenever a freshly installed SW is waiting and the page is still controlled
+by the old one. `pwa_version_check.js` (SNOW-374) reveals the same banner
+on an `X-App-Version` drift. The banner offers two actions:
 
-- **Reload** — posts `SKIP_WAITING` to the waiting worker; the worker
-  activates, `clients.claim()` fires, `controllerchange` fires,
-  `sw_register.js` reloads once.
+- **Reload** — dispatched by `handleReloadClick` in `sw_register.js`. If a
+  fresh SW is waiting, posts `SKIP_WAITING` to it (the worker activates,
+  `clients.claim()` fires, `controllerchange` fires, `sw_register.js`
+  reloads once). If no worker is waiting (the version-header path), clears
+  the SW shell caches (`snowdesk-shell-*` / `map-shell-*`) and reloads —
+  otherwise the SW's `_networkFirst` handler can hand back the cached
+  HTML with the stale `pwa-app-version` meta tag baked in, and the
+  version-check will re-show the banner in a loop. Also clears
+  `pwa.update.first_shown_at` so the accepted update doesn't later trip
+  the SNOW-374 §3.9 escalation modal.
 - **×** — dismisses the banner for the rest of the tab's lifetime.
 
 Contract, end-user-facing: *if there is an update, you see one "Reload"
 message; if there is no message, you are already on the latest version.*
 
-The banner markup is baked into `public/templates/public/base.html`; every
-user-visible string is wrapped in `{% trans %}`. The JS in `sw_register.js`
-only toggles the `hidden`/`flex` class pair (the HTML5 `hidden` attribute
-would lose to Tailwind's `flex` utility in the cascade).
+The banner uses design tokens (`bg-card`, `border-border`, `rounded-card`,
+`shadow-glass`) so it reads as a first-class Snowdesk surface — matching
+the `_pwa_install_prompt.html` shape rather than a raw status pill. It is
+offset above the mobile timeline scrubber via a `bottom: calc(5.5rem +
+env(safe-area-inset-bottom))` inline style. Reveal is via the `hidden`
+class toggle; the self-injected admin fallback in `sw_register.js`
+mirrors this via `display: flex`/`none` and carries `data-fallback="1"`
+so both reveal-sites use the same branch selector.
 
 ### How the trigger fires
 

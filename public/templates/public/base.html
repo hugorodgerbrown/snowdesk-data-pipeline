@@ -118,13 +118,9 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% endblock %}
         {# SNOW-79 follow-up: SW-update banner. Hidden by default; revealed by   #}
         {# sw_register.js when a new service worker has installed and the page  #}
-        {# is still controlled by the old one. Click "Reload" to pick up the    #}
-        {# new shell; click × to dismiss for the rest of this page's lifetime.  #}
-        {# ``.hidden`` (Tailwind's ``display: none``) instead of the HTML5      #}
-        {# ``hidden`` attribute — the latter is overridden by the ``flex``      #}
-        {# utility because the UA stylesheet's ``[hidden]`` rule is not         #}
-        {# ``!important``. The reveal/dismiss script toggles this class.        #}
-        {% include "includes/_toast.html" with id="sw-update-banner" kind="info" body=_("An updated version is available.") cta_label=_("Reload") cta_href="#" dismissible=True %}
+        {# is still controlled by the old one, and by pwa_version_check.js on   #}
+        {# an X-App-Version drift (SNOW-374 soft-update path).                  #}
+        {% include "includes/_sw_update_banner.html" %}
         {# SNOW-374: forced-update modal. Hidden by default; opened by       #}
         {# pwa_version_check.js when the server declares an X-App-Min-Version #}
         {# above the shell's build, or when the soft banner has escalated    #}
