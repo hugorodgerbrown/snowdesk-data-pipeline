@@ -66,13 +66,20 @@ def test_share_button_completes_share_flow(
     # ``wait_for_load_state("networkidle")`` only waits for the network; the
     # clipboard write may resolve after that.  Polling with a 5 s budget gives
     # the async chain time to complete without slowing down the happy path.
+    #
+    # The wait condition checks the actual assertion — that the clipboard
+    # starts with ``http`` — rather than just ``length > 0``. The previous
+    # ``length > 0`` gate could pass on a transient non-URL clipboard value
+    # (or a rejected Promise from an ill-timed poll) and then flake on the
+    # following ``evaluate`` when the URL wasn't quite there yet.
     page.wait_for_function(
-        "() => navigator.clipboard.readText().then(t => t.length > 0)",
+        "async () => { const t = await navigator.clipboard.readText();"
+        " return typeof t === 'string' && t.startsWith('http'); }",
         timeout=5000,
     )
 
     # navigator.clipboard.readText() returns a Promise — evaluate with an
     # arrow function so Playwright awaits it before returning the value.
-    clipboard: str = page.evaluate("() => navigator.clipboard.readText()")
+    clipboard: str = page.evaluate("async () => await navigator.clipboard.readText()")
     assert clipboard.startswith("http"), f"clipboard value: {clipboard!r}"
     assert page_errors == [], f"JS errors after share: {page_errors}"
