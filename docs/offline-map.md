@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch Mechanism A/B, update banner, manifest icons, CACHE_VERSION
 status: current
-last-reviewed: 2026-07-15
+last-reviewed: 2026-07-16
 ---
 
 # PWA shell
@@ -30,24 +30,30 @@ manifest icons.
 
 ## Update strategy
 
-The SW calls `self.skipWaiting()` on `install` so the new version takes
-over on the next navigation, but it deliberately does **not** call
-`self.clients.claim()`. Pairing `claim()` with a `controllerchange`-based
-auto-reload in `sw_register.js` produced a tight reload loop in dev — every
-navigation re-triggered the SW update check. Without `claim()`, the new SW
-activates immediately but only controls an open tab on its next natural
-navigation.
+The SW deliberately does **not** call `self.skipWaiting()` on `install`
+— a freshly installed worker sits in the `waiting` state until the page
+posts `{ type: 'SKIP_WAITING' }` (which happens when the user clicks
+"Reload" in the update banner). Only then does the worker skip waiting;
+on `activate` it calls `self.clients.claim()` so the new shell takes over
+the currently-open tab, and `sw_register.js` listens for the resulting
+`controllerchange` event and reloads once.
+
+The one-and-only reload is gated on a `userTriggeredUpdate` flag set at
+click-time, so a first-install `clients.claim()` never causes a reload
+on someone's very first visit — and there is no dev reload loop.
 
 To surface the pending update to the user, `sw_register.js` reveals a
 fixed bottom banner (`#sw-update-banner` in `base.html`) whenever a freshly
 installed SW is waiting and the page is still controlled by the old one. The
 banner offers two actions:
 
-- **Reload** — navigates the page, picking up the new shell.
+- **Reload** — posts `SKIP_WAITING` to the waiting worker; the worker
+  activates, `clients.claim()` fires, `controllerchange` fires,
+  `sw_register.js` reloads once.
 - **×** — dismisses the banner for the rest of the tab's lifetime.
 
-Trade-off: in-flight tabs no longer auto-reload on SW activation. The banner
-makes the update visible without the loop.
+Contract, end-user-facing: *if there is an update, you see one "Reload"
+message; if there is no message, you are already on the latest version.*
 
 The banner markup is baked into `public/templates/public/base.html`; every
 user-visible string is wrapped in `{% trans %}`. The JS in `sw_register.js`
@@ -66,14 +72,16 @@ the SW's scope, accelerated by the `Cache-Control: no-cache` header that
 When the bytes differ, the SW lifecycle plays out as:
 
 ```
-fetch /sw.js  →  install (skipWaiting)  →  installed  →  activating  →  activated
-                                              │
-                                              └── statechange listener in
-                                                  sw_register.js fires here.
-                                                  If navigator.serviceWorker.controller
-                                                  is non-null (= an old SW is still
-                                                  controlling the tab), the banner
-                                                  is revealed.
+fetch /sw.js  →  install  →  installed (waiting)  ┈┈┈  user clicks "Reload"
+                                 │                              │
+                                 └── statechange listener       └── SKIP_WAITING message
+                                     in sw_register.js fires;       posted to the waiting
+                                     if a controller exists,        worker → skipWaiting()
+                                     the banner is revealed.        → activating → activated
+                                                                    → clients.claim()
+                                                                    → controllerchange
+                                                                    → sw_register.js reloads
+                                                                      the page once.
 ```
 
 The `controller` check suppresses the banner on first-time installs (when
