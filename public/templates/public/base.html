@@ -82,6 +82,10 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# client treats them as "no constraint declared".                    #}
         <meta name="pwa-app-version" content="{{ APP_VERSION }}">
         <meta name="pwa-app-min-version" content="{{ APP_MIN_VERSION }}">
+        {# SNOW-375: user identity for the telemetry 8-field envelope.     #}
+        {# Empty content for anonymous requests — db.js treats it as null. #}
+        <meta name="pwa-user-id" content="{% if request.user.is_authenticated %}{{ request.user.pk }}{% endif %}">
+
         {# SNOW-118: Apple iOS PWA support. Without these, "Add to Home    #}
         {# Screen" on iPhone produces a screenshot icon and a non-         #}
         {# standalone Safari window. apple-touch-icon must be opaque (no   #}
@@ -132,6 +136,20 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# viewed or >30s engaged) and the 30-day dismiss cool-off has       #}
         {# elapsed.                                                          #}
         {% include "includes/_pwa_install_prompt.html" %}
+        {# SNOW-375: terminal Reset Required overlay. Hidden by default;   #}
+        {# revealed by static/js/db.js when an IndexedDB migration throws #}
+        {# or the DB refuses to open. The CTA calls the SNOW-378          #}
+        {# pwa_reset.js six-step wipe.                                    #}
+        {% include "includes/_pwa_reset_required.html" %}
+        {# SNOW-375: IndexedDB wrapper must load BEFORE any consumer that #}
+        {# calls window.pwaDb — currently pwa_reset.js (for the CTA bind) #}
+        {# and telemetry.js (queue:events + context helper).              #}
+        <script src="{% static 'js/db.js' %}" defer></script>
+        {# SNOW-385: first-party client telemetry buffer + sendBeacon    #}
+        {# critical-event path. MUST load after db.js. Consumer scripts   #}
+        {# below use optional chaining (window.pwaTelemetry?.emit) so    #}
+        {# the load order is defensive rather than strict.                #}
+        <script src="{% static 'js/telemetry.js' %}" defer></script>
         {# SNOW-79: register the PWA shell SW from every public page. #}
         <script src="{% static 'js/sw_register.js' %}" defer></script>
         {# SNOW-374: version-check runs on every JS-issued fetch + HTMX XHR. #}
