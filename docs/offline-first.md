@@ -41,6 +41,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.9 | Two-mechanism kill switch — Mechanism A            | SNOW-372      | `/api/sw-config` returns `{sw_url, kill}` from `SW_URL` / `SW_KILL` settings                      |
 | 12.9 | Two-mechanism kill switch — Mechanism B            | SNOW-373      | `static/js/sw-kill.js` served at `/sw-kill.js`; wipes storage on activate then unregisters        |
 | 12.10| Client obeys server version verdict                | SNOW-374      | `static/js/pwa_version_check.js` wraps `fetch` + hooks `htmx:afterOnLoad`; `_pwa_update_modal.html` |
+| 12.11| First-party client telemetry (server + buffer)     | SNOW-381 / SNOW-385 | Server: `analytics/views.py::telemetry_receive`, `analytics/signals.py`. Client: `static/js/telemetry.js` on the SNOW-375 `queue:events` store. |
 
 ## Version + freshness contract
 
@@ -175,31 +176,34 @@ into the IndexedDB `meta:app` store.
 
 Not yet shipped (tracked as separate SNOW-368 children):
 
-- **SNOW-375** — IndexedDB scaffolding (`data:{resource}`,
-  `queue:mutations`, `queue:events`, `meta:sync`, `meta:app`).
 - **SNOW-376** — Client mutation queue with exponential backoff and
-  Background Sync.
+  Background Sync. Now unblocked (SNOW-375 shipped).
 - **SNOW-380** — Declarative Web Push, subscription re-verification,
   410 Gone handling.
-- **SNOW-381 (client-side)** — IndexedDB event buffer + `sendBeacon`
-  fast path for critical events. Blocked on SNOW-375.
-- **SNOW-384** — PostHog dashboards and alerts backed by SNOW-381.
+- **SNOW-384** — PostHog dashboards and alerts backed by SNOW-381 /
+  SNOW-385.
 
-Shipped from the observability track:
+Shipped from the observability + IndexedDB track:
 
+- **SNOW-375** — IndexedDB scaffolding (`static/js/db.js`, one DB per
+  app, four static object stores, schema-versioned migrations, Reset
+  Required overlay). See [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md).
 - **SNOW-381 (server-side)** — `/api/telemetry` receiver,
   `analytics/schema.py` envelope validation, and the five §16.2
   server-side signals (`pwa.version.endpoint.hit`, `pwa.sw_config.hit`,
   `pwa.push.sent`, `pwa.push.gone_410`, `pwa.idempotency.replay`)
   wired into their existing call sites. See
   [`telemetry-pipeline.md`](telemetry-pipeline.md).
+- **SNOW-385** — First-party client telemetry buffer
+  (`static/js/telemetry.js`) using the SNOW-375 `queue:events` store;
+  `sendBeacon` fast path for critical events; opt-in/out toggle with
+  EU-default. See [`telemetry-pipeline.md`](telemetry-pipeline.md).
 
 Non-negotiables the deferred tickets cover:
 
 | §    | Requirement                        | Ticket                  |
 |------|------------------------------------|-------------------------|
 | 12.4 | Mutation queue with Idempotency-Key | SNOW-376                |
-| 12.11| First-party client telemetry        | SNOW-381 (client-side)  |
 
 ## See also
 

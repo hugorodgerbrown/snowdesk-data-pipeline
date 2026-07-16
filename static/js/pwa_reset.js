@@ -37,11 +37,11 @@
   const SKIP_CONFIRM_ATTR = 'data-pwa-reset-skip-confirm';
 
   // Known DB names — deleted explicitly in the fallback path for
-  // browsers without ``indexedDB.databases()``. Empty until SNOW-375
-  // introduces a schema; kept as a hard-coded list so a future author
-  // has an obvious place to add ``'snowdesk-pwa-v1'`` (or whatever the
-  // schema module lands on).
-  const KNOWN_DB_NAMES = Object.freeze([]);
+  // browsers without ``indexedDB.databases()``. Kept in sync with
+  // ``static/js/db.js`` DB_NAME (SNOW-375). When db.js bumps the
+  // namespace (rare — see docs/indexeddb-scaffolding.md), add the new
+  // name here so old databases are also wiped.
+  const KNOWN_DB_NAMES = Object.freeze(['snowdesk-pwa-v1']);
 
   /**
    * Run the full six-step wipe. Every step swallows its own errors —
@@ -110,12 +110,14 @@
       // Non-fatal.
     }
 
-    // Telemetry — placeholder until SNOW-381 lands. INFO-level so the
-    // network tab / DevTools console shows the reset happened.
+    // Telemetry — SNOW-385. Emits a critical event, so telemetry.js
+    // fires ``sendBeacon`` immediately (even opt-out clients still send
+    // the signal, spec §16.6). Optional chaining because this file is
+    // loaded on admin pages too, where telemetry.js is not.
     try {
-      console.info('pwa.reset.user_initiated');
+      window.pwaTelemetry?.emit('pwa.reset.user_initiated');
     } catch (_err) {
-      // Ignore.
+      // Ignore — analytics must never break the reset flow.
     }
 
     // (5) Reload. Using ``location.reload()`` (no argument) picks up

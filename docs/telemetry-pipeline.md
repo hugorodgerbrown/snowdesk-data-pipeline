@@ -131,24 +131,107 @@ synthetic PostHog distinct_id `_server`.
 - The five server-side signal emitters follow the same rule — no key,
   no forwarding.
 
-## Client-side (SNOW-381 follow-up, blocked on SNOW-375)
+## Client-side (SNOW-385)
 
-Not yet shipped. When the IndexedDB scaffolding in SNOW-375 lands, the
-follow-up will add:
+Shipped in the SNOW-375 + SNOW-385 PR alongside the IndexedDB
+scaffolding. `static/js/telemetry.js` — loaded after `db.js` in
+`public/templates/public/base.html`. Public API:
 
-- `static/js/telemetry.js` (~2 KB, no third-party library): batch
-  buffer in `queue:events`, flush on `online` / foreground / every
-  30s / queue depth > 50.
-- `navigator.sendBeacon('/api/telemetry', …)` immediate-fire path for
-  the critical events called out in SNOW-381
-  (`pwa.kill_switch.activated`, `pwa.forced_update.triggered`,
-  `pwa.reset.*`, `pwa.sw.fetch_undefined`,
-  `pwa.mutation.failed_permanent`, `pwa.push.subscription_lost`,
-  `pwa.sw.activation_failed`).
-- Sample rates per spec §16.3 table.
-- Settings toggle "Send anonymous usage data" (opt-in EU, opt-out
-  elsewhere). Critical events fire with `user_id` / `session_id`
-  stripped when the toggle is off (spec §16.6).
+```js
+window.pwaTelemetry = {
+  emit(event, properties = {}),   // enqueue + critical sendBeacon
+  flush(),                        // manual drain (Promise)
+  setOptIn(bool),                 // persist to meta:app
+  isOptIn(),                      // Promise<bool>
+  CRITICAL_EVENTS,                // read-only Set
+  SAMPLE_RATES,                   // read-only object
+};
+```
+
+### Buffer + flush
+
+- Events are written to the SNOW-375 `queue:events` object store.
+- Flush triggers (any of): `online` event, `visibilitychange → visible`,
+  30-second interval while visible, `pagehide`, or queue depth >= 50.
+- Batch of up to 50 rows POSTed as `{"events": [envelope, ...]}` with
+  `keepalive: true` so the request survives a foreground-to-background
+  transition.
+- On 2xx or 4xx, the drained rows are deleted (4xx = server rejected;
+  retrying identical bad payloads only wastes the rate limit).
+- On 5xx / network failure, rows stay in place for the next trigger.
+- Flush is serialised — a call while one is in flight returns the same
+  promise so overlapping triggers can't double-POST.
+
+### Critical events — sendBeacon fast path
+
+The exact set from spec §16 (`static/js/telemetry.js::CRITICAL_EVENTS`):
+`pwa.kill_switch.activated`, `pwa.forced_update.triggered`,
+`pwa.reset.user_initiated`, `pwa.reset.forced`,
+`pwa.sw.fetch_undefined`, `pwa.mutation.failed_permanent`,
+`pwa.push.subscription_lost`, `pwa.sw.activation_failed`.
+
+Every critical `emit()`:
+1. Fires `navigator.sendBeacon('/api/telemetry', envelope)` immediately
+   with the **single-envelope** shape (the receiver's fast path).
+2. ALSO enqueues to `queue:events` — sendBeacon has no delivery
+   guarantee, so the flush loop is the retry mechanism.
+3. Bypasses the sample-rate gate.
+
+### Sample rates (spec §16.3)
+
+Encoded in `SAMPLE_RATES`. Any event not listed sample at 100%.
+Currently:
+- 10% for `pwa.freshness.fresh/.stale`, `pwa.storage.evicted_probable`.
+- 25% for `pwa.sw.installed/.activated/.update_available/.update_applied`
+  on repeat launches; 100% on the first launch after install (the
+  first-launch bump is scored per session via a sessionStorage marker).
+- 100% for everything else — including all critical events and the
+  install funnel.
+
+### Opt-in / opt-out (spec §16.6)
+
+- Persisted to `meta:app` under `key='telemetry.opt_in'`.
+- First-launch default: `false` when `navigator.language` starts with
+  an EU-language prefix
+  (`de|fr|it|es|nl|pl|pt|sv|da|fi|el|hu|cs|sk|ro|bg|hr|sl|et|lv|lt|mt|ga`),
+  `true` otherwise. Persisted on that first read so a language change
+  doesn't retroactively flip the default.
+- **Standard events**: opt-out drops them entirely (no enqueue, no
+  network).
+- **Critical events**: still fire (sendBeacon + enqueue) but with
+  `user_id: null` and `session_id: null` — the operational-safety
+  signals cannot be silenced (spec §16.6), but they don't identify the
+  user.
+- The settings-page toggle rendering is a small follow-up ticket; this
+  slice ships the `setOptIn` / `isOptIn` API + the persistence.
+
+### Consumer wire-up
+
+Existing PWA scripts call `window.pwaTelemetry?.emit(...)` at their
+event points. Optional chaining because these scripts are loaded on
+admin pages too where telemetry.js is not.
+
+| Call site | Event(s) |
+|-----------|----------|
+| `static/js/pwa_reset.js::resetLocalData` | `pwa.reset.user_initiated` |
+| — future SNOW-374 hook — | `pwa.forced_update.triggered` |
+| — future SNOW-379 hook — | `pwa.install.prompted/.accepted/.dismissed/.completed` |
+| — future SNOW-377 hook — | `pwa.freshness.fresh/.stale/.unsafe` |
+| — future SNOW-79 hook — | `pwa.sw.installed/.activated/.update_available/.update_applied` |
+
+Only `pwa_reset.js` is wired in this slice — the other one-liners
+land alongside their respective consumer tickets so the emit points
+match the design of each interaction.
+
+### Tests
+
+`tests/e2e/test_pwa_telemetry.py` covers:
+1. `emit()` writes to `queue:events` with the eight-field envelope shape.
+2. `flush()` POSTs the batch and clears rows on 2xx.
+3. Critical event fires `sendBeacon` immediately.
+4. Opt-out drops standard events; critical events fire with null ids.
+5. First `isOptIn()` call persists the computed default to `meta:app`.
+6. `setOptIn(true)` writes through.
 
 ## See also
 
