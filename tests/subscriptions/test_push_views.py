@@ -358,6 +358,23 @@ class TestPushTest:
         assert mock_enqueue.call_count == 2
         assert response.json() == {"ok": True, "enqueued": 2}
 
+    def test_inactive_subscriptions_are_skipped(self, staff_client: Client) -> None:
+        """Rows with ``inactive_at`` set are excluded from the fan-out.
+
+        Without this filter, ``push_test`` would keep hammering
+        already-dead endpoints and produce spurious ``pwa.push.gone_410``
+        signals against the SNOW-381 observability dashboard.
+        """
+        from django.utils import timezone
+
+        PushSubscriptionFactory.create()
+        PushSubscriptionFactory.create(inactive_at=timezone.now())
+        with patch("subscriptions.push_views.enqueue_push") as mock_enqueue:
+            response = _post_json(staff_client, _TEST_URL, {})
+        assert response.status_code == 200
+        assert mock_enqueue.call_count == 1
+        assert response.json() == {"ok": True, "enqueued": 1}
+
 
 # ---------------------------------------------------------------------------
 # SNOW-311 — caplog regression: no subscriber email in push_views log output

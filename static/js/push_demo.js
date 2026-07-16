@@ -241,6 +241,21 @@
       body: JSON.stringify({ endpoint: sub.endpoint }),
     });
     log(`unregister → ${resp.status}`);
+    if (resp.ok) {
+      // Clear the reverify flag on explicit opt-out. Without this,
+      // reverifyPushSubscription would silently resubscribe on the next
+      // page load (Notification.permission is still 'granted' after
+      // sub.unsubscribe()), reversing the user's choice.
+      try {
+        await window.pwaDb?.put('meta:app', {
+          key: 'push.subscribed_before',
+          value: false,
+        });
+      } catch (_e) {
+        // Non-fatal — worst case the reverify path fires once and re-registers,
+        // then the user disables again. Not silent-resubscribe-forever.
+      }
+    }
     await refreshState();
   }
 

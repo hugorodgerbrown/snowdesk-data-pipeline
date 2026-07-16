@@ -116,7 +116,7 @@ def push_test(request: HttpRequest) -> HttpResponse:
     queued.  Actual delivery happens asynchronously in the background worker.
     """
     data = _parse_json(request)
-    qs = PushSubscription.objects.all()
+    qs = PushSubscription.objects.active()
     if endpoint := data.get("endpoint"):
         qs = qs.filter(endpoint=endpoint)
 
