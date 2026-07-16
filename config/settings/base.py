@@ -176,6 +176,10 @@ TEMPLATES = [
                 "subscriptions.context_processors.nav_subscriptions",
                 # Exposes SITE_BASE_URL for absolute-URL construction in OG tags.
                 "public.context_processors.site_base_url",
+                # Injects APP_VERSION / APP_MIN_VERSION into every template so
+                # base.html can bake them into <meta> tags for the client-side
+                # version check (SNOW-374).
+                "public.context_processors.pwa_version",
             ],
         },
     },

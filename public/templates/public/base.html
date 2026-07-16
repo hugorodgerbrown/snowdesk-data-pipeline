@@ -75,6 +75,13 @@ extra_js        : scripts loaded at end of <body>. Used by
         <link rel="manifest" href="{% url 'web_manifest' %}">
         {# ds-lint-allow: meta tag does not resolve CSS variables; mobile browser chrome requires a literal hex #}
         <meta name="theme-color" content="#1a1a1a">
+        {# SNOW-374: PWA version-check contract. Bake the current build      #}
+        {# into the shell so the client can compare against X-App-Version /  #}
+        {# X-App-Min-Version on every response and trigger a forced-update   #}
+        {# modal when it falls behind. Empty content strings are safe — the  #}
+        {# client treats them as "no constraint declared".                    #}
+        <meta name="pwa-app-version" content="{{ APP_VERSION }}">
+        <meta name="pwa-app-min-version" content="{{ APP_MIN_VERSION }}">
         {# SNOW-118: Apple iOS PWA support. Without these, "Add to Home    #}
         {# Screen" on iPhone produces a screenshot icon and a non-         #}
         {# standalone Safari window. apple-touch-icon must be opaque (no   #}
@@ -111,8 +118,15 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# utility because the UA stylesheet's ``[hidden]`` rule is not         #}
         {# ``!important``. The reveal/dismiss script toggles this class.        #}
         {% include "includes/_toast.html" with id="sw-update-banner" kind="info" body=_("An updated version is available.") cta_label=_("Reload") cta_href="#" dismissible=True %}
+        {# SNOW-374: forced-update modal. Hidden by default; opened by       #}
+        {# pwa_version_check.js when the server declares an X-App-Min-Version #}
+        {# above the shell's build, or when the soft banner has escalated    #}
+        {# past its 24h grace window on cold launch.                          #}
+        {% include "includes/_pwa_update_modal.html" %}
         {# SNOW-79: register the PWA shell SW from every public page. #}
         <script src="{% static 'js/sw_register.js' %}" defer></script>
+        {# SNOW-374: version-check runs on every JS-issued fetch + HTMX XHR. #}
+        <script src="{% static 'js/pwa_version_check.js' %}" defer></script>
         {% block extra_js %}{% endblock %}
     </body>
 </html>
