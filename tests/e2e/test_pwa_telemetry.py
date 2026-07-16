@@ -48,7 +48,25 @@ def browser_type_launch_args(
 
 
 def _load(page: Page, live_server_url: str) -> None:
-    """Load / and wait for window.pwaDb + window.pwaTelemetry to appear."""
+    """Load / and wait for window.pwaDb + window.pwaTelemetry to appear.
+
+    Removes ``navigator.serviceWorker`` before any page script runs so
+    ``sw_register.js`` bails out on its very first line
+    (``if (!('serviceWorker' in navigator)) return;``) — neither a real
+    SW registration nor a ``pwa.kill_switch.activated`` mechanism-A check
+    ever runs. localhost is a secure context, so without this the real
+    ``sw.js`` genuinely installs and — since SNOW-384 wired
+    ``pwa.sw.installed`` / ``.activated`` telemetry into it — posts its
+    own events into ``queue:events`` at unpredictable real-world timing,
+    which this file's ``rows[0]`` / exact-count assertions don't expect.
+    This file tests ``telemetry.js`` in isolation, not the SW lifecycle,
+    so removing that source of real events is the correct fix rather
+    than loosening every assertion here.
+    """
+    page.add_init_script(
+        "Object.defineProperty(navigator, 'serviceWorker', "
+        "{ value: undefined, configurable: true });"
+    )
     page.goto(live_server_url)
     page.wait_for_load_state("load")
     page.wait_for_function("() => typeof window.pwaDb === 'object'")
