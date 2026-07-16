@@ -16,7 +16,9 @@
       "mcp__Linear__save_status_update",
       "mcp__Linear__get_project",
       "Write(~/.claude/logs/project-update/*)",
-      "mcp__Linear__list_comments"
+      "mcp__Linear__list_comments",
+      "mcp__Linear__save_issue",
+      "mcp__Linear__save_comment"
     ],
     "deny": [
       "Read(./.venv/**)",
