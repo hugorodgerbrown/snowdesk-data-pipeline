@@ -3,8 +3,11 @@ subscriptions/push_views.py — Web Push JSON endpoints (staff-only).
 
 Three views, all JSON in / JSON out:
 
-- ``push_register``   POST  — body: ``{endpoint, keys: {p256dh, auth}}``.
+- ``push_register``   POST  — body: ``{endpoint, keys: {p256dh, auth}, mechanism?}``.
                               Upserts a PushSubscription keyed by endpoint.
+                              ``mechanism`` defaults to ``"sw"`` when omitted
+                              and must be one of ``PushSubscription.Mechanism``
+                              (SNOW-380); an unknown value is rejected with 400.
 - ``push_unregister`` POST  — body: ``{endpoint}``. Hard-deletes the row.
 - ``push_test``       POST  — body: ``{endpoint?, title?, body?, url?}``.
                               Enqueues one ``_worker_dispatch_push`` task per
@@ -53,6 +56,10 @@ def push_register(request: HttpRequest) -> HttpResponse:
     if not (endpoint and p256dh and auth):
         return JsonResponse({"ok": False, "error": "missing fields"}, status=400)
 
+    mechanism = data.get("mechanism", PushSubscription.Mechanism.SW)
+    if mechanism not in PushSubscription.Mechanism.values:
+        return JsonResponse({"ok": False, "error": "invalid mechanism"}, status=400)
+
     # The staff gate guarantees an authenticated staff User.  Staff users who
     # have a Subscriber profile (e.g. created via the subscribe flow) link the
     # PushSubscription directly; staff with no profile leave subscriber=None.
@@ -68,6 +75,8 @@ def push_register(request: HttpRequest) -> HttpResponse:
             "auth": auth,
             "subscriber": subscriber,
             "user_agent": request.headers.get("User-Agent", "")[:512],
+            "mechanism": mechanism,
+            "inactive_at": None,
         },
     )
     logger.info(
