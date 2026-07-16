@@ -62,8 +62,12 @@ class TestDispatchPush:
         client-side re-verification loop has something to reconcile
         against, rather than hard-deleted.
         """
+        # Factory default (inactive_at=None) is covered by
+        # test_push_models.py::test_inactive_at_defaults_to_none; not
+        # re-asserted here because mypy narrows the field's type after an
+        # `is None` check and flags the later `is not None` check below as
+        # unreachable.
         sub = PushSubscriptionFactory.create()
-        assert sub.inactive_at is None
         before = timezone.now()
         exc = _make_webpush_exception(410)
         with (
