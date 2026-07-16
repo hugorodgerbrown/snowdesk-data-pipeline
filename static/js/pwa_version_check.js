@@ -61,6 +61,11 @@
   // Latch — once set, we've triggered a forced update and further
   // responses should not re-run the flow.
   let forcedUpdateTriggered = false;
+  // SNOW-384: separate latch so pwa.forced_update.triggered fires exactly
+  // once regardless of which caller reaches showBlockingModal() first —
+  // both existing callers already gate on forcedUpdateTriggered before
+  // calling, so this is defence in depth rather than a load-bearing guard.
+  let modalTelemetryEmitted = false;
 
   /**
    * Read a ``content`` value from a ``<meta name="…">`` tag or return ``""``
@@ -76,8 +81,13 @@
 
   /**
    * Reveal the blocking modal. Idempotent — safe to call twice.
+   *
+   * @param {'min_version' | 'escalation'} trigger What caused the forced
+   *   update: an immediate server min-version mismatch, or the 24h soft-
+   *   banner escalation on cold launch. Stamped on the telemetry event
+   *   for dashboard breakdown.
    */
-  function showBlockingModal() {
+  function showBlockingModal(trigger) {
     const modal = document.getElementById('pwa-update-modal');
     if (!modal) return;
     modal.classList.remove('hidden');
@@ -85,6 +95,18 @@
     // focus. Restored on reload; we never intentionally hide the modal
     // once shown.
     document.documentElement.style.overflow = 'hidden';
+    // SNOW-384: pwa.forced_update.triggered is critical (telemetry.js
+    // CRITICAL_EVENTS) — sendBeacon fires immediately.
+    if (!modalTelemetryEmitted) {
+      modalTelemetryEmitted = true;
+      try {
+        window.pwaTelemetry?.emit('pwa.forced_update.triggered', {
+          trigger: trigger || 'unknown',
+        });
+      } catch (_err) {
+        // Ignore — telemetry must never block the forced-update flow.
+      }
+    }
   }
 
   /**
@@ -176,7 +198,7 @@
     // spec §3.4 is deliberate that this must not be dismissable.
     if (serverMin && differs(serverMin, CURRENT_BUILD)) {
       forcedUpdateTriggered = true;
-      showBlockingModal();
+      showBlockingModal('min_version');
       // Best-effort: wipe local caches / SW immediately so a page-visible
       // hang doesn't leave the user in a half-broken state. The reload
       // is user-initiated (click), because a synchronous reload here
@@ -240,7 +262,7 @@
       if (!Number.isFinite(shownAt)) return;
       if (Date.now() - shownAt < ESCALATION_MS) return;
       forcedUpdateTriggered = true;
-      showBlockingModal();
+      showBlockingModal('escalation');
     } catch (_err) {
       // No storage access — nothing to escalate.
     }

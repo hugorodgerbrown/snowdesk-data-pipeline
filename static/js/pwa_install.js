@@ -50,15 +50,21 @@
  * our IndexedDB / Cache Storage across storage-pressure evictions. The
  * result is logged as ``pwa.storage.persisted``.
  *
- * Telemetry
- * ---------
- * Emitted via ``console.info`` for now:
- *   pwa.install.prompted     — the browser's own dialogue was shown
- *   pwa.install.accepted     — user accepted the native prompt
- *   pwa.install.completed    — ``appinstalled`` fired
- *   pwa.install.dismissed    — user dismissed our banner (30-day cool-off)
- *   pwa.storage.persisted    — {result: boolean} from storage.persist()
- * SNOW-381 will wire the events to the first-party telemetry pipeline.
+ * Telemetry (SNOW-384)
+ * --------------------
+ * Wired to ``window.pwaTelemetry?.emit(event, properties)``
+ * (``static/js/telemetry.js``, SNOW-385) via the local ``emitTelemetry``
+ * helper, which always stamps ``properties.platform`` (``'ios'`` |
+ * ``'android'`` | ``'desktop'``, UA-sniffed):
+ *   pwa.install.prompted                — our banner was revealed
+ *   pwa.install.accepted                — user accepted the native prompt
+ *   pwa.install.dismissed               — user dismissed our banner (30-day cool-off)
+ *   pwa.install.completed               — ``appinstalled`` fired / standalone launch detected
+ *   pwa.install.notifications_granted   — iOS install completed with Notification.permission
+ *                                          already 'granted' (see onInstalled())
+ *   pwa.storage.persisted               — still console.info only; not in
+ *                                          analytics.schema.ALLOWED_EVENTS,
+ *                                          out of SNOW-384 scope.
  */
 
 (function () {
@@ -141,6 +147,36 @@
       );
     } catch (_err) {
       return false;
+    }
+  }
+
+  /**
+   * Coarse platform bucket for the install-funnel telemetry properties
+   * (SNOW-384): ``'ios'`` | ``'android'`` | ``'desktop'``. UA-sniffed —
+   * good enough for a dashboard breakdown, not used for any behavioural
+   * branch (that's ``isIOS()`` / the deferredPrompt presence).
+   * @returns {'ios' | 'android' | 'desktop'}
+   */
+  function installPlatform() {
+    try {
+      if (isIOS()) return 'ios';
+      if (/Android/.test(navigator.userAgent)) return 'android';
+    } catch (_err) {
+      // Fall through to desktop.
+    }
+    return 'desktop';
+  }
+
+  /**
+   * Best-effort telemetry emit — never breaks the install flow.
+   * @param {string} event
+   * @param {object} [properties]
+   */
+  function emitTelemetry(event, properties) {
+    try {
+      window.pwaTelemetry?.emit(event, { platform: installPlatform(), ...properties });
+    } catch (_err) {
+      // Ignore.
     }
   }
 
@@ -245,11 +281,7 @@
     const el = document.getElementById(id);
     if (!el || !el.classList.contains('hidden')) return;
     el.classList.remove('hidden');
-    try {
-      console.info('pwa.install.prompted', { platform: id });
-    } catch (_err) {
-      // Ignore.
-    }
+    emitTelemetry('pwa.install.prompted', { banner: id });
   }
 
   /**
@@ -261,11 +293,7 @@
     const el = document.getElementById(id);
     if (el) el.classList.add('hidden');
     writeItem(DISMISS_KEY, String(Date.now()));
-    try {
-      console.info('pwa.install.dismissed', { platform: id });
-    } catch (_err) {
-      // Ignore.
-    }
+    emitTelemetry('pwa.install.dismissed', { banner: id });
   }
 
   /**
@@ -285,11 +313,7 @@
             deferredPrompt.prompt();
             const choice = await deferredPrompt.userChoice;
             if (choice && choice.outcome === 'accepted') {
-              try {
-                console.info('pwa.install.accepted');
-              } catch (_err) {
-                // Ignore.
-              }
+              emitTelemetry('pwa.install.accepted');
             } else {
               dismissBanner('pwa-install-banner');
             }
@@ -363,11 +387,7 @@
    */
   async function onInstalled() {
     writeItem(INSTALLED_KEY, String(Date.now()));
-    try {
-      console.info('pwa.install.completed');
-    } catch (_err) {
-      // Ignore.
-    }
+    emitTelemetry('pwa.install.completed');
     // On iOS, storage.persist() only reliably returns true once
     // notification permission has been granted. Elsewhere the browser
     // may auto-grant based on install state.
@@ -377,6 +397,13 @@
           'Notification' in window &&
           Notification.permission === 'granted'
         ) {
+          // SNOW-384: this is the only notification-permission check in
+          // this file — pwa_install.js never itself calls
+          // Notification.requestPermission() (that lives in the staff
+          // push demo, static/js/push_demo.js, a separate flow). This
+          // observes permission already granted by the time install
+          // completes, which is the funnel signal the dashboard wants.
+          emitTelemetry('pwa.install.notifications_granted');
           await requestPersistentStorage();
         }
       } catch (_err) {

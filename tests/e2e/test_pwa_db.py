@@ -51,7 +51,25 @@ STATIC_STORES = ["queue:mutations", "queue:events", "meta:sync", "meta:app"]
 
 
 def _open_and_wait(page: Page, live_server_url: str) -> None:
-    """Load / and wait for ``window.pwaDb`` to be defined by db.js."""
+    """Load / and wait for ``window.pwaDb`` to be defined by db.js.
+
+    Removes ``navigator.serviceWorker`` before any page script runs so
+    ``sw_register.js`` bails out on its very first line
+    (``if (!('serviceWorker' in navigator)) return;``) — neither a real
+    SW registration nor a ``pwa.kill_switch.activated`` mechanism-A check
+    ever runs. localhost is a secure context, so without this the real
+    ``sw.js`` genuinely installs and — since SNOW-384 wired
+    ``pwa.sw.installed`` / ``.activated`` telemetry into it — posts its
+    own events into ``queue:events`` at unpredictable real-world timing,
+    which this file's ``queue:events`` count assertions don't expect.
+    This file tests ``db.js`` in isolation, not the SW lifecycle, so
+    removing that source of real events is the correct fix rather than
+    weakening assertions.
+    """
+    page.add_init_script(
+        "Object.defineProperty(navigator, 'serviceWorker', "
+        "{ value: undefined, configurable: true });"
+    )
     page.goto(live_server_url)
     page.wait_for_load_state("load")
     # db.js is deferred and IIFE'd; the assignment happens synchronously

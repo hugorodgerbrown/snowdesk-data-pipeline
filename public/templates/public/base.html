@@ -146,6 +146,12 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# below use optional chaining (window.pwaTelemetry?.emit) so    #}
         {# the load order is defensive rather than strict.                #}
         <script src="{% static 'js/telemetry.js' %}" defer></script>
+        {# SNOW-384: mutation-queue surface — no-op today (SNOW-376 fills   #}
+        {# in the real queue behind window.pwaMutationQueue), but emits    #}
+        {# telemetry so call sites adopting it now get signal for free.    #}
+        {# Loaded after telemetry.js per the same defensive-load-order     #}
+        {# convention as every other pwaTelemetry consumer below.          #}
+        <script src="{% static 'js/mutation_queue.js' %}" defer></script>
         {# SNOW-79: register the PWA shell SW from every public page. #}
         <script src="{% static 'js/sw_register.js' %}" defer></script>
         {# SNOW-374: version-check runs on every JS-issued fetch + HTMX XHR. #}

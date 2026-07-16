@@ -329,6 +329,37 @@ class TestReceiverNoPostHogKey:
         assert response.status_code == 204
         mock_capture.assert_not_called()
 
+    @override_settings(POSTHOG_API_KEY="")
+    def test_analytics_track_never_called_when_key_empty(self) -> None:
+        """SNOW-384: the receiver's own gate short-circuits before the
+        per-event forward loop — ``analytics.track`` is never called at
+        all, not merely no-opping internally.
+        """
+        with patch("analytics.views.analytics.track") as mock_track:
+            response = Client().post(
+                "/api/telemetry",
+                data=json.dumps({"events": [_valid_event(), _valid_event()]}),
+                content_type="application/json",
+            )
+        assert response.status_code == 204
+        mock_track.assert_not_called()
+
+
+class TestReceiverKeyGatePositive:
+    """SNOW-384: with a key configured, the forward loop still runs."""
+
+    @_POSTHOG
+    def test_analytics_track_called_when_key_set(self) -> None:
+        """SNOW-384: with a key configured, the forward loop still runs."""
+        with patch("analytics.views.analytics.track") as mock_track:
+            response = Client().post(
+                "/api/telemetry",
+                data=json.dumps(_valid_event()),
+                content_type="application/json",
+            )
+        assert response.status_code == 204
+        mock_track.assert_called_once()
+
 
 class TestReceiverCsrfExempt:
     """The endpoint is CSRF-exempt so sendBeacon can post without a token."""

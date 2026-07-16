@@ -123,7 +123,14 @@ class IdempotencyMiddleware:
 
             emit_server_signal(
                 "pwa.idempotency.replay",
-                {"view": _view_name(request), "status": cached.response_status},
+                {
+                    "view": _view_name(request),
+                    "status": cached.response_status,
+                    # SNOW-384: client_version threaded from the
+                    # X-Client-Version request header, same convention as
+                    # every other server-side signal.
+                    "client_version": request.headers.get("X-Client-Version", ""),
+                },
             )
             return cached.build_response()
 

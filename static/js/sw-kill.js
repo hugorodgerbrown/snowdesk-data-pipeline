@@ -87,6 +87,24 @@ self.addEventListener('activate', (event) => {
       // full ``location.reload`` message dance — it works from the SW
       // context and re-fetches the current URL.
       const clients = await self.clients.matchAll({ type: 'window' });
+      // SNOW-384: best-effort SW → page telemetry, posted just ahead of
+      // the navigate() calls below so the still-open old page has a
+      // chance to run window.pwaTelemetry.emit() (critical event →
+      // sendBeacon) before its own navigation tears it down. There is no
+      // synchronous alternative from a SW context; some loss under a
+      // fast navigate race is accepted, same as other reload-adjacent
+      // telemetry in this codebase.
+      clients.forEach((client) => {
+        try {
+          client.postMessage({
+            type: 'pwa-telemetry',
+            event: 'pwa.kill_switch.activated',
+            properties: { mechanism: 'b' },
+          });
+        } catch (_err) {
+          // Ignore.
+        }
+      });
       await Promise.all(
         clients.map((client) => {
           try {

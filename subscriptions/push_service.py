@@ -1,10 +1,15 @@
 """
 subscriptions/push_service.py — Wrap pywebpush for the spike.
 
-Single function ``dispatch_push(sub, payload)`` that encrypts and POSTs the
-payload to the push service URL stored on a PushSubscription. Returns a
-small status dict; never raises — callers iterate over many rows and want
-per-row outcomes, not a halt on the first 410 Gone.
+Single function ``dispatch_push(sub, payload, client_version="")`` that
+encrypts and POSTs the payload to the push service URL stored on a
+PushSubscription. Returns a small status dict; never raises — callers
+iterate over many rows and want per-row outcomes, not a halt on the first
+410 Gone. ``client_version`` is threaded through onto the server-side
+``pwa.push.sent`` / ``pwa.push.gone_410`` telemetry signals so PostHog's
+version-distribution and push-health dashboards can filter by client build
+(SNOW-384); the value comes from the ``X-Client-Version`` request header
+in the caller's context.
 
 404 vs 410 (SNOW-380, spec §8): a 404 means the endpoint URL itself is
 wrong (a rare transport-layer error) and the row is hard-deleted. A 410
@@ -23,9 +28,12 @@ that the service worker's ``push`` event handler parses in JS. The
 fixed JSON shape the OS renders without running any JS — see
 ``_build_wire_payload`` and ``docs/push-notifications.md``.
 
-``enqueue_push(sub, payload)`` is the async entry point: it enqueues a
-``_worker_dispatch_push`` task via django-tasks so the actual pywebpush
-HTTP round-trip runs off the request cycle (SNOW-319).
+``enqueue_push(sub, payload, client_version="")`` is the async entry
+point: it enqueues a ``_worker_dispatch_push`` task via django-tasks so
+the actual pywebpush HTTP round-trip runs off the request cycle
+(SNOW-319). ``client_version`` is captured at enqueue time and passed
+through to the worker so the dispatched telemetry carries the same
+value regardless of when the task actually runs.
 """
 
 from __future__ import annotations
@@ -78,8 +86,21 @@ def _build_wire_payload(
     return payload
 
 
-def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, Any]:
-    """Send one Web Push and return a per-row outcome dict."""
+def dispatch_push(
+    sub: PushSubscription, payload: dict[str, Any], client_version: str = ""
+) -> dict[str, Any]:
+    """Send one Web Push and return a per-row outcome dict.
+
+    Args:
+        sub: The subscription to deliver to.
+        payload: Push payload dict (``title``, ``body``, ``url``).
+        client_version: SNOW-384 — threaded in from the caller rather than
+            read off a request, because dispatch runs inside a background
+            task (``_worker_dispatch_push``) with no request in scope.
+            Defaults to ``""`` when the caller has no value to pass (e.g.
+            a future non-request-triggered push send).
+
+    """
     wire_payload = _build_wire_payload(sub, payload)
     try:
         response = webpush(
@@ -98,7 +119,10 @@ def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, A
             # signal the observability dashboard reconciles against
             # client-side pwa.push.subscription_lost. Emit before the save
             # so sub.pk is unambiguous in the event payload.
-            emit_server_signal("pwa.push.gone_410", {"subscription_pk": sub.pk})
+            emit_server_signal(
+                "pwa.push.gone_410",
+                {"subscription_pk": sub.pk, "client_version": client_version},
+            )
             logger.info(
                 "marking push subscription pk=%s endpoint=%.30s… inactive (410)",
                 sub.pk,
@@ -125,7 +149,11 @@ def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, A
     # progresses.
     emit_server_signal(
         "pwa.push.sent",
-        {"subscription_pk": sub.pk, "status": response.status_code},
+        {
+            "subscription_pk": sub.pk,
+            "status": response.status_code,
+            "client_version": client_version,
+        },
     )
     return {"ok": True, "status": response.status_code}
 
@@ -137,7 +165,9 @@ def dispatch_push(sub: PushSubscription, payload: dict[str, Any]) -> dict[str, A
 
 
 @task()
-def _worker_dispatch_push(sub_pk: int, payload: dict[str, Any]) -> None:
+def _worker_dispatch_push(
+    sub_pk: int, payload: dict[str, Any], client_version: str = ""
+) -> None:
     """
     Background worker: load a PushSubscription by PK and dispatch the push.
 
@@ -155,6 +185,9 @@ def _worker_dispatch_push(sub_pk: int, payload: dict[str, Any]) -> None:
     Args:
         sub_pk: Primary key of the ``PushSubscription`` to deliver to.
         payload: Push payload dict (``title``, ``body``, ``url``).
+        client_version: SNOW-384 — carried through from ``enqueue_push``
+            (which reads it off the triggering request) since this worker
+            has no request of its own.
 
     """
     try:
@@ -165,7 +198,7 @@ def _worker_dispatch_push(sub_pk: int, payload: dict[str, Any]) -> None:
             sub_pk,
         )
         return
-    dispatch_push(sub, payload)
+    dispatch_push(sub, payload, client_version)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +206,9 @@ def _worker_dispatch_push(sub_pk: int, payload: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def enqueue_push(sub: PushSubscription, payload: dict[str, Any]) -> None:
+def enqueue_push(
+    sub: PushSubscription, payload: dict[str, Any], client_version: str = ""
+) -> None:
     """
     Enqueue a Web Push delivery for ``sub`` to run off the request cycle.
 
@@ -184,6 +219,9 @@ def enqueue_push(sub: PushSubscription, payload: dict[str, Any]) -> None:
     Args:
         sub: The ``PushSubscription`` to deliver to.
         payload: Push payload dict (``title``, ``body``, ``url``).
+        client_version: SNOW-384 — the ``X-Client-Version`` header off the
+            request that triggered this send, if any. Defaults to ``""``
+            for callers with no request in scope.
 
     """
-    _worker_dispatch_push.enqueue(sub.pk, payload)
+    _worker_dispatch_push.enqueue(sub.pk, payload, client_version)
