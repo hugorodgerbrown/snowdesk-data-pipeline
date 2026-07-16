@@ -115,6 +115,14 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    # Idempotency-Key deduplication for state-changing requests (SNOW-371).
+    # Runs before AuthenticationMiddleware so a cache hit short-circuits
+    # before any auth work, and after CsrfViewMiddleware so a cached
+    # response is not served to a request that would have failed CSRF on
+    # first execution — the original request already passed CSRF when the
+    # row was cached, so a replay of an already-successful mutation is
+    # safe to serve without a second CSRF check.
+    "core.idempotency.IdempotencyMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # django-waffle. Reads request.user (populated by AuthenticationMiddleware
     # immediately above) so per-user / superuser / staff flag targeting works.
