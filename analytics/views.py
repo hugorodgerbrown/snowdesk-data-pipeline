@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import cast
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -37,21 +38,32 @@ from analytics.schema import (
 logger = logging.getLogger(__name__)
 
 
-def _error(status: int, code: str, detail: str) -> JsonResponse:
+def _error(status: int, code: str) -> JsonResponse:
     """Return a JSON error response with a stable shape.
+
+    Only the short machine-identifier ``code`` is included in the
+    response body — never a stringified exception, never a request
+    detail — so validation failures cannot leak internal state
+    (CodeQL py/stack-trace-exposure). Operators diagnose via the
+    server log; the client only needs to know the failure category.
 
     Args:
         status: HTTP status code.
         code: Short machine identifier for the failure mode.
-        detail: Human-readable reason (safe to log; no PII).
 
     Returns:
-        JsonResponse with ``{"error": code, "detail": detail}``.
+        JsonResponse with ``{"error": code}``.
 
     """
-    return JsonResponse({"error": code, "detail": detail}, status=status)
+    return JsonResponse({"error": code}, status=status)
 
 
+# The receiver has no side effect beyond forwarding to PostHog and
+# ``navigator.sendBeacon`` — the client-side critical-event fast path —
+# cannot attach a CSRF token. The abuse surface is limited to inflating
+# the PostHog event count and is mitigated by the per-IP rate limit
+# below. Rationale + threat model: docs/telemetry-pipeline.md.
+# nosemgrep: python.django.security.audit.csrf-exempt.no-csrf-exempt
 @csrf_exempt
 @require_POST
 @ratelimit(key="ip", rate="60/m", block=False)
@@ -91,10 +103,10 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
     """
     content_type = (request.content_type or "").lower()
     if content_type != "application/json" and not content_type.endswith("+json"):
-        return _error(415, "unsupported_media_type", "expected application/json")
+        return _error(415, "unsupported_media_type")
 
     if len(request.body) > MAX_PAYLOAD_BYTES:
-        return _error(413, "payload_too_large", f"max {MAX_PAYLOAD_BYTES} bytes")
+        return _error(413, "payload_too_large")
 
     if getattr(request, "limited", False):
         logger.info("telemetry rate-limited ip=%s", _client_ip(request))
@@ -103,12 +115,16 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        return _error(400, "invalid_json", str(exc))
+        # Full exception detail is logged server-side; the response body
+        # carries only the machine code so no stack info flows out.
+        logger.info("telemetry invalid_json: %s", exc)
+        return _error(400, "invalid_json")
 
     try:
         events = parse_payload(payload)
     except TelemetrySchemaError as exc:
-        return _error(400, "invalid_envelope", str(exc))
+        logger.info("telemetry invalid_envelope: %s", exc)
+        return _error(400, "invalid_envelope")
 
     forwarded = 0
     for event in events:
@@ -120,7 +136,8 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
             # Client attempted to send a PII-tainted property. Reject the
             # whole batch so the caller notices and stops shipping it —
             # partial acceptance would silently drop data.
-            return _error(400, "pii_property", str(exc))
+            logger.warning("telemetry pii_property: %s", exc)
+            return _error(400, "pii_property")
         forwarded += 1
 
     logger.debug("telemetry forwarded events=%d", forwarded)
@@ -173,8 +190,10 @@ def _build_properties(event: dict[str, object]) -> dict[str, object]:
         The merged properties dict for ``posthog.capture``.
 
     """
-    props = event.get("properties") or {}
-    assert isinstance(props, dict)  # already validated by parse_payload
+    # ``parse_payload`` already enforces ``properties`` is a dict; cast
+    # narrows the type for mypy without a runtime ``assert`` (which ruff
+    # S101 rejects in non-test code and Python -O would strip anyway).
+    props = cast(dict[str, object], event.get("properties") or {})
     base: dict[str, object] = dict(props)
     for key in (
         "client_version",
