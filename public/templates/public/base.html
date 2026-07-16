@@ -102,6 +102,9 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% block extra_head %}{% endblock %}
     </head>
     <body class="{% block body_class %}bg-bg text-text-1 font-sans min-h-screen flex flex-col{% endblock %}">
+        {# SNOW-377: persistent offline banner. Hidden by default; revealed by #}
+        {# pwa_offline.js when the browser reports offline or a request fails. #}
+        {% include "includes/_offline_banner.html" %}
         {% block nav %}
             {% include "includes/nav.html" %}
         {% endblock %}
@@ -127,6 +130,9 @@ extra_js        : scripts loaded at end of <body>. Used by
         <script src="{% static 'js/sw_register.js' %}" defer></script>
         {# SNOW-374: version-check runs on every JS-issued fetch + HTMX XHR. #}
         <script src="{% static 'js/pwa_version_check.js' %}" defer></script>
+        {# SNOW-377: connection-state UI. Wraps fetch + HTMX so freshness    #}
+        {# headers feed the banner and network failures reveal it.          #}
+        <script src="{% static 'js/pwa_offline.js' %}" defer></script>
         {% block extra_js %}{% endblock %}
     </body>
 </html>
