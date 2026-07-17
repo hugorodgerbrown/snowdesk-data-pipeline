@@ -1431,3 +1431,68 @@ def sw_config(request: HttpRequest) -> JsonResponse:
         sw_config_properties["reason"] = "env_kill_switch"
     emit_server_signal("pwa.sw_config.hit", sw_config_properties)
     return response
+
+
+# ---------------------------------------------------------------------------
+# Per-bulletin JSON endpoints (SNOW-394)
+# ---------------------------------------------------------------------------
+# Two representations of a single stored bulletin, keyed by ``bulletin_id``
+# (the CharField, not the auto PK). The two shapes are exposed as two
+# distinct URLs — rather than one URL with ``Accept`` content negotiation —
+# so each is advertised on the bulletin HTML page with its own
+# ``<link rel="alternate" type="application/json">``, so generic
+# fetchers (``Accept: */*``) still discover both, and so CDN caches key
+# on URL alone without a ``Vary: Accept`` fragmentation.
+
+
+@require_GET
+@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+def bulletin_render_model(request: HttpRequest, bulletin_id: str) -> JsonResponse:
+    """
+    Serve the render model for one bulletin as JSON.
+
+    The render model is Snowdesk's canonical, versioned view of the
+    bulletin — the same shape the map tooltip and the season sheet
+    consume. It is the shape a downstream consumer usually wants: no
+    provider-specific CAAML idiosyncrasies, just the presentation-ready
+    fields plus a schema version.
+
+    Args:
+        request: The incoming HTTP request (unused — the response is
+            keyed on ``bulletin_id`` alone).
+        bulletin_id: The public identifier of the bulletin (the
+            ``Bulletin.bulletin_id`` CharField, not the auto PK).
+
+    Returns:
+        A ``JsonResponse`` with the render model as the body, or 404 if
+        no bulletin exists for that id.
+
+    """
+    bulletin = get_object_or_404(Bulletin, bulletin_id=bulletin_id)
+    return JsonResponse(bulletin.render_model or {})
+
+
+@require_GET
+@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+def bulletin_caaml(request: HttpRequest, bulletin_id: str) -> JsonResponse:
+    """
+    Serve the raw CAAML payload (in its GeoJSON Feature envelope) as JSON.
+
+    The stored shape is the source-of-truth representation for the
+    bulletin — every provider's CAAML v6 JSON wrapped in a
+    ``{"type": "Feature", "geometry": null, "properties": {…}}``
+    envelope (see the ``geojson-feature-envelope`` ADR). Consumers who
+    want just the CAAML take ``.properties``; consumers who want the
+    Feature envelope take the whole payload.
+
+    Args:
+        request: The incoming HTTP request (unused).
+        bulletin_id: The public identifier of the bulletin.
+
+    Returns:
+        A ``JsonResponse`` with the stored raw payload as the body, or
+        404 if no bulletin exists for that id.
+
+    """
+    bulletin = get_object_or_404(Bulletin, bulletin_id=bulletin_id)
+    return JsonResponse(bulletin.raw_data or {})

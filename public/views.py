@@ -2728,6 +2728,64 @@ def _build_structured_data(
         f"{bulletin.valid_from.isoformat()}/{bulletin.valid_to.isoformat()}"
     )
 
+    # SNOW-394: spatialCoverage.geo from MicroRegion.centre. The field
+    # is populated at fixture-ingest time as {"lon": …, "lat": …} and
+    # covers every real region; guarding the lookup keeps the field
+    # optional so a partially-seeded region (dev-only edge) still
+    # renders.
+    spatial_coverage: dict[str, Any] = {
+        "@type": "Place",
+        "name": region.name,
+        "containedInPlace": {
+            "@type": "Place",
+            "name": major_name,
+        },
+    }
+    if isinstance(region.centre, dict):
+        lat = region.centre.get("lat")
+        lon = region.centre.get("lon")
+        if isinstance(lat, int | float) and isinstance(lon, int | float):
+            spatial_coverage["geo"] = {
+                "@type": "GeoCoordinates",
+                "latitude": float(lat),
+                "longitude": float(lon),
+            }
+
+    report: dict[str, Any] = {
+        "@type": "Report",
+        "@id": f"{canonical_url}#report",
+        "name": f"Avalanche bulletin — {region.name}",
+        "datePublished": date_published,
+        # SNOW-394: dateModified reflects the last upsert of the row so
+        # LLMs and freshness-aware crawlers can tell a re-issued
+        # bulletin from a fresh one.
+        "dateModified": bulletin.updated_at.isoformat(),
+        "temporalCoverage": temporal_coverage,
+        "inLanguage": get_language() or "en-gb",
+        "sourceOrganization": {
+            "@type": "Organization",
+            "name": source_name,
+            "url": source_url,
+        },
+        "spatialCoverage": spatial_coverage,
+        "about": {
+            "@type": "DefinedTerm",
+            "name": danger_label,
+            "termCode": danger_number,
+            "inDefinedTermSet": "https://www.avalanches.org/standards/avalanche-danger-scale/",
+        },
+    }
+    # SNOW-394: isBasedOn points at the upstream source document — the
+    # per-bulletin ``pdf_url`` populated at ingest by SLF / ALBINA /
+    # Météo-France fetchers. Stronger citation than sourceOrganization
+    # alone; only emitted when we have a concrete URL to point at.
+    if bulletin.pdf_url:
+        report["isBasedOn"] = {
+            "@type": "CreativeWork",
+            "url": bulletin.pdf_url,
+            "encodingFormat": "application/pdf",
+        }
+
     payload: dict[str, Any] = {
         "@context": "https://schema.org",
         "@type": "WebPage",
@@ -2740,33 +2798,7 @@ def _build_structured_data(
             "name": settings.SITE_NAME,
             "url": settings.SITE_BASE_URL,
         },
-        "mainEntity": {
-            "@type": "Report",
-            "@id": f"{canonical_url}#report",
-            "name": f"Avalanche bulletin — {region.name}",
-            "datePublished": date_published,
-            "temporalCoverage": temporal_coverage,
-            "inLanguage": get_language() or "en-gb",
-            "sourceOrganization": {
-                "@type": "Organization",
-                "name": source_name,
-                "url": source_url,
-            },
-            "spatialCoverage": {
-                "@type": "Place",
-                "name": region.name,
-                "containedInPlace": {
-                    "@type": "Place",
-                    "name": major_name,
-                },
-            },
-            "about": {
-                "@type": "DefinedTerm",
-                "name": danger_label,
-                "termCode": danger_number,
-                "inDefinedTermSet": "https://www.avalanches.org/standards/avalanche-danger-scale/",
-            },
-        },
+        "mainEntity": report,
     }
 
     return json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
