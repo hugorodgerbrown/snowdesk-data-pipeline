@@ -181,6 +181,11 @@ TEMPLATES = [
                 # base.html can bake them into <meta> tags for the client-side
                 # version check (SNOW-374).
                 "public.context_processors.pwa_version",
+                # SNOW-399: injects SITE_ENVIRONMENT and the derived
+                # SITE_NAME_DISPLAY / PWA_ICON_DIR / PWA_THEME_COLOR so
+                # base.html can render a distinct app name, icon, and theme
+                # colour on staging vs production PWA installs.
+                "public.context_processors.site_environment",
             ],
         },
     },
@@ -613,6 +618,14 @@ SITE_BASE_URL = config("SITE_BASE_URL", default="http://localhost:8000")
 # Human-readable site name — used in structured data (JSON-LD), email
 # subjects, and any other context that needs the brand string.
 SITE_NAME = "Snowdesk"
+
+# SNOW-399: environment label used to make a staging PWA install visibly
+# distinct from a production one — different app name, theme colour, and
+# icon set so the two home-screen icons can be told apart at a glance.
+# Anything other than "production" is treated as a non-production install
+# by the PWA manifest view (``public.views.serve_manifest``) and the site
+# ``<head>`` (``public/templates/public/base.html``).
+SITE_ENVIRONMENT = config("SITE_ENVIRONMENT", default="production")
 
 # django.contrib.sites — required by django.contrib.sitemaps (SNOW-218).
 # Set to 1 (the default "example.com" site created by the sites migration).

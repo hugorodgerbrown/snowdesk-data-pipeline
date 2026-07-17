@@ -2,7 +2,9 @@
 /*
  * bin/build-pwa-icons — Render PWA icon PNGs from static/favicon.svg.
  *
- * Outputs four files into static/icons/pwa/:
+ * Outputs two sets of four files.
+ *
+ * Production set (static/icons/pwa/) — the canonical Snowdesk brand icons:
  *   - icon-192.png            (192×192, purpose: any)
  *   - icon-512.png            (512×512, purpose: any)
  *   - icon-maskable-512.png   (512×512, purpose: maskable)
@@ -11,30 +13,51 @@
  *                               can't render transparency in home-screen
  *                               icons cleanly)
  *
+ * Staging set (static/icons/pwa-staging/, SNOW-399) — same four files but
+ * on an amber canvas (#7c2d12) with an amber rect fill (#b45309) and a
+ * "STAGING" wordmark composited across the middle. The wordmark sits
+ * inside the maskable safe zone (80% of the canvas) so Android's adaptive
+ * mask never crops it.
+ *
+ * Snowdesk deploys the same codebase to staging (*.onrender.com) and
+ * production (snowdesk.info). Once a tester has both installed as PWAs,
+ * the two home-screen tiles look identical — this ships a launcher tile
+ * that reads as unambiguously non-production from three feet away, so
+ * staging sessions can't be confused for production ones.
+ *
  * Run via ``npm run build:icons`` (see package.json). The PNGs are
  * checked in alongside ``static/favicon.svg`` — when the SVG changes,
  * regenerate and commit the new outputs.
  *
  * The maskable variant pads the source artwork inside a "safe zone"
  * (80% of the canvas) so adaptive icon shapes on Android don't crop
- * the glyph. The canvas is filled with MASKABLE_CANVAS_COLOUR (the
- * brand green, #2d4a3e) rather than the manifest background_color
- * (cream, #f4f1e8). Without this, Android's circular crop clips into
- * the cream padding at the cardinal edges and shows a visible cream
- * border against the launcher background — the green-on-green canvas
- * ensures those clipped areas are indistinguishable from the icon's own
- * green rect (SNOW-151). The apple-touch-icon and purpose:any variants
- * are unaffected and continue to use BACKGROUND_COLOUR (cream). The
- * maskable PNG must be opaque (no alpha channel) — Android's adaptive-
- * icon mask leaks transparency at the masked corners if the PNG retains
- * an alpha channel, causing the logo to appear shrunken on a white
- * background. ``flatten`` composites transparent pixels onto the
- * supplied background colour; ``removeAlpha`` then drops the alpha
- * channel so the PNG encoder writes RGB (color_type 2) not RGBA
- * (color_type 6). Both steps are required under sharp >= 0.33 —
- * ``flatten`` alone no longer drops the channel. The apple-touch-icon
- * variant uses the same two-step sequence so the icon reads as a solid
- * tile under iOS's automatic corner rounding.
+ * the glyph. On the production set the canvas is filled with
+ * MASKABLE_CANVAS_COLOUR (the brand green, #2d4a3e) rather than the
+ * manifest background_color (cream, #f4f1e8). Without this, Android's
+ * circular crop clips into the cream padding at the cardinal edges and
+ * shows a visible cream border against the launcher background — the
+ * green-on-green canvas ensures those clipped areas are indistinguishable
+ * from the icon's own green rect (SNOW-151). The apple-touch-icon and
+ * purpose:any variants are unaffected and continue to use
+ * BACKGROUND_COLOUR (cream). The maskable PNG must be opaque (no alpha
+ * channel) — Android's adaptive-icon mask leaks transparency at the
+ * masked corners if the PNG retains an alpha channel, causing the logo
+ * to appear shrunken on a white background. ``flatten`` composites
+ * transparent pixels onto the supplied background colour; ``removeAlpha``
+ * then drops the alpha channel so the PNG encoder writes RGB
+ * (color_type 2) not RGBA (color_type 6). Both steps are required under
+ * sharp >= 0.33 — ``flatten`` alone no longer drops the channel. The
+ * apple-touch-icon variant uses the same two-step sequence so the icon
+ * reads as a solid tile under iOS's automatic corner rounding.
+ *
+ * The staging set uses MASKABLE_CANVAS_COLOUR_STAGING (#7c2d12 — a
+ * darker rust) for the maskable canvas and BACKGROUND_COLOUR_STAGING
+ * (#7c2d12 too) so all four staging PNGs read as a single amber tile.
+ * Keep MASKABLE_CANVAS_COLOUR_STAGING and the theme_color in
+ * public/site_environment.PWAEnvironmentIdentity.STAGING (#b45309, one
+ * shade brighter for the OS chrome tint) in the same amber family — the
+ * two are seen side by side (status bar next to icon) on installed
+ * Android PWAs.
  */
 
 'use strict';
@@ -45,7 +68,8 @@ const sharp = require('sharp');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SRC_SVG = path.join(REPO_ROOT, 'static', 'favicon.svg');
-const OUT_DIR = path.join(REPO_ROOT, 'static', 'icons', 'pwa');
+const OUT_DIR_PROD = path.join(REPO_ROOT, 'static', 'icons', 'pwa');
+const OUT_DIR_STAGING = path.join(REPO_ROOT, 'static', 'icons', 'pwa-staging');
 
 // Manifest background_color — used as the padding fill for the
 // apple-touch-icon and purpose:any variants so the icon reads as a
@@ -57,25 +81,67 @@ const BACKGROUND_COLOUR = '#f4f1e8';
 // green-on-green and shows no cream border (SNOW-151).
 const MASKABLE_CANVAS_COLOUR = '#2d4a3e';
 
+// SNOW-399 — staging palette. The rect fill and both canvases share the
+// darker rust (#7c2d12) so every staging PNG reads as one amber tile.
+// The theme colour (#b45309, one shade brighter) lives in
+// public/site_environment.PWAEnvironmentIdentity.STAGING and drives the
+// OS status-bar tint next to the installed icon.
+const BACKGROUND_COLOUR_STAGING = '#7c2d12';
+const MASKABLE_CANVAS_COLOUR_STAGING = '#7c2d12';
+const RECT_FILL_STAGING = '#b45309';
+
 const SAFE_ZONE_RATIO = 0.8;
 
-async function buildAny(size, outName) {
-  const outPath = path.join(OUT_DIR, outName);
-  await sharp(SRC_SVG).resize(size, size).png().toFile(outPath);
+/**
+ * Read the checked-in production favicon SVG and, for the staging set,
+ * recolour the rect fill and composite a "STAGING" wordmark across the
+ * middle. The wordmark is drawn in near-black (#1a1a1a) so it reads on
+ * both the cream mountain glyph and the amber background — a cream fill
+ * would disappear where it overlaps the cream mountain. Font size is
+ * 4.6 units of the 32-unit viewBox and the text sits at y=17.5 (near
+ * vertical centre), which stays well inside the maskable safe zone
+ * (~y=3.2 to y=28.8) so Android's adaptive mask never crops it.
+ */
+function loadSourceSvg(variant) {
+  const svg = fs.readFileSync(SRC_SVG, 'utf8');
+  if (variant === 'production') {
+    return Buffer.from(svg, 'utf8');
+  }
+  // Replace the rect fill and append the wordmark just before the closing
+  // </svg>. Regex targets the exact production shape (see the check in
+  // main()); a future SVG rewrite that changes it will surface as a
+  // build-time mismatch, not a silent recolour.
+  const recoloured = svg.replace(
+    /fill="#2d4a3e"/,
+    `fill="${RECT_FILL_STAGING}"`,
+  );
+  const wordmark =
+    '<text x="16" y="17.5" font-family="Arial, Helvetica, sans-serif"' +
+    ' font-size="4.6" font-weight="700" text-anchor="middle"' +
+    ' fill="#1a1a1a" letter-spacing="0.15">STAGING</text>';
+  return Buffer.from(
+    recoloured.replace('</svg>', `${wordmark}</svg>`),
+    'utf8',
+  );
+}
+
+async function buildAny(size, outName, outDir, srcSvg) {
+  const outPath = path.join(outDir, outName);
+  await sharp(srcSvg).resize(size, size).png().toFile(outPath);
   console.log(`wrote ${path.relative(REPO_ROOT, outPath)} (${size}×${size}, any)`);
 }
 
-async function buildMaskable(size, outName) {
-  const outPath = path.join(OUT_DIR, outName);
+async function buildMaskable(size, outName, outDir, srcSvg, canvasColour) {
+  const outPath = path.join(outDir, outName);
   const inner = Math.round(size * SAFE_ZONE_RATIO);
   const pad = Math.round((size - inner) / 2);
-  const innerBuffer = await sharp(SRC_SVG).resize(inner, inner).png().toBuffer();
+  const innerBuffer = await sharp(srcSvg).resize(inner, inner).png().toBuffer();
   await sharp({
     create: {
       width: size,
       height: size,
       channels: 4,
-      background: MASKABLE_CANVAS_COLOUR,
+      background: canvasColour,
     },
   })
     .composite([{ input: innerBuffer, top: pad, left: pad }])
@@ -85,7 +151,7 @@ async function buildMaskable(size, outName) {
     // flatten alone doesn't drop the channel in sharp >= 0.33; removeAlpha
     // alone would fill with black. Together they ensure Android's adaptive-
     // icon mask doesn't leak transparency at the masked corners.
-    .flatten({ background: MASKABLE_CANVAS_COLOUR })
+    .flatten({ background: canvasColour })
     .removeAlpha()
     .png()
     .toFile(outPath);
@@ -94,17 +160,17 @@ async function buildMaskable(size, outName) {
   );
 }
 
-async function buildAppleTouchIcon(size, outName) {
-  const outPath = path.join(OUT_DIR, outName);
+async function buildAppleTouchIcon(size, outName, outDir, srcSvg, backgroundColour) {
+  const outPath = path.join(outDir, outName);
   // iOS home-screen icons cannot be transparent — flatten the SVG over
   // the manifest background colour so corners don't render black after
   // iOS's automatic corner rounding. ``flatten`` composites transparent
   // pixels onto the background; ``removeAlpha`` then drops the alpha
   // channel so the PNG is written as opaque RGB (color_type 2). Both
   // steps are required under sharp >= 0.33 (see buildMaskable).
-  await sharp(SRC_SVG)
+  await sharp(srcSvg)
     .resize(size, size)
-    .flatten({ background: BACKGROUND_COLOUR })
+    .flatten({ background: backgroundColour })
     .removeAlpha()
     .png()
     .toFile(outPath);
@@ -113,16 +179,43 @@ async function buildAppleTouchIcon(size, outName) {
   );
 }
 
+async function buildSet({ variant, outDir, canvasColour, backgroundColour }) {
+  fs.mkdirSync(outDir, { recursive: true });
+  const srcSvg = loadSourceSvg(variant);
+  await buildAny(192, 'icon-192.png', outDir, srcSvg);
+  await buildAny(512, 'icon-512.png', outDir, srcSvg);
+  await buildMaskable(512, 'icon-maskable-512.png', outDir, srcSvg, canvasColour);
+  await buildAppleTouchIcon(180, 'apple-touch-icon-180.png', outDir, srcSvg, backgroundColour);
+}
+
 async function main() {
   if (!fs.existsSync(SRC_SVG)) {
     console.error(`source SVG not found: ${SRC_SVG}`);
     process.exit(1);
   }
-  fs.mkdirSync(OUT_DIR, { recursive: true });
-  await buildAny(192, 'icon-192.png');
-  await buildAny(512, 'icon-512.png');
-  await buildMaskable(512, 'icon-maskable-512.png');
-  await buildAppleTouchIcon(180, 'apple-touch-icon-180.png');
+  // The staging recolour depends on the exact production rect-fill string.
+  // Guard here so a future SVG rewrite surfaces as a build error rather
+  // than a silent no-op recolour that ships an amber-less staging tile.
+  const svg = fs.readFileSync(SRC_SVG, 'utf8');
+  if (!svg.includes('fill="#2d4a3e"')) {
+    console.error(
+      'expected fill="#2d4a3e" in static/favicon.svg — update the staging' +
+        ' recolour in loadSourceSvg() if the brand colour has moved',
+    );
+    process.exit(1);
+  }
+  await buildSet({
+    variant: 'production',
+    outDir: OUT_DIR_PROD,
+    canvasColour: MASKABLE_CANVAS_COLOUR,
+    backgroundColour: BACKGROUND_COLOUR,
+  });
+  await buildSet({
+    variant: 'staging',
+    outDir: OUT_DIR_STAGING,
+    canvasColour: MASKABLE_CANVAS_COLOUR_STAGING,
+    backgroundColour: BACKGROUND_COLOUR_STAGING,
+  });
 }
 
 main().catch((err) => {

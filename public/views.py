@@ -115,6 +115,7 @@ from .season_calendar import (
     build_season_ribbon,
     season_header,
 )
+from .site_environment import PWAEnvironmentIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -1500,6 +1501,14 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
     env-var (``http://localhost:8000`` in dev, ``https://snowdesk.info``
     in production).
 
+    SNOW-399: the manifest ``name`` / ``short_name`` / ``theme_color`` and
+    the icon ``src`` prefix all key off
+    ``public.site_environment.PWAEnvironmentIdentity.from_settings()`` so
+    a staging install lands on the home screen as ``Snowdesk (Staging)``
+    with an amber icon set — visibly distinct from the production tile.
+    Screenshots stay under ``/static/icons/pwa/screenshots/`` on every
+    environment because they show the actual UI, which is identical.
+
     The response carries ``Content-Type: application/manifest+json`` so
     Chromium honours the manifest spec strictly. ``Cache-Control:
     public, max-age=300`` is short enough that a SITE_BASE_URL change
@@ -1516,9 +1525,11 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
 
     """
     base = settings.SITE_BASE_URL.rstrip("/")
+    identity = PWAEnvironmentIdentity.from_settings()
+    icon_dir = identity.icon_dir.rstrip("/")
     manifest = {
-        "name": "Snowdesk",
-        "short_name": "Snowdesk",
+        "name": identity.name_display,
+        "short_name": identity.short_name,
         "id": f"{base}/",
         "lang": "en",
         "description": "Daily Swiss avalanche bulletins for the alpine region.",
@@ -1527,22 +1538,22 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
         "scope": f"{base}/",
         "display": "standalone",
         "background_color": "#f4f1e8",
-        "theme_color": "#1a1a1a",
+        "theme_color": identity.theme_color,
         "icons": [
             {
-                "src": "/static/icons/pwa/icon-192.png",
+                "src": f"{icon_dir}/icon-192.png",
                 "sizes": "192x192",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": "/static/icons/pwa/icon-512.png",
+                "src": f"{icon_dir}/icon-512.png",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": "/static/icons/pwa/icon-maskable-512.png",
+                "src": f"{icon_dir}/icon-maskable-512.png",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "maskable",

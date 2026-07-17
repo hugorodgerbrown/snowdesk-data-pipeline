@@ -9,7 +9,9 @@ subscriptions/templates/subscriptions/base.html.
 
 Blocks
 ------
-title           : <title> contents. Default "Snowdesk".
+title           : <title> contents. Default is SITE_NAME_DISPLAY (SNOW-399)
+                  — "Snowdesk" on production, "Snowdesk (Staging)" on
+                  the staging deploy.
 meta_description: <meta name="description"> content. Empty by default.
 og_tags         : OpenGraph / Twitter card meta tags. Default provides
                   site-wide og:site_name, og:type, og:locale, og:image,
@@ -52,11 +54,17 @@ extra_js        : scripts loaded at end of <body>. Used by
             <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
         {% endblock %}
         <meta name="description" content="{% block meta_description %}{% endblock %}">
-        <title>{% block title %}Snowdesk{% endblock %}</title>
+        {# SNOW-399: PWA_TITLE_SUFFIX rides outside the title block so       #}
+        {# child templates that override {% block title %} with page-       #}
+        {# specific copy still get "— Staging" appended in the browser tab. #}
+        <title>{% block title %}{{ SITE_NAME_DISPLAY }}{% endblock %}{{ PWA_TITLE_SUFFIX }}</title>
         {# SNOW-218: OpenGraph / Twitter card defaults. Bulletin pages extend  #}
         {# this block with {{ block.super }} then add page-specific tags.      #}
+        {# SNOW-399: og:site_name reflects SITE_NAME_DISPLAY so a shared       #}
+        {# staging link previews as "Snowdesk (Staging)" and isn't mistaken    #}
+        {# for a production URL.                                              #}
         {% block og_tags %}
-            <meta property="og:site_name" content="Snowdesk">
+            <meta property="og:site_name" content="{{ SITE_NAME_DISPLAY }}">
             <meta property="og:type" content="website">
             <meta property="og:locale" content="{{ LANGUAGE_CODE|og_locale }}">
             <meta property="og:image" content="{{ SITE_BASE_URL }}{% static 'social/og-default.png' %}">
@@ -73,8 +81,11 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# (not as a static file) so ``id``, ``start_url``, and ``scope`` can #}
         {# be rendered as absolute URLs from ``settings.SITE_BASE_URL``.       #}
         <link rel="manifest" href="{% url 'web_manifest' %}">
+        {# SNOW-399: PWA_THEME_COLOR is the environment-appropriate hex —      #}
+        {# amber on staging, brand dark on production. Kept in sync with the  #}
+        {# manifest theme_color by public.site_environment.                    #}
         {# ds-lint-allow: meta tag does not resolve CSS variables; mobile browser chrome requires a literal hex #}
-        <meta name="theme-color" content="#1a1a1a">
+        <meta name="theme-color" content="{{ PWA_THEME_COLOR }}">
         {# SNOW-374: PWA version-check contract. Bake the current build      #}
         {# into the shell so the client can compare against X-App-Version /  #}
         {# X-App-Min-Version on every response and trigger a forced-update   #}
@@ -90,10 +101,15 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# Screen" on iPhone produces a screenshot icon and a non-         #}
         {# standalone Safari window. apple-touch-icon must be opaque (no   #}
         {# transparency) — iOS rounds the corners automatically.           #}
-        <link rel="apple-touch-icon" sizes="180x180" href="{% static 'icons/pwa/apple-touch-icon-180.png' %}">
+        {# SNOW-399: apple-touch-icon href and apple-mobile-web-app-title  #}
+        {# resolve against PWA_ICON_DIR / SITE_NAME_DISPLAY so a staging   #}
+        {# install lands on the iOS home screen with a distinct amber      #}
+        {# tile and a "Snowdesk (Staging)" label — the manifest doesn't    #}
+        {# apply on iOS, so this legacy contract is the only mechanism.    #}
+        <link rel="apple-touch-icon" sizes="180x180" href="{{ PWA_ICON_DIR }}apple-touch-icon-180.png">
         <meta name="mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-        <meta name="apple-mobile-web-app-title" content="Snowdesk">
+        <meta name="apple-mobile-web-app-title" content="{{ SITE_NAME_DISPLAY }}">
         {% include "includes/theme_head.html" %}
         {# Preload primary font files so the browser fetches them in parallel    #}
         {# with the stylesheet rather than after CSS parsing discovers them.     #}
