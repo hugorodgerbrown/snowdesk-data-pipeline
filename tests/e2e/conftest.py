@@ -232,11 +232,18 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
     Unlike every other fixture in this file, this one does NOT disable or
     strip ``navigator.serviceWorker`` — it is what SNOW-389's lifecycle
     tests use specifically to drive the real ``/sw.js``. Waits for
-    first-install activation before yielding: a fresh registration has no
-    prior controller, so ``sw.js`` activates automatically without needing
-    ``skipWaiting()`` (see the header comment in ``static/js/sw.js``), and
-    its ``activate`` handler calls ``clients.claim()`` which hands control
-    of this very page to the new worker without a reload.
+    first-install activation, then reloads once more: a fresh
+    registration has no prior controller, so ``sw.js`` activates
+    automatically without needing ``skipWaiting()`` (see the header
+    comment in ``static/js/sw.js``) and its ``activate`` handler calls
+    ``clients.claim()``, which hands control of the page to the new
+    worker — but the very first navigation that triggered registration in
+    the first place was never itself intercepted (the SW didn't exist yet
+    when it was requested), so the shell's own HTML is NOT cached until a
+    second, SW-controlled load happens. Every scenario in
+    ``docs/testing-scenarios.md`` §"PWA Shell" after P1 lists "Scenario P1
+    completed" as a precondition — this reload is what makes that true for
+    every consuming test, not just the install test itself.
 
     Teardown unregisters any SW registration and deletes the
     ``snowdesk-pwa-v1`` IndexedDB so the next test starts clean — fixtures
@@ -267,6 +274,10 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
         "() => navigator.serviceWorker.controller?.state === 'activated'",
         timeout=5000,
     )
+    # Second, SW-controlled load — see the docstring above for why this is
+    # needed to make "Scenario P1 completed" actually true.
+    page.reload()
+    page.wait_for_load_state("load")
     yield PwaPage(page=page, live_server_url=live_server.url, page_errors=page_errors)
     assert page_errors == [], f"JS errors during the test: {page_errors}"
     _unregister_service_workers(page)
