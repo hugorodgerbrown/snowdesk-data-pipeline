@@ -480,7 +480,8 @@
    and the SLF data licence. Single (i) entry point so map chrome stays
    uncluttered. The card is absolutely positioned relative to the toggle
    and opens to the right so it never collides with the scrubber.
-   Stacking: scrubber=2, legend=3, utility cluster=4. */
+   Stacking: scrubber=2, offseason chip=2, legend=3 (also season-ribbon
+   at top-left), utility cluster=4. */
 
 .map-legend {
     position: absolute;
@@ -1244,7 +1245,7 @@
     position: absolute;
     left: calc(env(safe-area-inset-left, 0px) + 52px);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
-    z-index: 3;
+    z-index: 2;
     /* Match the 32px legend roundel's height so, sharing the same bottom
        baseline, the chip is vertically centred on it rather than reading as
        bottom-anchored to it. */
