@@ -108,6 +108,7 @@ INSTALLED_APPS = [
     "subscriptions",
     "analytics",
     "observations",
+    "mcp_server",
 ]
 
 MIDDLEWARE = [
