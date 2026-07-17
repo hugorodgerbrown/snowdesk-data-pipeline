@@ -59,16 +59,29 @@ the next in-flight request rather than needing a poll.
 The client's own build is baked into `<meta name="pwa-app-version">`
 and `<meta name="pwa-app-min-version">` at page-render time (see
 `public.context_processors.pwa_version`). `pwa_version_check.js`
-compares the two on every fetch / HTMX response:
+compares the two on every fetch / HTMX response.
 
-- `X-App-Min-Version` non-empty AND differs from the shell's build →
+A header drift is treated as a **hint, not a verdict**: cacheable API
+responses (`/api/ratings/`, the geo feeds) can be replayed by the
+browser HTTP cache or the SW's stale-while-revalidate cache with
+pre-deploy headers, which is indistinguishable from a real drift at the
+header level (the staging stuck-banner bug — Reload clears Cache
+Storage but not the HTTP cache, so the stale header returned
+immediately). An observed drift therefore triggers one authoritative
+`fetch('/api/version', {cache: 'no-store'})`, and the verdict comes
+from the response **body**:
+
+- body `min_supported` non-empty AND differs from the shell's build →
   open `#pwa-update-modal` (non-dismissable), wipe SW + Cache Storage,
   wait for the user to click "Reload now".
-- `X-App-Version` differs from the shell's build → reveal the soft
+- body `current` differs from the shell's build → reveal the soft
   `#sw-update-banner` and stamp
   `localStorage['pwa.update.first_shown_at']`.
+- body matches the shell's build → the observed header value is
+  memoised as a stale-cache artefact and reveals nothing.
 - On cold launch, if the soft banner has been showing >24h, escalate
-  straight to the blocking modal.
+  straight to the blocking modal — after the same `/api/version`
+  confirmation; a stamp the server disowns is cleared instead.
 
 Empty header content is legal — the client treats `""` as "no floor
 declared" rather than "missing / older server". This distinction is
