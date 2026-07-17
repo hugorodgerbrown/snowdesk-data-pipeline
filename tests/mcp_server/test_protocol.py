@@ -5,16 +5,29 @@ Covers the JSON-RPC 2.0 envelope (every reserved error code), the MCP
 handshake methods (``initialize``, ``notifications/initialized``,
 ``ping``), and the tool-invocation methods (``tools/list``,
 ``tools/call``).
+
+The ``tools/call`` section also exercises every ``_handle_*`` adapter in
+``mcp_server.tools`` end-to-end (the dispatcher entry point a real MCP
+client actually calls), plus every argument-validation error branch in
+``mcp_server.tools``'s ``_require_str`` / ``_required_iso_date`` /
+``_optional_iso_date`` helpers — the direct-call tests in
+``tests/mcp_server/test_tools.py`` only cover the business functions, not
+the adapters that unpack a JSON-RPC ``arguments`` dict into them.
 """
 
 from __future__ import annotations
 
+import datetime
+from typing import Any
+
 import pytest
 from django.core.cache import cache
+from freezegun import freeze_time
 
+from bulletins.models import RegionDayRating
 from mcp_server import protocol
 from mcp_server.tools import TOOLS
-from tests.factories import MicroRegionFactory
+from tests.factories import MicroRegionFactory, RegionDayRatingFactory, ResortFactory
 
 
 @pytest.fixture(autouse=True)
@@ -215,3 +228,170 @@ def test_tools_call_domain_error_is_reported_as_tool_error_not_protocol_error() 
     result = response["result"]
     assert result["isError"] is True
     assert "XX-0000" in result["content"][0]["text"]
+
+
+@pytest.mark.django_db
+@freeze_time("2026-03-10")
+def test_tools_call_get_danger_history_returns_structured_content() -> None:
+    """get_danger_history round-trips through tools/call and returns day data."""
+    region = MicroRegionFactory.create(region_id="CH-4115", name="Bas-Valais")
+    RegionDayRatingFactory.create(
+        region=region,
+        date=datetime.date(2026, 1, 10),
+        max_rating=RegionDayRating.Rating.HIGH,
+    )
+    response = protocol.dispatch(
+        _request(
+            "tools/call",
+            {
+                "name": "get_danger_history",
+                "arguments": {
+                    "region_id": "CH-4115",
+                    "from_date": "2026-01-01",
+                    "to_date": "2026-01-31",
+                },
+            },
+        )
+    )
+    assert response is not None
+    result = response["result"]
+    assert result["isError"] is False
+    assert result["structuredContent"]["region_id"] == "CH-4115"
+    assert result["structuredContent"]["count"] == 1
+    assert result["structuredContent"]["days"][0]["max_rating"] == "high"
+
+
+@pytest.mark.django_db
+def test_tools_call_list_resorts_in_region_returns_structured_content() -> None:
+    """list_resorts_in_region round-trips through tools/call and returns resorts."""
+    region = MicroRegionFactory.create(region_id="CH-4115", name="Bas-Valais")
+    ResortFactory.create(
+        name="Verbier", region=region, latitude=46.0961, longitude=7.2286
+    )
+    response = protocol.dispatch(
+        _request(
+            "tools/call",
+            {
+                "name": "list_resorts_in_region",
+                "arguments": {"region_id": "CH-4115"},
+            },
+        )
+    )
+    assert response is not None
+    result = response["result"]
+    assert result["isError"] is False
+    assert result["structuredContent"]["count"] == 1
+    assert result["structuredContent"]["resorts"][0]["name"] == "Verbier"
+
+
+# ---------------------------------------------------------------------------
+# tools/call — argument-validation error branches
+# ---------------------------------------------------------------------------
+#
+# These exercise the _require_str / _required_iso_date / _optional_iso_date
+# helpers in mcp_server.tools via the same tools/call round-trip a real MCP
+# client uses. A validation failure is a ToolError, so it surfaces as
+# isError=True with the message in content[0]["text"] — not a JSON-RPC
+# protocol-level error.
+
+
+def _call_tool(name: str, arguments: dict[str, object]) -> dict[str, Any]:
+    """Dispatch a tools/call request and return the unwrapped CallToolResult."""
+    response = protocol.dispatch(
+        _request("tools/call", {"name": name, "arguments": arguments})
+    )
+    assert response is not None
+    result: dict[str, Any] = response["result"]
+    return result
+
+
+def test_require_str_missing_key_is_a_tool_error() -> None:
+    """A missing required string argument (e.g. 'query') is a tool error."""
+    result = _call_tool("search_regions", {})
+    assert result["isError"] is True
+    assert "query" in result["content"][0]["text"]
+
+
+def test_require_str_blank_value_is_a_tool_error() -> None:
+    """A blank (whitespace-only) required string argument is a tool error."""
+    result = _call_tool("search_regions", {"query": "   "})
+    assert result["isError"] is True
+    assert "query" in result["content"][0]["text"]
+
+
+def test_require_str_non_string_value_is_a_tool_error() -> None:
+    """A non-string value for a required string argument is a tool error."""
+    result = _call_tool("search_regions", {"query": 42})
+    assert result["isError"] is True
+    assert "query" in result["content"][0]["text"]
+
+
+def test_required_iso_date_missing_key_is_a_tool_error() -> None:
+    """A missing required date argument (e.g. 'from_date') is a tool error."""
+    result = _call_tool(
+        "get_danger_history",
+        {"region_id": "CH-4115", "to_date": "2026-01-31"},
+    )
+    assert result["isError"] is True
+    assert "from_date" in result["content"][0]["text"]
+
+
+def test_required_iso_date_non_string_value_is_a_tool_error() -> None:
+    """A non-string value for a required date argument is a tool error."""
+    result = _call_tool(
+        "get_danger_history",
+        {"region_id": "CH-4115", "from_date": 20260101, "to_date": "2026-01-31"},
+    )
+    assert result["isError"] is True
+    assert "from_date" in result["content"][0]["text"]
+
+
+def test_required_iso_date_malformed_string_is_a_tool_error() -> None:
+    """A malformed (unparsable) ISO date string is a tool error."""
+    result = _call_tool(
+        "get_danger_history",
+        {
+            "region_id": "CH-4115",
+            "from_date": "not-a-date",
+            "to_date": "2026-01-31",
+        },
+    )
+    assert result["isError"] is True
+    assert "from_date" in result["content"][0]["text"]
+
+
+def test_optional_iso_date_non_string_value_is_a_tool_error() -> None:
+    """A non-string value for an optional date argument is a tool error."""
+    result = _call_tool(
+        "get_current_conditions",
+        {"region_id": "CH-4115", "date": 20260101},
+    )
+    assert result["isError"] is True
+    assert "date" in result["content"][0]["text"]
+
+
+@pytest.mark.django_db
+def test_optional_iso_date_valid_string_is_parsed() -> None:
+    """A well-formed 'date' string is parsed and used, not just left to default."""
+    MicroRegionFactory.create(region_id="CH-4115", name="Bas-Valais")
+    result = _call_tool(
+        "get_current_conditions",
+        {"region_id": "CH-4115", "date": "2026-04-08"},
+    )
+    assert result["isError"] is False
+    assert result["structuredContent"]["date"] == "2026-04-08"
+
+
+def test_min_rating_non_string_value_is_a_tool_error() -> None:
+    """A non-string 'min_rating' value is a tool error."""
+    result = _call_tool(
+        "get_danger_history",
+        {
+            "region_id": "CH-4115",
+            "from_date": "2026-01-01",
+            "to_date": "2026-01-31",
+            "min_rating": 3,
+        },
+    )
+    assert result["isError"] is True
+    assert "min_rating" in result["content"][0]["text"]
