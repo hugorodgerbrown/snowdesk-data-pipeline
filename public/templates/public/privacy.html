@@ -168,11 +168,28 @@ in this template; no runtime context is required.
                         with them.
                     {% endblocktrans %}
                 </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>PostHog</strong> (posthog.com) — processes the anonymous app-usage events described
+                        below, if you have telemetry switched on. We never send bulletin content, your email address, or
+                        your IP address as part of these events.
+                    {% endblocktrans %}
+                </li>
             </ul>
-            <p>
+            <p class="mb-3">
                 {% blocktrans trimmed %}
                     All providers are contractually required to handle your data in compliance with UK GDPR. We do not
-                    use any advertising networks or analytics platforms.
+                    use advertising networks, and we do not sell or share data for advertising purposes.
+                {% endblocktrans %}
+            </p>
+            <p>
+                {% blocktrans trimmed %}
+                    We collect a small stream of anonymous app-usage events — for example
+                    <code>pwa.sw.installed</code> or <code>pwa.push.received</code> — so we can keep Snowdesk working
+                    reliably across browsers and devices. These events never include bulletin content, your email
+                    address, or your IP address. This is switched off by default for browsers set to a European
+                    language, and on by default otherwise; you can change this at any time from the toggle on your
+                    <a class="underline" href="{% url 'subscriptions:manage' %}">manage subscriptions page</a>.
                 {% endblocktrans %}
             </p>
         </section>
@@ -220,8 +237,9 @@ in this template; no runtime context is required.
                 {% blocktrans trimmed %}
                     Snowdesk uses one strictly necessary session cookie. It is set automatically when you visit the
                     site, contains no personal information, and expires when you close your browser. Because it is
-                    strictly necessary, no consent banner is required under UK PECR. We do not use tracking, analytics,
-                    or advertising cookies of any kind.
+                    strictly necessary, no consent banner is required under UK PECR. We do not use advertising cookies,
+                    and our anonymous usage-data telemetry (see section 5) does not use cookies either — it is stored
+                    locally in your browser and sent to us directly when you have it switched on.
                 {% endblocktrans %}
             </p>
         </section>
