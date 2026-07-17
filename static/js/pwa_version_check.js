@@ -26,10 +26,33 @@
  *      ``localStorage['pwa.update.first_shown_at']`` if unset. This is the
  *      same visible affordance as the SW-update flow.
  *
+ * Header drift is a HINT, not a verdict (staging stuck-banner fix)
+ * ----------------------------------------------------------------
+ * The version headers ride on every response — including responses the
+ * browser HTTP cache or the service worker's stale-while-revalidate cache
+ * replays from before a deploy (``/api/ratings/`` and the geo feeds carry
+ * ``Cache-Control: public, max-age=300``/``3600``). Right after a deploy
+ * those replayed responses still carry the PREVIOUS build's
+ * ``X-App-Version``, which looks exactly like a real drift. Acting on the
+ * header directly showed a phantom "Update available" banner that the
+ * Reload button could never clear — clearing Cache Storage does not touch
+ * the browser HTTP cache, so the stale header came straight back after
+ * the reload.
+ *
+ * So an observed drift now only *schedules a verification*: one
+ * authoritative ``fetch('/api/version', {cache: 'no-store'})`` (via the
+ * pristine pre-wrap fetch, so it cannot recurse into this check), acting
+ * on the response *body* — which is by definition as fresh as its own
+ * headers. Only a confirmed drift reveals the banner or modal; a
+ * confirmed-clean check memoises the stale header value so replays of the
+ * same cached response don't re-trigger the round trip.
+ *
  * 24h escalation (§3.9): the soft banner sticks — but if it has been
  * showing for more than 24h without acceptance, the very next cold launch
  * shows the blocking modal instead. This runs once at page load, not on
- * every response, so mid-session escalation is not annoying.
+ * every response, so mid-session escalation is not annoying. The stamp is
+ * verified against ``/api/version`` before the modal blocks anything — a
+ * stamp planted by a stale-cache false positive is cleared, not escalated.
  *
  * Sources checked
  * ---------------
@@ -57,10 +80,26 @@
   const CURRENT_MIN = readMeta('pwa-app-min-version') || '';
   const FIRST_SHOWN_KEY = 'pwa.update.first_shown_at';
   const ESCALATION_MS = 24 * 60 * 60 * 1000;
+  const VERSION_ENDPOINT = '/api/version';
+
+  // The pristine fetch, captured BEFORE wrapFetch() replaces window.fetch.
+  // Verification requests go out through this so they can never recurse
+  // back into inspectHeaders (and never re-observe their own headers).
+  const pristineFetch =
+    typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
 
   // Latch — once set, we've triggered a forced update and further
   // responses should not re-run the flow.
   let forcedUpdateTriggered = false;
+  // Header values already resolved by a verification round trip, so a
+  // replay of the same cached response doesn't fetch /api/version again:
+  // ``staleConfirmed`` — the server said we're current, the header was a
+  // cache artefact; ``driftConfirmed`` — the server confirmed a real
+  // drift (the soft banner is already showing, and it is sticky).
+  const staleConfirmed = new Set();
+  const driftConfirmed = new Set();
+  // Single-flight guard for the verification fetch.
+  let verifyInFlight = null;
   // SNOW-384: separate latch so pwa.forced_update.triggered fires exactly
   // once regardless of which caller reaches showBlockingModal() first —
   // both existing callers already gate on forcedUpdateTriggered before
@@ -178,13 +217,102 @@
   }
 
   /**
-   * Consume the two version headers from any completed response and
-   * decide which of the three outcomes applies:
+   * Fetch the authoritative version verdict from ``/api/version``,
+   * bypassing every cache layer (``cache: 'no-store'`` skips the browser
+   * HTTP cache; the SW classifies the path as network-only so Cache
+   * Storage never sees it). Uses the pristine pre-wrap fetch so the
+   * request cannot recurse into ``inspectHeaders``.
+   *
+   * @returns {Promise<{current: string, min_supported: string} | null>}
+   *   The trimmed body fields, or ``null`` when the endpoint is
+   *   unreachable / non-2xx — "cannot confirm" must never be treated as
+   *   "confirmed drift".
+   */
+  async function fetchAuthoritativeVersion() {
+    if (!pristineFetch) return null;
+    try {
+      const res = await pristineFetch(VERSION_ENDPOINT, { cache: 'no-store' });
+      if (!res || !res.ok) return null;
+      const json = await res.json();
+      return {
+        current: String(json.current || '').trim(),
+        min_supported: String(json.min_supported || '').trim(),
+      };
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  /**
+   * Resolve an observed header drift into one of the three outcomes,
+   * using the authoritative body rather than the (possibly cache-stale)
+   * header that triggered us:
    *
    *   * forced-update → open the modal, wipe local state, wait for
    *     user click.
    *   * soft-update   → reveal the sticky banner.
-   *   * fresh         → no-op.
+   *   * fresh         → memoise the stale header values; no-op.
+   *
+   * Single-flight: concurrent observations share one round trip.
+   *
+   * @param {string[]} observed The drifting header values that prompted
+   *   this verification, memoised under whichever verdict comes back.
+   * @returns {Promise<void>}
+   */
+  function verifyObservedDrift(observed) {
+    if (verifyInFlight) return verifyInFlight;
+    verifyInFlight = fetchAuthoritativeVersion()
+      .then((verdict) => {
+        if (!verdict || forcedUpdateTriggered) return;
+
+        // Min-version verdict wins. A non-empty min-version that does not
+        // match the shell we were delivered on is a forced-update signal;
+        // spec §3.4 is deliberate that this must not be dismissable.
+        if (
+          verdict.min_supported &&
+          differs(verdict.min_supported, CURRENT_BUILD)
+        ) {
+          forcedUpdateTriggered = true;
+          showBlockingModal('min_version');
+          // Best-effort: wipe local caches / SW immediately so a
+          // page-visible hang doesn't leave the user in a half-broken
+          // state. The reload is user-initiated (click), because a
+          // synchronous reload here would be confusing.
+          resetAndReload().catch(() => {});
+          return;
+        }
+
+        if (verdict.current && differs(verdict.current, CURRENT_BUILD)) {
+          observed.forEach((value) => driftConfirmed.add(value));
+          showSoftBanner();
+          return;
+        }
+
+        // Server says we ARE current — the observed headers were replayed
+        // from a pre-deploy cache entry. Remember them so the same cached
+        // responses don't re-trigger the round trip, and clear any
+        // first-shown stamp so a phantom banner from a pre-fix session
+        // can't later escalate to the blocking modal.
+        observed.forEach((value) => staleConfirmed.add(value));
+        try {
+          localStorage.removeItem(FIRST_SHOWN_KEY);
+        } catch (_err) {
+          // Ignore.
+        }
+      })
+      .finally(() => {
+        verifyInFlight = null;
+      });
+    return verifyInFlight;
+  }
+
+  /**
+   * Consume the two version headers from any completed response. A drift
+   * against the shell's build is only a HINT that an update might exist —
+   * the response may have been replayed from the browser HTTP cache or
+   * the SW's stale-while-revalidate cache with pre-deploy headers — so
+   * the outcome is decided by ``verifyObservedDrift`` against the
+   * authoritative ``/api/version`` body, never by the header alone.
    *
    * @param {(name: string) => string | null} getHeader
    */
@@ -193,23 +321,19 @@
     const serverMin = (getHeader('X-App-Min-Version') || '').trim();
     const serverVer = (getHeader('X-App-Version') || '').trim();
 
-    // Min-version verdict wins. A non-empty min-version that does not
-    // match the shell we were delivered on is a forced-update signal;
-    // spec §3.4 is deliberate that this must not be dismissable.
-    if (serverMin && differs(serverMin, CURRENT_BUILD)) {
-      forcedUpdateTriggered = true;
-      showBlockingModal('min_version');
-      // Best-effort: wipe local caches / SW immediately so a page-visible
-      // hang doesn't leave the user in a half-broken state. The reload
-      // is user-initiated (click), because a synchronous reload here
-      // would be confusing.
-      resetAndReload().catch(() => {});
-      return;
+    const observed = [];
+    for (const value of [serverMin, serverVer]) {
+      if (!value || !differs(value, CURRENT_BUILD)) continue;
+      if (staleConfirmed.has(value)) continue;
+      if (driftConfirmed.has(value)) {
+        // Already verified as a real drift — keep the sticky banner
+        // visible without another round trip.
+        showSoftBanner();
+        continue;
+      }
+      observed.push(value);
     }
-
-    if (serverVer && differs(serverVer, CURRENT_BUILD)) {
-      showSoftBanner();
-    }
+    if (observed.length) verifyObservedDrift(observed);
   }
 
   /**
@@ -253,6 +377,13 @@
    * upgrade to the blocking modal on this launch. Runs once at page load
    * — not on every response — so a user who is actively browsing does
    * not get an escalation mid-session.
+   *
+   * The stamp alone is not trusted: it may have been planted by a
+   * stale-cache false positive (see the header-drift section of the
+   * module comment). The server confirms the drift via ``/api/version``
+   * before the modal blocks anything; a stamp the server disowns is
+   * cleared instead. An unreachable endpoint escalates nothing — a
+   * blocking modal on unverifiable evidence would strand offline users.
    */
   function maybeEscalateOnColdLaunch() {
     try {
@@ -261,11 +392,29 @@
       const shownAt = Number(raw);
       if (!Number.isFinite(shownAt)) return;
       if (Date.now() - shownAt < ESCALATION_MS) return;
-      forcedUpdateTriggered = true;
-      showBlockingModal('escalation');
     } catch (_err) {
       // No storage access — nothing to escalate.
+      return;
     }
+    fetchAuthoritativeVersion().then((verdict) => {
+      if (!verdict || forcedUpdateTriggered) return;
+      const drifted =
+        (verdict.current && differs(verdict.current, CURRENT_BUILD)) ||
+        (verdict.min_supported &&
+          differs(verdict.min_supported, CURRENT_BUILD));
+      if (drifted) {
+        forcedUpdateTriggered = true;
+        showBlockingModal('escalation');
+        return;
+      }
+      // The server says this shell IS current — the stamp is a leftover
+      // false positive. Clear it so it never escalates again.
+      try {
+        localStorage.removeItem(FIRST_SHOWN_KEY);
+      } catch (_err) {
+        // Ignore.
+      }
+    });
   }
 
   /**

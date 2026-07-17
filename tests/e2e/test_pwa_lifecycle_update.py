@@ -8,6 +8,10 @@ and a server ``X-App-Min-Version`` floor the shell doesn't meet (forced
 update). All three assert the central SNOW-389 invariant: the service
 worker converges to a single, clean, active registration — never a
 lingering ``waiting`` worker, never two active workers, never orphaned.
+
+P5b covers the inverse of P5 — the staging stuck-banner regression: a
+header drift replayed from a stale cache, which the authoritative
+``/api/version`` body disowns, must reveal nothing at all.
 """
 
 from __future__ import annotations
@@ -111,15 +115,22 @@ def test_header_drift_shows_banner_and_clears_shell_caches(pwa_page: PwaPage) ->
     that prevents the reload-loop bug) — proven by planting a marker cache
     entry and observing it gone afterwards, since the marker cannot
     reappear on its own (nothing repopulates that specific URL).
+
+    Since the stale-cache fix, a drifted header alone no longer reveals
+    the banner — ``pwa_version_check.js`` confirms against the
+    ``/api/version`` BODY first — so the route drifts both the header and
+    the body's ``current`` field to model a genuinely newer server.
     """
     page = pwa_page.page
 
-    def _drift_version_header(route: Route) -> None:
+    def _drift_version(route: Route) -> None:
         response = route.fetch()
+        payload = response.json()
+        payload["current"] = "test-newer-build"
         headers = {**response.headers, "x-app-version": "test-newer-build"}
-        route.fulfill(response=response, headers=headers)
+        route.fulfill(response=response, headers=headers, json=payload)
 
-    page.route("**/api/version", _drift_version_header)
+    page.route("**/api/version", _drift_version)
     page.evaluate("async () => { await fetch('/api/version'); }")
 
     page.wait_for_selector("#sw-update-banner:not(.hidden)", timeout=5000)
@@ -173,6 +184,78 @@ def test_header_drift_shows_banner_and_clears_shell_caches(pwa_page: PwaPage) ->
 
 
 # ---------------------------------------------------------------------------
+# P5b — stale cached header (the staging stuck-banner bug)
+# ---------------------------------------------------------------------------
+
+
+def test_stale_cached_header_does_not_show_banner(pwa_page: PwaPage) -> None:
+    """A drifted header whose authoritative body matches the shell reveals nothing.
+
+    Models a response replayed from the browser HTTP cache right after a
+    deploy: it still carries the previous build's ``X-App-Version``, but
+    the server has NOT actually moved past the shell. Pre-fix, that header
+    alone revealed the update banner — and because Reload only clears
+    Cache Storage (never the browser HTTP cache), the stale header came
+    straight back after the reload and the banner could never be cleared.
+    The fix verifies drift against the ``/api/version`` body before
+    showing anything.
+    """
+    page = pwa_page.page
+
+    def _stale_header_only(route: Route) -> None:
+        response = route.fetch()
+        headers = {**response.headers, "x-app-version": "stale-old-build"}
+        route.fulfill(response=response, headers=headers)
+
+    page.route("**/api/version", _stale_header_only)
+
+    # The wrapped fetch observes the drifted header; the verification it
+    # schedules reads the (truthful) body of the same routed endpoint.
+    page.evaluate("async () => { await fetch('/api/version'); }")
+    page.wait_for_timeout(1000)
+
+    assert "hidden" in (
+        page.eval_on_selector("#sw-update-banner", "(el) => el.className") or ""
+    )
+    # No first-shown stamp either — a phantom banner must not arm the 24h
+    # escalation timer.
+    assert (
+        page.evaluate("() => localStorage.getItem('pwa.update.first_shown_at')") is None
+    )
+
+
+def test_stale_escalation_stamp_clears_when_server_current(pwa_page: PwaPage) -> None:
+    """A >24h first-shown stamp the server disowns clears without a modal.
+
+    Pre-fix sessions could stamp ``pwa.update.first_shown_at`` off a
+    stale-cache false positive; escalating that to the blocking modal on
+    cold launch would hard-block users who are already on the latest
+    build. The escalation path now confirms with ``/api/version`` first
+    and clears a stamp the server does not back.
+    """
+    page = pwa_page.page
+
+    page.evaluate(
+        """() => {
+            const shownAt = Date.now() - 25 * 60 * 60 * 1000;
+            localStorage.setItem('pwa.update.first_shown_at', String(shownAt));
+          }"""
+    )
+    page.reload()
+    page.wait_for_load_state("load")
+
+    # The stamp is cleared once the (real, un-routed) /api/version verdict
+    # comes back matching the shell build.
+    page.wait_for_function(
+        "() => localStorage.getItem('pwa.update.first_shown_at') === null",
+        timeout=5000,
+    )
+    assert "hidden" in (
+        page.eval_on_selector("#pwa-update-modal", "(el) => el.className") or ""
+    )
+
+
+# ---------------------------------------------------------------------------
 # P6 — forced update (X-App-Min-Version floor not met)
 # ---------------------------------------------------------------------------
 
@@ -204,22 +287,38 @@ def test_min_version_shows_modal_and_resets_cleanly(pwa_page: PwaPage) -> None:
 
     def _drift_min_version(route: Route) -> None:
         response = route.fetch()
+        payload = response.json()
+        payload["min_supported"] = "test-force-update"
         headers = {**response.headers, "x-app-min-version": "test-force-update"}
-        route.fulfill(response=response, headers=headers)
+        route.fulfill(response=response, headers=headers, json=payload)
 
     page.route("**/api/version", _drift_min_version)
 
-    # inspectHeaders() reveals the modal synchronously and then kicks off
-    # resetAndReload() — which can complete (and navigate) within
-    # milliseconds when there's little to wipe. Capturing the modal state
-    # in the same round trip as the triggering fetch, rather than in a
-    # separate Python-side call afterwards, is the only way to observe it
-    # reliably before the reload tears the page down.
+    # The modal now opens one authoritative /api/version round trip after
+    # the triggering response (stale-cache fix), and resetAndReload() —
+    # which can complete (and navigate) within milliseconds when there's
+    # little to wipe — starts in the same task as the reveal. A
+    # MutationObserver armed BEFORE the triggering fetch resolves at the
+    # microtask the class flips, which is the only way to observe the
+    # modal reliably before the reload tears the page down.
     with page.expect_navigation(timeout=10000):
         modal_state = page.evaluate(
             """async () => {
-                await fetch('/api/version');
                 const modal = document.getElementById('pwa-update-modal');
+                const shown = new Promise((resolve) => {
+                  const obs = new MutationObserver(() => {
+                    if (!modal.classList.contains('hidden')) {
+                      obs.disconnect();
+                      resolve();
+                    }
+                  });
+                  obs.observe(modal, {
+                    attributes: true,
+                    attributeFilter: ['class'],
+                  });
+                });
+                await fetch('/api/version');
+                await shown;
                 return {
                   hidden: modal.classList.contains('hidden'),
                   overflow: document.documentElement.style.overflow,

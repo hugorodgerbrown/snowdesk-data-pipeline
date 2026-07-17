@@ -61,6 +61,12 @@
  *     version-check would immediately re-show the banner and the user
  *     would be stuck in a reload loop.
  *
+ *   Either way the click always ends in a reload: the waiting worker is
+ *   re-resolved from the live registration (a captured reference can go
+ *   redundant, and messaging a redundant worker is a silent no-op), and a
+ *   fallback timer downgrades to the cache-clearing reload if activation
+ *   never fires ``controllerchange``.
+ *
  * Because the reload is gated on the user having clicked "Reload"
  * (``userTriggeredUpdate``), a first-install ``clients.claim()`` does not
  * reload the page, and there is no dev reload-loop.
@@ -229,18 +235,49 @@
   }
 
   /**
+   * Drop the SW shell caches, then reload. Clearing first means the
+   * navigation goes to the network for fresh HTML with the current
+   * APP_VERSION baked into ``<meta>`` — without it, ``_networkFirst``'s
+   * runtime cache could hand back HTML carrying the stale
+   * ``pwa-app-version`` meta tag (the original reload-loop bug). Bulletin
+   * JSON and other network-only paths are unaffected; the shell caches
+   * are the only thing that would keep the stale meta tag alive.
+   */
+  async function clearShellCachesAndReload() {
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(
+          keys
+            .filter(
+              (k) =>
+                k.startsWith('snowdesk-shell-') || k.startsWith('map-shell-'),
+            )
+            .map((k) => caches.delete(k)),
+        );
+      }
+    } catch (_err) {
+      // Cache API unavailable / eviction race — reload anyway.
+    }
+
+    window.location.reload();
+  }
+
+  /**
    * Reload click handler. Handles both the SW-driven path (a fresh worker
    * is waiting) and the version-header-driven path (the server's
    * ``X-App-Version`` drifted from the shell's ``<meta>`` but ``sw.js`` did
    * not change so no worker is waiting).
    *
-   * The version-header path is where the pre-fix bug lived: the previous
-   * fallback ``window.location.reload()`` could return the SW's cached HTML
-   * from ``_networkFirst``'s runtime cache, which still carried the stale
-   * ``pwa-app-version`` meta tag. The very next fetch spotted the mismatch
-   * again and re-showed the banner — the user was stuck in a loop. Clearing
-   * the shell cache before the reload guarantees the navigation goes to
-   * the network and picks up the new HTML.
+   * The waiting worker is re-resolved from the live registration rather
+   * than trusted from the reference captured when the banner was shown:
+   * that worker can have gone redundant since (superseded by a newer
+   * install, a failed update, or browser eviction), and ``postMessage`` to
+   * a redundant worker is a silent no-op — the click would do nothing and
+   * the busy-latch below would leave the button dead. For the same
+   * reason, the SW path arms a fallback timer: if ``controllerchange``
+   * hasn't fired shortly after ``SKIP_WAITING`` was posted, fall back to
+   * the cache-clearing reload so the click ALWAYS lands on a fresh shell.
    *
    * Also clears ``pwa.update.first_shown_at`` so a successful update
    * doesn't leave a stale escalation timer that later trips the blocking
@@ -262,35 +299,41 @@
 
     userTriggeredUpdate = true;
 
-    if (waitingWorker) {
+    // Prefer the registration's live waiting worker; the captured
+    // reference is only a fallback and only while still actually waiting
+    // (state 'installed' — anything else can no longer be activated).
+    let waiting =
+      waitingWorker && waitingWorker.state === 'installed'
+        ? waitingWorker
+        : null;
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration && registration.waiting) {
+        waiting = registration.waiting;
+      }
+    } catch (_err) {
+      // getRegistration failure — proceed with what we have.
+    }
+
+    if (waiting) {
       // SW-driven path: activation fires ``controllerchange`` which
       // triggers the guarded reload below.
-      waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+      waiting.postMessage({ type: 'SKIP_WAITING' });
+      // Safety net: a worker that never activates (stuck install, killed
+      // SW process) must not strand the user on a disabled button. The
+      // cache-clearing reload is safe even if activation later succeeds —
+      // ``refreshing`` ensures whichever path runs first wins and the
+      // other becomes a no-op.
+      setTimeout(() => {
+        if (refreshing) return;
+        refreshing = true;
+        clearShellCachesAndReload();
+      }, 3000);
       return;
     }
 
-    // Version-header-driven path: drop the SW shell cache so the reload
-    // goes to the network for fresh HTML with the current APP_VERSION
-    // baked into <meta>. Bulletin JSON and other network-only paths are
-    // unaffected; the shell caches are the only thing that would keep the
-    // stale meta tag alive.
-    try {
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(
-          keys
-            .filter(
-              (k) =>
-                k.startsWith('snowdesk-shell-') || k.startsWith('map-shell-'),
-            )
-            .map((k) => caches.delete(k)),
-        );
-      }
-    } catch (_err) {
-      // Cache API unavailable / eviction race — reload anyway.
-    }
-
-    window.location.reload();
+    // Version-header-driven path (no worker waiting).
+    await clearShellCachesAndReload();
   }
 
   // The new worker called ``clients.claim()`` and now controls the page.

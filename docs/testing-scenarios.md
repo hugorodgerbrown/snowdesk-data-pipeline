@@ -544,16 +544,23 @@ APP_VERSION=test-newer-build uv run python manage.py runserver
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Keep the tab open, then trigger any request (scroll the timeline, tap a region — anything that fires a `fetch` or HTMX call) | `pwa_version_check.js` sees the header mismatch and reveals `#sw-update-banner` |
+| 1 | Keep the tab open, then trigger any request (scroll the timeline, tap a region — anything that fires a `fetch` or HTMX call) | `pwa_version_check.js` sees the header mismatch, confirms it against the `/api/version` body (Network panel: one `no-store` request to `/api/version`), and reveals `#sw-update-banner` |
 | 2 | DevTools → Application → Service workers | Only one SW is registered — no waiting worker (the SW itself did not change) |
 | 3 | Click "Reload" on the banner | Application → Cache storage: the `snowdesk-shell-*` entries are cleared before the reload; the page reloads once and the new shell's `<meta name="pwa-app-version">` now matches the header — the banner does not re-appear |
+
+A header mismatch the `/api/version` body does **not** back — e.g. a
+response replayed from the browser HTTP cache right after a deploy —
+reveals nothing (automated:
+[test_pwa_lifecycle_update.py::test_stale_cached_header_does_not_show_banner](../tests/e2e/test_pwa_lifecycle_update.py)).
+This is the fix for the staging stuck-banner bug, where Reload could
+never clear a banner triggered by stale cached headers.
 
 ### Scenario P6: Forced update via APP_MIN_VERSION
 
 > Automated: [test_pwa_lifecycle_update.py::test_min_version_shows_modal_and_resets_cleanly](../tests/e2e/test_pwa_lifecycle_update.py)
-> — correction from implementation: `pwa_version_check.js`'s
-> `inspectHeaders()` calls `resetAndReload()` automatically the moment
-> the mismatch is detected, it does not wait for a "Reload now" click
+> — correction from implementation: `pwa_version_check.js` calls
+> `resetAndReload()` automatically the moment the mismatch is confirmed
+> against the `/api/version` body, it does not wait for a "Reload now" click
 > (that handler is a redundant, idempotent fallback). In practice the
 > modal is visible only very briefly before the automatic reset lands —
 > step 2 below describes the button as the trigger, which is not what

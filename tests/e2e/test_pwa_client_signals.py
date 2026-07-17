@@ -294,9 +294,23 @@ def test_install_completed_emits_on_appinstalled(
 
 
 def test_forced_update_escalation_emits(live_server: LiveServer, page: Page) -> None:
-    """A soft-banner shown >24h ago escalates to the blocking modal on cold launch."""
+    """A soft-banner shown >24h ago escalates to the blocking modal on cold launch.
+
+    The escalation path verifies the pending update against the
+    ``/api/version`` body before blocking (stale-cache fix), so the route
+    drifts ``current`` to model a server that genuinely moved on — a
+    stamp the server disowns is cleared instead of escalated.
+    """
     _load(page, live_server.url)
     _delete_db(page)
+
+    def _drift_current(route: Route) -> None:
+        response = route.fetch()
+        payload = response.json()
+        payload["current"] = "test-newer-build"
+        route.fulfill(response=response, json=payload)
+
+    page.route("**/api/version", _drift_current)
 
     page.evaluate(
         """() => {
@@ -305,7 +319,9 @@ def test_forced_update_escalation_emits(live_server: LiveServer, page: Page) -> 
           }"""
     )
     page.reload()
-    page.wait_for_function("() => typeof window.pwaTelemetry === 'object'")
+    # The modal reveal is async now (one /api/version round trip) — wait
+    # for it rather than sampling a fixed delay after load.
+    page.wait_for_selector("#pwa-update-modal:not(.hidden)", timeout=5000)
 
     row = page.evaluate(
         """async () => {
@@ -316,10 +332,6 @@ def test_forced_update_escalation_emits(live_server: LiveServer, page: Page) -> 
     )
     assert row is not None
     assert row["properties"]["trigger"] == "escalation"
-    # The modal itself should also be visible.
-    assert "hidden" not in (
-        page.eval_on_selector("#pwa-update-modal", "(el) => el.className") or ""
-    )
 
 
 # ---------------------------------------------------------------------------
