@@ -35,6 +35,7 @@ from django.urls import include, path
 from public.sitemaps import BulletinSitemap
 from public.views import (
     serve_favicon,
+    serve_llms_full_txt,
     serve_llms_txt,
     serve_manifest,
     serve_robots,
@@ -60,6 +61,7 @@ urlpatterns = [
     path("manifest.webmanifest", serve_manifest, name="web_manifest"),
     path("robots.txt", serve_robots, name="robots"),
     path("llms.txt", serve_llms_txt, name="llms_txt"),
+    path("llms-full.txt", serve_llms_full_txt, name="llms_full_txt"),
     path("favicon.ico", serve_favicon, name="favicon_ico"),
     path("favicon.ico/", serve_favicon, name="favicon_ico_slash"),
 ]
