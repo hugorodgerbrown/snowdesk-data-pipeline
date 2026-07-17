@@ -183,9 +183,7 @@ Optional context:
                 {# add/remove visibility on outline-only line layers stacked  #}
                 {# above the L4 choropleth. State persists in localStorage    #}
                 {# under snowdesk.map.overlay.l1 / .l2 / .l4. Micro regions   #}
-                {# is checked-and-disabled because the danger-rating          #}
-                {# choropleth is rendered on the L4 layer — hiding it would   #}
-                {# leave the map empty.                                       #}
+                {# defaults to visible, like the other overlay tiers.         #}
                 <li role="separator" class="basemap-menu-separator"></li>
                 <li role="none" class="basemap-menu-section-label">
                     {% trans "Overlays" %}
@@ -219,9 +217,6 @@ Optional context:
                         class="basemap-menu-item basemap-menu-item--overlay"
                         data-overlay-key="l4"
                         aria-checked="true"
-                        aria-disabled="true"
-                        disabled
-                        title='{% trans "Micro regions carry the avalanche danger ratings — required" %}'
                     >
                         {% trans "Micro regions" %}
                     </button>

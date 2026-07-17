@@ -110,6 +110,29 @@ def test_map_page_renders_resorts_overlay_toggle() -> None:
 
 
 @pytest.mark.django_db
+def test_map_page_renders_micro_regions_overlay_toggle() -> None:
+    """
+    SNOW-390: the Micro regions checkbox is a normal overlay toggle, matching
+    L1 / L2 / L3 / Resorts. Default is ``aria-checked="true"`` — the
+    danger-rating choropleth is visible on first paint — but the button is no
+    longer locked with ``disabled`` / ``aria-disabled`` / a "required" tooltip.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+    assert 'data-overlay-key="l4"' in content
+    l4_btn_idx = content.index('data-overlay-key="l4"')
+    next_li_idx = content.find("<li ", l4_btn_idx)
+    button_scope = (
+        content[l4_btn_idx:next_li_idx] if next_li_idx > 0 else content[l4_btn_idx:]
+    )
+    assert 'aria-checked="true"' in button_scope
+    assert 'aria-disabled="true"' not in button_scope
+    assert "disabled" not in button_scope
+    assert "required" not in button_scope
+
+
+@pytest.mark.django_db
 def test_map_page_renders_resorts_legend_entry() -> None:
     """SNOW-78: the danger-scale legend includes a Resorts entry."""
     client = Client()
