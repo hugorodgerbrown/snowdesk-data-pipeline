@@ -170,6 +170,22 @@ class PwaPage:
     def wait_for_event(self, event_name: str, timeout: int = 5000) -> dict[str, Any]:
         """Poll ``queue:events`` until ``event_name`` appears; return the row.
 
+        Caution when calling this more than once in the same test for an
+        event that ISN'T already guaranteed present: a second
+        ``wait_for_function`` (or any further ``page.evaluate()``) call
+        issued while an earlier one is genuinely still settling something
+        SW-driven has, in practice, reliably come back empty even though
+        the underlying data was there moments before (observed while
+        building ``test_pwa_push_journey.py`` — see that file's module
+        docstring for the specifics). It's SAFE to call this more than
+        once when every event is already certain to be present by the
+        time the test body runs (``test_pwa_lifecycle_install.py``'s
+        ``pwa.sw.installed`` + ``.activated`` calls, both stamped during
+        ``pwa_page``'s own setup, are the existing example) — the risk is
+        specifically waiting on a SECOND event that still needs genuine
+        polling time. When in doubt, fold every condition into ONE
+        ``page.wait_for_function()`` predicate instead of chaining calls.
+
         Args:
             event_name: The ``pwa.*`` event name to wait for.
             timeout: Milliseconds to poll before giving up.
