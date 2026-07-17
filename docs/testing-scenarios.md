@@ -1,8 +1,8 @@
 ---
 name: testing-scenarios
-description: Manual user-testing scenarios — homepage, bulletin pages, map, search and subscription flows on the test_data fixture
+description: Manual test scenarios — homepage, bulletin, map, search, subscriptions, PWA install/update/offline/kill-switch — on test_data
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-07-17
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -414,3 +414,230 @@ both hits appear and the badge makes the distinction obvious.
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/random/ | Browser permanently redirects (301) to http://localhost:8000/examples/random/ |
 | 2 | Verify a bulletin loads | A random bulletin renders inline at the `/examples/random/` URL with a region name, date, and danger level |
+
+---
+
+## PWA Shell
+
+End-to-end pass for the service worker + install prompt + update banner
++ offline UI. Runs against the local dev server on `http://localhost:8000`
+(service workers are allowed on `localhost` without HTTPS). The related
+architecture reference is [`offline-map.md`](offline-map.md); the
+compliance index is [`offline-first.md`](offline-first.md).
+
+> **Universal preconditions**
+>
+> Before every scenario, reset the browser state so results are
+> deterministic:
+>
+> 1. DevTools → **Application → Storage → Clear site data** (ticks
+>    "Service Workers", "Cookies and other site data", "Cache storage").
+>    This unregisters any prior SW and empties Cache Storage +
+>    IndexedDB.
+> 2. Close and reopen the tab (or hard-reload with cache disabled) so
+>    the next navigation starts from a clean slate.
+>
+> DevTools panels used throughout: **Application → Service workers**
+> (install / waiting / activated state, `Update` and `Unregister`
+> links), **Application → Cache storage** (inspect the `snowdesk-shell-*`
+> cache), **Network → Offline** throttle (simulate no connection),
+> **Application → Manifest**.
+
+### Scenario P1: First visit installs and controls the second load
+
+**Goal**: Verify the SW registers on first visit, caches the shell, and
+serves the second load from cache.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Reset state, then navigate to http://localhost:8000/ | Page loads normally over the network |
+| 2 | Open DevTools → Application → Service workers | An `activated and is running` entry appears for `http://localhost:8000/` with source `sw.js`; no waiting worker |
+| 3 | Open Application → Cache storage → `snowdesk-shell-vN` | Entries include `http://localhost:8000/`, `/static/offline.html`, and the hashed CSS/JS bundles referenced by the page |
+| 4 | Reload the page (Cmd+R / F5, with "Disable cache" **off**) | Network tab shows the shell entries served from `(ServiceWorker)`; Console has no SW errors |
+
+### Scenario P2: Install prompt (Chromium desktop / Android)
+
+**Goal**: Verify `#pwa-install-banner` reveals when the browser fires
+`beforeinstallprompt`, and that clicking Install completes the flow.
+
+**Preconditions**: Chrome / Edge / any Chromium browser. The install
+prompt only fires when the site is not already installed — if the app
+is installed, uninstall it first (Chrome ⋮ menu → "Uninstall Snowdesk"
+from within the standalone window).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Reset state, navigate to http://localhost:8000/ and interact with the map (scroll, tap a region) until Chrome's install engagement threshold fires | The `#pwa-install-banner` slides in over the bottom-right of the viewport with a "Snowdesk" title, one-line body, and an "Install" primary CTA + `×` dismiss |
+| 2 | Click "Install" | The browser's native install dialog opens with the manifest name, icon, and screenshots (Application → Manifest lists the same); accepting installs the app and closes the tab / opens a standalone window |
+| 3 | Reopen the tab and reset state; interact again to re-fire the prompt; this time click `×` | Banner disappears and does not re-appear during this session; a `pwa.install.dismissed` event is emitted (see Application → IndexedDB → `snowdesk-pwa` → `queue:events` if telemetry is on) |
+
+### Scenario P3: iOS install guide
+
+**Goal**: Verify Safari on iOS shows the static "Share → Add to Home
+Screen" hint (iOS has no `beforeinstallprompt`).
+
+**Preconditions**: iOS Safari on a real device or a Simulator, browsing
+to `http://<your-lan-ip>:8000/` (the dev server must be reachable on
+the LAN — `runserver 0.0.0.0:8000`).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Reset state, load the map page, and interact with it | `#pwa-install-ios` appears with an animated arrow pointing to the Share icon in the Safari toolbar and the message "Tap Share, then Add to Home Screen" |
+| 2 | Follow the guide: Share → Add to Home Screen → Add | The Snowdesk icon appears on the home screen using the Apple touch icon (not a screenshot of the page); tapping it opens the app in standalone mode without Safari chrome |
+
+### Scenario P4: Update banner via a new sw.js (SW-driven path)
+
+**Goal**: Verify the soft update banner appears when a new SW installs,
+and clicking Reload lands cleanly on the new shell in a single reload.
+
+**Preconditions**: Complete Scenario P1 first so an SW is already
+controlling the page. Bump `CACHE_VERSION` in [static/js/sw.js](static/js/sw.js)
+(e.g. `'snowdesk-shell-v8'` → `'snowdesk-shell-v99-test'`) — this is
+the change that causes the browser to detect a new SW. Revert after
+the scenario.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | With the tab open, DevTools → Application → Service workers → click **Update** (top right) | A second SW appears in state `installed, waiting to activate` alongside the still-`activated` prior worker |
+| 2 | Look at the page | The `#sw-update-banner` slides in at the bottom-centre: refresh icon, "Update available", "A newer version of Snowdesk is ready.", and a "Reload" primary CTA + `×` |
+| 3 | Click "Reload" on the banner | The banner button briefly disables; the waiting worker activates (Service workers panel: the new SW becomes `activated and is running`, the old one disappears); the page reloads exactly once onto the new shell (URL and content preserved) |
+| 4 | Reload one more time | No banner appears — you are already on the latest version |
+
+### Scenario P5: Update banner via server X-App-Version drift (header path)
+
+**Goal**: Verify the same banner also appears when `sw.js` is unchanged
+but the server has moved on, and that Reload clears the shell caches so
+the reload picks up the fresh HTML (no reload loop).
+
+**Preconditions**: Scenario P1 completed; the dev server running.
+Restart the server with an overridden version so the response header
+`X-App-Version` differs from the `<meta name="pwa-app-version">` that
+was baked into the currently-loaded page:
+
+```bash
+APP_VERSION=test-newer-build uv run python manage.py runserver
+```
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Keep the tab open, then trigger any request (scroll the timeline, tap a region — anything that fires a `fetch` or HTMX call) | `pwa_version_check.js` sees the header mismatch and reveals `#sw-update-banner` |
+| 2 | DevTools → Application → Service workers | Only one SW is registered — no waiting worker (the SW itself did not change) |
+| 3 | Click "Reload" on the banner | Application → Cache storage: the `snowdesk-shell-*` entries are cleared before the reload; the page reloads once and the new shell's `<meta name="pwa-app-version">` now matches the header — the banner does not re-appear |
+
+### Scenario P6: Forced update via APP_MIN_VERSION
+
+**Goal**: Verify the blocking modal appears when the server declares a
+minimum client version that the shell does not meet, and that Reload
+now performs a full SW-unregister + cache-wipe + reload.
+
+**Preconditions**: Scenario P1 completed. Restart the server with:
+
+```bash
+APP_MIN_VERSION=test-force-update uv run python manage.py runserver
+```
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Reload the tab (or trigger any request) | `pwa_version_check.js` sees `X-App-Min-Version: test-force-update` != the shell's baked build → `#pwa-update-modal` opens as a full-viewport overlay with "Update required" copy and a single "Reload now" CTA; no dismiss control; underlying page scroll is locked |
+| 2 | Click "Reload now" | Application → Service workers: every registration is unregistered; Cache storage: every cache entry is deleted; page reloads with no SW controlling it, then re-registers cleanly |
+| 3 | Restart the server without `APP_MIN_VERSION` and reload | No modal; the app operates normally |
+
+### Scenario P7: Offline reload of a cached page (incl. /?d=YYYY-MM-DD)
+
+**Goal**: Verify a page that was successfully loaded online serves from
+cache when offline, including `/?d=X` variants that only exist via
+`history.replaceState` (fixed in [PR #347](https://github.com/hugorodgerbrown/snowdesk-data-pipeline/pull/347)).
+
+**Preconditions**: Scenario P1 completed. The map page loaded at least
+once online since `Clear site data`.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Load http://localhost:8000/ online; scrub the timeline so the URL becomes `/?d=2026-02-17` (any date the fixture covers) | Map renders and paints the choropleth for the selected date |
+| 2 | DevTools → Network → set throttling to **Offline** | The `#pwa-offline-banner` slides in from the top with "No connection — showing cached data." and a freshness stamp (see P8) |
+| 3 | Reload the page (Cmd+R) | The map shell renders from cache; the URL is preserved at `/?d=2026-02-17`; the choropleth paints from `/api/ratings/` (which is stale-while-revalidate cached — see the STATIC_PATHS list in `sw.js`); no "You're offline" page appears |
+| 4 | Also try reloading with a `?d=` value you did **not** visit online (e.g. `/?d=2026-03-01`) | Same behaviour — the `ignoreSearch: true` cache-match fallback in `_networkFirst` finds the cached `/` shell; the JS reinitialises to 1 March |
+
+### Scenario P8: Offline banner + freshness + network-required controls
+
+**Goal**: Verify the persistent offline banner (SNOW-377) tracks the
+connection state, surfaces the last `X-Data-Generated-At` timestamp,
+and disables any form or button carrying `data-network-required`.
+
+**Preconditions**: Scenario P1 completed. A bulletin URL such as
+http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/ visited
+online at least once so the timestamp is primed.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Load the bulletin page online; observe the freshness indicator embedded in the page (dot + "Updated HH:MM DD/MM") | Dot is green ("fresh"); the same stamp appears in the offline banner as soon as it opens (banner is `hidden` while online) |
+| 2 | DevTools → Network → **Offline** | `#pwa-offline-banner` reveals with "No connection — showing cached data." on the left and the freshness stamp on the right |
+| 3 | Scroll to the bulletin's "Get avalanche alerts" subscribe form | The email input and Subscribe button are visibly disabled (grey / no-hover; `aria-disabled="true"` in the DOM). This is `data-network-required` in action |
+| 4 | Network → **No throttling** (back online) | `#pwa-offline-banner` hides again; subscribe form re-enables; no page reload needed |
+
+### Scenario P9: Offline navigation to a URL never visited
+
+**Goal**: Verify the branded `/static/offline.html` fallback surfaces
+when both the network and the cache miss.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Reset state, load `/` online once so the SW is controlling | SW `activated`; only `/` is in the navigation cache |
+| 2 | DevTools → Network → **Offline** | Offline banner reveals |
+| 3 | Navigate to http://localhost:8000/some-page-never-visited/ (address bar) | The branded "You're offline" page renders — Snowdesk wordmark, "Snowdesk needs a network connection to fetch the latest bulletin.", and a "Retry" button. No stack trace, no Chrome error page |
+| 4 | Network → back online, click "Retry" | Navigation proceeds normally |
+
+### Scenario P10: Kill switch A — /api/sw-config flip
+
+**Goal**: Verify setting `SW_KILL=true` causes new tabs to unregister
+their SW without ever registering a new one (Mechanism A —
+pre-register gate in `sw_register.js`).
+
+**Preconditions**: Scenario P1 completed so an SW is currently
+registered. Restart the server with:
+
+```bash
+SW_KILL=true uv run python manage.py runserver
+```
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | `curl -s http://localhost:8000/api/sw-config` | Returns JSON `{"sw_url": "/sw.js", "kill": true}` |
+| 2 | Open a new tab to http://localhost:8000/ (do not reuse a tab that has a controller from before the flip) | Page loads normally without a SW in control; DevTools → Application → Service workers reports no registration for this origin |
+| 3 | Reload — every subsequent navigation is a plain fetch | No `snowdesk-shell-*` cache entries are populated; no offline behaviour applies |
+| 4 | Restart the server without `SW_KILL`, reset state, reload | SW registers again as in Scenario P1 |
+
+### Scenario P11: Kill switch B — swap sw.js for sw-kill.js
+
+**Goal**: Verify pointing `SW_URL` at `/sw-kill.js` swaps every
+already-installed client onto the wipe-and-unregister worker
+(Mechanism B — for clients that already have a controller and won't
+run Mechanism A until next launch).
+
+**Preconditions**: Scenario P1 completed. Restart with:
+
+```bash
+SW_URL=/sw-kill.js uv run python manage.py runserver
+```
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | In the tab still open from P1, DevTools → Application → Service workers → click **Update** | A new worker (source `sw-kill.js`) installs and activates |
+| 2 | Observe the SW panel and Cache storage | The kill worker unregisters itself once it has cleared all caches; Cache storage becomes empty; the registration list becomes empty within a few seconds |
+| 3 | Reload the tab | Page loads over the network; no SW controls it; `sw_register.js` re-registers `/sw.js` if `SW_URL` was reverted, or `/sw-kill.js` again if not |
+| 4 | Restart the server with defaults (`SW_URL=/sw.js`, `SW_KILL=false`), reset state, reload | Back to Scenario P1's clean state |
+
+### Scenario P12: Reset local data (manage page button)
+
+**Goal**: Verify the "Reset local data" control on the manage page
+clears IndexedDB + Cache storage + unregisters the SW, and shows the
+`#pwa-reset-required` overlay while it runs.
+
+**Preconditions**: Signed in (Scenario 10 or 21). Scenario P1
+completed so state exists to clear.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Navigate to http://localhost:8000/subscribe/manage/ and locate the "Reset local data" button in the account section | Button is visible with a short explanation of what it does |
+| 2 | Click "Reset local data" | The `#pwa-reset-required` full-viewport overlay opens with "Reset required" heading, an explanation, and a "Reset now" CTA |
+| 3 | Click "Reset now" | Application → IndexedDB (`snowdesk-pwa`), Cache storage (`snowdesk-shell-*`), and Service workers are all cleared; page reloads and re-registers a fresh SW |
