@@ -295,7 +295,12 @@ The SW classifies every fetch into one of three buckets:
   destination `document`). Strategy: **network-first** with a
   per-page cache fallback so an offline reload still surfaces the
   last-seen page, and the pre-cached `/static/offline.html` if the
-  requested URL has never been visited (SNOW-118).
+  requested URL has never been visited (SNOW-118). The offline
+  fallback also does one retry with `cache.match(request, { ignoreSearch:
+  true })` before giving up, so a reload of `/?d=YYYY-MM-DD` — a URL that
+  the map page only ever writes via `history.replaceState` and never
+  fetches from the server — serves the cached `/` shell instead of the
+  offline page.
 
 - **`network`** — everything else: bulletin JSON
   (`/api/region/<id>/summary/`), ratings (`/api/ratings/`), calendar partials,
