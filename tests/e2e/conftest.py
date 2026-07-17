@@ -234,11 +234,22 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
     that disable the real SW don't need this (there is nothing to clean up);
     this one drives it, so it owns cleaning up after it.
 
+    Stubs ``Math.random`` to always return 0 before the first navigation
+    (same technique as the freshness / storage-eviction tests in
+    ``test_pwa_client_signals.py``) so ``telemetry.js``'s sample-rate gate
+    (``pwa.sw.installed`` / ``.activated`` / ``.update_available`` /
+    ``.update_applied`` are sampled at 25% on repeat launches) always
+    passes — without it, a test asserting on more than one of those events
+    in the same page-load session would be flaky, since only the first
+    ``pwa.sw.*`` emit per session is forced to 100% by the
+    first-launch bump.
+
     Yields:
         A ``PwaPage`` bundling the page with the lifecycle-assertion
         helpers.
 
     """
+    page.add_init_script("Math.random = () => 0;")
     page.goto(live_server.url + "/")
     page.wait_for_load_state("load")
     page.wait_for_function(
