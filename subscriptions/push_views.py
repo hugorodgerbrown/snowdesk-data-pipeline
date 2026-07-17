@@ -128,6 +128,7 @@ def push_test(request: HttpRequest) -> HttpResponse:
 
     # SNOW-384: thread client_version through to the background dispatch —
     # the worker has no request of its own to read the header from.
+    # Client sends this header via static/js/pwa_client_version.js (SNOW-388).
     client_version = request.headers.get("X-Client-Version", "")
 
     count = 0
