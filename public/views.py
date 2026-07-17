@@ -1653,27 +1653,57 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         """Build an absolute URL for a named route under ``SITE_BASE_URL``."""
         return f"{base}{reverse(name)}"
 
+    def bulletin_link(region_id: str, slug: str) -> str:
+        """Build the evergreen bulletin URL for a region under ``SITE_BASE_URL``."""
+        path = reverse(
+            "public:bulletin",
+            kwargs={"region_id": region_id, "slug": slug},
+        )
+        return f"{base}{path}"
+
     # Built line-by-line (rather than one triple-quoted block) so each source
     # line stays within the 88-char limit while the rendered Markdown bullets
     # remain single, unwrapped lines.
     lines = [
         "# Snowdesk",
         "",
-        "> Daily Swiss avalanche bulletins from the SLF (WSL Institute for",
-        "> Snow and Avalanche Research), sourced from the public CAAML API and",
-        "> rendered per micro-region with danger ratings, avalanche problems,",
-        "> and weather context. Bulletin pages carry schema.org JSON-LD; the",
-        "> underlying data is licensed CC BY 4.0 by the SLF.",
+        "> Daily avalanche bulletins for the Alps — Switzerland (SLF / WSL",
+        "> Institute for Snow and Avalanche Research), Austria + South Tyrol +",
+        "> Trentino (ALBINA / EUREGIO avalanche.report), and France",
+        "> (Météo-France). All providers normalised to CAAML v6 and rendered",
+        "> per micro-region with danger ratings, avalanche problems, and",
+        "> weather context. Bulletin pages carry schema.org JSON-LD; the",
+        "> underlying data is licensed by the issuing warning services (SLF",
+        "> CC BY 4.0; others per their own terms).",
         "",
         "## Pages",
         "",
         f"- [Avalanche map]({link('public:home')}): interactive choropleth of "
         "current danger ratings by region; also the site entry point.",
         f"- [How to read a bulletin]({link('public:how_to_read_bulletin')}): "
-        "reference guide to the SLF danger scale, avalanche problems, and the "
-        "aspect/elevation rose.",
+        "reference guide to the EAWS danger scale, avalanche problems, and "
+        "the aspect/elevation rose.",
         f"- [Example bulletin]({link('public:examples_random')}): a randomly "
         "selected bulletin rendered in the canonical layout.",
+        "",
+        "## Regions",
+        "",
+        "Snowdesk covers Alpine micro-regions across all four EAWS warning "
+        "zones. Each link below is an evergreen URL — it always renders "
+        "today's bulletin for the region.",
+        "",
+        f"- [Switzerland — Martigny / Verbier]"
+        f"({bulletin_link('ch-4115', 'martigny-verbier')}): "
+        "sample SLF bulletin, Valais.",
+        f"- [Austria — Silvretta Ost]"
+        f"({bulletin_link('at-07-12', 'silvretta-ost')}): "
+        "sample ALBINA bulletin, Tirol.",
+        f"- [Italy — Dolomiti di Gardena]"
+        f"({bulletin_link('it-32-bz-18', 'dolomiti-di-gardena')}): "
+        "sample ALBINA / EUREGIO bulletin, South Tyrol.",
+        f"- [France — Mont-Blanc]"
+        f"({bulletin_link('fr-03', 'mont-blanc')}): "
+        "sample Météo-France bulletin, French Alps.",
         "",
         "## Data",
         "",
@@ -1688,7 +1718,7 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         "",
         "## Legal",
         "",
-        f"- [Terms & SLF data licence]({link('public:terms')}): SLF CC BY 4.0 "
+        f"- [Terms & data licences]({link('public:terms')}): source-service "
         "attribution and Snowdesk liability disclaimer.",
         f"- [Privacy]({link('public:privacy')}): how subscriber data is handled.",
         f"- [Terms of service]({link('public:terms_of_service')}): conditions of use.",
