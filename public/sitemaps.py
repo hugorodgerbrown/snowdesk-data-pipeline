@@ -41,8 +41,12 @@ class BulletinSitemap(Sitemap):
     The ``lastmod`` date is the most recent ``updated_at`` among those bulletins
     for the region, retrieved via an annotation on the queryset to avoid N+1.
 
-    URL form: form-3 dated URL ``/<region_id>/<slug>/<YYYY-MM-DD>/`` for all
-    regions so the entry is a stable, historical record once the day passes.
+    URL form: form-2 evergreen URL ``/<region_id>/<slug>/`` (SNOW-395).
+    LLMs and search engines cite whatever URL the sitemap advertises; a
+    dated URL is stale by tomorrow, so the evergreen form is what stays
+    useful for "current conditions" queries. Each evergreen page carries
+    a ``<link rel="canonical">`` pointing back at that day's form-3 URL,
+    so the historical anchor is still discoverable via the page itself.
     """
 
     changefreq = "daily"
@@ -72,21 +76,21 @@ class BulletinSitemap(Sitemap):
 
     def location(self, item: MicroRegion) -> str:
         """
-        Return the canonical path for a region's bulletin.
+        Return the evergreen canonical path for a region's bulletin (SNOW-395).
 
-        Uses the form-3 dated URL ``/<region_id>/<slug>/<YYYY-MM-DD>/``
-        so the sitemap entry points to today's specific bulletin, not the
-        evergreen "today" URL.
+        Uses the form-2 evergreen URL ``/<region_id>/<slug>/`` — the URL
+        that always renders today's bulletin. The bulletin page's own
+        ``<link rel="canonical">`` points at the form-3 dated URL so
+        search engines still see the historical anchor for the day.
 
         Args:
             item: A ``MicroRegion`` instance from ``items()``.
 
         Returns:
-            The path string (e.g. ``"/ch-4115/martigny-verbier/2026-05-20/"``).
+            The path string (e.g. ``"/ch-4115/martigny-verbier/"``).
 
         """
-        today = timezone.localdate(timezone=_ZURICH_TZ)
-        return item.get_absolute_url(target_date=today)
+        return item.get_absolute_url()
 
     def lastmod(self, item: MicroRegion) -> Any:
         """

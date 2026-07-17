@@ -8,10 +8,13 @@ Covers:
   - Regions whose bulletin date is not today are excluded.
   - Regions with no bulletin at all are excluded.
   - Empty-but-valid XML when no bulletin is published for today.
+  - Sitemap entries are evergreen form-2 URLs, not dated form-3 URLs
+    (SNOW-395).
 """
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -151,6 +154,30 @@ class TestSitemapContents:
         content = response.content.decode()
         assert "ch-2222" in content
         assert "ch-3333" not in content
+
+    def test_urls_are_evergreen_not_dated(self, client: Client) -> None:
+        """SNOW-395: every <loc> is form 2 (/<region>/<slug>/), not form 3.
+
+        A dated URL is stale by tomorrow — LLMs and search engines cite
+        whatever the sitemap advertises, so the evergreen form keeps
+        "current conditions" queries pointing at a live page.
+        """
+        region = MicroRegionFactory.create(
+            region_id="CH-4115", name="Valais", slug="ch-4115"
+        )
+        _make_bulletin_for_region(region, _zurich_today())
+
+        response = client.get(reverse("sitemap"))
+        content = response.content.decode()
+
+        locs = re.findall(r"<loc>([^<]+)</loc>", content)
+        assert locs, "expected at least one <loc> entry"
+        date_segment = re.compile(r"/\d{4}-\d{2}-\d{2}/?$")
+        for loc in locs:
+            assert not date_segment.search(loc), (
+                f"sitemap URL still carries a date segment: {loc!r}"
+            )
+            assert loc.endswith("/ch-4115/valais/")
 
 
 @pytest.mark.django_db
