@@ -1,6 +1,6 @@
 ---
 name: offline-map
-description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch Mechanism A/B, _sw_update_banner, manifest icons, CACHE_VERSION
+description: PWA shell — sw.js, sw-kill.js, /api/sw-config, kill switch A/B, _sw_update_banner, icons, CACHE_VERSION, SITE_ENVIRONMENT swap
 status: current
 last-reviewed: 2026-07-16
 ---
@@ -361,6 +361,34 @@ Output:
 The PNGs are checked in. There's no Render-side regen step — when
 `favicon.svg` changes, run `npm run build:icons` and commit the new
 PNGs alongside the SVG edit.
+
+### Staging identity swap (SNOW-399)
+
+`bin/build-pwa-icons` also emits a second set into
+`static/icons/pwa-staging/` — same four filenames, amber canvas
+(`#7c2d12`), amber rect fill (`#b45309`), and a `STAGING` wordmark
+composited across the middle of the source SVG. The wordmark sits
+inside the maskable safe zone so Android's adaptive-icon mask never
+crops it.
+
+The manifest view (`public.views.serve_manifest`) and `base.html` both
+read `public.site_environment.PWAEnvironmentIdentity.from_settings()`,
+which resolves `settings.SITE_ENVIRONMENT` to a bundle of identity
+fields — `name_display`, `short_name`, `icon_dir`, `theme_color`. On
+production (`SITE_ENVIRONMENT=production`, the default) the identity
+matches the pre-SNOW-399 hard-coded values. On any other value it
+switches to `Snowdesk (Staging)` / `Snowdesk Staging` / the
+`pwa-staging/` icon directory / amber `#b45309` for both the
+manifest `theme_color` and the `<meta name="theme-color">` tag.
+
+Screenshots live under `/static/icons/pwa/screenshots/` on every
+environment — the screenshots show the actual UI, which is identical
+on both.
+
+On Render, set `SITE_ENVIRONMENT=staging` on the staging web service
+(the production service leaves the default in place). Everything else
+— cache keys, service worker registration, manifest URL — is unchanged
+per environment; only the visible identity fields swap.
 
 ## Regenerating screenshots
 

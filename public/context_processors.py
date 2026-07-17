@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
+from public.site_environment import PWAEnvironmentIdentity
+
 if TYPE_CHECKING:
     from django.http import HttpRequest
 
@@ -64,4 +66,52 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
     return {
         "APP_VERSION": str(getattr(settings, "APP_VERSION", "")),
         "APP_MIN_VERSION": str(getattr(settings, "APP_MIN_VERSION", "")),
+    }
+
+
+def site_environment(request: HttpRequest) -> dict[str, Any]:
+    """
+    Inject PWA environment identity into every template context (SNOW-399).
+
+    Reads ``settings.SITE_ENVIRONMENT`` and resolves it to a
+    ``PWAEnvironmentIdentity`` whose fields are used by ``base.html`` and
+    ``public.views.serve_manifest`` to render a visibly distinct PWA
+    install per environment — the manifest ``name``, the ``<title>``
+    default, the ``apple-mobile-web-app-title``, the ``apple-touch-icon``
+    href, and the ``theme-color`` meta tag all key off it.
+
+    Exposed template variables:
+
+    - ``SITE_ENVIRONMENT`` — the raw setting (e.g. ``"production"``,
+      ``"staging"``).
+    - ``SITE_NAME_DISPLAY`` — the human-facing brand string (e.g.
+      ``"Snowdesk"`` on production, ``"Snowdesk (Staging)"`` on staging).
+    - ``PWA_ICON_DIR`` — the ``/static/icons/…/`` prefix under which
+      ``base.html`` looks up ``apple-touch-icon-180.png``. Matches the
+      icon prefix used by ``serve_manifest`` so the two agree per
+      environment.
+    - ``PWA_THEME_COLOR`` — hex string used in the ``<meta name="theme-color">``
+      tag. Matches ``theme_color`` in the manifest so the OS chrome tint
+      and the browser chrome tint match.
+    - ``PWA_TITLE_SUFFIX`` — string appended after every ``<title>``
+      block (empty on production, ``" — Staging"`` otherwise). Child
+      templates already override ``{% block title %}`` with page-specific
+      copy; the suffix rides outside the block so every page tab reads as
+      staging without requiring each child template to opt in.
+
+    Args:
+        request: The incoming HTTP request (unused — identity is derived
+            from ``settings.SITE_ENVIRONMENT``, not per-request).
+
+    Returns:
+        The five template variables described above.
+
+    """
+    identity = PWAEnvironmentIdentity.from_settings()
+    return {
+        "SITE_ENVIRONMENT": identity.environment,
+        "SITE_NAME_DISPLAY": identity.name_display,
+        "PWA_ICON_DIR": identity.icon_dir,
+        "PWA_THEME_COLOR": identity.theme_color,
+        "PWA_TITLE_SUFFIX": identity.title_suffix,
     }
