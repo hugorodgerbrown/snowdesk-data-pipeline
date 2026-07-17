@@ -7,7 +7,7 @@ don't share a namespace — ``{% url "api:ratings" %}`` vs
 ``{% url "public:bulletin_date" %}``.
 """
 
-from django.urls import path
+from django.urls import include, path
 
 from . import api
 
@@ -63,4 +63,7 @@ urlpatterns = [
         api.edit_resort_save_coords,
         name="edit_resort_save_coords",
     ),
+    # SNOW-391: hosted MCP (Model Context Protocol) JSON-RPC endpoint.
+    # Final URL: POST /api/mcp/; reverses as api:mcp:endpoint.
+    path("mcp/", include(("mcp_server.urls", "mcp"), namespace="mcp")),
 ]
