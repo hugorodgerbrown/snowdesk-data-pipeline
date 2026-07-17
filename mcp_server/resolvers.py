@@ -4,8 +4,10 @@ mcp_server/resolvers.py — Region lookup and fuzzy place-name search.
 Two entry points consumed by ``mcp_server.tools``:
 
 * ``resolve_region(region_id)`` — exact ``MicroRegion.region_id`` lookup,
-  reusing the same prefetch shape as the bulletin page so a hit is cheap
-  to render further down the tool.
+  scoped to what the MCP tools need (the parent major region's name via
+  ``select_related("subregion__major")``); deliberately lighter than the
+  bulletin page's own lookup, which also prefetches ``neighbours`` for a
+  UI panel no tool reads.
 * ``search_places(query)`` — fuzzy name search across resorts and
   micro/major regions, for callers who only have a place name.
 
@@ -24,11 +26,9 @@ from typing import Any
 
 from django.core.cache import cache
 from django.db.models import Max
-from django.http import Http404
 from rapidfuzz import fuzz, process
 
 from mcp_server.normalise import normalise
-from public.views import _resolve_region_for_bulletin
 from regions.models import MajorRegion, MicroRegion, Resort
 
 # How long a built candidate pool stays in cache once computed. The cache
@@ -49,11 +49,11 @@ _KIND_PRIORITY = {"micro": 0, "major": 1, "resort": 2}
 def resolve_region(region_id: str) -> MicroRegion | None:
     """Look up a MicroRegion by ``region_id``, or ``None`` if unknown.
 
-    Thin wrapper over ``public.views._resolve_region_for_bulletin`` — reuses
-    its ``select_related("subregion__major")`` prefetch (the tools need the
-    parent major region's name) — but returns ``None`` instead of raising
-    ``Http404`` so the tool layer can turn "unknown region" into a JSON-RPC
-    tool error rather than a bare 404.
+    ``select_related("subregion__major")`` is all the MCP tools need (the
+    parent major region's name); deliberately doesn't prefetch
+    ``neighbours`` — that's only used by the bulletin page's "Adjoining
+    regions" panel, which no MCP tool reads, and at the endpoint's 60/min
+    rate-limit ceiling a redundant prefetch is a real query cost.
 
     Args:
         region_id: An SLF-style region identifier, e.g. ``"CH-4115"``.
@@ -63,10 +63,11 @@ def resolve_region(region_id: str) -> MicroRegion | None:
         The MicroRegion, or ``None`` if no region has that id.
 
     """
-    try:
-        return _resolve_region_for_bulletin(region_id)
-    except Http404:
-        return None
+    return (
+        MicroRegion.objects.select_related("subregion__major")
+        .filter(region_id__iexact=region_id)
+        .first()
+    )
 
 
 def _distinct_names(*names: str) -> list[str]:
@@ -95,30 +96,6 @@ def _distinct_names(*names: str) -> list[str]:
     return result
 
 
-def _major_region_representatives() -> dict[int, str]:
-    """Map each MajorRegion's pk to one representative MicroRegion.region_id.
-
-    A MajorRegion aggregates many MicroRegions and has no bulletin page of
-    its own, so a name match against it (e.g. "Wallis" -> Valais) still
-    needs to resolve to a single ``region_id`` the other three tools can
-    take. The alphabetically-first child MicroRegion is used as a
-    best-effort representative — a known v1 limitation for major regions
-    with many children; see docs/mcp-server.md.
-
-    Returns:
-        A dict of ``{major_region_pk: region_id}``, one entry per
-        MajorRegion that has at least one MicroRegion child.
-
-    """
-    representatives: dict[int, str] = {}
-    rows = MicroRegion.objects.order_by("region_id").values_list(
-        "region_id", "subregion__major_id"
-    )
-    for region_id, major_pk in rows:
-        representatives.setdefault(major_pk, region_id)
-    return representatives
-
-
 def _build_candidate_pool() -> list[dict[str, Any]]:
     """Build the full search-candidate pool from the database.
 
@@ -128,16 +105,26 @@ def _build_candidate_pool() -> list[dict[str, Any]]:
     ``"resort"``), a human-readable ``parent`` for context, and the
     pre-computed ``normalised`` search key.
 
+    Each MajorRegion's representative ``region_id`` (see
+    ``_build_candidate_pool``'s major-region loop below) is derived from
+    the same ``MicroRegion`` rows loaded for the micro-region loop, rather
+    than a second query — ``MicroRegion.Meta.ordering = ["region_id"]``
+    means the loop already visits rows alphabetically, so recording the
+    first ``region_id`` seen per major-region pk reproduces the
+    "alphabetically-first child" representative with no extra table scan.
+
     Returns:
         The full candidate-pool list — not cached here; caching is
         ``_candidate_pool``'s responsibility.
 
     """
     rows: list[dict[str, Any]] = []
+    major_reps: dict[int, str] = {}
 
     for region in MicroRegion.objects.select_related("subregion__major"):
         major = region.subregion.major
         parent = major.name_en or major.name_native
+        major_reps.setdefault(major.pk, region.region_id)
         rows.append(
             {
                 "region_id": region.region_id,
@@ -148,7 +135,6 @@ def _build_candidate_pool() -> list[dict[str, Any]]:
             }
         )
 
-    major_reps = _major_region_representatives()
     for major_region in MajorRegion.objects.all():
         region_id = major_reps.get(major_region.pk)
         if region_id is None:
