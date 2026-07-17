@@ -503,11 +503,23 @@ def _route_capturing_headers(captured: dict[str, str]) -> Callable[[Route], None
 
     Shared by the tests below so each just supplies its own ``captured``
     dict and reads it back after triggering the request.
+
+    ``Access-Control-Allow-Origin: *`` is stamped on the fulfilled response
+    so cross-origin fetches (e.g. ``https://tiles.example.com/**``) don't
+    hit a browser CORS refusal and throw "TypeError: Failed to fetch"
+    before the test can inspect ``captured``. Harmless for same-origin
+    routes — the header is ignored when the browser already accepts the
+    response (SNOW-397).
     """
 
     def _handler(route: Route) -> None:
         captured.update(route.request.headers)
-        route.fulfill(status=200, content_type="application/json", body="{}")
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body="{}",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
 
     return _handler
 
