@@ -1712,6 +1712,14 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         f"- [Full URL index]({link('llms_full_txt')}): every micro-region's "
         "evergreen bulletin URL, sorted by region_id — the low-token full "
         "index paired with this file (SNOW-393).",
+        f"- [Switzerland — RSS feed]({base}/ch/feed.rss): latest SLF "
+        "bulletins per micro-region (SNOW-396).",
+        f"- [Austria — RSS feed]({base}/at/feed.rss): latest ALBINA "
+        "bulletins per Austrian micro-region.",
+        f"- [Italy — RSS feed]({base}/it/feed.rss): latest ALBINA / EUREGIO "
+        "bulletins per Italian micro-region.",
+        f"- [France — RSS feed]({base}/fr/feed.rss): latest Météo-France "
+        "bulletins per massif.",
         f"- [Region ratings (JSON)]({link('api:ratings')}): current danger "
         "ratings; accepts ?d=YYYY-MM-DD and ?country=ch|fr|at|it.",
         f"- [Regions (GeoJSON)]({link('api:regions_geojson')}): micro-region "
