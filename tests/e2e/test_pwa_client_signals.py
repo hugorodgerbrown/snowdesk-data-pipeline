@@ -29,6 +29,9 @@ notes on those). Specifically:
 6. ``window.pwaMutationQueue`` stub methods (``static/js/mutation_queue.js``).
 7. ``pwa.storage.evicted_probable`` heuristic in ``static/js/db.js``,
    forcing the sample-rate gate open by stubbing ``Math.random``.
+8. ``X-Client-Version`` header injection (``static/js/pwa_client_version.js``,
+   SNOW-388) on same-origin ``fetch`` and HTMX requests, and its absence on
+   third-party requests.
 
 Not covered here (documented as manual-only in
 ``docs/telemetry-pipeline.md``): ``pwa.sw.installed/.activated/
@@ -43,12 +46,13 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from django.template.loader import render_to_string
-from playwright.sync_api import Page
+from playwright.sync_api import Page, Route
 from pytest_django.live_server_helper import LiveServer
 
 
@@ -484,6 +488,92 @@ def test_storage_evicted_probable_on_low_quota(
     assert row is not None
     assert row["properties"]["quota"] == 1024
     assert row["properties"]["usage"] == 0
+
+
+# ---------------------------------------------------------------------------
+# 8. X-Client-Version on same-origin fetch / HTMX requests (SNOW-388)
+# ---------------------------------------------------------------------------
+
+
+def _route_capturing_headers(captured: dict[str, str]) -> Callable[[Route], None]:
+    """Return a ``page.route`` handler that records headers then fulfils 200.
+
+    Shared by the tests below so each just supplies its own ``captured``
+    dict and reads it back after triggering the request.
+    """
+
+    def _handler(route: Route) -> None:
+        captured.update(route.request.headers)
+        route.fulfill(status=200, content_type="application/json", body="{}")
+
+    return _handler
+
+
+def test_fetch_stamps_client_version_on_same_origin_request(
+    live_server: LiveServer, page: Page
+) -> None:
+    """A same-origin fetch() call carries X-Client-Version matching the meta tag."""
+    _load(page, live_server.url)
+
+    captured: dict[str, str] = {}
+    page.route("**/api/version", _route_capturing_headers(captured))
+
+    page.evaluate("async () => { await fetch('/api/version'); }")
+
+    expected = page.eval_on_selector(
+        'meta[name="pwa-app-version"]', "(el) => el.content"
+    )
+    assert expected  # sanity: the meta tag must carry a real build id
+    assert captured.get("x-client-version") == expected
+
+
+def test_fetch_omits_client_version_on_third_party_request(
+    live_server: LiveServer, page: Page
+) -> None:
+    """A cross-origin fetch() call does NOT carry X-Client-Version."""
+    _load(page, live_server.url)
+
+    captured: dict[str, str] = {}
+    page.route("https://tiles.example.com/**", _route_capturing_headers(captured))
+
+    page.evaluate(
+        "async () => { await fetch('https://tiles.example.com/style.json'); }"
+    )
+
+    assert "x-client-version" not in captured
+
+
+def test_htmx_config_request_stamps_client_version(
+    live_server: LiveServer, page: Page, _load_test_data: None
+) -> None:
+    """A same-origin HTMX request carries X-Client-Version via htmx:configRequest.
+
+    Uses the canonical bulletin page (which loads htmx.min.js) rather than
+    ``/`` — the home page does not load HTMX. A synthetic ``hx-get`` element
+    is injected and processed manually since the page has no pre-existing
+    element that issues a GET to a stable, easily-routed URL.
+    """
+    page.goto(f"{live_server.url}/ch-4115/martigny-verbier/2026-04-08/")
+    page.wait_for_load_state("load")
+
+    captured: dict[str, str] = {}
+    page.route("**/api/version", _route_capturing_headers(captured))
+
+    page.evaluate(
+        """() => {
+            const el = document.createElement('div');
+            el.setAttribute('hx-get', '/api/version');
+            document.body.appendChild(el);
+            window.htmx.process(el);
+            el.click();
+          }"""
+    )
+    page.wait_for_timeout(200)
+
+    expected = page.eval_on_selector(
+        'meta[name="pwa-app-version"]', "(el) => el.content"
+    )
+    assert captured.get("x-client-version") == expected
 
 
 def test_storage_evicted_probable_not_flagged_on_healthy_quota(
