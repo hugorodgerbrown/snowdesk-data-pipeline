@@ -39,6 +39,32 @@ and loads home_intro.js in addition to the shared map assets.
     <link rel="prefetch" href="{% url 'api:ratings' %}?d={{ season_end|date:'Y-m-d' }}&country=ch">
     <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
     <link rel="stylesheet" href="{% static 'css/map.css' %}">
+    {# Per-country RSS/Atom feeds (SNOW-396). Feed readers and LLM crawlers  #}
+    {# pick these up from the page head; the four hrefs cover every country. #}
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Switzerland avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='ch' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Austria avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='at' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Italy avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='it' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — France avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='fr' %}"
+    >
 {% endblock %}
 
 {% block content %}

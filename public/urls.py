@@ -40,6 +40,7 @@ from django.urls import path
 from django.views.generic import RedirectView
 
 from . import debug_views, views
+from .feeds import CountryBulletinFeed
 
 app_name = "public"
 
@@ -93,6 +94,17 @@ urlpatterns = [
 ]
 
 urlpatterns += [
+    # Per-country RSS/Atom feed (SNOW-396). Registered before the generic
+    # <region_id:region_id>/ catch-all so `<country>/feed.rss` is never
+    # mistaken for a region_id + slug pair. The region_id converter regex
+    # requires a dash after the two-letter country code, so a bare
+    # `ch`/`at`/`it`/`fr` first segment can't match it, but explicit
+    # ordering keeps the intent visible.
+    path(
+        "<str:country>/feed.rss",
+        CountryBulletinFeed(),
+        name="country_bulletin_feed",
+    ),
     # Share-redirect (SNOW-217) — registered before the generic
     # <str:region_id>/ catch-alls so "/s/<token>/" is never swallowed.
     path(
