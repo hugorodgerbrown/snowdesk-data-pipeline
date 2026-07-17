@@ -2,7 +2,7 @@
 name: telemetry-pipeline
 description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon envelope, server-side pwa.* signals, PostHog forwarding
 status: current
-last-reviewed: 2026-07-16
+last-reviewed: 2026-07-17
 ---
 
 # Telemetry pipeline
@@ -125,10 +125,13 @@ read from the `X-Client-Version` request header
 caller when no request is in scope — `push_service.py::dispatch_push`
 runs inside the `_worker_dispatch_push` background task, so
 `push_views.py::push_test` reads the header and passes it through
-`enqueue_push(sub, payload, client_version)`. No client currently sends
-`X-Client-Version`, so the property is `""` in practice until a
-client-side change starts sending it — the server-side plumbing is in
-place regardless. `pwa.sw_config.hit` additionally carries a `reason`
+`enqueue_push(sub, payload, client_version)`. `static/js/pwa_client_version.js`
+(SNOW-388) stamps the header on every same-origin `fetch` and HTMX
+request, so the property is populated for all five call sites above.
+`navigator.sendBeacon` cannot carry custom headers, but the events it
+sends already carry `client_version` inside the telemetry envelope body
+instead; SW-initiated navigation fetches remain uninstrumented (out of
+scope for SNOW-388). `pwa.sw_config.hit` additionally carries a `reason`
 property when `kill=true`, sourced from `settings.SW_KILL` (the only
 kill trigger today — a fixed string `"env_kill_switch"`; a future
 second trigger should add its own reason string).

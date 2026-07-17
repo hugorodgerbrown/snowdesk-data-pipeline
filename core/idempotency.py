@@ -128,7 +128,8 @@ class IdempotencyMiddleware:
                     "status": cached.response_status,
                     # SNOW-384: client_version threaded from the
                     # X-Client-Version request header, same convention as
-                    # every other server-side signal.
+                    # every other server-side signal. Client sends this
+                    # header via static/js/pwa_client_version.js (SNOW-388).
                     "client_version": request.headers.get("X-Client-Version", ""),
                 },
             )

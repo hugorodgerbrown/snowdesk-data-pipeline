@@ -1382,9 +1382,8 @@ def version(request: HttpRequest) -> JsonResponse:
     # dashboards can chart poll cadence and detect clients that stop
     # phoning home.
     # SNOW-384: client_version is read from the X-Client-Version request
-    # header (absent today — no client currently sends it — so this is
-    # "" in practice until a client-side change starts sending it; the
-    # server-side plumbing is in place regardless).
+    # header. Client sends this header via static/js/pwa_client_version.js
+    # (SNOW-388) on every same-origin fetch/HTMX request.
     emit_server_signal(
         "pwa.version.endpoint.hit",
         {"client_version": request.headers.get("X-Client-Version", "")},
@@ -1419,7 +1418,8 @@ def sw_config(request: HttpRequest) -> JsonResponse:
         "sw_url": settings.SW_URL,
         "kill": kill,
         # SNOW-384: client_version — see the identical note on
-        # ``version()`` above; empty until a client sends the header.
+        # ``version()`` above. Client sends this header via
+        # static/js/pwa_client_version.js (SNOW-388).
         "client_version": request.headers.get("X-Client-Version", ""),
     }
     if kill:

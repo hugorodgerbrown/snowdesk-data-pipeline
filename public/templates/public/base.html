@@ -141,6 +141,15 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# calls window.pwaDb — currently pwa_reset.js (for the CTA bind) #}
         {# and telemetry.js (queue:events + context helper).              #}
         <script src="{% static 'js/db.js' %}" defer></script>
+        {# SNOW-388: stamps X-Client-Version on same-origin fetch/HTMX      #}
+        {# requests. MUST load FIRST among the fetch-wrapping scripts below #}
+        {# (sw_register.js, pwa_version_check.js, pwa_offline.js) so it     #}
+        {# becomes the INNERMOST wrapper — sw_register.js dispatches a      #}
+        {# fetch() synchronously at its own IIFE-load (fetchSwConfig), so   #}
+        {# any script that installs its fetch wrapper AFTER sw_register.js  #}
+        {# misses that call entirely. See the header comment in             #}
+        {# pwa_client_version.js for the full load-order rationale.         #}
+        <script src="{% static 'js/pwa_client_version.js' %}" defer></script>
         {# SNOW-385: first-party client telemetry buffer + sendBeacon    #}
         {# critical-event path. MUST load after db.js. Consumer scripts   #}
         {# below use optional chaining (window.pwaTelemetry?.emit) so    #}
@@ -152,7 +161,9 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# Loaded after telemetry.js per the same defensive-load-order     #}
         {# convention as every other pwaTelemetry consumer below.          #}
         <script src="{% static 'js/mutation_queue.js' %}" defer></script>
-        {# SNOW-79: register the PWA shell SW from every public page. #}
+        {# SNOW-79: register the PWA shell SW from every public page.       #}
+        {# SNOW-388: dispatches a fetch() synchronously at IIFE-load — must #}
+        {# load AFTER pwa_client_version.js above so that fetch is wrapped. #}
         <script src="{% static 'js/sw_register.js' %}" defer></script>
         {# SNOW-374: version-check runs on every JS-issued fetch + HTMX XHR. #}
         <script src="{% static 'js/pwa_version_check.js' %}" defer></script>
