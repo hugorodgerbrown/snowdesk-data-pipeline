@@ -445,6 +445,8 @@ compliance index is [`offline-first.md`](offline-first.md).
 
 ### Scenario P1: First visit installs and controls the second load
 
+> Automated: [test_pwa_lifecycle_install.py::test_first_install_registers_and_caches_shell](../tests/e2e/test_pwa_lifecycle_install.py)
+
 **Goal**: Verify the SW registers on first visit, caches the shell, and
 serves the second load from cache.
 
@@ -456,6 +458,12 @@ serves the second load from cache.
 | 4 | Reload the page (Cmd+R / F5, with "Disable cache" **off**) | Network tab shows the shell entries served from `(ServiceWorker)`; Console has no SW errors |
 
 ### Scenario P2: Install prompt (Chromium desktop / Android)
+
+> Manual-only: Chromium's install engagement heuristic (scroll/tap
+> thresholds before `beforeinstallprompt` fires) is not drivable from
+> Playwright. The install funnel's telemetry (`pwa.install.prompted` /
+> `.accepted` / `.dismissed` / `.completed`) IS covered — see
+> [test_pwa_client_signals.py](../tests/e2e/test_pwa_client_signals.py).
 
 **Goal**: Verify `#pwa-install-banner` reveals when the browser fires
 `beforeinstallprompt`, and that clicking Install completes the flow.
@@ -473,6 +481,9 @@ from within the standalone window).
 
 ### Scenario P3: iOS install guide
 
+> Manual-only: requires real Safari-on-iOS chrome (Share sheet, Add to
+> Home Screen), which Chromium/Playwright cannot exercise.
+
 **Goal**: Verify Safari on iOS shows the static "Share → Add to Home
 Screen" hint (iOS has no `beforeinstallprompt`).
 
@@ -486,6 +497,13 @@ the LAN — `runserver 0.0.0.0:8000`).
 | 2 | Follow the guide: Share → Add to Home Screen → Add | The Snowdesk icon appears on the home screen using the Apple touch icon (not a screenshot of the page); tapping it opens the app in standalone mode without Safari chrome |
 
 ### Scenario P4: Update banner via a new sw.js (SW-driven path)
+
+> Automated: [test_pwa_lifecycle_update.py::test_update_banner_appears_on_new_sw_bytes](../tests/e2e/test_pwa_lifecycle_update.py)
+> — drives the byte-diff via a server-side monkeypatch of
+> `public.views._serve_sw_file` rather than DevTools' "Update" button;
+> Playwright cannot observe or intercept a service worker's own script
+> fetch (confirmed during the SNOW-389 spike — see
+> [_spike_results.py](../tests/e2e/_spike_results.py)).
 
 **Goal**: Verify the soft update banner appears when a new SW installs,
 and clicking Reload lands cleanly on the new shell in a single reload.
@@ -504,6 +522,12 @@ the scenario.
 | 4 | Reload one more time | No banner appears — you are already on the latest version |
 
 ### Scenario P5: Update banner via server X-App-Version drift (header path)
+
+> Automated: [test_pwa_lifecycle_update.py::test_header_drift_shows_banner_and_clears_shell_caches](../tests/e2e/test_pwa_lifecycle_update.py)
+> — the header drift is injected via `page.route()` on one fetch rather
+> than restarting the server with `APP_VERSION` overridden; the reload's
+> cache wipe is proven by planting a cache-entry marker and observing it
+> gone afterwards.
 
 **Goal**: Verify the same banner also appears when `sw.js` is unchanged
 but the server has moved on, and that Reload clears the shell caches so
@@ -526,6 +550,15 @@ APP_VERSION=test-newer-build uv run python manage.py runserver
 
 ### Scenario P6: Forced update via APP_MIN_VERSION
 
+> Automated: [test_pwa_lifecycle_update.py::test_min_version_shows_modal_and_resets_cleanly](../tests/e2e/test_pwa_lifecycle_update.py)
+> — correction from implementation: `pwa_version_check.js`'s
+> `inspectHeaders()` calls `resetAndReload()` automatically the moment
+> the mismatch is detected, it does not wait for a "Reload now" click
+> (that handler is a redundant, idempotent fallback). In practice the
+> modal is visible only very briefly before the automatic reset lands —
+> step 2 below describes the button as the trigger, which is not what
+> the shipped code does.
+
 **Goal**: Verify the blocking modal appears when the server declares a
 minimum client version that the shell does not meet, and that Reload
 now performs a full SW-unregister + cache-wipe + reload.
@@ -539,10 +572,19 @@ APP_MIN_VERSION=test-force-update uv run python manage.py runserver
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Reload the tab (or trigger any request) | `pwa_version_check.js` sees `X-App-Min-Version: test-force-update` != the shell's baked build → `#pwa-update-modal` opens as a full-viewport overlay with "Update required" copy and a single "Reload now" CTA; no dismiss control; underlying page scroll is locked |
-| 2 | Click "Reload now" | Application → Service workers: every registration is unregistered; Cache storage: every cache entry is deleted; page reloads with no SW controlling it, then re-registers cleanly |
+| 2 | Observe the tab | The reset (SW-unregister + cache-wipe) and reload happen automatically, within about a second of step 1 — the "Reload now" button is a fallback for whenever the automatic path doesn't run, not the primary trigger |
 | 3 | Restart the server without `APP_MIN_VERSION` and reload | No modal; the app operates normally |
 
 ### Scenario P7: Offline reload of a cached page (incl. /?d=YYYY-MM-DD)
+
+> Automated: [test_pwa_lifecycle_offline.py::test_offline_reload_of_visited_date_url](../tests/e2e/test_pwa_lifecycle_offline.py)
+> and [::test_offline_reload_of_never_visited_date_url](../tests/e2e/test_pwa_lifecycle_offline.py)
+> (the SNOW-347 regression guard) — the `?d=` URL is moved client-side
+> via `history.replaceState`, the same mechanism `map.js`'s `commitDate()`
+> uses when scrubbing (MapLibre tiles don't load in headless Chromium, so
+> driving the actual scrubber UI isn't reliable here — see
+> [test_scrubber_reverse.py](../tests/e2e/test_scrubber_reverse.py) for
+> the dedicated scrubber-UI coverage).
 
 **Goal**: Verify a page that was successfully loaded online serves from
 cache when offline, including `/?d=X` variants that only exist via
@@ -560,6 +602,13 @@ once online since `Clear site data`.
 
 ### Scenario P8: Offline banner + freshness + network-required controls
 
+> Automated: [test_pwa_lifecycle_offline.py::test_offline_banner_and_network_required_controls](../tests/e2e/test_pwa_lifecycle_offline.py)
+> — correction from implementation: `data-network-required` sits on the
+> `<form>` element (`aria-disabled` lands there, not on the email
+> `<input>` itself); `pwa_offline.js`'s `syncNetworkRequired()` also
+> directly `disabled`s any `<button>` descendant, which is what actually
+> stops the Subscribe click.
+
 **Goal**: Verify the persistent offline banner (SNOW-377) tracks the
 connection state, surfaces the last `X-Data-Generated-At` timestamp,
 and disables any form or button carrying `data-network-required`.
@@ -572,10 +621,12 @@ online at least once so the timestamp is primed.
 |------|--------|-----------------|
 | 1 | Load the bulletin page online; observe the freshness indicator embedded in the page (dot + "Updated HH:MM DD/MM") | Dot is green ("fresh"); the same stamp appears in the offline banner as soon as it opens (banner is `hidden` while online) |
 | 2 | DevTools → Network → **Offline** | `#pwa-offline-banner` reveals with "No connection — showing cached data." on the left and the freshness stamp on the right |
-| 3 | Scroll to the bulletin's "Get avalanche alerts" subscribe form | The email input and Subscribe button are visibly disabled (grey / no-hover; `aria-disabled="true"` in the DOM). This is `data-network-required` in action |
+| 3 | Scroll to the bulletin's "Get avalanche alerts" subscribe form | The Subscribe button is disabled (grey / no-hover); the enclosing `<form>` carries `aria-disabled="true"` and `pointer-events: none`, so the email input is unreachable too. This is `data-network-required` in action |
 | 4 | Network → **No throttling** (back online) | `#pwa-offline-banner` hides again; subscribe form re-enables; no page reload needed |
 
 ### Scenario P9: Offline navigation to a URL never visited
+
+> Automated: [test_pwa_lifecycle_offline.py::test_offline_navigation_to_never_visited_url_shows_offline_fallback](../tests/e2e/test_pwa_lifecycle_offline.py)
 
 **Goal**: Verify the branded `/static/offline.html` fallback surfaces
 when both the network and the cache miss.
@@ -588,6 +639,10 @@ when both the network and the cache miss.
 | 4 | Network → back online, click "Retry" | Navigation proceeds normally |
 
 ### Scenario P10: Kill switch A — /api/sw-config flip
+
+> Automated: [test_pwa_lifecycle_kill_and_reset.py::test_kill_switch_a_prevents_registration](../tests/e2e/test_pwa_lifecycle_kill_and_reset.py)
+> — `/api/sw-config` is routed to `kill: true` via `page.route()` on a
+> fresh tab rather than restarting the server with `SW_KILL=true`.
 
 **Goal**: Verify setting `SW_KILL=true` causes new tabs to unregister
 their SW without ever registering a new one (Mechanism A —
@@ -609,6 +664,22 @@ SW_KILL=true uv run python manage.py runserver
 
 ### Scenario P11: Kill switch B — swap sw.js for sw-kill.js
 
+> Manual-only: a `test_kill_switch_b_wipes_and_unregisters` test was
+> written and initially looked solid, but a wider SNOW-389 anti-flake
+> pass surfaced a genuine, non-marginal "did not converge to zero
+> registrations" failure in the install → skipWaiting → activate → wipe
+> → unregister chain — raising the poll deadline did not fix it. Dropped
+> per the scope's fallback ladder ("flaky > absent, but flaky < manual")
+> — see [_spike_results.py](../tests/e2e/_spike_results.py).
+>
+> Correction from that implementation attempt, still useful for the
+> manual walkthrough below: `registration.update()` (DevTools' "Update"
+> button) only re-fetches the CURRENTLY registered script URL; it cannot
+> pick up a changed `sw_url`. What actually re-reads `/api/sw-config` is
+> `sw_register.js`'s top-level `fetchSwConfig()`, which runs on every
+> fresh page load — step 1 below needs a reload, not an in-place DevTools
+> update, to trigger Mechanism B.
+
 **Goal**: Verify pointing `SW_URL` at `/sw-kill.js` swaps every
 already-installed client onto the wipe-and-unregister worker
 (Mechanism B — for clients that already have a controller and won't
@@ -622,16 +693,23 @@ SW_URL=/sw-kill.js uv run python manage.py runserver
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | In the tab still open from P1, DevTools → Application → Service workers → click **Update** | A new worker (source `sw-kill.js`) installs and activates |
+| 1 | In the tab still open from P1, reload the page (not DevTools' "Update" button — see the correction above) | A new worker (source `sw-kill.js`) installs and activates |
 | 2 | Observe the SW panel and Cache storage | The kill worker unregisters itself once it has cleared all caches; Cache storage becomes empty; the registration list becomes empty within a few seconds |
 | 3 | Reload the tab | Page loads over the network; no SW controls it; `sw_register.js` re-registers `/sw.js` if `SW_URL` was reverted, or `/sw-kill.js` again if not |
 | 4 | Restart the server with defaults (`SW_URL=/sw.js`, `SW_KILL=false`), reset state, reload | Back to Scenario P1's clean state |
 
 ### Scenario P12: Reset local data (manage page button)
 
+> Automated: [test_pwa_lifecycle_kill_and_reset.py::test_manage_page_reset_local_data](../tests/e2e/test_pwa_lifecycle_kill_and_reset.py)
+> — correction from implementation: `[data-pwa-reset-trigger]` on the
+> manage page is bound by `pwa_reset.js`, which gates on a native
+> `window.confirm()` dialog, not the `#pwa-reset-required` overlay. That
+> overlay is a distinct, unrelated mechanism — `db.js`'s terminal Reset
+> Required state after an IndexedDB migration failure — and is never
+> shown by this button.
+
 **Goal**: Verify the "Reset local data" control on the manage page
-clears IndexedDB + Cache storage + unregisters the SW, and shows the
-`#pwa-reset-required` overlay while it runs.
+clears IndexedDB + Cache storage + unregisters the SW.
 
 **Preconditions**: Signed in (Scenario 10 or 21). Scenario P1
 completed so state exists to clear.
@@ -639,5 +717,5 @@ completed so state exists to clear.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/subscribe/manage/ and locate the "Reset local data" button in the account section | Button is visible with a short explanation of what it does |
-| 2 | Click "Reset local data" | The `#pwa-reset-required` full-viewport overlay opens with "Reset required" heading, an explanation, and a "Reset now" CTA |
-| 3 | Click "Reset now" | Application → IndexedDB (`snowdesk-pwa`), Cache storage (`snowdesk-shell-*`), and Service workers are all cleared; page reloads and re-registers a fresh SW |
+| 2 | Click "Reset local data" | A native confirm dialog opens, summarising what will and won't be cleared |
+| 3 | Accept the dialog | Application → IndexedDB (`snowdesk-pwa-v1`), Cache storage (`snowdesk-shell-*`), and Service workers are all cleared; page reloads and re-registers a fresh SW |

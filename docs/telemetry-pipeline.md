@@ -298,17 +298,54 @@ dispatched on `navigator.serviceWorker`), Mechanism-A kill switch, the
 install funnel, forced-update escalation, the freshness indicator, the
 `mutation_queue.js` stub, and the storage-eviction heuristic.
 
-**Not covered by Playwright** — no reliable way to drive a real
-install → waiting → activate cycle deterministically in this harness:
-`pwa.sw.installed` / `.activated` / `.activation_failed` /
-`.update_available` / `.update_applied` / `.fetch_undefined`,
-`pwa.push.received` / `.shown` / `.opened`, and Mechanism B's
-`pwa.kill_switch.activated` (`sw-kill.js`). The message-bridge mechanism
-itself IS exercised by `test_pwa_client_signals.py` (a simulated
-`MessageEvent`), so these are lower-risk than an untested code path —
-but the real SW lifecycle triggers for them should still be
+SNOW-389 added a second class of test that DOES drive a real, undisabled
+service worker (the `pwa_page` fixture in `tests/e2e/conftest.py`),
+closing most of the "not covered" gap this section used to describe:
+
+| File | Covers |
+|------|--------|
+| `tests/e2e/test_pwa_lifecycle_install.py` | `pwa.sw.installed`, `.activated` (first install) |
+| `tests/e2e/test_pwa_lifecycle_update.py` | `pwa.sw.update_available` (a byte-different `sw.js`, via a server-side monkeypatch of `public.views._serve_sw_file` — Playwright cannot intercept a SW's own script fetch); the header-drift and forced-update paths (no dedicated `pwa.sw.*` event, but the banner/modal/reset behaviour itself) |
+| `tests/e2e/test_pwa_lifecycle_kill_and_reset.py` | Mechanism A's pre-register kill gate and `pwa.reset.user_initiated` (best-effort) |
+| `tests/e2e/test_pwa_push_journey.py` | `pwa.push.received`, `.shown` |
+
+**Still not covered by Playwright**:
+
+- `pwa.sw.activation_failed` / `.fetch_undefined` — both require
+  provoking a genuine SW-internal failure (a thrown `activate` handler, a
+  strategy function resolving to a non-`Response`); there's no seam to
+  trigger either without editing `static/js/sw.js`, which SNOW-389 kept
+  out of scope.
+- `pwa.push.opened` (`notificationclick`) — headless Chromium's
+  `Notification.permission` reports `'denied'` regardless of the granted
+  `notifications` permission, and `showNotification()` resolves as a
+  silent no-op rather than actually displaying anything;
+  `registration.getNotifications()` is unconditionally empty afterwards,
+  so there is no queryable `Notification` instance to build a synthetic
+  `notificationclick` event against.
+- `pwa.sw.update_applied` — `sw_register.js`'s own comment documents the
+  emit as a best-effort race against the reload tearing the page down
+  before the IndexedDB write settles; asserting on it would encode a
+  known flake rather than catch one, so `test_pwa_lifecycle_update.py`
+  deliberately doesn't.
+- Mechanism B's `pwa.kill_switch.activated` (`mechanism: 'b'`,
+  `sw-kill.js`) — a real-SW test for this was written and initially
+  looked solid, but a wider anti-flake pass surfaced a genuine
+  intermittent failure in the underlying
+  install → skipWaiting → activate → wipe → unregister chain (not a
+  timing-margin issue — a longer deadline didn't fix it). Dropped per
+  the SNOW-389 scope's fallback ladder; stays manual — see
+  `docs/testing-scenarios.md` Scenario P11.
+
+Full findings, including the two Playwright/Chromium quirks discovered
+along the way (a SW's own script fetch is invisible to `page.route()`;
+a second `wait_for_function()`/`evaluate()` call issued while an earlier
+SW-driven promise is still settling can read back empty), live in
+[`tests/e2e/_spike_results.py`](../tests/e2e/_spike_results.py).
+
+The real SW lifecycle triggers for the still-uncovered events should be
 spot-checked manually (devtools Application → Service Workers,
-`queue:events` inspection) before relying on the dashboards for these
+`queue:events` inspection) before relying on the dashboards for those
 specific events.
 
 ## See also
