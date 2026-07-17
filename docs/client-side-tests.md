@@ -1,8 +1,8 @@
 ---
 name: client-side-tests
-description: Playwright e2e harness (tox -e e2e) — share-button smoke test, clipboard fixtures, CI cadence, adding browser tests
+description: Playwright e2e harness (tox -e e2e) — share-button test, clipboard fixtures, real-vs-simulated SW-lifecycle tests, adding tests
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-07-17
 ---
 
 # Client-side test harness
@@ -86,17 +86,68 @@ def test_my_feature(
     # … further assertions …
 ```
 
+### SW-lifecycle tests: real vs simulated
+
+Two different fixture families exercise the service worker, and picking
+the wrong one for a new test either pollutes an unrelated assertion or
+misses the thing you actually meant to test:
+
+- **Simulated** (`_disable_real_sw` in `test_pwa_client_signals.py`, or
+  the stripped-`navigator.serviceWorker` init script in `test_pwa_db.py` /
+  `test_pwa_telemetry.py`) — the real `/sw.js` never registers. Use this
+  when the test is about something ELSE that happens to load on a page
+  the SW would otherwise control (telemetry envelopes, `db.js` internals,
+  the install-prompt funnel) and a real SW's own asynchronous lifecycle
+  events would just be timing noise for that assertion.
+- **Real** (`pwa_page` / `signed_in_page` in `conftest.py`, SNOW-389) — a
+  genuine `/sw.js` registers, activates, and controls the page, with
+  `wait_for_event()` / `assert_sw_absent()` helpers for the "never stuck,
+  adrift, or abandoned" invariant. Use this when the test IS about the SW
+  lifecycle itself: install, update, offline, kill switch, or reset — see
+  `tests/e2e/test_pwa_lifecycle_*.py` and `test_pwa_push_journey.py`.
+
+Two Playwright/Chromium quirks surfaced while building the real-SW
+suite, worth knowing before adding another one:
+
+1. **A service worker's own script fetch is invisible to Playwright.**
+   Neither `page.on("request", ...)` nor `page.route()` /
+   `context.route()` ever fire for the initial `/sw.js` registration
+   fetch or a `registration.update()` re-fetch. To simulate a changed
+   `sw.js` (a new deploy), monkeypatch the Django view that serves it
+   (`public.views._serve_sw_file`) instead — `live_server` runs in-process,
+   so this changes what bytes the live server actually returns.
+2. **A second `wait_for_function()` (or any further `page.evaluate()`)
+   call, issued while an earlier SW-driven promise is still settling,
+   can read back empty** even though the underlying IndexedDB write was
+   there moments before. Fold every condition a test needs into ONE
+   `wait_for_function()` predicate rather than chaining separate waits —
+   see `test_pwa_push_journey.py`'s module docstring for the specific
+   case that surfaced this.
+
+Full findings from the spike that shaped this design:
+[`tests/e2e/_spike_results.py`](../tests/e2e/_spike_results.py).
+
 ---
 
 ## Fixture notes
 
 ### `browser_context_args` (in `conftest.py`)
 
-Grants `clipboard-read` and `clipboard-write` permissions to every test
-context.  Without this, `navigator.clipboard.writeText()` raises
-`NotAllowedError` in headless Chromium (the browser blocks clipboard access
-unless the context explicitly grants it via Playwright's permission API).
-The override is transparent — tests just use `page.evaluate("() => navigator.clipboard.readText()")` and it works.
+Grants `clipboard-read`, `clipboard-write`, and `notifications` permissions
+to every test context.  Without the clipboard grants,
+`navigator.clipboard.writeText()` raises `NotAllowedError` in headless
+Chromium (the browser blocks clipboard access unless the context explicitly
+grants it via Playwright's permission API).  The override is transparent —
+tests just use `page.evaluate("() => navigator.clipboard.readText()")` and
+it works.  The `notifications` grant (SNOW-389) is what lets
+`self.registration.showNotification()` resolve inside `sw.js`'s `push`
+handler rather than rejecting.
+
+### `pwa_page` / `signed_in_page` (in `conftest.py`, SNOW-389)
+
+Real-service-worker fixtures — see "SW-lifecycle tests: real vs
+simulated" above for when to reach for these instead of the
+simulated-SW pattern.
 
 ### `_load_test_data` (in `conftest.py`)
 
