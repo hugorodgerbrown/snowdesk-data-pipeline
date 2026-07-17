@@ -31,7 +31,10 @@ notes on those). Specifically:
    forcing the sample-rate gate open by stubbing ``Math.random``.
 8. ``X-Client-Version`` header injection (``static/js/pwa_client_version.js``,
    SNOW-388) on same-origin ``fetch`` and HTMX requests, and its absence on
-   third-party requests.
+   third-party requests — including the ``sw_register.js::fetchSwConfig()``
+   pre-register fetch, which fires synchronously at IIFE-load and is the
+   regression case for the original load-order bug (the wrapper must load
+   BEFORE ``sw_register.js``, not after).
 
 Not covered here (documented as manual-only in
 ``docs/telemetry-pipeline.md``): ``pwa.sw.installed/.activated/
@@ -541,6 +544,39 @@ def test_fetch_omits_client_version_on_third_party_request(
     )
 
     assert "x-client-version" not in captured
+
+
+def test_sw_config_fetch_carries_client_version(
+    live_server: LiveServer, page: Page
+) -> None:
+    """sw_register.js's pre-register fetch('/api/sw-config') carries the header.
+
+    Regression guard for the original SNOW-388 bug: ``pwa_client_version.js``
+    initially loaded LAST in ``base.html``, so ``sw_register.js``'s
+    ``fetchSwConfig()`` — dispatched SYNCHRONOUSLY at its own IIFE-load,
+    before any user interaction — went out through an unwrapped
+    ``window.fetch`` and never carried the header. The route interceptor
+    must be armed BEFORE navigation to observe that load-time request.
+    """
+    captured: dict[str, str] = {}
+
+    def _handler(route: Route) -> None:
+        captured.update(route.request.headers)
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"sw_url": "/sw.js", "kill": False}),
+        )
+
+    page.route("**/api/sw-config", _handler)
+    page.goto(live_server.url)
+    page.wait_for_load_state("load")
+
+    expected = page.eval_on_selector(
+        'meta[name="pwa-app-version"]', "(el) => el.content"
+    )
+    assert expected  # sanity: the meta tag must carry a real build id
+    assert captured.get("x-client-version") == expected
 
 
 def test_htmx_config_request_stamps_client_version(

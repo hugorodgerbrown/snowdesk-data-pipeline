@@ -2,7 +2,8 @@
  * static/js/pwa_client_version.js — Stamp X-Client-Version on same-origin
  * client requests (SNOW-388).
  *
- * Five server-side ``emit_server_signal`` call sites
+ * Four server-side ``emit_server_signal`` call sites (five signals — push
+ * emits both ``.sent`` and ``.gone_410`` from one call site)
  * (``public/api.py::version``, ``public/api.py::sw_config``,
  * ``subscriptions/push_views.py::push_test``,
  * ``core/idempotency.py::IdempotencyMiddleware``) read ``client_version``
@@ -18,19 +19,40 @@
  * would be repetitive and easy to miss on new additions — a single
  * monkey-patch plus one HTMX listener covers all of them.
  *
- * LOAD ORDER IS LOAD-BEARING — THIS SCRIPT MUST LOAD LAST.
- * ``pwa_offline.js`` and ``pwa_version_check.js`` both already
- * monkey-patch ``window.fetch`` (to watch response headers, not to alter
- * requests). Because each of those wrappers captures ``window.fetch`` at
- * the time it runs and reassigns ``window.fetch`` to its own wrapper, the
- * LAST script to install a wrapper becomes the OUTERMOST one — the first
- * to see a caller's request and the last to see the real response. This
- * script must load after both of them in
- * ``public/templates/public/base.html`` so its request-mutating logic
- * runs before delegating down through their (request-preserving)
- * wrappers to the native ``fetch``. If a future refactor moves this
- * script earlier in the load order, the header may be silently dropped —
- * do not reorder without re-reading this comment.
+ * LOAD ORDER IS LOAD-BEARING — THIS SCRIPT MUST LOAD FIRST (right after
+ * ``db.js``, before ``sw_register.js``, ``telemetry.js``,
+ * ``mutation_queue.js``, ``pwa_version_check.js``, and ``pwa_offline.js``).
+ *
+ * ``sw_register.js`` dispatches a ``fetch('/api/sw-config')`` SYNCHRONOUSLY
+ * at its own IIFE-load (``fetchSwConfig()``, called immediately, not from
+ * an event handler) — there is no user interaction or async tick between
+ * script-parse and that call. Whichever wrapper is installed on
+ * ``window.fetch`` at that moment is the one this pre-register fetch goes
+ * through; any wrapper installed AFTER ``sw_register.js`` has executed
+ * simply never sees it, so this script must have patched ``window.fetch``
+ * before that script's script tag runs.
+ *
+ * Because each wrapper captures ``window.fetch`` at the time it runs and
+ * reassigns ``window.fetch`` to its own version, the FIRST script to
+ * install a wrapper becomes the INNERMOST one — the last to see a
+ * caller's request before it reaches the native ``fetch``, and the first
+ * to see the real response on the way back out. Loading first therefore
+ * means every later wrapper's calls to "the current ``window.fetch``"
+ * resolve, through the composed chain, down to this one — so our header
+ * injection still runs on every request, including those issued by
+ * scripts that load after us.
+ *
+ * This composition is only safe because ``pwa_offline.js`` and
+ * ``pwa_version_check.js`` (both of which patch ``window.fetch`` after
+ * this script) are PURE RESPONSE-SIDE OBSERVERS — they read response
+ * headers and rethrow/return the response unchanged; neither reads nor
+ * mutates the outbound request or its headers. If a future script needs
+ * to mutate the outbound request (add/remove a header, rewrite the URL),
+ * it must load BEFORE this one, or it will silently lose to whatever
+ * ``fetch(..)`` call this wrapper already dispatched downstream. Do not
+ * reorder without re-reading this comment and re-auditing every wrapper
+ * between ``db.js`` and this script's tag in
+ * ``public/templates/public/base.html``.
  *
  * SCOPE — deliberately excluded:
  *   * Service-worker-side fetch wrapping (``sw.js``) — every signal this
@@ -96,6 +118,11 @@
         if (isSameOrigin(resource.url) && !resource.headers.has(HEADER)) {
           const headers = new Headers(resource.headers);
           headers.set(HEADER, CLIENT_VERSION);
+          // Assumption: no Snowdesk call site does fetch(requestObj, init)
+          // with its own init.headers — per the fetch spec, a second-arg
+          // init.headers would take priority over the rebuilt Request's
+          // headers and silently drop our injection. Revisit if that shape
+          // is ever introduced.
           return nativeFetch(new Request(resource, { headers }), init);
         }
         return nativeFetch(resource, init);
