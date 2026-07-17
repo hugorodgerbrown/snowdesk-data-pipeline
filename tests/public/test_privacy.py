@@ -22,11 +22,8 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
-
-@pytest.fixture()
-def client() -> Client:
-    """An anonymous Django test client."""
-    return Client()
+# `client` is pytest-django's built-in fixture (an anonymous ``Client()``);
+# no local override needed.
 
 
 @pytest.mark.django_db
