@@ -325,6 +325,18 @@ async function _staleWhileRevalidate(request) {
  * HTML navigations so the user sees fresh data normally, the last-seen
  * page when offline-but-cached, and a branded offline page when neither
  * network nor cache has the URL (a page they've never visited before).
+ *
+ * The offline-fallback branch does a second cache lookup with
+ * ``ignoreSearch: true`` before giving up. Rationale: the map page adds
+ * ``?d=YYYY-MM-DD`` client-side via ``history.replaceState`` while the
+ * user scrubs the timeline (see ``static/js/map.js``), so those URLs are
+ * never fetched from the server and never cached. An offline reload of
+ * ``/?d=2026-01-23`` would otherwise miss the exact-URL cache lookup and
+ * fall straight to ``offline.html`` even though the ``/`` shell HTML
+ * (which is byte-identical for every ``?d`` value — the date is read
+ * back off ``location.search`` by page-level JS) has been cached since
+ * the first visit. Matching with ``ignoreSearch: true`` returns that
+ * cached shell, and the page reinitialises to the requested date.
  */
 async function _networkFirst(request) {
   const cache = await caches.open(CACHE_VERSION);
@@ -338,6 +350,8 @@ async function _networkFirst(request) {
     const cached = await cache.match(request);
     if (cached) return cached;
     if (request.mode === 'navigate' || request.destination === 'document') {
+      const searchless = await cache.match(request, { ignoreSearch: true });
+      if (searchless) return searchless;
       const fallback = await cache.match(OFFLINE_FALLBACK);
       if (fallback) return fallback;
     }
