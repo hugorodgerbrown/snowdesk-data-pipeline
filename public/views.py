@@ -1709,6 +1709,9 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         "",
         f"- [Sitemap]({link('sitemap')}): XML sitemap of today's published "
         "region bulletins.",
+        f"- [Full URL index]({link('llms_full_txt')}): every micro-region's "
+        "evergreen bulletin URL, sorted by region_id — the low-token full "
+        "index paired with this file (SNOW-393).",
         f"- [Region ratings (JSON)]({link('api:ratings')}): current danger "
         "ratings; accepts ?d=YYYY-MM-DD and ?country=ch|fr|at|it.",
         f"- [Regions (GeoJSON)]({link('api:regions_geojson')}): micro-region "
@@ -1728,6 +1731,63 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
     body = "\n".join(lines)
     response = HttpResponse(body, content_type="text/markdown; charset=utf-8")
     response["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+def serve_llms_full_txt(request: HttpRequest) -> HttpResponse:
+    """
+    Serve ``/llms-full.txt`` — the full URL index paired with ``/llms.txt``.
+
+    Follows the llmstxt.org convention: pair the short summary
+    (``/llms.txt``) with a complete machine-readable listing at
+    ``/llms-full.txt``. Each line is one Markdown link — the region's
+    evergreen ``/<region_id>/<slug>/`` URL — with a country and
+    major-region description, sorted by ``region_id`` for stable
+    diffs.
+
+    The queryset joins ``subregion__major`` so country and major-region
+    labels are available without an N+1 query per row. A one-hour
+    ``Cache-Control`` is applied because the micro-region set only
+    changes on fixture ingest, not per-bulletin.
+
+    Args:
+        request: The incoming HTTP request (unused — the body is
+            origin-keyed via ``SITE_BASE_URL``, not per-request).
+
+    Returns:
+        An ``HttpResponse`` with the ``text/markdown`` llms-full.txt body.
+
+    """
+    # Function-local import to break a public.views ↔ public.api circular
+    # (public.api imports _resolve_region_for_bulletin from this module).
+    from public.api import COUNTRY_NAMES
+
+    base = settings.SITE_BASE_URL.rstrip("/")
+    lines = [
+        "# Snowdesk — full URL index",
+        "",
+        "> Full machine-readable index paired with /llms.txt. One line per",
+        "> Alpine micro-region (SLF / ALBINA / Météo-France coverage), sorted",
+        "> by region_id. Each URL is the evergreen form-2 route that always",
+        "> renders today's bulletin.",
+        "",
+        "## Regions",
+        "",
+    ]
+    regions = MicroRegion.objects.select_related("subregion__major").order_by(
+        "region_id"
+    )
+    for region in regions:
+        url = f"{base}{region.get_absolute_url()}"
+        country_code = region.region_id[:2].upper()
+        country_name = COUNTRY_NAMES.get(country_code, country_code)
+        major = region.subregion.major if region.subregion_id else None
+        major_name = (major.name_en or major.name_native) if major else "—"
+        lines.append(f"- [{region.name}]({url}): {country_name} · {major_name}")
+    lines.append("")
+    body = "\n".join(lines)
+    response = HttpResponse(body, content_type="text/markdown; charset=utf-8")
+    response["Cache-Control"] = "public, max-age=3600"
     return response
 
 

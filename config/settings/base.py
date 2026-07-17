@@ -307,6 +307,7 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         # Static public-good documents (config/urls.py) — SNOW-338.
         "/robots.txt",
         "/llms.txt",
+        "/llms-full.txt",
         "/manifest.webmanifest",
         # Favicon has two routes: bare path and trailing-slash variant.
         "/favicon.ico",
