@@ -289,6 +289,23 @@ class TestGetDangerHistory:
                 today=datetime.date(2026, 2, 1),
             )
 
+    def test_no_rating_min_rating_raises_tool_error(self, region: MicroRegion) -> None:
+        """min_rating='no_rating' is rejected, not silently accepted.
+
+        'At or above no_rating' is a null constraint that would match every
+        day — the schema description only ever advertised the five real
+        ratings (low..very_high), so the value is treated as invalid rather
+        than silently matching everything.
+        """
+        with pytest.raises(tools.ToolError):
+            tools.get_danger_history(
+                region.region_id,
+                datetime.date(2026, 1, 1),
+                datetime.date(2026, 1, 2),
+                min_rating=RegionDayRating.Rating.NO_RATING,
+                today=datetime.date(2026, 2, 1),
+            )
+
     def test_unknown_region_id_raises_tool_error(self) -> None:
         """An unknown region_id raises ToolError."""
         with pytest.raises(tools.ToolError):

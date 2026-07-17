@@ -37,11 +37,16 @@ from public.views import _select_bulletin_for_date
 from regions.models import Resort
 
 # Rank order for "at or above" comparisons in get_danger_history. Mirrors
-# public/api.py's private _RATING_TO_INT — duplicated rather than imported
-# since that constant is a module-private implementation detail of a
-# different app's choropleth encoding, not a shared public API.
+# public/api.py's private _RATING_TO_INT, minus NO_RATING — duplicated
+# rather than imported since that constant is a module-private
+# implementation detail of a different app's choropleth encoding, not a
+# shared public API. NO_RATING is deliberately excluded here (rather than
+# ranked 0, as it is in _RATING_TO_INT): "at or above no_rating" is a null
+# constraint that would match every day and helps no LLM caller, so
+# min_rating="no_rating" is rejected as an invalid value instead of
+# silently accepted (see the "min_rating" schema description below, which
+# only ever advertised the five real ratings).
 _RATING_RANK: dict[str, int] = {
-    RegionDayRating.Rating.NO_RATING: 0,
     RegionDayRating.Rating.LOW: 1,
     RegionDayRating.Rating.MODERATE: 2,
     RegionDayRating.Rating.CONSIDERABLE: 3,
@@ -50,8 +55,9 @@ _RATING_RANK: dict[str, int] = {
 }
 
 # The subset of Bulletin.render_model["prose"] the plan calls out as
-# useful to an LLM client — excludes weather_review and tendency_lead,
-# which are template-specific rather than general-purpose prose.
+# useful to an LLM client — excludes weather_review, tendency, and
+# tendency_lead, which are template-specific rather than general-purpose
+# prose.
 _PROSE_FIELDS = ("snowpack_structure", "weather_forecast", "avalanche_activity")
 
 
