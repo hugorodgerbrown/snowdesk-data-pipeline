@@ -108,4 +108,25 @@ SPIKE_RESULTS: dict[str, SpikeResult] = {
             "manage-page journey is not split into a cheaper subset."
         ),
     },
+    "P11_kill_switch_mechanism_b": {
+        "status": "manual",
+        "reason": (
+            "Not part of the original spike (P10-P12 were implemented "
+            "directly, not spike-gated) — dropped during the step-5 "
+            "anti-flake pass instead. "
+            "test_kill_switch_b_wipes_and_unregisters initially looked "
+            "solid (15/15, then 19/20 in separate isolated passes), but "
+            "a wider combined-suite batch surfaced a genuine 'did not "
+            "converge to zero registrations' failure (9/10). Raising the "
+            "poll deadline from 10s to 20s did not fix it (14/20 in the "
+            "worst follow-up batch), ruling out a timing-margin "
+            "explanation — something about the "
+            "install -> skipWaiting -> activate -> wipe -> unregister "
+            "chain intermittently doesn't complete. Per the scope's "
+            "fallback ladder ('flaky > absent, but flaky < manual'), P11 "
+            "moves to manual-only. P10 (Mechanism A) and P12 (reset) are "
+            "unaffected and ship — see "
+            "test_pwa_lifecycle_kill_and_reset.py."
+        ),
+    },
 }

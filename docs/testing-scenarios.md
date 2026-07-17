@@ -664,13 +664,21 @@ SW_KILL=true uv run python manage.py runserver
 
 ### Scenario P11: Kill switch B — swap sw.js for sw-kill.js
 
-> Automated: [test_pwa_lifecycle_kill_and_reset.py::test_kill_switch_b_wipes_and_unregisters](../tests/e2e/test_pwa_lifecycle_kill_and_reset.py)
-> — correction from implementation: `registration.update()` (DevTools'
-> "Update" button) only re-fetches the CURRENTLY registered script URL;
-> it cannot pick up a changed `sw_url`. What actually re-reads
-> `/api/sw-config` is `sw_register.js`'s top-level `fetchSwConfig()`,
-> which runs on every fresh page load — step 1 below needs a reload, not
-> an in-place DevTools update, to trigger Mechanism B.
+> Manual-only: a `test_kill_switch_b_wipes_and_unregisters` test was
+> written and initially looked solid, but a wider SNOW-389 anti-flake
+> pass surfaced a genuine, non-marginal "did not converge to zero
+> registrations" failure in the install → skipWaiting → activate → wipe
+> → unregister chain — raising the poll deadline did not fix it. Dropped
+> per the scope's fallback ladder ("flaky > absent, but flaky < manual")
+> — see [_spike_results.py](../tests/e2e/_spike_results.py).
+>
+> Correction from that implementation attempt, still useful for the
+> manual walkthrough below: `registration.update()` (DevTools' "Update"
+> button) only re-fetches the CURRENTLY registered script URL; it cannot
+> pick up a changed `sw_url`. What actually re-reads `/api/sw-config` is
+> `sw_register.js`'s top-level `fetchSwConfig()`, which runs on every
+> fresh page load — step 1 below needs a reload, not an in-place DevTools
+> update, to trigger Mechanism B.
 
 **Goal**: Verify pointing `SW_URL` at `/sw-kill.js` swaps every
 already-installed client onto the wipe-and-unregister worker

@@ -303,7 +303,7 @@ closing most of the "not covered" gap this section used to describe:
 |------|--------|
 | `tests/e2e/test_pwa_lifecycle_install.py` | `pwa.sw.installed`, `.activated` (first install) |
 | `tests/e2e/test_pwa_lifecycle_update.py` | `pwa.sw.update_available` (a byte-different `sw.js`, via a server-side monkeypatch of `public.views._serve_sw_file` — Playwright cannot intercept a SW's own script fetch); the header-drift and forced-update paths (no dedicated `pwa.sw.*` event, but the banner/modal/reset behaviour itself) |
-| `tests/e2e/test_pwa_lifecycle_kill_and_reset.py` | Mechanism B's `pwa.kill_switch.activated` (`mechanism: 'b'`, best-effort — see below) and `pwa.reset.user_initiated` (best-effort) |
+| `tests/e2e/test_pwa_lifecycle_kill_and_reset.py` | Mechanism A's pre-register kill gate and `pwa.reset.user_initiated` (best-effort) |
 | `tests/e2e/test_pwa_push_journey.py` | `pwa.push.received`, `.shown` |
 
 **Still not covered by Playwright**:
@@ -325,6 +325,14 @@ closing most of the "not covered" gap this section used to describe:
   before the IndexedDB write settles; asserting on it would encode a
   known flake rather than catch one, so `test_pwa_lifecycle_update.py`
   deliberately doesn't.
+- Mechanism B's `pwa.kill_switch.activated` (`mechanism: 'b'`,
+  `sw-kill.js`) — a real-SW test for this was written and initially
+  looked solid, but a wider anti-flake pass surfaced a genuine
+  intermittent failure in the underlying
+  install → skipWaiting → activate → wipe → unregister chain (not a
+  timing-margin issue — a longer deadline didn't fix it). Dropped per
+  the SNOW-389 scope's fallback ladder; stays manual — see
+  `docs/testing-scenarios.md` Scenario P11.
 
 Full findings, including the two Playwright/Chromium quirks discovered
 along the way (a SW's own script fetch is invisible to `page.route()`;
