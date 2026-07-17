@@ -153,10 +153,19 @@ class PwaPage:
         no ``snowdesk-shell-*`` caches, no ``snowdesk-pwa-v1`` IndexedDB.
         This is the central invariant SNOW-389 exists to enforce after a
         kill switch, a forced reset, or a min-version update.
+
+    ``page_errors``
+        Populated by the ``pwa_page`` fixture's ``pageerror`` listener
+        (same technique as ``tests/e2e/test_share_button.py``) so every
+        lifecycle test gets the template-tag-in-JS-comment / script-parse
+        regression guard for free, without repeating the boilerplate in
+        each test file. Tests that care can assert ``pwa_page.page_errors
+        == []`` explicitly; ``pwa_page``'s own teardown asserts it too.
     """
 
     page: Page
     live_server_url: str
+    page_errors: list[str]
 
     def wait_for_event(self, event_name: str, timeout: int = 5000) -> dict[str, Any]:
         """Poll ``queue:events`` until ``event_name`` appears; return the row.
@@ -249,6 +258,8 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
         helpers.
 
     """
+    page_errors: list[str] = []
+    page.on("pageerror", lambda err: page_errors.append(str(err)))
     page.add_init_script("Math.random = () => 0;")
     page.goto(live_server.url + "/")
     page.wait_for_load_state("load")
@@ -256,7 +267,8 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
         "() => navigator.serviceWorker.controller?.state === 'activated'",
         timeout=5000,
     )
-    yield PwaPage(page=page, live_server_url=live_server.url)
+    yield PwaPage(page=page, live_server_url=live_server.url, page_errors=page_errors)
+    assert page_errors == [], f"JS errors during the test: {page_errors}"
     _unregister_service_workers(page)
     _delete_pwa_db(page)
 
@@ -331,5 +343,6 @@ def signed_in_page(pwa_page: PwaPage, django_db_blocker: Any) -> SignedInPage:
     return SignedInPage(
         page=pwa_page.page,
         live_server_url=pwa_page.live_server_url,
+        page_errors=pwa_page.page_errors,
         subscriber=subscriber,
     )
