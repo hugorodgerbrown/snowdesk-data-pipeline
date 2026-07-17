@@ -60,6 +60,14 @@ def test_llms_lists_data_endpoints() -> None:
     assert "/api/regions.geojson" in body
 
 
+def test_llms_lists_mcp_endpoint() -> None:
+    """SNOW-391: the MCP server section links the JSON-RPC endpoint."""
+    body = _body()
+    assert "## MCP server" in body
+    assert "/api/mcp/" in body
+    assert "Model Context Protocol" in body
+
+
 def test_llms_links_are_absolute_and_host_pinned() -> None:
     """Every Markdown link uses an absolute URL built from SITE_BASE_URL.
 

@@ -1686,6 +1686,13 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         f"- [Resorts (GeoJSON)]({link('api:resorts_geojson')}): ski-resort "
         "point locations.",
         "",
+        "## MCP server",
+        "",
+        f"- [MCP JSON-RPC endpoint]({link('api:mcp:endpoint')}): POST-only "
+        "Model Context Protocol server (JSON-RPC 2.0) with tools to search "
+        "regions and resorts, read current conditions, query danger-rating "
+        "history, and list resorts in a region.",
+        "",
         "## Legal",
         "",
         f"- [Terms & SLF data licence]({link('public:terms')}): SLF CC BY 4.0 "
