@@ -182,6 +182,7 @@ in this template; no runtime context is required.
                     use advertising networks, and we do not sell or share data for advertising purposes.
                 {% endblocktrans %}
             </p>
+            {% url 'subscriptions:manage' as manage_url %}
             <p>
                 {% blocktrans trimmed %}
                     We collect a small stream of anonymous app-usage events — for example
@@ -189,7 +190,7 @@ in this template; no runtime context is required.
                     reliably across browsers and devices. These events never include bulletin content, your email
                     address, or your IP address. This is switched off by default for browsers set to a European
                     language, and on by default otherwise; you can change this at any time from the toggle on your
-                    <a class="underline" href="{% url 'subscriptions:manage' %}">manage subscriptions page</a>.
+                    <a class="underline" href="{{ manage_url }}">manage subscriptions page</a>.
                 {% endblocktrans %}
             </p>
         </section>
