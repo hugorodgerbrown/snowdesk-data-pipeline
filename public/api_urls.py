@@ -21,6 +21,25 @@ urlpatterns = [
     path("sw-config", api.sw_config, name="sw_config"),
     # Share-create endpoint (SNOW-217). POST only; returns a tokenised short URL.
     path("bulletins/share/", api.share_create, name="share_create"),
+    # Per-bulletin JSON endpoints (SNOW-394). Two representations of the
+    # same stored bulletin — the render model (canonical presentation
+    # shape) and the raw CAAML in its GeoJSON Feature envelope. Both are
+    # advertised on the bulletin HTML page via ``<link rel="alternate"
+    # type="application/json">`` so LLM crawlers and generic fetchers
+    # can pivot from HTML to structured data in one hop. The
+    # ``.caaml.json`` suffix distinguishes the raw endpoint from the
+    # render-model endpoint at the URL level (rather than via
+    # ``Accept``) so both are independently discoverable and cacheable.
+    path(
+        "bulletins/<str:bulletin_id>/",
+        api.bulletin_render_model,
+        name="bulletin_render_model",
+    ),
+    path(
+        "bulletins/<str:bulletin_id>.caaml.json",
+        api.bulletin_caaml,
+        name="bulletin_caaml",
+    ),
     # SNOW-239: unified ratings endpoint. Replaces today-summaries + season-ratings.
     # Accepts optional ?d=YYYY-MM-DD and ?country=ch|fr|at|it filters.
     path("ratings/", api.ratings, name="ratings"),
