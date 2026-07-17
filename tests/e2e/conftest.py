@@ -170,21 +170,17 @@ class PwaPage:
     def wait_for_event(self, event_name: str, timeout: int = 5000) -> dict[str, Any]:
         """Poll ``queue:events`` until ``event_name`` appears; return the row.
 
-        Caution when calling this more than once in the same test for an
-        event that ISN'T already guaranteed present: a second
-        ``wait_for_function`` (or any further ``page.evaluate()``) call
-        issued while an earlier one is genuinely still settling something
-        SW-driven has, in practice, reliably come back empty even though
-        the underlying data was there moments before (observed while
-        building ``test_pwa_push_journey.py`` — see that file's module
-        docstring for the specifics). It's SAFE to call this more than
-        once when every event is already certain to be present by the
-        time the test body runs (``test_pwa_lifecycle_install.py``'s
-        ``pwa.sw.installed`` + ``.activated`` calls, both stamped during
-        ``pwa_page``'s own setup, are the existing example) — the risk is
-        specifically waiting on a SECOND event that still needs genuine
-        polling time. When in doubt, fold every condition into ONE
-        ``page.wait_for_function()`` predicate instead of chaining calls.
+        The wait, the row-capture, and the JSON snapshot all happen inside
+        a single ``page.evaluate`` call so no cross-call race window exists.
+        Earlier revisions of this helper split the wait and the capture
+        into ``wait_for_function`` + ``page.evaluate`` (raced) and then into
+        ``wait_for_function`` returning the row itself + a deferred
+        ``json_value`` on the JSHandle (also raced — the handle's referent
+        could be reclaimed or mutated between resolution and serialisation).
+        Polling inside evaluate with an explicit ``setTimeout`` loop, plus
+        a ``JSON.parse(JSON.stringify(found))`` snapshot at match time,
+        removes every intermediate window in which the row could vanish
+        or drift (SNOW-397).
 
         Args:
             event_name: The ``pwa.*`` event name to wait for.
@@ -194,25 +190,29 @@ class PwaPage:
             The matching row from ``queue:events``.
 
         Raises:
-            playwright.sync_api.Error: If the event never lands within
-                ``timeout`` milliseconds.
+            AssertionError: If the event never lands within ``timeout``
+                milliseconds. The message names the event so failures are
+                immediately diagnosable.
 
         """
-        self.page.wait_for_function(
-            """(name) => window.pwaDb.getAll('queue:events').then(
-                 (rows) => rows.some((r) => r.event === name),
-               )""",
-            arg=event_name,
-            timeout=timeout,
-        )
         row = self.page.evaluate(
-            """async (name) => {
-                const rows = await window.pwaDb.getAll('queue:events');
-                return rows.find((r) => r.event === name);
+            """async ({ name, timeoutMs }) => {
+                const deadline = Date.now() + timeoutMs;
+                while (Date.now() < deadline) {
+                  const rows = await window.pwaDb.getAll('queue:events');
+                  const found = rows.find((r) => r.event === name);
+                  if (found) {
+                    return JSON.parse(JSON.stringify(found));
+                  }
+                  await new Promise((r) => setTimeout(r, 100));
+                }
+                return null;
               }""",
-            event_name,
+            {"name": event_name, "timeoutMs": timeout},
         )
-        assert row is not None, f"event {event_name!r} vanished after being found"
+        assert row is not None, (
+            f"event {event_name!r} not found in queue:events within {timeout}ms"
+        )
         return cast(dict[str, Any], row)
 
     def assert_sw_absent(self) -> None:
