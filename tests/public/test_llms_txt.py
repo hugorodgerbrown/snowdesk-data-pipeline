@@ -51,6 +51,55 @@ def test_llms_lists_core_pages() -> None:
     assert "How to read a bulletin" in body
 
 
+def test_llms_blockquote_names_all_three_providers() -> None:
+    """SNOW-392: blockquote must name SLF, ALBINA, and Météo-France.
+
+    llms.txt is the site's LLM-facing summary — if it still calls Snowdesk
+    "Swiss avalanche bulletins" any LLM discovering the site through the
+    llmstxt.org convention gets a stale picture of coverage.
+    """
+    body = _body()
+    assert "SLF" in body
+    assert "ALBINA" in body
+    assert "Météo-France" in body
+    assert "CAAML" in body
+
+
+def test_llms_has_regions_section_with_one_url_per_country() -> None:
+    """SNOW-392: ## Regions section carries one evergreen URL per country.
+
+    Each URL is form-2 (no date segment) so it always resolves to today's
+    bulletin. The four representative regions are chosen to reliably have
+    a bulletin every day of the season.
+    """
+    body = _body()
+    assert "## Regions" in body
+    # One evergreen URL per country — form 2, no date segment.
+    assert "/ch-4115/martigny-verbier/" in body
+    assert "/at-07-12/silvretta-ost/" in body
+    assert "/it-32-bz-18/dolomiti-di-gardena/" in body
+    assert "/fr-03/mont-blanc/" in body
+    # None of the region URLs carry a date segment.
+    import re
+
+    region_urls = re.findall(r"/(?:ch|at|it|fr)-[a-z0-9-]+/[a-z0-9-]+/", body)
+    date_segment = re.compile(r"/\d{4}-\d{2}-\d{2}/?$")
+    for url in region_urls:
+        assert not date_segment.search(url), (
+            f"region URL in llms.txt has a date segment: {url!r}"
+        )
+
+
+def test_llms_section_order_reads_top_down() -> None:
+    """Pages → Regions → Data → Legal — the sections read top-down."""
+    body = _body()
+    pages = body.index("## Pages")
+    regions = body.index("## Regions")
+    data = body.index("## Data")
+    legal = body.index("## Legal")
+    assert pages < regions < data < legal
+
+
 def test_llms_lists_data_endpoints() -> None:
     """The Data section surfaces the sitemap and the public JSON endpoints."""
     body = _body()
