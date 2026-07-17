@@ -52,13 +52,31 @@ SPIKE_RESULTS: dict[str, SpikeResult] = {
     "Q2_push_dispatch": {
         "status": "covered",
         "reason": (
-            "10/10 green. context.service_workers[0].evaluate() can "
-            "dispatch `new PushEvent('push', {data: ...})` directly on the "
-            "real, activated SW, invoking sw.js's push listener exactly as "
-            "a live push message would. showNotification() does not "
-            "reject in headless Chromium once the notifications permission "
-            "is granted (see Q4). Drives the push trio in "
-            "test_pwa_push_journey.py."
+            "10/10 green for the spike's own scope (pwa.push.received / "
+            ".shown). context.service_workers[0].evaluate() can dispatch "
+            "`new PushEvent('push', {data: ...})` directly on the real, "
+            "activated SW, invoking sw.js's push listener exactly as a "
+            "live push message would; showNotification() resolves rather "
+            "than rejecting. Drives test_pwa_push_journey.py's single "
+            "received+shown test — see Q2b for .opened, which the spike "
+            "did not test and turned out NOT to be coverable."
+        ),
+    },
+    "Q2b_push_opened_notificationclick": {
+        "status": "manual",
+        "reason": (
+            "Discovered during implementation, not by the spike (the "
+            "spike's own acceptance criteria only covered received + "
+            "shown). Notification.permission reports 'denied' in headless "
+            "Chromium regardless of the granted 'notifications' "
+            "permission, and showNotification() resolves as a silent "
+            "no-op rather than actually displaying anything — "
+            "registration.getNotifications() is unconditionally empty "
+            "afterwards (checked from both the SW and the page, at "
+            "delays up to 5s). There is no queryable Notification "
+            "instance to build a synthetic notificationclick event "
+            "against, so pwa.push.opened cannot be driven this way. "
+            "test_pwa_push_journey.py ships received+shown only."
         ),
     },
     "Q3_activation_failed_fetch_undefined": {
