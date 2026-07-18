@@ -1371,9 +1371,11 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
 @require_GET
 def manage_view(request: HttpRequest) -> HttpResponse:
     """
-    Show the subscriptions dashboard for the authenticated subscriber.
+    Show the account dashboard for the authenticated user.
 
-    Unauthenticated visitors are redirected to the sign-in page.
+    Unauthenticated visitors are redirected to the sign-in page.  A registered
+    user with no ``Subscriber`` profile still sees the page (with no
+    subscription cards) — this is the landing spot after registration.
 
     GET: render the subscriptions dashboard (one card per subscribed
     region, with resort list and per-region remove button).
@@ -1396,10 +1398,14 @@ def manage_view(request: HttpRequest) -> HttpResponse:
         Rendered page or redirect to sign-in.
 
     """
-    subscriber = _get_subscriber(request)
-
-    if subscriber is None:
+    if not request.user.is_authenticated:
         return redirect("accounts:sign_in")
+
+    # A registered user (SNOW-430) has an Account but may have no Subscriber
+    # (no bulletin subscriptions). Render the dashboard for any authenticated
+    # user — redirecting non-subscribers to sign-in would loop, because
+    # sign_in_view sends authenticated users straight back here.
+    subscriber = _get_subscriber(request)
 
     just_confirmed = request.GET.get("just_confirmed") == "1"
 
@@ -1408,6 +1414,8 @@ def manage_view(request: HttpRequest) -> HttpResponse:
         .select_related("region", "region__subregion__major")
         .prefetch_related("region__resorts")
         .order_by("region__name")
+        if subscriber is not None
+        else Subscription.objects.none()
     )
 
     return render(
