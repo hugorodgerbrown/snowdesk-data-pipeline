@@ -270,8 +270,10 @@ class Command(BaseCommand):
         )
 
         # Active-ForecastPoint pass — forecast-only, so it only runs when the
-        # window reaches today, and it never participates in --local-mirror
-        # or --stash (points are not part of the on-disk archive contract).
+        # window reaches today, and it is suppressed under --local-mirror (the
+        # mirror replays region archive data only). Points are also outside the
+        # on-disk archive contract: the pass never forwards on_fetched, so point
+        # data never reaches the --stash file even when the pass itself runs.
         if end >= today and not skip_points and not local_mirror:
             point_counts = fetch_all_points(today, commit=commit, base_url=base_url)
             for key in total_counts:
