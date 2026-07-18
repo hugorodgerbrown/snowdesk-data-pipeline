@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("regions", "0006_majorregion_display_on_map"),
-        ("subscriptions", "0003_geo_match_fields"),
+        ("accounts", "0003_geo_match_fields"),
     ]
 
     operations = [
@@ -85,7 +85,7 @@ class Migration(migrations.Migration):
                         help_text="Subscriber who submitted this report.",
                         on_delete=django.db.models.deletion.CASCADE,
                         related_name="field_observations",
-                        to="subscriptions.subscriber",
+                        to="accounts.subscriber",
                     ),
                 ),
             ],

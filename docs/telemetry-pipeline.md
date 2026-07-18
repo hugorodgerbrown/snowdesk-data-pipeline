@@ -115,7 +115,7 @@ synthetic PostHog distinct_id `_server`.
 |--------|-----------|------------|
 | `pwa.version.endpoint.hit` | `public/api.py::version` | Client fetches `/api/version` |
 | `pwa.sw_config.hit` | `public/api.py::sw_config` | Client fetches `/api/sw-config` |
-| `pwa.push.sent` | `subscriptions/push_service.py::dispatch_push` | Push service returns 2xx |
+| `pwa.push.sent` | `accounts/push_service.py::dispatch_push` | Push service returns 2xx |
 | `pwa.push.gone_410` | Same | Push service returns 410 (subscription lost) |
 | `pwa.idempotency.replay` | `core/idempotency.py::IdempotencyMiddleware` | Cache hit — same `Idempotency-Key` seen twice |
 

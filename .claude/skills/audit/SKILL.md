@@ -36,7 +36,7 @@ surface pre-loaded, so you don't have to describe the stack each time.
    - **SLF CAAML ingest** — `bulletins/services/` fetches from
      `aws.slf.ch` (plus Météo-France and ALBINA sources); check for SSRF,
      unvalidated redirects, and injection via bulletin content.
-   - **Resend email** — `subscriptions/` sends magic-link and notification
+   - **Resend email** — `accounts/` sends magic-link and notification
      emails via the Resend HTTP API; check for header injection, open
      redirect in magic links, and rate-limit bypass.
    - **Anthropic API** — if any view proxies model calls, check for prompt

@@ -23,7 +23,7 @@ class RegionsConfig(AppConfig):
         """Register URL path converters that belong to the regions domain.
 
         ``RegionIdConverter`` is defined in ``regions/`` and used by URL patterns
-        in ``public/``, ``public/api_urls.py``, and ``subscriptions/``.  Registering
+        in ``public/``, ``public/api_urls.py``, and ``accounts/``.  Registering
         it here — in ``AppConfig.ready()`` — guarantees the converter is available
         the moment any URLconf is resolved, regardless of the include order in
         ``config/urls.py`` or whether a test imports a URL module in isolation.

@@ -55,7 +55,7 @@ uv run python manage.py fetch_weather --start 2024-11-01 --end 2025-05-01 --comm
 - **Python / Django** — data pipeline, models, views, split across six
   apps: `core` (abstract `BaseModel`, middleware), `regions` (region and
   resort reference data), `bulletins` (SLF / ALBINA / Météo-France
-  ingestion + render model + weather), `subscriptions` (signed-token
+  ingestion + render model + weather), `accounts` (signed-token
   email flow + custom user model), `public` (bulletin site), `config`
   (split settings)
 - **Tailwind CSS v4** — compiled via `@tailwindcss/cli` from `src/css/main.css`

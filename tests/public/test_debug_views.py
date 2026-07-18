@@ -30,8 +30,8 @@ from django.contrib.staticfiles.finders import find as find_static
 from django.test import Client
 from django.urls import reverse
 
+from accounts.models import Subscriber
 from public.design_tokens import LIBRARY_GROUPS, FoundationCategory, IconToken
-from subscriptions.models import Subscriber
 from tests.factories import SubscriberFactory, UserFactory
 
 

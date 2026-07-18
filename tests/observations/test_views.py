@@ -42,7 +42,7 @@ FORM_URL = "/partials/report/form/"
 SUBMIT_URL = "/partials/report/"
 
 # Type annotation as dict[str, Any] matches the **extra kwargs expected by
-# Django's test Client.get/post — same pattern as tests/subscriptions/test_views.py.
+# Django's test Client.get/post — same pattern as tests/accounts/test_views.py.
 HTMX_HEADERS: dict[str, Any] = {"HTTP_HX_REQUEST": "true"}
 
 

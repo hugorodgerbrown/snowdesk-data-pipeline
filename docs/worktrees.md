@@ -43,7 +43,7 @@ surface is unaffected.
 | Subscribed user | `dev@snowdesk.dev` | `snowdesk` | Active subscriber, subscribed to CH-4115 (Martigny-Verbier) |
 
 The constants are defined in
-`subscriptions/management/commands/seed_dev_users.py` (`SUPERUSER_EMAIL`,
+`accounts/management/commands/seed_dev_users.py` (`SUPERUSER_EMAIL`,
 `NORMAL_USER_EMAIL`, `PASSWORD`).
 
 ## Force-reseed procedure

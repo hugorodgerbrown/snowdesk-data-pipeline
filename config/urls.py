@@ -1,7 +1,7 @@
 """
 config/urls.py — Root URL configuration.
 
-Mounts the Django admin, the subscriptions flow under /subscribe/, the JSON
+Mounts the Django admin, the accounts flow under /subscribe/, the JSON
 API under /api/, the django-csp-plus report endpoint under /csp/, and the
 public-facing bulletin site at the root.
 
@@ -45,7 +45,7 @@ from public.views import (
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("subscribe/", include("subscriptions.urls")),
+    path("subscribe/", include("accounts.urls")),
     # /api/telemetry must be listed BEFORE the public api_urls include so
     # Django resolves it against the analytics namespace rather than
     # falling through to public.api_urls (which does not define it).

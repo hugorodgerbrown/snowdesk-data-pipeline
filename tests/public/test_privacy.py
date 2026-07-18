@@ -74,5 +74,5 @@ class TestPrivacyTelemetryCopy:
     def test_sharing_section_links_to_manage_page_toggle(self, client: Client) -> None:
         """Section 5 links to the manage-page toggle so users can opt out."""
         response = client.get(reverse("public:privacy"))
-        manage_url = reverse("subscriptions:manage")
+        manage_url = reverse("accounts:manage")
         assert manage_url.encode() in response.content

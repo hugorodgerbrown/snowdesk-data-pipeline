@@ -31,7 +31,7 @@ open, what's carried forward under "watching").
 
 - **Stack**: Python 3.14 / Django 6.0, HTMX, Tailwind CSS v4, uv,
   pytest + FactoryBoy + tox.
-- **Apps**: `config/`, `core/`, `regions/`, `bulletins/`, `subscriptions/`,
+- **Apps**: `config/`, `core/`, `regions/`, `bulletins/`, `accounts/`,
   `public/`, plus `analytics/` if present.
 - **Conventions are in `CLAUDE.md`** — read it. The invariants, model kit,
   management-command contract, and design-system rules there are the

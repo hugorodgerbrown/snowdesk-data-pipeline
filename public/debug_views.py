@@ -20,10 +20,10 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound
 from django.shortcuts import render
 
+from accounts.models import PushSubscription
+from accounts.push_config import VAPID_PUBLIC_KEY
 from core.decorators import require_htmx
 from public.design_tokens import LIBRARY_GROUPS, get_category
-from subscriptions.models import PushSubscription
-from subscriptions.push_config import VAPID_PUBLIC_KEY
 
 DEFAULT_SLUG = "typography"
 
