@@ -87,6 +87,83 @@ account" always reaches the manage page.
                 {% include "includes/_button.html" with label=label variant="secondary" full_width=True %}
             </form>
             {% endcard %}
+
+            {% comment %}
+                Optional "save a passkey" card (SNOW-434). Wires the existing
+                WebAuthn registration endpoints via window.Passkey.registerPasskey
+                (same pattern as manage.html). On success it auto-advances to
+                the manage page; on an unsupported browser the whole card hides
+                (progressive enhancement). Not a gate.
+            {% endcomment %}
+            {% card padding="p-8" extra="mt-6" %}
+            <div id="passkey-setup">
+                <h2 class="text-lg font-semibold text-text-1 mb-2">
+                    {% trans "Save a passkey" %}
+                </h2>
+                <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                    {% trans "Optional — save a passkey for this device to sign in with Face ID, Touch ID, or your device PIN, no password needed." %}
+                </p>
+                {% trans "Save a passkey for this device" as label %}
+                {% include "includes/_button.html" with label=label variant="secondary" full_width=True button_type="button" button_id="btn-register-passkey" %}
+                <div
+                    id="passkey-feedback"
+                    role="status"
+                    aria-live="polite"
+                    class="hidden mt-4 text-sm text-text-2"
+                >
+                </div>
+            </div>
+            {% endcard %}
         </div>
     </div>
+
+    {% comment %}
+        Passkey registration wiring (SNOW-434) — reuses the existing
+        window.Passkey.registerPasskey helper and WebAuthn endpoints. On
+        passkey:registered the user auto-advances to the manage page (the same
+        destination as the password path); on passkey:unsupported the card is
+        hidden.
+    {% endcomment %}
+    <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
+    <script nonce="{{ request.csp_nonce }}">
+        (function () {
+            'use strict';
+
+            var regBtn = document.getElementById("btn-register-passkey");
+            var feedback = document.getElementById("passkey-feedback");
+            var card = document.getElementById("passkey-setup");
+            var MANAGE_URL = "{% url 'accounts:manage' %}";
+
+            function showFeedback(msg) {
+                if (!feedback) return;
+                feedback.textContent = msg;
+                feedback.classList.remove("hidden");
+            }
+
+            if (regBtn) {
+                regBtn.addEventListener("click", function () {
+                    regBtn.disabled = true;
+                    window.Passkey.registerPasskey(
+                        "{% url 'accounts:passkey_register_request' %}",
+                        "{% url 'accounts:passkey_register_response' %}"
+                    );
+                });
+            }
+
+            /* Success — auto-advance to the finish (manage) step. */
+            document.addEventListener("passkey:registered", function () {
+                window.location.href = MANAGE_URL;
+            });
+            document.addEventListener("passkey:cancelled", function () {
+                if (regBtn) regBtn.disabled = false;
+            });
+            document.addEventListener("passkey:unsupported", function () {
+                if (card) card.style.display = "none";
+            });
+            document.addEventListener("passkey:error", function () {
+                if (regBtn) regBtn.disabled = false;
+                showFeedback("{% trans "Passkey registration failed. Please try again." %}");
+            });
+        })();
+    </script>
 {% endblock %}

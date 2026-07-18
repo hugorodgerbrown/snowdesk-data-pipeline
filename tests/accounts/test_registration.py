@@ -226,6 +226,18 @@ class TestSetupView:
         assert response.status_code == 200
         assert "You're verified" in response.content.decode()
 
+    def test_renders_passkey_cta_with_endpoints(self, client: Client) -> None:
+        """SNOW-434: the passkey CTA renders with the register request/response
+        URLs, independent of the password form.
+        """
+        account = AccountFactory.create()
+        client.force_login(account.user)
+        content = client.get(self.URL).content.decode()
+        assert "Save a passkey" in content
+        assert 'id="btn-register-passkey"' in content
+        assert reverse("accounts:passkey_register_request") in content
+        assert reverse("accounts:passkey_register_response") in content
+
 
 # ---------------------------------------------------------------------------
 # send_verification_email

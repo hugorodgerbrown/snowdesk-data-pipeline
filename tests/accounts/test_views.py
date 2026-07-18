@@ -1005,6 +1005,23 @@ class TestManageViewUnauthenticated:
 
 
 @pytest.mark.django_db
+class TestManageViewRegisteredOnly:
+    """A registered user with an Account but no Subscriber still reaches the
+    dashboard — no redirect loop (SNOW-434 regression).
+    """
+
+    def test_account_without_subscriber_renders_manage(self) -> None:
+        from tests.factories import AccountFactory  # noqa: PLC0415
+
+        account = AccountFactory.create()
+        client = Client()
+        client.force_login(account.user)
+        response = client.get(reverse("accounts:manage"))
+        assert response.status_code == 200
+        assert "no active subscriptions" in response.content.decode().lower()
+
+
+@pytest.mark.django_db
 class TestSignInView:
     """Tests for the dedicated sign_in_view."""
 
@@ -1224,10 +1241,18 @@ class TestManageViewAuthenticated:
         assert b"Your subscription is confirmed" not in response.content
 
     def test_stale_session_redirects_to_sign_in(self) -> None:
-        """A session whose subscriber was deleted redirects to sign-in."""
+        """A session whose user was deleted (full account removal) redirects to
+        sign-in — the session no longer resolves to an authenticated user.
+
+        (Deleting only the Subscriber leaves an authenticated registered-only
+        user, who now correctly sees the dashboard — see
+        TestManageViewRegisteredOnly.)
+        """
         subscriber = SubscriberFactory.create()
         client = _make_session_client(subscriber)
+        user = subscriber.user
         subscriber.delete()
+        user.delete()
         response = client.get(reverse("accounts:manage"))
         assert response.status_code == 302
         assert reverse("accounts:sign_in") in response["Location"]

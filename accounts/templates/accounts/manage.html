@@ -2,9 +2,9 @@
 {% comment %}
 accounts/templates/accounts/manage.html — Subscription management page.
 
-Always rendered for an authenticated subscriber (the view redirects
-unauthenticated visitors to /account/sign-in/ before this template is
-reached).
+Rendered for any authenticated user (the view redirects unauthenticated
+visitors to /account/sign-in/ before this template is reached). A registered
+user with no Subscriber profile sees the page with no subscription cards.
 
 Shows one card per subscribed region, ordered by region name. Each card
 shows the region name, region ID, and resort list. A per-region "Remove"
@@ -351,17 +351,21 @@ hard-deletes the subscriber.
                 {% comment %}
                     Destructive account deletion — visually separated,
                     small, muted.  hx-confirm stays here: deleting the
-                    whole account is irreversible.
+                    whole account is irreversible. Only shown when there are
+                    subscriptions to unsubscribe from (a registered-only user
+                    has no Subscriber row, so delete_account would 403).
                 {% endcomment %}
-                <div class="border-t border-border pt-8">
-                    <button
-                        hx-post="{% url 'accounts:delete_account' %}"
-                        hx-confirm='{% trans "Unsubscribe from all alerts and delete your account?" %}'
-                        class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
-                    >
-                        {% trans "Unsubscribe from all alerts" %}
-                    </button>
-                </div>
+                {% if subscriptions %}
+                    <div class="border-t border-border pt-8">
+                        <button
+                            hx-post="{% url 'accounts:delete_account' %}"
+                            hx-confirm='{% trans "Unsubscribe from all alerts and delete your account?" %}'
+                            class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
+                        >
+                            {% trans "Unsubscribe from all alerts" %}
+                        </button>
+                    </div>
+                {% endif %}
             </div>
             {# /hx-headers wrapper #}
 
