@@ -117,15 +117,14 @@ def test_rename_via_detail_sheet_refreshes_label(
     assert name_input.input_value() == "Old Name"
 
     name_input.fill("New Name")
-    name_input.dispatch_event("change")
-
-    page.wait_for_function(
-        "(uuid) => { "
-        "const row = document.getElementById('favourite-' + uuid); "
-        "return row && row.querySelector('input[name=name]').value === 'New Name'; "
-        "}",
-        arg=fav_uuid,
-    )
+    # Wait for the actual rename response, not just the DOM value fill()
+    # already set client-side (a wait_for_function on the input's value
+    # would be trivially true immediately, before the htmx round-trip even
+    # starts, racing ahead of the DB write below).
+    with page.expect_response(
+        lambda r: r.url.endswith(f"/favourites/partials/{fav_uuid}/rename/")
+    ):
+        name_input.dispatch_event("change")
 
     with django_db_blocker.unblock():
         favourite.refresh_from_db()
