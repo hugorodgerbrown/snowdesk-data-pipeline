@@ -91,7 +91,7 @@ and tests section are your guide.
 **Before committing any template change, walk this checklist:**
 
 - Does an existing partial in `templates/includes/`, `public/templates/`, or
-  `subscriptions/templates/.../partials/` already render this shape? If yes,
+  `accounts/templates/.../partials/` already render this shape? If yes,
   use it — don't write a fresh copy.
 - Is the same shape currently inlined in another template that I'm about
   to inline again? If yes, extract a new partial and register it in

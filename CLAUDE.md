@@ -29,7 +29,7 @@ bulletins/       Everything that originates from provider APIs — the models
                  and render-model services under services/, the ingestion
                  commands (see docs/management-commands.md), and their admin
                  classes
-subscriptions/   Signed-token subscription flow (see docs/subscriptions.md);
+accounts/        Signed-token subscription flow (see docs/accounts.md);
                  owns the ``Subscriber`` profile model (OneToOne to auth.User,
                  not AUTH_USER_MODEL itself) and ``PasskeyCredential`` (FK
                  to auth.User — any authenticated user can register passkeys)
@@ -365,7 +365,7 @@ Read these when working in the relevant area:
 | Accepted architectural decisions | [`docs/decisions/`](docs/decisions/) |
 | How to read an avalanche bulletin (domain primer) | [`docs/bulletin-guide.md`](docs/bulletin-guide.md) |
 | User personas and core journeys | [`docs/user-journeys.md`](docs/user-journeys.md) |
-| Subscriptions (signed tokens, rate limits, email) | [`docs/subscriptions.md`](docs/subscriptions.md) |
+| Accounts (signed tokens, rate limits, email) | [`docs/accounts.md`](docs/accounts.md) |
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
 | Weather-driven bulletin header (WMO buckets, is_day projection) | [`docs/weather-header.md`](docs/weather-header.md) |
@@ -396,4 +396,5 @@ Read these when working in the relevant area:
 | MCP server (POST /api/mcp/ JSON-RPC tools, season cost caps, fuzzy region search) | [`docs/mcp-server.md`](docs/mcp-server.md) |
 | IndexedDB scaffolding (window.pwaDb, queue:events, meta:app, Reset Required) | [`docs/indexeddb-scaffolding.md`](docs/indexeddb-scaffolding.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
+| Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |
 | Worktree DB seeding, dev credentials, test_data coverage | [`docs/worktrees.md`](docs/worktrees.md) |

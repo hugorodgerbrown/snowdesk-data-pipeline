@@ -25,7 +25,7 @@ A bulleted list of testable conditions. Each one should be checkable as pass/fai
 
 ### Technical surface
 Which parts of the Snowdesk codebase this touches. Be specific:
-- Django apps affected (e.g. `bulletins`, `subscriptions`, `resorts`)
+- Django apps affected (e.g. `bulletins`, `accounts`, `resorts`)
 - Models affected (new fields? new models? migrations needed?)
 - Templates / HTMX partials affected
 - Celery tasks affected
