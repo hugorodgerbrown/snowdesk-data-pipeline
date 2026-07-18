@@ -16,6 +16,15 @@
 #                      2. loaddata test_data
 #                      3. seed_dev_users
 #                    See docs/worktrees.md for credentials and reseed steps.
+#   - output.css   → compiled from src/css/main.css with the Tailwind CLI
+#                    (gitignored build artifact, not shared across worktrees).
+#                    Without it a browser preview of a fresh worktree 404s
+#                    the stylesheet and renders a collapsed, unstyled page.
+#                    The current e2e suite (tox -e e2e) passes either way —
+#                    it captures uncaught JS, not layout — but a future
+#                    viewport-dependent test on an unstyled page would fail
+#                    with misleading "outside the viewport" / intercepted-
+#                    click errors. See docs/client-side-tests.md.
 #
 # Idempotent: skips assets that already exist locally. Wired up via
 # the PostToolUse:EnterWorktree hook in .claude/settings.json so it
@@ -75,9 +84,24 @@ seed_db_if_missing() {
     actions=$((actions + 1))
 }
 
+build_css_if_missing() {
+    if [ -e "static/css/output.css" ]; then
+        return
+    fi
+    echo "init-worktree: building static/css/output.css (npm install + Tailwind CLI)"
+    npm install
+    npx @tailwindcss/cli \
+        -i ./src/css/main.css \
+        -o ./static/css/output.css \
+        --minify
+    echo "init-worktree: static/css/output.css built"
+    actions=$((actions + 1))
+}
+
 link_if_missing .env
 link_if_missing .venv
 seed_db_if_missing
+build_css_if_missing
 
 # Silent on a fully-set-up worktree; only announces when the worktree
 # actually needed bootstrapping.
