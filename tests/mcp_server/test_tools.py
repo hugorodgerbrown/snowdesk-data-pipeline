@@ -2,15 +2,17 @@
 tests/mcp_server/test_tools.py — Tests for mcp_server.tools.
 
 One test class per tool: ``search_regions``, ``get_current_conditions``,
-``get_danger_history``, ``list_resorts_in_region``. Each tool's business
-logic is exercised directly (not through the JSON-RPC ``arguments`` dict
-adapters) so date/``today`` seams stay explicit and readable.
+``get_avalanche_problems``, ``get_danger_history``, ``list_resorts_in_region``.
+Each tool's business logic is exercised directly (not through the JSON-RPC
+``arguments`` dict adapters) so date/``today`` seams stay explicit and
+readable.
 """
 
 from __future__ import annotations
 
 import datetime
 from datetime import UTC
+from typing import Any
 
 import pytest
 from django.core.cache import cache
@@ -49,8 +51,18 @@ def _make_bulletin(
     region: MicroRegion,
     target_date: datetime.date,
     danger_key: str = "considerable",
+    avalanche_problems: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Create a Bulletin covering ``target_date`` for ``region``."""
+    """Create a Bulletin covering ``target_date`` for ``region``.
+
+    ``avalanche_problems``, when given, is injected verbatim into
+    ``raw_data["properties"]["avalancheProblems"]`` — the caller supplies
+    CAAML-shaped problem dicts (SLF/ALBINA/MF field names) so tests can
+    exercise ``Bulletin.get_avalanche_problems()``'s ``from_dict`` mapping.
+    The key is always written (``None`` and ``[]`` both store ``[]``);
+    ``Bulletin.get_avalanche_problems()`` treats absent-key and empty-list
+    identically anyway.
+    """
     bulletin = BulletinFactory.create(
         issued_at=datetime.datetime.combine(
             target_date, datetime.time(17, 0), tzinfo=UTC
@@ -61,7 +73,12 @@ def _make_bulletin(
         valid_to=datetime.datetime.combine(
             target_date, datetime.time(17, 0), tzinfo=UTC
         ),
-        raw_data={"properties": {"dangerRatings": [{"mainValue": danger_key}]}},
+        raw_data={
+            "properties": {
+                "dangerRatings": [{"mainValue": danger_key}],
+                "avalancheProblems": avalanche_problems or [],
+            }
+        },
         render_model={
             "version": 5,
             "danger": {
@@ -167,6 +184,189 @@ class TestGetCurrentConditions:
 
         assert result["has_bulletin"] is True
         assert result["date"] == "2026-04-08"
+
+
+# ---------------------------------------------------------------------------
+# get_avalanche_problems
+# ---------------------------------------------------------------------------
+
+_CURATED_PROBLEM_FIELDS = {
+    "problem_type",
+    "danger_rating_value",
+    "valid_time_period",
+    "elevation",
+    "aspects",
+    "comment",
+    "avalanche_size",
+}
+
+
+@pytest.mark.django_db
+class TestGetAvalancheProblems:
+    """Tests for tools.get_avalanche_problems."""
+
+    def test_happy_path_serialises_slf_shaped_problems(
+        self, region: MicroRegion
+    ) -> None:
+        """Two SLF-shaped problems serialise to the curated field subset."""
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(
+            region,
+            target_date,
+            avalanche_problems=[
+                {
+                    "problemType": "persistent_weak_layers",
+                    "dangerRatingValue": "considerable",
+                    "validTimePeriod": "all_day",
+                    "elevation": {"lowerBound": "2200"},
+                    "aspects": ["N", "NE", "E", "NW"],
+                    "comment": "Distinct weak layers persist near the ground.",
+                },
+                {
+                    "problemType": "wet_snow",
+                    "dangerRatingValue": "moderate",
+                    "validTimePeriod": "earlier",
+                    "elevation": {"upperBound": "2600"},
+                    "aspects": ["S", "SW"],
+                    "comment": "Wet snow avalanches possible on sunny slopes.",
+                },
+            ],
+        )
+
+        result = tools.get_avalanche_problems(region.region_id, target_date)
+
+        assert result["has_bulletin"] is True
+        assert result["region_id"] == region.region_id
+        assert result["date"] == "2026-04-08"
+        assert result["count"] == 2
+
+        first, second = result["problems"]
+        assert set(first) == _CURATED_PROBLEM_FIELDS
+        assert first["problem_type"] == "persistent_weak_layers"
+        assert first["danger_rating_value"] == "considerable"
+        assert first["valid_time_period"] == "all_day"
+        assert first["elevation"] == {"lower_bound": "2200", "upper_bound": None}
+        assert first["aspects"] == ["N", "NE", "E", "NW"]
+        assert isinstance(first["aspects"], list)
+        assert first["comment"] == "Distinct weak layers persist near the ground."
+        assert first["avalanche_size"] is None
+
+        assert second["problem_type"] == "wet_snow"
+        assert second["elevation"] == {"lower_bound": None, "upper_bound": "2600"}
+
+        assert "persistent_weak_layers" in result["summary"]
+        assert "considerable" in result["summary"]
+        assert "2 avalanche problems" in result["summary"]
+
+    def test_serialises_albina_shaped_problem_and_ignores_custom_data(
+        self, region: MicroRegion
+    ) -> None:
+        """An ALBINA problem's avalancheSize is kept; customData is dropped."""
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(
+            region,
+            target_date,
+            avalanche_problems=[
+                {
+                    "problemType": "gliding_snow",
+                    "elevation": {"upperBound": "2400"},
+                    "avalancheSize": 2,
+                    "customData": {"ALBINA": {"avalancheType": "glide"}},
+                },
+            ],
+        )
+
+        result = tools.get_avalanche_problems(region.region_id, target_date)
+
+        assert result["count"] == 1
+        problem = result["problems"][0]
+        assert set(problem) == _CURATED_PROBLEM_FIELDS
+        assert problem["problem_type"] == "gliding_snow"
+        assert problem["avalanche_size"] == 2
+        assert problem["elevation"] == {"lower_bound": None, "upper_bound": "2400"}
+
+    def test_serialises_minimal_meteofrance_shaped_problem(
+        self, region: MicroRegion
+    ) -> None:
+        """A minimal MF problem with no elevation still serialises cleanly."""
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(
+            region,
+            target_date,
+            avalanche_problems=[
+                {
+                    "problemType": "wet_snow",
+                    "aspects": ["S"],
+                    "validTimePeriod": "later",
+                },
+            ],
+        )
+
+        result = tools.get_avalanche_problems(region.region_id, target_date)
+
+        assert result["count"] == 1
+        problem = result["problems"][0]
+        assert set(problem) == _CURATED_PROBLEM_FIELDS
+        assert problem["problem_type"] == "wet_snow"
+        assert problem["valid_time_period"] == "later"
+        assert problem["aspects"] == ["S"]
+        assert problem["elevation"] is None
+        assert problem["comment"] is None
+        assert problem["danger_rating_value"] is None
+        assert problem["avalanche_size"] is None
+
+    def test_no_bulletin_for_date_is_a_structured_empty_result(
+        self, region: MicroRegion
+    ) -> None:
+        """A quiet day with no bulletin is a normal result, not an error."""
+        result = tools.get_avalanche_problems(
+            region.region_id, datetime.date(2026, 4, 8)
+        )
+        assert result["has_bulletin"] is False
+        assert result["problems"] == []
+        assert result["count"] == 0
+        assert "No bulletin" in result["summary"]
+
+    def test_bulletin_with_no_problems_is_distinct_from_no_bulletin(
+        self, region: MicroRegion
+    ) -> None:
+        """A bulletin with an empty avalancheProblems array is not an error.
+
+        Distinguished from the no-bulletin case by ``has_bulletin: True``
+        and different summary wording.
+        """
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(region, target_date, avalanche_problems=[])
+
+        result = tools.get_avalanche_problems(region.region_id, target_date)
+
+        assert result["has_bulletin"] is True
+        assert result["problems"] == []
+        assert result["count"] == 0
+        assert "No bulletin" not in result["summary"]
+        assert "0 avalanche problems" in result["summary"]
+
+    def test_unknown_region_id_raises_tool_error(self) -> None:
+        """An unknown region_id raises ToolError rather than a bare exception."""
+        with pytest.raises(tools.ToolError):
+            tools.get_avalanche_problems("XX-0000", datetime.date(2026, 4, 8))
+
+    def test_defaults_to_today_seam_when_date_omitted(
+        self, region: MicroRegion
+    ) -> None:
+        """Omitting 'date' falls back to the injected 'today' seam."""
+        fixed_today = datetime.date(2026, 4, 8)
+        _make_bulletin(
+            region,
+            fixed_today,
+            avalanche_problems=[{"problemType": "wind_slab", "aspects": ["N"]}],
+        )
+
+        result = tools.get_avalanche_problems(region.region_id, today=fixed_today)
+
+        assert result["has_bulletin"] is True
+        assert result["date"] == "2026-04-08"
+        assert result["count"] == 1
 
 
 # ---------------------------------------------------------------------------
