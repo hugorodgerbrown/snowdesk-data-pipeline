@@ -72,7 +72,7 @@ def test_account_view_sets_no_referrer() -> None:
     """account_view overrides Referrer-Policy to no-referrer (token in URL)."""
     subscriber = SubscriberFactory.create()
     token = generate_token(subscriber.user.email, salt=SALT_ACCOUNT_ACCESS)
-    response = Client().get(f"/subscribe/account/{token}/")
+    response = Client().get(f"/account/access/{token}/")
     # Redirects or error page — both should carry no-referrer.
     assert response["Referrer-Policy"] == "no-referrer"
 
@@ -84,7 +84,7 @@ def test_unsubscribe_view_get_sets_no_referrer() -> None:
     subscriber = SubscriberFactory.create()
     SubscriptionFactory.create(subscriber=subscriber, region=region)
     token = generate_unsubscribe_token(subscriber.user.email, region.region_id)
-    response = Client().get(f"/subscribe/unsubscribe/{token}/")
+    response = Client().get(f"/account/unsubscribe/{token}/")
     assert response.status_code == 200
     assert response["Referrer-Policy"] == "no-referrer"
 
@@ -96,7 +96,7 @@ def test_view_override_takes_precedence_over_middleware_default() -> None:
     subscriber = SubscriberFactory.create()
     SubscriptionFactory.create(subscriber=subscriber, region=region)
     token = generate_unsubscribe_token(subscriber.user.email, region.region_id)
-    response = Client().get(f"/subscribe/unsubscribe/{token}/")
+    response = Client().get(f"/account/unsubscribe/{token}/")
     # Must be no-referrer, not the middleware default.
     assert response["Referrer-Policy"] == "no-referrer"
     assert response["Referrer-Policy"] != "strict-origin-when-cross-origin"

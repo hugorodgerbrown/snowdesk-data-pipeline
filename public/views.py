@@ -1621,6 +1621,9 @@ def serve_robots(request: HttpRequest) -> HttpResponse:
         "User-agent: *",
         "Allow: /",
         "Disallow: /admin/",
+        "Disallow: /account/",
+        # Legacy prefix — 301-redirects to /account/, but disallow it too so
+        # thin crawlers don't fetch it before following the redirect (SNOW-430).
         "Disallow: /subscribe/",
         "Disallow: /api/edit/",
         "Disallow: /partials/",

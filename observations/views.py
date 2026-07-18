@@ -15,6 +15,8 @@ the map page (SNOW-324):
 Both endpoints are:
   - flag-gated on ``field_observations`` (404 when inactive);
   - authentication-gated (403 for anonymous users);
+  - verification-gated (403 unless the user has a verified ``Account``,
+    SNOW-430);
   - ``@require_htmx`` (400 for non-HTMX requests).
 
 ``report_submit`` additionally applies django-ratelimit (5/m per IP, block=False)
@@ -24,14 +26,17 @@ and returns 429 when the limit is exceeded.
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 import waffle
+from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django_ratelimit.decorators import ratelimit
 
+from accounts.models import Account
 from core.decorators import require_htmx
 from observations.models import FieldObservation
 from regions.services.point_match import region_for_point
@@ -63,6 +68,49 @@ def _require_field_observations_flag(request: HttpRequest) -> None:
 
     if not waffle.flag_is_active(request, "field_observations"):
         raise Http404("field_observations flag is inactive for this request.")
+
+
+def _is_verified(user: object) -> bool:
+    """Return True when ``user`` has a verified ``Account`` profile (SNOW-430).
+
+    Field reports require a verified email address: an authenticated user with
+    no ``Account`` row, or an unverified one, is rejected.  Existing confirmed
+    subscribers are backfilled to verified by the
+    ``backfill_verified_accounts`` command.
+
+    Args:
+        user: The ``request.user`` to check.
+
+    Returns:
+        True when the user has an ``Account`` with ``is_verified=True``.
+
+    """
+    try:
+        account = user.account  # type: ignore[attr-defined]
+    except Account.DoesNotExist:
+        return False
+    return bool(account.is_verified)
+
+
+def _auth_gate(request: HttpRequest) -> HttpResponse | None:
+    """Return a 403 response when the user may not submit field reports.
+
+    Field reports require an authenticated user (403 for anonymous) whose
+    email has been verified (403 for an unverified / account-less user,
+    SNOW-430).  Returns ``None`` when the user passes both checks.
+
+    Args:
+        request: The current HTTP request.
+
+    Returns:
+        An ``HttpResponse`` (403) to short-circuit the view, or ``None``.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+    if not _is_verified(request.user):
+        return HttpResponse("Email verification required.", status=403)
+    return None
 
 
 def _parse_gps(lat_str: str | None, lon_str: str | None) -> tuple[float, float] | None:
@@ -113,8 +161,9 @@ def report_form(request: HttpRequest) -> HttpResponse:
     """
     _require_field_observations_flag(request)
 
-    if not request.user.is_authenticated:
-        return HttpResponse("Authentication required.", status=403)
+    gate = _auth_gate(request)
+    if gate is not None:
+        return gate
 
     coords = _parse_gps(request.GET.get("lat"), request.GET.get("lon"))
     has_coords = coords is not None
@@ -182,8 +231,9 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     """
     _require_field_observations_flag(request)
 
-    if not request.user.is_authenticated:
-        return HttpResponse("Authentication required.", status=403)
+    gate = _auth_gate(request)
+    if gate is not None:
+        return gate
 
     if getattr(request, "limited", False):
         return HttpResponse(
@@ -234,8 +284,9 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     # Best-effort region resolution — no region-required rejection.
     region = region_for_point(lat, lon)
 
+    # _auth_gate above guarantees an authenticated User; cast narrows for mypy.
     FieldObservation.objects.create(
-        user=request.user,
+        user=cast(User, request.user),
         region=region,
         latitude=lat,
         longitude=lon,

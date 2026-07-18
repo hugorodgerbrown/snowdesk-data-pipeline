@@ -18,6 +18,7 @@ from django.contrib.auth.models import User
 from django.utils import timezone as django_timezone
 
 from accounts.models import (
+    Account,
     PasskeyCredential,
     PushSubscription,
     Subscriber,
@@ -372,6 +373,33 @@ class SubscriberFactory(factory.django.DjangoModelFactory[Subscriber]):
     )
     status = Subscriber.Status.ACTIVE
     acquisition_request = None  # nullable — not always set
+
+
+class AccountFactory(factory.django.DjangoModelFactory[Account]):
+    """Factory for Account identity-profile instances (SNOW-430).
+
+    Creates a linked non-staff User (``user__username`` derived from
+    ``user__email`` to uphold the username == email invariant) and defaults
+    to a **verified** account — the common state for tests that need a
+    logged-in user able to submit field reports.  Pass ``is_verified=False``
+    for the pre-verification case; ``verified_at`` then defaults to None.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Account
+
+    user = factory.SubFactory(
+        UserFactory,
+        is_staff=False,
+        email=factory.Sequence(lambda n: f"account{n}@example.com"),
+    )
+    is_verified = True
+    verified_at = factory.LazyAttribute(
+        lambda obj: django_timezone.now() if obj.is_verified else None
+    )
+    display_name = ""
 
 
 class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):

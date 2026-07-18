@@ -46,7 +46,7 @@
    * with mediation:"conditional".  The browser surfaces matching passkeys
    * inline inside the email input's autofill dropdown without a modal.
    *
-   * On success the user is redirected to /subscribe/manage/.
+   * On success the user is redirected to /account/manage/.
    *
    * @param {string} authRequestUrl  URL to GET authentication options from.
    * @param {string} authResponseUrl URL to POST the credential to.
@@ -258,7 +258,7 @@
     }
 
     if (resp.ok && data.ok) {
-      window.location.href = '/subscribe/manage/';
+      window.location.href = '/account/manage/';
       return;
     }
 

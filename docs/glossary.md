@@ -80,7 +80,7 @@ L3 is deliberately skipped. All in `regions/models.py`.
 | PasskeyCredential | WebAuthn platform passkey for an `auth.User` (FK to `User`, not `Subscriber` — any authenticated user, including staff without a Subscriber profile, can register one) | `accounts/models.py` |
 | PushSubscription | Web Push endpoint (spike) | `accounts/models.py` |
 | BulletinShare / BulletinShareClick | Tokenised short share URL and its per-follow click log | `bulletins/models.py` |
-| RequestLog | Request-context snapshot (geo, UA, referer) captured at sign-up/sign-in/subscribe/share-click | `core/models.py` |
+| RequestLog | Request-context snapshot (geo, UA, referer) captured at sign-up/sign-in/account/share-click | `core/models.py` |
 
 ## Testing
 

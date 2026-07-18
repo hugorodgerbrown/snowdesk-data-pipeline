@@ -21,7 +21,7 @@ def test_manage_page_has_reset_trigger() -> None:
     client = Client()
     client.force_login(subscriber.user)
 
-    response = client.get("/subscribe/manage/")
+    response = client.get("/account/manage/")
     body = response.content.decode("utf-8")
 
     assert response.status_code == 200
@@ -36,7 +36,7 @@ def test_manage_page_loads_pwa_reset_script() -> None:
     client = Client()
     client.force_login(subscriber.user)
 
-    response = client.get("/subscribe/manage/")
+    response = client.get("/account/manage/")
     body = response.content.decode("utf-8")
 
     assert "pwa_reset.js" in body
@@ -49,7 +49,7 @@ def test_manage_page_has_reset_helper_copy() -> None:
     client = Client()
     client.force_login(subscriber.user)
 
-    response = client.get("/subscribe/manage/")
+    response = client.get("/account/manage/")
     body = response.content.decode("utf-8")
 
     # Copy is spread across template line breaks + blocktrans whitespace

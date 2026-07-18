@@ -46,7 +46,7 @@ def _make_request(
 ) -> MagicMock:
     """Build a minimal synthetic request with the given metadata."""
     request = rf.post(
-        "/subscribe/",
+        "/account/",
         HTTP_USER_AGENT=ua,
         HTTP_ACCEPT_LANGUAGE=accept_language,
         HTTP_REFERER=referer,

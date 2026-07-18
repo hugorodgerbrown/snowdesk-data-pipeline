@@ -1,9 +1,10 @@
 """
 config/urls.py — Root URL configuration.
 
-Mounts the Django admin, the accounts flow under /subscribe/, the JSON
-API under /api/, the django-csp-plus report endpoint under /csp/, and the
-public-facing bulletin site at the root.
+Mounts the Django admin, the accounts flow under /account/ (with a permanent
+redirect from the legacy /subscribe/ prefix), the JSON API under /api/, the
+django-csp-plus report endpoint under /csp/, and the public-facing bulletin
+site at the root.
 
 The ``/sw.js``, ``/manifest.webmanifest``, ``/robots.txt``, ``/llms.txt``
 and ``/favicon.ico`` routes are registered before ``public.urls`` so the
@@ -30,7 +31,8 @@ check (``urls.W005``) is satisfied. Production never imports any mirror module.
 from django.conf import settings
 from django.contrib import admin
 from django.contrib.sitemaps.views import sitemap
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.generic import RedirectView
 
 from public.sitemaps import BulletinSitemap
 from public.views import (
@@ -45,7 +47,22 @@ from public.views import (
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("subscribe/", include("accounts.urls")),
+    path("account/", include("accounts.urls")),
+    # SNOW-430: the accounts app moved from /subscribe/ to /account/. Redirect
+    # the legacy prefix permanently so in-flight account-access and unsubscribe
+    # email links keep working. The account-access token route was also renamed
+    # (account/<token>/ -> access/<token>/), so it needs its own mapping ahead
+    # of the generic catch-all.
+    re_path(
+        r"^subscribe/account/(?P<token>[^/]+)/?$",
+        RedirectView.as_view(url="/account/access/%(token)s/", permanent=True),
+    ),
+    re_path(
+        r"^subscribe/(?P<rest>.*)$",
+        RedirectView.as_view(
+            url="/account/%(rest)s", permanent=True, query_string=True
+        ),
+    ),
     # /api/telemetry must be listed BEFORE the public api_urls include so
     # Django resolves it against the analytics namespace rather than
     # falling through to public.api_urls (which does not define it).

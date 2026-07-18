@@ -257,7 +257,7 @@ class TestIdempotencyReplaySignal:
         def _post(key: str) -> HttpRequest:
             r = HttpRequest()
             r.method = "POST"
-            r.path = "/subscribe/"
+            r.path = "/account/"
             r.META["HTTP_IDEMPOTENCY_KEY"] = key
             return r
 

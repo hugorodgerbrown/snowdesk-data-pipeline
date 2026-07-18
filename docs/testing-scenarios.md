@@ -285,8 +285,8 @@ both hits appear and the badge makes the distinction obvious.
 | 1 | Navigate to http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/ and scroll to the bottom of the bulletin | A "Get avalanche alerts" card is visible with an email input (placeholder "your@email.com") and a "Subscribe" button |
 | 2 | Type `tester@example.com` into the email field | Text appears in the input field |
 | 3 | Click "Subscribe" | The card is replaced in-place (HTMX, no page reload) with "Check your inbox" and "We've sent you a link to access your account. It expires in 24 hours." |
-| 4 | Open Mailhog at http://localhost:8025 | An email is listed in the inbox for `tester@example.com` containing an account-access link of the form `http://localhost:8000/subscribe/account/<token>/` |
-| 5 | Open the email and click the account link | Browser redirects to http://localhost:8000/subscribe/manage/?just_confirmed=1 |
+| 4 | Open Mailhog at http://localhost:8025 | An email is listed in the inbox for `tester@example.com` containing an account-access link of the form `http://localhost:8000/account/access/<token>/` |
+| 5 | Open the email and click the account link | Browser redirects to http://localhost:8000/account/manage/?just_confirmed=1 |
 | 6 | Verify the manage page | A "Your subscription is confirmed." banner is shown; a region card for the subscribed region (CH-4115) is listed with a "Remove" button; a "Passkeys" section prompts "Sign in faster with a passkey" |
 
 ### Scenario 11: One-click add a region from another bulletin page (HTMX)
@@ -297,7 +297,7 @@ both hits appear and the badge makes the distinction obvious.
 |------|--------|-----------------|
 | 1 | While signed in (Scenario 10), navigate to http://localhost:8000/CH-1221/grindelwald/2026-04-10/ and scroll to the CTA | The card shows "You're signed in. One click to add daily bulletin updates for this region." with an "Add region" button (no email input) |
 | 2 | Click "Add region" | The card is replaced in-place (no page reload) with a confirmation that the region was added, including a "Manage your subscriptions" link |
-| 3 | Navigate to http://localhost:8000/subscribe/manage/ | Two region cards are listed |
+| 3 | Navigate to http://localhost:8000/account/manage/ | Two region cards are listed |
 
 ### Scenario 12: Add multiple regions and remove one (HTMX)
 
@@ -307,7 +307,7 @@ both hits appear and the badge makes the distinction obvious.
 |------|--------|-----------------|
 | 1 | While signed in, navigate to http://localhost:8000/CH-4222/ and scroll to the CTA | The bulletin page for the Zermatt region shows the one-click "Add region" card |
 | 2 | Click "Add region" | The card confirms the region was added |
-| 3 | Navigate to http://localhost:8000/subscribe/manage/ | Three region cards are listed |
+| 3 | Navigate to http://localhost:8000/account/manage/ | Three region cards are listed |
 | 4 | Click "Remove" on the Grindelwald region card | The card disappears without a page reload (HTMX swap); two region cards remain |
 
 ### Scenario 13: Unsubscribe from all alerts (delete account)
@@ -318,7 +318,7 @@ both hits appear and the badge makes the distinction obvious.
 |------|--------|-----------------|
 | 1 | On the manage page with at least one region subscribed, locate the "Unsubscribe from all alerts" link at the bottom | The link is visible as small underlined text below the Passkeys section |
 | 2 | Click "Unsubscribe from all alerts" | A browser confirmation dialog appears asking "Unsubscribe from all alerts and delete your account?" |
-| 3 | Click "OK" on the confirmation dialog | Browser is redirected to http://localhost:8000/subscribe/unsubscribe-done/; the subscriber account is hard-deleted and the session is cleared |
+| 3 | Click "OK" on the confirmation dialog | Browser is redirected to http://localhost:8000/account/unsubscribe-done/; the subscriber account is hard-deleted and the session is cleared |
 
 ### Scenario 14: Removing the last region deletes the account
 
@@ -326,9 +326,9 @@ both hits appear and the badge makes the distinction obvious.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Subscribe to exactly one region (Scenario 10) and open http://localhost:8000/subscribe/manage/ | One region card is listed |
-| 2 | Click "Remove" on the only region card | Browser is redirected to http://localhost:8000/subscribe/unsubscribe-done/ |
-| 3 | Navigate to http://localhost:8000/subscribe/manage/ | Browser redirects to http://localhost:8000/subscribe/sign-in/ (account deleted, session cleared) |
+| 1 | Subscribe to exactly one region (Scenario 10) and open http://localhost:8000/account/manage/ | One region card is listed |
+| 2 | Click "Remove" on the only region card | Browser is redirected to http://localhost:8000/account/unsubscribe-done/ |
+| 3 | Navigate to http://localhost:8000/account/manage/ | Browser redirects to http://localhost:8000/account/sign-in/ (account deleted, session cleared) |
 
 ### Scenario 15: Already-subscribed region shows an Unsubscribe CTA
 
@@ -363,9 +363,9 @@ both hits appear and the badge makes the distinction obvious.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/subscribe/account/expired.invalid.token/ | Page shows "This link has expired" (HTTP 400) with the text "Account links are only valid for 24 hours. This one has expired or is invalid." |
+| 1 | Navigate to http://localhost:8000/account/access/expired.invalid.token/ | Page shows "This link has expired" (HTTP 400) with the text "Account links are only valid for 24 hours. This one has expired or is invalid." |
 | 2 | Verify the recovery link | A "Request a new link" button is visible |
-| 3 | Click "Request a new link" | Browser navigates to http://localhost:8000/subscribe/manage/, which redirects (unauthenticated) to http://localhost:8000/subscribe/sign-in/ |
+| 3 | Click "Request a new link" | Browser navigates to http://localhost:8000/account/manage/, which redirects (unauthenticated) to http://localhost:8000/account/sign-in/ |
 
 ### Scenario 19: Access the account URL with no token
 
@@ -373,7 +373,7 @@ both hits appear and the badge makes the distinction obvious.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/subscribe/account/ | Browser shows a 404 Not Found page (the URL pattern requires a token segment) |
+| 1 | Navigate to http://localhost:8000/account/access/ | Browser shows a 404 Not Found page (the URL pattern requires a token segment) |
 
 ### Scenario 20: Access the manage page without authentication
 
@@ -382,7 +382,7 @@ both hits appear and the badge makes the distinction obvious.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Open a new private/incognito browser window | Fresh session with no cookies |
-| 2 | Navigate to http://localhost:8000/subscribe/manage/ | Browser redirects to http://localhost:8000/subscribe/sign-in/ |
+| 2 | Navigate to http://localhost:8000/account/manage/ | Browser redirects to http://localhost:8000/account/sign-in/ |
 
 ### Scenario 21: Returning subscriber re-authenticates via the sign-in page
 
@@ -392,9 +392,9 @@ both hits appear and the badge makes the distinction obvious.
 |------|--------|-----------------|
 | 1 | Complete Scenario 10 (subscribe and confirm at least one region, e.g. CH-4115) | Region is saved |
 | 2 | Open a new private/incognito window (to clear the session) | Fresh session |
-| 3 | Navigate to http://localhost:8000/subscribe/sign-in/ | Page loads with a "Sign in" heading, the text "Enter your email address and we'll send you a sign-in link.", and (where WebAuthn is available) a "Sign in with a passkey" button |
+| 3 | Navigate to http://localhost:8000/account/sign-in/ | Page loads with a "Sign in" heading, the text "Enter your email address and we'll send you a sign-in link.", and (where WebAuthn is available) a "Sign in with a passkey" button |
 | 4 | Enter `tester@example.com` and click "Send sign-in link" | A "Check your inbox" page loads: "If that address is registered, we've sent you a link to manage your subscriptions. It expires in 24 hours." (the same response is shown whether or not the email is registered) |
-| 5 | Open Mailhog, find the new email, and click the account link | Browser redirects to http://localhost:8000/subscribe/manage/ |
+| 5 | Open Mailhog, find the new email, and click the account link | Browser redirects to http://localhost:8000/account/manage/ |
 | 6 | Verify existing subscriptions | The previously added region card (e.g. CH-4115) is listed with a "Remove" button |
 
 ### Scenario 22: Sign out via the nav account menu
@@ -404,7 +404,7 @@ both hits appear and the badge makes the distinction obvious.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | While signed in, click the circular avatar button (first letter of your email) in the top nav | A dropdown menu opens listing the subscribed region links, a "Manage alerts" link, and a "Sign out" button |
-| 2 | Click "Sign out" | The session is cleared and the browser is redirected to the sign-in page; navigating to http://localhost:8000/subscribe/manage/ now redirects to http://localhost:8000/subscribe/sign-in/ |
+| 2 | Click "Sign out" | The session is cleared and the browser is redirected to the sign-in page; navigating to http://localhost:8000/account/manage/ now redirects to http://localhost:8000/account/sign-in/ |
 
 ### Scenario 23: Deprecated /random/ URL redirects
 
@@ -723,6 +723,6 @@ completed so state exists to clear.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/subscribe/manage/ and locate the "Reset local data" button in the account section | Button is visible with a short explanation of what it does |
+| 1 | Navigate to http://localhost:8000/account/manage/ and locate the "Reset local data" button in the account section | Button is visible with a short explanation of what it does |
 | 2 | Click "Reset local data" | A native confirm dialog opens, summarising what will and won't be cleared |
 | 3 | Accept the dialog | Application → IndexedDB (`snowdesk-pwa-v1`), Cache storage (`snowdesk-shell-*`), and Service workers are all cleared; page reloads and re-registers a fresh SW |
