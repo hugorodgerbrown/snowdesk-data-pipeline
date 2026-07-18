@@ -1,8 +1,8 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — search_regions, get_current_conditions, get_danger_history, list_resorts_in_region tools
+description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — search_regions, get_current_conditions, get_danger_history, list_resorts_in_region, get_bulletin_metadata tools
 status: current
-last-reviewed: 2026-07-17
+last-reviewed: 2026-07-18
 ---
 
 # MCP server
@@ -134,6 +134,26 @@ a single region.
 * **Params:** `region_id` (string, required).
 * **Returns:** `{region_id, region_name, resorts: [{name, latitude,
   longitude, canton}], count, summary}`.
+
+### `get_bulletin_metadata`
+
+Returns provenance metadata for the bulletin covering one region on one
+day — the fields a downstream LLM needs to quote freshness or attribute
+the source without hallucinating.
+
+* **Params:** `region_id` (string, required), `date` (`YYYY-MM-DD`,
+  optional — defaults to today).
+* **Returns:** `{region_id, region_name, date, has_bulletin, bulletin_id,
+  issued_at, valid_from, valid_to, next_update_expected, source_provider
+  ("slf"|"albina"|"meteofrance"|null), source_url, language,
+  language_variants_available, summary}`. `source_url` prefers the
+  bulletin's stored `pdf_url` and falls back to the provider's landing
+  page when none is recorded. `language_variants_available` reports the
+  languages Snowdesk has stored for this bulletin — currently always a
+  single-item list (`Bulletin.bulletin_id` is unique so only one language
+  variant survives per row). When no bulletin covers `date`,
+  `has_bulletin` is `false` and provenance fields are omitted — a
+  structured "no data" result, not an error.
 
 ## Cost caps
 

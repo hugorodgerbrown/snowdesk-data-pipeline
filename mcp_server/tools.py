@@ -31,7 +31,7 @@ from typing import Any
 
 from django.utils import timezone
 
-from bulletins.models import RegionDayRating
+from bulletins.models import Bulletin, RegionDayRating
 from mcp_server import resolvers, season
 from public.views import _select_bulletin_for_date
 from regions.models import Resort
@@ -481,6 +481,133 @@ def _handle_list_resorts_in_region(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# get_bulletin_metadata
+# ---------------------------------------------------------------------------
+
+
+# Canonical human-facing pages per provider, used when the bulletin row has
+# no direct ``pdf_url`` recorded. An LLM caller quoting attribution wants a
+# page a human can click through to, not a raw JSON endpoint.
+_SOURCE_HOME_URL: dict[str, str] = {
+    Bulletin.Source.SLF: "https://www.slf.ch/en/avalanche-bulletin-and-snow-situation/",
+    Bulletin.Source.ALBINA: "https://avalanche.report/",
+    Bulletin.Source.METEOFRANCE: (
+        "https://meteofrance.com/meteo-montagne/risque-avalanche"
+    ),
+}
+
+
+def _source_from_render_model(bulletin: Bulletin) -> str | None:
+    """Return the provider source string stamped on a bulletin's render_model.
+
+    Returns ``None`` when the render model failed to build (version 0) and
+    the source stamp is therefore missing — a rare but possible state that
+    the tool response reports as ``source_provider: null`` rather than
+    guessing a value.
+    """
+    source = bulletin.render_model.get("source") if bulletin.render_model else None
+    return source if isinstance(source, str) and source else None
+
+
+def get_bulletin_metadata(
+    region_id: str,
+    date: dt.date | None = None,
+    *,
+    today: dt.date | None = None,
+) -> dict[str, Any]:
+    """Return provenance metadata for a bulletin covering one region/day.
+
+    Answers "when was this bulletin issued?", "when is the next update
+    expected?", and "where's the canonical source I can cite?" — the
+    fields a downstream LLM needs to avoid hallucinating attribution.
+
+    Args:
+        region_id: Exact region identifier, e.g. ``"CH-4115"``.
+        date: The day to look up. Defaults to today.
+        today: Overrides "today" for the default-date fallback — a
+            settable-in-tests seam; production callers never pass this.
+
+    Returns:
+        A dict with ``region_id``, ``date``, ``has_bulletin`` and, when a
+        bulletin is available, ``issued_at``, ``valid_from``, ``valid_to``,
+        ``next_update_expected``, ``source_provider``, ``source_url``,
+        ``language`` and ``language_variants_available``. A day with no
+        covering bulletin is a structured empty result, not an error.
+
+    Raises:
+        ToolError: ``region_id`` does not match any known region.
+
+    """
+    region = resolvers.resolve_region(region_id)
+    if region is None:
+        raise ToolError(f"Unknown region_id: {region_id!r}.")
+
+    target_date = date or today or timezone.localdate()
+    bulletin = _select_bulletin_for_date(region, target_date)
+    if bulletin is None:
+        return {
+            "region_id": region.region_id,
+            "region_name": region.name,
+            "date": target_date.isoformat(),
+            "has_bulletin": False,
+            "summary": (
+                f"No bulletin is available for {region.name} "
+                f"({region.region_id}) on {target_date.isoformat()}."
+            ),
+        }
+
+    source = _source_from_render_model(bulletin)
+    # bulletin_id is unique, so filtering by it can only ever return this
+    # same row — language variants aren't stored side-by-side. Report the
+    # single language the row was fetched in; other-language variants live
+    # on the provider, not in the Snowdesk DB.
+    language_variants = [bulletin.lang] if bulletin.lang else []
+    source_url = bulletin.pdf_url or (_SOURCE_HOME_URL.get(source) if source else "")
+    return {
+        "region_id": region.region_id,
+        "region_name": region.name,
+        "date": target_date.isoformat(),
+        "has_bulletin": True,
+        "bulletin_id": bulletin.bulletin_id,
+        "issued_at": bulletin.issued_at.isoformat(),
+        "valid_from": bulletin.valid_from.isoformat(),
+        "valid_to": bulletin.valid_to.isoformat(),
+        "next_update_expected": (
+            bulletin.next_update.isoformat() if bulletin.next_update else None
+        ),
+        "source_provider": source,
+        "source_url": source_url,
+        "language": bulletin.lang or None,
+        "language_variants_available": language_variants,
+        "summary": _bulletin_metadata_summary(region, target_date, bulletin, source),
+    }
+
+
+def _bulletin_metadata_summary(
+    region: Any,
+    target_date: dt.date,
+    bulletin: Bulletin,
+    source: str | None,
+) -> str:
+    """Return a one-line, LLM-quotable summary of a metadata result."""
+    provider = source or "unknown provider"
+    parts = [
+        f"{region.name} ({region.region_id}) bulletin for {target_date.isoformat()}: "
+        f"issued {bulletin.issued_at.isoformat()} by {provider}."
+    ]
+    if bulletin.next_update:
+        parts.append(f"Next update expected {bulletin.next_update.isoformat()}.")
+    return " ".join(parts)
+
+
+def _handle_get_bulletin_metadata(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``get_bulletin_metadata`` JSON-RPC arguments to the tool function."""
+    region_id = _require_str(arguments, "region_id")
+    parsed_date = _optional_iso_date(arguments, "date")
+    return get_bulletin_metadata(region_id, parsed_date)
+
+
+# ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
 
@@ -585,5 +712,33 @@ TOOLS: dict[str, ToolSpec] = {
             "required": ["region_id"],
         },
         handler=_handle_list_resorts_in_region,
+    ),
+    "get_bulletin_metadata": ToolSpec(
+        name="get_bulletin_metadata",
+        description=(
+            "Return provenance metadata for the bulletin covering one region "
+            "on one day: issued_at, valid_from/to, next_update_expected, "
+            "source_provider (slf/albina/meteofrance), source_url for "
+            "citation, and language variants. Call this when you need to "
+            "quote the bulletin's freshness or attribute the source."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "region_id": {
+                    "type": "string",
+                    "description": (
+                        "Exact region_id, e.g. 'CH-4115'. Use search_regions "
+                        "first if you only have a place name."
+                    ),
+                },
+                "date": {
+                    "type": "string",
+                    "description": "ISO date YYYY-MM-DD. Defaults to today.",
+                },
+            },
+            "required": ["region_id"],
+        },
+        handler=_handle_get_bulletin_metadata,
     ),
 }

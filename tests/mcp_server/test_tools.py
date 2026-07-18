@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import datetime
 from datetime import UTC
+from typing import Any
 
 import pytest
 from django.core.cache import cache
 
-from bulletins.models import RegionDayRating
+from bulletins.models import Bulletin, RegionDayRating
 from mcp_server import tools
 from regions.models import MicroRegion
 from tests.factories import (
@@ -49,21 +50,36 @@ def _make_bulletin(
     region: MicroRegion,
     target_date: datetime.date,
     danger_key: str = "considerable",
-) -> None:
-    """Create a Bulletin covering ``target_date`` for ``region``."""
-    bulletin = BulletinFactory.create(
-        issued_at=datetime.datetime.combine(
+    *,
+    source: str = "slf",
+    lang: str = "en",
+    pdf_url: str = "",
+    next_update: datetime.datetime | None = None,
+    bulletin_id: str | None = None,
+) -> Any:
+    """Create a Bulletin covering ``target_date`` for ``region``.
+
+    Returns the created ``Bulletin`` so tests that assert on stored fields
+    (issued_at, next_update, source stamp, lang) can reference them
+    without re-querying.
+    """
+    kwargs: dict[str, Any] = {
+        "issued_at": datetime.datetime.combine(
             target_date, datetime.time(17, 0), tzinfo=UTC
         ),
-        valid_from=datetime.datetime.combine(
+        "valid_from": datetime.datetime.combine(
             target_date, datetime.time(8, 0), tzinfo=UTC
         ),
-        valid_to=datetime.datetime.combine(
+        "valid_to": datetime.datetime.combine(
             target_date, datetime.time(17, 0), tzinfo=UTC
         ),
-        raw_data={"properties": {"dangerRatings": [{"mainValue": danger_key}]}},
-        render_model={
+        "next_update": next_update,
+        "lang": lang,
+        "pdf_url": pdf_url,
+        "raw_data": {"properties": {"dangerRatings": [{"mainValue": danger_key}]}},
+        "render_model": {
             "version": 5,
+            "source": source,
             "danger": {
                 "key": danger_key,
                 "number": "3",
@@ -79,8 +95,12 @@ def _make_bulletin(
                 "tendency_lead": None,
             },
         },
-    )
+    }
+    if bulletin_id is not None:
+        kwargs["bulletin_id"] = bulletin_id
+    bulletin = BulletinFactory.create(**kwargs)
     RegionBulletinFactory.create(bulletin=bulletin, region=region)
+    return bulletin
 
 
 # ---------------------------------------------------------------------------
@@ -350,3 +370,171 @@ class TestListResortsInRegion:
         """An unknown region_id raises ToolError."""
         with pytest.raises(tools.ToolError):
             tools.list_resorts_in_region("XX-0000")
+
+
+# ---------------------------------------------------------------------------
+# get_bulletin_metadata
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestGetBulletinMetadata:
+    """Tests for tools.get_bulletin_metadata."""
+
+    def test_returns_provenance_fields_for_present_bulletin(
+        self, region: MicroRegion
+    ) -> None:
+        """A stored bulletin surfaces issued_at, valid dates, source, and URL."""
+        target_date = datetime.date(2026, 4, 8)
+        next_update = datetime.datetime.combine(
+            datetime.date(2026, 4, 9), datetime.time(8, 0), tzinfo=UTC
+        )
+        pdf_url = "https://www.slf.ch/fileadmin/avalanche_bulletin/pdf/example.pdf"
+        _make_bulletin(
+            region,
+            target_date,
+            source=Bulletin.Source.SLF,
+            lang="en",
+            pdf_url=pdf_url,
+            next_update=next_update,
+        )
+
+        result = tools.get_bulletin_metadata(region.region_id, target_date)
+
+        assert result["has_bulletin"] is True
+        assert result["region_id"] == region.region_id
+        assert result["date"] == "2026-04-08"
+        assert result["issued_at"].startswith("2026-04-08T17:00")
+        assert result["valid_from"].startswith("2026-04-08T08:00")
+        assert result["valid_to"].startswith("2026-04-08T17:00")
+        assert result["next_update_expected"].startswith("2026-04-09T08:00")
+        assert result["source_provider"] == "slf"
+        assert result["source_url"] == pdf_url
+        assert result["language"] == "en"
+        assert result["language_variants_available"] == ["en"]
+        assert "slf" in result["summary"]
+
+    def test_falls_back_to_source_home_url_when_no_pdf_url(
+        self, region: MicroRegion
+    ) -> None:
+        """A bulletin without a stored pdf_url reports the provider's landing page."""
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(
+            region,
+            target_date,
+            source=Bulletin.Source.ALBINA,
+            pdf_url="",
+        )
+
+        result = tools.get_bulletin_metadata(region.region_id, target_date)
+
+        assert result["source_provider"] == "albina"
+        assert result["source_url"] == "https://avalanche.report/"
+
+    def test_meteofrance_source_maps_to_meteofrance_home_url(
+        self, region: MicroRegion
+    ) -> None:
+        """A Météo-France bulletin without pdf_url resolves to the MF home URL."""
+        _make_bulletin(
+            region,
+            datetime.date(2026, 4, 8),
+            source=Bulletin.Source.METEOFRANCE,
+            pdf_url="",
+        )
+
+        result = tools.get_bulletin_metadata(
+            region.region_id, datetime.date(2026, 4, 8)
+        )
+
+        assert result["source_provider"] == "meteofrance"
+        assert "meteofrance.com" in result["source_url"]
+
+    def test_no_bulletin_for_date_is_a_structured_empty_result(
+        self, region: MicroRegion
+    ) -> None:
+        """A quiet day with no bulletin is a normal result, not an error."""
+        result = tools.get_bulletin_metadata(
+            region.region_id, datetime.date(2026, 4, 8)
+        )
+
+        assert result["has_bulletin"] is False
+        assert "issued_at" not in result
+        assert "No bulletin" in result["summary"]
+
+    def test_missing_next_update_is_reported_as_null(self, region: MicroRegion) -> None:
+        """A bulletin without a scheduled next_update reports null, not absent."""
+        _make_bulletin(
+            region,
+            datetime.date(2026, 4, 8),
+            source=Bulletin.Source.SLF,
+            next_update=None,
+        )
+
+        result = tools.get_bulletin_metadata(
+            region.region_id, datetime.date(2026, 4, 8)
+        )
+
+        assert result["next_update_expected"] is None
+
+    def test_missing_source_stamp_reports_null_provider(
+        self, region: MicroRegion
+    ) -> None:
+        """A bulletin whose render_model has no source stamp reports null."""
+        # Direct factory create — bypasses _make_bulletin so we can omit
+        # the source key from render_model entirely (mirrors the rare
+        # RenderModelBuildError fallback where render_model has version 0
+        # and no source stamp).
+        bulletin = BulletinFactory.create(
+            issued_at=datetime.datetime(2026, 4, 8, 17, 0, tzinfo=UTC),
+            valid_from=datetime.datetime(2026, 4, 8, 8, 0, tzinfo=UTC),
+            valid_to=datetime.datetime(2026, 4, 8, 17, 0, tzinfo=UTC),
+            lang="en",
+            raw_data={"properties": {"dangerRatings": []}},
+            render_model={"version": 0, "error": "build failed"},
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=region)
+
+        result = tools.get_bulletin_metadata(
+            region.region_id, datetime.date(2026, 4, 8)
+        )
+
+        assert result["source_provider"] is None
+        assert result["source_url"] == ""
+
+    def test_unknown_region_id_raises_tool_error(self) -> None:
+        """An unknown region_id raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.get_bulletin_metadata("XX-0000", datetime.date(2026, 4, 8))
+
+    def test_defaults_to_today_seam_when_date_omitted(
+        self, region: MicroRegion
+    ) -> None:
+        """Omitting 'date' falls back to the injected 'today' seam."""
+        fixed_today = datetime.date(2026, 4, 8)
+        _make_bulletin(region, fixed_today, source=Bulletin.Source.SLF)
+
+        result = tools.get_bulletin_metadata(region.region_id, today=fixed_today)
+
+        assert result["has_bulletin"] is True
+        assert result["date"] == "2026-04-08"
+
+
+# ---------------------------------------------------------------------------
+# _handle_* argument-parsing adapters
+# ---------------------------------------------------------------------------
+
+
+class TestHandleGetBulletinMetadataArgs:
+    """Tests for the JSON-RPC arguments adapter of get_bulletin_metadata."""
+
+    def test_missing_region_id_raises_tool_error(self) -> None:
+        """The adapter rejects an argument dict without a valid region_id."""
+        with pytest.raises(tools.ToolError):
+            tools._handle_get_bulletin_metadata({})
+
+    def test_invalid_date_string_raises_tool_error(self) -> None:
+        """A non-ISO date string is rejected before the tool runs."""
+        with pytest.raises(tools.ToolError):
+            tools._handle_get_bulletin_metadata(
+                {"region_id": "CH-4115", "date": "not-a-date"}
+            )
