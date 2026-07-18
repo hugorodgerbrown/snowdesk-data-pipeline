@@ -1,0 +1,77 @@
+{% load i18n static %}
+{% comment %}
+public/partials/_favourites_surface.html — Favourite-pin sheet + JS (SNOW-414).
+
+Mirrors _report_surface.html's structure: a viewport-anchored sheet
+container that favourites.js opens/closes, plus a couple of server-rendered
+<template>s the JS clones rather than fetching from the server — there is
+no "fetch one favourite" GET endpoint (SNOW-413 only shipped POST create /
+rename / delete + the geojson layer), so the create form and the CSRF token
+it carries are rendered once, here, and reused by the JS for both the
+create flow and the pin-detail (rename/delete) flow.
+
+htmx.min.js is loaded once by home.html (shared with _report_surface.html)
+before this partial — not repeated here.
+
+Context expected:
+  favourites_visible          — bool: whether the favourites waffle flag is
+                                 active (gates the whole partial).
+  favourite_create_url        — str: POST endpoint for favourites:create.
+  favourites_signin_url       — str: sign-in page URL for the anon CTA.
+{% endcomment %}
+{% if favourites_visible %}
+    {# Sheet container — hidden until favourites.js opens it. Same token   #}
+    {# classes as #report-sheet so the two surfaces read as one family.    #}
+    <div
+        id="favourite-sheet"
+        hidden
+        class="fixed bottom-0 left-0 right-0 z-40 rounded-t-card border-t border-border bg-card px-4 pb-8 pt-4 [box-shadow:var(--shadow-glass)] sm:left-auto sm:right-4 sm:bottom-4 sm:w-96 sm:rounded-card sm:border"
+        aria-label='{% trans "Favourite" %}'
+    >
+    </div>
+    {# Create-form template — cloned by favourites.js once a pin has been  #}
+    {# placed/dragged into position. Carries a real {% csrf_token %} so the #}
+    {# hx-post submit is valid; lat/lon are written into the hidden inputs  #}
+    {# by favourites.js before the form is shown.                          #}
+    <template id="favourite-create-template">
+        <form
+            id="favourite-create-form"
+            hx-post="{{ favourite_create_url }}"
+            hx-target="#favourite-sheet"
+            hx-swap="innerHTML"
+            class="flex flex-col gap-3 px-2 py-4"
+        >
+            {% csrf_token %}
+            <input type="hidden" name="lat">
+            <input type="hidden" name="lon">
+            <label class="text-sm text-text-2" for="favourite-name-input">
+                {% trans "Name this pin (optional)" %}
+            </label>
+            <input
+                id="favourite-name-input"
+                type="text"
+                name="name"
+                maxlength="100"
+                placeholder='{% trans "Unnamed pin" %}'
+                class="w-full rounded-tag border border-border bg-card px-3 py-2 text-sm text-text-1 placeholder:text-text-3 focus:outline-none"
+            >
+            <div class="flex items-center gap-3">
+                <button
+                    type="submit"
+                    class="flex-1 rounded-pill bg-status-info-bg py-2 text-sm font-medium text-status-info-text"
+                >
+                    {% trans "Save" %}
+                </button>
+                <button
+                    type="button"
+                    data-action="close-favourite-sheet"
+                    class="flex-1 rounded-pill border border-border py-2 text-sm font-medium text-text-2"
+                >
+                    {% trans "Cancel" %}
+                </button>
+            </div>
+        </form>
+    </template>
+    {# SNOW-414: saved-pin add/rename/delete JS. #}
+    <script defer src="{% static 'js/favourites.js' %}"></script>
+{% endif %}

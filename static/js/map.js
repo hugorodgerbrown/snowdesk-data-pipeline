@@ -231,6 +231,11 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // Fetched one settled day at a time and memoised per date (see
   // fetchBulletinGroupingsForDate at module scope).
   const BULLETIN_GROUPINGS_URL = mapEl.dataset.bulletinGroupingsUrl || null;
+  // SNOW-414: per-user favourites GeoJSON — only rendered when eligible
+  // (flag active + authenticated); anonymous/ineligible requests must never
+  // fetch this endpoint (it 403s, and there's nothing to show anyway).
+  const FAVOURITES_URL = mapEl.dataset.favouritesUrl || null;
+  const FAVOURITES_ELIGIBLE = mapEl.dataset.favouritesEligible === 'true';
   // Hoist to module scope so fetchBulletinGroupingsForDate() (defined before
   // the IIFE) can reach the URL that was read from the DOM here.
   BULLETIN_GROUPINGS_URL_MODULE = BULLETIN_GROUPINGS_URL;
@@ -307,16 +312,22 @@ const repaintRegionsForDate = (dateKey, cache) => {
     l3: 'snowdesk.map.overlay.l3',
     l4: 'snowdesk.map.overlay.l4',
     resorts: 'snowdesk.map.overlay.resorts',
+    // SNOW-414: eligible-only — the toggle only exists in the DOM (and this
+    // key is only ever read/written) when data-favourites-eligible="true".
+    favourites: 'snowdesk.map.overlay.favourites',
   };
   // L4 defaults to visible: hiding it leaves only the basemap and any
   // active overlay tiers, which is intended. SNOW-78 resorts default off
   // so the map opens uncluttered.
   // SNOW-323: l3 (bulletin groupings) defaults off so the map opens uncluttered.
-  const overlayState = { l1: false, l2: false, l3: false, l4: true, resorts: false };
+  // SNOW-414: favourites defaults ON — a user's own saved pins should be
+  // visible without an extra toggle-hunt, unlike resorts (a public dataset).
+  const overlayState = { l1: false, l2: false, l3: false, l4: true, resorts: false, favourites: true };
   for (const key of ['l1', 'l2', 'l3', 'resorts']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
   overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
+  overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
 
   // SNOW-172: Country toggle state — which country's geometry is shown.
   // Default: CH on, others off. Each key maps to a boolean (visible/hidden).
@@ -796,6 +807,61 @@ const repaintRegionsForDate = (dateKey, cache) => {
     });
   };
 
+  // SNOW-414: install the favourites (saved-pin) layer. A star glyph text
+  // symbol rather than a sprite image — MapLibre can render a text-field
+  // glyph from the style's own font stack, so no icon image needs
+  // registering. Distinct colour + halo from the resort circles so a
+  // user's own pins read as a different kind of marker. Idempotent, like
+  // installResortsLayer — early-returns if the source already exists so a
+  // snowdesk:favourites-changed refresh can call this safely too.
+  const installFavouritesLayer = (geojson) => {
+    if (!geojson || map.getSource('favourites')) return;
+    map.addSource('favourites', { type: 'geojson', data: geojson });
+    map.addLayer({
+      id: 'favourites-pin',
+      type: 'symbol',
+      source: 'favourites',
+      layout: {
+        visibility: overlayState.favourites ? 'visible' : 'none',
+        'text-field': '★',
+        'text-font': ['Noto Sans Bold'],
+        'text-size': 18,
+        'text-allow-overlap': true,
+      },
+      paint: {
+        // Snowdesk link/brand blue — MapLibre paint props can't reference the
+        // CSS ``@theme`` tokens, so the star glyph and its label carry the hex
+        // literal directly (kept in sync with --color-link by hand).
+        'text-color': '#1a73e8',
+        'text-halo-color': 'rgba(255,255,255,0.95)',
+        'text-halo-width': 1.6,
+      },
+    });
+    // Favourite labels — zoom-banded like the resort labels, but shown a
+    // touch earlier (minzoom 8) since there are far fewer of them per user.
+    map.addLayer({
+      id: 'favourites-label',
+      type: 'symbol',
+      source: 'favourites',
+      minzoom: 8,
+      layout: {
+        visibility: overlayState.favourites ? 'visible' : 'none',
+        'text-field': ['get', 'name'],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 11,
+        'text-allow-overlap': false,
+        'text-offset': [0, 1.1],
+        'text-anchor': 'top',
+        'text-padding': 4,
+      },
+      paint: {
+        'text-color': '#1a73e8',
+        'text-halo-color': 'rgba(255,255,255,0.95)',
+        'text-halo-width': 1.4,
+      },
+    });
+  };
+
   // SNOW-323: Install the bulletin-groupings source and line layer.
   // Idempotent — early-returns when the source already exists (called on
   // basemap swap via the styledata handler and on first l3 toggle).
@@ -1109,7 +1175,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
   // errors degrade silently (no layer install), applyCountryFilters is called
   // after install so freshly-added L1/L2 layers respect the active country
   // filter immediately.
-  const overlayLoaded = { l1: false, l2: false, l3: false, resorts: false };
+  const overlayLoaded = { l1: false, l2: false, l3: false, resorts: false, favourites: false };
 
   const ensureOverlayLoaded = async (key) => {
     if (overlayLoaded[key]) return;
@@ -1145,6 +1211,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
       if (!data) return;
       resortsGeojsonCache = data;
       installResortsLayer(resortsGeojsonCache);
+    } else if (key === 'favourites') {
+      // SNOW-414: eligible-gated — anonymous/ineligible visitors never see
+      // the toggle, but guard the fetch too in case this is ever reached
+      // some other way (e.g. the eager boot-time call below).
+      if (!FAVOURITES_ELIGIBLE || !FAVOURITES_URL) return;
+      const data = await fetch(FAVOURITES_URL)
+        .then(r => r.json()).catch(() => null);
+      if (!data) return;
+      installFavouritesLayer(data);
     }
     overlayLoaded[key] = true;
     // Apply country filters to the freshly-added layers so they
@@ -1166,6 +1241,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // don't carry a user-facing name property).
     l3: ['bulletin-groupings-line'],
     resorts: ['resorts-pin', 'resorts-label'],
+    favourites: ['favourites-pin', 'favourites-label'],
   };
 
   // SNOW-235: Bridge for the basemapPickerInit IIFE — dispatched when
@@ -1361,6 +1437,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
     // intentional and an improvement over the previous blocking behaviour.
     for (const key of ['l1', 'l2', 'resorts']) {
       if (overlayState[key]) ensureOverlayLoaded(key).catch(() => {});
+    }
+
+    // SNOW-414: favourites is default-ON (unlike the tiers above), so an
+    // eligible user's saved pins load at boot rather than waiting for a
+    // toggle. Anonymous/ineligible visitors never reach this branch —
+    // ensureOverlayLoaded('favourites') also short-circuits on
+    // !FAVOURITES_ELIGIBLE as a second guard.
+    if (FAVOURITES_ELIGIBLE && overlayState.favourites) {
+      ensureOverlayLoaded('favourites').catch(() => {});
     }
 
     // Interaction
@@ -1744,7 +1829,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
       ) {
         return;
       }
-      const layers = ['regions-fill', 'resorts-pin'].filter(
+      const layers = ['regions-fill', 'resorts-pin', 'favourites-pin'].filter(
         (id) => map.getLayer(id),
       );
       if (!layers.length) return;
@@ -1779,6 +1864,41 @@ const repaintRegionsForDate = (dateKey, cache) => {
     });
     map.on('mouseenter', 'resorts-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'resorts-pin', () => { map.getCanvas().style.cursor = ''; });
+
+    // SNOW-414: tapping a favourite pin opens the rename/delete detail sheet
+    // (favourites.js listens for this event) — mirrors the resort-pin
+    // handler above rather than focusing a region, since a favourite isn't
+    // necessarily inside a known EAWS region.
+    map.on('click', 'favourites-pin', (e) => {
+      if (!e.features.length) return;
+      const props = e.features[0].properties;
+      document.dispatchEvent(new CustomEvent('snowdesk:favourite-selected', {
+        detail: { uuid: props.uuid, name: props.name },
+      }));
+    });
+    map.on('mouseenter', 'favourites-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'favourites-pin', () => { map.getCanvas().style.cursor = ''; });
+
+    // SNOW-414: favourites.js dispatches this after a successful
+    // create/rename/delete so the map's own pin layer reflects the change
+    // without a full page reload. Installs the layer first if this is the
+    // very first favourite the user has ever saved (overlayLoaded.favourites
+    // is only true once ensureOverlayLoaded('favourites') has run, which
+    // requires at least one prior fetch — install here covers the case
+    // where an ineligible-at-boot state doesn't apply, since the toggle
+    // itself is eligible-gated).
+    document.addEventListener('snowdesk:favourites-changed', () => {
+      if (!FAVOURITES_ELIGIBLE || !FAVOURITES_URL) return;
+      fetch(FAVOURITES_URL).then(r => r.json()).then((fc) => {
+        const source = map.getSource('favourites');
+        if (source) {
+          source.setData(fc);
+        } else {
+          installFavouritesLayer(fc);
+          overlayLoaded.favourites = true;
+        }
+      }).catch(() => {});
+    });
 
     // ---- History wiring (SNOW-39) ----
     //
@@ -2970,6 +3090,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     l3: ['bulletin-groupings-line'],
     l4: ['regions-fill', 'regions-line', 'regions-label'],
     resorts: ['resorts-pin', 'resorts-label'],
+    favourites: ['favourites-pin', 'favourites-label'],
   };
   const OVERLAY_STORAGE_KEY = {
     l1: 'snowdesk.map.overlay.l1',
@@ -2977,6 +3098,7 @@ const repaintRegionsForDate = (dateKey, cache) => {
     l3: 'snowdesk.map.overlay.l3',
     l4: 'snowdesk.map.overlay.l4',
     resorts: 'snowdesk.map.overlay.resorts',
+    favourites: 'snowdesk.map.overlay.favourites',
   };
 
   for (const item of items) {
@@ -3008,10 +3130,15 @@ const repaintRegionsForDate = (dateKey, cache) => {
           return;
         }
 
+        // SNOW-414: notify telemetry when the favourites overlay is flipped.
+        if (overlayKey === 'favourites') {
+          window.pwaTelemetry?.emit('map.favourite.overlay_toggled', { visible: next });
+        }
+
         // Tier overlay — toggle layer visibility.
         writeStorage(OVERLAY_STORAGE_KEY[overlayKey], String(next));
         if (MAP) {
-          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'l3' || overlayKey === 'resorts')) {
+          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'l3' || overlayKey === 'resorts' || overlayKey === 'favourites')) {
             // SNOW-235: First enable of a lazy overlay tier — delegate to the
             // main IIFE via snowdesk:overlay-load so it can fetch the GeoJSON,
             // install the layers, and then make them visible. The main IIFE

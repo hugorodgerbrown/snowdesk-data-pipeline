@@ -808,6 +808,7 @@ def home(request: HttpRequest) -> HttpResponse:
         )
 
     report_ctx = _report_context(request)
+    favourites_ctx = _favourites_context(request)
 
     return render(
         request,
@@ -816,6 +817,7 @@ def home(request: HttpRequest) -> HttpResponse:
             **base_ctx,
             **edit_context,
             **report_ctx,
+            **favourites_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
             "default_region_name": default_region_name,
@@ -1330,6 +1332,63 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
                 "report_form_url": reverse("observations:report_form"),
                 "report_submit_url": reverse("observations:report_submit"),
                 "report_signin_url": reverse("accounts:sign_in"),
+            }
+        )
+    return ctx
+
+
+def _favourites_context(request: HttpRequest) -> dict[str, Any]:
+    """Build the template context dict for the saved-pin favourites affordance.
+
+    ``favourites_visible`` is True when the ``favourites`` waffle flag is
+    active — this controls whether the "Add favourite" control and the
+    overlay toggle are rendered at all (seeded with ``superusers=True`` by
+    ``favourites/migrations/0002_seed_favourites_flag.py``).
+    ``favourites_eligible`` additionally requires the user to be
+    authenticated — favourites.js and map.js branch on this to show the
+    real add/rename/delete flow versus an anonymous sign-in CTA.
+
+    When ``favourites_visible`` is True the dict also includes the HTMX
+    endpoint URLs, a sign-in URL for the anonymous CTA, and two
+    ``__UUID__``-templated URLs (mirroring ``edit_save_url_template`` in
+    ``home()``) that favourites.js string-replaces at runtime to build the
+    rename/delete requests for a pin selected on the map — there is no
+    server-side "fetch one favourite" endpoint, so the client reconstructs
+    the same rename/delete markup ``favourites/partials/_favourite.html``
+    renders after create.
+
+    Args:
+        request: The current HTTP request.
+
+    Returns:
+        Dict with ``favourites_visible``, ``favourites_eligible``, and (when
+        visible) ``favourites_geojson_url``, ``favourite_create_url``,
+        ``favourite_rename_url_template``, ``favourite_delete_url_template``,
+        and ``favourites_signin_url``.
+
+    """
+    favourites_visible = waffle.flag_is_active(request, "favourites")
+    favourites_eligible = favourites_visible and request.user.is_authenticated
+    ctx: dict[str, Any] = {
+        "favourites_visible": favourites_visible,
+        "favourites_eligible": favourites_eligible,
+    }
+    if favourites_visible:
+        # __UUID__ placeholder, mirroring the __ID__ trick used above for
+        # edit_save_url_template — reverse with a dummy uuid, then string-
+        # replace at runtime with the uuid of the pin actually selected.
+        dummy_uuid = uuid.UUID(int=0)
+        ctx.update(
+            {
+                "favourites_geojson_url": reverse("favourites:geojson"),
+                "favourite_create_url": reverse("favourites:create"),
+                "favourite_rename_url_template": reverse(
+                    "favourites:rename", args=[dummy_uuid]
+                ).replace(str(dummy_uuid), "__UUID__"),
+                "favourite_delete_url_template": reverse(
+                    "favourites:delete", args=[dummy_uuid]
+                ).replace(str(dummy_uuid), "__UUID__"),
+                "favourites_signin_url": reverse("accounts:sign_in"),
             }
         )
     return ctx

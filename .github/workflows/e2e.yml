@@ -56,6 +56,23 @@ jobs:
           echo "SECRET_KEY=ci-e2e-secret-key" > .env
           echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
 
+      # The e2e tests drive the real page, so the Tailwind stylesheet must be
+      # present — ``static/css/output.css`` is a gitignored build artefact, so
+      # a fresh checkout has no CSS and any test that clicks a CSS-positioned
+      # control (e.g. the map utility pills, which the map canvas would
+      # otherwise occlude) fails its Playwright actionability check. Build it
+      # here, mirroring lighthouse.yml, before the live server serves statics.
+      - name: Set up Node (20)
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build Tailwind CSS
+        run: npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
+
       - name: Cache Playwright browsers
         uses: actions/cache@v6
         with:
