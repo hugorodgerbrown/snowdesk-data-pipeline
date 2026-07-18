@@ -1083,7 +1083,10 @@ def _danger_trend_summary(
     """Return a one-line, LLM-quotable summary of a get_danger_trend result."""
     days = envelope["days"]
     if not days:
-        return envelope["summary"]  # Reuse the empty-window message.
+        # Reuse the empty-window message from get_danger_history.
+        # Cast to str — envelope is typed as dict[str, Any] so mypy would
+        # otherwise complain about returning Any from a -> str function.
+        return str(envelope["summary"])
     parts = [
         f"{envelope['region_name']} ({envelope['region_id']}) over "
         f"{envelope['count']} day(s): trend {direction}."

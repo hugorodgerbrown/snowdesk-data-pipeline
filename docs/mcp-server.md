@@ -1,6 +1,6 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — search_regions, get_current_conditions, get_danger_history, list_resorts_in_region, get_bulletin_metadata, get_bulletin_raw, bulk_current_conditions, find_regions_near, get_danger_trend tools
+description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — nine read-only tools over regions, bulletins, danger history/trend, geolocation
 status: current
 last-reviewed: 2026-07-18
 ---
