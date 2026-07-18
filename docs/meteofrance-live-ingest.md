@@ -102,12 +102,12 @@ envVars:
   …
 ```
 
-### Blueprint auto-sync is disabled
+### Env-var values still need a manual dashboard step
 
-The file header in [`render.yaml`](../render.yaml) documents this
-explicitly: Blueprint auto-sync is **not** enabled. Updating `render.yaml`
-records the intent in the repo but does **not** propagate to the live
-deployment automatically.
+Blueprint auto-sync propagates the *shape* of `render.yaml` (services,
+plans, domains, env-var keys) to Render, but values marked `sync: false`
+are deliberately not synced — the key appears in the dashboard as unset
+until an operator supplies the value.
 
 ### Operator action required after merge
 

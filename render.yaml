@@ -1,32 +1,30 @@
 # Render deployment Blueprint for Snowdesk.
 #
-# Documentation only — Blueprint auto-sync is NOT enabled. Changes to the
-# live deployment are still made via the Render dashboard; this file is the
-# checked-in record of that configuration so the deployment topology
-# (services, deploy branches, env-var wiring) is discoverable from the repo.
+# Blueprint auto-sync IS enabled — Render reads this file from `main` and
+# applies changes to the services declared here (see the Blueprint entry in
+# the Render dashboard). Databases and env-group contents remain
+# dashboard-managed: no `databases:` block, and env-var groups are
+# referenced by `fromGroup` rather than declared. That deliberately keeps
+# secrets and Postgres wiring out of Blueprint's scope.
 #
 # Path-to-live (SNOW-339): deploys are split across two branches.
 #   * `main`    → Staging   — one web service, auto-deploys on every merge.
-#   * `release` → Production — three services, deploys when the `release`
+#   * `release` → Production — three services, deploy when the `release`
 #                 branch advances (a release PR merges). All three track
 #                 the SAME branch so they always run the same commit
 #                 against the shared production database.
+# The Blueprint source branch and the per-service deploy branch are
+# independent: Blueprint reads this file from `main`, and each service's
+# `branch:` field governs which branch it deploys from.
+#
 # Staging and production use SEPARATE Postgres databases. This matters
 # because build.sh runs `migrate` + `loaddata` on every deploy — a staging
 # deploy must never touch the production schema. Full flow: docs/deployment.md.
 #
-# Originally exported from Render on 2026-05-22. Corrections / additions
-# applied against the raw export:
-#   * snowdesk-cron-bulletins: added `meteofrance` to --source.
-#   * snowdesk-cron-bulletins: dropped --today so a missed run self-heals.
-#   * snowdesk-worker-tasks (SNOW-229): added the django-tasks-db worker
-#     entry. The worker must also be created in the Render dashboard
-#     before subscription emails enqueue to django_tasks_db will be
-#     consumed in production.
-#   * snowdesk-scheduler (SNOW-238): replaced snowdesk-cron-bulletins and
-#     snowdesk-cron-weather with a single long-running APScheduler worker.
-#   * SNOW-339: pinned the production services to `branch: release` and
-#     added the Staging environment (web only, tracking `main`).
+# `snowdesk-scheduler` (SNOW-238) is a single long-running APScheduler
+# worker that replaces the older per-schedule Render cron jobs.
+# `snowdesk-background-tasks` (SNOW-229) consumes the django-tasks-db
+# queue used by subscription emails.
 #
 # Env vars marked `sync: false` must be set manually in the Render
 # dashboard — they are not auto-populated from a Blueprint import.
@@ -37,6 +35,32 @@ projects:
     environments:
       - name: Production
         services:
+          - type: worker
+            name: snowdesk-background-tasks
+            runtime: python
+            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
+            plan: starter
+            region: frankfurt
+            branch: release
+            buildCommand: ./build_headless.sh
+            startCommand: python manage.py db_worker
+            autoDeployTrigger: checksPass
+            envVars:
+              - fromGroup: Production
+
+          - type: worker
+            name: snowdesk-scheduler
+            runtime: python
+            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
+            plan: starter
+            region: frankfurt
+            branch: release
+            buildCommand: ./build_headless.sh
+            startCommand: python manage.py run_scheduler
+            autoDeployTrigger: checksPass
+            envVars:
+              - fromGroup: Production
+
           - type: web
             name: snowdesk-website
             runtime: python
@@ -49,7 +73,7 @@ projects:
             domains:
               - www.snowdesk.info
               - snowdesk.info
-            autoDeployTrigger: commit
+            autoDeployTrigger: checksPass
             envVars:
               - key: METEOFRANCE_API_KEY
                 sync: false
@@ -61,46 +85,18 @@ projects:
                 sync: false
               - key: WEBAUTHN_RP_ID
                 sync: false
-              - fromGroup: Django App Settings
-
-          - type: worker
-            name: snowdesk-scheduler
-            runtime: python
-            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
-            plan: starter
-            region: frankfurt
-            branch: release
-            buildCommand: ./build_headless.sh
-            startCommand: python manage.py run_scheduler
-            autoDeployTrigger: commit
-            envVars:
-              - key: METEOFRANCE_API_KEY
-                sync: false
-              - fromGroup: Django App Settings
-
-          - type: worker
-            name: snowdesk-worker-tasks
-            runtime: python
-            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
-            plan: starter
-            region: frankfurt
-            branch: release
-            buildCommand: ./build_headless.sh
-            startCommand: python manage.py db_worker
-            autoDeployTrigger: commit
-            envVars:
-              - fromGroup: Django App Settings
+              - fromGroup: Production
 
       - name: Staging
         # Single web dyno, auto-deploys from `main`. No scheduler and no
-        # task worker — staging does not ingest bulletins or send queued
-        # email on its own; seed its database with a manual `fetch_bulletins`
-        # run when test data is needed. Wired to its own Postgres and its
-        # own env group (separate SECRET_KEY, DATABASE_URL, ALLOWED_HOSTS,
-        # email target) — never the production database.
+        # background-tasks worker — staging does not ingest bulletins or
+        # send queued email on its own; seed its database with a manual
+        # `fetch_bulletins` run when test data is needed. Wired to its own
+        # Postgres and its own env group (separate SECRET_KEY, DATABASE_URL,
+        # ALLOWED_HOSTS, email target) — never the production database.
         services:
           - type: web
-            name: snowdesk-website-staging
+            name: snowdesk-staging
             runtime: python
             repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
             plan: starter
@@ -108,16 +104,8 @@ projects:
             branch: main
             buildCommand: . ./build.sh
             startCommand: gunicorn config.wsgi
-            autoDeployTrigger: commit
+            autoDeployTrigger: checksPass
             envVars:
-              - key: METEOFRANCE_API_KEY
+              - key: POSTHOG_API_KEY
                 sync: false
-              - key: CSP_REPORT_ONLY
-                sync: false
-              - key: WEBAUTHN_ORIGIN
-                sync: false
-              - key: WEBAUTHN_RP_NAME
-                sync: false
-              - key: WEBAUTHN_RP_ID
-                sync: false
-              - fromGroup: Django App Settings (Staging)
+              - fromGroup: Staging

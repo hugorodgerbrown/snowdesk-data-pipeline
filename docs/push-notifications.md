@@ -223,11 +223,11 @@ Render shell), do the following in the Render dashboard:
 > match at generation time; the only way to ship a mismatch is to copy them
 > from different runs by hand. Don't.
 
-The repo-root `render.yaml` is a documentation-only record of the Render
-topology (Blueprint auto-sync is not enabled); live deploy changes are still
-made via the dashboard. It does not include the VAPID env vars or the secret
-file — those live only in the dashboard (the env-var group marked
-`fromGroup: Django App Settings`, plus Secret Files).
+The repo-root `render.yaml` is the source of truth for the Render service
+topology (Blueprint auto-sync is enabled). It does not include the VAPID env
+vars or the secret file — those live only in the dashboard (in the
+`Production` env group referenced via `fromGroup`, plus Secret Files —
+Blueprint doesn't touch env-group contents or Secret Files).
 
 ---
 
