@@ -735,3 +735,177 @@ class TestHandleBulkCurrentConditionsArgs:
         """A non-string entry in the batch is a -32602 protocol failure."""
         with pytest.raises(self._protocol_error()):
             tools._handle_bulk_current_conditions({"region_ids": ["CH-4115", 42]})
+
+
+# ---------------------------------------------------------------------------
+# find_regions_near
+# ---------------------------------------------------------------------------
+
+
+# Coordinates picked so distance ordering is unambiguous:
+# * Verbier   (~46.10, 7.23)      → target for near-hit tests.
+# * Zermatt   (~46.02, 7.75)      → ~40 km east of Verbier.
+# * Chamonix  (~45.92, 6.87)      → ~30 km south-west of Verbier.
+# * Zurich    (~47.37, 8.55)      → ~180 km north-east — out of a 100 km
+#                                    radius from Verbier.
+_VERBIER = (46.10, 7.23)
+_ZERMATT = (46.02, 7.75)
+_CHAMONIX = (45.92, 6.87)
+_ZURICH = (47.37, 8.55)
+
+
+@pytest.mark.django_db
+class TestFindRegionsNear:
+    """Tests for tools.find_regions_near."""
+
+    @pytest.fixture
+    def alpine_regions(self) -> dict[str, MicroRegion]:
+        """Three MicroRegions with known centroids for distance tests."""
+        ch = MajorRegionFactory.create(prefix="CH-4", country="CH", name_en="Valais")
+        fr = MajorRegionFactory.create(prefix="FR-73", country="FR", name_en="Savoie")
+        ch_north = MajorRegionFactory.create(
+            prefix="CH-2", country="CH", name_en="Zurich"
+        )
+        ch_sub = SubRegionFactory.create(prefix="CH-41", major=ch)
+        fr_sub = SubRegionFactory.create(prefix="FR-73", major=fr)
+        north_sub = SubRegionFactory.create(prefix="CH-21", major=ch_north)
+        return {
+            "verbier": MicroRegionFactory.create(
+                region_id="CH-4115",
+                name="Bas-Valais",
+                subregion=ch_sub,
+                centre={"lat": _VERBIER[0], "lon": _VERBIER[1]},
+            ),
+            "zermatt": MicroRegionFactory.create(
+                region_id="CH-4114",
+                name="Zermatt",
+                subregion=ch_sub,
+                centre={"lat": _ZERMATT[0], "lon": _ZERMATT[1]},
+            ),
+            "chamonix": MicroRegionFactory.create(
+                region_id="FR-73-01",
+                name="Mont-Blanc",
+                subregion=fr_sub,
+                centre={"lat": _CHAMONIX[0], "lon": _CHAMONIX[1]},
+            ),
+            "zurich": MicroRegionFactory.create(
+                region_id="CH-2001",
+                name="Zurich Alps",
+                subregion=north_sub,
+                centre={"lat": _ZURICH[0], "lon": _ZURICH[1]},
+            ),
+        }
+
+    def test_nearest_region_first(self, alpine_regions: dict[str, MicroRegion]) -> None:
+        """Verbier coords resolve to CH-4115 as the closest hit."""
+        result = tools.find_regions_near(lat=_VERBIER[0], lon=_VERBIER[1], radius_km=50)
+
+        assert result["count"] >= 1
+        assert result["results"][0]["region_id"] == "CH-4115"
+        assert result["results"][0]["distance_km"] == 0.0
+        assert result["results"][0]["provider"] == "slf"
+
+    def test_orders_by_distance(self, alpine_regions: dict[str, MicroRegion]) -> None:
+        """A wider radius returns hits nearest-first."""
+        result = tools.find_regions_near(lat=_VERBIER[0], lon=_VERBIER[1], radius_km=50)
+
+        distances = [r["distance_km"] for r in result["results"]]
+        assert distances == sorted(distances)
+
+    def test_provider_derives_from_region_country(
+        self, alpine_regions: dict[str, MicroRegion]
+    ) -> None:
+        """A French region is attributed to meteofrance, not slf."""
+        result = tools.find_regions_near(
+            lat=_CHAMONIX[0], lon=_CHAMONIX[1], radius_km=10
+        )
+
+        assert result["count"] == 1
+        assert result["results"][0]["region_id"] == "FR-73-01"
+        assert result["results"][0]["provider"] == "meteofrance"
+
+    def test_zero_matches_returns_empty_not_error(
+        self, alpine_regions: dict[str, MicroRegion]
+    ) -> None:
+        """A query point outside coverage is a successful empty result."""
+        # Tokyo — nothing within 100 km of Snowdesk-covered regions.
+        result = tools.find_regions_near(lat=35.68, lon=139.69, radius_km=100)
+
+        assert result["results"] == []
+        assert result["count"] == 0
+        assert "No covered regions" in result["summary"]
+
+    def test_ignores_regions_without_centre(
+        self, alpine_regions: dict[str, MicroRegion]
+    ) -> None:
+        """Regions with a null centre don't crash the distance loop."""
+        ch = MajorRegionFactory.create(prefix="CH-9", country="CH", name_en="Rhaetia")
+        sub = SubRegionFactory.create(prefix="CH-91", major=ch)
+        MicroRegionFactory.create(
+            region_id="CH-9101",
+            name="No-centre region",
+            subregion=sub,
+            centre=None,
+        )
+
+        # Query near the null-centre region's would-be location — it must
+        # not appear in results and must not raise.
+        result = tools.find_regions_near(
+            lat=_VERBIER[0], lon=_VERBIER[1], radius_km=100
+        )
+
+        assert all(r["region_id"] != "CH-9101" for r in result["results"])
+
+    def test_limit_truncates_result_list(
+        self, alpine_regions: dict[str, MicroRegion]
+    ) -> None:
+        """The limit argument caps the number of returned regions."""
+        result = tools.find_regions_near(
+            lat=_VERBIER[0], lon=_VERBIER[1], radius_km=100, limit=1
+        )
+
+        assert result["count"] == 1
+
+
+class TestHandleFindRegionsNearArgs:
+    """Tests for the JSON-RPC arguments adapter of find_regions_near."""
+
+    def _protocol_error(self) -> type[Exception]:
+        """Return the ProtocolError class without a module-level cycle."""
+        from mcp_server.protocol import ProtocolError
+
+        return ProtocolError
+
+    def test_missing_lat_raises_protocol_error(self) -> None:
+        """A call without lat is a -32602 protocol failure."""
+        with pytest.raises(self._protocol_error()):
+            tools._handle_find_regions_near({"lon": 7.23, "radius_km": 10})
+
+    def test_out_of_range_lat_raises_protocol_error(self) -> None:
+        """A lat outside [-90, 90] is a -32602 protocol failure."""
+        with pytest.raises(self._protocol_error()):
+            tools._handle_find_regions_near({"lat": 200, "lon": 7.23, "radius_km": 10})
+
+    def test_out_of_range_lon_raises_protocol_error(self) -> None:
+        """A lon outside [-180, 180] is a -32602 protocol failure."""
+        with pytest.raises(self._protocol_error()):
+            tools._handle_find_regions_near({"lat": 46.1, "lon": 300, "radius_km": 10})
+
+    def test_zero_or_negative_radius_raises_protocol_error(self) -> None:
+        """A non-positive radius is a -32602 protocol failure."""
+        with pytest.raises(self._protocol_error()):
+            tools._handle_find_regions_near({"lat": 46.1, "lon": 7.23, "radius_km": 0})
+
+    def test_over_cap_radius_raises_protocol_error(self) -> None:
+        """A radius over 100 km is a -32602 protocol failure."""
+        with pytest.raises(self._protocol_error()):
+            tools._handle_find_regions_near(
+                {"lat": 46.1, "lon": 7.23, "radius_km": 500}
+            )
+
+    def test_non_integer_limit_raises_protocol_error(self) -> None:
+        """A non-integer limit is a -32602 protocol failure."""
+        with pytest.raises(self._protocol_error()):
+            tools._handle_find_regions_near(
+                {"lat": 46.1, "lon": 7.23, "radius_km": 10, "limit": "many"}
+            )

@@ -810,6 +810,101 @@ def _handle_get_bulletin_raw(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# find_regions_near
+# ---------------------------------------------------------------------------
+
+# Hard cap on the radius input, in kilometres. 100 km is generous for a
+# single trailhead-to-region lookup (roughly Verbier → Zurich) but keeps
+# the loop from turning into a whole-Alps sweep, which is what
+# search_regions and get_current_conditions are for.
+_FIND_REGIONS_NEAR_RADIUS_CAP_KM = 100.0
+
+# Default result count when the caller doesn't specify — same tier as
+# search_regions.
+_FIND_REGIONS_NEAR_DEFAULT_LIMIT = 10
+
+
+def find_regions_near(
+    lat: float, lon: float, radius_km: float, limit: int | None = None
+) -> dict[str, Any]:
+    """Return covered regions inside a radius of one point, nearest first.
+
+    Reverse geolocation: skiers know their trailhead coordinates from a
+    mapping app but not the SLF region slug. ``search_regions`` doesn't
+    help when the place isn't named; this tool bridges that gap.
+
+    Args:
+        lat: Latitude in degrees, ``[-90, 90]``.
+        lon: Longitude in degrees, ``[-180, 180]``.
+        radius_km: Radius bound in kilometres.
+        limit: Maximum results (nearest first). Defaults to 10.
+
+    Returns:
+        ``{query: {lat, lon, radius_km}, results, count, summary}`` —
+        ``results`` is a list of ``{region_id, name, kind, distance_km,
+        provider}`` dicts. Empty when no MicroRegion falls within the
+        radius (e.g. a query point outside Snowdesk's coverage) — a
+        legitimate empty result, not an error.
+
+    """
+    resolved_limit = limit if limit is not None else _FIND_REGIONS_NEAR_DEFAULT_LIMIT
+    results = resolvers.find_places_near(lat, lon, radius_km, resolved_limit)
+    return {
+        "query": {"lat": lat, "lon": lon, "radius_km": radius_km},
+        "results": results,
+        "count": len(results),
+        "summary": _find_regions_near_summary(lat, lon, radius_km, results),
+    }
+
+
+def _find_regions_near_summary(
+    lat: float, lon: float, radius_km: float, results: list[dict[str, Any]]
+) -> str:
+    """Return a one-line, LLM-quotable summary of a find_regions_near result."""
+    if not results:
+        return f"No covered regions within {radius_km:g} km of ({lat:g}, {lon:g})."
+    names = ", ".join(
+        f"{r['name']} ({r['region_id']}, {r['distance_km']:g} km)" for r in results[:5]
+    )
+    return (
+        f"{len(results)} region(s) within {radius_km:g} km of "
+        f"({lat:g}, {lon:g}): {names}."
+    )
+
+
+def _handle_find_regions_near(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``find_regions_near`` JSON-RPC arguments to the tool function.
+
+    Rejects invalid geographic inputs and over-cap radius as JSON-RPC
+    ``-32602`` — these are input-contract failures, not domain-level
+    outcomes the tool tried and couldn't satisfy.
+    """
+    from mcp_server.protocol import INVALID_PARAMS, ProtocolError
+
+    lat = arguments.get("lat")
+    lon = arguments.get("lon")
+    radius_km = arguments.get("radius_km")
+    if not isinstance(lat, int | float) or not -90 <= lat <= 90:
+        raise ProtocolError(INVALID_PARAMS, "'lat' must be a number in [-90, 90].")
+    if not isinstance(lon, int | float) or not -180 <= lon <= 180:
+        raise ProtocolError(INVALID_PARAMS, "'lon' must be a number in [-180, 180].")
+    if not isinstance(radius_km, int | float) or radius_km <= 0:
+        raise ProtocolError(INVALID_PARAMS, "'radius_km' must be a positive number.")
+    if radius_km > _FIND_REGIONS_NEAR_RADIUS_CAP_KM:
+        raise ProtocolError(
+            INVALID_PARAMS,
+            f"'radius_km' is {radius_km:g}; the cap is "
+            f"{_FIND_REGIONS_NEAR_RADIUS_CAP_KM:g} km per call.",
+        )
+    limit = arguments.get("limit")
+    if limit is not None and (not isinstance(limit, int) or limit <= 0):
+        raise ProtocolError(
+            INVALID_PARAMS, "'limit' must be a positive integer when supplied."
+        )
+    return find_regions_near(float(lat), float(lon), float(radius_km), limit)
+
+
+# ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
 
@@ -1000,5 +1095,46 @@ TOOLS: dict[str, ToolSpec] = {
             "required": ["region_ids"],
         },
         handler=_handle_bulk_current_conditions,
+    ),
+    "find_regions_near": ToolSpec(
+        name="find_regions_near",
+        description=(
+            "Reverse geolocation: given (lat, lon, radius_km) return the "
+            "covered avalanche-warning regions inside the radius, nearest "
+            "first. Use when you have coordinates from a mapping app but "
+            "don't know the SLF region slug — search_regions covers the "
+            "opposite direction (place name → region). Radius is capped "
+            "at 100 km per call."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "lat": {
+                    "type": "number",
+                    "description": "Latitude in degrees, [-90, 90].",
+                    "minimum": -90,
+                    "maximum": 90,
+                },
+                "lon": {
+                    "type": "number",
+                    "description": "Longitude in degrees, [-180, 180].",
+                    "minimum": -180,
+                    "maximum": 180,
+                },
+                "radius_km": {
+                    "type": "number",
+                    "description": ("Radius bound in kilometres. Capped at 100."),
+                    "exclusiveMinimum": 0,
+                    "maximum": _FIND_REGIONS_NEAR_RADIUS_CAP_KM,
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": ("Maximum results (nearest first). Default 10."),
+                    "minimum": 1,
+                },
+            },
+            "required": ["lat", "lon", "radius_km"],
+        },
+        handler=_handle_find_regions_near,
     ),
 }

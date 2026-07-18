@@ -22,6 +22,7 @@ guaranteed miss — no explicit invalidation needed.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from django.core.cache import cache
@@ -30,6 +31,23 @@ from rapidfuzz import fuzz, process
 
 from mcp_server.normalise import normalise
 from regions.models import MajorRegion, MicroRegion, Resort
+
+# Country → provider mapping for the ``find_places_near`` result shape.
+# Static because Snowdesk fetches from exactly one provider per country;
+# the region's own country label is authoritative regardless of whether a
+# bulletin exists on any given day.
+_PROVIDER_BY_COUNTRY: dict[str, str] = {
+    "CH": "slf",
+    "AT": "albina",
+    "IT": "albina",
+    "FR": "meteofrance",
+}
+
+# Approximate mean earth radius in kilometres — good to five significant
+# figures at the mid-latitudes Snowdesk covers, which is well below the
+# accuracy floor of MicroRegion.centre (a single lon/lat pair per region,
+# so distance to any specific point is already a coarse estimate).
+_EARTH_RADIUS_KM = 6371.0088
 
 # How long a built candidate pool stays in cache once computed. The cache
 # *key* already changes whenever underlying data changes (see
@@ -228,6 +246,91 @@ def _match_exact_region_id(
                 "score": 100.0,
             }
     return None
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return the great-circle distance in kilometres between two lat/lon pairs.
+
+    Pure-Python haversine (no PostGIS, no Shapely) — mirrors the same
+    dependency-free precedent the request-path point-in-polygon lookup
+    established. Accuracy is ~0.5% at continental distances, far better
+    than the ~10 km scale of a MicroRegion centroid.
+
+    Args:
+        lat1: Latitude of point one, in degrees.
+        lon1: Longitude of point one, in degrees.
+        lat2: Latitude of point two, in degrees.
+        lon2: Longitude of point two, in degrees.
+
+    Returns:
+        The great-circle distance in kilometres.
+
+    """
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dphi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    )
+    return 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(a))
+
+
+def find_places_near(
+    lat: float, lon: float, radius_km: float, limit: int = 10
+) -> list[dict[str, Any]]:
+    """Return covered MicroRegions inside a radius of one point, nearest first.
+
+    Args:
+        lat: Query latitude in degrees, in ``[-90, 90]``.
+        lon: Query longitude in degrees, in ``[-180, 180]``.
+        radius_km: Radius bound; only regions within this distance are
+            returned. Callers are expected to enforce their own upper
+            bound (see the ``mcp_server.tools.find_regions_near`` cap).
+        limit: Maximum results to return, nearest first.
+
+    Returns:
+        A list of ``{region_id, name, kind: "micro", distance_km,
+        provider}`` dicts, nearest first. Empty when no MicroRegion has a
+        ``centre`` within ``radius_km`` of the query point.
+
+    """
+    # Small enough (~1500 rows) to hold in memory and iterate — the same
+    # rationale as ``_candidate_pool``. Load with the major-region join
+    # for the country → provider derivation.
+    regions = MicroRegion.objects.select_related("subregion__major").all()
+
+    hits: list[tuple[float, dict[str, Any]]] = []
+    for region in regions:
+        centre = region.centre
+        if not isinstance(centre, dict):
+            continue
+        centre_lat = centre.get("lat")
+        centre_lon = centre.get("lon")
+        if not isinstance(centre_lat, int | float) or not isinstance(
+            centre_lon, int | float
+        ):
+            continue
+        distance = _haversine_km(lat, lon, float(centre_lat), float(centre_lon))
+        if distance > radius_km:
+            continue
+        provider = _PROVIDER_BY_COUNTRY.get(region.subregion.major.country)
+        hits.append(
+            (
+                distance,
+                {
+                    "region_id": region.region_id,
+                    "name": region.name,
+                    "kind": "micro",
+                    "distance_km": round(distance, 2),
+                    "provider": provider,
+                },
+            )
+        )
+
+    hits.sort(key=lambda h: h[0])
+    return [row for _distance, row in hits[:limit]]
 
 
 def search_places(query: str, limit: int = 10) -> list[dict[str, Any]]:

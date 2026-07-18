@@ -1,6 +1,6 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — search_regions, get_current_conditions, get_danger_history, list_resorts_in_region, get_bulletin_metadata, get_bulletin_raw, bulk_current_conditions tools
+description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — search_regions, get_current_conditions, get_danger_history, list_resorts_in_region, get_bulletin_metadata, get_bulletin_raw, bulk_current_conditions, find_regions_near tools
 status: current
 last-reviewed: 2026-07-18
 ---
@@ -190,6 +190,33 @@ through a client that is already going through an LLM.
 * **Duplicates** in `region_ids` are allowed and return duplicate
   entries in `results` — the caller's own bug, not something for the
   tool to hide.
+
+### `find_regions_near`
+
+Reverse geolocation: given `(lat, lon, radius_km)` return the covered
+avalanche-warning regions inside the radius, nearest first. Skiers know
+their trailhead coordinates from a mapping app but not the SLF region
+slug — `search_regions` covers the opposite direction (place name →
+region).
+
+* **Params:** `lat` (number, required, `[-90, 90]`), `lon` (number,
+  required, `[-180, 180]`), `radius_km` (number, required, positive,
+  capped at 100), `limit` (integer, optional — default 10).
+* **Returns:** `{query: {lat, lon, radius_km}, results: [{region_id,
+  name, kind: "micro", distance_km, provider}], count, summary}`.
+  Nearest first. `provider` is derived from the region's country
+  (`"slf"` / `"albina"` / `"meteofrance"`).
+* **Cost cap:** `radius_km` is hard-capped at 100 km per call (see
+  `_FIND_REGIONS_NEAR_RADIUS_CAP_KM`). Over-cap radius, out-of-range
+  lat/lon, non-positive radius, and non-integer `limit` are all
+  rejected as JSON-RPC `-32602` (invalid params).
+* **Distance:** pure-Python haversine
+  (`mcp_server.resolvers._haversine_km`) against
+  `MicroRegion.centre` — no PostGIS or Shapely dependency, matching
+  the request-path point-in-polygon precedent.
+* **Empty results** when nothing is inside the radius (e.g. a query
+  point outside Snowdesk's coverage) — a legitimate empty response,
+  not an error.
 
 ## Cost caps
 
