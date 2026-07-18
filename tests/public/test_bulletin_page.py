@@ -23,11 +23,11 @@ from django.urls import reverse
 from django.utils.translation import override as language_override
 from pytest_django.fixtures import SettingsWrapper
 
+from accounts.models import Subscriber
 from bulletins.models import Bulletin
 from bulletins.services.render_model import RENDER_MODEL_VERSION
 from public.views import BULLETIN_SOURCE_LINKS
 from regions.models import MicroRegion
-from subscriptions.models import Subscriber
 from tests.factories import (
     BulletinFactory,
     MajorRegionFactory,
@@ -3376,7 +3376,7 @@ class TestStructuredData:
 # SNOW-222: subscribe panel states
 # ---------------------------------------------------------------------------
 
-_TOKEN_BACKEND = "subscriptions.backends.TokenBackend"
+_TOKEN_BACKEND = "accounts.backends.TokenBackend"
 
 
 def _make_session_client(subscriber: Subscriber) -> Client:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from django.test import Client, override_settings
 
-from subscriptions.services.token import (
+from accounts.services.token import (
     SALT_ACCOUNT_ACCESS,
     generate_token,
     generate_unsubscribe_token,

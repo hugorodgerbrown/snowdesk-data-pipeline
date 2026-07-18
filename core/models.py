@@ -2,7 +2,7 @@
 core/models.py — Shared abstract and concrete Django models.
 
 Holds ``BaseModel`` so concrete-model apps (``regions``, ``bulletins``,
-``subscriptions``, …) share a single source of truth for the standard
+``accounts``, …) share a single source of truth for the standard
 fields without depending on each other.
 
 Also provides:
@@ -110,7 +110,7 @@ class RequestLogManager(models.Manager["RequestLog"]):
         # sessions both yield subscriber=None.
         subscriber = None
         if request.user.is_authenticated:
-            from subscriptions.models import Subscriber  # noqa: PLC0415
+            from accounts.models import Subscriber  # noqa: PLC0415
 
             try:
                 subscriber = request.user.subscriber
@@ -153,7 +153,7 @@ class RequestLog(BaseModel):
     """
 
     subscriber = models.ForeignKey(
-        "subscriptions.Subscriber",
+        "accounts.Subscriber",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,

@@ -58,7 +58,7 @@
    * Feature-detect Apple's Declarative Web Push (iOS 18.4+, WebKit).
    * Declarative subscriptions get a fixed JSON payload shape the OS
    * renders directly, without running the service worker's `push`
-   * handler — see `subscriptions/push_service.py::_build_wire_payload`.
+   * handler — see `accounts/push_service.py::_build_wire_payload`.
    */
   function _supportsDeclarativePush() {
     return typeof Notification !== 'undefined' && 'declarativePush' in Notification;

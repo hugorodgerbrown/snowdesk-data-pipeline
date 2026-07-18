@@ -32,7 +32,7 @@ bulletins/       Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
                  weather_display / geoip), the dev-only SLF / Open-Meteo
                  mirror endpoints, and the bulletin and weather management
                  commands
-subscriptions/   Signed-token email subscription flow — Subscriber, Subscription
+accounts/        Signed-token email subscription flow — Subscriber, Subscription
 public/          Public-facing bulletin site (HTMX-driven). Owns the JSON API
                  used by the map page (api.py / api_urls.py)
 tests/           Mirrors the layout of the modules under test
@@ -160,7 +160,7 @@ Contains pure-ish functions that:
   `logger.info("Pipeline run %s started", run.pk)`.
 - Use `logger.exception(...)` inside `except` blocks to capture
   tracebacks; `logger.error("...", exc_info=True)` is also acceptable.
-- The `core`, `regions`, `bulletins`, and `subscriptions` loggers are
+- The `core`, `regions`, `bulletins`, and `accounts` loggers are
   configured in [config/settings/base.py](config/settings/base.py) to
   write to `logs/pipeline.log` with rotation (the filename is legacy and
   intentionally preserved), and errors additionally to `logs/errors.log`.
@@ -216,7 +216,7 @@ Every concrete model must:
 5. **Have an AdminModel** registered in the owning app's `admin.py`
    ([bulletins/admin.py](bulletins/admin.py),
    [regions/admin.py](regions/admin.py),
-   [subscriptions/admin.py](subscriptions/admin.py)) with at minimum
+   [accounts/admin.py](accounts/admin.py)) with at minimum
    `list_display`, `search_fields` where useful, and `readonly_fields`
    for timestamp columns.
 6. **Have a Factory** in [tests/factories.py](tests/factories.py).
@@ -252,7 +252,7 @@ fetch, or mutate other records.
 - HTMX fragment views return only the inner HTML snippet. They are
   routed under a `partials/` prefix in the owning app's `urls.py`
   (e.g. [public/urls.py](public/urls.py),
-  [subscriptions/urls.py](subscriptions/urls.py)) and guarded with the
+  [accounts/urls.py](accounts/urls.py)) and guarded with the
   `require_htmx` decorator from
   [core/decorators.py](core/decorators.py).
 - Views are thin: parse query params, enforce permissions, call the ORM or
@@ -403,7 +403,7 @@ catalogue and flag reference.
 - Target: **all new code has covering tests**; aim for ≥90% total
   coverage across the project apps.
 - `pytest --cov=core --cov=bulletins --cov=regions --cov=public
-  --cov=subscriptions` runs by default via `addopts` in
+  --cov=accounts` runs by default via `addopts` in
   [pyproject.toml](pyproject.toml).
 - `config/`, `*/migrations/*`, and `__init__.py` are excluded from
   coverage reporting.
@@ -435,7 +435,7 @@ catalogue and flag reference.
 - `gitleaks` for committed secrets
 - Local `djangofmt` hook via `.venv/bin/djangofmt`
 - Local `mypy` hook via `.venv/bin/mypy core/ bulletins/ regions/
-  public/ subscriptions/ tests/ config/` (kept in sync with the
+  public/ accounts/ tests/ config/` (kept in sync with the
   `tox -e mypy` target)
 
 Install with `uv run pre-commit install`. Do not bypass hooks with
@@ -454,9 +454,9 @@ sensitive code.
 | ---------------- | ---------------------------------------------------------------------------------------- |
 | `fmt`            | `ruff format --check .`                                                                  |
 | `lint`           | `ruff check .`                                                                           |
-| `mypy`           | `mypy core/ bulletins/ regions/ public/ subscriptions/ tests/ config/`                   |
+| `mypy`           | `mypy core/ bulletins/ regions/ public/ accounts/ tests/ config/`                       |
 | `django-checks`  | `manage.py check` + `makemigrations --check`                                             |
-| `test`           | `pytest --cov=core --cov=bulletins --cov=regions --cov=public --cov=subscriptions tests/` |
+| `test`           | `pytest --cov=core --cov=bulletins --cov=regions --cov=public --cov=accounts tests/`     |
 | `audit`          | `pip-audit` against the uv-exported requirements                                         |
 | `sast`           | `semgrep` with the Django + Python + security-audit rulesets                             |
 

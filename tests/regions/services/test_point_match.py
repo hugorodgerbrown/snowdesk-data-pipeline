@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from accounts.models import Subscription
 from regions.services.point_match import (
     ELSEWHERE,
     IN_NEIGHBOUR,
@@ -28,7 +29,6 @@ from regions.services.point_match import (
     point_in_polygon,
     region_for_point,
 )
-from subscriptions.models import Subscription
 from tests.factories import MicroRegionFactory
 
 # ---------------------------------------------------------------------------

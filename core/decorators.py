@@ -3,7 +3,7 @@ core/decorators.py — Shared view decorators.
 
 Currently hosts ``require_htmx``, used by any view in the project that
 returns an HTMX-only HTML fragment. Lives in ``core/`` so any app
-(``public``, ``subscriptions``, ``bulletins``, …) can import it without
+(``public``, ``accounts``, ``bulletins``, …) can import it without
 worrying about cross-app dependency direction.
 """
 

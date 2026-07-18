@@ -15,7 +15,7 @@ to this list.
 
 It deliberately does not describe implementation. For the URL map, see
 the `urls.py` modules; for ingestion, see [`management-commands.md`](management-commands.md);
-for the subscriber flow internals, see [`subscriptions.md`](subscriptions.md).
+for the subscriber flow internals, see [`accounts.md`](accounts.md).
 
 ---
 
@@ -234,7 +234,7 @@ in the email is the entire authentication mechanism.
 - New email types must include the per-region unsubscribe partial.
   Skipping it is a CAN-SPAM-class regression even if technically the
   user can manage subscriptions elsewhere.
-- Any new token surface goes through `subscriptions/services/token.py`
+- Any new token surface goes through `accounts/services/token.py`
   and uses a fresh salt — never overload `SALT_UNSUBSCRIBE`.
 
 ### J5 — Read historically or learn (either persona)

@@ -200,7 +200,7 @@ def test_subscribe_form_marked_network_required() -> None:
     # directly against a fake context.
     _ = response
     out = _render(
-        '{% include "subscriptions/partials/subscribe_form.html" '
+        '{% include "accounts/partials/subscribe_form.html" '
         "with region_id='CH-4123' %}",
         {},
     )

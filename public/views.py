@@ -73,6 +73,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import condition, require_POST
 
 import analytics
+from accounts.models import Subscription
 from bulletins.models import (
     Bulletin,
     BulletinShare,
@@ -104,7 +105,6 @@ from core.decorators import require_htmx
 from core.services.request_log import capture as capture_request_log
 from core.utils import html_to_markdown
 from regions.models import MicroRegion
-from subscriptions.models import Subscription
 
 from .decorators import lowercase_region_id
 from .guidance import load_field_guidance
@@ -1329,7 +1329,7 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
             {
                 "report_form_url": reverse("observations:report_form"),
                 "report_submit_url": reverse("observations:report_submit"),
-                "report_signin_url": reverse("subscriptions:sign_in"),
+                "report_signin_url": reverse("accounts:sign_in"),
             }
         )
     return ctx

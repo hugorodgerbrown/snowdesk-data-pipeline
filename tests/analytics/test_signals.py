@@ -5,7 +5,7 @@ and the five call sites where it's wired into existing code paths:
 
 * ``public.api.version``                 — pwa.version.endpoint.hit
 * ``public.api.sw_config``               — pwa.sw_config.hit
-* ``subscriptions.push_service``         — pwa.push.sent / pwa.push.gone_410
+* ``accounts.push_service``               — pwa.push.sent / pwa.push.gone_410
 * ``core.idempotency.IdempotencyMiddleware`` — pwa.idempotency.replay
 
 Each test patches ``posthog.capture`` so the real network client is
@@ -152,7 +152,7 @@ class TestPushSentSignals:
     @_POSTHOG
     def test_success_emits_push_sent(self) -> None:
         """A 2xx response from pywebpush fires pwa.push.sent."""
-        from subscriptions.push_service import dispatch_push
+        from accounts.push_service import dispatch_push
         from tests.factories import PushSubscriptionFactory
 
         sub = PushSubscriptionFactory.create()
@@ -161,7 +161,7 @@ class TestPushSentSignals:
             status_code = 201
 
         with (
-            patch("subscriptions.push_service.webpush", return_value=_FakeResp()),
+            patch("accounts.push_service.webpush", return_value=_FakeResp()),
             patch("posthog.capture") as mock_capture,
         ):
             result = dispatch_push(sub, {"title": "t", "body": "b"})
@@ -174,7 +174,7 @@ class TestPushSentSignals:
     @_POSTHOG
     def test_success_threads_client_version(self) -> None:
         """SNOW-384: client_version passed to dispatch_push lands in properties."""
-        from subscriptions.push_service import dispatch_push
+        from accounts.push_service import dispatch_push
         from tests.factories import PushSubscriptionFactory
 
         sub = PushSubscriptionFactory.create()
@@ -183,7 +183,7 @@ class TestPushSentSignals:
             status_code = 201
 
         with (
-            patch("subscriptions.push_service.webpush", return_value=_FakeResp()),
+            patch("accounts.push_service.webpush", return_value=_FakeResp()),
             patch("posthog.capture") as mock_capture,
         ):
             dispatch_push(
@@ -209,7 +209,7 @@ class TestPushSentSignals:
         """
         from pywebpush import WebPushException
 
-        from subscriptions.push_service import dispatch_push
+        from accounts.push_service import dispatch_push
         from tests.factories import PushSubscriptionFactory
 
         sub = PushSubscriptionFactory.create()
@@ -222,7 +222,7 @@ class TestPushSentSignals:
         exc.response = _FakeResp()
 
         with (
-            patch("subscriptions.push_service.webpush", side_effect=exc),
+            patch("accounts.push_service.webpush", side_effect=exc),
             patch("posthog.capture") as mock_capture,
         ):
             result = dispatch_push(sub, {"title": "t", "body": "b"})
@@ -232,7 +232,7 @@ class TestPushSentSignals:
         events = [c.kwargs["event"] for c in mock_capture.call_args_list]
         assert "pwa.push.gone_410" in events
         # Subscription row is kept but marked inactive.
-        from subscriptions.models import PushSubscription
+        from accounts.models import PushSubscription
 
         row = PushSubscription.objects.get(pk=sub_pk)
         assert row.inactive_at is not None

@@ -1,23 +1,17 @@
 # .github/workflows/lighthouse.yml — Run Lighthouse CI against the public
 # site on pull requests. Asserts accessibility and SEO scores, warns on
 # performance and best-practices regressions.
+#
+# "Audit public pages" is a required status check in the "Main branch
+# rules" ruleset, so the ``pull_request`` trigger runs on every PR with no
+# path filter — a path-filtered required check never reports on PRs outside
+# its paths and leaves them stuck at "Expected" (SNOW-435).
 
 name: Lighthouse
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    paths:
-      - "**/*.py"
-      - "**/*.html"
-      - "src/css/**"
-      - "static/**"
-      - "package.json"
-      - "package-lock.json"
-      - "lighthouserc.*"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".github/workflows/lighthouse.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

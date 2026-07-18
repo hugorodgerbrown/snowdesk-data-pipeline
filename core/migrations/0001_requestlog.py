@@ -161,7 +161,7 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 # subscriber FK added in core.0003_requestlog_subscriber_fk
-                # after the subscriptions app is initialised (circular-dep break).
+                # after the accounts app is initialised (circular-dep break).
             ],
             options={
                 "ordering": ["-created_at"],

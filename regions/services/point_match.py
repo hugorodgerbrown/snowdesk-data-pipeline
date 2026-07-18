@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Match-kind constants
 # ---------------------------------------------------------------------------
-# Plain strings so regions/ keeps no dependency on subscriptions/.
+# Plain strings so regions/ keeps no dependency on accounts/.
 # Subscription.GeoMatchKind literal values MUST match these — a unit test in
 # tests/regions/services/test_point_match.py guards against drift.
 
