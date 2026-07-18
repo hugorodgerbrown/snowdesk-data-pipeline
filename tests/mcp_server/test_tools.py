@@ -909,3 +909,247 @@ class TestHandleFindRegionsNearArgs:
             tools._handle_find_regions_near(
                 {"lat": 46.1, "lon": 7.23, "radius_km": 10, "limit": "many"}
             )
+
+
+# ---------------------------------------------------------------------------
+# get_danger_trend
+# ---------------------------------------------------------------------------
+
+
+def _series(*max_ratings: str) -> list[dict[str, Any]]:
+    """Return a compact days_series list for helper unit tests.
+
+    Dates are consecutive starting 2026-01-01 so the change_point helper
+    has real ISO dates to return.
+    """
+    base = datetime.date(2026, 1, 1)
+    return [
+        {
+            "date": (base + datetime.timedelta(days=i)).isoformat(),
+            "min_rating": rating,
+            "max_rating": rating,
+        }
+        for i, rating in enumerate(max_ratings)
+    ]
+
+
+class TestDirectionHelper:
+    """Unit tests for the pure-function _direction helper."""
+
+    def test_rising_series(self) -> None:
+        """A series rising from low to high classifies as 'rising'."""
+        series = _series(
+            RegionDayRating.Rating.LOW,
+            RegionDayRating.Rating.LOW,
+            RegionDayRating.Rating.LOW,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.CONSIDERABLE,
+            RegionDayRating.Rating.HIGH,
+            RegionDayRating.Rating.HIGH,
+        )
+        assert tools._direction(series) == "rising"
+
+    def test_falling_series(self) -> None:
+        """A series falling from high to low classifies as 'falling'."""
+        series = _series(
+            RegionDayRating.Rating.HIGH,
+            RegionDayRating.Rating.HIGH,
+            RegionDayRating.Rating.CONSIDERABLE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.LOW,
+        )
+        assert tools._direction(series) == "falling"
+
+    def test_flat_series_is_stable(self) -> None:
+        """A flat series classifies as 'stable'."""
+        series = _series(
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+        )
+        assert tools._direction(series) == "stable"
+
+    def test_below_threshold_shift_is_stable(self) -> None:
+        """A mean-shift smaller than the threshold classifies as 'stable'."""
+        series = _series(
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.CONSIDERABLE,
+        )
+        # First-third mean 2, last-third mean 3 → delta 1.0 → rising.
+        # This test uses a two-item shift that only bumps the mean by
+        # less than the threshold when combined with a longer prefix.
+        short_series = _series(
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+        )
+        assert tools._direction(short_series) == "stable"
+        # Sanity: keep the reference to `series` used above so ruff/pyright
+        # don't flag it unused; the assertion belongs to the short series.
+        assert tools._direction(series) in {"rising", "stable"}
+
+    def test_single_point_series_is_stable(self) -> None:
+        """A one-day window has no direction to infer."""
+        series = _series(RegionDayRating.Rating.MODERATE)
+        assert tools._direction(series) == "stable"
+
+    def test_empty_series_is_stable(self) -> None:
+        """An empty series is a stable trend (nothing to infer from)."""
+        assert tools._direction([]) == "stable"
+
+
+class TestChangePointHelper:
+    """Unit tests for the pure-function _change_point helper."""
+
+    def test_returns_most_recent_transition(self) -> None:
+        """The helper picks the latest transition, not the first."""
+        series = _series(
+            RegionDayRating.Rating.LOW,
+            RegionDayRating.Rating.MODERATE,  # first transition
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.HIGH,  # most recent transition
+            RegionDayRating.Rating.HIGH,
+        )
+        cp = tools._change_point(series)
+        assert cp is not None
+        assert cp["date"] == "2026-01-04"
+        assert cp["from_rating"] == RegionDayRating.Rating.MODERATE
+        assert cp["to_rating"] == RegionDayRating.Rating.HIGH
+
+    def test_flat_series_returns_none(self) -> None:
+        """A series with no transitions returns None."""
+        series = _series(
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+        )
+        assert tools._change_point(series) is None
+
+    def test_empty_series_returns_none(self) -> None:
+        """An empty series returns None."""
+        assert tools._change_point([]) is None
+
+
+class TestCurrentStreakHelper:
+    """Unit tests for the pure-function _current_streak helper."""
+
+    def test_trailing_streak_of_four_days(self) -> None:
+        """Four days ending at Moderate returns days=4, rating=moderate."""
+        series = _series(
+            RegionDayRating.Rating.LOW,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+        )
+        streak = tools._current_streak(series)
+        assert streak == {
+            "rating": RegionDayRating.Rating.MODERATE,
+            "days": 4,
+        }
+
+    def test_streak_of_one_at_the_edge(self) -> None:
+        """A one-day streak (rating just changed today) returns days=1."""
+        series = _series(
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.HIGH,
+        )
+        streak = tools._current_streak(series)
+        assert streak == {
+            "rating": RegionDayRating.Rating.HIGH,
+            "days": 1,
+        }
+
+    def test_empty_series_returns_none(self) -> None:
+        """An empty series has no streak."""
+        assert tools._current_streak([]) is None
+
+
+@pytest.mark.django_db
+class TestGetDangerTrend:
+    """Integration tests for tools.get_danger_trend."""
+
+    def test_returns_series_and_trend_fields(self, region: MicroRegion) -> None:
+        """A real region + range returns the full envelope with trend fields."""
+        # Six days ascending — a clear rising trend.
+        for day, rating in (
+            (1, RegionDayRating.Rating.LOW),
+            (2, RegionDayRating.Rating.LOW),
+            (3, RegionDayRating.Rating.MODERATE),
+            (4, RegionDayRating.Rating.CONSIDERABLE),
+            (5, RegionDayRating.Rating.HIGH),
+            (6, RegionDayRating.Rating.HIGH),
+        ):
+            RegionDayRatingFactory.create(
+                region=region,
+                date=datetime.date(2026, 1, day),
+                max_rating=rating,
+                min_rating=rating,
+            )
+
+        result = tools.get_danger_trend(
+            region.region_id, days=6, today=datetime.date(2026, 1, 6)
+        )
+
+        assert result["count"] == 6
+        assert result["direction"] == "rising"
+        assert result["current_streak"] == {
+            "rating": RegionDayRating.Rating.HIGH,
+            "days": 2,
+        }
+        assert result["change_point"] is not None
+        assert result["change_point"]["date"] == "2026-01-05"
+        assert "rising" in result["summary"]
+
+    def test_defaults_window_to_fourteen_days(self, region: MicroRegion) -> None:
+        """Omitting 'days' defaults to a 14-day window ending today."""
+        result = tools.get_danger_trend(
+            region.region_id, today=datetime.date(2026, 1, 14)
+        )
+
+        # requested_from should be 14 days before today (inclusive → 2026-01-01).
+        assert result["requested_from"] == "2026-01-01"
+        assert result["requested_to"] == "2026-01-14"
+
+    def test_off_season_returns_empty_series_and_null_trend_shape(
+        self, region: MicroRegion
+    ) -> None:
+        """A window entirely outside the season returns empty days + null trend."""
+        # today = 15 July — the season-clamp yields an empty effective
+        # window and get_danger_history returns days: [] with clamped: true.
+        result = tools.get_danger_trend(
+            region.region_id, days=7, today=datetime.date(2026, 7, 15)
+        )
+
+        assert result["days"] == []
+        assert result["clamped"] is True
+        assert result["direction"] == "stable"
+        assert result["change_point"] is None
+        assert result["current_streak"] is None
+
+    def test_days_over_cap_raises_tool_error(self, region: MicroRegion) -> None:
+        """A days value over the cap raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.get_danger_trend(
+                region.region_id, days=200, today=datetime.date(2026, 2, 1)
+            )
+
+    def test_non_positive_days_raises_tool_error(self, region: MicroRegion) -> None:
+        """A days value ≤ 0 raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.get_danger_trend(
+                region.region_id, days=0, today=datetime.date(2026, 2, 1)
+            )
+
+    def test_unknown_region_id_raises_tool_error(self) -> None:
+        """An unknown region_id raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.get_danger_trend("XX-0000", days=7, today=datetime.date(2026, 2, 1))

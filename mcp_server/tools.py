@@ -905,6 +905,202 @@ def _handle_find_regions_near(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# get_danger_trend
+# ---------------------------------------------------------------------------
+
+# Default trailing window in days when the caller doesn't specify. Two
+# weeks is short enough to be a "trend" (recent snowpack story) rather
+# than a "history" question — get_danger_history covers arbitrary
+# ranges.
+_TREND_DEFAULT_DAYS = 14
+
+# Hard cap on the trend window. Same shape as get_danger_history: the
+# season-clamp already bounds cost, so the cap here is about semantics
+# (a 200-day "trend" isn't a trend) rather than query cost.
+_TREND_MAX_DAYS = 90
+
+# Threshold, in rating rank steps, above which a mean-shift between the
+# first and last third of the window is called a directional trend.
+# Half a rating step means the shift must be at least the equivalent of
+# half the population moving up one rating level; smaller shifts are
+# noise.
+_TREND_DIRECTION_THRESHOLD = 0.5
+
+
+def get_danger_trend(
+    region_id: str,
+    days: int | None = None,
+    *,
+    today: dt.date | None = None,
+) -> dict[str, Any]:
+    """Return the danger rating series plus a computed trend layer.
+
+    Answers "is danger rising or falling in Verbier?" in one call.
+    Wraps :func:`get_danger_history` (so season-clamp, region
+    resolution, and DB reads are shared verbatim) and layers three
+    pure-function helpers on top: ``direction`` (rising / stable /
+    falling), ``change_point`` (most recent rating transition), and
+    ``current_streak`` (trailing days at the current peak rating).
+
+    Args:
+        region_id: Exact region identifier, e.g. ``"CH-4115"``.
+        days: Trailing window length in days. Defaults to
+            :data:`_TREND_DEFAULT_DAYS`; cap :data:`_TREND_MAX_DAYS`.
+        today: Overrides "today" for the trailing-window end — a
+            settable-in-tests seam; production callers never pass this.
+
+    Returns:
+        The full :func:`get_danger_history` envelope with three added
+        fields: ``direction``, ``change_point`` (nullable), and
+        ``current_streak`` (nullable).
+
+    Raises:
+        ToolError: ``region_id`` is unknown, ``days`` is not a positive
+            integer, or ``days`` exceeds :data:`_TREND_MAX_DAYS`.
+
+    """
+    resolved_days = _TREND_DEFAULT_DAYS if days is None else days
+    if not isinstance(resolved_days, int) or resolved_days <= 0:
+        raise ToolError("'days' must be a positive integer.")
+    if resolved_days > _TREND_MAX_DAYS:
+        raise ToolError(f"'days' is {resolved_days}; the cap is {_TREND_MAX_DAYS}.")
+
+    resolved_today = today or timezone.localdate()
+    to_date = resolved_today
+    from_date = to_date - dt.timedelta(days=resolved_days - 1)
+
+    envelope = get_danger_history(region_id, from_date, to_date, today=resolved_today)
+
+    days_series = envelope["days"]
+    direction = _direction(days_series)
+    change_point = _change_point(days_series)
+    current_streak = _current_streak(days_series)
+
+    envelope["direction"] = direction
+    envelope["change_point"] = change_point
+    envelope["current_streak"] = current_streak
+    envelope["summary"] = _danger_trend_summary(
+        envelope, direction, change_point, current_streak
+    )
+    return envelope
+
+
+def _direction(days_series: list[dict[str, Any]]) -> str:
+    """Classify a peak-rating series as rising, falling, or stable.
+
+    Compares the mean rank of the first third of the window to the last
+    third. A difference of :data:`_TREND_DIRECTION_THRESHOLD` rating
+    steps or more classifies as ``"rising"`` / ``"falling"``; smaller
+    shifts are ``"stable"``. Series with fewer than three data points
+    are ``"stable"`` (nothing meaningful to infer from one or two rows).
+
+    Args:
+        days_series: A list of ``{date, min_rating, max_rating}`` dicts,
+            ordered by date.
+
+    Returns:
+        ``"rising"``, ``"falling"``, or ``"stable"``.
+
+    """
+    ranks = [_RATING_RANK.get(d["max_rating"], 0) for d in days_series]
+    ranks = [r for r in ranks if r > 0]
+    if len(ranks) < 3:
+        return "stable"
+    third = max(1, len(ranks) // 3)
+    first_mean = sum(ranks[:third]) / third
+    last_mean = sum(ranks[-third:]) / third
+    delta = last_mean - first_mean
+    if delta >= _TREND_DIRECTION_THRESHOLD:
+        return "rising"
+    if delta <= -_TREND_DIRECTION_THRESHOLD:
+        return "falling"
+    return "stable"
+
+
+def _change_point(days_series: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Return the most recent day whose peak rating differs from the prior day's.
+
+    Args:
+        days_series: A list of ``{date, min_rating, max_rating}`` dicts,
+            ordered by date.
+
+    Returns:
+        ``{date, from_rating, to_rating}`` for the most recent transition,
+        or ``None`` when the series is empty or flat.
+
+    """
+    for i in range(len(days_series) - 1, 0, -1):
+        prev = days_series[i - 1]
+        curr = days_series[i]
+        if curr["max_rating"] != prev["max_rating"]:
+            return {
+                "date": curr["date"],
+                "from_rating": prev["max_rating"],
+                "to_rating": curr["max_rating"],
+            }
+    return None
+
+
+def _current_streak(days_series: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Return the trailing consecutive-day count at the current peak rating.
+
+    Args:
+        days_series: A list of ``{date, min_rating, max_rating}`` dicts,
+            ordered by date.
+
+    Returns:
+        ``{rating, days}`` for the trailing streak, or ``None`` when the
+        series is empty.
+
+    """
+    if not days_series:
+        return None
+    current_rating = days_series[-1]["max_rating"]
+    streak = 0
+    for entry in reversed(days_series):
+        if entry["max_rating"] != current_rating:
+            break
+        streak += 1
+    return {"rating": current_rating, "days": streak}
+
+
+def _danger_trend_summary(
+    envelope: dict[str, Any],
+    direction: str,
+    change_point: dict[str, Any] | None,
+    current_streak: dict[str, Any] | None,
+) -> str:
+    """Return a one-line, LLM-quotable summary of a get_danger_trend result."""
+    days = envelope["days"]
+    if not days:
+        return envelope["summary"]  # Reuse the empty-window message.
+    parts = [
+        f"{envelope['region_name']} ({envelope['region_id']}) over "
+        f"{envelope['count']} day(s): trend {direction}."
+    ]
+    if current_streak is not None:
+        parts.append(
+            f"Current streak: {current_streak['days']} day(s) at "
+            f"'{current_streak['rating']}'."
+        )
+    if change_point is not None:
+        parts.append(
+            f"Last change on {change_point['date']}: "
+            f"{change_point['from_rating']} → {change_point['to_rating']}."
+        )
+    return " ".join(parts)
+
+
+def _handle_get_danger_trend(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``get_danger_trend`` JSON-RPC arguments to the tool function."""
+    region_id = _require_str(arguments, "region_id")
+    days = arguments.get("days")
+    if days is not None and not isinstance(days, int):
+        raise ToolError("'days' must be an integer when supplied.")
+    return get_danger_trend(region_id, days)
+
+
+# ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
 
@@ -1136,5 +1332,35 @@ TOOLS: dict[str, ToolSpec] = {
             "required": ["lat", "lon", "radius_km"],
         },
         handler=_handle_find_regions_near,
+    ),
+    "get_danger_trend": ToolSpec(
+        name="get_danger_trend",
+        description=(
+            "Return the danger rating series for one region over the "
+            "trailing N days plus a computed trend layer: direction "
+            "(rising / stable / falling), most recent change_point, and "
+            "current_streak (trailing days at the current peak rating). "
+            "Answers 'is danger rising or falling in Verbier?' in one "
+            "call. Default window 14 days; cap 90 days."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "region_id": {
+                    "type": "string",
+                    "description": "Exact region_id, e.g. 'CH-4115'.",
+                },
+                "days": {
+                    "type": "integer",
+                    "description": (
+                        "Trailing window length in days. Default 14, cap 90."
+                    ),
+                    "minimum": 1,
+                    "maximum": _TREND_MAX_DAYS,
+                },
+            },
+            "required": ["region_id"],
+        },
+        handler=_handle_get_danger_trend,
     ),
 }

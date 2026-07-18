@@ -1,6 +1,6 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — search_regions, get_current_conditions, get_danger_history, list_resorts_in_region, get_bulletin_metadata, get_bulletin_raw, bulk_current_conditions, find_regions_near tools
+description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — search_regions, get_current_conditions, get_danger_history, list_resorts_in_region, get_bulletin_metadata, get_bulletin_raw, bulk_current_conditions, find_regions_near, get_danger_trend tools
 status: current
 last-reviewed: 2026-07-18
 ---
@@ -217,6 +217,32 @@ region).
 * **Empty results** when nothing is inside the radius (e.g. a query
   point outside Snowdesk's coverage) — a legitimate empty response,
   not an error.
+
+### `get_danger_trend`
+
+Returns the danger rating series for one region over the trailing N
+days plus a computed trend layer — answers "is danger rising or
+falling in Verbier?" in one call.
+
+* **Params:** `region_id` (string, required), `days` (integer,
+  optional — default 14, cap 90).
+* **Returns:** the full `get_danger_history` envelope (season-clamped)
+  plus three fields:
+  - `direction`: `"rising"` / `"stable"` / `"falling"` from a mean-
+    shift comparison of the first vs last third of the window; the
+    threshold is `_TREND_DIRECTION_THRESHOLD` (0.5 rating steps).
+  - `change_point`: `{date, from_rating, to_rating}` for the most
+    recent transition, or `null` if the window is flat.
+  - `current_streak`: `{rating, days}` for the trailing consecutive
+    days at the current peak rating, or `null` if the window is empty.
+* **Cost cap:** window capped at 90 days (see `_TREND_MAX_DAYS`).
+  Non-positive or over-cap `days` values raise a domain-level
+  `isError` — this is the same convention as
+  `get_danger_history`'s `min_rating` rejection (a tool that tried
+  and couldn't satisfy), not a JSON-RPC parameter failure.
+* **Off-season windows** clamp to the season window and return `days:
+  []` with `direction: "stable"`, `change_point: null`,
+  `current_streak: null` — a structured empty result, not an error.
 
 ## Cost caps
 
