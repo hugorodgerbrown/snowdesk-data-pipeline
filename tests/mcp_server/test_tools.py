@@ -1354,6 +1354,267 @@ class TestGetDangerTrend:
 
 
 # ---------------------------------------------------------------------------
+# list_regions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestListRegions:
+    """Tests for tools.list_regions."""
+
+    @pytest.fixture
+    def multi_country_regions(self) -> dict[str, MicroRegion]:
+        """Four MicroRegions across CH/AT/IT/FR for filter and AND tests."""
+        ch = MajorRegionFactory.create(prefix="CH-4", country="CH", name_en="Valais")
+        at = MajorRegionFactory.create(prefix="AT-07", country="AT", name_en="Tyrol")
+        it = MajorRegionFactory.create(
+            prefix="IT-32", country="IT", name_en="Alto Adige"
+        )
+        fr = MajorRegionFactory.create(prefix="FR-73", country="FR", name_en="Savoie")
+        ch_sub = SubRegionFactory.create(prefix="CH-41", major=ch)
+        at_sub = SubRegionFactory.create(prefix="AT-07-1", major=at)
+        it_sub = SubRegionFactory.create(prefix="IT-32-1", major=it)
+        fr_sub = SubRegionFactory.create(prefix="FR-73-1", major=fr)
+        return {
+            "verbier": MicroRegionFactory.create(
+                region_id="CH-4115", name="Bas-Valais", subregion=ch_sub
+            ),
+            "tyrol": MicroRegionFactory.create(
+                region_id="AT-07-01", name="Tyrol Region", subregion=at_sub
+            ),
+            "alto_adige": MicroRegionFactory.create(
+                region_id="IT-32-01", name="Alto Adige Region", subregion=it_sub
+            ),
+            "chamonix": MicroRegionFactory.create(
+                region_id="FR-73-01", name="Mont-Blanc", subregion=fr_sub
+            ),
+        }
+
+    def test_no_args_returns_all_regions_including_uncovered(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """With no filters, every region is returned — including uncovered ones."""
+        # None of these regions has a RegionDayRating row — an uncovered
+        # region is still a real, listable region.
+        result = tools.list_regions()
+
+        region_ids = {r["region_id"] for r in result["regions"]}
+        assert region_ids == {"CH-4115", "AT-07-01", "IT-32-01", "FR-73-01"}
+        assert result["count"] == 4
+        assert result["filters"] == {"country": None, "provider": None}
+
+    def test_response_constants_are_upper_case(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """kind and provider values are UPPER CASE, unlike the ten-tool convention."""
+        result = tools.list_regions(country="ch")
+
+        entry = result["regions"][0]
+        assert entry["kind"] == "MICRO"
+        assert entry["provider"] == "SLF"
+        assert entry["country"] == "CH"
+
+    def test_country_filter_is_case_insensitive(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """A lowercase country filter is normalised and applied."""
+        result = tools.list_regions(country="ch")
+
+        assert {r["region_id"] for r in result["regions"]} == {"CH-4115"}
+        assert result["filters"]["country"] == "CH"
+
+    def test_provider_filter_is_case_insensitive(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """A lowercase provider filter is normalised, matching both AT and IT."""
+        result = tools.list_regions(provider="albina")
+
+        assert {r["region_id"] for r in result["regions"]} == {
+            "AT-07-01",
+            "IT-32-01",
+        }
+        assert result["filters"]["provider"] == "ALBINA"
+
+    def test_country_and_provider_filters_are_anded(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """country narrows provider's broader match set — both apply together."""
+        result = tools.list_regions(country="IT", provider="ALBINA")
+
+        assert {r["region_id"] for r in result["regions"]} == {"IT-32-01"}
+
+    def test_mismatched_filters_return_empty_not_error(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """A country/provider combination with no overlap is an empty result."""
+        result = tools.list_regions(country="FR", provider="ALBINA")
+
+        assert result["regions"] == []
+        assert result["count"] == 0
+
+    def test_unknown_country_raises_tool_error(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """An unrecognised country raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.list_regions(country="XX")
+
+    def test_unknown_provider_raises_tool_error(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """An unrecognised provider raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.list_regions(provider="not_a_provider")
+
+    def test_empty_country_raises_tool_error(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """An empty country string is rejected, not treated as no filter."""
+        with pytest.raises(tools.ToolError):
+            tools.list_regions(country="")
+
+    def test_empty_provider_raises_tool_error(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """An empty provider string is rejected, not treated as no filter."""
+        with pytest.raises(tools.ToolError):
+            tools.list_regions(provider="")
+
+    def test_handle_list_regions_adapts_arguments(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """The JSON-RPC adapter passes country/provider through to the tool."""
+        result = tools._handle_list_regions({"country": "ch"})
+
+        assert {r["region_id"] for r in result["regions"]} == {"CH-4115"}
+
+    def test_handle_list_regions_rejects_non_string_country(self) -> None:
+        """A non-string country argument raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools._handle_list_regions({"country": 123})
+
+    def test_handle_list_regions_rejects_non_string_provider(self) -> None:
+        """A non-string provider argument raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools._handle_list_regions({"provider": 123})
+
+
+# ---------------------------------------------------------------------------
+# region_info
+# ---------------------------------------------------------------------------
+
+_SQUARE_POLYGON: dict[str, Any] = {
+    "type": "Polygon",
+    "coordinates": [[[7.0, 46.0], [7.5, 46.0], [7.5, 46.5], [7.0, 46.5], [7.0, 46.0]]],
+}
+
+_TWO_SQUARE_MULTIPOLYGON: dict[str, Any] = {
+    "type": "MultiPolygon",
+    "coordinates": [
+        [[[7.0, 46.0], [7.2, 46.0], [7.2, 46.2], [7.0, 46.2], [7.0, 46.0]]],
+        [[[8.0, 47.0], [8.3, 47.0], [8.3, 47.3], [8.0, 47.3], [8.0, 47.0]]],
+    ],
+}
+
+
+@pytest.mark.django_db
+class TestRegionInfo:
+    """Tests for tools.region_info."""
+
+    def test_full_envelope_for_a_covered_region(self, region: MicroRegion) -> None:
+        """Every envelope field is present and correctly derived."""
+        region.boundary = _SQUARE_POLYGON
+        region.save()
+        ResortFactory.create(
+            name="Verbier", region=region, latitude=46.0961, longitude=7.2286
+        )
+        ResortFactory.create(name="Ungeocoded Resort", region=region)
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 4, 1))
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 4, 10))
+
+        result = tools.region_info(region.region_id)
+
+        assert result["region_id"] == region.region_id
+        assert result["region_name"] == region.name
+        assert result["country"] == "CH"
+        assert result["eaws_parent"] == {
+            "major_prefix": "CH-4",
+            "major_name": "Valais",
+            "sub_prefix": "CH-41",
+            "sub_name": region.subregion.name_en or region.subregion.name_native,
+        }
+        assert result["source_provider"] == "SLF"
+        # canton "VS" is ResortFactory's default, not set in this test.
+        assert result["resorts"] == [
+            {
+                "name": "Verbier",
+                "latitude": 46.0961,
+                "longitude": 7.2286,
+                "canton": "VS",
+            }
+        ]
+        assert result["resort_count"] == 1
+        assert result["bbox"] == {
+            "min_lon": 7.0,
+            "min_lat": 46.0,
+            "max_lon": 7.5,
+            "max_lat": 46.5,
+        }
+        assert result["coverage_first_date"] == "2026-04-01"
+        assert result["coverage_last_date"] == "2026-04-10"
+        assert "Published daily" in result["issue_schedule"]
+        assert region.region_id in result["summary"]
+
+    def test_multipolygon_boundary_computes_bbox_across_all_parts(
+        self, region: MicroRegion
+    ) -> None:
+        """A MultiPolygon boundary's bbox spans every part, not just the first."""
+        region.boundary = _TWO_SQUARE_MULTIPOLYGON
+        region.save()
+
+        result = tools.region_info(region.region_id)
+
+        assert result["bbox"] == {
+            "min_lon": 7.0,
+            "min_lat": 46.0,
+            "max_lon": 8.3,
+            "max_lat": 47.3,
+        }
+
+    def test_missing_boundary_returns_null_bbox(self, region: MicroRegion) -> None:
+        """A region with no stored boundary reports bbox: null, not an error."""
+        result = tools.region_info(region.region_id)
+
+        assert result["bbox"] is None
+
+    def test_zero_ratings_returns_null_coverage_dates(
+        self, region: MicroRegion
+    ) -> None:
+        """An uncovered region reports both coverage dates as null."""
+        result = tools.region_info(region.region_id)
+
+        assert result["coverage_first_date"] is None
+        assert result["coverage_last_date"] is None
+        assert "No bulletin coverage" in result["summary"]
+
+    def test_unknown_region_id_raises_tool_error(self) -> None:
+        """An unknown region_id raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.region_info("XX-0000")
+
+    def test_handle_region_info_adapts_arguments(self, region: MicroRegion) -> None:
+        """The JSON-RPC adapter passes region_id through to the tool."""
+        result = tools._handle_region_info({"region_id": region.region_id})
+
+        assert result["region_id"] == region.region_id
+
+    def test_handle_region_info_requires_region_id(self) -> None:
+        """A missing region_id is rejected by the shared _require_str helper."""
+        with pytest.raises(tools.ToolError):
+            tools._handle_region_info({})
+
+
+# ---------------------------------------------------------------------------
 # get_regional_snapshot
 # ---------------------------------------------------------------------------
 

@@ -27,6 +27,18 @@ the codebase (``mcp_server.resolvers``, ``public.views``,
 * ``get_regional_snapshot`` — per-region peak-danger entries plus a
   scope-level summary for a whole country or major region, sourced from
   ``RegionDayRating`` (one indexed query, not an N-region fan-out).
+* ``list_regions`` — every known micro-region, optionally filtered by
+  country and/or provider (ANDed).
+* ``region_info`` — per-region reference-data metadata: EAWS parents,
+  provider, resorts, computed bbox, coverage window, static issue
+  schedule.
+
+``list_regions`` and ``region_info`` deliberately emit UPPER CASE response
+constants (``kind: "MICRO"``, provider values ``"SLF"``/``"ALBINA"``/
+``"METEOFRANCE"`` — the ``Bulletin.Source`` enum *names*, never the raw
+lowercase literals the other eleven tools use) with case-insensitive input
+normalisation — an approved SNOW-404 deviation from the rest of this
+registry, not an oversight.
 
 Each tool is implemented as a plain, typed Python function (the signature
 a caller reasons about) plus a thin ``_handle_*`` adapter that unpacks the
@@ -45,6 +57,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from django.db.models import Max, Min
 from django.utils import timezone
 
 from bulletins.models import Bulletin, RegionDayRating
@@ -52,7 +65,7 @@ from bulletins.schema import AvalancheProblem
 from mcp_server import resolvers, season
 from public.api import COUNTRY_NAMES
 from public.views import _select_bulletin_for_date
-from regions.models import Resort
+from regions.models import MicroRegion, Resort
 
 # Rank order for "at or above" comparisons in get_danger_history. Mirrors
 # public/api.py's private _RATING_TO_INT, minus NO_RATING — duplicated
@@ -1253,6 +1266,356 @@ def _handle_get_danger_trend(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# list_regions / region_info — shared constants
+# ---------------------------------------------------------------------------
+#
+# Both tools emit UPPER CASE response constants (kind: "MICRO", provider
+# values "SLF"/"ALBINA"/"METEOFRANCE" — the Bulletin.Source enum *names*)
+# with case-insensitive input normalisation. This is a deliberate SNOW-404
+# departure from the lowercase constants the other ten tools use.
+
+# Valid provider names, matched case-insensitively against Bulletin.Source
+# *names* (never the raw lowercase literal values used elsewhere).
+_VALID_PROVIDER_NAMES: set[str] = {member.name for member in Bulletin.Source}
+
+# Valid countries — the keys of resolvers._PROVIDER_BY_COUNTRY.
+_VALID_COUNTRIES: set[str] = set(resolvers._PROVIDER_BY_COUNTRY.keys())
+
+# Static published issue cadence per provider — general publication
+# information (not computed from live bulletin data; no provider feed
+# exposes a "next scheduled issue" field). Keyed by Bulletin.Source enum
+# member, same pattern as _SOURCE_HOME_URL above — TextChoices members
+# hash and compare equal to their raw string value, so lookups can pass
+# either the member or the plain lowercase string.
+_ISSUE_SCHEDULE: dict[str, str] = {
+    Bulletin.Source.SLF: (
+        "Published daily at 17:00 CET; updated at 08:00 CET during the "
+        "main season (December-April) when conditions change."
+    ),
+    Bulletin.Source.ALBINA: (
+        "Published daily at 17:00 for the following day; updated at "
+        "08:00 the same day when conditions require it."
+    ),
+    Bulletin.Source.METEOFRANCE: (
+        "Published daily at approximately 16:00 local time per massif "
+        "during the avalanche season."
+    ),
+}
+
+
+def _normalise_country(country: str) -> str:
+    """Return ``country`` upper-cased and validated, or raise ToolError.
+
+    Args:
+        country: A country code in any casing, e.g. ``"ch"`` or ``"CH"``.
+
+    Returns:
+        The upper-cased country code.
+
+    Raises:
+        ToolError: ``country`` isn't one of :data:`_VALID_COUNTRIES`.
+
+    """
+    normalised = country.strip().upper()
+    if normalised not in _VALID_COUNTRIES:
+        raise ToolError(
+            f"Unknown country: {country!r}. Valid values: "
+            f"{', '.join(sorted(_VALID_COUNTRIES))}."
+        )
+    return normalised
+
+
+def _normalise_provider(provider: str) -> str:
+    """Return ``provider`` upper-cased and validated, or raise ToolError.
+
+    Args:
+        provider: A provider name in any casing, e.g. ``"slf"`` or
+            ``"SLF"``.
+
+    Returns:
+        The upper-cased provider name (a ``Bulletin.Source`` enum name).
+
+    Raises:
+        ToolError: ``provider`` isn't a recognised ``Bulletin.Source`` name.
+
+    """
+    normalised = provider.strip().upper()
+    if normalised not in _VALID_PROVIDER_NAMES:
+        raise ToolError(
+            f"Unknown provider: {provider!r}. Valid values: "
+            f"{', '.join(sorted(_VALID_PROVIDER_NAMES))}."
+        )
+    return normalised
+
+
+def _provider_name_for_country(country: str) -> str | None:
+    """Return the ``Bulletin.Source`` *name* (e.g. ``"SLF"``) serving a country.
+
+    Args:
+        country: An upper-cased ISO-3166-1 alpha-2 country code.
+
+    Returns:
+        The provider's enum name, or ``None`` if the country isn't one
+        Snowdesk fetches from (not expected in practice — every
+        ``MajorRegion.country`` is fixture-backed against
+        ``resolvers._PROVIDER_BY_COUNTRY`` — but handled defensively
+        rather than assumed).
+
+    """
+    value = resolvers._PROVIDER_BY_COUNTRY.get(country)
+    if value is None:
+        return None
+    return Bulletin.Source(value).name
+
+
+# ---------------------------------------------------------------------------
+# list_regions
+# ---------------------------------------------------------------------------
+
+
+def list_regions(
+    country: str | None = None, provider: str | None = None
+) -> dict[str, Any]:
+    """List every known micro-region, optionally filtered by country/provider.
+
+    Args:
+        country: An ISO-3166-1 alpha-2 country code (CH/AT/IT/FR), matched
+            case-insensitively. ``None`` applies no country filter.
+        provider: A ``Bulletin.Source`` name (SLF/ALBINA/METEOFRANCE),
+            matched case-insensitively. ``None`` applies no provider
+            filter. ANDed with ``country`` when both are given.
+
+    Returns:
+        ``{filters, regions: [{region_id, name, kind: "MICRO", country,
+        provider}], count, summary}``, ordered by ``region_id`` (the model
+        default). Regions with no ``RegionDayRating`` coverage are
+        included — an uncovered region is still a real, listable region.
+
+    Raises:
+        ToolError: ``country`` or ``provider`` is supplied but not a
+            recognised value.
+
+    """
+    normalised_country = _normalise_country(country) if country is not None else None
+    normalised_provider = (
+        _normalise_provider(provider) if provider is not None else None
+    )
+    provider_value = (
+        Bulletin.Source[normalised_provider].value
+        if normalised_provider is not None
+        else None
+    )
+
+    regions = resolvers.list_regions(
+        country=normalised_country, provider=provider_value
+    )
+    region_list = [
+        {
+            "region_id": region.region_id,
+            "name": region.name,
+            "kind": "MICRO",
+            "country": region.subregion.major.country,
+            "provider": _provider_name_for_country(region.subregion.major.country),
+        }
+        for region in regions
+    ]
+    filters = {"country": normalised_country, "provider": normalised_provider}
+    return {
+        "filters": filters,
+        "regions": region_list,
+        "count": len(region_list),
+        "summary": _list_regions_summary(filters, region_list),
+    }
+
+
+def _list_regions_summary(
+    filters: dict[str, str | None], region_list: list[dict[str, Any]]
+) -> str:
+    """Return a one-line, LLM-quotable summary of a list_regions result."""
+    applied = [f"{key}={value}" for key, value in filters.items() if value is not None]
+    filter_text = f" ({', '.join(applied)})" if applied else ""
+    if not region_list:
+        return f"No regions match the given filters{filter_text}."
+    return f"{len(region_list)} region(s){filter_text}."
+
+
+def _handle_list_regions(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``list_regions`` JSON-RPC arguments to the tool function."""
+    country = arguments.get("country")
+    if country is not None and not isinstance(country, str):
+        raise ToolError("'country' must be a string when supplied.")
+    provider = arguments.get("provider")
+    if provider is not None and not isinstance(provider, str):
+        raise ToolError("'provider' must be a string when supplied.")
+    return list_regions(country, provider)
+
+
+# ---------------------------------------------------------------------------
+# region_info
+# ---------------------------------------------------------------------------
+
+
+def _boundary_bbox(boundary: Any) -> dict[str, float] | None:
+    """Compute a ``{min_lon, min_lat, max_lon, max_lat}`` bbox from GeoJSON.
+
+    Pure-Python — no Shapely, no PostGIS — the same dependency-free
+    precedent as ``resolvers._haversine_km``. Handles both ``Polygon`` and
+    ``MultiPolygon`` geometry types.
+
+    Args:
+        boundary: ``MicroRegion.boundary`` — expected to be a GeoJSON
+            ``Polygon`` or ``MultiPolygon`` dict, but not guaranteed (may
+            be ``None`` or malformed).
+
+    Returns:
+        The computed bbox, or ``None`` when ``boundary`` is missing, not a
+        recognised geometry type, or its coordinates can't be walked as
+        nested ``[lon, lat, ...]`` pairs.
+
+    """
+    if not isinstance(boundary, dict):
+        return None
+    geometry_type = boundary.get("type")
+    coordinates = boundary.get("coordinates")
+    if geometry_type not in ("Polygon", "MultiPolygon") or not coordinates:
+        return None
+
+    if geometry_type == "Polygon":
+        rings = coordinates
+    else:  # MultiPolygon: one extra nesting level of polygons over rings.
+        rings = [ring for polygon in coordinates for ring in polygon]
+
+    lons: list[float] = []
+    lats: list[float] = []
+    try:
+        for ring in rings:
+            for point in ring:
+                lons.append(float(point[0]))
+                lats.append(float(point[1]))
+    except TypeError, ValueError, IndexError:
+        return None
+
+    if not lons or not lats:
+        return None
+    return {
+        "min_lon": min(lons),
+        "min_lat": min(lats),
+        "max_lon": max(lons),
+        "max_lat": max(lats),
+    }
+
+
+def region_info(region_id: str) -> dict[str, Any]:
+    """Return full reference-data metadata for one micro-region.
+
+    Args:
+        region_id: Exact region identifier, e.g. ``"CH-4115"``.
+
+    Returns:
+        ``{region_id, region_name, country, eaws_parent: {major_prefix,
+        major_name, sub_prefix, sub_name}, source_provider, resorts,
+        resort_count, bbox, coverage_first_date, coverage_last_date,
+        issue_schedule, summary}``. ``resorts`` matches
+        :func:`list_resorts_in_region`'s per-resort shape.
+        ``coverage_first_date``/``coverage_last_date`` are both ``None``
+        for a region with no ``RegionDayRating`` rows — a legitimate
+        outcome for a region Snowdesk hasn't ingested data for, not an
+        error.
+
+    Raises:
+        ToolError: ``region_id`` does not match any known region.
+
+    """
+    region = resolvers.resolve_region(region_id)
+    if region is None:
+        raise ToolError(f"Unknown region_id: {region_id!r}.")
+
+    major = region.subregion.major
+    sub = region.subregion
+    country = major.country
+    provider_value = resolvers._PROVIDER_BY_COUNTRY.get(country)
+    provider_name = Bulletin.Source(provider_value).name if provider_value else None
+
+    resorts = Resort.objects.geocoded().filter(region=region).select_related("region")
+    resort_list = [
+        {
+            "name": resort.name,
+            "latitude": resort.latitude,
+            "longitude": resort.longitude,
+            "canton": resort.canton,
+        }
+        for resort in resorts
+    ]
+
+    coverage = RegionDayRating.objects.filter(region=region).aggregate(
+        first_date=Min("date"), last_date=Max("date")
+    )
+    coverage_first_date = coverage["first_date"]
+    coverage_last_date = coverage["last_date"]
+
+    bbox = _boundary_bbox(region.boundary)
+    issue_schedule = _ISSUE_SCHEDULE.get(provider_value) if provider_value else None
+
+    return {
+        "region_id": region.region_id,
+        "region_name": region.name,
+        "country": country,
+        "eaws_parent": {
+            "major_prefix": major.prefix,
+            "major_name": major.name_en or major.name_native,
+            "sub_prefix": sub.prefix,
+            "sub_name": sub.name_en or sub.name_native,
+        },
+        "source_provider": provider_name,
+        "resorts": resort_list,
+        "resort_count": len(resort_list),
+        "bbox": bbox,
+        "coverage_first_date": (
+            coverage_first_date.isoformat() if coverage_first_date else None
+        ),
+        "coverage_last_date": (
+            coverage_last_date.isoformat() if coverage_last_date else None
+        ),
+        "issue_schedule": issue_schedule,
+        "summary": _region_info_summary(
+            region,
+            provider_name,
+            resort_list,
+            coverage_first_date,
+            coverage_last_date,
+        ),
+    }
+
+
+def _region_info_summary(
+    region: MicroRegion,
+    provider_name: str | None,
+    resort_list: list[dict[str, Any]],
+    coverage_first_date: dt.date | None,
+    coverage_last_date: dt.date | None,
+) -> str:
+    """Return a one-line, LLM-quotable summary of a region_info result."""
+    header = f"{region.name} ({region.region_id})"
+    if provider_name:
+        header += f", served by {provider_name}"
+    parts = [f"{header}. {len(resort_list)} geocoded resort(s)."]
+    if coverage_first_date and coverage_last_date:
+        parts.append(
+            f"Bulletin coverage {coverage_first_date.isoformat()} to "
+            f"{coverage_last_date.isoformat()}."
+        )
+    else:
+        parts.append("No bulletin coverage recorded yet.")
+    return " ".join(parts)
+
+
+def _handle_region_info(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``region_info`` JSON-RPC arguments to the tool function."""
+    region_id = _require_str(arguments, "region_id")
+    return region_info(region_id)
+
+
+# ---------------------------------------------------------------------------
 # get_regional_snapshot
 # ---------------------------------------------------------------------------
 
@@ -1785,5 +2148,58 @@ TOOLS: dict[str, ToolSpec] = {
             },
         },
         handler=_handle_get_regional_snapshot,
+    ),
+    "list_regions": ToolSpec(
+        name="list_regions",
+        description=(
+            "List every avalanche-warning micro-region Snowdesk knows about, "
+            "optionally filtered by country and/or provider (filters are "
+            "ANDed). Runs with no arguments to return the full reference "
+            "list (~150-300 rows). Response constants are UPPER CASE "
+            "(kind: 'MICRO', provider: 'SLF'/'ALBINA'/'METEOFRANCE') — "
+            "inputs are matched case-insensitively."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "country": {
+                    "type": "string",
+                    "description": (
+                        "ISO-3166-1 alpha-2 country code: CH, AT, IT, or FR. "
+                        "Matched case-insensitively."
+                    ),
+                },
+                "provider": {
+                    "type": "string",
+                    "description": (
+                        "Source provider: SLF, ALBINA, or METEOFRANCE. "
+                        "Matched case-insensitively."
+                    ),
+                },
+            },
+        },
+        handler=_handle_list_regions,
+    ),
+    "region_info": ToolSpec(
+        name="region_info",
+        description=(
+            "Return full reference-data metadata for one micro-region: its "
+            "EAWS parent hierarchy (major/sub region prefix and name), "
+            "source provider, geocoded resorts, a computed bounding box, "
+            "its RegionDayRating coverage window, and a static published "
+            "issue schedule. Response constants are UPPER CASE (e.g. "
+            "source_provider: 'SLF')."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "region_id": {
+                    "type": "string",
+                    "description": "Exact region_id, e.g. 'CH-4115'.",
+                },
+            },
+            "required": ["region_id"],
+        },
+        handler=_handle_region_info,
     ),
 }
