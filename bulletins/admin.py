@@ -18,6 +18,10 @@ Also includes the PipelineRunAdmin with an upload UI for the Météo-France
 BRA NDJSON archive (SNOW-227) — operators can drop a ``bulletins.ndjson``
 file produced by the offline script pipeline directly into the production
 database without needing SSH access.
+
+Also includes the ForecastPointWeatherAdmin (SNOW-416), the point analogue
+of WeatherSnapshotAdmin without the one-click fetch button — the point
+pass runs from ``fetch_weather`` only, not the admin UI.
 """
 
 import io
@@ -40,6 +44,7 @@ from bulletins.models import (
     BulletinShare,
     BulletinShareClick,
     ForecastPoint,
+    ForecastPointWeather,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
@@ -840,3 +845,24 @@ class ForecastPointAdmin(admin.ModelAdmin):
     list_filter = ("elevation_band",)
     readonly_fields = ("uuid", "created_at", "updated_at")
     ordering = ("-created_at",)
+
+
+@admin.register(ForecastPointWeather)
+class ForecastPointWeatherAdmin(admin.ModelAdmin):
+    """Admin view for ForecastPointWeather."""
+
+    list_display = [
+        "id",
+        "forecast_point",
+        "valid_for_date",
+        "weather_code",
+        "temperature_2m_max",
+        "snowfall_sum",
+        "wind_speed_10m_max",
+        "fetched_at",
+    ]
+    list_filter = ["valid_for_date"]
+    list_select_related = ("forecast_point",)
+    raw_id_fields = ("forecast_point",)
+    readonly_fields = ("uuid", "created_at", "updated_at", "fetched_at")
+    ordering = ["-valid_for_date", "forecast_point__id"]
