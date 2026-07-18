@@ -33,6 +33,7 @@ from observations.models import FieldObservation
 from regions.models import (
     MajorRegion,
     MicroRegion,
+    RegionAlias,
     Resort,
     SubRegion,
 )
@@ -128,6 +129,18 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     geocode_confidence = None
     geocoded_at = None
     needs_review = False
+
+
+class RegionAliasFactory(factory.django.DjangoModelFactory[RegionAlias]):
+    """Factory for RegionAlias instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = RegionAlias
+
+    region = factory.SubFactory(MicroRegionFactory)
+    alias_text = factory.Sequence(lambda n: f"Alias {n}")
 
 
 class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):

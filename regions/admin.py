@@ -1,8 +1,9 @@
 """
 regions/admin.py — Django admin registrations for the regions app.
 
-Covers the geographic hierarchy (MajorRegion, SubRegion, MicroRegion)
-and Resort. Bulletin-related admins live in ``bulletins/admin.py``.
+Covers the geographic hierarchy (MajorRegion, SubRegion, MicroRegion),
+Resort, and RegionAlias. Bulletin-related admins live in
+``bulletins/admin.py``.
 """
 
 import logging
@@ -12,6 +13,7 @@ from django.contrib import admin
 from .models import (
     MajorRegion,
     MicroRegion,
+    RegionAlias,
     Resort,
     SubRegion,
 )
@@ -73,6 +75,17 @@ class MicroRegionAdmin(admin.ModelAdmin):
     search_fields = ["region_id", "name"]
     ordering = ["region_id"]
     readonly_fields = ["id", "slug", "centre", "boundary", "created_at", "updated_at"]
+
+
+@admin.register(RegionAlias)
+class RegionAliasAdmin(admin.ModelAdmin):
+    """Admin view for RegionAlias."""
+
+    list_display = ["alias_text", "region", "updated_at"]
+    list_filter = ["region__subregion__major"]
+    search_fields = ["alias_text", "region__region_id", "region__name"]
+    ordering = ["alias_text"]
+    readonly_fields = ["id", "uuid", "created_at", "updated_at"]
 
 
 @admin.register(Resort)

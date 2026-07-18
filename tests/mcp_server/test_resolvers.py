@@ -18,6 +18,7 @@ from mcp_server import resolvers
 from tests.factories import (
     MajorRegionFactory,
     MicroRegionFactory,
+    RegionAliasFactory,
     ResortFactory,
     SubRegionFactory,
 )
@@ -242,6 +243,96 @@ def test_search_places_misspelling_table(
     results = resolvers.search_places(query)
     assert results, f"expected at least one hit for {query!r}"
     assert results[0]["region_id"] == expected_region_id
+
+
+# ---------------------------------------------------------------------------
+# search_places — RegionAlias integration (SNOW-409)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_search_places_resolves_a_curated_alias(alpine_fixture: dict) -> None:
+    """A query matching a curated alias resolves to the aliased region."""
+    RegionAliasFactory.create(region=alpine_fixture["bas_valais"], alias_text="Sitten")
+    results = resolvers.search_places("Sitten")
+    assert results
+    assert results[0]["region_id"] == alpine_fixture["bas_valais"].region_id
+    assert results[0]["kind"] == "micro"
+
+
+@pytest.mark.django_db
+def test_search_places_dedups_alias_against_canonical_name(
+    alpine_fixture: dict,
+) -> None:
+    """A query matching both an alias and the canonical name yields one hit.
+
+    The dedup key is ``(kind, region_id)``; the alias row shares both with
+    its region's canonical ``MicroRegion`` row, so a query that scores
+    both should still return a single result for that region.
+    """
+    region = alpine_fixture["bas_valais"]
+    RegionAliasFactory.create(region=region, alias_text=region.name)
+    results = resolvers.search_places(region.name)
+    matches = [
+        r
+        for r in results
+        if r["region_id"] == region.region_id and r["kind"] == "micro"
+    ]
+    assert len(matches) == 1
+
+
+@pytest.mark.django_db
+def test_search_places_exact_region_id_returns_canonical_name_not_alias(
+    alpine_fixture: dict,
+) -> None:
+    """An exact region_id query still returns the canonical name.
+
+    The RegionAlias loop runs after the MicroRegion loop in
+    ``_build_candidate_pool``, so ``_match_exact_region_id`` — which
+    returns the first ``kind == "micro"`` row matching the id — finds the
+    canonical row before the alias row.
+    """
+    region = alpine_fixture["bas_valais"]
+    RegionAliasFactory.create(region=region, alias_text="Sitten")
+    results = resolvers.search_places(region.region_id)
+    assert len(results) == 1
+    assert results[0]["name"] == region.name
+
+
+@pytest.mark.django_db
+def test_search_places_reflects_a_newly_added_alias(alpine_fixture: dict) -> None:
+    """The cached candidate pool picks up an alias added after the first search.
+
+    Exercises the ``RegionAlias`` term added to ``resolvers._pool_cache_key``
+    — a plain TTL-only cache would still serve the stale pool here.
+    """
+    assert resolvers.search_places("Sitten") == []
+    RegionAliasFactory.create(region=alpine_fixture["bas_valais"], alias_text="Sitten")
+    results = resolvers.search_places("Sitten")
+    assert results
+    assert results[0]["region_id"] == alpine_fixture["bas_valais"].region_id
+
+
+@pytest.mark.django_db
+def test_search_places_reflects_an_edited_alias(alpine_fixture: dict) -> None:
+    """Editing an alias's text changes the cache key and is picked up.
+
+    Exercises the ``updated_at`` fingerprint specifically for an *edit*
+    (not just a create) — ``RegionAlias.save()`` bumps ``updated_at`` via
+    ``auto_now``, which changes ``_pool_cache_key``'s fingerprint.
+    """
+    alias = RegionAliasFactory.create(
+        region=alpine_fixture["bas_valais"], alias_text="Original"
+    )
+    assert resolvers.search_places("Original")
+
+    alias.alias_text = "Coire"
+    alias.save()
+
+    assert resolvers.search_places("Original") == []
+    results = resolvers.search_places("Coire")
+    assert results
+    assert results[0]["region_id"] == alpine_fixture["bas_valais"].region_id
 
 
 # ---------------------------------------------------------------------------
