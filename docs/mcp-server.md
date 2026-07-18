@@ -40,10 +40,13 @@ sidesteps standing up an ASGI stack for this one surface.
 * **Stateless** — no `Mcp-Session-Id` handling; each request is
   independent. No batched JSON-RPC requests in v1 (one request object per
   POST body).
-* Advertises protocol version `"2025-11-05"` in `initialize`; a
-  client-requested version is accepted but not required to match — the
-  server always states its own preferred version and lets the client
-  decide whether to continue, per spec.
+* Negotiates protocol version in `initialize`: if the client's requested
+  `protocolVersion` is one this server recognises (`2024-11-05`,
+  `2025-03-26`, `2025-06-18`, or `2025-11-25` — see
+  `mcp_server/protocol.py::SUPPORTED_PROTOCOL_VERSIONS`), the server
+  echoes it back; otherwise it returns its preferred version
+  (`"2025-06-18"`, `PROTOCOL_VERSION`) and lets the client decide whether
+  to disconnect, per spec.
 
 ## Methods
 
@@ -179,7 +182,7 @@ UI — no manifest or `.well-known` discovery is implemented in v1 (the
 ```bash
 curl -s -X POST http://localhost:8000/api/mcp/ \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.1"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.1"}}}'
 
 curl -s -X POST http://localhost:8000/api/mcp/ \
   -H 'Content-Type: application/json' \

@@ -23,11 +23,20 @@ from mcp_server.tools import TOOLS, ToolError
 
 logger = logging.getLogger(__name__)
 
-#: Advertised in the ``initialize`` response. A permissive server that
-#: accepts any client-requested version and states its own preferred
-#: version is expected to stay compatible with Claude Desktop / claude.ai
-#: for the foreseeable future — see docs/mcp-server.md.
-PROTOCOL_VERSION = "2025-11-05"
+#: Server's preferred MCP protocol version — advertised in ``initialize``
+#: whenever the client requests a version we don't recognise. Must be a
+#: real MCP spec revision date; ``2025-06-18`` is the widely-supported
+#: stable version that Claude Desktop, Claude Code, and MCP Inspector all
+#: recognise as of writing. See docs/mcp-server.md.
+PROTOCOL_VERSION = "2025-06-18"
+
+#: MCP spec revisions this server is willing to speak. Per the MCP
+#: ``initialize`` contract, if the client asks for one of these we echo it
+#: back; otherwise we fall back to :data:`PROTOCOL_VERSION` and let the
+#: client decide whether to disconnect. Keep in ascending date order.
+SUPPORTED_PROTOCOL_VERSIONS = frozenset(
+    {"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"}
+)
 
 #: JSON-RPC 2.0 reserved error codes.
 PARSE_ERROR = -32700
@@ -213,22 +222,32 @@ def dispatch(payload: Any) -> dict[str, Any] | None:
     return _result_envelope(parsed.request_id, outcome["result"] or {})
 
 
-def _handle_initialize(params: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001 — MCP handshake carries no inputs we need
+def _handle_initialize(params: dict[str, Any]) -> dict[str, Any]:
     """Handle the ``initialize`` method — the MCP handshake.
+
+    Negotiates the protocol version per the MCP spec: if the client
+    requests a version this server supports, echo it back; otherwise
+    return :data:`PROTOCOL_VERSION` and let the client decide whether to
+    disconnect. Capabilities and ``clientInfo`` are ignored — the tool
+    set is fixed.
 
     Args:
         params: The client's ``initialize`` params (``protocolVersion``,
-            ``capabilities``, ``clientInfo``). Unused: this server is
-            permissive about client version and capabilities — it always
-            advertises its own preferred version and its fixed tool set.
+            ``capabilities``, ``clientInfo``).
 
     Returns:
         The ``InitializeResult`` dict: ``protocolVersion``,
         ``capabilities``, and ``serverInfo``.
 
     """
+    requested = params.get("protocolVersion")
+    negotiated = (
+        requested
+        if isinstance(requested, str) and requested in SUPPORTED_PROTOCOL_VERSIONS
+        else PROTOCOL_VERSION
+    )
     return {
-        "protocolVersion": PROTOCOL_VERSION,
+        "protocolVersion": negotiated,
         "capabilities": {"tools": {}},
         "serverInfo": {"name": "snowdesk", "version": settings.APP_VERSION},
     }
