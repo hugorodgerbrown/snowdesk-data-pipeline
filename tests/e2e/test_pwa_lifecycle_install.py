@@ -59,4 +59,11 @@ def test_first_install_registers_and_caches_shell(pwa_page: PwaPage) -> None:
 
     # 3. Telemetry.
     pwa_page.wait_for_event("pwa.sw.installed")
-    pwa_page.wait_for_event("pwa.sw.activated")
+    # ``activated`` needs a longer window than the 5s default. Between the
+    # SW firing the event and the row landing in ``queue:events`` there is
+    # a Promise-chained IndexedDB write; under CI runner load that write
+    # can take several seconds to flush after activation completes, even
+    # though the reload above already exercised the activated SW. 15s is
+    # comfortably below Playwright's 30s per-test default and has held
+    # green across reruns.
+    pwa_page.wait_for_event("pwa.sw.activated", timeout=15_000)
