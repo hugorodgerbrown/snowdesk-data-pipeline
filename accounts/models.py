@@ -349,6 +349,19 @@ class Account(BaseModel):
         blank=True,
         help_text="Optional display name captured at registration.",
     )
+    pending_email = models.EmailField(
+        null=True,
+        blank=True,
+        help_text=(
+            "A new email address awaiting verification (SNOW-433). The account "
+            "keeps its current (verified) address until this one is confirmed."
+        ),
+    )
+    pending_email_requested_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the pending email change was requested.",
+    )
 
     objects = AccountManager()
 
@@ -384,6 +397,30 @@ class Account(BaseModel):
         self.is_verified = True
         if self.verified_at is None:
             self.verified_at = now
+        return self
+
+    def request_email_change(self, new_email: str, now: datetime) -> Account:
+        """Record a pending email change (in-memory only); the caller saves.
+
+        The pending address is not applied to ``User.username`` / ``User.email``
+        until it is confirmed via the emailed link (SNOW-433).
+
+        Args:
+            new_email: The requested new address (stored lowercased).
+            now: Timezone-aware "now" stamped on the request.
+
+        Returns:
+            ``self`` (for chaining).
+
+        """
+        self.pending_email = new_email.strip().lower()
+        self.pending_email_requested_at = now
+        return self
+
+    def clear_pending_email(self) -> Account:
+        """Clear the pending email slot (in-memory only); the caller saves."""
+        self.pending_email = None
+        self.pending_email_requested_at = None
         return self
 
 

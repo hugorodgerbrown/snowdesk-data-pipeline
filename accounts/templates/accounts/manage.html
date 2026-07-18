@@ -185,6 +185,29 @@ hard-deletes the subscriber.
                 {% endif %}
 
                 {% comment %}
+                    Account email — SNOW-433. Shows the current verified address
+                    with a "Change email" control that starts the re-verification
+                    flow (the address is not changed until the new one is
+                    confirmed).
+                {% endcomment %}
+                <div class="border-t border-border pt-8 mb-10">
+                    <h2 class="text-lg font-semibold text-text-1 mb-3">
+                        {% trans "Account email" %}
+                    </h2>
+                    <div class="flex items-center justify-between gap-4">
+                        <p class="text-sm text-text-2 min-w-0 truncate">
+                            {{ request.user.email }}
+                        </p>
+                        <a
+                            href="{% url 'accounts:change_email' %}"
+                            class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                        >
+                            {% trans "Change email" %}
+                        </a>
+                    </div>
+                </div>
+
+                {% comment %}
                     Passkeys section — lists registered platform passkeys with
                     delete buttons, and offers a "add passkey" button.
 

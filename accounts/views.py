@@ -17,6 +17,9 @@ Implements the subscription flow built around Django's TimestampSigner:
                       GET/POST — request a password reset by email (SNOW-432).
   reset_password_confirm_view
                       GET/POST — set a new password from a reset link (SNOW-432).
+  change_email_view   GET/POST — request an account email change (SNOW-433).
+  change_email_confirm_view
+                      GET/POST — confirm + apply an email change (SNOW-433).
   subscribe_partial   POST — inline HTMX subscribe CTA on bulletin pages.
                             Requires a region_id; uses a four-case matrix keyed
                             on (subscriber_created, subscription_created) to
@@ -53,6 +56,8 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime
+from typing import TYPE_CHECKING
 
 import waffle
 from django.conf import settings
@@ -63,6 +68,7 @@ from django.contrib.auth import (
     logout,
     update_session_auth_hash,
 )
+from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -78,6 +84,7 @@ from regions.models import MicroRegion
 from regions.services.point_match import IN_NEIGHBOUR, IN_REGION
 
 from .forms import (
+    ChangeEmailForm,
     EmailForm,
     PasswordSignInForm,
     RegisterForm,
@@ -88,6 +95,8 @@ from .logging_utils import mask_email
 from .models import Account, Subscriber, Subscription
 from .services.email import (
     send_account_access_email,
+    send_email_change_confirmation,
+    send_email_change_notice,
     send_password_reset_email,
     send_subscription_confirmation_email,
     send_verification_email,
@@ -97,10 +106,14 @@ from .services.token import (
     SALT_ACCOUNT_ACCESS,
     SALT_EMAIL_VERIFICATION,
     generate_unsubscribe_token,
+    verify_email_change_token,
     verify_password_reset_token,
     verify_token,
     verify_unsubscribe_token,
 )
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User as UserType
 
 logger = logging.getLogger(__name__)
 
@@ -595,6 +608,210 @@ def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpRespons
     response = redirect("accounts:manage")
     response["Referrer-Policy"] = "no-referrer"
     return response
+
+
+# ---------------------------------------------------------------------------
+# Change email — request + confirm (SNOW-433)
+# ---------------------------------------------------------------------------
+
+
+def _link_expired(request: HttpRequest) -> HttpResponse:
+    """Render the generic link-expired page (400) with Referrer-Policy set."""
+    response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
+    response["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+def _email_available(new_email: str, *, exclude_pk: int) -> bool:
+    """Return True when no *other* user already owns ``new_email``.
+
+    The uniqueness check is never surfaced to the requester (anti-enumeration);
+    it only gates whether the change proceeds.
+    """
+    return not User.objects.filter(username=new_email).exclude(pk=exclude_pk).exists()
+
+
+def _process_email_change_request(
+    user: UserType, new_email: str, request: HttpRequest
+) -> None:
+    """Record a pending change and dispatch the emails (SNOW-433).
+
+    Always FYIs the old address; only sets the pending slot and sends the
+    confirmation when the new address is free and differs from the current one
+    — a taken or unchanged address is a silent no-op, so the response the
+    caller renders is identical regardless.
+    """
+    now = timezone.now()
+    # Submitting the current address is a no-op — do nothing (and don't send a
+    # misleading "change requested" notice). The response is unchanged.
+    if new_email == user.email:
+        return
+
+    # FYI to the old (current) address on every real request — it is the
+    # owner's own inbox, so this leaks nothing about whether the new address is
+    # taken.
+    send_email_change_notice(user.email, stage="requested")
+
+    if not _email_available(new_email, exclude_pk=user.pk):
+        logger.info(
+            "Email change to an already-registered address — silent no-op "
+            "for user pk=%s",
+            user.pk,
+        )
+        return
+
+    account, _ = Account.objects.get_or_create(user=user)
+    account.request_email_change(new_email, now)
+    account.save(
+        update_fields=["pending_email", "pending_email_requested_at", "updated_at"]
+    )
+    send_email_change_confirmation(user, new_email, request=request)
+
+
+@require_http_methods(["GET", "POST"])
+def change_email_view(request: HttpRequest) -> HttpResponse:
+    """
+    Request a change of account email address (signed-in only, SNOW-433).
+
+    GET renders the form.  POST (rate-limited 3/m per IP) records the pending
+    change, emails the new address a confirmation and the old address an FYI,
+    and renders a "check your inbox at <new address>" page.  The displayed
+    account email does **not** change until the new address's link is
+    confirmed.  A new address that already belongs to another account is a
+    silent no-op — the response is identical, so nothing is leaked.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        The form, the "check your inbox" page, or a redirect to sign-in.
+
+    """
+    if not request.user.is_authenticated:
+        return redirect("accounts:sign_in")
+
+    if request.method == "GET":
+        return render(
+            request, "accounts/change_email.html", {"form": ChangeEmailForm()}
+        )
+
+    usage = get_usage(
+        request,
+        group="accounts.change_email.post",
+        key="ip",
+        rate="3/m",
+        method=["POST"],
+        increment=True,
+    )
+    if usage is not None and usage["should_limit"]:
+        return HttpResponse(status=429)
+
+    form = ChangeEmailForm(request.POST)
+    if not form.is_valid():
+        return render(request, "accounts/change_email.html", {"form": form})
+
+    new_email = form.cleaned_data["email"]
+    _process_email_change_request(request.user, new_email, request)
+    return render(request, "accounts/change_email_sent.html", {"new_email": new_email})
+
+
+@require_http_methods(["GET", "POST"])
+@ratelimit(key="ip", rate="10/m", block=False)
+def change_email_confirm_view(request: HttpRequest, token: str) -> HttpResponse:
+    """
+    Confirm and apply an email change (SNOW-433).
+
+    Verifies the token (bound to the user + the specific new address), then
+    checks the account's ``pending_email`` still matches (latest-request-wins,
+    single-use) and the address is still free.  GET renders a confirm button;
+    POST atomically swaps ``username``/``email`` to the new address, stamps the
+    account verified, clears the pending slot, re-establishes the session under
+    the new identity, and FYIs the old address.  Any failure renders the
+    link-expired page (400).  Rate-limited 10/m per IP.
+
+    Args:
+        request: Incoming HTTP request.
+        token: The signed email-change token from the URL path.
+
+    Returns:
+        The confirm page (GET), a redirect to manage (POST success), or the
+        link-expired page.
+
+    """
+    if getattr(request, "limited", False):
+        return HttpResponse(status=429)
+
+    max_age = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400)
+    result = verify_email_change_token(token, max_age=max_age)
+    if result is None:
+        return _link_expired(request)
+
+    user, new_email = result
+    account = Account.objects.filter(user=user).first()
+    # The pending slot must still name this address (a fresh request overwrites
+    # it, and completion clears it — both invalidate an old link) and the
+    # address must still be free.
+    if (
+        account is None
+        or account.pending_email != new_email
+        or not _email_available(new_email, exclude_pk=user.pk)
+    ):
+        return _link_expired(request)
+
+    if request.method == "GET":
+        response = render(
+            request,
+            "accounts/change_email_confirm.html",
+            {"new_email": new_email},
+        )
+        response["Referrer-Policy"] = "no-referrer"
+        return response
+
+    old_email = user.email
+    try:
+        _apply_email_change(user, account, new_email, timezone.now())
+    except IntegrityError:
+        # Lost the race — the address was taken between the check and the swap.
+        return _link_expired(request)
+
+    login(request, user, backend=_TOKEN_BACKEND)
+    send_email_change_notice(old_email, stage="completed")
+    logger.info("Email change completed for user pk=%s", user.pk)
+    response = redirect("accounts:manage")
+    response["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+def _apply_email_change(
+    user: UserType, account: Account, new_email: str, now: datetime
+) -> None:
+    """Atomically swap the user's email/username and clear the pending slot.
+
+    Re-reads the account under ``select_for_update`` and re-checks the pending
+    slot inside the transaction so a concurrent second request (that changed
+    ``pending_email`` after the view's initial read) is not clobbered — a
+    mismatch raises ``IntegrityError``, which the caller renders as an expired
+    link.
+    """
+    with transaction.atomic():
+        locked = Account.objects.select_for_update().get(pk=account.pk)
+        if locked.pending_email != new_email:
+            raise IntegrityError("pending_email changed concurrently")
+        user.username = new_email
+        user.email = new_email
+        user.save(update_fields=["username", "email"])
+        locked.is_verified = True
+        locked.verified_at = now
+        locked.clear_pending_email()
+        locked.save(
+            update_fields=[
+                "is_verified",
+                "verified_at",
+                "pending_email",
+                "pending_email_requested_at",
+                "updated_at",
+            ]
+        )
 
 
 # ---------------------------------------------------------------------------

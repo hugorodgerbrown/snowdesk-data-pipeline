@@ -18,6 +18,8 @@ The salts are:
   - ``SALT_PASSWORD_RESET`` — short-lived, single-use password-reset tokens
     that embed a fingerprint of the current password hash so they
     auto-invalidate once the password changes (SNOW-432).
+  - ``SALT_EMAIL_CHANGE`` — short-lived tokens binding a user to a specific
+    pending new email address (SNOW-433).
 
 Public API
 ----------
@@ -57,6 +59,7 @@ SALT_ACCOUNT_ACCESS = "account-access"
 SALT_UNSUBSCRIBE = "unsubscribe"
 SALT_EMAIL_VERIFICATION = "email-verification"
 SALT_PASSWORD_RESET = "password-reset"  # noqa: S105 — salt label, not a password
+SALT_EMAIL_CHANGE = "email-change"
 
 # Separator used inside composite token values (email|payload).
 _UNSUB_SEP = "|"
@@ -255,3 +258,62 @@ def verify_password_reset_token(token: str, *, max_age: int | None) -> User | No
     if not constant_time_compare(fingerprint, _reset_fingerprint(user)):
         return None
     return user
+
+
+# ---------------------------------------------------------------------------
+# Email-change tokens (SNOW-433)
+# ---------------------------------------------------------------------------
+
+
+def generate_email_change_token(user: User, new_email: str) -> str:
+    """Create a token binding ``user`` to a specific pending ``new_email``.
+
+    The signed value is ``{user_pk}|{new_email}``; binding both means the token
+    cannot be replayed against a different user or a different address.  Signs
+    inline with ``TimestampSigner`` (no shared logging helper).
+
+    Args:
+        user: The account requesting the change.
+        new_email: The requested new address.
+
+    Returns:
+        A signed, URL-safe token string.
+
+    """
+    payload = f"{user.pk}{_UNSUB_SEP}{new_email.strip().lower()}"
+    return TimestampSigner(salt=SALT_EMAIL_CHANGE).sign(payload)
+
+
+def verify_email_change_token(
+    token: str, *, max_age: int | None
+) -> tuple[User, str] | None:
+    """Verify an email-change token and return ``(user, new_email)``, or ``None``.
+
+    Returns ``None`` on a bad/expired signature or an unknown user pk.  The
+    caller must still confirm the account's ``pending_email`` matches the
+    returned address (latest-request-wins / single-use) and that the address
+    is still free.
+
+    Args:
+        token: The token from the confirm URL.
+        max_age: Maximum token age in seconds.
+
+    Returns:
+        ``(user, new_email)`` on success, or ``None``.
+
+    """
+    signer = TimestampSigner(salt=SALT_EMAIL_CHANGE)
+    try:
+        raw = signer.unsign(token, max_age=max_age)
+    except BadSignature, SignatureExpired:
+        return None
+    parts = raw.split(_UNSUB_SEP, 1)
+    if len(parts) != 2:
+        return None
+    user_pk, new_email = parts[0], parts[1].lower()
+    user_model = get_user_model()
+    try:
+        user = user_model.objects.get(pk=user_pk)
+    except user_model.DoesNotExist, ValueError:
+        return None
+    return user, new_email
