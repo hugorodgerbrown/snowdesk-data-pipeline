@@ -6,8 +6,10 @@ Covers:
   - Distinct rows created when a candidate is outside either threshold
     (too far horizontally, or the altitude-separation case: ~1km apart but
     1,500m vs 3,300m elevation).
-  - The IntegrityError race path: get_or_create raises, the winner's row
-    is re-fetched and returned.
+  - get_or_create semantics: two calls for the same quantised key converge
+    on one row (the guarantee resolve_forecast_point relies on for race
+    safety — Django's own get_or_create catches a concurrent IntegrityError
+    internally and re-fetches by the lookup kwargs).
   - fetch_elevation is called exactly once per resolution.
 
 fetch_elevation is mocked at the bulletins.services.forecast_points module
@@ -16,18 +18,17 @@ seam so no HTTP mocking leaks into these DB-level resolution tests.
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import _patch, patch
+from contextlib import AbstractContextManager
+from unittest.mock import MagicMock, patch
 
 import pytest
-from django.db import IntegrityError
 
 from bulletins.models import ForecastPoint
 from bulletins.services.forecast_points import resolve_forecast_point
 from tests.factories import ForecastPointFactory
 
 
-def _patch_elevation(elevation: float) -> _patch[Any]:
+def _patch_elevation(elevation: float) -> AbstractContextManager[MagicMock]:
     """Patch fetch_elevation (module seam) to return a fixed elevation."""
     return patch(
         "bulletins.services.forecast_points.fetch_elevation",
@@ -106,32 +107,34 @@ class TestResolveForecastPointDistinctPoints:
 
 
 @pytest.mark.django_db
-class TestResolveForecastPointRace:
-    """The IntegrityError race-safety path in get_or_create."""
+class TestForecastPointGetOrCreateConvergence:
+    """
+    get_or_create semantics that resolve_forecast_point's race safety relies on.
 
-    def test_integrity_error_returns_winners_row(self) -> None:
-        """When get_or_create raises IntegrityError, the winner's row is returned."""
-        winner_holder: dict[str, ForecastPoint] = {}
+    resolve_forecast_point() has no bespoke IntegrityError handling around
+    its get_or_create call — Django's own get_or_create already wraps the
+    create in a savepoint, catches a concurrent IntegrityError, and
+    re-fetches by the lookup kwargs (here, exactly the unique key). These
+    tests prove that underlying guarantee directly, without patching the
+    queryset class.
+    """
 
-        def _simulate_concurrent_insert(**kwargs: Any) -> tuple[ForecastPoint, bool]:
-            """Simulate another request winning the race to create the cell."""
-            defaults: dict[str, Any] = kwargs.pop("defaults", {})
-            winner_holder["winner"] = ForecastPoint.objects.create(
-                lat_cell=kwargs["lat_cell"],
-                lon_cell=kwargs["lon_cell"],
-                elevation_band=kwargs["elevation_band"],
-                **defaults,
-            )
-            raise IntegrityError("duplicate key")
+    def test_second_get_or_create_for_same_key_reuses_the_first_row(self) -> None:
+        """Two get_or_create calls for the same quantised key return one row."""
+        first, created_first = ForecastPoint.objects.get_or_create(
+            lat_cell=100,
+            lon_cell=200,
+            elevation_band=5,
+            defaults={"latitude": 46.1, "longitude": 7.4, "elevation": 1500.0},
+        )
+        second, created_second = ForecastPoint.objects.get_or_create(
+            lat_cell=100,
+            lon_cell=200,
+            elevation_band=5,
+            defaults={"latitude": 46.2, "longitude": 7.5, "elevation": 1600.0},
+        )
 
-        with (
-            _patch_elevation(1500.0),
-            patch(
-                "bulletins.models.ForecastPointQuerySet.get_or_create",
-                side_effect=_simulate_concurrent_insert,
-            ),
-        ):
-            resolved = resolve_forecast_point(46.1, 7.4)
-
-        assert resolved.pk == winner_holder["winner"].pk
+        assert created_first is True
+        assert created_second is False
+        assert first.pk == second.pk
         assert ForecastPoint.objects.count() == 1

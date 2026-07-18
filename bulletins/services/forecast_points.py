@@ -29,8 +29,6 @@ from __future__ import annotations
 import logging
 import math
 
-from django.db import IntegrityError
-
 from bulletins.models import ForecastPoint
 from bulletins.services.elevation import fetch_elevation
 
@@ -217,33 +215,21 @@ def resolve_forecast_point(latitude: float, longitude: float) -> ForecastPoint:
         )
         return reusable
 
-    try:
-        point, created = ForecastPoint.objects.get_or_create(
-            lat_cell=lat_cell,
-            lon_cell=lon_cell,
-            elevation_band=elevation_band,
-            defaults={
-                "latitude": latitude,
-                "longitude": longitude,
-                "elevation": elevation,
-            },
-        )
-    except IntegrityError:
-        # Race: another request created the same cell between our reuse
-        # check and get_or_create. Re-fetch the winner's row.
-        logger.debug(
-            "IntegrityError creating ForecastPoint for cell=(%s, %s, %s); "
-            "re-fetching the winner's row",
-            lat_cell,
-            lon_cell,
-            elevation_band,
-        )
-        point = ForecastPoint.objects.get(
-            lat_cell=lat_cell,
-            lon_cell=lon_cell,
-            elevation_band=elevation_band,
-        )
-        created = False
+    # Race safety: if another request creates the same cell between our
+    # reuse check and this call, Django's own get_or_create already catches
+    # the resulting IntegrityError in a savepoint and re-fetches by the
+    # lookup kwargs (which are exactly the unique key here) — no bespoke
+    # handling needed on top of that.
+    point, created = ForecastPoint.objects.get_or_create(
+        lat_cell=lat_cell,
+        lon_cell=lon_cell,
+        elevation_band=elevation_band,
+        defaults={
+            "latitude": latitude,
+            "longitude": longitude,
+            "elevation": elevation,
+        },
+    )
 
     logger.debug(
         "Resolved ForecastPoint id=%s created=%s for latitude=%s longitude=%s "

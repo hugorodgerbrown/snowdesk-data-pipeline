@@ -1083,6 +1083,7 @@ class ForecastPoint(BaseModel):
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
+        ordering = ["-created_at"]
         unique_together = [("lat_cell", "lon_cell", "elevation_band")]
 
     def to_string(self) -> str:
