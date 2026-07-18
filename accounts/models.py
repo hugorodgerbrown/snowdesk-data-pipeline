@@ -31,6 +31,8 @@ from accounts.aaguids import lookup as _aaguid_lookup
 from core.models import BaseModel
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
@@ -208,6 +210,181 @@ class Subscriber(BaseModel):
     def has_passkeys(self) -> bool:
         """Return True if this subscriber has at least one registered passkey."""
         return self.user.passkeys.exists()
+
+
+# ---------------------------------------------------------------------------
+# Account queryset / manager
+# ---------------------------------------------------------------------------
+
+
+class AccountQuerySet(models.QuerySet["Account"]):
+    """Custom queryset for Account."""
+
+    def verified(self) -> AccountQuerySet:
+        """Return only accounts whose current email has been verified."""
+        return self.filter(is_verified=True)
+
+    def by_email(self, email: str) -> AccountQuerySet:
+        """Return accounts matching the given email (normalised to lowercase)."""
+        return self.filter(user__email=email.lower())
+
+    def get_or_create_for_email(
+        self,
+        email: str,
+        *,
+        defaults: dict | None = None,
+    ) -> tuple[Account, bool]:
+        """Get or create a (User, Account) pair for the given email address.
+
+        Mirrors ``SubscriberQuerySet.get_or_create_for_email``: the email is
+        normalised to lowercase (Invariant 2) and the User is created with
+        ``username = email = email_lower`` so ``auth.User``'s unique
+        ``username`` field carries the uniqueness constraint.  No Subscriber
+        row is created — registration treats the User as a first-class object
+        independent of any bulletin subscription.
+
+        Args:
+            email: Raw email address (may be mixed-case).
+            defaults: Extra keyword arguments forwarded to the Account
+                get_or_create call.
+
+        Returns:
+            ``(account, created)`` — ``created`` is True when the Account row
+            was freshly created (the User may already have existed, e.g. via
+            the /account/ subscribe flow).
+
+        """
+        email_lower = email.strip().lower()
+        User = get_user_model()  # noqa: N806 — conventional upper-case alias
+        user, _user_created = User.objects.get_or_create(
+            username=email_lower,
+            defaults={"email": email_lower},
+        )
+        # Ensure email is always in sync even if the User pre-existed.
+        if user.email != email_lower:
+            user.email = email_lower
+            user.save(update_fields=["email"])
+        account, created = Account.objects.get_or_create(
+            user=user,
+            defaults=defaults or {},
+        )
+        return account, created
+
+
+class AccountManager(models.Manager["Account"]):
+    """Manager for Account that exposes the AccountQuerySet methods."""
+
+    def get_queryset(self) -> AccountQuerySet:
+        """Return the custom queryset."""
+        return AccountQuerySet(self.model, using=self._db)
+
+    def verified(self) -> AccountQuerySet:
+        """Return only accounts whose current email has been verified."""
+        return self.get_queryset().verified()
+
+    def by_email(self, email: str) -> AccountQuerySet:
+        """Return accounts matching the given email (normalised to lowercase)."""
+        return self.get_queryset().by_email(email)
+
+    def get_or_create_for_email(
+        self,
+        email: str,
+        *,
+        defaults: dict | None = None,
+    ) -> tuple[Account, bool]:
+        """Get or create a (User, Account) pair for the given email address.
+
+        Delegates to ``AccountQuerySet.get_or_create_for_email``.
+
+        Args:
+            email: Raw email address (may be mixed-case).
+            defaults: Extra keyword arguments forwarded to the Account
+                get_or_create call.
+
+        Returns:
+            ``(account, created)`` tuple.
+
+        """
+        return self.get_queryset().get_or_create_for_email(email, defaults=defaults)
+
+
+# ---------------------------------------------------------------------------
+# Account
+# ---------------------------------------------------------------------------
+
+
+class Account(BaseModel):
+    """
+    Identity profile linked to Django's built-in User via OneToOneField.
+
+    Registration (SNOW-430) treats users as first-class objects independent of
+    any bulletin subscription: an ``Account`` may exist with no ``Subscriber``
+    row.  Access it via ``request.user.account`` (related_name="account").
+
+    ``is_verified`` records that the *current* email address has been proven
+    reachable via a verification link.  It is deliberately distinct from
+    ``User.is_active`` — ``is_active`` is the account kill switch, while
+    ``is_verified`` gates actions that require a confirmed email (submitting
+    field reports, and later favourites).  Email is stored exclusively on
+    ``User.email``; access it as ``account.user.email``.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="account",
+    )
+    is_verified = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="True once the current email address has been verified.",
+    )
+    verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp of first successful email verification.",
+    )
+    display_name = models.CharField(
+        max_length=150,
+        blank=True,
+        help_text="Optional display name captured at registration.",
+    )
+
+    objects = AccountManager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+
+    def to_string(self) -> str:
+        """Return a human-readable representation."""
+        return self.user.email
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+    def mark_verified(self, now: datetime) -> Account:
+        """Mark this account's current email as verified (in-memory only).
+
+        Sets ``is_verified`` True and stamps ``verified_at`` on first
+        verification (idempotent — a re-verification does not overwrite the
+        original timestamp).  Mutates and returns ``self`` without saving;
+        the caller (a service or view) owns the ``save()`` and the login
+        side-effect, per the house model/service split.
+
+        Args:
+            now: Timezone-aware "now" used to stamp ``verified_at``.
+
+        Returns:
+            ``self`` (for chaining).
+
+        """
+        self.is_verified = True
+        if self.verified_at is None:
+            self.verified_at = now
+        return self
 
 
 # ---------------------------------------------------------------------------

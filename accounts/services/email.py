@@ -8,8 +8,13 @@ Provides two public functions:
 
 ``send_account_access_email(email, *, request=None)``
     Generates an account-access token, builds an absolute URL pointing at
-    ``/subscribe/account/<token>/``, renders plain-text and HTML templates,
+    ``/account/access/<token>/``, renders plain-text and HTML templates,
     and dispatches via Django's configured mail backend.
+
+``send_verification_email(email, *, request=None)``
+    Generates an email-verification token (``SALT_EMAIL_VERIFICATION``),
+    builds an absolute URL pointing at ``/account/verify/<token>/``, and
+    dispatches the registration verification email (SNOW-430).
 
 ``send_subscription_confirmation_email(email, *, region, request=None)``
     Sends a confirmation email to an already-active subscriber who just added
@@ -44,18 +49,23 @@ from django_tasks import task
 from regions.models import MicroRegion
 
 from ..logging_utils import mask_email
-from .token import SALT_ACCOUNT_ACCESS, generate_token
+from .token import SALT_ACCOUNT_ACCESS, SALT_EMAIL_VERIFICATION, generate_token
 
 logger = logging.getLogger(__name__)
 
-# Path template for account-access links: ``/subscribe/account/<token>/``
-_ACCOUNT_PATH_PREFIX = "/subscribe/account/"
+# Path template for account-access links: ``/account/access/<token>/``
+_ACCOUNT_PATH_PREFIX = "/account/access/"
+
+# Path template for registration email-verification links:
+# ``/account/verify/<token>/`` (SNOW-430).
+_VERIFY_PATH_PREFIX = "/account/verify/"
 
 # Email subjects — gettext_lazy so xgettext / makemessages can extract them at
 # module scope.  Use %-named placeholders (not f-strings) as xgettext cannot
 # parse f-strings.
 _SUBJECT_ACCESS = gettext_lazy("Your Snowdesk account link")
 _SUBJECT_SUBSCRIBED = gettext_lazy("Snowdesk: you're subscribed to %(region_name)s")
+_SUBJECT_VERIFY = gettext_lazy("Verify your Snowdesk email address")
 
 
 def _build_account_url(token: str, base_url: str | None) -> str:
@@ -72,10 +82,35 @@ def _build_account_url(token: str, base_url: str | None) -> str:
             the originating request before enqueueing.
 
     Returns:
-        Absolute URL string, e.g. ``https://example.com/subscribe/account/<token>/``.
+        Absolute URL string, e.g. ``https://example.com/account/access/<token>/``.
 
     """
     path = f"{_ACCOUNT_PATH_PREFIX}{token}/"
+    resolved_base = (
+        base_url
+        if base_url is not None
+        else getattr(settings, "SITE_BASE_URL", "http://localhost:8000").rstrip("/")
+    )
+    return f"{resolved_base.rstrip('/')}{path}"
+
+
+def _build_verify_url(token: str, base_url: str | None) -> str:
+    """
+    Build the absolute email-verification URL for a given token.
+
+    Mirrors ``_build_account_url`` but points at the registration
+    verification route (``/account/verify/<token>/``).
+
+    Args:
+        token: The signed token string.
+        base_url: Optional absolute base URL (scheme + host) extracted from
+            the originating request before enqueueing.
+
+    Returns:
+        Absolute URL string, e.g. ``https://example.com/account/verify/<token>/``.
+
+    """
+    path = f"{_VERIFY_PATH_PREFIX}{token}/"
     resolved_base = (
         base_url
         if base_url is not None
@@ -198,6 +233,47 @@ def _worker_send_subscription_confirmation_email(
     )
 
 
+@task()
+def _worker_send_verification_email(email: str, base_url: str | None) -> None:
+    """
+    Background worker: generate a token and send the email-verification email.
+
+    Token generation is deferred into the worker so that a retry issues a
+    fresh token rather than replaying a stale one from the original enqueue.
+    Uses ``SALT_EMAIL_VERIFICATION`` so a verification token cannot be
+    replayed against the account-access flow (or vice versa).
+
+    Args:
+        email: Recipient email address.
+        base_url: Absolute base URL (scheme + host) extracted from the
+            originating request, or ``None`` to fall back to SITE_BASE_URL.
+
+    """
+    token = generate_token(email, salt=SALT_EMAIL_VERIFICATION)
+    verify_url = _build_verify_url(token, base_url)
+    expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
+
+    context = {
+        "verify_url": verify_url,
+        "expiry_hours": expiry_hours,
+    }
+
+    subject = str(_SUBJECT_VERIFY)
+    plain_body = render_to_string("accounts/emails/verification.txt", context)
+    html_body = render_to_string("accounts/emails/verification.html", context)
+
+    logger.info("Sending email-verification email to %s", mask_email(email))
+
+    send_mail(
+        subject=subject,
+        message=plain_body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[email],
+        html_message=html_body,
+        fail_silently=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public API — thin wrappers that extract request data and enqueue a worker.
 # ---------------------------------------------------------------------------
@@ -245,3 +321,25 @@ def send_subscription_confirmation_email(
     """
     base_url = _extract_base_url(request)
     _worker_send_subscription_confirmation_email.enqueue(email, region.name, base_url)
+
+
+def send_verification_email(
+    email: str,
+    *,
+    request: HttpRequest | None = None,
+) -> None:
+    """
+    Enqueue an email-verification email to ``email`` (SNOW-430).
+
+    Sent during registration (and on re-registration of an unverified email).
+    Extracts the base URL from ``request`` (if provided) before enqueueing so
+    the worker carries no request dependency.  Token generation is deferred to
+    the worker so a retry issues a fresh token.
+
+    Args:
+        email: Recipient email address.
+        request: Optional HttpRequest used to derive the absolute base URL.
+
+    """
+    base_url = _extract_base_url(request)
+    _worker_send_verification_email.enqueue(email, base_url)

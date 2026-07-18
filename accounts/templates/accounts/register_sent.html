@@ -1,0 +1,19 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+accounts/templates/accounts/register_sent.html — "Check your inbox" page.
+
+Shown after a registration POST. The response is identical whether the email
+was new, already registered-and-unverified, or already verified, to prevent
+account enumeration (SNOW-430).
+{% endcomment %}
+{% load i18n %}
+
+{% block status_title %}{% trans "Check your inbox — Snowdesk" %}{% endblock %}
+
+{% block status_meta %}{% trans "We've sent you a link to verify your Snowdesk email address." %}{% endblock %}
+
+{% block status_heading %}{% trans "Check your inbox" %}{% endblock %}
+
+{% block status_body %}
+    {% trans "If that address needs verifying, we've sent you a link to confirm it. It expires in 24 hours." %}
+{% endblock %}

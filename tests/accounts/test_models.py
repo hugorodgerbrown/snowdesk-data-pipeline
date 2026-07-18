@@ -1,18 +1,21 @@
 """
 tests/accounts/test_models.py — Tests for accounts models.
 
-Covers Subscriber, Subscription, and PasskeyCredential model behaviour,
-queryset methods, string representations, and field constraints.
+Covers Account, Subscriber, Subscription, and PasskeyCredential model
+behaviour, queryset methods, string representations, and field constraints.
 """
 
+import datetime
 import uuid
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from accounts.aaguids import lookup as aaguid_lookup
-from accounts.models import PasskeyCredential, Subscriber, Subscription
+from accounts.models import Account, PasskeyCredential, Subscriber, Subscription
 from tests.factories import (
+    AccountFactory,
     MicroRegionFactory,
     PasskeyCredentialFactory,
     SubscriberFactory,
@@ -486,3 +489,82 @@ class TestSubscriberHasPasskeys:
         sub = SubscriberFactory.create()
         PasskeyCredentialFactory.create(user=sub.user)
         assert sub.has_passkeys() is True
+
+
+@pytest.mark.django_db
+class TestAccountModel:
+    """Tests for the Account identity-profile model (SNOW-430)."""
+
+    def test_to_string_returns_user_email(self) -> None:
+        account = AccountFactory.create(user__email="alice@example.com")
+        assert account.to_string() == "alice@example.com"
+        assert str(account) == "alice@example.com"
+
+    def test_defaults_are_unverified_when_built_unverified(self) -> None:
+        account = AccountFactory.create(is_verified=False)
+        assert account.is_verified is False
+        assert account.verified_at is None
+
+    def test_mark_verified_sets_flag_and_timestamp(self) -> None:
+        account = AccountFactory.create(is_verified=False)
+        now = timezone.now()
+        result = account.mark_verified(now)
+        assert result is account  # returns self for chaining
+        assert account.is_verified is True
+        assert account.verified_at == now
+
+    def test_mark_verified_does_not_save(self) -> None:
+        """mark_verified mutates in memory only; the caller owns the save."""
+        account = AccountFactory.create(is_verified=False)
+        account.mark_verified(timezone.now())
+        account.refresh_from_db()
+        assert account.is_verified is False
+
+    def test_mark_verified_is_idempotent_on_timestamp(self) -> None:
+        """A second mark_verified does not overwrite the original verified_at."""
+        first = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+        account = AccountFactory.create(is_verified=True, verified_at=first)
+        account.mark_verified(timezone.now())
+        assert account.verified_at == first
+
+
+@pytest.mark.django_db
+class TestAccountQuerySet:
+    """Tests for AccountQuerySet / AccountManager helpers."""
+
+    def test_verified_filters_to_verified_only(self) -> None:
+        verified = AccountFactory.create(is_verified=True)
+        AccountFactory.create(is_verified=False)
+        result = Account.objects.verified()
+        assert list(result) == [verified]
+
+    def test_by_email_lowercases(self) -> None:
+        account = AccountFactory.create(user__email="mixed@example.com")
+        assert account in Account.objects.by_email("MIXED@example.com")
+
+    def test_get_or_create_for_email_creates_user_and_account(self) -> None:
+        account, created = Account.objects.get_or_create_for_email("New@Example.com")
+        assert created is True
+        assert account.user.username == "new@example.com"
+        assert account.user.email == "new@example.com"
+        assert account.is_verified is False
+
+    def test_get_or_create_for_email_reuses_existing_user(self) -> None:
+        user = UserFactory.create(email="existing@example.com", is_staff=False)
+        account, created = Account.objects.get_or_create_for_email(
+            "existing@example.com"
+        )
+        assert created is True  # Account is new, User pre-existed
+        assert account.user == user
+
+    def test_get_or_create_for_email_is_idempotent(self) -> None:
+        first, _ = Account.objects.get_or_create_for_email("dup@example.com")
+        second, created = Account.objects.get_or_create_for_email("dup@example.com")
+        assert created is False
+        assert first.pk == second.pk
+
+    def test_get_or_create_for_email_applies_defaults(self) -> None:
+        account, _ = Account.objects.get_or_create_for_email(
+            "named@example.com", defaults={"display_name": "Named"}
+        )
+        assert account.display_name == "Named"

@@ -888,7 +888,7 @@ class TestAccountView:
         assert sub.confirmed_at is not None
 
     def test_valid_token_redirects_to_manage_with_just_confirmed(self) -> None:
-        """Successful token click redirects to /subscribe/manage/?just_confirmed=1."""
+        """Successful token click redirects to /account/manage/?just_confirmed=1."""
         SubscriberFactory.create(
             user__email="redirect@example.com", status=Subscriber.Status.PENDING
         )
@@ -896,7 +896,7 @@ class TestAccountView:
         client = Client()
         response = client.get(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 302
-        assert response["Location"] == "/subscribe/manage/?just_confirmed=1"
+        assert response["Location"] == "/account/manage/?just_confirmed=1"
 
     def test_valid_token_sets_confirmed_at_with_timezone(self) -> None:
         """confirmed_at timestamp has tzinfo set."""
@@ -949,7 +949,7 @@ class TestAccountView:
         client = Client()
         response = client.get(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 302
-        assert "/subscribe/manage/" in response["Location"]
+        assert "/account/manage/" in response["Location"]
 
     def test_expired_token_returns_400(self) -> None:
         """Expired token renders link_expired.html with status 400."""
@@ -1026,7 +1026,7 @@ class TestSignInView:
         client = _make_session_client(subscriber)
         response = client.get(reverse("accounts:sign_in"))
         assert response.status_code == 302
-        assert "/subscribe/manage/" in response["Location"]
+        assert "/account/manage/" in response["Location"]
 
     def test_post_known_email_sends_account_access_email(self) -> None:
         """Known email on POST → account access email sent."""
@@ -1733,7 +1733,7 @@ class TestUnsubscribeDoneView:
     """Tests for the standalone unsubscribe_done_view."""
 
     def test_get_renders_done_page(self) -> None:
-        """GET /subscribe/unsubscribe-done/ renders the done page."""
+        """GET /account/unsubscribe-done/ renders the done page."""
         client = Client()
         response = client.get(reverse("accounts:unsubscribe_done"))
         assert response.status_code == 200
@@ -2553,7 +2553,7 @@ class TestAccountViewLogging:
         token = _valid_account_token(email)
 
         with caplog.at_level(logging.WARNING, logger="accounts.views"):
-            Client().get(f"/subscribe/account/{token}/")
+            Client().get(f"/account/access/{token}/")
 
         all_messages = [r.getMessage() for r in caplog.records]
 

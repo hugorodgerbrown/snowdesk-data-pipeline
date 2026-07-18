@@ -55,7 +55,7 @@ class _CountingView:
         )
 
 
-def _post(path: str = "/subscribe/", key: str | None = None) -> HttpRequest:
+def _post(path: str = "/account/", key: str | None = None) -> HttpRequest:
     """Build a bare-bones POST request with an optional Idempotency-Key."""
     request = HttpRequest()
     request.method = "POST"
@@ -243,20 +243,20 @@ def test_concurrent_race_swallows_integrity_error() -> None:
 def test_end_to_end_replay_via_test_client() -> None:
     """A POST to a real endpoint is deduplicated by the middleware chain.
 
-    Uses ``/subscribe/`` which returns an HTML fragment for invalid input.
+    Uses ``/account/`` which returns an HTML fragment for invalid input.
     Two POSTs with the same Idempotency-Key must produce exactly one
     IdempotencyRecord row and matching response bodies.
     """
     client = Client()
 
     first = client.post(
-        "/subscribe/",
+        "/account/",
         data={"region_id": ""},  # invalid — validation branch
         HTTP_HX_REQUEST="true",
         HTTP_IDEMPOTENCY_KEY="e2e-test-key",
     )
     second = client.post(
-        "/subscribe/",
+        "/account/",
         data={"region_id": ""},
         HTTP_HX_REQUEST="true",
         HTTP_IDEMPOTENCY_KEY="e2e-test-key",

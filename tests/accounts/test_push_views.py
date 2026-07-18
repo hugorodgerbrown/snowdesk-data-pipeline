@@ -35,9 +35,9 @@ from tests.factories import PushSubscriptionFactory, SubscriberFactory, UserFact
 # Helpers
 # ---------------------------------------------------------------------------
 
-_REGISTER_URL = "/subscribe/push/register/"
-_UNREGISTER_URL = "/subscribe/push/unregister/"
-_TEST_URL = "/subscribe/push/test/"
+_REGISTER_URL = "/account/push/register/"
+_UNREGISTER_URL = "/account/push/unregister/"
+_TEST_URL = "/account/push/test/"
 
 _REGISTER_BODY: dict[str, Any] = {
     "endpoint": "https://push.example.com/unique-endpoint-views-test",
@@ -95,7 +95,7 @@ def staff_client(staff_user: Any) -> Client:
 
 @pytest.mark.django_db
 class TestPushRegister:
-    """Tests for /subscribe/push/register/."""
+    """Tests for /account/push/register/."""
 
     def test_anonymous_redirected_to_admin_login(self) -> None:
         """Anonymous POST is redirected to admin login."""
@@ -255,7 +255,7 @@ class TestPushRegister:
 
 @pytest.mark.django_db
 class TestPushUnregister:
-    """Tests for /subscribe/push/unregister/."""
+    """Tests for /account/push/unregister/."""
 
     def test_anonymous_redirected_to_admin_login(self) -> None:
         """Anonymous POST is redirected to admin login."""
@@ -305,7 +305,7 @@ class TestPushUnregister:
 
 @pytest.mark.django_db
 class TestPushTest:
-    """Tests for /subscribe/push/test/."""
+    """Tests for /account/push/test/."""
 
     def test_anonymous_redirected_to_admin_login(self) -> None:
         """Anonymous POST is redirected to admin login."""

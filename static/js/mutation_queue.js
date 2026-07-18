@@ -27,7 +27,7 @@
  *                                ``operation`` plus ``{reason}``.
  *
  * ``operation`` is caller-supplied metadata describing the mutation (e.g.
- * ``{method: 'POST', url: '/subscribe/', idempotency_key: '...'}``).
+ * ``{method: 'POST', url: '/account/', idempotency_key: '...'}``).
  * Callers must not include any of the PII keys the server-side receiver
  * blocks (``email``, ``ip``, ``token``, ``credential_id``) — the same
  * rule as every other ``window.pwaTelemetry.emit`` call site.

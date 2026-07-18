@@ -13,7 +13,8 @@ Authenticated subscriber:
   processor (accounts/context_processors.py).
 
 Not authenticated:
-  A "Sign in" link routes to /subscribe/sign-in/.
+  A "Register" link routes to /account/register/ and a "Sign in" link to
+  /account/sign-in/.
 
 Staff overlay (separate from subscriber auth):
   A cog-icon button opens an admin dropdown: Component library, Push demo,
@@ -171,6 +172,12 @@ Usage
                     </div>
                 </div>
             {% else %}
+                <a
+                    href="{% url 'accounts:register' %}"
+                    class="text-sm text-text-2 hover:text-text-1"
+                >
+                    {% trans "Register" %}
+                </a>
                 <a
                     href="{% url 'accounts:sign_in' %}"
                     class="text-sm text-text-2 hover:text-text-1"

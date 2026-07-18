@@ -427,7 +427,7 @@ class SignedInPage(PwaPage):
     """A ``PwaPage`` authenticated as a freshly-created ``Subscriber``.
 
     Reused by the P12 manage-page journey (reset local data), which needs
-    a signed-in session before ``/subscribe/manage/`` renders anything but
+    a signed-in session before ``/account/manage/`` renders anything but
     a redirect to sign-in.
     """
 

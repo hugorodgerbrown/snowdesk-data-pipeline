@@ -61,13 +61,13 @@ class TestSendAccountAccessEmail:
 
     def test_body_contains_account_path(self) -> None:
         send_account_access_email("alice@example.com")
-        assert "/subscribe/account/" in mail.outbox[0].body
+        assert "/account/access/" in mail.outbox[0].body
 
     def test_html_body_contains_account_path(self) -> None:
         send_account_access_email("alice@example.com")
         html_body, _ = cast(EmailMultiAlternatives, mail.outbox[0]).alternatives[0]
         html = str(html_body)
-        assert "/subscribe/account/" in html
+        assert "/account/access/" in html
 
     def test_token_in_url_is_valid(self) -> None:
         """The token embedded in the URL should verify back to the email."""
@@ -75,10 +75,10 @@ class TestSendAccountAccessEmail:
         body = mail.outbox[0].body
         # Find the account URL line
         url_line = next(
-            line for line in body.splitlines() if "/subscribe/account/" in line
+            line for line in body.splitlines() if "/account/access/" in line
         )
-        # Extract token from the URL path: /subscribe/account/<token>/
-        token = url_line.strip().rstrip("/").split("/subscribe/account/")[-1]
+        # Extract token from the URL path: /account/access/<token>/
+        token = url_line.strip().rstrip("/").split("/account/access/")[-1]
         result = verify_token(
             token, salt=SALT_ACCOUNT_ACCESS, max_age=settings.ACCOUNT_TOKEN_MAX_AGE
         )
@@ -93,7 +93,7 @@ class TestSendAccountAccessEmail:
         request = rf.get("/")
         send_account_access_email("alice@example.com", request=request)
         body = mail.outbox[0].body
-        assert "/subscribe/account/" in body
+        assert "/account/access/" in body
 
     def test_html_alternative_present(self) -> None:
         send_account_access_email("alice@example.com")
@@ -161,7 +161,7 @@ class TestSendSubscriptionConfirmationEmail:
         """Plain-text body contains the account-access URL path."""
         region = MicroRegionFactory.create(name="Engelberg Region")
         send_subscription_confirmation_email("alice@example.com", region=region)
-        assert "/subscribe/account/" in mail.outbox[0].body
+        assert "/account/access/" in mail.outbox[0].body
 
     def test_html_alternative_present(self) -> None:
         """Email includes an HTML alternative."""
@@ -185,9 +185,9 @@ class TestSendSubscriptionConfirmationEmail:
         send_subscription_confirmation_email("alice@example.com", region=region)
         body = mail.outbox[0].body
         url_line = next(
-            line for line in body.splitlines() if "/subscribe/account/" in line
+            line for line in body.splitlines() if "/account/access/" in line
         )
-        token = url_line.strip().rstrip("/").split("/subscribe/account/")[-1]
+        token = url_line.strip().rstrip("/").split("/account/access/")[-1]
         result = verify_token(
             token, salt=SALT_ACCOUNT_ACCESS, max_age=settings.ACCOUNT_TOKEN_MAX_AGE
         )
@@ -201,7 +201,7 @@ class TestSendSubscriptionConfirmationEmail:
         send_subscription_confirmation_email(
             "alice@example.com", region=region, request=request
         )
-        assert "/subscribe/account/" in mail.outbox[0].body
+        assert "/account/access/" in mail.outbox[0].body
 
     def test_text_body_includes_slf_attribution(self) -> None:
         """SLF licence credit appears in the plain-text body (SNOW-30)."""

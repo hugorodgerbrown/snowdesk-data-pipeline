@@ -9,10 +9,12 @@ account-access and unsubscribe flows.  Tokens are produced by Django's
 built-in ``TimestampSigner`` so they do not require a separate secret
 — they are derived from ``settings.SECRET_KEY`` and an additional salt.
 
-Three salts are defined:
+The salts are:
   - ``SALT_ACCOUNT_ACCESS`` — short-lived tokens for account-access email links.
   - ``SALT_UNSUBSCRIBE`` — permanent tokens embedded in bulletin emails; these
     never expire so a subscriber can always opt out even months later.
+  - ``SALT_EMAIL_VERIFICATION`` — short-lived tokens for the registration
+    email-verification links (SNOW-430).
 
 Public API
 ----------
@@ -44,6 +46,7 @@ logger = logging.getLogger(__name__)
 # salt, which is intentional: bump the salt to rotate all outstanding tokens.
 SALT_ACCOUNT_ACCESS = "account-access"
 SALT_UNSUBSCRIBE = "unsubscribe"
+SALT_EMAIL_VERIFICATION = "email-verification"
 
 # Separator used inside unsubscribe token values.
 _UNSUB_SEP = "|"

@@ -198,6 +198,20 @@ incident that invalidates derived state:
   multi-year backfills to stay polite to the public APIs.
 - `audit_resort_regions --commit` — after editing resort coordinates or
   region polygons; refixes FKs and rewrites the resort fixture.
+- `backfill_verified_accounts --commit` — one-off post-deploy step for
+  SNOW-430. Creates (or flips) a verified `Account` for every confirmed
+  (active) `Subscriber` that lacks one, so existing subscribers are not
+  locked out of field reports by the new `is_verified` gate. `verified_at`
+  is stamped from the subscriber's `confirmed_at`. Read-only by default;
+  pass `--commit` to persist. Idempotent — a second run reports everything
+  as skipped.
+
+  ```bash
+  uv run python manage.py backfill_verified_accounts           # dry-run
+  uv run python manage.py backfill_verified_accounts --commit
+  ```
+
+  Flags: `--commit`.
 
 ### Health checks (read-only)
 

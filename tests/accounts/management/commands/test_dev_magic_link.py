@@ -51,7 +51,7 @@ class TestDevMagicLinkCreatesSubscriber:
         out = _run("new@example.com", capsys)
         expected_token = generate_token("new@example.com", salt=SALT_ACCOUNT_ACCESS)
         base = str(settings.WEBAUTHN_ORIGIN).rstrip("/")
-        assert f"{base}/subscribe/account/{expected_token}/" in out
+        assert f"{base}/account/access/{expected_token}/" in out
 
 
 @pytest.mark.django_db

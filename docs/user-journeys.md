@@ -49,7 +49,7 @@ and a single feature often has to work in both:
 
 - **Session-authenticated** — has clicked an account-access link or
   signed in with a passkey in this browser. The full management surface
-  under `/subscribe/manage/` is available: add regions, remove regions,
+  under `/account/manage/` is available: add regions, remove regions,
   register passkeys, delete the account.
 - **Token-authenticated** — arrived via a signed token in a bulletin
   email, with no active session. The surface is intentionally narrow:
@@ -136,14 +136,14 @@ homepage) drops an email into the inline form and becomes a subscriber.
 - Inline subscribe form on the homepage, no region context.
 
 **URL surface:**
-- `POST /subscribe/` — HTMX form submit, returns one of four success
+- `POST /account/` — HTMX form submit, returns one of four success
   cards (A new, B existing-pending, C active-new-region, D
   active-already).
 - Email — account-access link.
-- `GET /subscribe/account/<token>/` — verifies the token, flips
+- `GET /account/access/<token>/` — verifies the token, flips
   `pending → active`, stamps `confirmed_at`, drops `subscriber_uuid`
   into the session.
-- `/subscribe/manage/` — the post-confirm destination.
+- `/account/manage/` — the post-confirm destination.
 
 **Key invariants:**
 - Cases A and B return **byte-equal** response fragments. This is the
@@ -171,22 +171,22 @@ homepage) drops an email into the inline form and becomes a subscriber.
 > a passkey so I don't need email links."
 
 **Entry points:**
-- `/subscribe/sign-in/` — the dedicated sign-in page.
+- `/account/sign-in/` — the dedicated sign-in page.
 - Account-access email link (covered in J2) — implicitly signs the
   user in on click.
 - A passkey present on the device, surfaced as a "Sign in with
   passkey" option on the sign-in page.
 
 **URL surface:**
-- `/subscribe/sign-in/` — email entry or passkey challenge.
-- `/subscribe/account/<token>/` — token consumed during the email
+- `/account/sign-in/` — email entry or passkey challenge.
+- `/account/access/<token>/` — token consumed during the email
   branch of sign-in.
-- `/subscribe/manage/` — landing page once authenticated.
-- `/subscribe/manage/remove/<region_id>/` — HTMX region removal.
-- `/subscribe/manage/delete/` — hard-delete the account.
-- `/subscribe/manage/passkeys/<uuid>/delete/` — remove a passkey.
-- `/subscribe/webauthn/…` — WebAuthn challenge/response endpoints.
-- `/subscribe/sign-out/` — POST-only.
+- `/account/manage/` — landing page once authenticated.
+- `/account/manage/remove/<region_id>/` — HTMX region removal.
+- `/account/manage/delete/` — hard-delete the account.
+- `/account/manage/passkeys/<uuid>/delete/` — remove a passkey.
+- `/account/webauthn/…` — WebAuthn challenge/response endpoints.
+- `/account/sign-out/` — POST-only.
 
 **Key invariants:**
 - Adding a new region happens on a bulletin page through the inline
@@ -218,9 +218,9 @@ in the email is the entire authentication mechanism.
 
 **URL surface:**
 - Click-through to a current bulletin — re-enters J1 from the URL on.
-- `GET /subscribe/unsubscribe/<token>/` — confirm page.
-- `POST /subscribe/unsubscribe/<token>/` — perform the unsubscribe.
-- `/subscribe/unsubscribe-done/` — confirmation page.
+- `GET /account/unsubscribe/<token>/` — confirm page.
+- `POST /account/unsubscribe/<token>/` — perform the unsubscribe.
+- `/account/unsubscribe-done/` — confirmation page.
 
 **Key invariants:**
 - Unsubscribe tokens have **no expiry**. A subscriber must be able to

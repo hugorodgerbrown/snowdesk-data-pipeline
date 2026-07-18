@@ -9,7 +9,7 @@
  * that the template emits. The key is URL-safe-base64 (RFC 7515) and must be
  * fed to PushManager.subscribe as a Uint8Array.
  *
- * Every fetch to /subscribe/push/* carries the CSRF token read from the
+ * Every fetch to /account/push/* carries the CSRF token read from the
  * csrftoken cookie (Django's default CSRF middleware accepts it via the
  * X-CSRFToken header) and credentials: 'same-origin' so the session cookie
  * is included for the staff_member_required check.
@@ -76,7 +76,7 @@
 
   /** POST a PushSubscriptionJSON + mechanism to the register endpoint. */
   async function _postRegister(subJson, mechanism) {
-    return fetch('/subscribe/push/register/', {
+    return fetch('/account/push/register/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -114,7 +114,7 @@
       applicationServerKey: urlBase64ToUint8Array(key),
     });
     const mechanism = _supportsDeclarativePush() ? 'declarative' : 'sw';
-    log(`POST /subscribe/push/register/ (mechanism=${mechanism})`);
+    log(`POST /account/push/register/ (mechanism=${mechanism})`);
     const resp = await _postRegister(sub.toJSON(), mechanism);
     log(`register → ${resp.status}`);
     if (resp.ok) {
@@ -230,8 +230,8 @@
     // would silently break notifications for a user who just wanted a
     // fresh session on the same device.
     await sub.unsubscribe();
-    log('POST /subscribe/push/unregister/');
-    const resp = await fetch('/subscribe/push/unregister/', {
+    log('POST /account/push/unregister/');
+    const resp = await fetch('/account/push/unregister/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -271,8 +271,8 @@
       body: $('#push-body').value || 'Test push from /_push-demo/',
       url: $('#push-url').value || '/',
     };
-    log(`POST /subscribe/push/test/ → ${body.title}`);
-    const resp = await fetch('/subscribe/push/test/', {
+    log(`POST /account/push/test/ → ${body.title}`);
+    const resp = await fetch('/account/push/test/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

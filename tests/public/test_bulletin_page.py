@@ -3418,7 +3418,7 @@ class TestSubscribePanelStates:
         assert response.status_code == 200
         content = response.content.decode()
         # Add-region form POSTs to the add_region endpoint.
-        assert "/subscribe/add/" in content
+        assert "/account/add/" in content
         # Should NOT show the email input (anonymous form).
         assert 'name="email"' not in content
 
@@ -3434,7 +3434,7 @@ class TestSubscribePanelStates:
         assert response.status_code == 200
         content = response.content.decode()
         # Unsubscribe form POSTs to the remove_region_from_bulletin endpoint.
-        assert "/subscribe/remove-region/" in content
+        assert "/account/remove-region/" in content
         # Should NOT show the email input (anonymous form).
         assert 'name="email"' not in content
 

@@ -98,7 +98,7 @@ def test_manage_page_reset_local_data(signed_in_page: SignedInPage) -> None:
     than assumed from the docs table, which conflates the two.
     """
     page = signed_in_page.page
-    page.goto(signed_in_page.live_server_url + "/subscribe/manage/")
+    page.goto(signed_in_page.live_server_url + "/account/manage/")
     page.wait_for_load_state("load")
     assert "sign-in" not in page.url
 

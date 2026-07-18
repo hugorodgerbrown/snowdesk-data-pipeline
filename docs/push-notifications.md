@@ -35,7 +35,7 @@ given subscription uses:
 
 `static/js/push_demo.js::_supportsDeclarativePush()` does the feature
 detection and sends the result as a `"mechanism"` field on the
-`/subscribe/push/register/` POST body.
+`/account/push/register/` POST body.
 
 `accounts/push_service.py::dispatch_push` branches the *outgoing wire
 payload* on `sub.mechanism` (see `_build_wire_payload`). For a `declarative`

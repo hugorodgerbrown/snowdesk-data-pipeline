@@ -402,13 +402,13 @@ def test_mutation_queue_stub_emits_enqueued(
     row = page.evaluate(
         """async () => {
             await window.pwaTelemetry.setOptIn(true);
-            await window.pwaMutationQueue.enqueue({ method: 'POST', url: '/subscribe/' });
+            await window.pwaMutationQueue.enqueue({ method: 'POST', url: '/account/' });
             const rows = await window.pwaDb.getAll('queue:events');
             return rows.find((r) => r.event === 'pwa.mutation.enqueued');
           }"""
     )
     assert row is not None
-    assert row["properties"] == {"method": "POST", "url": "/subscribe/"}
+    assert row["properties"] == {"method": "POST", "url": "/account/"}
 
 
 def test_mutation_queue_stub_emits_drained(live_server: LiveServer, page: Page) -> None:
@@ -439,7 +439,7 @@ def test_mutation_queue_stub_emits_failed_permanent(
         """async () => {
             await window.pwaTelemetry.setOptIn(false);
             await window.pwaMutationQueue.markFailed(
-              { method: 'POST', url: '/subscribe/' }, 'max_retries_exceeded',
+              { method: 'POST', url: '/account/' }, 'max_retries_exceeded',
             );
             const rows = await window.pwaDb.getAll('queue:events');
             return rows.find((r) => r.event === 'pwa.mutation.failed_permanent');
@@ -447,7 +447,7 @@ def test_mutation_queue_stub_emits_failed_permanent(
     )
     assert row is not None
     assert row["properties"]["reason"] == "max_retries_exceeded"
-    assert row["properties"]["url"] == "/subscribe/"
+    assert row["properties"]["url"] == "/account/"
 
 
 # ---------------------------------------------------------------------------

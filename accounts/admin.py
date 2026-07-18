@@ -1,10 +1,13 @@
 """
 accounts/admin.py — Django admin registrations for subscriptions models.
 
-Provides list and detail views for Subscriber, Subscription, PasskeyCredential,
-and PushSubscription records so that operators can inspect and manage newsletter
-subscriptions, registered passkeys, and Web Push subscriptions without direct
-database access.
+Provides list and detail views for Account, Subscriber, Subscription,
+PasskeyCredential, and PushSubscription records so that operators can inspect
+and manage registered accounts, newsletter subscriptions, registered passkeys,
+and Web Push subscriptions without direct database access.
+
+``Account`` (SNOW-430) is the identity profile keyed to ``auth.User``; it
+appears both as a standalone admin and as an inline on the custom User admin.
 
 ``PasskeyCredential`` has a FK to ``auth.User``, so its inline appears on a
 custom ``UserAdmin`` (not on ``SubscriberAdmin``).  This module unregisters the
@@ -21,7 +24,13 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as _BaseUserAdmin
 
-from .models import PasskeyCredential, PushSubscription, Subscriber, Subscription
+from .models import (
+    Account,
+    PasskeyCredential,
+    PushSubscription,
+    Subscriber,
+    Subscription,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +44,19 @@ class SubscriptionInline(admin.TabularInline):
     extra = 0
     readonly_fields = ["region", "created_at", "updated_at"]
     verbose_name = "Subscription"
+
+
+class AccountInline(admin.StackedInline):
+    """Inline display of the Account identity profile on the User admin page."""
+
+    model = Account
+    extra = 0
+    max_num = 1
+    can_delete = False
+    readonly_fields = ["is_verified", "verified_at", "created_at", "updated_at"]
+    fields = ["display_name", "is_verified", "verified_at", "created_at", "updated_at"]
+    verbose_name = "Account"
+    verbose_name_plural = "Account"
 
 
 class PasskeyCredentialInline(admin.TabularInline):
@@ -115,16 +137,47 @@ class SnowdeskUserAdmin(_BaseUserAdmin):
     """Custom UserAdmin that exposes registered passkeys as an inline.
 
     Passkeys are keyed to auth.User (not to Subscriber), so the inline belongs
-    here rather than on SubscriberAdmin.  All other UserAdmin behaviour is
-    inherited unchanged.
+    here rather than on SubscriberAdmin.  The Account identity profile
+    (SNOW-430) is likewise keyed to auth.User and appears as an inline here.
+    All other UserAdmin behaviour is inherited unchanged.
     """
 
-    inlines = [PasskeyCredentialInline]
+    inlines = [AccountInline, PasskeyCredentialInline]
 
 
 # Replace the default UserAdmin with our custom one so passkeys are visible.
 admin.site.unregister(User)
 admin.site.register(User, SnowdeskUserAdmin)
+
+
+@admin.register(Account)
+class AccountAdmin(admin.ModelAdmin):
+    """Admin view for Account (identity profile linked to auth.User)."""
+
+    list_display = [
+        "account_email",
+        "display_name",
+        "is_verified",
+        "verified_at",
+        "created_at",
+    ]
+    list_filter = ["is_verified"]
+    list_select_related = ["user"]
+    search_fields = ["user__email", "display_name"]
+    ordering = ["-created_at"]
+    readonly_fields = [
+        "user",
+        "uuid",
+        "is_verified",
+        "verified_at",
+        "created_at",
+        "updated_at",
+    ]
+
+    @admin.display(description="Email")
+    def account_email(self, obj: Account) -> str:
+        """Return the linked User's email address."""
+        return obj.user.email
 
 
 @admin.register(Subscription)

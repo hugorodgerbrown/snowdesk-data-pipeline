@@ -42,6 +42,7 @@ def test_robots_disallows_functional_paths() -> None:
     body = _body()
     for path in (
         "Disallow: /admin/",
+        "Disallow: /account/",
         "Disallow: /subscribe/",
         "Disallow: /api/edit/",
         "Disallow: /partials/",

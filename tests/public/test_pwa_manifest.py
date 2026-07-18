@@ -66,7 +66,7 @@ def test_manifest_scope_is_absolute_site_root() -> None:
 
     Without an explicit ``scope``, the W3C default is the directory of
     ``start_url`` — which on the previous ``/map/`` setting meant any
-    in-app link to ``/``, ``/region/<id>/``, ``/subscribe/``, etc.
+    in-app link to ``/``, ``/region/<id>/``, ``/account/``, etc.
     escaped the standalone window into a regular browser tab.
     """
     manifest = _load_manifest()

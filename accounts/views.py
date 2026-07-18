@@ -5,6 +5,13 @@ Implements the subscription flow built around Django's TimestampSigner:
 
   sign_in_view        GET/POST — dedicated sign-in page (email entry / passkey).
                                POST: rate-limited (3/m per IP); sends magic link.
+  register_view       GET/POST — standalone registration page (email required,
+                               name optional). POST: rate-limited (3/m per IP);
+                               sends an email-verification link (SNOW-430).
+  verify_view         GET/POST — confirm an email-verification token. GET shows
+                               a confirm button (no state change); POST marks the
+                               Account verified, logs in, redirects to setup.
+  setup_view          GET  — post-verification credential-setup landing page.
   subscribe_partial   POST — inline HTMX subscribe CTA on bulletin pages.
                             Requires a region_id; uses a four-case matrix keyed
                             on (subscriber_created, subscription_created) to
@@ -16,7 +23,7 @@ Implements the subscription flow built around Django's TimestampSigner:
                       POST — HTMX: authenticated one-click unsubscribe from the
                             bulletin page. Mirrors remove_region cascade logic.
   account_view        GET  — verify account-access token; activate subscriber;
-                            log in via Django auth; redirect to /subscribe/manage/.
+                            log in via Django auth; redirect to /account/manage/.
   manage_view         GET  — authenticated "your subscriptions" page.
                             Unauthenticated requests redirect to /sign-in/.
   remove_region       POST — HTMX: remove one subscribed region card.
@@ -44,7 +51,7 @@ import uuid
 
 import waffle
 from django.conf import settings
-from django.contrib.auth import login, logout
+from django.contrib.auth import get_user_model, login, logout
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -59,22 +66,26 @@ from public.decorators import lowercase_region_id
 from regions.models import MicroRegion
 from regions.services.point_match import IN_NEIGHBOUR, IN_REGION
 
-from .forms import EmailForm, SubscribeForm
+from .forms import EmailForm, RegisterForm, SubscribeForm
 from .logging_utils import mask_email
-from .models import Subscriber, Subscription
+from .models import Account, Subscriber, Subscription
 from .services.email import (
     send_account_access_email,
     send_subscription_confirmation_email,
+    send_verification_email,
 )
 from .services.request_context import geo_match_snapshot
 from .services.token import (
     SALT_ACCOUNT_ACCESS,
+    SALT_EMAIL_VERIFICATION,
     generate_unsubscribe_token,
     verify_token,
     verify_unsubscribe_token,
 )
 
 logger = logging.getLogger(__name__)
+
+User = get_user_model()
 
 # The backend used when calling login() after token/passkey verification.
 _TOKEN_BACKEND = "accounts.backends.TokenBackend"  # noqa: S105 — backend path, not a password
@@ -83,10 +94,10 @@ _TOKEN_BACKEND = "accounts.backends.TokenBackend"  # noqa: S105 — backend path
 _LINK_EXPIRED_TEMPLATE = "accounts/link_expired.html"
 
 # URL name for the manage page — used in redirects.
-_MANAGE_URL = "/subscribe/manage/"
+_MANAGE_URL = "/account/manage/"
 
 # URL for the unsubscribe-done page — used in HX-Redirect headers.
-_UNSUBSCRIBE_DONE_URL = "/subscribe/unsubscribe-done/"
+_UNSUBSCRIBE_DONE_URL = "/account/unsubscribe-done/"
 
 
 def _get_subscriber(request: HttpRequest) -> Subscriber | None:
@@ -172,6 +183,184 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
     analytics.track("sign_in_requested", str(subscriber.user_id), sign_in_props)
 
     return render(request, "accounts/manage_sent.html", {})
+
+
+# ---------------------------------------------------------------------------
+# register_view — standalone registration page (SNOW-430)
+# ---------------------------------------------------------------------------
+
+
+@require_http_methods(["GET", "POST"])
+def register_view(request: HttpRequest) -> HttpResponse:
+    """
+    Standalone registration page: email required, name optional.
+
+    Creates (or reuses) an ``auth.User`` and an ``Account`` profile — no
+    ``Subscriber`` row.  Submitting sends an email-verification link
+    asynchronously; the account only becomes verified when that link is
+    confirmed (``verify_view``).
+
+    Anti-enumeration: the response is identical whether the email is new,
+    already registered-and-unverified, or already verified.  A verified
+    account receives **no** second email (nothing to verify); an unverified
+    one (including accounts first created via the subscribe flow) has its
+    link re-sent.
+
+    POST is rate-limited to 3/min per IP.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        Rendered registration page, the "check your inbox" page, or a redirect
+        to manage when already authenticated.
+
+    """
+    if request.user.is_authenticated:
+        return redirect("accounts:manage")
+
+    if request.method == "GET":
+        return render(request, "accounts/register.html", {"form": RegisterForm()})
+
+    # POST — rate-limit then create-or-reuse and (maybe) send.
+    usage = get_usage(
+        request,
+        group="accounts.register.post",
+        key="ip",
+        rate="3/m",
+        method=["POST"],
+        increment=True,
+    )
+    if usage is not None and usage["should_limit"]:
+        return HttpResponse(status=429)
+
+    form = RegisterForm(request.POST)
+    if not form.is_valid():
+        return render(request, "accounts/register.html", {"form": form})
+
+    email: str = form.cleaned_data["email"]
+    name: str = form.cleaned_data.get("name", "")
+
+    account, _created = Account.objects.get_or_create_for_email(
+        email,
+        defaults={"display_name": name} if name else None,
+    )
+    # Backfill a display name onto an existing account that had none.
+    if name and not account.display_name:
+        account.display_name = name
+        account.save(update_fields=["display_name", "updated_at"])
+
+    if account.is_verified:
+        # Already verified — nothing to verify, and sending an email would
+        # leak that the address exists.  Return the same response anyway.
+        # (The response body is byte-identical; a residual timing signal from
+        # skipping the enqueue is mitigated by the 3/min per-IP rate limit,
+        # consistent with the sign-in/subscribe enumeration posture.)
+        logger.info(
+            "Registration for already-verified account pk=%s — no email sent",
+            account.pk,
+        )
+    else:
+        send_verification_email(email, request=request)
+        logger.info("Verification email sent for account pk=%s", account.pk)
+
+    return render(request, "accounts/register_sent.html", {})
+
+
+# ---------------------------------------------------------------------------
+# verify_view — confirm an email-verification token (SNOW-430)
+# ---------------------------------------------------------------------------
+
+
+@require_http_methods(["GET", "POST"])
+def verify_view(request: HttpRequest, token: str) -> HttpResponse:
+    """
+    Verify an email-verification token from the registration email.
+
+    GET renders a confirm page with a single button — it performs **no**
+    state change, so link-prefetch scanners cannot silently verify an
+    account.  POST marks the ``Account`` verified, logs the user in, and
+    redirects to the credential-setup page.
+
+    On a bad, tampered, or expired token (or an unknown email) renders the
+    generic ``link_expired`` page (400).
+
+    Args:
+        request: Incoming HTTP request.
+        token: The signed verification token from the URL path.
+
+    Returns:
+        Confirm page (GET), redirect to setup (POST), or link-expired page.
+
+    """
+    max_age = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400)
+    email = verify_token(token, salt=SALT_EMAIL_VERIFICATION, max_age=max_age)
+
+    if email is None:
+        logger.debug("verify_view received an invalid/expired token")
+        response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
+        response["Referrer-Policy"] = "no-referrer"
+        return response
+
+    try:
+        user = User.objects.get(username=email.lower())
+    except User.DoesNotExist:
+        logger.warning(
+            "verify_view: valid token for unknown email %s", mask_email(email)
+        )
+        response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
+        response["Referrer-Policy"] = "no-referrer"
+        return response
+
+    if request.method == "GET":
+        response = render(request, "accounts/verify.html", {"token": token})
+        response["Referrer-Policy"] = "no-referrer"
+        return response
+
+    # POST — perform the verification. Create the Account already-verified so a
+    # freshly-inserted row is never briefly visible as unverified; only an
+    # existing row needs the follow-up UPDATE.
+    now = timezone.now()
+    account, created = Account.objects.get_or_create(
+        user=user,
+        defaults={"is_verified": True, "verified_at": now},
+    )
+    if not created:
+        account.mark_verified(now)
+        account.save(update_fields=["is_verified", "verified_at", "updated_at"])
+    login(request, user, backend=_TOKEN_BACKEND)
+    logger.info("Account pk=%s verified via registration link", account.pk)
+
+    response = redirect("accounts:setup")
+    response["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+# ---------------------------------------------------------------------------
+# setup_view — post-verification credential-setup landing (SNOW-430)
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+def setup_view(request: HttpRequest) -> HttpResponse:
+    """
+    Post-verification "finish setup" landing page.
+
+    Reached after ``verify_view`` logs the user in.  In SNOW-430 this is a
+    simple welcome + "continue to your account" page; SNOW-431 (set a
+    password) and SNOW-434 (register a passkey) extend it with optional
+    credential cards.  Unauthenticated visitors are redirected to sign-in.
+
+    Args:
+        request: Incoming GET request.
+
+    Returns:
+        Rendered setup page, or a redirect to sign-in.
+
+    """
+    if not request.user.is_authenticated:
+        return redirect("accounts:sign_in")
+    return render(request, "accounts/setup.html", {})
 
 
 # ---------------------------------------------------------------------------
@@ -663,7 +852,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
     On success: if the subscriber is pending, flip to active and stamp
     ``confirmed_at`` (idempotent — re-clicking the same link does not
     re-stamp).  Calls ``django.contrib.auth.login()`` to establish the
-    Django session and redirects to ``/subscribe/manage/?just_confirmed=1``.
+    Django session and redirects to ``/account/manage/?just_confirmed=1``.
 
     On failure (bad, tampered, or expired token): renders ``link_expired.html``
     with status 400.
@@ -1059,7 +1248,7 @@ def build_unsubscribe_url(
 
     """
     token = generate_unsubscribe_token(email, region_id)
-    path = f"/subscribe/unsubscribe/{token}/"
+    path = f"/account/unsubscribe/{token}/"
     if request is not None:
         return request.build_absolute_uri(path)
     base = getattr(settings, "SITE_BASE_URL", "http://localhost:8000").rstrip("/")

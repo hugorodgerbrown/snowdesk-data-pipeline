@@ -5,7 +5,7 @@ Panel state for an authenticated subscriber who IS already subscribed to this re
 
 Displays a confirmation heading and a secondary "Unsubscribe" CTA. POSTs to
 accounts:remove_region_from_bulletin, which either swaps in a confirmation
-fragment or HX-Redirects to /subscribe/unsubscribe-done/ if this was the last region.
+fragment or HX-Redirects to /account/unsubscribe-done/ if this was the last region.
 
 Expected context variables:
   region_id   — the SLF region identifier (str)
@@ -20,7 +20,7 @@ Expected context variables:
     </h2>
     <p class="text-sm text-text-2 mb-4 leading-relaxed">
         {% trans "You receive daily bulletin updates for this region." %}
-        <a href="/subscribe/manage/" class="underline text-text-1">{% trans "Manage your subscriptions" %}</a>
+        <a href="/account/manage/" class="underline text-text-1">{% trans "Manage your subscriptions" %}</a>
     </p>
     <form
         hx-post="{% url 'accounts:remove_region_from_bulletin' region_id %}"

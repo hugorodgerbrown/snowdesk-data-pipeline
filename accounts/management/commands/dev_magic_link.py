@@ -71,6 +71,6 @@ class Command(BaseCommand):
 
         token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
         base = str(settings.WEBAUTHN_ORIGIN).rstrip("/")
-        url = f"{base}/subscribe/account/{token}/"
+        url = f"{base}/account/access/{token}/"
 
         self.stdout.write(self.style.SUCCESS(url))

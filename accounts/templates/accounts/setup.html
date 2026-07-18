@@ -1,0 +1,38 @@
+{% extends "public/base.html" %}
+{% comment %}
+accounts/templates/accounts/setup.html — Post-verification credential-setup page.
+
+Reached after verify_view logs the user in (SNOW-430). In this ticket it is a
+simple welcome + "continue to your account" landing. SNOW-431 extends it with
+an optional "set a password" card and SNOW-434 with a "save a passkey" card;
+both land the user on the manage page when they finish or skip.
+{% endcomment %}
+{% load i18n static components %}
+
+{% block title %}{% trans "Finish setting up — Snowdesk" %}{% endblock %}
+
+{% block meta_description %}{% trans "Your Snowdesk email is verified. Finish setting up your account." %}{% endblock %}
+
+{% block content %}
+    <div class="px-4 py-10">
+        <div class="max-w-narrow mx-auto">
+            {% card padding="p-8" %}
+            <h1 class="text-2xl font-semibold text-text-1 mb-2">
+                {% trans "You're verified" %}
+            </h1>
+            <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                {% trans "Your email address is confirmed. You can manage your account and subscriptions from here." %}
+            </p>
+            <div>
+                {% url 'accounts:manage' as manage_url %}
+                {% trans "Continue to your account" as label %}
+                {% include "includes/_button.html" with label=label href=manage_url variant="primary" full_width=True %}
+            </div>
+            {% endcard %}
+            {% comment %}
+                SNOW-431 adds an optional "set a password" card and SNOW-434 an
+                optional "save a passkey" card below this welcome card.
+            {% endcomment %}
+        </div>
+    </div>
+{% endblock %}
