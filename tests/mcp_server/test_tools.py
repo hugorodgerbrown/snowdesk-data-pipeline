@@ -538,3 +538,66 @@ class TestHandleGetBulletinMetadataArgs:
             tools._handle_get_bulletin_metadata(
                 {"region_id": "CH-4115", "date": "not-a-date"}
             )
+
+
+# ---------------------------------------------------------------------------
+# get_bulletin_raw
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestGetBulletinRaw:
+    """Tests for tools.get_bulletin_raw."""
+
+    def test_returns_caaml_verbatim_for_present_bulletin(
+        self, region: MicroRegion
+    ) -> None:
+        """The stored raw_data is returned unchanged.
+
+        Production ingest wraps raw CAAML in a GeoJSON Feature envelope
+        (see ``docs/decisions/geojson-feature-envelope.md``); the tool
+        never unwraps that envelope — a caller reasoning against the
+        CAAML schema wants the same shape they would fetch from the
+        provider. This test's factory sets raw_data without the envelope
+        for brevity; the important assertion is the deep-equal against
+        whatever the ingest stored.
+        """
+        target_date = datetime.date(2026, 4, 8)
+        bulletin = _make_bulletin(region, target_date, source=Bulletin.Source.ALBINA)
+
+        result = tools.get_bulletin_raw(region.region_id, target_date)
+
+        assert result["has_bulletin"] is True
+        assert result["region_id"] == region.region_id
+        assert result["date"] == "2026-04-08"
+        assert result["provider"] == "albina"
+        assert result["issued_at"].startswith("2026-04-08T17:00")
+        assert result["caaml"] == bulletin.raw_data
+        assert "dangerRatings" in result["caaml"]["properties"]
+
+    def test_no_bulletin_for_date_is_a_structured_empty_result(
+        self, region: MicroRegion
+    ) -> None:
+        """A quiet day with no bulletin is a normal result, not an error."""
+        result = tools.get_bulletin_raw(region.region_id, datetime.date(2026, 4, 8))
+
+        assert result["has_bulletin"] is False
+        assert "caaml" not in result
+        assert "No bulletin" in result["summary"]
+
+    def test_unknown_region_id_raises_tool_error(self) -> None:
+        """An unknown region_id raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.get_bulletin_raw("XX-0000", datetime.date(2026, 4, 8))
+
+    def test_defaults_to_today_seam_when_date_omitted(
+        self, region: MicroRegion
+    ) -> None:
+        """Omitting 'date' falls back to the injected 'today' seam."""
+        fixed_today = datetime.date(2026, 4, 8)
+        _make_bulletin(region, fixed_today)
+
+        result = tools.get_bulletin_raw(region.region_id, today=fixed_today)
+
+        assert result["has_bulletin"] is True
+        assert result["date"] == "2026-04-08"

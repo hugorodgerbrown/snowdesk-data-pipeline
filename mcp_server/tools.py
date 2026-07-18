@@ -608,6 +608,83 @@ def _handle_get_bulletin_metadata(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# get_bulletin_raw
+# ---------------------------------------------------------------------------
+
+
+def get_bulletin_raw(
+    region_id: str,
+    date: dt.date | None = None,
+    *,
+    today: dt.date | None = None,
+) -> dict[str, Any]:
+    """Return the full CAAML v6 payload for a region + day.
+
+    Machine-readable escape hatch: when a flattened tool has dropped a
+    field the caller needs, this returns the source-shape CAAML JSON
+    (wrapped in the GeoJSON Feature envelope Snowdesk stores). Payload
+    runs ~10-30 KB per bulletin; prefer the flattened tools for the
+    common questions.
+
+    Args:
+        region_id: Exact region identifier, e.g. ``"CH-4115"``.
+        date: The day to look up. Defaults to today.
+        today: Overrides "today" for the default-date fallback — a
+            settable-in-tests seam; production callers never pass this.
+
+    Returns:
+        A dict with the standard wrapping metadata (``region_id``,
+        ``date``, ``has_bulletin``, ``provider``, ``issued_at``) and the
+        raw ``caaml`` payload verbatim. When no bulletin covers ``date``
+        the result carries ``has_bulletin: false`` and no ``caaml`` key —
+        a quiet day is a legitimate empty result, not an error.
+
+    Raises:
+        ToolError: ``region_id`` does not match any known region.
+
+    """
+    region = resolvers.resolve_region(region_id)
+    if region is None:
+        raise ToolError(f"Unknown region_id: {region_id!r}.")
+
+    target_date = date or today or timezone.localdate()
+    bulletin = _select_bulletin_for_date(region, target_date)
+    if bulletin is None:
+        return {
+            "region_id": region.region_id,
+            "region_name": region.name,
+            "date": target_date.isoformat(),
+            "has_bulletin": False,
+            "summary": (
+                f"No bulletin is available for {region.name} "
+                f"({region.region_id}) on {target_date.isoformat()}."
+            ),
+        }
+
+    source = _source_from_render_model(bulletin)
+    return {
+        "region_id": region.region_id,
+        "region_name": region.name,
+        "date": target_date.isoformat(),
+        "has_bulletin": True,
+        "provider": source,
+        "issued_at": bulletin.issued_at.isoformat(),
+        "caaml": bulletin.raw_data,
+        "summary": (
+            f"Raw CAAML payload for {region.name} ({region.region_id}) on "
+            f"{target_date.isoformat()} (issued {bulletin.issued_at.isoformat()})."
+        ),
+    }
+
+
+def _handle_get_bulletin_raw(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``get_bulletin_raw`` JSON-RPC arguments to the tool function."""
+    region_id = _require_str(arguments, "region_id")
+    parsed_date = _optional_iso_date(arguments, "date")
+    return get_bulletin_raw(region_id, parsed_date)
+
+
+# ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
 
@@ -740,5 +817,33 @@ TOOLS: dict[str, ToolSpec] = {
             "required": ["region_id"],
         },
         handler=_handle_get_bulletin_metadata,
+    ),
+    "get_bulletin_raw": ToolSpec(
+        name="get_bulletin_raw",
+        description=(
+            "Escape hatch: return the full CAAML v6 payload (wrapped in a "
+            "GeoJSON Feature envelope) for one region on one day. Use when "
+            "the flattened tools have dropped a field you need — payload "
+            "is ~10-30 KB per bulletin, so prefer get_current_conditions "
+            "or get_avalanche_problems for the common questions."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "region_id": {
+                    "type": "string",
+                    "description": (
+                        "Exact region_id, e.g. 'CH-4115'. Use search_regions "
+                        "first if you only have a place name."
+                    ),
+                },
+                "date": {
+                    "type": "string",
+                    "description": "ISO date YYYY-MM-DD. Defaults to today.",
+                },
+            },
+            "required": ["region_id"],
+        },
+        handler=_handle_get_bulletin_raw,
     ),
 }

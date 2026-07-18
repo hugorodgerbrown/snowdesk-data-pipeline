@@ -1,6 +1,6 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — search_regions, get_current_conditions, get_danger_history, list_resorts_in_region, get_bulletin_metadata tools
+description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — search_regions, get_current_conditions, get_danger_history, list_resorts_in_region, get_bulletin_metadata, get_bulletin_raw tools
 status: current
 last-reviewed: 2026-07-18
 ---
@@ -154,6 +154,20 @@ the source without hallucinating.
   variant survives per row). When no bulletin covers `date`,
   `has_bulletin` is `false` and provenance fields are omitted — a
   structured "no data" result, not an error.
+
+### `get_bulletin_raw`
+
+Escape hatch: returns the full CAAML v6 payload (wrapped in the GeoJSON
+Feature envelope Snowdesk stores) for one region on one day. Use this
+when the flattened tools have dropped a field the caller needs — payload
+is ~10-30 KB per bulletin, so it is not the default.
+
+* **Params:** `region_id` (string, required), `date` (`YYYY-MM-DD`,
+  optional — defaults to today).
+* **Returns:** `{region_id, region_name, date, has_bulletin, provider,
+  issued_at, caaml: {type: "Feature", geometry, properties: {...}},
+  summary}`. When no bulletin covers `date`, `has_bulletin` is `false`
+  and the `caaml` key is omitted.
 
 ## Cost caps
 
