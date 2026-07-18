@@ -24,6 +24,9 @@ the codebase (``mcp_server.resolvers``, ``public.views``,
   ``MicroRegion.centre``; radius capped at 100 km per call.
 * ``get_danger_trend`` — trailing-window danger series plus computed
   direction / change_point / current_streak layers.
+* ``get_regional_snapshot`` — per-region peak-danger entries plus a
+  scope-level summary for a whole country or major region, sourced from
+  ``RegionDayRating`` (one indexed query, not an N-region fan-out).
 
 Each tool is implemented as a plain, typed Python function (the signature
 a caller reasons about) plus a thin ``_handle_*`` adapter that unpacks the
@@ -47,6 +50,7 @@ from django.utils import timezone
 from bulletins.models import Bulletin, RegionDayRating
 from bulletins.schema import AvalancheProblem
 from mcp_server import resolvers, season
+from public.api import COUNTRY_NAMES
 from public.views import _select_bulletin_for_date
 from regions.models import Resort
 
@@ -1249,6 +1253,197 @@ def _handle_get_danger_trend(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# get_regional_snapshot
+# ---------------------------------------------------------------------------
+
+
+def _scope_label(country: str | None, major_region_id: str | None) -> str:
+    """Return a human-readable label for a get_regional_snapshot scope.
+
+    Args:
+        country: The normalised (upper-cased) country code, or ``None``.
+        major_region_id: The normalised major-region prefix, or ``None``.
+
+    Returns:
+        The country's English name (e.g. ``"Switzerland"``) when scoped by
+        country, else the major-region prefix itself — the tool doesn't
+        look up the MajorRegion's own name, since a major-region scope may
+        legitimately resolve to zero MicroRegions.
+
+    """
+    if country:
+        return COUNTRY_NAMES.get(country, country)
+    return major_region_id or "the requested scope"
+
+
+def _peak_rating_population(
+    region_entries: list[dict[str, Any]],
+) -> tuple[str | None, int]:
+    """Return the highest ``danger_level`` present and how many regions carry it.
+
+    Args:
+        region_entries: The per-region entries from
+            :func:`get_regional_snapshot`, each carrying a
+            ``danger_level`` that is ``None`` when ``has_bulletin`` is
+            ``False``.
+
+    Returns:
+        ``(rating, count)`` for the highest-ranked ``danger_level`` value
+        present, or ``(None, 0)`` when no entry carries a rating.
+
+    """
+    ranked = [
+        (entry["danger_level"], _RATING_RANK.get(entry["danger_level"], 0))
+        for entry in region_entries
+        if entry["danger_level"] is not None
+    ]
+    if not ranked:
+        return None, 0
+    highest_rank = max(rank for _rating, rank in ranked)
+    peak_rating = next(rating for rating, rank in ranked if rank == highest_rank)
+    peak_count = sum(1 for _rating, rank in ranked if rank == highest_rank)
+    return peak_rating, peak_count
+
+
+def get_regional_snapshot(
+    country: str | None = None,
+    major_region_id: str | None = None,
+    date: dt.date | None = None,
+    *,
+    today: dt.date | None = None,
+) -> dict[str, Any]:
+    """Return a per-region peak-danger snapshot for a country or major region.
+
+    Answers "where should I go?" in one call: given a country (ISO-2) or a
+    ``MajorRegion.prefix``, returns one entry per covered MicroRegion with
+    its peak (``max_rating``) and minimum (``min_rating``) danger rating
+    for the day, plus a scope-level summary. A natural companion to
+    :func:`bulk_current_conditions` for the case where the caller doesn't
+    yet know which ``region_ids`` they want.
+
+    Sourced from ``RegionDayRating`` — one indexed query per call rather
+    than an N-region fan-out over :func:`get_current_conditions` — the
+    same table :func:`get_danger_history` and :func:`get_danger_trend`
+    already read from, and the peak-rating semantic already established
+    for the choropleth, map tooltip, and season calendar
+    (``docs/compressed-views-rating-rule.md``).
+
+    Args:
+        country: ISO-3166-1 alpha-2 country code, e.g. ``"CH"``. Mutually
+            exclusive with ``major_region_id`` — exactly one is required.
+        major_region_id: A ``MajorRegion.prefix``, e.g. ``"CH-4"``.
+            Mutually exclusive with ``country``.
+        date: The day to look up. Defaults to ``today`` (or, if that is
+            also unset, the real current date) when omitted.
+        today: Overrides "today" for the default-date fallback — a
+            settable-in-tests seam; production callers never pass this.
+
+    Returns:
+        ``{scope, date, regions, count, count_with_bulletin, summary}``.
+        ``regions`` is one entry per MicroRegion in scope, ordered by
+        ``region_id``: ``{region_id, name, danger_level, min_rating,
+        has_bulletin}``. ``danger_level`` (the peak, i.e.
+        ``RegionDayRating.max_rating``) and ``min_rating`` are ``None``
+        when ``has_bulletin`` is ``False`` — a region with no
+        ``RegionDayRating`` row for that day is a legitimate outcome, not
+        an error.
+
+    Raises:
+        ToolError: neither or both of ``country`` / ``major_region_id``
+            are supplied, ``country`` isn't a recognised ISO-2 code, or
+            ``major_region_id`` doesn't match any known ``MajorRegion``.
+
+    """
+    try:
+        regions = resolvers.regions_for_scope(country, major_region_id)
+    except ValueError as exc:
+        raise ToolError(str(exc)) from exc
+
+    target_date = date or today or timezone.localdate()
+
+    ratings_by_region_id = {
+        row.region.region_id: row
+        for row in RegionDayRating.objects.filter(
+            region__in=regions, date=target_date
+        ).select_related("region")
+    }
+
+    region_entries: list[dict[str, Any]] = []
+    for region in regions:
+        rating = ratings_by_region_id.get(region.region_id)
+        if rating is None:
+            region_entries.append(
+                {
+                    "region_id": region.region_id,
+                    "name": region.name,
+                    "danger_level": None,
+                    "min_rating": None,
+                    "has_bulletin": False,
+                }
+            )
+        else:
+            region_entries.append(
+                {
+                    "region_id": region.region_id,
+                    "name": region.name,
+                    "danger_level": rating.max_rating,
+                    "min_rating": rating.min_rating,
+                    "has_bulletin": True,
+                }
+            )
+
+    count_with_bulletin = sum(1 for entry in region_entries if entry["has_bulletin"])
+    scope = {
+        "country": country.strip().upper() if country else None,
+        "major_region_id": major_region_id.strip() if major_region_id else None,
+    }
+    return {
+        "scope": scope,
+        "date": target_date.isoformat(),
+        "regions": region_entries,
+        "count": len(region_entries),
+        "count_with_bulletin": count_with_bulletin,
+        "summary": _regional_snapshot_summary(
+            _scope_label(scope["country"], scope["major_region_id"]),
+            target_date,
+            region_entries,
+            count_with_bulletin,
+        ),
+    }
+
+
+def _regional_snapshot_summary(
+    scope_label: str,
+    target_date: dt.date,
+    region_entries: list[dict[str, Any]],
+    count_with_bulletin: int,
+) -> str:
+    """Return a one-line, LLM-quotable summary of a get_regional_snapshot result."""
+    parts = [
+        f"{scope_label} on {target_date.isoformat()}: {count_with_bulletin}/"
+        f"{len(region_entries)} region(s) with a bulletin."
+    ]
+    peak_rating, peak_count = _peak_rating_population(region_entries)
+    if peak_rating is not None:
+        parts.append(
+            f"Peak rating {peak_rating.replace('_', ' ')} ({peak_count} region(s))."
+        )
+    return " ".join(parts)
+
+
+def _handle_get_regional_snapshot(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``get_regional_snapshot`` JSON-RPC arguments to the tool function."""
+    country = arguments.get("country")
+    if country is not None and not isinstance(country, str):
+        raise ToolError("'country' must be a string when supplied.")
+    major_region_id = arguments.get("major_region_id")
+    if major_region_id is not None and not isinstance(major_region_id, str):
+        raise ToolError("'major_region_id' must be a string when supplied.")
+    parsed_date = _optional_iso_date(arguments, "date")
+    return get_regional_snapshot(country, major_region_id, parsed_date)
+
+
+# ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
 
@@ -1537,5 +1732,42 @@ TOOLS: dict[str, ToolSpec] = {
             "required": ["region_id"],
         },
         handler=_handle_get_danger_trend,
+    ),
+    "get_regional_snapshot": ToolSpec(
+        name="get_regional_snapshot",
+        description=(
+            "Return a per-region peak-danger snapshot for every region in a "
+            "country or major-region scope, plus a scope-level summary — "
+            "answers 'where should I go?' in one call instead of an N-region "
+            "fan-out over get_current_conditions. Exactly one of 'country' "
+            "or 'major_region_id' is required. Sourced from RegionDayRating "
+            "(the same peak-rating table get_danger_history, "
+            "get_danger_trend, and the map choropleth read from), not a "
+            "per-region bulletin scan."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "country": {
+                    "type": "string",
+                    "description": (
+                        "ISO-3166-1 alpha-2 country code, e.g. 'CH'. Mutually "
+                        "exclusive with major_region_id."
+                    ),
+                },
+                "major_region_id": {
+                    "type": "string",
+                    "description": (
+                        "A MajorRegion prefix, e.g. 'CH-4'. Mutually "
+                        "exclusive with country."
+                    ),
+                },
+                "date": {
+                    "type": "string",
+                    "description": "ISO date YYYY-MM-DD. Defaults to today.",
+                },
+            },
+        },
+        handler=_handle_get_regional_snapshot,
     ),
 }
