@@ -1,13 +1,16 @@
 """
 mcp_server/tools.py — MCP tool registry and handlers.
 
-Four read-only tools, composed from services that already exist elsewhere
+Five read-only tools, composed from services that already exist elsewhere
 in the codebase (``mcp_server.resolvers``, ``public.views``,
-``RegionDayRating.objects.for_region_range``, ``Bulletin.render_model``):
+``RegionDayRating.objects.for_region_range``, ``Bulletin.render_model``,
+``Bulletin.get_avalanche_problems``):
 
 * ``search_regions`` — fuzzy place-name search (``resolvers.search_places``).
 * ``get_current_conditions`` — danger rating + forecaster prose for one
   region on one day.
+* ``get_avalanche_problems`` — the structured avalanche-problem list
+  (type, elevation, aspects, comment) for one region on one day.
 * ``get_danger_history`` — per-day min/max ratings for one region over a
   date range, clamped to a single avalanche season.
 * ``list_resorts_in_region`` — geocoded resorts within one region.
@@ -32,6 +35,7 @@ from typing import Any
 from django.utils import timezone
 
 from bulletins.models import RegionDayRating
+from bulletins.schema import AvalancheProblem
 from mcp_server import resolvers, season
 from public.views import _select_bulletin_for_date
 from regions.models import Resort
@@ -285,6 +289,137 @@ def _handle_get_current_conditions(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# get_avalanche_problems
+# ---------------------------------------------------------------------------
+
+
+def get_avalanche_problems(
+    region_id: str,
+    date: dt.date | None = None,
+    *,
+    today: dt.date | None = None,
+) -> dict[str, Any]:
+    """Return the structured avalanche-problem list for a region on a day.
+
+    The decision-support layer behind the scalar danger level returned by
+    ``get_current_conditions`` — each problem carries its own type,
+    elevation band, aspects, and forecaster comment.
+
+    Args:
+        region_id: Exact region identifier, e.g. ``"CH-4115"``.
+        date: The day to look up. Defaults to ``today`` (or, if that is
+            also unset, the real current date) when omitted.
+        today: Overrides "today" for the default-date fallback — a
+            settable-in-tests seam; production callers never pass this.
+
+    Returns:
+        A dict describing the day's problems. When no bulletin covers
+        ``date`` this is a structured "no data" result (``has_bulletin:
+        False``), not an error — a quiet day with no forecast is a
+        legitimate outcome. A bulletin with no distinct problems (an empty
+        ``avalancheProblems`` array) is also a legitimate, non-error
+        outcome, distinguished from the no-bulletin case by
+        ``has_bulletin: True`` and a different summary wording.
+
+    Raises:
+        ToolError: ``region_id`` does not match any known region.
+
+    """
+    region = resolvers.resolve_region(region_id)
+    if region is None:
+        raise ToolError(f"Unknown region_id: {region_id!r}.")
+
+    target_date = date or today or timezone.localdate()
+    bulletin = _select_bulletin_for_date(region, target_date)
+    if bulletin is None:
+        return {
+            "region_id": region.region_id,
+            "region_name": region.name,
+            "date": target_date.isoformat(),
+            "has_bulletin": False,
+            "problems": [],
+            "count": 0,
+            "summary": (
+                f"No bulletin is available for {region.name} "
+                f"({region.region_id}) on {target_date.isoformat()}."
+            ),
+        }
+
+    problems = [_serialise_problem(p) for p in bulletin.get_avalanche_problems()]
+    return {
+        "region_id": region.region_id,
+        "region_name": region.name,
+        "date": target_date.isoformat(),
+        "has_bulletin": True,
+        "problems": problems,
+        "count": len(problems),
+        "summary": _avalanche_problems_summary(region, target_date, problems),
+    }
+
+
+def _serialise_problem(problem: AvalancheProblem) -> dict[str, Any]:
+    """Serialise one ``AvalancheProblem`` to a JSON-friendly dict.
+
+    Curated to the subset of fields useful to an LLM caller —
+    ``problem_type``, ``danger_rating_value``, ``valid_time_period``,
+    ``elevation``, ``aspects``, ``comment``, ``avalanche_size``.
+    Provider-specific fields (``subdivision``, ``avalanche_type``,
+    ``snowpack_stability``, ``frequency``) are deliberately omitted.
+
+    Args:
+        problem: The dataclass instance to serialise.
+
+    Returns:
+        A dict with the curated field subset. ``elevation`` is ``None``
+        when the source problem has no elevation constraint, otherwise a
+        ``{lower_bound, upper_bound}`` dict (either bound may be
+        ``None``). ``aspects`` is always a list.
+
+    """
+    elevation: dict[str, str | None] | None = None
+    if problem.elevation is not None:
+        elevation = {
+            "lower_bound": problem.elevation.lower_bound,
+            "upper_bound": problem.elevation.upper_bound,
+        }
+    return {
+        "problem_type": problem.problem_type,
+        "danger_rating_value": problem.danger_rating_value,
+        "valid_time_period": problem.valid_time_period,
+        "elevation": elevation,
+        "aspects": list(problem.aspects),
+        "comment": problem.comment,
+        "avalanche_size": problem.avalanche_size,
+    }
+
+
+def _avalanche_problems_summary(
+    region: Any,
+    target_date: dt.date,
+    problems: list[dict[str, Any]],
+) -> str:
+    """Return a one-line, LLM-quotable summary of a get_avalanche_problems result."""
+    header = f"{region.name} ({region.region_id}) on {target_date.isoformat()}"
+    if not problems:
+        return f"{header}: 0 avalanche problems reported."
+    noun = "avalanche problem" if len(problems) == 1 else "avalanche problems"
+    described = ", ".join(
+        f"{p['problem_type']} ({p['danger_rating_value']})"
+        if p["danger_rating_value"]
+        else p["problem_type"]
+        for p in problems
+    )
+    return f"{header}: {len(problems)} {noun} — {described}."
+
+
+def _handle_get_avalanche_problems(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``get_avalanche_problems`` JSON-RPC arguments to the tool function."""
+    region_id = _require_str(arguments, "region_id")
+    parsed_date = _optional_iso_date(arguments, "date")
+    return get_avalanche_problems(region_id, parsed_date)
+
+
+# ---------------------------------------------------------------------------
 # get_danger_history
 # ---------------------------------------------------------------------------
 
@@ -532,6 +667,33 @@ TOOLS: dict[str, ToolSpec] = {
             "required": ["region_id"],
         },
         handler=_handle_get_current_conditions,
+    ),
+    "get_avalanche_problems": ToolSpec(
+        name="get_avalanche_problems",
+        description=(
+            "Return the structured avalanche-problem list (type, elevation "
+            "band, aspects, forecaster comment) for one region on a given "
+            "day — the decision-support detail behind the scalar danger "
+            "level from get_current_conditions. Defaults to today."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "region_id": {
+                    "type": "string",
+                    "description": (
+                        "Exact region_id, e.g. 'CH-4115'. Use search_regions "
+                        "first if you only have a place name."
+                    ),
+                },
+                "date": {
+                    "type": "string",
+                    "description": "ISO date YYYY-MM-DD. Defaults to today.",
+                },
+            },
+            "required": ["region_id"],
+        },
+        handler=_handle_get_avalanche_problems,
     ),
     "get_danger_history": ToolSpec(
         name="get_danger_history",

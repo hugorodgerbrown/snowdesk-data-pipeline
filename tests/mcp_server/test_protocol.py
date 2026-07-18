@@ -180,8 +180,8 @@ def test_ping_returns_empty_result() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_tools_list_returns_all_four_registered_tools() -> None:
-    """tools/list advertises all four tools with name/description/inputSchema."""
+def test_tools_list_returns_all_five_registered_tools() -> None:
+    """tools/list advertises all five tools with name/description/inputSchema."""
     response = protocol.dispatch(_request("tools/list"))
     assert response is not None
     names = {t["name"] for t in response["result"]["tools"]}
@@ -189,6 +189,7 @@ def test_tools_list_returns_all_four_registered_tools() -> None:
     assert names == {
         "search_regions",
         "get_current_conditions",
+        "get_avalanche_problems",
         "get_danger_history",
         "list_resorts_in_region",
     }
