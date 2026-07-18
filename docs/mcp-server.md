@@ -1,6 +1,6 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — ten read-only tools over regions, bulletins, problems, danger trend, geolocation
+description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — twelve read-only tools over regions, bulletins, problems, danger trend, geolocation
 status: current
 last-reviewed: 2026-07-18
 ---
@@ -55,13 +55,22 @@ sidesteps standing up an ASGI stack for this one surface.
 | `initialize` | Returns `protocolVersion`, `capabilities: {"tools": {}}`, `serverInfo: {name: "snowdesk", version: <APP_VERSION>}`. |
 | `notifications/initialized` | A notification (no `id`) — accepted, no response body (`204`). |
 | `ping` | Liveness check; empty result `{}`. |
-| `tools/list` | Returns all ten tools below with `name`, `description`, `inputSchema`. |
+| `tools/list` | Returns all twelve tools below with `name`, `description`, `inputSchema`. |
 | `tools/call` | `{"name": ..., "arguments": {...}}` → a `CallToolResult` (`content`, `structuredContent`, `isError`). |
 
 ## Tools
 
-All ten are implemented in `mcp_server/tools.py`, composed from services
+All twelve are implemented in `mcp_server/tools.py`, composed from services
 that already exist elsewhere in the codebase — no new query logic.
+
+**Casing convention (SNOW-404):** `list_regions` and `region_info`
+deliberately emit **UPPER CASE** response constants (`kind: "MICRO"`,
+provider values `"SLF"` / `"ALBINA"` / `"METEOFRANCE"` — the
+`Bulletin.Source` enum *names*, never the raw lowercase literals) with
+case-insensitive input normalisation. Every other tool below uses the
+lowercase constants shown in its own `Returns` line. This is an approved
+inconsistency, not an oversight — see each tool's section for its exact
+casing.
 
 ### `search_regions`
 
@@ -273,6 +282,65 @@ falling in Verbier?" in one call.
   []` with `direction: "stable"`, `change_point: null`,
   `current_streak: null` — a structured empty result, not an error.
 
+### `list_regions`
+
+Lists every avalanche-warning micro-region Snowdesk knows about,
+optionally filtered by country and/or provider. Runs with no arguments to
+return the full reference list.
+
+* **Params:** `country` (string, optional — `CH`/`AT`/`IT`/`FR`, matched
+  case-insensitively), `provider` (string, optional —
+  `SLF`/`ALBINA`/`METEOFRANCE`, matched case-insensitively).
+* **Returns:** `{filters: {country, provider}, regions: [{region_id,
+  name, kind: "MICRO", country, provider}], count, summary}`, ordered by
+  `region_id` (the model default).
+* **Filters are orthogonal and ANDed** — supplying both narrows to their
+  intersection. An unrecognised `country` or `provider` value raises a
+  domain-level `isError`, not a JSON-RPC parameter error — same
+  convention as `get_danger_history`'s `min_rating` rejection.
+* **Uncovered regions are included.** A `MicroRegion` with no
+  `RegionDayRating` rows is still a real, listable region; `region_info`
+  is where the coverage window (or its absence) is reported.
+* **UPPER CASE response constants** (`kind: "MICRO"`, `provider:
+  "SLF"`/`"ALBINA"`/`"METEOFRANCE"`) — see the casing note above.
+* **No result cap** — the full list runs ~150-300 rows, per the approved
+  SNOW-404 scope.
+
+### `region_info`
+
+Returns full reference-data metadata for one micro-region: its EAWS
+parent hierarchy, source provider, resorts, a computed bounding box, its
+`RegionDayRating` coverage window, and a static published issue schedule.
+
+* **Params:** `region_id` (string, required).
+* **Returns:** `{region_id, region_name, country, eaws_parent:
+  {major_prefix, major_name, sub_prefix, sub_name}, source_provider,
+  resorts: [{name, latitude, longitude, canton}], resort_count, bbox:
+  {min_lon, min_lat, max_lon, max_lat} | null, coverage_first_date,
+  coverage_last_date, issue_schedule, summary}`.
+* **`bbox`** is computed in pure Python from `MicroRegion.boundary`
+  GeoJSON (`Polygon` or `MultiPolygon`) — no Shapely, no PostGIS, the
+  same dependency-free precedent as
+  `mcp_server.resolvers._haversine_km`. `null` when the boundary is
+  missing or malformed.
+* **`coverage_first_date`/`coverage_last_date`** come from
+  `RegionDayRating.objects.filter(region=region).aggregate(Min("date"),
+  Max("date"))`; both `null` for a region with no ingested day ratings —
+  a legitimate outcome, not an error.
+* **`issue_schedule`** is a static, hand-written string describing each
+  provider's published cadence (SLF ~17:00 CET daily, +08:00 update in
+  season; ALBINA ~17:00 for the following day, +08:00 when needed;
+  Météo-France ~16:00 local per massif in season) — general publication
+  information, not a live per-bulletin field.
+* **Elevation bounds were assessed and dropped (SNOW-404).** Analysed
+  against a season of bulletins and found not to add reliable value at
+  the region level (bounds vary per avalanche problem, not per region) —
+  no `elevation_min`/`elevation_max` field is returned. Revisit only if a
+  concrete caller need emerges.
+* **UPPER CASE response constants** (`source_provider:
+  "SLF"`/`"ALBINA"`/`"METEOFRANCE"`) — see the casing note above.
+* Raises a domain-level `isError` for an unknown `region_id`.
+
 ## Cost caps
 
 * `get_danger_history` is capped to one region and one avalanche season
@@ -345,6 +413,11 @@ curl -s -X POST http://localhost:8000/api/mcp/ \
   region has no bulletin page of its own.
 * **Auth.** Public/anonymous, IP-rate-limited — matches the rest of
   `/api/`. No token auth in v1.
+* **No `resources/*` capability.** Reference data (`list_regions`,
+  `region_info`) is exposed as `tools/call` methods, not as MCP
+  `resources/list` / `resources/read` — `initialize` advertises only
+  `capabilities: {"tools": {}}`. A `resources/*` request is unrecognised
+  (`-32601`), same as any other unimplemented top-level method.
 
 ## See also
 
