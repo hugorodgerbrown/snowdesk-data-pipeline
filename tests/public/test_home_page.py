@@ -22,13 +22,16 @@ from __future__ import annotations
 import datetime
 
 import pytest
+from django.contrib.auth.base_user import AbstractBaseUser
+from django.contrib.auth.models import AnonymousUser
 from django.core.management import call_command
-from django.test import Client, override_settings
+from django.http import HttpRequest
+from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
 from waffle.testutils import override_flag
 
-from public.views import _default_region_label
+from public.views import _default_region_label, _favourites_context
 from tests.factories import (
     BulletinFactory,
     MajorRegionFactory,
@@ -582,3 +585,101 @@ class TestHomePageReportButtonParity:
         content = client.get(reverse("public:home")).content.decode()
         assert "report-btn" in content
         assert 'data-report-eligible="true"' in content
+
+
+@pytest.mark.django_db
+class TestFavouritesContext:
+    """Unit tests for _favourites_context() (SNOW-414).
+
+    Called directly (via RequestFactory) rather than through the full
+    home() round-trip so the {flag on/off} x {anon/auth} matrix is cheap
+    to exercise — mirrors the existing _default_region_label() unit tests
+    in TestDefaultRegionLabel above. django_db is required even for the
+    "build" (unsaved) cases: waffle.flag_is_active() queries the Flag
+    table regardless of override_flag's monkeypatched active state.
+    """
+
+    def _request(self, *, user: "AbstractBaseUser | AnonymousUser") -> HttpRequest:
+        request = RequestFactory().get("/")
+        request.user = user  # type: ignore[assignment]
+        return request
+
+    @override_flag("favourites", active=False)
+    def test_flag_off_anon_not_visible_not_eligible(self) -> None:
+        """Flag off + anonymous: neither visible nor eligible, no URLs."""
+        ctx = _favourites_context(self._request(user=AnonymousUser()))
+        assert ctx["favourites_visible"] is False
+        assert ctx["favourites_eligible"] is False
+        assert "favourites_geojson_url" not in ctx
+
+    @override_flag("favourites", active=False)
+    def test_flag_off_auth_not_visible_not_eligible(self) -> None:
+        """Flag off + authenticated: still neither visible nor eligible.
+
+        The flag gates the feature entirely, regardless of auth state.
+        """
+        subscriber = SubscriberFactory.build()
+        ctx = _favourites_context(self._request(user=subscriber.user))
+        assert ctx["favourites_visible"] is False
+        assert ctx["favourites_eligible"] is False
+
+    @override_flag("favourites", active=True)
+    def test_flag_on_anon_visible_not_eligible(self) -> None:
+        """Flag on + anonymous: visible (so the anon CTA can render), not eligible."""
+        ctx = _favourites_context(self._request(user=AnonymousUser()))
+        assert ctx["favourites_visible"] is True
+        assert ctx["favourites_eligible"] is False
+        assert ctx["favourites_geojson_url"] == reverse("favourites:geojson")
+        assert ctx["favourite_create_url"] == reverse("favourites:create")
+        assert ctx["favourites_signin_url"] == reverse("accounts:sign_in")
+        assert "__UUID__" in ctx["favourite_rename_url_template"]
+        assert "__UUID__" in ctx["favourite_delete_url_template"]
+
+    @override_flag("favourites", active=True)
+    def test_flag_on_auth_visible_and_eligible(self) -> None:
+        """Flag on + authenticated: both visible and eligible."""
+        subscriber = SubscriberFactory.create()
+        ctx = _favourites_context(self._request(user=subscriber.user))
+        assert ctx["favourites_visible"] is True
+        assert ctx["favourites_eligible"] is True
+
+
+@pytest.mark.django_db
+class TestHomePageFavouritesParity:
+    """The favourites map controls render on / per SNOW-414's eligibility rules."""
+
+    @override_flag("favourites", active=False)
+    def test_favourite_controls_absent_when_flag_off(self) -> None:
+        """No Add-favourite control, overlay toggle, or #map data-* when the flag is off."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        assert "favourite-add-btn" not in content
+        assert 'data-overlay-key="favourites"' not in content
+        assert "data-favourites-url" not in content
+
+    @override_flag("favourites", active=True)
+    def test_add_control_shown_for_anonymous_with_flag(self) -> None:
+        """Anonymous visitors see the Add-favourite control (with a sign-in CTA)
+        but not the overlay toggle (eligible-only) or the geojson URL.
+        """
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        assert "favourite-add-btn" in content
+        assert 'data-favourites-eligible="false"' in content
+        assert "data-signin-url" in content
+        assert 'data-overlay-key="favourites"' not in content
+        assert "data-favourites-url" not in content
+
+    @override_flag("favourites", active=True)
+    def test_add_control_and_overlay_eligible_for_subscriber(self) -> None:
+        """A logged-in subscriber sees the Add control, the overlay toggle,
+        and #map carries the per-user geojson URL.
+        """
+        subscriber = SubscriberFactory.create()
+        client = Client(SERVER_NAME="localhost")
+        client.force_login(subscriber.user)
+        content = client.get(reverse("public:home")).content.decode()
+        assert "favourite-add-btn" in content
+        assert 'data-favourites-eligible="true"' in content
+        assert 'data-overlay-key="favourites"' in content
+        assert reverse("favourites:geojson") in content

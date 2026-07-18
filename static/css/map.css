@@ -302,6 +302,20 @@
     filter: brightness(1.04);
 }
 
+/* SNOW-414: "Add favourite" pill — same 40x40 icon-button geometry as
+   the basemap / locate pills, stacked inside #map-controls-br (not
+   independently positioned like .map-report-control, which predates the
+   bottom-right stack prototype). The star SVG inherits currentColor. */
+.map-utility-pill--favourite {
+    width: 40px;
+    flex: 0 0 auto;
+    justify-content: center;
+}
+
+.map-utility-pill--favourite:hover {
+    filter: brightness(1.04);
+}
+
 /* Search input inside the expanded pill — hidden until the pill is
    in the expanded state. Width/opacity transition in sync with the
    pill's width transition so the reveal feels like one motion. */

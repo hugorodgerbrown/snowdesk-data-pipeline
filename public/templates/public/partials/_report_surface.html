@@ -2,12 +2,17 @@
 {% comment %}
 public/partials/_report_surface.html — Field-report sheet and JS (SNOW-333).
 
-Shared between map.html and home.html. Rendered only when report_visible is
-True (i.e. the field_observations waffle flag is active for the request).
+Included from home.html. Rendered only when report_visible is True (i.e.
+the field_observations waffle flag is active for the request).
 
 The roundel button lives in _map_embed.html (inside #map so it floats above
 the season scrubber). This partial owns the viewport-anchored sheet panel
-that report.js opens, and the two script tags required to drive it.
+that report.js opens, and the script tag required to drive it.
+
+htmx.min.js is loaded by home.html (shared with _favourites_surface.html,
+SNOW-414) — not repeated here; report.js calls htmx.ajax and the
+swapped-in form submits via hx-post, so htmx.min.js must precede it in
+document order, which home.html's include ordering guarantees.
 
 Context expected:
   report_visible  — bool: whether the feature flag is active.
@@ -24,9 +29,6 @@ Context expected:
     >
     </div>
     {# SNOW-333: field-report JS — geolocation + HTMX sheet opener.          #}
-    {# htmx.min.js must precede report.js (report.js calls htmx.ajax and    #}
-    {# the swapped-in form submits via hx-post). Both deferred so they      #}
-    {# execute in document order after the map assets.                      #}
-    <script defer src="{% static 'js/htmx.min.js' %}"></script>
+    {# Deferred so it executes in document order after the map assets.      #}
     <script defer src="{% static 'js/report.js' %}"></script>
 {% endif %}

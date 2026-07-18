@@ -47,6 +47,8 @@ Optional context:
     data-bulletin-groupings-url="{% url 'api:bulletin_groupings_geojson' %}"
     data-default-basemap-key="{{ default_basemap_key }}"
     data-season-end="{{ season_end|date:'Y-m-d' }}"
+    {% if favourites_eligible %}data-favourites-url="{{ favourites_geojson_url }}"{% endif %}
+    data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
 >
     <div class="map-utility-cluster" id="map-utility-cluster">
         <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">
@@ -251,6 +253,26 @@ Optional context:
                         {% trans "Resorts" %}
                     </button>
                 </li>
+                {# SNOW-414: Favourites overlay — the signed-in user's own saved   #}
+                {# pins, as star markers above the L4 choropleth. Eligible-only   #}
+                {# (flag + authenticated) since the layer is per-user data.       #}
+                {# Default-on (map.js seeds overlayState.favourites from          #}
+                {# localStorage with a `true` fallback) — this static             #}
+                {# aria-checked="true" is the first-paint default; map.js         #}
+                {# reconciles it against the persisted preference on load.        #}
+                {% if favourites_eligible %}
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay"
+                            data-overlay-key="favourites"
+                            aria-checked="true"
+                        >
+                            {% trans "Favourites" %}
+                        </button>
+                    </li>
+                {% endif %}
                 {# SNOW-65: Options section — behaviours that modify interaction   #}
                 {# rather than visual layers. Uses the same checkbox affordance   #}
                 {# as the overlay items.                                          #}
@@ -311,6 +333,40 @@ Optional context:
                 </svg>
             </button>
         </div>
+        {# SNOW-414: "Add favourite" control — rendered whenever the flag is    #}
+        {# active (favourites_visible), regardless of authentication state, so #}
+        {# anonymous visitors see the affordance and get a sign-in CTA on tap  #}
+        {# (favourites.js branches on data-favourites-eligible, mirroring      #}
+        {# #report-btn's data-report-eligible anon branch).                   #}
+        {% if favourites_visible %}
+            <div class="map-utility-pill map-utility-pill--favourite">
+                <button
+                    id="favourite-add-btn"
+                    type="button"
+                    class="map-utility-button"
+                    data-favourite-create-url="{{ favourite_create_url }}"
+                    data-favourite-rename-url-template="{{ favourite_rename_url_template }}"
+                    data-favourite-delete-url-template="{{ favourite_delete_url_template }}"
+                    data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
+                    data-signin-url="{{ favourites_signin_url }}"
+                    aria-label='{% trans "Add a favourite pin" %}'
+                >
+                    <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                    </svg>
+                </button>
+            </div>
+        {% endif %}
     </div>
     {% comment %}
     Map info panel (SNOW-38, redesigned SNOW-230). A single (i) toggle
