@@ -18,6 +18,7 @@ the adapters that unpack a JSON-RPC ``arguments`` dict into them.
 from __future__ import annotations
 
 import datetime
+from datetime import UTC
 from typing import Any
 
 import pytest
@@ -27,7 +28,13 @@ from freezegun import freeze_time
 from bulletins.models import RegionDayRating
 from mcp_server import protocol
 from mcp_server.tools import TOOLS
-from tests.factories import MicroRegionFactory, RegionDayRatingFactory, ResortFactory
+from tests.factories import (
+    BulletinFactory,
+    MicroRegionFactory,
+    RegionBulletinFactory,
+    RegionDayRatingFactory,
+    ResortFactory,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -189,6 +196,7 @@ def test_tools_list_returns_all_registered_tools() -> None:
     assert names == {
         "search_regions",
         "get_current_conditions",
+        "get_avalanche_problems",
         "get_danger_history",
         "list_resorts_in_region",
         "get_bulletin_metadata",
@@ -256,6 +264,52 @@ def test_tools_call_domain_error_is_reported_as_tool_error_not_protocol_error() 
     result = response["result"]
     assert result["isError"] is True
     assert "XX-0000" in result["content"][0]["text"]
+
+
+@pytest.mark.django_db
+def test_tools_call_get_avalanche_problems_returns_structured_content() -> None:
+    """get_avalanche_problems round-trips through tools/call and returns problem data."""
+    region = MicroRegionFactory.create(region_id="CH-4115", name="Bas-Valais")
+    target_date = datetime.date(2026, 3, 10)
+    bulletin = BulletinFactory.create(
+        issued_at=datetime.datetime.combine(
+            target_date, datetime.time(17, 0), tzinfo=UTC
+        ),
+        valid_from=datetime.datetime.combine(
+            target_date, datetime.time(8, 0), tzinfo=UTC
+        ),
+        valid_to=datetime.datetime.combine(
+            target_date, datetime.time(17, 0), tzinfo=UTC
+        ),
+        raw_data={
+            "properties": {
+                "avalancheProblems": [
+                    {
+                        "problemType": "wind_slab",
+                        "dangerRatingValue": "considerable",
+                        "aspects": ["N"],
+                    }
+                ]
+            }
+        },
+    )
+    RegionBulletinFactory.create(bulletin=bulletin, region=region)
+
+    response = protocol.dispatch(
+        _request(
+            "tools/call",
+            {
+                "name": "get_avalanche_problems",
+                "arguments": {"region_id": "CH-4115", "date": "2026-03-10"},
+            },
+        )
+    )
+    assert response is not None
+    result = response["result"]
+    assert result["isError"] is False
+    assert result["structuredContent"]["region_id"] == "CH-4115"
+    assert result["structuredContent"]["count"] == 1
+    assert result["structuredContent"]["problems"][0]["problem_type"] == "wind_slab"
 
 
 @pytest.mark.django_db

@@ -1,6 +1,6 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — nine read-only tools over regions, bulletins, danger history/trend, geolocation
+description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — ten read-only tools over regions, bulletins, problems, danger trend, geolocation
 status: current
 last-reviewed: 2026-07-18
 ---
@@ -55,12 +55,12 @@ sidesteps standing up an ASGI stack for this one surface.
 | `initialize` | Returns `protocolVersion`, `capabilities: {"tools": {}}`, `serverInfo: {name: "snowdesk", version: <APP_VERSION>}`. |
 | `notifications/initialized` | A notification (no `id`) — accepted, no response body (`204`). |
 | `ping` | Liveness check; empty result `{}`. |
-| `tools/list` | Returns all four tools below with `name`, `description`, `inputSchema`. |
+| `tools/list` | Returns all ten tools below with `name`, `description`, `inputSchema`. |
 | `tools/call` | `{"name": ..., "arguments": {...}}` → a `CallToolResult` (`content`, `structuredContent`, `isError`). |
 
 ## Tools
 
-All four are implemented in `mcp_server/tools.py`, composed from services
+All ten are implemented in `mcp_server/tools.py`, composed from services
 that already exist elsewhere in the codebase — no new query logic.
 
 ### `search_regions`
@@ -98,6 +98,35 @@ Returns the danger rating and forecaster prose for one region on one day.
   avalanche_activity}, summary}`. When no bulletin covers `date`,
   `has_bulletin` is `false` and the rest is a structured "no data" result
   — a quiet day with no forecast is a legitimate outcome, not an error.
+
+### `get_avalanche_problems`
+
+Returns the structured avalanche-problem list for one region on one day —
+the decision-support detail behind the scalar `danger_level` returned by
+`get_current_conditions`. Sourced from `Bulletin.get_avalanche_problems()`
+(`bulletins/models.py`), which parses the bulletin's `avalancheProblems`
+CAAML array into `AvalancheProblem` dataclasses (`bulletins/schema.py`).
+
+* **Params:** `region_id` (string, required), `date` (`YYYY-MM-DD`,
+  optional — defaults to today).
+* **Returns:** `{region_id, region_name, date, has_bulletin, problems: [{
+  problem_type, danger_rating_value, valid_time_period, elevation:
+  {lower_bound, upper_bound} | null, aspects, comment, avalanche_size}],
+  count, summary}`. `elevation` is `null` when the source problem carries
+  no elevation constraint; otherwise both bounds are always present,
+  either of which may itself be `null`. When no bulletin covers `date`,
+  `has_bulletin` is `false` and `problems`/`count` are empty/`0` — the
+  same structured "no data" shape as `get_current_conditions`. A bulletin
+  with an empty `avalancheProblems` array is a distinct, non-error case
+  (`has_bulletin: true`, `problems: []`, and a different summary wording)
+  from "no bulletin at all".
+
+**Curated field subset.** Deliberately omits provider-specific fields —
+`subdivision` (SLF's CH sub-level qualifier), `avalanche_type` (ALBINA's
+slab/loose/glide axis), `snowpack_stability`, and `frequency` — as
+low-value for a general-purpose LLM caller. See
+`AvalancheProblem`'s docstring in `bulletins/schema.py` for the full field
+set these are drawn from.
 
 ### `get_danger_history`
 

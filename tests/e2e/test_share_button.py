@@ -63,23 +63,30 @@ def test_share_button_completes_share_flow(
     # Wait for the async clipboard write to settle.  The share flow involves
     # a ``fetch`` → ``navigator.share`` (async, may reject on headless
     # Chromium) → ``navigator.clipboard.writeText`` (also async) chain.
-    # ``wait_for_load_state("networkidle")`` only waits for the network; the
-    # clipboard write may resolve after that.  Polling with a 5 s budget gives
-    # the async chain time to complete without slowing down the happy path.
     #
-    # The wait condition checks the actual assertion — that the clipboard
-    # starts with ``http`` — rather than just ``length > 0``. The previous
-    # ``length > 0`` gate could pass on a transient non-URL clipboard value
-    # (or a rejected Promise from an ill-timed poll) and then flake on the
-    # following ``evaluate`` when the URL wasn't quite there yet.
-    page.wait_for_function(
-        "async () => { const t = await navigator.clipboard.readText();"
-        " return typeof t === 'string' && t.startsWith('http'); }",
-        timeout=5000,
+    # The wait and the capture happen inside a single ``page.evaluate`` with
+    # an inline ``setTimeout`` poll so no cross-call race window exists.
+    # Earlier revisions split them into ``wait_for_function`` + a second
+    # ``page.evaluate`` — same shape SNOW-397 debugged in ``PwaPage``: the
+    # async predicate's Promise return could resolve the wait before its
+    # resolved value's truthiness was checked, letting the subsequent read
+    # fire while the clipboard was still empty.  One round trip, no
+    # cross-call window.
+    clipboard: str | None = page.evaluate(
+        """async (timeoutMs) => {
+            const deadline = Date.now() + timeoutMs;
+            while (Date.now() < deadline) {
+              const t = await navigator.clipboard.readText();
+              if (typeof t === 'string' && t.startsWith('http')) {
+                return t;
+              }
+              await new Promise((r) => setTimeout(r, 100));
+            }
+            return null;
+        }""",
+        5000,
     )
-
-    # navigator.clipboard.readText() returns a Promise — evaluate with an
-    # arrow function so Playwright awaits it before returning the value.
-    clipboard: str = page.evaluate("async () => await navigator.clipboard.readText()")
-    assert clipboard.startswith("http"), f"clipboard value: {clipboard!r}"
+    assert clipboard is not None and clipboard.startswith("http"), (
+        f"clipboard value: {clipboard!r}"
+    )
     assert page_errors == [], f"JS errors after share: {page_errors}"
