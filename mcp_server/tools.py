@@ -608,6 +608,131 @@ def _handle_get_bulletin_metadata(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# bulk_current_conditions
+# ---------------------------------------------------------------------------
+
+# Per-call cap on the region_ids batch. Sized to the "generous batch" tier
+# the scoping comment established alongside get_danger_history's one-region
+# ceiling: at 20 sequential ORM reads per call, worst-case cost stays well
+# within the endpoint's 60/min rate-limit ceiling. Revisit against real
+# usage before raising further.
+_BULK_CURRENT_CONDITIONS_CAP = 20
+
+
+def bulk_current_conditions(
+    region_ids: list[str],
+    date: dt.date | None = None,
+    *,
+    today: dt.date | None = None,
+) -> dict[str, Any]:
+    """Return current conditions for a batch of regions on one day.
+
+    Fan-out over :func:`get_current_conditions`, returning one entry per
+    ``region_id`` in the input order. Unknown region_ids come back as a
+    per-item ``{region_id, has_bulletin: false, error: "unknown_region"}``
+    rather than failing the whole call — a client's stale region_id
+    shouldn't wipe out the other 19.
+
+    Args:
+        region_ids: Up to :data:`_BULK_CURRENT_CONDITIONS_CAP` region_ids.
+            Duplicates are allowed and return duplicate entries — the
+            caller's own bug, not something for the tool to hide.
+        date: The day to look up. Defaults to today.
+        today: Overrides "today" for the default-date fallback — a
+            settable-in-tests seam; production callers never pass this.
+
+    Returns:
+        ``{query, results, count, summary}`` — ``results`` is a list of
+        per-region dicts matching :func:`get_current_conditions`'s
+        response shape, or ``{region_id, has_bulletin: false, error:
+        "unknown_region"}`` for stale/unknown region_ids.
+
+    """
+    # Batch shape validation lives in the JSON-RPC handler (raises
+    # ProtocolError → -32602). The business-logic function trusts what
+    # it's given so unit tests don't have to fake the JSON-RPC layer.
+    resolved_today = today or timezone.localdate()
+    target_date = date or resolved_today
+
+    results: list[dict[str, Any]] = []
+    for region_id in region_ids:
+        region = resolvers.resolve_region(region_id)
+        if region is None:
+            results.append(
+                {
+                    "region_id": region_id,
+                    "has_bulletin": False,
+                    "error": "unknown_region",
+                    "summary": f"Unknown region_id: {region_id!r}.",
+                }
+            )
+            continue
+        results.append(
+            get_current_conditions(region_id, target_date, today=resolved_today)
+        )
+
+    return {
+        "query": {
+            "region_ids": list(region_ids),
+            "date": target_date.isoformat(),
+        },
+        "results": results,
+        "count": len(results),
+        "summary": _bulk_current_conditions_summary(target_date, results),
+    }
+
+
+def _bulk_current_conditions_summary(
+    target_date: dt.date, results: list[dict[str, Any]]
+) -> str:
+    """Return a one-line, LLM-quotable summary of a bulk_current_conditions result."""
+    with_bulletin = sum(1 for r in results if r.get("has_bulletin"))
+    unknown = sum(1 for r in results if r.get("error") == "unknown_region")
+    parts = [
+        f"{len(results)} region(s) queried for {target_date.isoformat()}: "
+        f"{with_bulletin} with bulletin"
+    ]
+    if unknown:
+        parts.append(f"{unknown} unknown region_id(s)")
+    return ", ".join(parts) + "."
+
+
+def _handle_bulk_current_conditions(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``bulk_current_conditions`` JSON-RPC arguments to the tool function.
+
+    Enforces the batch-shape contract from the scoping comment: rejects an
+    empty batch or one that exceeds the cap as JSON-RPC ``-32602``, rather
+    than as a domain-level ``isError: true`` — batch shape is an input
+    contract, not a domain failure the tool tried and couldn't satisfy.
+    """
+    # Local import — see the module-level import in mcp_server.protocol; a
+    # top-level import here would create a cycle (protocol imports tools).
+    from mcp_server.protocol import INVALID_PARAMS, ProtocolError
+
+    raw = arguments.get("region_ids")
+    if not isinstance(raw, list):
+        raise ProtocolError(
+            INVALID_PARAMS, "'region_ids' is required and must be an array of strings."
+        )
+    if not raw:
+        raise ProtocolError(INVALID_PARAMS, "'region_ids' must not be empty.")
+    if len(raw) > _BULK_CURRENT_CONDITIONS_CAP:
+        raise ProtocolError(
+            INVALID_PARAMS,
+            f"'region_ids' has {len(raw)} entries; the cap is "
+            f"{_BULK_CURRENT_CONDITIONS_CAP} per call.",
+        )
+    for item in raw:
+        if not isinstance(item, str) or not item.strip():
+            raise ProtocolError(
+                INVALID_PARAMS,
+                "'region_ids' entries must be non-empty strings.",
+            )
+    parsed_date = _optional_iso_date(arguments, "date")
+    return bulk_current_conditions(raw, parsed_date)
+
+
+# ---------------------------------------------------------------------------
 # get_bulletin_raw
 # ---------------------------------------------------------------------------
 
@@ -845,5 +970,35 @@ TOOLS: dict[str, ToolSpec] = {
             "required": ["region_id"],
         },
         handler=_handle_get_bulletin_raw,
+    ),
+    "bulk_current_conditions": ToolSpec(
+        name="bulk_current_conditions",
+        description=(
+            "Batched fan-out over get_current_conditions. Prevents 'show me "
+            "Valais today' from turning into 20+ sequential MCP round-trips. "
+            "Capped at 20 region_ids per call; unknown region_ids come back "
+            "per-item as {has_bulletin: false, error: 'unknown_region'} "
+            "rather than failing the whole batch."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "region_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Up to 20 region_ids, e.g. ['CH-4115', 'CH-4114']."
+                    ),
+                    "minItems": 1,
+                    "maxItems": _BULK_CURRENT_CONDITIONS_CAP,
+                },
+                "date": {
+                    "type": "string",
+                    "description": "ISO date YYYY-MM-DD. Defaults to today.",
+                },
+            },
+            "required": ["region_ids"],
+        },
+        handler=_handle_bulk_current_conditions,
     ),
 }

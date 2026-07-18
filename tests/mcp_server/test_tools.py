@@ -601,3 +601,137 @@ class TestGetBulletinRaw:
 
         assert result["has_bulletin"] is True
         assert result["date"] == "2026-04-08"
+
+
+# ---------------------------------------------------------------------------
+# bulk_current_conditions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestBulkCurrentConditions:
+    """Tests for tools.bulk_current_conditions."""
+
+    @pytest.fixture
+    def three_regions(self) -> list[MicroRegion]:
+        """Three MicroRegion fixtures for batch tests."""
+        major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_en="Valais")
+        sub = SubRegionFactory.create(prefix="CH-41", major=major)
+        return [
+            MicroRegionFactory.create(
+                region_id=f"CH-411{n}", name=f"Region-{n}", subregion=sub
+            )
+            for n in (5, 6, 7)
+        ]
+
+    def test_returns_one_entry_per_region_in_input_order(
+        self, three_regions: list[MicroRegion]
+    ) -> None:
+        """The batch preserves caller-supplied ordering."""
+        target_date = datetime.date(2026, 4, 8)
+        for region in three_regions:
+            _make_bulletin(region, target_date, danger_key="moderate")
+
+        result = tools.bulk_current_conditions(
+            [r.region_id for r in three_regions], target_date
+        )
+
+        assert result["count"] == 3
+        assert [r["region_id"] for r in result["results"]] == [
+            "CH-4115",
+            "CH-4116",
+            "CH-4117",
+        ]
+        assert all(r["has_bulletin"] for r in result["results"])
+        assert result["query"]["date"] == "2026-04-08"
+
+    def test_unknown_region_is_per_item_not_batch_failure(
+        self, three_regions: list[MicroRegion]
+    ) -> None:
+        """A stale region_id in the batch surfaces as a per-item error."""
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(three_regions[0], target_date)
+
+        result = tools.bulk_current_conditions(
+            [three_regions[0].region_id, "XX-0000", three_regions[1].region_id],
+            target_date,
+        )
+
+        assert result["count"] == 3
+        assert result["results"][0]["has_bulletin"] is True
+        assert result["results"][1] == {
+            "region_id": "XX-0000",
+            "has_bulletin": False,
+            "error": "unknown_region",
+            "summary": "Unknown region_id: 'XX-0000'.",
+        }
+        assert result["results"][2]["has_bulletin"] is False
+        assert "1 unknown region_id" in result["summary"]
+
+    def test_duplicate_region_ids_return_duplicate_entries(
+        self, region: MicroRegion
+    ) -> None:
+        """Duplicates aren't deduped — the caller's own bug, not ours."""
+        _make_bulletin(region, datetime.date(2026, 4, 8))
+
+        result = tools.bulk_current_conditions(
+            [region.region_id, region.region_id], datetime.date(2026, 4, 8)
+        )
+
+        assert result["count"] == 2
+        assert [r["region_id"] for r in result["results"]] == [
+            region.region_id,
+            region.region_id,
+        ]
+
+    def test_defaults_to_today_seam_when_date_omitted(
+        self, region: MicroRegion
+    ) -> None:
+        """Omitting 'date' falls back to the injected 'today' seam."""
+        fixed_today = datetime.date(2026, 4, 8)
+        _make_bulletin(region, fixed_today)
+
+        result = tools.bulk_current_conditions([region.region_id], today=fixed_today)
+
+        assert result["query"]["date"] == "2026-04-08"
+        assert result["results"][0]["has_bulletin"] is True
+
+
+class TestHandleBulkCurrentConditionsArgs:
+    """Tests for the JSON-RPC arguments adapter of bulk_current_conditions.
+
+    These exercise the -32602 rejection path directly (import the
+    ProtocolError class locally so the assertions read straightforwardly).
+    """
+
+    def _protocol_error(self) -> type[Exception]:
+        """Return the ProtocolError class without a module-level cycle."""
+        from mcp_server.protocol import ProtocolError
+
+        return ProtocolError
+
+    def test_missing_region_ids_raises_protocol_error(self) -> None:
+        """A batch call without region_ids is a -32602 protocol failure."""
+        with pytest.raises(self._protocol_error()):
+            tools._handle_bulk_current_conditions({})
+
+    def test_non_list_region_ids_raises_protocol_error(self) -> None:
+        """region_ids that isn't an array is a -32602 protocol failure."""
+        with pytest.raises(self._protocol_error()):
+            tools._handle_bulk_current_conditions({"region_ids": "CH-4115"})
+
+    def test_empty_batch_raises_protocol_error(self) -> None:
+        """An empty region_ids array is invalid input, not an empty success."""
+        with pytest.raises(self._protocol_error()):
+            tools._handle_bulk_current_conditions({"region_ids": []})
+
+    def test_over_cap_batch_raises_protocol_error(self) -> None:
+        """A 21-item batch exceeds the cap; -32602, no partial result."""
+        over_cap = [f"CH-{i:04d}" for i in range(21)]
+        with pytest.raises(self._protocol_error()):
+            tools._handle_bulk_current_conditions({"region_ids": over_cap})
+
+    def test_non_string_batch_entry_raises_protocol_error(self) -> None:
+        """A non-string entry in the batch is a -32602 protocol failure."""
+        with pytest.raises(self._protocol_error()):
+            tools._handle_bulk_current_conditions({"region_ids": ["CH-4115", 42]})

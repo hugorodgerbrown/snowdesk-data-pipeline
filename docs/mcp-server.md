@@ -1,6 +1,6 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — search_regions, get_current_conditions, get_danger_history, list_resorts_in_region, get_bulletin_metadata, get_bulletin_raw tools
+description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — search_regions, get_current_conditions, get_danger_history, list_resorts_in_region, get_bulletin_metadata, get_bulletin_raw, bulk_current_conditions tools
 status: current
 last-reviewed: 2026-07-18
 ---
@@ -168,6 +168,28 @@ is ~10-30 KB per bulletin, so it is not the default.
   issued_at, caaml: {type: "Feature", geometry, properties: {...}},
   summary}`. When no bulletin covers `date`, `has_bulletin` is `false`
   and the `caaml` key is omitted.
+
+### `bulk_current_conditions`
+
+Batched fan-out over `get_current_conditions`. Prevents a "show me
+Valais today" prompt from turning into 20+ sequential MCP round-trips
+through a client that is already going through an LLM.
+
+* **Params:** `region_ids` (array of strings, 1..20, required), `date`
+  (`YYYY-MM-DD`, optional — defaults to today).
+* **Returns:** `{query: {region_ids, date}, results: [...], count,
+  summary}`. Each entry in `results` matches
+  `get_current_conditions`'s response shape when the region resolves,
+  or `{region_id, has_bulletin: false, error: "unknown_region",
+  summary}` when it doesn't.
+* **Cost cap:** hard-capped at 20 region_ids per call (see
+  `_BULK_CURRENT_CONDITIONS_CAP`). An empty or over-cap batch is
+  rejected as JSON-RPC `-32602` (invalid params), not silently
+  truncated. Unknown region_ids inside a valid batch are per-item
+  errors — one stale id doesn't wipe out the other 19.
+* **Duplicates** in `region_ids` are allowed and return duplicate
+  entries in `results` — the caller's own bug, not something for the
+  tool to hide.
 
 ## Cost caps
 
