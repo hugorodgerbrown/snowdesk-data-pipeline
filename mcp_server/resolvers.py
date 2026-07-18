@@ -1,7 +1,7 @@
 """
 mcp_server/resolvers.py — Region lookup and fuzzy place-name search.
 
-Two entry points consumed by ``mcp_server.tools``:
+Entry points consumed by ``mcp_server.tools``:
 
 * ``resolve_region(region_id)`` — exact ``MicroRegion.region_id`` lookup,
   scoped to what the MCP tools need (the parent major region's name via
@@ -10,6 +10,9 @@ Two entry points consumed by ``mcp_server.tools``:
   UI panel no tool reads.
 * ``search_places(query)`` — fuzzy name search across resorts and
   micro/major regions, for callers who only have a place name.
+* ``regions_for_scope(country, major_region_id)`` — the MicroRegions
+  covered by a country or a major-region prefix, for
+  ``get_regional_snapshot``'s "where should I go?" fan-out.
 
 The candidate universe (~1500 rows across ``Resort``, ``MicroRegion``, and
 ``MajorRegion``) is cheap to hold in full and is cached in the Django
@@ -30,7 +33,14 @@ from django.db.models import Max
 from rapidfuzz import fuzz, process
 
 from mcp_server.normalise import normalise
+from public.api import COUNTRY_NAMES
 from regions.models import MajorRegion, MicroRegion, Resort
+
+# ISO-3166-1 alpha-2 codes Snowdesk has bulletin coverage for. Re-exported
+# from ``public.api.COUNTRY_NAMES`` (rather than a second, drifting list)
+# so ``regions_for_scope`` validates a ``country`` scope against the same
+# set the map's ``?country=`` filter and region tooltip already use.
+VALID_COUNTRIES: frozenset[str] = frozenset(COUNTRY_NAMES)
 
 # Country → provider mapping for the ``find_places_near`` result shape.
 # Static because Snowdesk fetches from exactly one provider per country;
@@ -86,6 +96,57 @@ def resolve_region(region_id: str) -> MicroRegion | None:
         .filter(region_id__iexact=region_id)
         .first()
     )
+
+
+def regions_for_scope(
+    country: str | None, major_region_id: str | None
+) -> list[MicroRegion]:
+    """Return the MicroRegions in scope for a country or a major-region prefix.
+
+    Backs ``get_regional_snapshot`` — the "where should I go?" tool that
+    answers a country- or major-region-wide danger question in a single
+    call rather than an N-region fan-out. Exactly one of ``country`` or
+    ``major_region_id`` must be supplied.
+
+    ``display_on_map=False`` major regions are included — this answers a
+    coverage question, not a map-visibility one.
+
+    Args:
+        country: ISO-3166-1 alpha-2 country code, e.g. ``"CH"``. Matched
+            case-insensitively against :data:`VALID_COUNTRIES`.
+        major_region_id: A ``MajorRegion.prefix``, e.g. ``"CH-4"``.
+            Matched case-insensitively.
+
+    Returns:
+        The matching MicroRegions, ``select_related("subregion__major")``
+        so callers can read ``.subregion.major`` (country, name) without a
+        query per region, in the model's default ``region_id`` ordering.
+
+    Raises:
+        ValueError: neither or both of ``country`` / ``major_region_id``
+            are supplied, ``country`` isn't a recognised code, or
+            ``major_region_id`` doesn't match any known ``MajorRegion``.
+
+    """
+    if bool(country) == bool(major_region_id):
+        raise ValueError("Exactly one of 'country' or 'major_region_id' is required.")
+
+    queryset = MicroRegion.objects.select_related("subregion__major")
+
+    if country is not None:
+        normalised_country = country.strip().upper()
+        if normalised_country not in VALID_COUNTRIES:
+            raise ValueError(f"Unknown country: {country!r}.")
+        return list(queryset.filter(subregion__major__country=normalised_country))
+
+    normalised_prefix = (major_region_id or "").strip()
+    matches = list(queryset.filter(subregion__major__prefix__iexact=normalised_prefix))
+    if (
+        not matches
+        and not MajorRegion.objects.filter(prefix__iexact=normalised_prefix).exists()
+    ):
+        raise ValueError(f"Unknown major_region_id: {major_region_id!r}.")
+    return matches
 
 
 def _distinct_names(*names: str) -> list[str]:
