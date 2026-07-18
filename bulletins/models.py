@@ -1025,15 +1025,22 @@ class BulletinGrouping(BaseModel):
 
 
 class ForecastPointQuerySet(models.QuerySet["ForecastPoint"]):
-    """
-    Custom queryset for ForecastPoint.
+    """Custom queryset for ForecastPoint."""
 
-    Deliberately empty of domain methods for now. A future ``active()``
-    method (annotating over the reverse FK from the not-yet-built
-    ``favourites.Favourite`` model) is deferred to the ticket that
-    introduces that app — see
-    ``docs/decisions/forecast-point-quantisation.md``.
-    """
+    def active(self) -> "ForecastPointQuerySet":
+        """Return points referenced by at least one favourite.
+
+        Annotates over the reverse FK created by ``favourites.Favourite``
+        and filters to rows with a non-zero count — see
+        ``docs/decisions/forecast-point-quantisation.md``.
+
+        Returns:
+            Filtered queryset of ForecastPoints with one or more favourites.
+
+        """
+        return self.annotate(favourite_count=models.Count("favourites")).filter(
+            favourite_count__gt=0
+        )
 
 
 class ForecastPoint(BaseModel):
