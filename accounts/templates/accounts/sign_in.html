@@ -82,6 +82,14 @@ the manage page can be authenticated-only.
                         placeholder="{% trans 'Your password' %}"
                         class="w-full px-4 py-2.5 rounded-tag border border-text-3/30 bg-card text-text-1 placeholder:text-text-3 focus:outline-none focus:ring-2 focus:ring-text-1/30"
                     >
+                    <p class="mt-2 text-right">
+                        <a
+                            href="{% url 'accounts:reset_password' %}"
+                            class="text-xs text-text-2 hover:text-text-1 underline underline-offset-2"
+                        >
+                            {% trans "Forgot your password?" %}
+                        </a>
+                    </p>
                 </div>
                 {% trans "Send sign-in link" as label %}
                 {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
