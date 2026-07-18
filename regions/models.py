@@ -434,6 +434,74 @@ class MicroRegion(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# RegionAlias
+# ---------------------------------------------------------------------------
+
+
+class RegionAliasQuerySet(models.QuerySet["RegionAlias"]):
+    """Custom queryset for RegionAlias."""
+
+    def get_by_natural_key(self, region_id: str, alias_text: str) -> RegionAlias:
+        """Look up a RegionAlias by its (region_id, alias_text) natural key."""
+        return self.get(region__region_id=region_id, alias_text=alias_text)
+
+
+class RegionAlias(BaseModel):
+    """
+    A hand-curated alternate name for a MicroRegion.
+
+    Covers, for example, a French/German exonym pair that shares no
+    letters with the canonical name ("Sitten" for "Sion", "Coire" for
+    "Chur"). Fuzzy matching (``mcp_server.resolvers.search_places``) already
+    tolerates accents, typos, punctuation, and whitespace variance, but
+    cannot bridge two names that share almost no characters. This table
+    is the curated escape hatch for that narrow case — deliberately
+    minimal (no ``language`` or ``source`` field; those were scoped out
+    of SNOW-409) since the only consumer is the fuzzy-search candidate
+    pool, which only needs a name to index.
+    """
+
+    region = models.ForeignKey(
+        MicroRegion,
+        on_delete=models.PROTECT,
+        related_name="aliases",
+        help_text="The MicroRegion this alias resolves to.",
+    )
+    alias_text = models.CharField(
+        max_length=100,
+        help_text="An alternate name for the region, e.g. a French/German exonym.",
+    )
+
+    objects = RegionAliasQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["region", "alias_text"], name="unique_region_alias"
+            )
+        ]
+        ordering = ["alias_text"]
+        verbose_name = "region alias"
+        verbose_name_plural = "region aliases"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+    def to_string(self) -> str:
+        """Return a concise canonical string (alias_text + arrow + region_id)."""
+        return f"{self.alias_text} → {self.region.region_id}"
+
+    def natural_key(self) -> tuple[str, str]:
+        """Return the natural key for serialisation (region_id, alias_text)."""
+        return (self.region.region_id, self.alias_text)
+
+    natural_key.dependencies = ["regions.microregion"]  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
 # Resort
 # ---------------------------------------------------------------------------
 
