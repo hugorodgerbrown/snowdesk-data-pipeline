@@ -1,8 +1,8 @@
 """
 mcp_server/tools.py — MCP tool registry and handlers.
 
-Four read-only tools, composed from services that already exist elsewhere
-in the codebase (``mcp_server.resolvers``, ``public.views``,
+Read-only tools, composed from services that already exist elsewhere in
+the codebase (``mcp_server.resolvers``, ``public.views``,
 ``RegionDayRating.objects.for_region_range``, ``Bulletin.render_model``):
 
 * ``search_regions`` — fuzzy place-name search (``resolvers.search_places``).
@@ -11,6 +11,16 @@ in the codebase (``mcp_server.resolvers``, ``public.views``,
 * ``get_danger_history`` — per-day min/max ratings for one region over a
   date range, clamped to a single avalanche season.
 * ``list_resorts_in_region`` — geocoded resorts within one region.
+* ``get_bulletin_metadata`` — provenance (issued_at, source, source_url,
+  language variants) for one region on one day.
+* ``get_bulletin_raw`` — full CAAML v6 payload escape hatch for one
+  region on one day.
+* ``bulk_current_conditions`` — batched fan-out over
+  ``get_current_conditions``, capped at 20 region_ids per call.
+* ``find_regions_near`` — haversine reverse geolocation over
+  ``MicroRegion.centre``; radius capped at 100 km per call.
+* ``get_danger_trend`` — trailing-window danger series plus computed
+  direction / change_point / current_streak layers.
 
 Each tool is implemented as a plain, typed Python function (the signature
 a caller reasons about) plus a thin ``_handle_*`` adapter that unpacks the
