@@ -241,7 +241,7 @@ def region_for_point(lat: float, lon: float) -> "MicroRegion | None":
 
     # Order by squared Euclidean distance from centre (cheap proxy for proximity).
     def _sq_distance(region: "MicroRegion") -> float:
-        """Return the squared distance from the region centre to (lon, lat)."""
+        """Return the squared distance from the region centre to (lat, lon)."""
         centre = region.centre
         if not centre:
             return float("inf")
