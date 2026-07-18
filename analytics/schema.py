@@ -85,6 +85,13 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         "pwa.freshness.unsafe",
         # Storage-pressure signal (spec §16.4 dashboard 8 baseline).
         "pwa.storage.evicted_probable",
+        # Map favourites (SNOW-414) — deliberately a `map.*` namespace, not
+        # `pwa.*`, since these describe a map-surface interaction rather
+        # than PWA shell lifecycle. Emitted by static/js/favourites.js and
+        # static/js/map.js's overlay-toggle handler.
+        "map.favourite.created",
+        "map.favourite.deleted",
+        "map.favourite.overlay_toggled",
     }
 )
 
