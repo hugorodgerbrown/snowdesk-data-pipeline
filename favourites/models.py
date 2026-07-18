@@ -114,6 +114,8 @@ class Favourite(BaseModel):
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
+        ordering = ["-created_at"]
+
     def to_string(self) -> str:
         """Return a concise human-readable description of this favourite.
 

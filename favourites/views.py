@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from uuid import UUID
 
 import waffle
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -47,6 +48,10 @@ from favourites.services import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Must match Favourite.name's max_length. Checked here so an over-length
+# submission is turned into a handled 400 instead of a DB DataError (500).
+_NAME_MAX_LENGTH = 100
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +116,8 @@ def favourite_create(request: HttpRequest) -> HttpResponse:
 
     Validates the POST body:
     - ``lat`` / ``lon`` must be present and parseable (400 otherwise).
-    - ``name`` is optional.
+    - ``name`` is optional, but rejected with 400 if it exceeds
+      ``Favourite.name``'s max_length (would otherwise raise a DB DataError).
     - Rate-limited to 10 creations per minute per user (429 on excess).
 
     When the user has reached ``settings.FAVOURITES_MAX_PER_USER``, renders
@@ -142,6 +148,10 @@ def favourite_create(request: HttpRequest) -> HttpResponse:
 
     latitude, longitude = coords
     name = request.POST.get("name", "")
+    if len(name) > _NAME_MAX_LENGTH:
+        return HttpResponse(
+            f"name must be at most {_NAME_MAX_LENGTH} characters.", status=400
+        )
 
     try:
         favourite = create_favourite(request.user, latitude, longitude, name=name)
@@ -160,11 +170,12 @@ def favourite_create(request: HttpRequest) -> HttpResponse:
 
 @require_htmx
 @require_POST
-def favourite_rename(request: HttpRequest, uuid: Any) -> HttpResponse:
+def favourite_rename(request: HttpRequest, uuid: UUID) -> HttpResponse:
     """Rename an existing Favourite owned by the requesting user.
 
     Args:
-        request: The incoming HTMX POST request. Expects a ``name`` field.
+        request: The incoming HTMX POST request. Expects a ``name`` field,
+            rejected with 400 if it exceeds ``Favourite.name``'s max_length.
         uuid: The Favourite's uuid, from the URL.
 
     Returns:
@@ -181,7 +192,13 @@ def favourite_rename(request: HttpRequest, uuid: Any) -> HttpResponse:
     except Favourite.DoesNotExist:
         return HttpResponse("Favourite not found.", status=404)
 
-    favourite.name = request.POST.get("name", "")
+    name = request.POST.get("name", "")
+    if len(name) > _NAME_MAX_LENGTH:
+        return HttpResponse(
+            f"name must be at most {_NAME_MAX_LENGTH} characters.", status=400
+        )
+
+    favourite.name = name
     # updated_at is auto_now — it must be in update_fields or the DB column
     # is left stale, since save(update_fields=...) skips every field not
     # explicitly listed (auto_now is applied in Python, not by the DB).
@@ -196,7 +213,7 @@ def favourite_rename(request: HttpRequest, uuid: Any) -> HttpResponse:
 
 @require_htmx
 @require_POST
-def favourite_delete(request: HttpRequest, uuid: Any) -> HttpResponse:
+def favourite_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
     """Delete an existing Favourite owned by the requesting user.
 
     Args:

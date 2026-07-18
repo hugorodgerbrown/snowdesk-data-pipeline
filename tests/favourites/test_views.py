@@ -130,6 +130,19 @@ class TestFavouriteCreateValidation:
         )
         assert response.status_code == 400
 
+    @override_flag("favourites", active=True)
+    def test_name_over_max_length_returns_400(self, client: Client) -> None:
+        """A name longer than max_length is rejected with 400, not a DB error."""
+        user = UserFactory.create()
+        client.force_login(user)
+        response = client.post(
+            CREATE_URL,
+            {"lat": "46.1", "lon": "7.4", "name": "x" * 101},
+            **HTMX_HEADERS,
+        )
+        assert response.status_code == 400
+        assert not Favourite.objects.filter(user=user).exists()
+
 
 @pytest.mark.django_db
 class TestFavouriteCreateSuccess:
@@ -288,6 +301,21 @@ class TestFavouriteRenameOwnerIsolation:
             **HTMX_HEADERS,
         )
         assert response.status_code == 403
+
+    @override_flag("favourites", active=True)
+    def test_name_over_max_length_returns_400(self, client: Client) -> None:
+        """A name longer than max_length is rejected with 400, not a DB error."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = _create_via_service(user)
+
+        response = client.post(
+            _rename_url(favourite.uuid), {"name": "x" * 101}, **HTMX_HEADERS
+        )
+
+        assert response.status_code == 400
+        favourite.refresh_from_db()
+        assert favourite.name != "x" * 101
 
     @override_flag("favourites", active=True)
     def test_updated_at_advances_after_rename(self, client: Client) -> None:
