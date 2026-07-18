@@ -31,12 +31,16 @@ branch-protected against direct pushes.
 
 Production is three services — the website
 (`snowdesk-website`), the APScheduler worker (`snowdesk-scheduler`), and
-the django-tasks-db worker (`snowdesk-worker-tasks`). All three share one
+the django-tasks-db worker (`snowdesk-background-tasks`). All three share one
 Postgres database, so they must run the **same commit**. Pinning all three
-to the `release` branch (`autoDeployTrigger: commit`) guarantees that: one
-branch advance redeploys all three from the same ref. The topology is
-recorded in [`render.yaml`](../render.yaml) (documentation only — Blueprint
-auto-sync is disabled, so the live wiring is set in the Render dashboard).
+to the `release` branch (`autoDeployTrigger: checksPass`) guarantees that:
+one branch advance redeploys all three from the same ref, once CI has gone
+green. The topology is the source of truth in
+[`render.yaml`](../render.yaml) — Blueprint auto-sync is enabled and reads
+that file from `main`, so any change to services, plans, domains, or deploy
+branches lands via a PR. Databases and env-group contents remain
+dashboard-managed (no `databases:` block; env vars grouped via
+`fromGroup`).
 
 ## Separate databases (important)
 
@@ -101,7 +105,7 @@ to `main`, or that merge deploys to production.
    ```
 2. Render dashboard: change each production service's auto-deploy branch
    from `main` to `release` (`snowdesk-website`, `snowdesk-scheduler`,
-   `snowdesk-worker-tasks`).
+   `snowdesk-background-tasks`).
 3. Render dashboard: create the staging web service tracking `main`, wired
    to its own Postgres and env group.
 4. GitHub: branch-protect `release` (require a PR; require status checks).

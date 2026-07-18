@@ -53,9 +53,10 @@ export them first.
 ## Production topology
 
 Postgres on Render via `DATABASE_URL`. One web service (`snowdesk-website`) plus
-two workers (`snowdesk-scheduler`, `snowdesk-worker-tasks`), all auto-deploying
-on commit to `main` (see [`render.yaml`](../../render.yaml)). Unless noted, run
-commands in the **Render Shell of `snowdesk-website`**.
+two workers (`snowdesk-scheduler`, `snowdesk-background-tasks`), all pinned to
+the `release` branch and auto-deploying when CI passes on a release-PR merge
+(see [`render.yaml`](../../render.yaml)). Unless noted, run commands in the
+**Render Shell of `snowdesk-website`**.
 
 ---
 
@@ -87,7 +88,7 @@ In the Render dashboard, **suspend both workers** so cron ingest and the email
 worker cannot write mid-reset:
 
 - `snowdesk-scheduler` → Suspend
-- `snowdesk-worker-tasks` → Suspend
+- `snowdesk-background-tasks` → Suspend
 
 ### 4. Drop and recreate the schema
 
@@ -138,7 +139,7 @@ rebuild steps the pipeline needs (`rebuild_render_models`,
 
 ### 8. Resume workers
 
-In the dashboard, **resume** `snowdesk-scheduler` and `snowdesk-worker-tasks`.
+In the dashboard, **resume** `snowdesk-scheduler` and `snowdesk-background-tasks`.
 Each redeploys and runs `build_headless.sh` (`migrate` = no-op, `loaddata` =
 idempotent) against the now-populated DB. Confirm both reach **Live**.
 
