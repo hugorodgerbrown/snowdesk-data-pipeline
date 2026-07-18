@@ -11,13 +11,13 @@ Two entry points consumed by ``mcp_server.tools``:
 * ``search_places(query)`` — fuzzy name search across resorts and
   micro/major regions, for callers who only have a place name.
 
-The candidate universe (~1500 rows across ``Resort``, ``MicroRegion``, and
-``MajorRegion``) is cheap to hold in full and is cached in the Django
-default cache, keyed on a fingerprint of the newest ``updated_at`` across
-all three tables — the same pattern as
-``bulletins.services.coverage.covered_region_ids``. Any edit to a region or
-resort changes the fingerprint, which changes the cache key, which is a
-guaranteed miss — no explicit invalidation needed.
+The candidate universe (~1500 rows across ``Resort``, ``MicroRegion``,
+``MajorRegion``, and ``RegionAlias``) is cheap to hold in full and is
+cached in the Django default cache, keyed on a fingerprint of the newest
+``updated_at`` across all four tables — the same pattern as
+``bulletins.services.coverage.covered_region_ids``. Any edit to a region,
+resort, or alias changes the fingerprint, which changes the cache key,
+which is a guaranteed miss — no explicit invalidation needed.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from django.db.models import Max
 from rapidfuzz import fuzz, process
 
 from mcp_server.normalise import normalise
-from regions.models import MajorRegion, MicroRegion, Resort
+from regions.models import MajorRegion, MicroRegion, RegionAlias, Resort
 
 # Country → provider mapping for the ``find_places_near`` result shape.
 # Static because Snowdesk fetches from exactly one provider per country;
@@ -117,11 +117,11 @@ def _distinct_names(*names: str) -> list[str]:
 def _build_candidate_pool() -> list[dict[str, Any]]:
     """Build the full search-candidate pool from the database.
 
-    One row per (Resort / MicroRegion / MajorRegion) x distinct human
-    name. Each row carries the ``region_id`` a matching tool call should
-    use, a display ``name``, a ``kind`` (``"micro"``, ``"major"``, or
-    ``"resort"``), a human-readable ``parent`` for context, and the
-    pre-computed ``normalised`` search key.
+    One row per (Resort / MicroRegion / MajorRegion / RegionAlias) x
+    distinct human name. Each row carries the ``region_id`` a matching
+    tool call should use, a display ``name``, a ``kind`` (``"micro"``,
+    ``"major"``, or ``"resort"``), a human-readable ``parent`` for
+    context, and the pre-computed ``normalised`` search key.
 
     Each MajorRegion's representative ``region_id`` (see
     ``_build_candidate_pool``'s major-region loop below) is derived from
@@ -130,6 +130,14 @@ def _build_candidate_pool() -> list[dict[str, Any]]:
     means the loop already visits rows alphabetically, so recording the
     first ``region_id`` seen per major-region pk reproduces the
     "alphabetically-first child" representative with no extra table scan.
+
+    The ``RegionAlias`` loop runs last, after the ``MicroRegion`` loop —
+    ``_match_exact_region_id`` returns the *first* pool row whose
+    ``kind == "micro"`` matches a queried ``region_id``, so an alias row
+    appended before its region's canonical ``MicroRegion`` row would win
+    an exact-id lookup instead of the canonical name. Each alias row uses
+    ``kind="micro"`` (not a fourth kind) so it dedups against — and, on an
+    exact-id query, loses to — its region's canonical row.
 
     Returns:
         The full candidate-pool list — not cached here; caching is
@@ -180,6 +188,19 @@ def _build_candidate_pool() -> list[dict[str, Any]]:
                 }
             )
 
+    for alias in RegionAlias.objects.select_related("region__subregion__major"):
+        major = alias.region.subregion.major
+        parent = major.name_en or major.name_native
+        rows.append(
+            {
+                "region_id": alias.region.region_id,
+                "name": alias.alias_text,
+                "kind": "micro",
+                "parent": parent,
+                "normalised": normalise(alias.alias_text),
+            }
+        )
+
     return rows
 
 
@@ -187,13 +208,14 @@ def _pool_cache_key() -> str:
     """Return a cache key that changes whenever the candidate data changes.
 
     Fingerprints the pool on the newest ``updated_at`` across
-    ``MicroRegion``, ``MajorRegion``, and ``Resort`` — any create, edit, or
-    delete touches one of those timestamps, which changes the fingerprint,
-    which guarantees the next call is a cache miss. No explicit
-    invalidation call site is needed anywhere else in the codebase.
+    ``MicroRegion``, ``MajorRegion``, ``Resort``, and ``RegionAlias`` — any
+    create, edit, or delete touches one of those timestamps, which changes
+    the fingerprint, which guarantees the next call is a cache miss. No
+    explicit invalidation call site is needed anywhere else in the
+    codebase.
 
     Returns:
-        A cache key string unique to the current state of the three
+        A cache key string unique to the current state of the four
         source tables.
 
     """
@@ -201,6 +223,7 @@ def _pool_cache_key() -> str:
         MicroRegion.objects.aggregate(latest=Max("updated_at"))["latest"],
         MajorRegion.objects.aggregate(latest=Max("updated_at"))["latest"],
         Resort.objects.aggregate(latest=Max("updated_at"))["latest"],
+        RegionAlias.objects.aggregate(latest=Max("updated_at"))["latest"],
     ]
     known = [s for s in stamps if s is not None]
     fingerprint = max(known).isoformat() if known else "empty"
