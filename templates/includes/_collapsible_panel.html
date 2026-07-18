@@ -28,9 +28,7 @@ Parameters (passed via ``{% include … with … %}``):
 <details
     class="snowdesk-panel bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0"
     data-testid="{{ data_testid }}"
-    {% if is_open %}
-        open
-    {% endif %}
+    {% if is_open %}open{% endif %}
 >
     <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
         <span class="text-summary font-semibold text-text-1">{{ title }}</span>

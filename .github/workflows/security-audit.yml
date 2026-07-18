@@ -1,6 +1,8 @@
 # .github/workflows/security-audit.yml — Audit locked Python dependencies
 # for known CVEs on every push/PR and on a weekly cron, so newly-published
-# advisories surface even when the lockfile has not changed.
+# advisories surface even when the lockfile has not changed. Also runs SAST
+# (semgrep) and a gitleaks secret scan — the CI backstop for the bypassable
+# pre-commit gitleaks hook (invariant #5: no secrets in source).
 
 name: Security audit
 
@@ -71,3 +73,20 @@ jobs:
 
       - name: Run semgrep via tox
         run: tox -e sast
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          # Full history so the scan covers every commit in the push/PR range,
+          # not just the tip. Mirrors the pre-commit gitleaks hook.
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
