@@ -527,6 +527,21 @@ class TestAccountModel:
         account.mark_verified(timezone.now())
         assert account.verified_at == first
 
+    def test_request_email_change_sets_pending(self) -> None:
+        account = AccountFactory.create()
+        now = timezone.now()
+        result = account.request_email_change("New@Example.com", now)
+        assert result is account
+        assert account.pending_email == "new@example.com"  # lowercased
+        assert account.pending_email_requested_at == now
+
+    def test_clear_pending_email(self) -> None:
+        account = AccountFactory.create()
+        account.request_email_change("new@example.com", timezone.now())
+        account.clear_pending_email()
+        assert account.pending_email is None
+        assert account.pending_email_requested_at is None
+
 
 @pytest.mark.django_db
 class TestAccountQuerySet:

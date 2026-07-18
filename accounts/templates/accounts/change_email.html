@@ -1,0 +1,58 @@
+{% extends "public/base.html" %}
+{% comment %}
+accounts/templates/accounts/change_email.html — Request an email change.
+
+Signed-in only. Shows the current (verified) address and a field for the new
+one. The account keeps its current address until the new one is confirmed
+(SNOW-433).
+{% endcomment %}
+{% load i18n static components %}
+
+{% block title %}{% trans "Change your email — Snowdesk" %}{% endblock %}
+
+{% block meta_description %}{% trans "Change the email address on your Snowdesk account." %}{% endblock %}
+
+{% block content %}
+    <div class="px-4 py-10">
+        <div class="max-w-narrow mx-auto">
+            {% card padding="p-8" %}
+            <h1 class="text-2xl font-semibold text-text-1 mb-2">
+                {% trans "Change your email" %}
+            </h1>
+            <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                {% blocktrans with current=request.user.email trimmed %}
+                    Your account email is <strong>{{ current }}</strong>. Enter a new address and we'll send it a
+                    confirmation link. Your current address stays in use until you confirm.
+                {% endblocktrans %}
+            </p>
+            <form method="post" novalidate>
+                {% csrf_token %}
+                <div class="mb-4">
+                    <label
+                        for="{{ form.email.id_for_label }}"
+                        class="block text-sm font-medium text-text-1 mb-1.5"
+                    >
+                        {% trans "New email address" %}
+                    </label>
+                    {{ form.email }}
+                    {% if form.email.errors %}
+                        <ul class="mt-1.5 space-y-0.5">
+                            {% for error in form.email.errors %}
+                                <li class="text-xs text-form-error">{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
+                {% trans "Send confirmation link" as label %}
+                {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
+            </form>
+            <p class="text-text-3 text-sm mt-6 text-center">
+                {% url 'accounts:manage' as manage_url %}
+                {% blocktrans trimmed %}
+                    <a href="{{ manage_url }}" class="underline">Back to your account</a>
+                {% endblocktrans %}
+            </p>
+            {% endcard %}
+        </div>
+    </div>
+{% endblock %}

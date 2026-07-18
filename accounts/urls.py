@@ -56,6 +56,12 @@ urlpatterns = [
         views.reset_password_confirm_view,
         name="reset_password_confirm",
     ),
+    path("change-email/", views.change_email_view, name="change_email"),
+    path(
+        "change-email/<str:token>/",
+        views.change_email_confirm_view,
+        name="change_email_confirm",
+    ),
     path("sign-in/", views.sign_in_view, name="sign_in"),
     path("access/<str:token>/", views.account_view, name="account"),
     path("manage/", views.manage_view, name="manage"),

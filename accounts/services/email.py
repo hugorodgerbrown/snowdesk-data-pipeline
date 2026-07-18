@@ -28,6 +28,14 @@ Provides two public functions:
     account-access flow) so the link in the email lands directly on the
     manage page.  Includes the region name in the subject and body.
 
+``send_email_change_confirmation(user, new_email, *, request=None)``
+    Sends a confirmation link (``SALT_EMAIL_CHANGE``) to the **new** address; on
+    confirmation the account's email is swapped (SNOW-433).
+
+``send_email_change_notice(email, *, stage, request=None)``
+    Sends a link-free FYI to the **old** address on both request and completion
+    of an email change (SNOW-433).
+
 Both enqueue work via the django-tasks ``@task`` decorator so the SMTP
 round-trip runs off the request cycle, returning immediately (SNOW-26).
 
@@ -44,6 +52,7 @@ replaying a potentially-stale one.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -55,10 +64,14 @@ from django_tasks import task
 
 from regions.models import MicroRegion
 
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+
 from ..logging_utils import mask_email
 from .token import (
     SALT_ACCOUNT_ACCESS,
     SALT_EMAIL_VERIFICATION,
+    generate_email_change_token,
     generate_password_reset_token,
     generate_token,
 )
@@ -76,6 +89,10 @@ _VERIFY_PATH_PREFIX = "/account/verify/"
 # ``/account/reset-password/<token>/`` (SNOW-432).
 _RESET_PATH_PREFIX = "/account/reset-password/"
 
+# Path template for email-change confirm links:
+# ``/account/change-email/<token>/`` (SNOW-433).
+_EMAIL_CHANGE_PATH_PREFIX = "/account/change-email/"
+
 # Email subjects — gettext_lazy so xgettext / makemessages can extract them at
 # module scope.  Use %-named placeholders (not f-strings) as xgettext cannot
 # parse f-strings.
@@ -83,6 +100,8 @@ _SUBJECT_ACCESS = gettext_lazy("Your Snowdesk account link")
 _SUBJECT_SUBSCRIBED = gettext_lazy("Snowdesk: you're subscribed to %(region_name)s")
 _SUBJECT_VERIFY = gettext_lazy("Verify your Snowdesk email address")
 _SUBJECT_RESET = gettext_lazy("Reset your Snowdesk password")
+_SUBJECT_EMAIL_CHANGE = gettext_lazy("Confirm your new Snowdesk email address")
+_SUBJECT_EMAIL_CHANGE_NOTICE = gettext_lazy("Your Snowdesk email address is changing")
 
 
 def _build_account_url(token: str, base_url: str | None) -> str:
@@ -150,6 +169,27 @@ def _build_reset_url(token: str, base_url: str | None) -> str:
 
     """
     path = f"{_RESET_PATH_PREFIX}{token}/"
+    resolved_base = (
+        base_url
+        if base_url is not None
+        else getattr(settings, "SITE_BASE_URL", "http://localhost:8000").rstrip("/")
+    )
+    return f"{resolved_base.rstrip('/')}{path}"
+
+
+def _build_email_change_url(token: str, base_url: str | None) -> str:
+    """
+    Build the absolute email-change confirm URL for a given token.
+
+    Args:
+        token: The signed email-change token string.
+        base_url: Optional absolute base URL (scheme + host).
+
+    Returns:
+        Absolute URL string, e.g. ``https://example.com/account/change-email/<token>/``.
+
+    """
+    path = f"{_EMAIL_CHANGE_PATH_PREFIX}{token}/"
     resolved_base = (
         base_url
         if base_url is not None
@@ -367,6 +407,81 @@ def _worker_send_password_reset_email(email: str, base_url: str | None) -> None:
     )
 
 
+@task()
+def _worker_send_email_change_confirmation(
+    user_pk: int, new_email: str, base_url: str | None
+) -> None:
+    """
+    Background worker: send the email-change confirmation to the NEW address.
+
+    The confirmation link, once clicked and confirmed, swaps the account's
+    address (SNOW-433).  Token generation is deferred into the worker and binds
+    the user + the specific new address.
+
+    Args:
+        user_pk: Primary key of the account requesting the change.
+        new_email: The requested new address (the recipient).
+        base_url: Absolute base URL (scheme + host), or ``None``.
+
+    """
+    user_model = get_user_model()
+    try:
+        user = user_model.objects.get(pk=user_pk)
+    except user_model.DoesNotExist:
+        return
+
+    token = generate_email_change_token(user, new_email)
+    confirm_url = _build_email_change_url(token, base_url)
+    expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
+
+    context = {"confirm_url": confirm_url, "expiry_hours": expiry_hours}
+    subject = str(_SUBJECT_EMAIL_CHANGE)
+    plain_body = render_to_string("accounts/emails/email_change_confirm.txt", context)
+    html_body = render_to_string("accounts/emails/email_change_confirm.html", context)
+
+    logger.info("Sending email-change confirmation to %s", mask_email(new_email))
+
+    send_mail(
+        subject=subject,
+        message=plain_body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[new_email],
+        html_message=html_body,
+        fail_silently=False,
+    )
+
+
+@task()
+def _worker_send_email_change_notice(email: str, stage: str) -> None:
+    """
+    Background worker: send an FYI notice to the OLD address (no link).
+
+    Sent both when an email change is requested and when it completes so the
+    original address always learns about the change.  Carries no link and does
+    not disclose the new address.
+
+    Args:
+        email: The old (current) address — the recipient.
+        stage: ``"requested"`` or ``"completed"``.
+
+    """
+    context = {"stage": stage}
+    subject = str(_SUBJECT_EMAIL_CHANGE_NOTICE)
+    plain_body = render_to_string("accounts/emails/email_change_notice.txt", context)
+    html_body = render_to_string("accounts/emails/email_change_notice.html", context)
+
+    logger.info("Sending email-change notice (%s) to %s", stage, mask_email(email))
+
+    send_mail(
+        subject=subject,
+        message=plain_body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[email],
+        html_message=html_body,
+        fail_silently=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public API — thin wrappers that extract request data and enqueue a worker.
 # ---------------------------------------------------------------------------
@@ -458,3 +573,42 @@ def send_password_reset_email(
     """
     base_url = _extract_base_url(request)
     _worker_send_password_reset_email.enqueue(email, base_url)
+
+
+def send_email_change_confirmation(
+    user: User,
+    new_email: str,
+    *,
+    request: HttpRequest | None = None,
+) -> None:
+    """
+    Enqueue an email-change confirmation to the new address (SNOW-433).
+
+    Args:
+        user: The account requesting the change (only ``user.pk`` is used).
+        new_email: The requested new address (the recipient).
+        request: Optional HttpRequest used to derive the absolute base URL.
+
+    """
+    base_url = _extract_base_url(request)
+    _worker_send_email_change_confirmation.enqueue(user.pk, new_email, base_url)
+
+
+def send_email_change_notice(
+    email: str,
+    *,
+    stage: str,
+    request: HttpRequest | None = None,  # noqa: ARG001 — kept for call-site symmetry
+) -> None:
+    """
+    Enqueue an FYI notice (no link) to the old address (SNOW-433).
+
+    Sent on both request and completion of an email change.
+
+    Args:
+        email: The old (current) address — the recipient.
+        stage: ``"requested"`` or ``"completed"``.
+        request: Unused; accepted so callers can pass it uniformly.
+
+    """
+    _worker_send_email_change_notice.enqueue(email, stage)

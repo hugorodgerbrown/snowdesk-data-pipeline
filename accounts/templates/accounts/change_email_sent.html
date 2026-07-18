@@ -1,0 +1,21 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+accounts/templates/accounts/change_email_sent.html — "Check your inbox" page.
+
+Shown after an email-change request. The response is identical whether the new
+address was available or already taken, to prevent enumeration (SNOW-433).
+{% endcomment %}
+{% load i18n %}
+
+{% block status_title %}{% trans "Check your inbox — Snowdesk" %}{% endblock %}
+
+{% block status_meta %}{% trans "We've sent a confirmation link to your new Snowdesk email address." %}{% endblock %}
+
+{% block status_heading %}{% trans "Check your inbox" %}{% endblock %}
+
+{% block status_body %}
+    {% blocktrans with new=new_email trimmed %}
+        We've sent a confirmation link to <strong>{{ new }}</strong>. Click it to finish changing your email. It expires
+        in 24 hours, and your current address stays in use until then.
+    {% endblocktrans %}
+{% endblock %}

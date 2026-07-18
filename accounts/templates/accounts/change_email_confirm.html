@@ -1,0 +1,30 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+accounts/templates/accounts/change_email_confirm.html — Confirm an email change.
+
+Rendered on GET of /account/change-email/<token>/ for a valid token. It makes
+no change: only the POST from this form swaps the account's email address
+(safe against link-prefetch scanners). SNOW-433.
+{% endcomment %}
+{% load i18n %}
+
+{% block status_title %}{% trans "Confirm your new email — Snowdesk" %}{% endblock %}
+
+{% block status_meta %}{% trans "Confirm the new email address for your Snowdesk account." %}{% endblock %}
+
+{% block status_heading %}{% trans "Confirm your new email" %}{% endblock %}
+
+{% block status_body %}
+    {% blocktrans with new=new_email trimmed %}
+        Confirm that <strong>{{ new }}</strong> should become the email address for your Snowdesk account. Your old
+        address will stop working for sign-in.
+    {% endblocktrans %}
+{% endblock %}
+
+{% block status_cta %}
+    <form method="post" class="mt-6">
+        {% csrf_token %}
+        {% trans "Confirm new email" as label %}
+        {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
+    </form>
+{% endblock %}

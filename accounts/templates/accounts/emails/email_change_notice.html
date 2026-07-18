@@ -1,0 +1,37 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{% trans "Your Snowdesk email address is changing" %}</title>
+    </head>
+    <body style="font-family: sans-serif; color: #1f2937; max-width: 600px; margin: 0 auto; padding: 2rem 1rem">
+        <p>{% trans "Hi," %}</p>
+        {% if stage == "completed" %}
+            <p>
+                {% trans "The email address on your Snowdesk account has been changed. This address will no longer be used to sign in." %}
+            </p>
+        {% else %}
+            <p>
+                {% trans "A change to the email address on your Snowdesk account was requested. Your current address stays in use until the new one is confirmed." %}
+            </p>
+        {% endif %}
+        <p style="color: #6b7280; font-size: 0.875rem">
+            {% trans "If this wasn't you, please secure your account — reset your password from the sign-in page." %}
+        </p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 2rem 0">
+        <p style="color: #9ca3af; font-size: 0.75rem">{% trans "Snowdesk — Swiss Avalanche Bulletins" %}</p>
+        <p style="color: #9ca3af; font-size: 0.75rem">
+            {% blocktrans trimmed %}
+                Avalanche data: WSL Institute for Snow and Avalanche Research SLF (<a
+                    href="https://www.slf.ch"
+                    style="color: #9ca3af"
+                >slf.ch</a>) &middot; Licensed under <a
+                    href="https://creativecommons.org/licenses/by/4.0/"
+                    style="color: #9ca3af"
+                >CC BY 4.0</a>
+            {% endblocktrans %}
+        </p>
+    </body>
+</html>

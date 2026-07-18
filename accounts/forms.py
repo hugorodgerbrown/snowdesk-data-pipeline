@@ -139,6 +139,32 @@ class PasswordSignInForm(forms.Form):
         return email.lower().strip()
 
 
+class ChangeEmailForm(forms.Form):
+    """Form for requesting an account email change (SNOW-433).
+
+    A single field for the new address; the view handles the silent
+    uniqueness check and verification flow.
+    """
+
+    email = forms.EmailField(
+        max_length=254,
+        label="New email address",
+        widget=forms.EmailInput(
+            attrs={
+                "placeholder": "new@email.com",
+                "class": _INPUT_CLASSES,
+                "autofocus": True,
+                "autocomplete": "email",
+            }
+        ),
+    )
+
+    def clean_email(self) -> str:
+        """Normalise the email address to lowercase with whitespace stripped."""
+        email: str = self.cleaned_data["email"]
+        return email.lower().strip()
+
+
 class EmailForm(forms.Form):
     """Form for capturing the subscriber's email address on the manage page."""
 
