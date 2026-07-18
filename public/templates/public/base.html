@@ -4,8 +4,8 @@ public/templates/public/base.html — Canonical layout for the public site.
 Pulled out of bulletin.html (the "most complete, use as base" page flagged
 in SNOW-9). Every public page extends this template, including home.html (which
 hosts the map at /).
-Subscription pages also extend this file indirectly via
-subscriptions/templates/subscriptions/base.html.
+Subscription pages (accounts/templates/accounts/) also extend this file
+directly.
 
 Blocks
 ------
@@ -42,7 +42,7 @@ site_footer     : the global site footer. Default = the small SLF
                   line (e.g. into a floating overlay), not to remove
                   it.
 extra_js        : scripts loaded at end of <body>. Used by
-                  subscriptions/base.html to inject HTMX.
+                  accounts/ templates to inject HTMX.
 {% endcomment %}
 {% load i18n og_tags static %}
 <!DOCTYPE html>

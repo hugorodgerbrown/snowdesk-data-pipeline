@@ -1,0 +1,18 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+accounts/templates/accounts/manage_sent.html — "Check your inbox" page.
+
+Shown after the unauthenticated manage POST. The response is identical
+whether the email was known or unknown to prevent account enumeration.
+{% endcomment %}
+{% load i18n %}
+
+{% block status_title %}{% trans "Check your inbox — Snowdesk" %}{% endblock %}
+
+{% block status_meta %}{% trans "We've sent you an account link. Check your inbox to manage your Snowdesk subscriptions." %}{% endblock %}
+
+{% block status_heading %}{% trans "Check your inbox" %}{% endblock %}
+
+{% block status_body %}
+    {% trans "If that address is registered, we've sent you a link to manage your subscriptions. It expires in 24 hours." %}
+{% endblock %}

@@ -1,0 +1,23 @@
+{% load i18n components %}
+{% comment %}
+accounts/templates/accounts/partials/subscribe_unsubscribed.html
+HTMX response fragment shown after the bulletin-page unsubscribe action on the
+non-last-region path. Swaps in as a confirmation when the subscriber still has
+other regions active.
+
+Mirrors subscribe_success_already.html's structure but confirms removal rather
+than confirming existing subscription.
+
+Expected context variables:
+  region_name — the human-readable region name (str)
+{% endcomment %}
+{% card padding="p-6" %}
+<h2 class="text-base font-semibold text-text-1 mb-1">
+    {% blocktrans with region=region_name|force_escape trimmed %}
+        You've unsubscribed from <strong>{{ region }}</strong>
+    {% endblocktrans %}
+</h2>
+<p class="text-sm text-text-2 leading-relaxed">
+    <a href="/subscribe/manage/" class="underline text-text-1">{% trans "Manage your subscriptions" %}</a>
+</p>
+{% endcard %}

@@ -1794,27 +1794,27 @@ SUBSCRIBE_FORM_VARIANTS: tuple[dict[str, Any], ...] = (
 SUBSCRIBE_OUTCOMES_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Success — check inbox (generic)",
-        "partial": "subscriptions/partials/subscribe_success.html",
+        "partial": "accounts/partials/subscribe_success.html",
         "context": {},
     },
     {
         "caption": "Success — access link sent",
-        "partial": "subscriptions/partials/subscribe_success_access.html",
+        "partial": "accounts/partials/subscribe_success_access.html",
         "context": {},
     },
     {
         "caption": "Success — region added",
-        "partial": "subscriptions/partials/subscribe_success_added.html",
+        "partial": "accounts/partials/subscribe_success_added.html",
         "context": {"region_name": "Bex–Villars"},
     },
     {
         "caption": "Success — already subscribed",
-        "partial": "subscriptions/partials/subscribe_success_already.html",
+        "partial": "accounts/partials/subscribe_success_already.html",
         "context": {"region_name": "Bex–Villars"},
     },
     {
         "caption": "Error — region not found",
-        "partial": "subscriptions/partials/subscribe_error.html",
+        "partial": "accounts/partials/subscribe_error.html",
         "context": {},
     },
 )

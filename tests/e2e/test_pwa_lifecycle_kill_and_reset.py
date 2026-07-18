@@ -87,7 +87,7 @@ def test_kill_switch_a_prevents_registration(
 def test_manage_page_reset_local_data(signed_in_page: SignedInPage) -> None:
     """The manage page's "Reset local data" control wipes and reloads cleanly.
 
-    ``[data-pwa-reset-trigger]`` (``subscriptions/templates/subscriptions/manage.html``)
+    ``[data-pwa-reset-trigger]`` (``accounts/templates/accounts/manage.html``)
     is bound by ``pwa_reset.js``'s ``bindTrigger`` — a native
     ``window.confirm()`` dialog gates it (no ``data-pwa-reset-skip-confirm``
     on this button), then ``resetLocalData()`` runs the six-step wipe and

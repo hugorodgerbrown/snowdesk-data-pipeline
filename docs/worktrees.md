@@ -2,7 +2,7 @@
 name: worktrees
 description: init-worktree worktree seed strategy, dev credentials, test_data fixture coverage, reseed procedure
 status: current
-last-reviewed: 2026-06-22
+last-reviewed: 2026-07-18
 ---
 
 # Worktrees and DB seeding
@@ -43,7 +43,7 @@ surface is unaffected.
 | Subscribed user | `dev@snowdesk.dev` | `snowdesk` | Active subscriber, subscribed to CH-4115 (Martigny-Verbier) |
 
 The constants are defined in
-`subscriptions/management/commands/seed_dev_users.py` (`SUPERUSER_EMAIL`,
+`accounts/management/commands/seed_dev_users.py` (`SUPERUSER_EMAIL`,
 `NORMAL_USER_EMAIL`, `PASSWORD`).
 
 ## Force-reseed procedure
@@ -113,6 +113,21 @@ require either a locally fetched bulletin or an extended fixture:
 - Wet-snow problem days
 - Split-day (morning/afternoon) danger profiles
 - Off-season "no bulletin" regions
+- `regions.RegionAlias` rows (SNOW-409) — `test_data.json` is CH-only and
+  doesn't include them; some curated aliases target AT/IT regions that
+  don't exist in a fresh worktree DB at all. To exercise
+  `mcp_server.resolvers.search_places` against the curated aliases
+  (e.g. to reproduce a "Sitten" → CH-4121 style query locally), load the
+  EAWS fixtures the alias rows' natural keys depend on first:
+
+  ```bash
+  uv run python manage.py loaddata \
+      regions/fixtures/eaws_CH.json \
+      regions/fixtures/eaws_FR.json \
+      regions/fixtures/eaws_AT.json \
+      regions/fixtures/eaws_IT.json \
+      regions/fixtures/region_aliases.json
+  ```
 
 ### Extending the fixture
 

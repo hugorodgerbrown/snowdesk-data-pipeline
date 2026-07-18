@@ -17,30 +17,38 @@ import factory
 from django.contrib.auth.models import User
 from django.utils import timezone as django_timezone
 
+from accounts.models import (
+    PasskeyCredential,
+    PushSubscription,
+    Subscriber,
+    Subscription,
+)
 from bulletins.models import (
     Bulletin,
     BulletinGrouping,
     BulletinShare,
     BulletinShareClick,
+    ForecastPoint,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
     WeatherSnapshot,
 )
 from bulletins.services.day_rating import DAY_RATING_VERSION
+from bulletins.services.forecast_points import (
+    quantise_elevation,
+    quantise_lat,
+    quantise_lon,
+)
 from core.models import RequestLog
+from favourites.models import Favourite
 from observations.models import FieldObservation
 from regions.models import (
     MajorRegion,
     MicroRegion,
+    RegionAlias,
     Resort,
     SubRegion,
-)
-from subscriptions.models import (
-    PasskeyCredential,
-    PushSubscription,
-    Subscriber,
-    Subscription,
 )
 
 
@@ -130,6 +138,18 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     needs_review = False
 
 
+class RegionAliasFactory(factory.django.DjangoModelFactory[RegionAlias]):
+    """Factory for RegionAlias instances."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = RegionAlias
+
+    region = factory.SubFactory(MicroRegionFactory)
+    alias_text = factory.Sequence(lambda n: f"Alias {n}")
+
+
 class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
     """Factory for Bulletin instances."""
 
@@ -214,6 +234,31 @@ class WeatherSnapshotFactory(factory.django.DjangoModelFactory[WeatherSnapshot])
     )
     sunset = factory.LazyFunction(
         lambda: datetime.datetime(2026, 5, 1, 20, 45, tzinfo=UTC)
+    )
+
+
+class ForecastPointFactory(factory.django.DjangoModelFactory[ForecastPoint]):
+    """
+    Factory for ForecastPoint instances.
+
+    ``lat_cell``/``lon_cell``/``elevation_band`` are derived from the
+    representative ``latitude``/``longitude``/``elevation`` via
+    ``LazyAttribute`` so the quantised keys always stay consistent with the
+    coordinates, matching what ``resolve_forecast_point`` would compute.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = ForecastPoint
+
+    latitude = 46.1
+    longitude = 7.4
+    elevation = 1500.0
+    lat_cell = factory.LazyAttribute(lambda obj: quantise_lat(obj.latitude))
+    lon_cell = factory.LazyAttribute(lambda obj: quantise_lon(obj.longitude))
+    elevation_band = factory.LazyAttribute(
+        lambda obj: quantise_elevation(obj.elevation)
     )
 
 
@@ -420,3 +465,32 @@ class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation
     location_source = FieldObservation.LOCATION_SOURCE.GPS
     observed_at = factory.LazyFunction(django_timezone.now)
     observation_type = FieldObservation.OBSERVATION_TYPE.WHUMPFING
+
+
+class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
+    """Factory for Favourite instances.
+
+    ``latitude``/``longitude`` vary per instance (``factory.Sequence``) and
+    are threaded into the ``forecast_point`` SubFactory so each build lands
+    in a distinct (lat_cell, lon_cell, elevation_band) triple — reusing
+    ``ForecastPointFactory``'s fixed defaults for every Favourite would trip
+    its ``unique_together`` constraint on the second build.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Favourite
+
+    user = factory.SubFactory(UserFactory)
+    name = ""
+    latitude = factory.Sequence(lambda n: 46.1 + n * 0.05)
+    longitude = factory.Sequence(lambda n: 7.4 + n * 0.05)
+    elevation = 1500.0
+    forecast_point = factory.SubFactory(
+        ForecastPointFactory,
+        latitude=factory.LazyAttribute(lambda obj: obj.factory_parent.latitude),
+        longitude=factory.LazyAttribute(lambda obj: obj.factory_parent.longitude),
+        elevation=factory.LazyAttribute(lambda obj: obj.factory_parent.elevation),
+    )
+    region = None

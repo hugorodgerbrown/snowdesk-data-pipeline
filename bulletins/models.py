@@ -26,6 +26,11 @@ Owns the eight bulletin-driven models:
   - BulletinGrouping: dissolved outer boundary of all L4 micro-regions
     sharing a bulletin on a given day, computed at ingest time. Provides
     the "L3" dynamic overlay on the map (SNOW-323).
+  - ForecastPoint: canonical weather-sampling location that many nearby
+    map pins snap to, keyed on a quantised lat/lon grid cell and an
+    elevation band. Resolved by
+    ``bulletins.services.forecast_points.resolve_forecast_point``
+    (SNOW-412, phase 1 of the Favourites feature).
 
 Region hierarchy (MicroRegion, MajorRegion, SubRegion, Resort) lives
 in ``regions.models`` — those are stable lookup tables shared across the
@@ -1008,6 +1013,92 @@ class BulletinGrouping(BaseModel):
             f"BulletinGrouping({self.bulletin.bulletin_id},"
             f" {self.target_date}, {self.countries})"
         )
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# ForecastPoint
+# ---------------------------------------------------------------------------
+
+
+class ForecastPointQuerySet(models.QuerySet["ForecastPoint"]):
+    """Custom queryset for ForecastPoint."""
+
+    def active(self) -> "ForecastPointQuerySet":
+        """Return points referenced by at least one favourite.
+
+        Annotates over the reverse FK created by ``favourites.Favourite``
+        and filters to rows with a non-zero count — see
+        ``docs/decisions/forecast-point-quantisation.md``.
+
+        Returns:
+            Filtered queryset of ForecastPoints with one or more favourites.
+
+        """
+        return self.annotate(favourite_count=models.Count("favourites")).filter(
+            favourite_count__gt=0
+        )
+
+
+class ForecastPoint(BaseModel):
+    """
+    A canonical weather-sampling location shared by nearby map pins.
+
+    Many user pins that land close together (horizontally and in
+    elevation) should reuse the same Open-Meteo forecast fetch rather than
+    each triggering its own. To make "close together" a stable, indexable
+    concept, every pin is quantised onto a coarse lat/lon grid cell plus
+    an elevation band, and one ``ForecastPoint`` row is kept per distinct
+    (lat_cell, lon_cell, elevation_band) triple.
+
+    Rows are created and reused by
+    ``bulletins.services.forecast_points.resolve_forecast_point``, which
+    also decides whether a pin should reuse an existing nearby point (via
+    haversine distance and elevation difference) or mint a new one. See
+    ``docs/decisions/forecast-point-quantisation.md`` for the grid sizing
+    rationale.
+
+    ``latitude``, ``longitude``, and ``elevation`` are the *representative*
+    values captured from the pin that created (or last matched) this row —
+    not the cell's geometric centre.
+    """
+
+    lat_cell = models.IntegerField(
+        help_text="floor(latitude / LAT_CELL_SIZE) — see forecast_points.py.",
+    )
+    lon_cell = models.IntegerField(
+        help_text="floor(longitude / LON_CELL_SIZE) — see forecast_points.py.",
+    )
+    elevation_band = models.IntegerField(
+        help_text="floor(elevation / ELEVATION_BAND_SIZE) — see forecast_points.py.",
+    )
+    latitude = models.FloatField(
+        help_text="Representative latitude of the pin that resolved to this point.",
+    )
+    longitude = models.FloatField(
+        help_text="Representative longitude of the pin that resolved to this point.",
+    )
+    elevation = models.FloatField(
+        help_text="Representative elevation in metres, from the Open-Meteo lookup.",
+    )
+
+    objects = ForecastPointQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+        unique_together = [("lat_cell", "lon_cell", "elevation_band")]
+
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this point.
+
+        Format: ``46.80000,7.50000 @1500m``
+        """
+        return f"{self.latitude:.5f},{self.longitude:.5f} @{self.elevation:.0f}m"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""

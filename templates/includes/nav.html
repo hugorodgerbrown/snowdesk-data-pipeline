@@ -10,7 +10,7 @@ Authenticated subscriber:
   An avatar button (first letter of email) opens a dropdown showing up to
   three subscribed region links, a "Manage alerts" link, and a "Sign out"
   button.  Region links are provided by the nav_subscriptions context
-  processor (subscriptions/context_processors.py).
+  processor (accounts/context_processors.py).
 
 Not authenticated:
   A "Sign in" link routes to /subscribe/sign-in/.
@@ -152,13 +152,13 @@ Usage
                         {% endif %}
                         <a
                             role="menuitem"
-                            href="{% url 'subscriptions:manage' %}"
+                            href="{% url 'accounts:manage' %}"
                             class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
                         >
                             {% trans "Manage alerts" %}
                         </a>
                         <div class="my-1 border-t border-border" aria-hidden="true"></div>
-                        <form method="post" action="{% url 'subscriptions:sign_out' %}" class="contents">
+                        <form method="post" action="{% url 'accounts:sign_out' %}" class="contents">
                             {% csrf_token %}
                             <button
                                 type="submit"
@@ -172,7 +172,7 @@ Usage
                 </div>
             {% else %}
                 <a
-                    href="{% url 'subscriptions:sign_in' %}"
+                    href="{% url 'accounts:sign_in' %}"
                     class="text-sm text-text-2 hover:text-text-1"
                 >
                     {% trans "Sign in" %}

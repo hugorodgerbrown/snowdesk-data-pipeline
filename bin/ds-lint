@@ -39,7 +39,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_ROOTS: tuple[Path, ...] = (
     REPO_ROOT / "templates",
     REPO_ROOT / "public" / "templates",
-    REPO_ROOT / "subscriptions" / "templates",
+    REPO_ROOT / "accounts" / "templates",
     REPO_ROOT / "bulletins" / "templates",
     REPO_ROOT / "observations" / "templates",
 )
@@ -50,7 +50,7 @@ TEMPLATE_ROOTS: tuple[Path, ...] = (
 # over adding entries here; file-level suppression is a last resort.
 PATH_ALLOWLIST: tuple[str, ...] = (
     "bulletins/templates/admin/*",
-    "subscriptions/templates/subscriptions/emails/*",
+    "accounts/templates/accounts/emails/*",
     # Country-flag colours are mandated by each country's flag spec; they
     # are not stylistic choices and cannot be tokenized.
     "templates/includes/country_flags_sprite.html",

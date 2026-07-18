@@ -25,7 +25,7 @@ matters because SW-based push on iOS is fragile — a background SW eviction
 silently drops the notification — whereas a declarative payload is rendered
 by the OS even if the SW is gone.
 
-`subscriptions/models.py::PushSubscription.mechanism` records which path a
+`accounts/models.py::PushSubscription.mechanism` records which path a
 given subscription uses:
 
 - `sw` — the service-worker-parsed path (`{title, body, url}`), used by
@@ -37,7 +37,7 @@ given subscription uses:
 detection and sends the result as a `"mechanism"` field on the
 `/subscribe/push/register/` POST body.
 
-`subscriptions/push_service.py::dispatch_push` branches the *outgoing wire
+`accounts/push_service.py::dispatch_push` branches the *outgoing wire
 payload* on `sub.mechanism` (see `_build_wire_payload`). For a `declarative`
 subscription, whatever `{title, body, url}`-shaped payload the caller
 passes in is translated to:
@@ -125,9 +125,9 @@ Web Push dispatch (RFC 8292 §2). It **must** start with `mailto:` or
 Push) reject the JWT with a 403 for anything else, and the failure only
 surfaces at dispatch time in production.
 
-`subscriptions/checks.py::check_vapid_claim_email` — registered via
-`subscriptions/apps.py::SubscriptionsConfig.ready()` — fails
-`manage.py check` (error code `subscriptions.push_config.E001`) if
+`accounts/checks.py::check_vapid_claim_email` — registered via
+`accounts/apps.py::AccountsConfig.ready()` — fails
+`manage.py check` (error code `accounts.push_config.E001`) if
 `VAPID_CLAIM_EMAIL` doesn't start with one of those two prefixes, catching
 a misconfigured environment before it reaches production silently.
 
@@ -294,7 +294,7 @@ Safari on iOS only delivers Web Push in standalone (installed PWA) mode.
    check `_supportsDeclarativePush()` runs client-side.
 3. Click **Enable push**, grant permission, and confirm the register POST
    in the network tab carries `"mechanism":"declarative"`.
-4. Check `/admin/subscriptions/pushsubscription/` — the new row's
+4. Check `/admin/accounts/pushsubscription/` — the new row's
    **Mechanism** column should read `declarative`.
 5. Send a test push. The OS renders the notification directly from the
    Declarative Web Push JSON shape — no service worker `push` handler
@@ -353,7 +353,7 @@ Diagnose on Render with:
 
 ```python
 from py_vapid import Vapid
-from subscriptions import push_config
+from accounts import push_config
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 import base64
 
@@ -385,5 +385,5 @@ If you must rotate:
 6. Upload the new secret file on Render (raw scalar; same filename).
 7. Deploy.
 8. Every existing `PushSubscription` row is now invalid. A bulk-delete via the
-   Django admin (`/admin/subscriptions/pushsubscription/`) cleans up the dead
+   Django admin (`/admin/accounts/pushsubscription/`) cleans up the dead
    rows before the next push attempt does it one-by-one.

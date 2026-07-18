@@ -1,0 +1,38 @@
+{% load i18n components %}
+{% comment %}
+accounts/templates/accounts/partials/subscribe_authed_add.html
+Panel state for an authenticated subscriber who is NOT yet subscribed to this region.
+
+Displays a one-click "Add region" CTA. POSTs to accounts:add_region, which is
+idempotent, and swaps the outer wrapper div on success.
+
+Expected context variables:
+  region_id   — the SLF region identifier (str)
+  region_name — the human-readable region name (str)
+{% endcomment %}
+<div id="subscribe-cta-{{ region_id }}">
+    {% card padding="p-6" %}
+    <h2 class="text-base font-semibold text-text-1 mb-1">
+        {% blocktrans with region=region_name|force_escape trimmed %}
+            Add <strong>{{ region }}</strong> to your alerts
+        {% endblocktrans %}
+    </h2>
+    <p class="text-sm text-text-2 mb-4 leading-relaxed">
+        {% trans "You're signed in. One click to add daily bulletin updates for this region." %}
+    </p>
+    <form
+        hx-post="{% url 'accounts:add_region' region_id %}"
+        hx-target="#subscribe-cta-{{ region_id }}"
+        hx-swap="outerHTML"
+        hx-indicator="#subscribe-indicator-{{ region_id }}"
+    >
+        {% csrf_token %}
+        {% trans "Add region" as label %}
+        {% include "includes/_button.html" with label=label variant="primary" size="compact" %}
+    </form>
+    <span
+        id="subscribe-indicator-{{ region_id }}"
+        class="htmx-indicator text-xs text-text-3 mt-1 block"
+    >{% trans "Saving…" %}</span>
+    {% endcard %}
+</div>

@@ -204,6 +204,9 @@ def test_tools_list_returns_all_registered_tools() -> None:
         "bulk_current_conditions",
         "find_regions_near",
         "get_danger_trend",
+        "get_regional_snapshot",
+        "list_regions",
+        "region_info",
     }
     for tool in response["result"]["tools"]:
         assert tool["description"]

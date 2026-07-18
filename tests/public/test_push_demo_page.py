@@ -19,7 +19,7 @@ from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 
-from subscriptions.models import Subscriber
+from accounts.models import Subscriber
 from tests.factories import SubscriberFactory, UserFactory
 
 _PUSH_DEMO_URL = "/_push-demo/"

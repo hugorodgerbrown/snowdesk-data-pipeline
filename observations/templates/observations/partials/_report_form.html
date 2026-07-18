@@ -71,9 +71,7 @@ Context:
                 type="submit"
                 name="observation_type"
                 value="{{ value }}"
-                {% if not has_coords %}
-                    disabled
-                {% endif %}
+                {% if not has_coords %}disabled{% endif %}
                 class="rounded-tag border border-border bg-card px-3 py-2 text-sm text-text-1 text-left hover:border-status-info-text hover:bg-status-info-bg transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
                 {{ label }}

@@ -105,9 +105,10 @@ INSTALLED_APPS = [
     "regions",
     "bulletins",
     "public",
-    "subscriptions",
+    "accounts",
     "analytics",
     "observations",
+    "favourites",
     "mcp_server",
 ]
 
@@ -174,7 +175,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "django.template.context_processors.i18n",
                 # Injects nav_subscriptions for the subscriber avatar dropdown.
-                "subscriptions.context_processors.nav_subscriptions",
+                "accounts.context_processors.nav_subscriptions",
                 # Exposes SITE_BASE_URL for absolute-URL construction in OG tags.
                 "public.context_processors.site_base_url",
                 # Injects APP_VERSION / APP_MIN_VERSION into every template so
@@ -236,11 +237,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Authentication
 # ---------------------------------------------------------------------------
 # Django's default auth.User is the user model.  Subscribers are linked via
-# a OneToOneField on subscriptions.Subscriber (related_name="subscriber").
+# a OneToOneField on accounts.Subscriber (related_name="subscriber").
 
 AUTHENTICATION_BACKENDS = [
     # Verifies signed magic-link tokens; used by account_view and passkey auth.
-    "subscriptions.backends.TokenBackend",
+    "accounts.backends.TokenBackend",
     # Standard Django password backend; used by the admin login form for staff.
     "django.contrib.auth.backends.ModelBackend",
 ]
@@ -607,9 +608,18 @@ WAFFLE_CREATE_MISSING_FLAGS = False
 # Account-access token
 # ---------------------------------------------------------------------------
 # Maximum age (in seconds) for account-access tokens verified by
-# subscriptions/services/token.py.  Defaults to 24 hours.
+# accounts/services/token.py.  Defaults to 24 hours.
 
 ACCOUNT_TOKEN_MAX_AGE = config("ACCOUNT_TOKEN_MAX_AGE", default=86400, cast=int)
+
+
+# ---------------------------------------------------------------------------
+# Favourites (SNOW-413)
+# ---------------------------------------------------------------------------
+# Maximum number of Favourite rows a single user may hold at once, enforced
+# by favourites.services.create_favourite.
+
+FAVOURITES_MAX_PER_USER = config("FAVOURITES_MAX_PER_USER", default=25, cast=int)
 
 # Base URL used when building absolute links in emails sent outside a request
 # context (e.g. from management commands or background tasks).
@@ -798,7 +808,7 @@ LOGGING = {
             "level": "DEBUG",
             "propagate": False,
         },
-        "subscriptions": {
+        "accounts": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",
             "propagate": False,

@@ -1,11 +1,18 @@
-# .github/workflows/lint-guards.yml — Design-system and documentation linters.
+# .github/workflows/lint-guards.yml — Design-system, documentation, and
+# template-formatting linters.
 #
-# Runs ``tox -e ds-lint`` (template design-token guard) and
-# ``tox -e docs-lint`` (docs frontmatter + CLAUDE.md routing guard) on every
-# pull request and push to main/release that touches templates, docs, the router,
-# or the linters themselves. Isolated from ci.yml so docs- and
-# template-only changes get a fast, focused gate without triggering the
-# full Python matrix.
+# Runs ``tox -e ds-lint`` (template design-token guard), ``tox -e docs-lint``
+# (docs frontmatter + CLAUDE.md routing guard), and ``tox -e djangofmt``
+# (template formatting — the CI backstop for the bypassable pre-commit hook).
+#
+# The three job contexts are required status checks in the "Main branch
+# rules" ruleset, so the ``pull_request`` trigger runs on every PR with no
+# path filter — a path-filtered required check never reports on PRs outside
+# its paths and leaves them stuck at "Expected" (SNOW-435). The ``push``
+# trigger keeps a path filter: pushes to main/release are not merge-gated,
+# so it only needs to run when templates, docs, or the linters change.
+# Isolated from ci.yml so the guards stay a fast, focused gate without
+# triggering the full Python matrix.
 
 name: Lint guards
 
@@ -25,14 +32,6 @@ on:
 
   pull_request:
     types: [opened, synchronize, reopened]
-    paths:
-      - "**/*.html"
-      - "docs/**"
-      - "CLAUDE.md"
-      - "bin/ds-lint"
-      - "bin/docs-lint"
-      - "tox.ini"
-      - ".github/workflows/lint-guards.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -44,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toxenv: [ds-lint, docs-lint]
+        toxenv: [ds-lint, docs-lint, djangofmt]
     env:
       TOXENV: ${{ matrix.toxenv }}
 

@@ -1,5 +1,11 @@
 # .github/workflows/ci.yml — Run formatting, linting, type checks, Django
 # checks, and tests via tox on push to main and on pull requests.
+#
+# The job contexts are required status checks in the "Main branch rules"
+# ruleset, so the ``pull_request`` trigger runs on every PR with no path
+# filter — a path-filtered required check never reports on PRs outside its
+# paths and leaves them stuck at "Expected" (SNOW-435). The ``push``
+# trigger keeps a path filter: pushes to main/release are not merge-gated.
 
 name: Python / Django
 
@@ -17,20 +23,14 @@ on:
 
   pull_request:
     types: [opened, synchronize, reopened]
-    paths:
-      - "**/*.py"
-      - "pyproject.toml"
-      - "uv.lock"
-      - "tox.ini"
-      - ".github/workflows/ci.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  format:
-    name: Check formatting
+  static:
+    name: Static analysis
     runs-on: ubuntu-latest
     strategy:
       matrix:

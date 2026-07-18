@@ -18,7 +18,7 @@ def test_base_model_default_ordering() -> None:
 
 def test_subscriber_inherits_base_model() -> None:
     """Subscriber is now a profile model extending BaseModel, not AbstractBaseUser."""
-    from subscriptions.models import Subscriber
+    from accounts.models import Subscriber
 
     assert issubclass(Subscriber, BaseModel)
 

@@ -4,6 +4,12 @@
 # Isolated from ci.yml so the Chromium install step and its cache are
 # scoped to this workflow and do not bloat the main CI image.
 #
+# "Playwright smoke tests" is a required status check in the "Main branch
+# rules" ruleset, so the ``pull_request`` trigger runs on every PR with no
+# path filter — a path-filtered required check never reports on PRs outside
+# its paths and leaves them stuck at "Expected" (SNOW-435). The ``push``
+# trigger keeps a path filter: pushes to main/release are not merge-gated.
+#
 # The Playwright binary cache is keyed on uv.lock so a new cache entry
 # is created only when the Playwright package version changes.  Cache misses
 # fall back to a clean install (the Chromium download takes ~60 s on a
@@ -26,13 +32,6 @@ on:
 
   pull_request:
     types: [opened, synchronize, reopened]
-    paths:
-      - "**/*.py"
-      - "**/*.html"
-      - "pyproject.toml"
-      - "uv.lock"
-      - "tox.ini"
-      - ".github/workflows/e2e.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
