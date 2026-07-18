@@ -42,6 +42,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+import waffle
 from django.conf import settings
 from django.contrib.auth import login, logout
 from django.http import HttpRequest, HttpResponse
@@ -738,10 +739,15 @@ def manage_view(request: HttpRequest) -> HttpResponse:
     region, with resort list and per-region remove button).
 
     Context keys:
-        subscriber       — authenticated Subscriber instance.
-        subscriptions    — queryset of Subscription rows for the subscriber.
-        just_confirmed   — True when arriving via the confirmation link.
-        today            — today's date (datetime.date) for the bulletin link label.
+        subscriber        — authenticated Subscriber instance.
+        subscriptions      — queryset of Subscription rows for the subscriber.
+        just_confirmed     — True when arriving via the confirmation link.
+        today              — today's date (datetime.date) for the bulletin link label.
+        favourites_visible — True when the ``favourites`` waffle flag is
+                              active for this request (SNOW-415). Gates the
+                              "My favourites" section, which lazy-loads
+                              ``favourites:list`` by URL name — this module
+                              never imports the ``favourites`` app.
 
     Args:
         request: Incoming HTTP request.
@@ -772,6 +778,7 @@ def manage_view(request: HttpRequest) -> HttpResponse:
             "subscriptions": subscriptions,
             "just_confirmed": just_confirmed,
             "today": timezone.now().date(),
+            "favourites_visible": waffle.flag_is_active(request, "favourites"),
         },
     )
 

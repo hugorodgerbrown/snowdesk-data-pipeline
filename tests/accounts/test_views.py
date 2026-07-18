@@ -15,7 +15,10 @@ Covers:
                         and unknown emails); authenticated GET shows region cards;
                         non-subscribed regions absent; just_confirmed banner;
                         telemetry toggle renders with role="switch", explainer
-                        copy, and a link to the privacy policy (SNOW-387).
+                        copy, and a link to the privacy policy (SNOW-387);
+                        the flag-gated "My favourites" section lazy-loads
+                        favourites:list when active, absent when inactive
+                        (SNOW-415).
   remove_region       — removes one region; last region → hard-delete + HX-Redirect;
                         no session → 403; non-HTMX → 400; rate-limit 429.
   delete_account      — hard-deletes subscriber; clears session; HX-Redirect to done;
@@ -42,6 +45,7 @@ from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
 from pytest_django.fixtures import SettingsWrapper
+from waffle.testutils import override_flag
 
 from accounts.models import Subscriber, Subscription
 from accounts.services.token import (
@@ -1325,6 +1329,41 @@ class TestManageViewAuthenticated:
         response = client.get(reverse("accounts:manage"))
         privacy_url = reverse("public:privacy")
         assert privacy_url.encode() in response.content
+
+
+# ---------------------------------------------------------------------------
+# manage_view — "My favourites" section (SNOW-415)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestManageViewFavouritesSection:
+    """The flag-gated 'My favourites' section lazy-loads favourites:list.
+
+    Asserted purely via the reversed ``favourites:list`` URL appearing in
+    the response HTML — this test module carries no import from the
+    ``favourites`` app, matching ``manage_view`` itself.
+    """
+
+    @override_flag("favourites", active=True)
+    def test_section_present_when_flag_active(self) -> None:
+        """With the flag active, the section lazy-loads favourites:list."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("accounts:manage"))
+        assert response.status_code == 200
+        assert b"My favourites" in response.content
+        assert reverse("favourites:list").encode() in response.content
+
+    @override_flag("favourites", active=False)
+    def test_section_absent_when_flag_inactive(self) -> None:
+        """With the flag inactive, the section (and its hx-get) is absent."""
+        subscriber = SubscriberFactory.create()
+        client = _make_session_client(subscriber)
+        response = client.get(reverse("accounts:manage"))
+        assert response.status_code == 200
+        assert b"My favourites" not in response.content
+        assert reverse("favourites:list").encode() not in response.content
 
 
 # ---------------------------------------------------------------------------
