@@ -31,8 +31,8 @@ without manual nudging:
 
 `Done` means the PR merged to `main` — the work is complete and on
 **staging**. It does **not** mean the ticket has shipped to production:
-production deploys only when a release PR moves `main` onto the `release`
-branch. Which tickets reached production is recorded in the **GitHub
+production deploys only when `release` is fast-forwarded to `main`. Which
+tickets reached production is recorded in the **GitHub
 Release** created on each production deploy (CalVer tag, notes generated
 from the `SNOW-xx:` PR titles). See [`deployment.md`](deployment.md).
 

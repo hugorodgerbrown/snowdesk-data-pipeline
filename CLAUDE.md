@@ -306,10 +306,12 @@ Deploys are split across two branches (hosted on Render):
 
 - **`main` → Staging** — every merge auto-deploys one web dyno.
 - **`release` → Production** — three services (web + scheduler + task
-  worker, one shared DB) deploy when a **release PR** (`main` → `release`)
-  merges. `release` is branch-protected; move it only via that PR.
+  worker, one shared DB) deploy when `release` is **fast-forwarded** to
+  `main` (`release` behaves like a tag that moves with `main`; no merge
+  commit, no PR). The ruleset allows the advance only as a fast-forward
+  whose target commit's checks are already green.
 
-Merging a release PR also fires [`release.yml`](.github/workflows/release.yml),
+Fast-forwarding `release` also fires [`release.yml`](.github/workflows/release.yml),
 which tags the commit **CalVer** (`YYYY.MM.DD`, `.N` for a second release
 the same day) and creates a GitHub Release. The auto-generated notes list
 the merged PRs — `SNOW-xx:` titles make the Release the record of which

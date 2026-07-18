@@ -10,9 +10,10 @@
 # Path-to-live (SNOW-339): deploys are split across two branches.
 #   * `main`    → Staging   — one web service, auto-deploys on every merge.
 #   * `release` → Production — three services, deploy when the `release`
-#                 branch advances (a release PR merges). All three track
-#                 the SAME branch so they always run the same commit
-#                 against the shared production database.
+#                 branch advances (a fast-forward of `release` to `main`;
+#                 see bin/cut-release). All three track the SAME branch so
+#                 they always run the same commit against the shared
+#                 production database.
 # The Blueprint source branch and the per-service deploy branch are
 # independent: Blueprint reads this file from `main`, and each service's
 # `branch:` field governs which branch it deploys from.

@@ -54,8 +54,8 @@ export them first.
 
 Postgres on Render via `DATABASE_URL`. One web service (`snowdesk-website`) plus
 two workers (`snowdesk-scheduler`, `snowdesk-background-tasks`), all pinned to
-the `release` branch and auto-deploying when CI passes on a release-PR merge
-(see [`render.yaml`](../../render.yaml)). Unless noted, run commands in the
+the `release` branch and auto-deploying when CI passes on the fast-forward of
+`release` to `main` (see [`render.yaml`](../../render.yaml)). Unless noted, run commands in the
 **Render Shell of `snowdesk-website`**.
 
 ---

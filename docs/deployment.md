@@ -1,6 +1,6 @@
 ---
 name: deployment
-description: Path-to-live — main→staging and release→production branch split, Render topology, cutting a release PR, GitHub Releases, CalVer tags
+description: Path-to-live: main→staging and release→production split, Render topology, cut a release by fast-forwarding release to main, CalVer tags
 status: current
 last-reviewed: 2026-06-22
 ---
@@ -14,18 +14,23 @@ and production only on an explicit release.
 ```
 feature/SNOW-xxx ──PR──▶ main ──────────────▶ Staging   (auto, 1 web dyno)
                           │
-                          └──release PR──▶ release ─────▶ Production (3 services)
+                          └──fast-forward──▶ release ───▶ Production (3 services)
                                                           + GitHub Release (CalVer tag)
 ```
 
 | Branch    | Deploys to | When                                   | Services |
 |-----------|------------|----------------------------------------|----------|
 | `main`    | Staging    | every merge (the default branch)       | 1 web    |
-| `release` | Production | when a release PR merges onto it       | web + scheduler + task worker |
+| `release` | Production | when `release` fast-forwards to `main` | web + scheduler + task worker |
 
-`main` is the GitHub default branch; feature PRs target it. The `release`
-branch moves **only** via a release PR (`main` → `release`) and is
-branch-protected against direct pushes.
+`main` is the GitHub default branch; feature PRs target it. `release`
+behaves like a tag that moves with `main`: it advances **only** by a
+fast-forward to the current `main` tip (no merge commit, no divergence), so
+the production commit is byte-identical to the `main` commit already
+verified on staging. The "Release branch" GitHub ruleset enforces this —
+the tip's required checks must already be green (reused from `main`), and
+force-pushes and deletion are blocked, so `release` can only ever move
+forward.
 
 ## Why a branch split
 
@@ -34,8 +39,9 @@ Production is three services — the website
 the django-tasks-db worker (`snowdesk-background-tasks`). All three share one
 Postgres database, so they must run the **same commit**. Pinning all three
 to the `release` branch (`autoDeployTrigger: checksPass`) guarantees that:
-one branch advance redeploys all three from the same ref, once CI has gone
-green. The topology is the source of truth in
+one fast-forward redeploys all three from the same ref, once CI has gone
+green. Because the advance is a fast-forward, that ref is a commit that was
+already on `main` and green on staging. The topology is the source of truth in
 [`render.yaml`](../render.yaml) — Blueprint auto-sync is enabled and reads
 that file from `main`, so any change to services, plans, domains, or deploy
 branches lands via a PR. Databases and env-group contents remain
@@ -60,20 +66,40 @@ ingest bulletins or send queued email on its own. Seed it with a manual
 
 1. Confirm `main` is green and what is on `main` has been verified on
    staging.
-2. Open the release PR. Use the helper, which lists the `SNOW-xx` tickets
-   that are on `main` but not yet on `release`:
+2. Fast-forward `release` to `main`. Use the helper, which lists the
+   `SNOW-xx` tickets that are on `main` but not yet on `release` and then
+   advances the ref:
 
    ```bash
-   bin/cut-release            # dry run — prints the title and ticket list
-   bin/cut-release --commit   # opens the PR (main → release) via gh
+   bin/cut-release            # dry run — prints the target SHA and ticket list
+   bin/cut-release --commit   # fast-forwards origin/release to origin/main
    ```
 
-   The release PR gets full CI/e2e/Lighthouse/lint-guards/security checks
-   like any other PR (those workflows run on every PR).
-3. Merge the release PR. Render redeploys the three production services
-   from the new `release` tip.
+   The push carries the exact `main` commit, so no new CI run is needed: the
+   ruleset reuses that commit's already-green checks, and the push is
+   rejected if they are not green. There is no release PR.
+3. Render redeploys the three production services from the new `release`
+   tip.
 4. The [`release.yml`](../.github/workflows/release.yml) workflow fires on
    the push to `release`, tags the commit, and creates a GitHub Release.
+
+### One-time migration off the PR flow
+
+The fast-forward only works when `release` is an ancestor of `main`. The
+old PR-based flow left merge commits on `release` that are not on `main`, so
+the first switch needs a one-time reset of `release` to the `main` tip. This
+is a non-fast-forward update, which the ruleset blocks for everyone except a
+bypass actor (a repo admin), so it must be done deliberately by an admin:
+
+```bash
+git fetch origin
+git push origin origin/main:refs/heads/release --force-with-lease
+```
+
+This advances production to the current `main` tip (a normal production
+deploy of whatever is on `main` but not yet released), and from then on
+every `bin/cut-release --commit` is a clean fast-forward. Run it as, or in
+place of, the next release.
 
 ## Versioning and Releases
 
@@ -108,4 +134,7 @@ to `main`, or that merge deploys to production.
    `snowdesk-background-tasks`).
 3. Render dashboard: create the staging web service tracking `main`, wired
    to its own Postgres and env group.
-4. GitHub: branch-protect `release` (require a PR; require status checks).
+4. GitHub: protect `release` with the "Release branch" ruleset — require
+   status checks, block force-pushes (`non_fast_forward`) and deletion, and
+   do **not** require a pull request (a fast-forward advance is a direct
+   push, not a PR merge).
