@@ -12,6 +12,7 @@ Implements the subscription flow built around Django's TimestampSigner:
                                a confirm button (no state change); POST marks the
                                Account verified, logs in, redirects to setup.
   setup_view          GET  — post-verification credential-setup landing page.
+  set_password_view   POST — set a password for the logged-in user (SNOW-431).
   subscribe_partial   POST — inline HTMX subscribe CTA on bulletin pages.
                             Requires a region_id; uses a four-case matrix keyed
                             on (subscriber_created, subscription_created) to
@@ -51,7 +52,13 @@ import uuid
 
 import waffle
 from django.conf import settings
-from django.contrib.auth import get_user_model, login, logout
+from django.contrib.auth import (
+    authenticate,
+    get_user_model,
+    login,
+    logout,
+    update_session_auth_hash,
+)
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -66,7 +73,13 @@ from public.decorators import lowercase_region_id
 from regions.models import MicroRegion
 from regions.services.point_match import IN_NEIGHBOUR, IN_REGION
 
-from .forms import EmailForm, RegisterForm, SubscribeForm
+from .forms import (
+    EmailForm,
+    PasswordSignInForm,
+    RegisterForm,
+    SnowdeskSetPasswordForm,
+    SubscribeForm,
+)
 from .logging_utils import mask_email
 from .models import Account, Subscriber, Subscription
 from .services.email import (
@@ -119,6 +132,44 @@ def _get_subscriber(request: HttpRequest) -> Subscriber | None:
 # ---------------------------------------------------------------------------
 
 
+def _password_sign_in(request: HttpRequest) -> HttpResponse | None:
+    """Attempt password sign-in when a password is supplied (SNOW-431).
+
+    A wrong password, an unknown email, and an account with no usable password
+    all fail identically (``authenticate`` returns None), so the generic error
+    leaks no account-existence signal.
+
+    Args:
+        request: The current POST request.
+
+    Returns:
+        A redirect to manage on success, the sign-in page with a generic error
+        on failure, or ``None`` when no password was supplied (the caller then
+        continues with the magic-link flow).
+
+    """
+    if not request.POST.get("password"):
+        return None
+
+    pw_form = PasswordSignInForm(request.POST)
+    if pw_form.is_valid():
+        user = authenticate(
+            request,
+            username=pw_form.cleaned_data["email"],
+            password=pw_form.cleaned_data["password"],
+        )
+        if user is not None:
+            login(request, user)
+            return redirect("accounts:manage")
+
+    return render(
+        request,
+        "accounts/sign_in.html",
+        {"form": EmailForm(), "password_error": True},
+        status=200,
+    )
+
+
 @require_http_methods(["GET", "POST"])
 def sign_in_view(request: HttpRequest) -> HttpResponse:
     """
@@ -127,8 +178,11 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
     GET: render the email entry form with passkey conditional UI.
     If the user is already authenticated, redirect to the manage page.
 
-    POST: rate-limited (3/m per IP); always returns the same "check your
-    inbox" response regardless of whether the email is known.
+    POST (rate-limited 3/m per IP): with a password supplied, attempt password
+    sign-in (SNOW-431) — success redirects to manage, failure re-renders with a
+    generic error. Without a password, the magic-link flow runs and always
+    returns the same "check your inbox" response regardless of whether the
+    email is known.
 
     Args:
         request: Incoming HTTP request.
@@ -154,6 +208,12 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
     )
     if usage is not None and usage["should_limit"]:
         return HttpResponse(status=429)
+
+    # Password sign-in branch (SNOW-431) — returns a response when a password
+    # was supplied, else None to fall through to the magic-link flow.
+    pw_response = _password_sign_in(request)
+    if pw_response is not None:
+        return pw_response
 
     form = EmailForm(request.POST)
     if not form.is_valid():
@@ -341,15 +401,42 @@ def verify_view(request: HttpRequest, token: str) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
+def _render_setup(
+    request: HttpRequest,
+    *,
+    password_form: SnowdeskSetPasswordForm | None = None,
+    status: int = 200,
+) -> HttpResponse:
+    """Render the credential-setup page with a (bound or fresh) password form.
+
+    Shared by ``setup_view`` (fresh form) and ``set_password_view`` (bound
+    form carrying validation errors).
+
+    Args:
+        request: The current request (its authenticated user seeds the form).
+        password_form: A bound form to re-render with errors, or None to build
+            a fresh unbound form.
+        status: HTTP status code for the response.
+
+    Returns:
+        The rendered setup page.
+
+    """
+    form = password_form or SnowdeskSetPasswordForm(request.user)
+    return render(
+        request, "accounts/setup.html", {"password_form": form}, status=status
+    )
+
+
 @require_GET
 def setup_view(request: HttpRequest) -> HttpResponse:
     """
     Post-verification "finish setup" landing page.
 
-    Reached after ``verify_view`` logs the user in.  In SNOW-430 this is a
-    simple welcome + "continue to your account" page; SNOW-431 (set a
-    password) and SNOW-434 (register a passkey) extend it with optional
-    credential cards.  Unauthenticated visitors are redirected to sign-in.
+    Reached after ``verify_view`` logs the user in.  Offers an optional
+    "set a password" card (SNOW-431); SNOW-434 adds a passkey card.  Neither
+    is a gate — the user can continue to their account either way.
+    Unauthenticated visitors are redirected to sign-in.
 
     Args:
         request: Incoming GET request.
@@ -360,7 +447,41 @@ def setup_view(request: HttpRequest) -> HttpResponse:
     """
     if not request.user.is_authenticated:
         return redirect("accounts:sign_in")
-    return render(request, "accounts/setup.html", {})
+    return _render_setup(request)
+
+
+@require_POST
+def set_password_view(request: HttpRequest) -> HttpResponse:
+    """
+    Set a password for the authenticated user from the setup page (SNOW-431).
+
+    Validates ``SnowdeskSetPasswordForm`` (confirmation match +
+    ``AUTH_PASSWORD_VALIDATORS``).  On success the password is persisted and
+    the session auth hash is refreshed so the user stays logged in, then
+    redirects to manage.  On failure the setup page is re-rendered with field
+    errors and nothing is stored.  Skipping the card is not a gate — the user
+    can reach manage without ever calling this view.
+
+    Args:
+        request: Incoming POST request (authenticated session required).
+
+    Returns:
+        Redirect to manage on success, or the setup page with errors.
+
+    """
+    if not request.user.is_authenticated:
+        return redirect("accounts:sign_in")
+
+    form = SnowdeskSetPasswordForm(request.user, request.POST)
+    if not form.is_valid():
+        return _render_setup(request, password_form=form)
+
+    form.save()
+    # The password hash changed; refresh the session hash so the current
+    # session is not invalidated by SessionAuthenticationMiddleware.
+    update_session_auth_hash(request, request.user)
+    logger.info("Password set for user pk=%s via setup page", request.user.pk)
+    return redirect("accounts:manage")
 
 
 # ---------------------------------------------------------------------------

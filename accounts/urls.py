@@ -45,6 +45,7 @@ urlpatterns = [
     path("register/", views.register_view, name="register"),
     path("verify/<str:token>/", views.verify_view, name="verify"),
     path("setup/", views.setup_view, name="setup"),
+    path("setup/password/", views.set_password_view, name="set_password"),
     path("sign-in/", views.sign_in_view, name="sign_in"),
     path("access/<str:token>/", views.account_view, name="account"),
     path("manage/", views.manage_view, name="manage"),

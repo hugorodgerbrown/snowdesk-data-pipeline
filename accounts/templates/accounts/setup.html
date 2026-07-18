@@ -2,10 +2,10 @@
 {% comment %}
 accounts/templates/accounts/setup.html — Post-verification credential-setup page.
 
-Reached after verify_view logs the user in (SNOW-430). In this ticket it is a
-simple welcome + "continue to your account" landing. SNOW-431 extends it with
-an optional "set a password" card and SNOW-434 with a "save a passkey" card;
-both land the user on the manage page when they finish or skip.
+Reached after verify_view logs the user in (SNOW-430). Shows a welcome card
+plus an optional "set a password" card (SNOW-431); SNOW-434 adds a "save a
+passkey" card. None of the credential options is a gate — "Continue to your
+account" always reaches the manage page.
 {% endcomment %}
 {% load i18n static components %}
 
@@ -29,10 +29,64 @@ both land the user on the manage page when they finish or skip.
                 {% include "includes/_button.html" with label=label href=manage_url variant="primary" full_width=True %}
             </div>
             {% endcard %}
+
             {% comment %}
-                SNOW-431 adds an optional "set a password" card and SNOW-434 an
-                optional "save a passkey" card below this welcome card.
+                Optional "set a password" card (SNOW-431). Skipping is not a
+                gate — the "Continue to your account" button above always
+                reaches the manage page. SNOW-434 adds a passkey card here too.
             {% endcomment %}
+            {% card padding="p-8" extra="mt-6" %}
+            <h2 class="text-lg font-semibold text-text-1 mb-2">
+                {% trans "Set a password" %}
+            </h2>
+            <p class="text-text-2 text-sm mb-6 leading-relaxed">
+                {% trans "Optional — set a password so you can sign in without waiting for an email link." %}
+            </p>
+            <form method="post" action="{% url 'accounts:set_password' %}" novalidate>
+                {% csrf_token %}
+                {% if password_form.non_field_errors %}
+                    <ul class="mb-4 space-y-0.5">
+                        {% for error in password_form.non_field_errors %}
+                            <li class="text-xs text-form-error">{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+                <div class="mb-4">
+                    <label
+                        for="{{ password_form.new_password1.id_for_label }}"
+                        class="block text-sm font-medium text-text-1 mb-1.5"
+                    >
+                        {% trans "New password" %}
+                    </label>
+                    {{ password_form.new_password1 }}
+                    {% if password_form.new_password1.errors %}
+                        <ul class="mt-1.5 space-y-0.5">
+                            {% for error in password_form.new_password1.errors %}
+                                <li class="text-xs text-form-error">{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
+                <div class="mb-4">
+                    <label
+                        for="{{ password_form.new_password2.id_for_label }}"
+                        class="block text-sm font-medium text-text-1 mb-1.5"
+                    >
+                        {% trans "Confirm password" %}
+                    </label>
+                    {{ password_form.new_password2 }}
+                    {% if password_form.new_password2.errors %}
+                        <ul class="mt-1.5 space-y-0.5">
+                            {% for error in password_form.new_password2.errors %}
+                                <li class="text-xs text-form-error">{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
+                {% trans "Set password" as label %}
+                {% include "includes/_button.html" with label=label variant="secondary" full_width=True %}
+            </form>
+            {% endcard %}
         </div>
     </div>
 {% endblock %}

@@ -29,6 +29,14 @@ the manage page can be authenticated-only.
             <p class="text-text-2 text-sm mb-6 leading-relaxed">
                 {% trans "Enter your email address and we'll send you a sign-in link." %}
             </p>
+            {% if password_error %}
+                <div
+                    role="alert"
+                    class="mb-4 rounded-tag border border-status-danger/30 bg-status-danger/10 px-4 py-2.5 text-sm text-text-1"
+                >
+                    {% trans "Invalid email or password." %}
+                </div>
+            {% endif %}
             <form method="post" novalidate>
                 {% csrf_token %}
                 <div class="mb-4">
@@ -47,8 +55,43 @@ the manage page can be authenticated-only.
                         </ul>
                     {% endif %}
                 </div>
+                {% comment %}
+                    Password sign-in field — revealed via the toggle below
+                    (SNOW-431), mirroring the passkey reveal pattern. The
+                    server branches on whether ``password`` is non-empty, so
+                    submitting with a password does password auth and
+                    submitting without one keeps sending the magic link. The
+                    magic-link path is the no-JS baseline; the password field
+                    is a progressive enhancement.
+                {% endcomment %}
+                <div
+                    id="password-signin-wrap"
+                    class="{% if not password_error %}hidden {% endif %}mb-4"
+                >
+                    <label
+                        for="id_password"
+                        class="block text-sm font-medium text-text-1 mb-1.5"
+                    >
+                        {% trans "Password" %}
+                    </label>
+                    <input
+                        type="password"
+                        name="password"
+                        id="id_password"
+                        autocomplete="current-password"
+                        placeholder="{% trans 'Your password' %}"
+                        class="w-full px-4 py-2.5 rounded-tag border border-text-3/30 bg-card text-text-1 placeholder:text-text-3 focus:outline-none focus:ring-2 focus:ring-text-1/30"
+                    >
+                </div>
                 {% trans "Send sign-in link" as label %}
                 {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
+                <button
+                    type="button"
+                    id="toggle-password-signin"
+                    class="hidden mt-3 w-full text-center text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+                >
+                    {% trans "Sign in with a password instead" %}
+                </button>
             </form>
             <div
                 id="passkey-signin-wrap"
@@ -80,6 +123,26 @@ the manage page can be authenticated-only.
             var AUTH_REQUEST_URL = "{% url 'accounts:passkey_auth_request' %}";
             var AUTH_RESPONSE_URL = "{% url 'accounts:passkey_auth_response' %}";
             var authFeedback = document.getElementById("passkey-auth-feedback");
+
+            /* Password sign-in toggle (SNOW-431) — progressive enhancement.
+               Reveal the "Sign in with a password instead" control, and on
+               click reveal + focus the password field. Without JS the field
+               stays hidden and the magic-link path is the baseline. */
+            var pwToggle = document.getElementById("toggle-password-signin");
+            var pwWrap = document.getElementById("password-signin-wrap");
+            if (pwToggle && pwWrap) {
+                /* Only offer the toggle when the field is not already shown
+                   (it is pre-revealed on a password error re-render). */
+                if (pwWrap.classList.contains("hidden")) {
+                    pwToggle.classList.remove("hidden");
+                }
+                pwToggle.addEventListener("click", function () {
+                    pwWrap.classList.remove("hidden");
+                    pwToggle.classList.add("hidden");
+                    var input = document.getElementById("id_password");
+                    if (input) input.focus();
+                });
+            }
 
             /* Conditional UI — passkeys surface in email-field autofill dropdown */
             window.Passkey.startConditionalSignIn(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
