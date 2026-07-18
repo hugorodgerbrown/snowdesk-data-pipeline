@@ -59,7 +59,9 @@ def _make_bulletin(
     ``raw_data["properties"]["avalancheProblems"]`` — the caller supplies
     CAAML-shaped problem dicts (SLF/ALBINA/MF field names) so tests can
     exercise ``Bulletin.get_avalanche_problems()``'s ``from_dict`` mapping.
-    Omitted (``None``) means "no problems published", not "field absent".
+    The key is always written (``None`` and ``[]`` both store ``[]``);
+    ``Bulletin.get_avalanche_problems()`` treats absent-key and empty-list
+    identically anyway.
     """
     bulletin = BulletinFactory.create(
         issued_at=datetime.datetime.combine(
