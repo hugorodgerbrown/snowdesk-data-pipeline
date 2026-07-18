@@ -6,10 +6,9 @@ entry points used by ``favourites/views.py``.
 
 Coordinate-argument convention: every function in this module takes
 latitude/longitude in that order — ``(latitude, longitude)`` — matching
-``bulletins.services.forecast_points.resolve_forecast_point``. The one
-exception is ``regions.services.point_match.region_for_point``, which is
-lon-first; we call it with its required argument order without changing
-its signature (out of scope for this ticket).
+``bulletins.services.forecast_points.resolve_forecast_point`` and
+``regions.services.point_match.region_for_point`` (both lat-first since
+SNOW-426).
 """
 
 from __future__ import annotations
@@ -74,8 +73,9 @@ def create_favourite(
     forecast_point = resolve_forecast_point(latitude, longitude)
 
     # Best-effort — may be None when the pin falls outside every known
-    # boundary. region_for_point is lon-first; called accordingly here.
-    region = region_for_point(longitude, latitude)
+    # boundary. region_for_point is lat-first (matching this module's
+    # convention) since SNOW-426.
+    region = region_for_point(latitude, longitude)
 
     with transaction.atomic():
         # Re-check the cap inside the transaction to narrow the race window
