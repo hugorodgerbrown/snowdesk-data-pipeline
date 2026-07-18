@@ -42,6 +42,16 @@ Fixtures defined here:
     rather than relying on Playwright's page/context network-interception
     hooks, which do not see a service worker's own script fetches at all) —
     these two fixtures are the ones that actually drive it.
+
+``favourites_page`` (SNOW-414)
+    A plain ``page`` + ``live_server`` combination (no ``pwa_page`` — the
+    favourites map-surface tests don't drive the SW lifecycle) with a
+    session cookie for a regular ``Subscriber``. Tests using it still need
+    ``@override_flag("favourites", active=True)`` — ``override_flag``
+    mutates the ``Flag.everyone`` DB column (see ``waffle.testutils``),
+    which is visible to the live-server thread since pytest-django's
+    ``live_server`` runs in-process, so it works the same as in a
+    Django-test-client test.
 """
 
 from __future__ import annotations
@@ -453,4 +463,51 @@ def signed_in_page(pwa_page: PwaPage, django_db_blocker: Any) -> SignedInPage:
         live_server_url=pwa_page.live_server_url,
         page_errors=pwa_page.page_errors,
         subscriber=subscriber,
+    )
+
+
+@dataclass
+class FavouritesPage:
+    """A plain (no real-SW) ``Page`` authenticated as a regular Subscriber.
+
+    Unlike ``signed_in_page``, this does not go through ``pwa_page`` — the
+    favourites map-surface tests don't need a real service-worker
+    lifecycle, and skipping it keeps the fixture cheap. The ``favourites``
+    waffle flag still needs ``@override_flag("favourites", active=True)``
+    on the test itself (this fixture only handles the session cookie).
+    """
+
+    page: Page
+    live_server_url: str
+    subscriber: Subscriber
+
+
+@pytest.fixture()
+def favourites_page(
+    live_server: LiveServer, page: Page, django_db_blocker: Any
+) -> FavouritesPage:
+    """A live-server ``page``, navigated nowhere yet, with a subscriber session.
+
+    Tests using this fixture are responsible for their own ``page.goto()``
+    (mirroring ``tests/e2e/test_home_ribbon.py``'s ``_navigate_home``
+    convention) since the session cookie must be added to the browser
+    context before the first navigation to the live-server origin.
+
+    Args:
+        live_server: The live Django server.
+        page: The Playwright page (real SW registration untouched — this
+            fixture doesn't disable it, but favourites tests don't drive
+            the SW lifecycle either way).
+        django_db_blocker: pytest-django's DB-access guard, unblocked here
+            to create the ``Subscriber``.
+
+    Returns:
+        A ``FavouritesPage`` bundling the page, server URL, and subscriber.
+
+    """
+    with django_db_blocker.unblock():
+        subscriber = SubscriberFactory.create()
+    _session_login(page.context, live_server.url, subscriber.user)
+    return FavouritesPage(
+        page=page, live_server_url=live_server.url, subscriber=subscriber
     )

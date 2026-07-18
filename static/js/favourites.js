@@ -362,13 +362,34 @@
 
   // ---------------------------------------------------------------------------
   // htmx response handling — create/rename success, delete success, cap error.
+  //
+  // Two-step: mark on htmx:beforeRequest whether the element making the
+  // request lives inside #favourite-sheet (checked *before* any swap runs,
+  // so elt.closest() sees a properly attached tree — outerHTML swaps like
+  // the delete form's own row removal detach the element by the time a
+  // later event fires), then act on htmx:afterRequest (last event in
+  // htmx's lifecycle, so any swap has already completed) by inspecting
+  // #favourite-sheet's current contents rather than the swap target —
+  // the create form swaps into #favourite-sheet itself while the detail
+  // row's rename/delete forms swap into #favourite-<uuid> (mirroring
+  // favourites/partials/_favourite.html's own hx-target), so checking
+  // "what's in the sheet now" covers both without caring which target
+  // each form used.
   // ---------------------------------------------------------------------------
 
-  document.addEventListener('htmx:afterSwap', function (event) {
-    const target = event.detail && event.detail.target;
-    if (!target || target !== sheet) return;
+  let sheetRequestPending = false;
 
-    const favouriteRow = target.querySelector('[data-favourite-uuid]');
+  document.addEventListener('htmx:beforeRequest', function (event) {
+    const elt = event.detail && event.detail.elt;
+    sheetRequestPending = !!(elt && elt.closest && elt.closest('#favourite-sheet'));
+  });
+
+  document.addEventListener('htmx:afterRequest', function (event) {
+    if (!sheetRequestPending) return;
+    sheetRequestPending = false;
+    if (!event.detail.successful) return; // errors handled by responseError below
+
+    const favouriteRow = sheet.querySelector('[data-favourite-uuid]');
     if (favouriteRow) {
       // Created (create form) or renamed (detail row) successfully.
       document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
@@ -379,14 +400,16 @@
       return;
     }
 
-    if (target.innerHTML.trim() === '') {
-      // Delete succeeded — favourites:delete returns an empty 200 body.
-      window.pwaTelemetry?.emit('map.favourite.deleted', {});
-      document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-      closeSheet();
+    if (creatingFavourite) {
+      // The favourites-cap message (_favourite_limit.html) swapped into the
+      // sheet instead of a favourite row — leave it displayed.
+      return;
     }
-    // Otherwise: the favourites-cap message (_favourite_limit.html) —
-    // leave it displayed, no state change to report.
+    // Detail-sheet path with no row left in the sheet => delete succeeded
+    // (favourites:delete returns an empty 200 body, removing the row).
+    window.pwaTelemetry?.emit('map.favourite.deleted', {});
+    document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+    closeSheet();
   });
 
   document.addEventListener('htmx:responseError', function (event) {
