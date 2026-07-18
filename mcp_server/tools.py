@@ -1418,15 +1418,31 @@ def _regional_snapshot_summary(
     region_entries: list[dict[str, Any]],
     count_with_bulletin: int,
 ) -> str:
-    """Return a one-line, LLM-quotable summary of a get_regional_snapshot result."""
+    """Return a one-line, LLM-quotable summary of a get_regional_snapshot result.
+
+    Args:
+        scope_label: Human-readable label for the scope, e.g. ``"Switzerland"``
+            or ``"CH-4"``, as returned by :func:`_scope_label`.
+        target_date: The calendar date the snapshot covers.
+        region_entries: The per-region entries returned by
+            :func:`get_regional_snapshot`, one per MicroRegion in the scope.
+        count_with_bulletin: Number of ``region_entries`` whose
+            ``has_bulletin`` is True — precomputed by the caller to avoid a
+            second pass over the list.
+
+    Returns:
+        A one-line summary safe for an LLM client to quote back.
+
+    """
     parts = [
         f"{scope_label} on {target_date.isoformat()}: {count_with_bulletin}/"
-        f"{len(region_entries)} region(s) with a bulletin."
+        f"{len(region_entries)} regions with a bulletin."
     ]
     peak_rating, peak_count = _peak_rating_population(region_entries)
     if peak_rating is not None:
+        region_word = "region" if peak_count == 1 else "regions"
         parts.append(
-            f"Peak rating {peak_rating.replace('_', ' ')} ({peak_count} region(s))."
+            f"Peak rating {peak_rating.replace('_', ' ')} ({peak_count} {region_word})."
         )
     return " ".join(parts)
 

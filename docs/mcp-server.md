@@ -300,7 +300,7 @@ caller doesn't yet know which `region_ids` they want.
 implementation would call the equivalent of `get_current_conditions`
 once per region — for CH's 149 MicroRegions, 149 sequential lookups per
 `tools/call`. Instead this tool issues one indexed
-`RegionDayRating.objects.filter(region_id__in=…, date=…)` query.
+`RegionDayRating.objects.filter(region__in=…, date=…)` query.
 `danger_level` reads `RegionDayRating.max_rating` — the same
 peak-rating semantic already established for the choropleth, map
 tooltip, and season calendar (`docs/compressed-views-rating-rule.md`)
@@ -323,10 +323,17 @@ wants visibility into.
 * `get_danger_history` is capped to one region and one avalanche season
   per call (above).
 * `search_regions` returns at most 10 candidates.
-* Every tool takes a single, already-resolved `region_id` except
-  `search_regions` — the LLM is expected to call `search_regions` first
-  when it only has a place name, then pass the returned `region_id` to the
-  other three tools.
+* `bulk_current_conditions` caps its `region_ids[]` input at 20 entries per
+  call.
+* `find_regions_near` caps its search radius at 100 km per call.
+* Most bulletin-scoped tools (`get_current_conditions`,
+  `get_avalanche_problems`, `get_bulletin_metadata`, `get_bulletin_raw`,
+  `list_resorts_in_region`) take a single, already-resolved `region_id`.
+  Start with `search_regions` or `find_regions_near` when you only have a
+  place name or coordinates, then pass the returned `region_id` to the
+  bulletin-scoped tools. `get_regional_snapshot` and
+  `bulk_current_conditions` are the exceptions — they cover a scope or a
+  batch in one call.
 
 ## Error codes
 
