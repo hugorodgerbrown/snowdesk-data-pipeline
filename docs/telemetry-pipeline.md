@@ -1,8 +1,8 @@
 ---
 name: telemetry-pipeline
-description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon envelope, server-side pwa.* signals, PostHog forwarding
+description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon envelope, server-side pwa.* signals, map.favourite.* events
 status: current
-last-reviewed: 2026-07-17
+last-reviewed: 2026-07-18
 ---
 
 # Telemetry pipeline
@@ -80,7 +80,9 @@ PostHog's own IP-derived GeoIP enrichment continues to run (see
 
 ## Event catalogue
 
-Two disjoint namespaces, both under the `pwa.` prefix:
+Two disjoint namespaces: `pwa.*` (PWA shell lifecycle) and a small
+`map.*` namespace (SNOW-414, map-surface interactions) — both flow
+through the same client-emitted / server-emitted split below.
 
 ### Client-emitted (via the receiver)
 
@@ -104,6 +106,14 @@ change the frozenset + document the property shape here.
 - **Freshness classifier**: `pwa.freshness.fresh`, `pwa.freshness.stale`,
   `pwa.freshness.unsafe`.
 - **Storage pressure**: `pwa.storage.evicted_probable`.
+- **Map favourites** (SNOW-414 — deliberately `map.*`, not `pwa.*`, since
+  these describe a map-surface interaction rather than PWA shell
+  lifecycle): `map.favourite.created` (`static/js/favourites.js`, a
+  create-form submit whose response carries a favourite row),
+  `map.favourite.deleted` (same file, a delete response with an empty
+  body), `map.favourite.overlay_toggled` with `properties.visible`
+  (`static/js/map.js`'s basemap-menu overlay-toggle handler, fired only
+  for `data-overlay-key="favourites"`).
 
 ### Server-emitted (via `emit_server_signal`)
 
@@ -253,6 +263,8 @@ below the table.
 | `static/js/sw-kill.js` (via the message bridge) | `pwa.kill_switch.activated` with `properties.mechanism: 'b'` (Mechanism B's own activate-time wipe, just ahead of the per-client `navigate()` calls) |
 | `static/js/mutation_queue.js` (stub, SNOW-376 fills in the real queue) | `pwa.mutation.enqueued` / `.drained` / `.failed_permanent` — every method is a no-op today; call sites adopting `window.pwaMutationQueue` now get telemetry for free once SNOW-376 lands |
 | `static/js/db.js::_checkStorageEstimate` (cold-start, inside `open()`'s `onsuccess`) | `pwa.storage.evicted_probable` — conservative heuristic (implausibly low `navigator.storage.estimate()` quota, or zero usage alongside a surviving `pwa.install.installed_at` localStorage marker); `TODO(SNOW-XXX)` in the source marks it for tightening once real eviction cases surface |
+| `static/js/favourites.js` (SNOW-414) | `map.favourite.created` (create-form `htmx:afterSwap` whose response carries `[data-favourite-uuid]`, gated on a module-level "currently creating" flag so a rename doesn't also fire it) / `map.favourite.deleted` (delete's empty-body `htmx:afterSwap`) |
+| `static/js/map.js::basemapPickerInit` (SNOW-414) | `map.favourite.overlay_toggled` with `properties.visible` — the basemap-menu overlay-toggle click handler, only for `data-overlay-key="favourites"` |
 
 **SW → page message bridge** (SNOW-384): `sw.js` and `sw-kill.js` run in
 a service-worker context with no `window`, so they cannot call

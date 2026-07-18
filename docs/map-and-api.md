@@ -1,8 +1,8 @@
 ---
 name: map-and-api
-description: / (public:home) MapLibre choropleth, season scrubber, basemap picker, and /api/ endpoints (ratings, geojson, summary, bulletin-groupings)
+description: / (public:home) MapLibre choropleth, scrubber, basemap picker, favourites overlay, /api/ endpoints (ratings, geojson, summary, groupings)
 status: current
-last-reviewed: 2026-06-16
+last-reviewed: 2026-07-18
 ---
 
 # Map page and JSON API
@@ -58,6 +58,35 @@ payload is fetched lazily on first scrubber interaction and cached for
 the session via `getSeasonRatings()` in `static/js/map.js` — first scrub
 pays the round-trip; subsequent scrubs and timelapse playback render
 from the in-memory cache.
+
+**Favourites overlay (SNOW-414)**: an eligible (favourites flag active +
+authenticated) visitor sees an "Add favourite" pill in the bottom-right
+control stack (`#map-controls-br`) and a `favourites` overlay toggle in the
+basemap menu's Overlays section, both rendered by `public/views.py`'s
+`_favourites_context()` and `_map_embed.html`. `#map` carries
+`data-favourites-eligible="true|false"` always, and `data-favourites-url`
+(the per-user `favourites:geojson` endpoint) only when eligible — anonymous
+and ineligible visitors' browsers never fetch the per-user endpoint.
+Unlike the resorts overlay, favourites defaults **on**
+(`overlayState.favourites`, `localStorage["snowdesk.map.overlay.favourites"]`)
+and is fetched eagerly at boot for eligible users rather than waiting for a
+toggle, since it's the user's own saved data rather than a public dataset.
+The `favourites-pin` layer is a `symbol` layer rendering a `★` glyph (no
+sprite image needed) plus a zoom-banded `favourites-label` showing each
+pin's name; tapping a pin dispatches `snowdesk:favourite-selected
+{uuid, name}` for `static/js/favourites.js` to open the rename/delete sheet,
+and a successful create/rename/delete round-trip there dispatches
+`snowdesk:favourites-changed`, which re-fetches the geojson and calls
+`map.getSource('favourites').setData(fc)`. The "Add favourite" flow itself
+(placement, drag-to-refine, the create/rename/delete sheet, CSRF handling)
+is documented in `favourites/views.py`'s module docstring and
+`static/js/favourites.js`'s header comment — there is no server-side "fetch
+one favourite" endpoint, so the pin-detail sheet's rename/delete markup is
+reconstructed client-side from the `__UUID__`-templated
+`favourite_rename_url_template` / `favourite_delete_url_template` context
+vars — the same reverse-with-a-dummy-id-then-string-replace trick
+`public/views.py::home()` uses for `edit_save_url_template`
+(`api:edit_resort_save_coords`).
 
 **Route ordering**: `/map/` (the redirect) is registered before `<str:region_id>/` in
 `public/urls.py`. Do not reorder these — Django matches URL patterns
