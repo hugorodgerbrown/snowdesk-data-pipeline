@@ -17,6 +17,10 @@ Covers:
   - --commit vs read-only.
   - Banner content (READ-ONLY, LOCAL-MIRROR, DELAY, STASH flags).
   - --stash: writes records to the archive.
+  - Active-ForecastPoint pass (SNOW-416): invoked by default when the window
+    reaches today; --skip-points disables it; --local-mirror skips it
+    cleanly (points don't participate in the mirror); point failures
+    propagate into the same failed > 0 → CommandError gate.
 """
 
 from datetime import UTC, date, datetime
@@ -35,6 +39,7 @@ from tests.factories import BulletinFactory, MicroRegionFactory, WeatherSnapshot
 
 PATCH_FETCH_ALL = "bulletins.management.commands.fetch_weather.fetch_all_regions"
 PATCH_BACKFILL_ALL = "bulletins.management.commands.fetch_weather.backfill_all_regions"
+PATCH_FETCH_ALL_POINTS = "bulletins.management.commands.fetch_weather.fetch_all_points"
 PATCH_TODAY = "bulletins.management.commands.fetch_weather.timezone.localdate"
 
 
@@ -538,7 +543,7 @@ class TestFailureHandling:
         mock_fetch.return_value = _make_counts(failed=2, created=1)
 
         with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            with pytest.raises(CommandError, match="2 region failure"):
+            with pytest.raises(CommandError, match="2 region/point failure"):
                 call_command("fetch_weather", commit=True)
 
     @patch(PATCH_FETCH_ALL)
@@ -553,7 +558,7 @@ class TestFailureHandling:
         mock_fetch.return_value = _make_counts(failed=2)
 
         with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            with pytest.raises(CommandError, match="3 region failure"):
+            with pytest.raises(CommandError, match="3 region/point failure"):
                 call_command(
                     "fetch_weather",
                     start=date(2026, 4, 29),
@@ -896,3 +901,154 @@ class TestOutput:
 
         out = capsys.readouterr().out
         assert "--commit" in out
+
+
+# ---------------------------------------------------------------------------
+# Active-ForecastPoint pass (SNOW-416)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestActiveForecastPointPass:
+    """Tests for the active-ForecastPoint forecast pass and --skip-points."""
+
+    @patch(PATCH_FETCH_ALL_POINTS)
+    @patch(PATCH_FETCH_ALL)
+    @patch(PATCH_BACKFILL_ALL)
+    def test_point_pass_invoked_by_default_when_window_reaches_today(
+        self,
+        mock_backfill: MagicMock,
+        mock_fetch: MagicMock,
+        mock_fetch_points: MagicMock,
+    ) -> None:
+        """A window reaching today invokes fetch_all_points for today's date."""
+        mock_backfill.return_value = _make_counts()
+        mock_fetch.return_value = _make_counts()
+        mock_fetch_points.return_value = _make_counts()
+
+        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
+            call_command("fetch_weather", commit=True)
+
+        mock_fetch_points.assert_called_once()
+        assert mock_fetch_points.call_args[0][0] == date(2026, 5, 1)
+        assert mock_fetch_points.call_args[1]["commit"] is True
+
+    @patch(PATCH_FETCH_ALL_POINTS)
+    @patch(PATCH_FETCH_ALL)
+    @patch(PATCH_BACKFILL_ALL)
+    def test_point_pass_skipped_when_window_does_not_reach_today(
+        self,
+        mock_backfill: MagicMock,
+        mock_fetch: MagicMock,
+        mock_fetch_points: MagicMock,
+    ) -> None:
+        """A window entirely in the past does not invoke fetch_all_points."""
+        mock_backfill.return_value = _make_counts()
+
+        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
+            call_command(
+                "fetch_weather",
+                start=date(2026, 4, 1),
+                end=date(2026, 4, 30),
+                commit=True,
+            )
+
+        mock_fetch_points.assert_not_called()
+
+    @patch(PATCH_FETCH_ALL_POINTS)
+    @patch(PATCH_FETCH_ALL)
+    @patch(PATCH_BACKFILL_ALL)
+    def test_skip_points_disables_point_pass(
+        self,
+        mock_backfill: MagicMock,
+        mock_fetch: MagicMock,
+        mock_fetch_points: MagicMock,
+    ) -> None:
+        """--skip-points prevents fetch_all_points from being called."""
+        mock_backfill.return_value = _make_counts()
+        mock_fetch.return_value = _make_counts()
+
+        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
+            call_command("fetch_weather", commit=True, skip_points=True)
+
+        mock_fetch_points.assert_not_called()
+
+    @patch(PATCH_FETCH_ALL_POINTS)
+    @patch(PATCH_FETCH_ALL)
+    @patch(PATCH_BACKFILL_ALL)
+    def test_local_mirror_skips_point_pass(
+        self,
+        mock_backfill: MagicMock,
+        mock_fetch: MagicMock,
+        mock_fetch_points: MagicMock,
+    ) -> None:
+        """--local-mirror skips the point pass — points don't participate in the mirror."""
+        mock_backfill.return_value = _make_counts()
+        mock_fetch.return_value = _make_counts()
+        mirror_url = "http://localhost:8000/dev/openmeteo-mirror/v1"
+
+        with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL=mirror_url):
+            with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
+                call_command("fetch_weather", commit=True, local_mirror=True)
+
+        mock_fetch_points.assert_not_called()
+
+    @patch(PATCH_FETCH_ALL_POINTS)
+    @patch(PATCH_FETCH_ALL)
+    @patch(PATCH_BACKFILL_ALL)
+    def test_point_failures_propagate_to_command_error(
+        self,
+        mock_backfill: MagicMock,
+        mock_fetch: MagicMock,
+        mock_fetch_points: MagicMock,
+    ) -> None:
+        """Point-pass failures are merged into the failed>0 → CommandError gate."""
+        mock_backfill.return_value = _make_counts()
+        mock_fetch.return_value = _make_counts()
+        mock_fetch_points.return_value = _make_counts(failed=1)
+
+        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
+            with pytest.raises(CommandError, match="1 region/point failure"):
+                call_command("fetch_weather", commit=True)
+
+    @patch(PATCH_FETCH_ALL_POINTS)
+    @patch(PATCH_FETCH_ALL)
+    @patch(PATCH_BACKFILL_ALL)
+    def test_point_counts_merged_into_report(
+        self,
+        mock_backfill: MagicMock,
+        mock_fetch: MagicMock,
+        mock_fetch_points: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Point pass created/updated counts are folded into the final report."""
+        mock_backfill.return_value = _make_counts()
+        mock_fetch.return_value = _make_counts(created=1)
+        mock_fetch_points.return_value = _make_counts(created=2, updated=1)
+
+        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
+            call_command("fetch_weather", commit=True)
+
+        out = capsys.readouterr().out
+        assert "3 created" in out
+        assert "1 updated" in out
+
+    @patch(PATCH_FETCH_ALL_POINTS)
+    @patch(PATCH_FETCH_ALL)
+    @patch(PATCH_BACKFILL_ALL)
+    def test_skip_points_shown_in_banner(
+        self,
+        mock_backfill: MagicMock,
+        mock_fetch: MagicMock,
+        mock_fetch_points: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Banner includes SKIP-POINTS when --skip-points is passed."""
+        mock_backfill.return_value = _make_counts()
+        mock_fetch.return_value = _make_counts()
+
+        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
+            call_command("fetch_weather", commit=True, skip_points=True)
+
+        out = capsys.readouterr().out
+        assert "SKIP-POINTS" in out

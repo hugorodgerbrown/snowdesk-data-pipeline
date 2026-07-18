@@ -29,6 +29,7 @@ from bulletins.models import (
     BulletinShare,
     BulletinShareClick,
     ForecastPoint,
+    ForecastPointWeather,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
@@ -260,6 +261,48 @@ class ForecastPointFactory(factory.django.DjangoModelFactory[ForecastPoint]):
     elevation_band = factory.LazyAttribute(
         lambda obj: quantise_elevation(obj.elevation)
     )
+
+
+class ForecastPointWeatherFactory(
+    factory.django.DjangoModelFactory[ForecastPointWeather]
+):
+    """
+    Factory for ForecastPointWeather instances.
+
+    Extended fields default to non-null values (rather than ``None``) so
+    factory-built rows exercise the "full daily payload" path by default;
+    tests covering the null-tolerance case construct rows or defaults dicts
+    explicitly instead of relying on this factory.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = ForecastPointWeather
+
+    forecast_point = factory.SubFactory(ForecastPointFactory)
+    valid_for_date = factory.LazyFunction(django_timezone.localdate)
+    weather_code = 0  # clear sky
+    sunrise = factory.LazyFunction(
+        lambda: datetime.datetime(2026, 5, 1, 5, 30, tzinfo=UTC)
+    )
+    sunset = factory.LazyFunction(
+        lambda: datetime.datetime(2026, 5, 1, 20, 45, tzinfo=UTC)
+    )
+    temperature_2m_max = 4.0
+    temperature_2m_min = -3.0
+    apparent_temperature_max = 2.0
+    apparent_temperature_min = -6.0
+    precipitation_sum = 0.0
+    snowfall_sum = 0.0
+    precipitation_probability_max = 10
+    precipitation_hours = 0.0
+    wind_speed_10m_max = 12.0
+    wind_gusts_10m_max = 25.0
+    wind_direction_10m_dominant = 270
+    uv_index_max = 3.5
+    daylight_duration = 46800.0
+    sunshine_duration = 30000.0
 
 
 class RequestLogFactory(factory.django.DjangoModelFactory[RequestLog]):

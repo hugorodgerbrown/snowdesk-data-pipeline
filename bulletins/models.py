@@ -31,6 +31,13 @@ Owns the eight bulletin-driven models:
     elevation band. Resolved by
     ``bulletins.services.forecast_points.resolve_forecast_point``
     (SNOW-412, phase 1 of the Favourites feature).
+  - ForecastPointWeather: one row per (ForecastPoint, date) storing the
+    comprehensive Open-Meteo daily forecast block for that point —
+    the point analogue of WeatherSnapshot, but with a richer field set
+    (temperature, precipitation, wind, UV) since a favourited point is a
+    personal detail card rather than a bulletin-page header. Fetched by
+    the ``fetch_weather`` management command's active-ForecastPoint pass
+    (SNOW-416).
 
 Region hierarchy (MicroRegion, MajorRegion, SubRegion, Resort) lives
 in ``regions.models`` — those are stable lookup tables shared across the
@@ -1099,6 +1106,171 @@ class ForecastPoint(BaseModel):
         Format: ``46.80000,7.50000 @1500m``
         """
         return f"{self.latitude:.5f},{self.longitude:.5f} @{self.elevation:.0f}m"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# ForecastPointWeather
+# ---------------------------------------------------------------------------
+
+
+class ForecastPointWeatherQuerySet(models.QuerySet["ForecastPointWeather"]):
+    """Custom queryset for ForecastPointWeather."""
+
+    def for_date(self, target_date: _date) -> "ForecastPointWeatherQuerySet":
+        """
+        Return all rows valid for a given calendar date.
+
+        Args:
+            target_date: The calendar date to filter by.
+
+        Returns:
+            A filtered queryset of ForecastPointWeather rows for that date.
+
+        """
+        return self.filter(valid_for_date=target_date)
+
+
+class ForecastPointWeather(BaseModel):
+    """
+    Open-Meteo daily forecast data for one ForecastPoint on one calendar day.
+
+    One row per (forecast_point, valid_for_date) pair. Fetched by the
+    ``fetch_weather`` management command's active-ForecastPoint pass —
+    the point analogue of ``WeatherSnapshot``, storing the comprehensive
+    daily Open-Meteo block rather than just the WMO code and sunrise/sunset,
+    since a favourited point is rendered as a personal detail card (SNOW-416).
+
+    Open-Meteo omits some daily variables depending on the backing weather
+    model (e.g. ``precipitation_probability_max``, ``uv_index_max``), so
+    every field beyond the core trio is nullable.
+    """
+
+    forecast_point = models.ForeignKey(
+        "bulletins.ForecastPoint",
+        on_delete=CASCADE,
+        related_name="weather_snapshots",
+    )
+    fetched_at = models.DateTimeField(
+        default=timezone.now,
+        help_text="When this row was last written (updated on every upsert).",
+    )
+    valid_for_date = models.DateField(
+        db_index=True,
+        help_text="The calendar date this weather forecast applies to.",
+    )
+
+    # Core fields (required — same as WeatherSnapshot).
+    weather_code = models.PositiveSmallIntegerField(
+        help_text="WMO weather interpretation code (0–99).",
+    )
+    sunrise = models.DateTimeField(
+        help_text=(
+            "Sunrise time for this point on valid_for_date (tz-aware, local time)."
+        ),
+    )
+    sunset = models.DateTimeField(
+        help_text=(
+            "Sunset time for this point on valid_for_date (tz-aware, local time)."
+        ),
+    )
+
+    # Extended daily aggregates — nullable because Open-Meteo omits some of
+    # these depending on the backing model.
+    temperature_2m_max = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Maximum daily air temperature at 2m, in °C.",
+    )
+    temperature_2m_min = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Minimum daily air temperature at 2m, in °C.",
+    )
+    apparent_temperature_max = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Maximum daily apparent (feels-like) temperature, in °C.",
+    )
+    apparent_temperature_min = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Minimum daily apparent (feels-like) temperature, in °C.",
+    )
+    precipitation_sum = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Total daily precipitation (rain + showers + snow), in mm.",
+    )
+    snowfall_sum = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Total daily snowfall, in cm.",
+    )
+    precipitation_probability_max = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum daily precipitation probability, as a percentage.",
+    )
+    precipitation_hours = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Number of hours with measurable precipitation, in hours.",
+    )
+    wind_speed_10m_max = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Maximum daily wind speed at 10m, in km/h.",
+    )
+    wind_gusts_10m_max = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Maximum daily wind gust speed at 10m, in km/h.",
+    )
+    wind_direction_10m_dominant = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Dominant daily wind direction at 10m, in degrees (0–360).",
+    )
+    uv_index_max = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Maximum daily UV index (dimensionless).",
+    )
+    daylight_duration = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Total daylight duration, in seconds.",
+    )
+    sunshine_duration = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Total sunshine duration, in seconds.",
+    )
+
+    objects = ForecastPointWeatherQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        unique_together = [("forecast_point", "valid_for_date")]
+        ordering = ["-valid_for_date", "forecast_point__id"]
+        indexes = [
+            models.Index(fields=["forecast_point", "valid_for_date"]),
+        ]
+
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this row.
+
+        Format: ``46.80000,7.50000 @1500m 2026-05-01 wmo=1``
+        """
+        return (
+            f"{self.forecast_point.to_string()} "
+            f"{self.valid_for_date} wmo={self.weather_code}"
+        )
 
     def __str__(self) -> str:
         """Return a human-readable representation."""

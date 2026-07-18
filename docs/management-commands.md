@@ -2,7 +2,7 @@
 name: management-commands
 description: Command catalogue — fetch_bulletins, fetch_weather, backfill_bulletin_groupings, rebuild_render_models, fixture builders, bootstrap-dev-db
 status: current
-last-reviewed: 2026-06-20
+last-reviewed: 2026-07-18
 ---
 
 # Management commands
@@ -491,6 +491,21 @@ endpoint; today uses the forecast endpoint. A single invocation therefore
 covers the entire default window correctly regardless of what is already
 in the DB.
 
+**Active-ForecastPoint pass (SNOW-416)** — when the resolved window reaches
+today, the command also fetches today's forecast for every **active**
+`ForecastPoint` (a point referenced by at least one `Favourite`; see
+[`favourites`/`accounts` glossary entries](glossary.md)), passing the
+point's stored `elevation` explicitly so the forecast is statistically
+downscaled to the pin's altitude. Results are written to
+`ForecastPointWeather` — the point analogue of `WeatherSnapshot`, but with
+a comprehensive daily field set (temperature, precipitation, wind, UV)
+since a favourited point renders as a personal detail card. Points are
+**forecast-only**: there is no archive/backfill path for them, and they do
+not participate in `--local-mirror` or `--stash` — both are skipped
+cleanly for the point pass regardless of the flag values. Pass
+`--skip-points` to fetch region weather only. Point failures are merged
+into the same `failed` total that triggers the command's non-zero exit.
+
 Read-only by default; the API is always called even without `--commit`,
 making a bare invocation a useful connectivity probe.
 
@@ -528,16 +543,24 @@ uv run python manage.py fetch_weather --commit --stash
 uv run python manage.py fetch_weather \
     --start 2020-11-01 --end 2025-04-30 --delay 2 --commit
 
+# Region weather only — skip the active-ForecastPoint pass.
+uv run python manage.py fetch_weather --commit --skip-points
+
 # Flags:
 #   --date         YYYY-MM-DD  single date; mutually exclusive with --start/--end
 #   --start        YYYY-MM-DD  start of window (inclusive); defaults to DB-derived
 #   --end          YYYY-MM-DD  end of window (inclusive); defaults to today
-#   --commit                   persist WeatherSnapshot rows; omit for a read-only run
+#   --commit                   persist WeatherSnapshot/ForecastPointWeather rows;
+#                              omit for a read-only run
 #   --local-mirror             replay from bulletins/local_mirrors/openmeteo_archive.ndjson
-#                              via the dev-only view (development.py only)
+#                              via the dev-only view (development.py only); the
+#                              active-ForecastPoint pass is skipped under this flag
 #   --delay        SECONDS     seconds between per-region archive calls (default 1.0;
 #                              pass 0 to disable; no effect on the forecast endpoint)
 #   --stash                    append fetched weather records to the on-disk archive
+#                              (region weather only — points never participate)
+#   --skip-points              skip the active-ForecastPoint forecast pass; fetch
+#                              region weather only
 ```
 
 ## Development & one-shot setup commands

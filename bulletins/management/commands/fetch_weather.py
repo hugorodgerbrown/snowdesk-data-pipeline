@@ -18,6 +18,16 @@ Dates strictly before today are fetched via the Open-Meteo archive endpoint;
 today (and any future date) is fetched via the forecast endpoint. The command
 splits the resolved window at the day boundary automatically.
 
+After the region pass, when the window includes today, the command also
+fetches today's forecast for every **active** ``ForecastPoint`` (a point
+referenced by at least one ``Favourite`` — see SNOW-412/SNOW-413), passing
+the point's stored elevation so the forecast is downscaled to the pin's
+altitude. Points are forecast-only — there is no archive/backfill path for
+them, and they do not participate in ``--local-mirror`` (skipped cleanly).
+Pass ``--skip-points`` to fetch region weather only. Point failures are
+merged into the same ``failed`` total that triggers the command's non-zero
+exit.
+
 ``--local-mirror`` replaces the old ``--source local-mirror`` flag. It switches
 all fetches to the development-only view that replays
 ``bulletins/local_mirrors/openmeteo_archive.ndjson``. Requires
@@ -44,7 +54,11 @@ Usage:
     python manage.py fetch_weather --start 2026-01-01 --end 2026-04-30 --commit
 
     # Replay from the local mirror (dev server must be running).
+    # Note: the active-ForecastPoint pass is skipped under --local-mirror.
     python manage.py fetch_weather --local-mirror --commit
+
+    # Region weather only — skip the active-ForecastPoint pass.
+    python manage.py fetch_weather --commit --skip-points
 
     # Capture the default window to the archive without DB writes.
     python manage.py fetch_weather --stash
@@ -66,12 +80,13 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from bulletins.models import Bulletin, WeatherSnapshot
+from bulletins.models import Bulletin, ForecastPoint, WeatherSnapshot
 from bulletins.services.openmeteo_archive import flush_stash
 from bulletins.services.weather_fetcher import (
     SOURCE_LIVE,
     SOURCE_LOCAL_MIRROR,
     backfill_all_regions,
+    fetch_all_points,
     fetch_all_regions,
     resolve_weather_source,
 )
@@ -102,13 +117,17 @@ class Command(BaseCommand):
 
     Read-only by default; pass --commit to persist WeatherSnapshot rows.
     Automatically routes past dates to the archive endpoint and today to the
-    forecast endpoint.
+    forecast endpoint. When the window reaches today, also fetches today's
+    forecast for every active ForecastPoint (forecast-only; pass
+    --skip-points to fetch region weather only).
     """
 
     help = (
         "Fetch Open-Meteo weather snapshots for all regions over a resolved date "
         "window (default: latest snapshot → today). Splits the window at today: "
         "past dates use the archive endpoint; today uses the forecast endpoint. "
+        "When the window reaches today, also fetches today's forecast for every "
+        "active ForecastPoint (forecast-only — pass --skip-points to skip it). "
         "Read-only by default; pass --commit to persist."
     )
 
@@ -163,7 +182,9 @@ class Command(BaseCommand):
                 "bulletins/local_mirrors/openmeteo_archive.ndjson "
                 "via the dev-only view. Requires "
                 "settings.WEATHER_API_LOCAL_MIRROR_BASE_URL (development.py); "
-                "raises CommandError otherwise."
+                "raises CommandError otherwise. Points are forecast-only and do "
+                "not participate in the mirror — the active-ForecastPoint pass "
+                "is skipped entirely under --local-mirror."
             ),
         )
         parser.add_argument(
@@ -191,6 +212,14 @@ class Command(BaseCommand):
                 "capture, or use --stash alone for a read-only archive refresh."
             ),
         )
+        parser.add_argument(
+            "--skip-points",
+            action="store_true",
+            help=(
+                "Skip the active-ForecastPoint forecast pass; fetch region "
+                "weather only."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the command."""
@@ -201,6 +230,7 @@ class Command(BaseCommand):
         local_mirror: bool = options["local_mirror"]
         delay: float = options["delay"]
         stash: bool = options["stash"]
+        skip_points: bool = options["skip_points"]
         verbosity: int = options["verbosity"]
 
         today = timezone.localdate()
@@ -214,16 +244,19 @@ class Command(BaseCommand):
 
         days = (end - start).days + 1
         region_count = MicroRegion.objects.count()
+        point_count = ForecastPoint.objects.active().count()
 
         self._announce(
             start,
             end,
             days,
             region_count,
+            point_count,
             commit=commit,
             delay=delay,
             stash=stash,
             local_mirror=local_mirror,
+            skip_points=skip_points,
         )
 
         total_counts = self._fetch(
@@ -235,6 +268,16 @@ class Command(BaseCommand):
             base_url=base_url,
             on_fetched=on_fetched,
         )
+
+        # Active-ForecastPoint pass — forecast-only, so it only runs when the
+        # window reaches today, and it is suppressed under --local-mirror (the
+        # mirror replays region archive data only). Points are also outside the
+        # on-disk archive contract: the pass never forwards on_fetched, so point
+        # data never reaches the --stash file even when the pass itself runs.
+        if end >= today and not skip_points and not local_mirror:
+            point_counts = fetch_all_points(today, commit=commit, base_url=base_url)
+            for key in total_counts:
+                total_counts[key] += point_counts[key]
 
         if stash:
             flush_stash(
@@ -251,7 +294,7 @@ class Command(BaseCommand):
 
         if total_counts["failed"] > 0:
             raise CommandError(
-                f"fetch_weather completed with {total_counts['failed']} region "
+                f"fetch_weather completed with {total_counts['failed']} region/point "
                 f"failure(s) for range {start}–{end}. Check logs for details."
             )
 
@@ -409,11 +452,13 @@ class Command(BaseCommand):
         end: date,
         days: int,
         region_count: int,
+        point_count: int,
         *,
         commit: bool,
         delay: float,
         stash: bool,
         local_mirror: bool,
+        skip_points: bool,
     ) -> None:
         """Write the start-of-run banner and matching log line."""
         flags: list[str] = []
@@ -425,6 +470,8 @@ class Command(BaseCommand):
             flags.append(f"DELAY={delay:g}s")
         if stash:
             flags.append("STASH")
+        if skip_points:
+            flags.append("SKIP-POINTS")
         flag_label = " [" + ", ".join(flags) + "]" if flags else ""
 
         if start == end:
@@ -432,23 +479,28 @@ class Command(BaseCommand):
         else:
             window_label = f"{start} to {end}"
 
+        points_label = "" if skip_points else f", {point_count} active point(s)"
+
         self.stdout.write(
             self.style.MIGRATE_HEADING(
                 f"Fetching weather {window_label} "
-                f"({days} day(s), {region_count} region(s)){flag_label}"
+                f"({days} day(s), {region_count} region(s)"
+                f"{points_label}){flag_label}"
             )
         )
         logger.info(
-            "fetch_weather started: start=%s end=%s days=%d regions=%d "
-            "commit=%s local_mirror=%s delay=%s stash=%s",
+            "fetch_weather started: start=%s end=%s days=%d regions=%d points=%d "
+            "commit=%s local_mirror=%s delay=%s stash=%s skip_points=%s",
             start,
             end,
             days,
             region_count,
+            point_count,
             commit,
             local_mirror,
             delay,
             stash,
+            skip_points,
         )
 
     def _report_outcome(
