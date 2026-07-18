@@ -59,8 +59,14 @@ has its own `DATABASE_URL`, `SECRET_KEY`, `ALLOWED_HOSTS`, and email target
 (its own env group in Render).
 
 Staging has **no scheduler and no task worker**, so its database does not
-ingest bulletins or send queued email on its own. Seed it with a manual
-`fetch_bulletins` run when test data is needed.
+ingest bulletins on its own — seed it with a manual `fetch_bulletins` run
+when test data is needed. Because there is no `db_worker` to consume the
+django-tasks-db queue, staging runs `config.settings.staging`
+(`DJANGO_SETTINGS_MODULE` pinned in [`render.yaml`](../render.yaml)), which
+inherits production's hardening but overrides the task backend to
+`ImmediateBackend` so subscription email is sent **inline on the request**.
+Under production's `DatabaseBackend`, staging would enqueue email that no
+worker ever sends — persisted silently, with no error in the logs.
 
 ## Cutting a release
 

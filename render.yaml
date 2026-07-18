@@ -88,11 +88,15 @@ projects:
 
       - name: Staging
         # Single web dyno, auto-deploys from `main`. No scheduler and no
-        # background-tasks worker — staging does not ingest bulletins or
-        # send queued email on its own; seed its database with a manual
-        # `fetch_bulletins` run when test data is needed. Wired to its own
-        # Postgres and its own env group (separate SECRET_KEY, DATABASE_URL,
-        # ALLOWED_HOSTS, email target) — never the production database.
+        # background-tasks worker — staging does not ingest bulletins on its
+        # own; seed its database with a manual `fetch_bulletins` run when test
+        # data is needed. Because there is no db_worker, staging runs the
+        # `config.settings.staging` module, which overrides the task backend
+        # to ImmediateBackend so subscription email is sent inline on the
+        # request instead of being queued to a worker that never runs. Wired
+        # to its own Postgres and its own env group (separate SECRET_KEY,
+        # DATABASE_URL, ALLOWED_HOSTS, email target) — never the production
+        # database.
         services:
           - type: web
             name: snowdesk-staging
@@ -105,4 +109,9 @@ projects:
             startCommand: gunicorn config.wsgi
             autoDeployTrigger: checksPass
             envVars:
+              # Staging inherits production hardening but sends email inline
+              # (no db_worker). Pinned here so it is version-controlled and
+              # not dependent on a manual dashboard edit to the env group.
+              - key: DJANGO_SETTINGS_MODULE
+                value: config.settings.staging
               - fromGroup: Staging
