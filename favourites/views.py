@@ -1,22 +1,33 @@
 """
 favourites/views.py — HTMX endpoints + GeoJSON layer for the favourites app.
 
-Provides three HTMX-only fragment views and one plain-JSON endpoint used by
-the map page's saved-pins feature (SNOW-413):
+Provides five HTMX-only fragment views and one plain-JSON endpoint used by
+the map page's saved-pins feature (SNOW-413) and the favourite detail card
+/ manage-page list (SNOW-415):
 
 - ``favourite_create`` (POST) — validates lat/lon/name, creates a
   Favourite, returns the saved-pin partial.
 - ``favourite_rename`` (POST) — owner-checked rename of an existing
   Favourite, returns the updated partial.
 - ``favourite_delete`` (POST) — owner-checked deletion of a Favourite.
+- ``favourite_card`` (GET) — owner-checked detail card: name/coords,
+  altitude, the containing region's current danger rating, and the
+  point's weather (SNOW-415).
+- ``favourite_list`` (GET) — the requesting user's own favourites,
+  rendered for the manage page's "My favourites" section (SNOW-415).
 - ``favourites_geojson`` (GET) — a FeatureCollection of the requesting
   user's own favourites, for the map's saved-pins layer. Not
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
   HTMX swap.
 
-All four are:
+All six are:
   - flag-gated on ``favourites`` (404 when inactive);
   - authentication-gated (403 for anonymous users).
+
+``favourite_card`` and ``favourite_rename``/``favourite_delete`` are
+owner-scoped via ``Favourite.objects.for_user()`` — another user's uuid
+returns 404, never 403, so a probing request can't distinguish "not yours"
+from "doesn't exist" (no existence oracle).
 
 ``favourite_create`` additionally applies django-ratelimit (10/m, keyed on
 ``user`` since these endpoints are auth-only) and returns 429 when the
@@ -29,16 +40,19 @@ latitude/longitude in that order — ``(latitude, longitude)`` — matching
 
 from __future__ import annotations
 
+import datetime
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import waffle
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
-from django.views.decorators.http import require_POST
+from django.utils import timezone
+from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
+from bulletins.models import RegionDayRating
 from core.decorators import require_htmx
 from favourites.models import Favourite
 from favourites.services import (
@@ -46,6 +60,9 @@ from favourites.services import (
     create_favourite,
     delete_favourite,
 )
+
+if TYPE_CHECKING:
+    from bulletins.services.weather_display import WeatherDisplay
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +118,35 @@ def _parse_latlon(
         return float(lat_str), float(lon_str)
     except ValueError, TypeError:
         return None
+
+
+def _point_weather_display(
+    favourite: Favourite, now: datetime.datetime
+) -> "WeatherDisplay | None":
+    """Return the point-accurate weather display for a favourite, or None.
+
+    A seam for SNOW-416 (``ForecastPointWeather``), which has not landed
+    yet. Always returns ``None`` today, so ``_favourite_card.html`` falls
+    back to its explicit "Forecast coming soon" empty state. Deliberately
+    does **not** fall back to the region-centroid ``WeatherSnapshot`` —
+    that would misrepresent the point's own conditions, which is exactly
+    what this feature exists to fix.
+
+    Once SNOW-416 lands, wire this up to fetch the favourite's
+    ``ForecastPointWeather`` snapshot and pass it through
+    ``bulletins.services.weather_display.build_weather_display``.
+
+    Args:
+        favourite: The Favourite whose point weather is being resolved.
+        now: The reference instant for the day/night decision (unused
+            today; kept so the SNOW-416 implementation can adopt this
+            signature unchanged).
+
+    Returns:
+        ``None``, always, until SNOW-416 lands.
+
+    """
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +281,98 @@ def favourite_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
         return HttpResponse("Favourite not found.", status=404)
 
     return HttpResponse("")
+
+
+@require_htmx
+@require_GET
+def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
+    """Render the favourite detail card partial.
+
+    Owner-scoped via ``Favourite.objects.for_user()`` — a non-owner's uuid
+    returns 404 (never 403), so the endpoint gives no existence oracle.
+
+    When ``favourite.region`` is set, resolves today's ``RegionDayRating``
+    for it (mirroring ``public.api.region_summary``) so the card can show
+    the regional danger rating and a link to the evergreen bulletin page.
+    When ``region`` is ``None`` (the pin falls outside every known
+    boundary), the card renders a "no bulletin coverage here" note
+    instead. The point's own weather comes from
+    ``_point_weather_display``, which returns ``None`` until SNOW-416
+    lands (empty "coming soon" state).
+
+    Args:
+        request: The incoming HTMX GET request.
+        uuid: The Favourite's uuid, from the URL.
+
+    Returns:
+        Rendered ``_favourite_card.html``, or an error response.
+
+    """
+    _require_favourites_flag(request)
+
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    try:
+        favourite = (
+            Favourite.objects.for_user(request.user)
+            .select_related("region", "forecast_point")
+            .get(uuid=uuid)
+        )
+    except Favourite.DoesNotExist:
+        return HttpResponse("Favourite not found.", status=404)
+
+    day_rating = None
+    bulletin_url = ""
+    if favourite.region is not None:
+        today = timezone.localdate()
+        day_rating = RegionDayRating.objects.filter(
+            region=favourite.region, date=today
+        ).first()
+        # No date arg — the evergreen "today" bulletin URL.
+        bulletin_url = favourite.region.get_absolute_url()
+
+    weather_display = _point_weather_display(favourite, timezone.now())
+
+    return render(
+        request,
+        "favourites/partials/_favourite_card.html",
+        {
+            "favourite": favourite,
+            "day_rating": day_rating,
+            "bulletin_url": bulletin_url,
+            "weather_display": weather_display,
+        },
+    )
+
+
+@require_htmx
+@require_GET
+def favourite_list(request: HttpRequest) -> HttpResponse:
+    """Render the requesting user's own favourites list partial.
+
+    Powers the manage page's "My favourites" section, which lazy-loads
+    this endpoint via ``hx-get`` on page load.
+
+    Args:
+        request: The incoming HTMX GET request.
+
+    Returns:
+        Rendered ``_favourite_list.html``, or an error response.
+
+    """
+    _require_favourites_flag(request)
+
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    favourites = Favourite.objects.for_user(request.user)
+
+    return render(
+        request,
+        "favourites/partials/_favourite_list.html",
+        {"favourites": favourites},
+    )
 
 
 def favourites_geojson(request: HttpRequest) -> JsonResponse:
