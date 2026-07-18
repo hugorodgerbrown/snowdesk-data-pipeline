@@ -16,6 +16,12 @@ Provides two public functions:
     builds an absolute URL pointing at ``/account/verify/<token>/``, and
     dispatches the registration verification email (SNOW-430).
 
+``send_password_reset_email(email, *, request=None)``
+    Sends a single-use password-reset link (``SALT_PASSWORD_RESET``) to
+    ``/account/reset-password/<token>/`` — but only for a real account with a
+    usable password; unknown / passwordless addresses are a silent no-op
+    (SNOW-432).
+
 ``send_subscription_confirmation_email(email, *, region, request=None)``
     Sends a confirmation email to an already-active subscriber who just added
     a new region.  Generates an account-access token (same salt as the
@@ -40,6 +46,7 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.http import HttpRequest
 from django.template.loader import render_to_string
@@ -49,7 +56,12 @@ from django_tasks import task
 from regions.models import MicroRegion
 
 from ..logging_utils import mask_email
-from .token import SALT_ACCOUNT_ACCESS, SALT_EMAIL_VERIFICATION, generate_token
+from .token import (
+    SALT_ACCOUNT_ACCESS,
+    SALT_EMAIL_VERIFICATION,
+    generate_password_reset_token,
+    generate_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +72,17 @@ _ACCOUNT_PATH_PREFIX = "/account/access/"
 # ``/account/verify/<token>/`` (SNOW-430).
 _VERIFY_PATH_PREFIX = "/account/verify/"
 
+# Path template for password-reset confirm links:
+# ``/account/reset-password/<token>/`` (SNOW-432).
+_RESET_PATH_PREFIX = "/account/reset-password/"
+
 # Email subjects — gettext_lazy so xgettext / makemessages can extract them at
 # module scope.  Use %-named placeholders (not f-strings) as xgettext cannot
 # parse f-strings.
 _SUBJECT_ACCESS = gettext_lazy("Your Snowdesk account link")
 _SUBJECT_SUBSCRIBED = gettext_lazy("Snowdesk: you're subscribed to %(region_name)s")
 _SUBJECT_VERIFY = gettext_lazy("Verify your Snowdesk email address")
+_SUBJECT_RESET = gettext_lazy("Reset your Snowdesk password")
 
 
 def _build_account_url(token: str, base_url: str | None) -> str:
@@ -111,6 +128,28 @@ def _build_verify_url(token: str, base_url: str | None) -> str:
 
     """
     path = f"{_VERIFY_PATH_PREFIX}{token}/"
+    resolved_base = (
+        base_url
+        if base_url is not None
+        else getattr(settings, "SITE_BASE_URL", "http://localhost:8000").rstrip("/")
+    )
+    return f"{resolved_base.rstrip('/')}{path}"
+
+
+def _build_reset_url(token: str, base_url: str | None) -> str:
+    """
+    Build the absolute password-reset confirm URL for a given token.
+
+    Args:
+        token: The signed reset token string.
+        base_url: Optional absolute base URL (scheme + host) extracted from
+            the originating request before enqueueing.
+
+    Returns:
+        Absolute URL string, e.g. ``https://example.com/account/reset-password/<token>/``.
+
+    """
+    path = f"{_RESET_PATH_PREFIX}{token}/"
     resolved_base = (
         base_url
         if base_url is not None
@@ -274,6 +313,60 @@ def _worker_send_verification_email(email: str, base_url: str | None) -> None:
     )
 
 
+@task()
+def _worker_send_password_reset_email(email: str, base_url: str | None) -> None:
+    """
+    Background worker: send a password-reset email to eligible accounts only.
+
+    Only real accounts with a usable password receive a link.
+    Unknown emails and passwordless (magic-link / passkey-only) accounts are a
+    silent no-op: no email is sent, but the request view returns the same
+    "check your inbox" response either way, so nothing is leaked.  Token
+    generation is deferred into the worker (fresh token on retry) and binds
+    the current password hash, making the token single-use.
+
+    Args:
+        email: Recipient email address (lowercased username).
+        base_url: Absolute base URL (scheme + host), or ``None`` for
+            SITE_BASE_URL.
+
+    """
+    user_model = get_user_model()
+    try:
+        user = user_model.objects.get(username=email.lower())
+    except user_model.DoesNotExist:
+        logger.info(
+            "Password reset requested for unknown %s — no email", mask_email(email)
+        )
+        return
+    if not user.has_usable_password():
+        logger.info(
+            "Password reset requested for passwordless account %s — no email",
+            mask_email(email),
+        )
+        return
+
+    token = generate_password_reset_token(user)
+    reset_url = _build_reset_url(token, base_url)
+    expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
+
+    context = {"reset_url": reset_url, "expiry_hours": expiry_hours}
+    subject = str(_SUBJECT_RESET)
+    plain_body = render_to_string("accounts/emails/password_reset.txt", context)
+    html_body = render_to_string("accounts/emails/password_reset.html", context)
+
+    logger.info("Sending password-reset email to %s", mask_email(email))
+
+    send_mail(
+        subject=subject,
+        message=plain_body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[email],
+        html_message=html_body,
+        fail_silently=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public API — thin wrappers that extract request data and enqueue a worker.
 # ---------------------------------------------------------------------------
@@ -343,3 +436,25 @@ def send_verification_email(
     """
     base_url = _extract_base_url(request)
     _worker_send_verification_email.enqueue(email, base_url)
+
+
+def send_password_reset_email(
+    email: str,
+    *,
+    request: HttpRequest | None = None,
+) -> None:
+    """
+    Enqueue a password-reset email to ``email`` (SNOW-432).
+
+    Always safe to call regardless of whether the address exists or has a
+    password — the worker no-ops silently in those cases while the caller
+    returns the same "check your inbox" response, preserving the
+    anti-enumeration invariant.
+
+    Args:
+        email: Recipient email address.
+        request: Optional HttpRequest used to derive the absolute base URL.
+
+    """
+    base_url = _extract_base_url(request)
+    _worker_send_password_reset_email.enqueue(email, base_url)

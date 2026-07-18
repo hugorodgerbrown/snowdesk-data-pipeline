@@ -15,6 +15,9 @@ The salts are:
     never expire so a subscriber can always opt out even months later.
   - ``SALT_EMAIL_VERIFICATION`` — short-lived tokens for the registration
     email-verification links (SNOW-430).
+  - ``SALT_PASSWORD_RESET`` — short-lived, single-use password-reset tokens
+    that embed a fingerprint of the current password hash so they
+    auto-invalidate once the password changes (SNOW-432).
 
 Public API
 ----------
@@ -37,8 +40,14 @@ Public API
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
+from django.contrib.auth import get_user_model
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
+from django.utils.crypto import constant_time_compare, salted_hmac
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +56,9 @@ logger = logging.getLogger(__name__)
 SALT_ACCOUNT_ACCESS = "account-access"
 SALT_UNSUBSCRIBE = "unsubscribe"
 SALT_EMAIL_VERIFICATION = "email-verification"
+SALT_PASSWORD_RESET = "password-reset"  # noqa: S105 — salt label, not a password
 
-# Separator used inside unsubscribe token values.
+# Separator used inside composite token values (email|payload).
 _UNSUB_SEP = "|"
 
 
@@ -163,3 +173,85 @@ def verify_unsubscribe_token(token: str) -> tuple[str, str] | None:
     email = parts[0].lower()
     region_id = parts[1]
     return email, region_id
+
+
+# ---------------------------------------------------------------------------
+# Password-reset tokens (SNOW-432)
+# ---------------------------------------------------------------------------
+
+
+def _reset_fingerprint(user: User) -> str:
+    """Return a short HMAC binding the token to the user's current credentials.
+
+    Includes the current password hash and last-login timestamp so the token
+    **auto-invalidates the moment the password changes** (single-use, option
+    (a)) — no persisted used-token record is needed.  Mirrors Django's own
+    ``PasswordResetTokenGenerator`` hash value.
+
+    Args:
+        user: The account the reset targets.
+
+    Returns:
+        A truncated hex HMAC digest.
+
+    """
+    login_ts = "" if user.last_login is None else user.last_login.isoformat()
+    value = f"{user.password}{login_ts}"
+    return salted_hmac(f"{SALT_PASSWORD_RESET}.fingerprint", value).hexdigest()[:20]
+
+
+def generate_password_reset_token(user: User) -> str:
+    """Create a single-use password-reset token for ``user``.
+
+    The signed value is ``{email}|{fingerprint}``; the fingerprint binds the
+    token to the user's current password hash so it stops verifying once the
+    password is changed.
+
+    Signs inline with ``TimestampSigner`` rather than delegating to
+    ``generate_token`` so the password-derived payload never transits the
+    shared, debug-logging token helpers.
+
+    Args:
+        user: The account requesting a reset.
+
+    Returns:
+        A signed, URL-safe token string.
+
+    """
+    payload = f"{user.get_username().lower()}{_UNSUB_SEP}{_reset_fingerprint(user)}"
+    return TimestampSigner(salt=SALT_PASSWORD_RESET).sign(payload)
+
+
+def verify_password_reset_token(token: str, *, max_age: int | None) -> User | None:
+    """Verify a password-reset token and return the target user, or ``None``.
+
+    Returns ``None`` on a bad/expired signature, an unknown email, or a
+    fingerprint mismatch (the password has changed since the token was minted
+    — i.e. the link has already been used).  Unsigns inline (no shared logging
+    helper) so the password-derived payload is never passed to a logger.
+
+    Args:
+        token: The token from the reset-confirm URL.
+        max_age: Maximum token age in seconds.
+
+    Returns:
+        The target ``auth.User`` on success, or ``None``.
+
+    """
+    signer = TimestampSigner(salt=SALT_PASSWORD_RESET)
+    try:
+        raw = signer.unsign(token, max_age=max_age)
+    except BadSignature, SignatureExpired:
+        return None
+    parts = raw.split(_UNSUB_SEP, 1)
+    if len(parts) != 2:
+        return None
+    email, fingerprint = parts[0].lower(), parts[1]
+    user_model = get_user_model()
+    try:
+        user = user_model.objects.get(username=email)
+    except user_model.DoesNotExist:
+        return None
+    if not constant_time_compare(fingerprint, _reset_fingerprint(user)):
+        return None
+    return user

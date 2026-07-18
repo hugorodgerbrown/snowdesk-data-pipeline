@@ -13,6 +13,10 @@ Implements the subscription flow built around Django's TimestampSigner:
                                Account verified, logs in, redirects to setup.
   setup_view          GET  — post-verification credential-setup landing page.
   set_password_view   POST — set a password for the logged-in user (SNOW-431).
+  reset_password_request_view
+                      GET/POST — request a password reset by email (SNOW-432).
+  reset_password_confirm_view
+                      GET/POST — set a new password from a reset link (SNOW-432).
   subscribe_partial   POST — inline HTMX subscribe CTA on bulletin pages.
                             Requires a region_id; uses a four-case matrix keyed
                             on (subscriber_created, subscription_created) to
@@ -84,6 +88,7 @@ from .logging_utils import mask_email
 from .models import Account, Subscriber, Subscription
 from .services.email import (
     send_account_access_email,
+    send_password_reset_email,
     send_subscription_confirmation_email,
     send_verification_email,
 )
@@ -92,6 +97,7 @@ from .services.token import (
     SALT_ACCOUNT_ACCESS,
     SALT_EMAIL_VERIFICATION,
     generate_unsubscribe_token,
+    verify_password_reset_token,
     verify_token,
     verify_unsubscribe_token,
 )
@@ -482,6 +488,113 @@ def set_password_view(request: HttpRequest) -> HttpResponse:
     update_session_auth_hash(request, request.user)
     logger.info("Password set for user pk=%s via setup page", request.user.pk)
     return redirect("accounts:manage")
+
+
+# ---------------------------------------------------------------------------
+# Password reset — request + confirm (SNOW-432)
+# ---------------------------------------------------------------------------
+
+
+@require_http_methods(["GET", "POST"])
+def reset_password_request_view(request: HttpRequest) -> HttpResponse:
+    """
+    Request a password reset by email (forgotten/change password, SNOW-432).
+
+    GET renders the single-field request form.  POST (rate-limited 3/m per IP)
+    enqueues a reset email and **always** renders the same "check your inbox"
+    page — an unknown address, a known address with a password, and a
+    passwordless account are byte-identical (the worker no-ops for the first
+    and third), so nothing is leaked.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        The request form, or the "check your inbox" page.
+
+    """
+    if request.method == "GET":
+        return render(request, "accounts/reset_password.html", {"form": EmailForm()})
+
+    usage = get_usage(
+        request,
+        group="accounts.reset_password.post",
+        key="ip",
+        rate="3/m",
+        method=["POST"],
+        increment=True,
+    )
+    if usage is not None and usage["should_limit"]:
+        return HttpResponse(status=429)
+
+    form = EmailForm(request.POST)
+    if not form.is_valid():
+        return render(request, "accounts/reset_password.html", {"form": form})
+
+    send_password_reset_email(form.cleaned_data["email"], request=request)
+    return render(request, "accounts/reset_password_sent.html", {})
+
+
+@require_http_methods(["GET", "POST"])
+@ratelimit(key="ip", rate="10/m", block=False)
+def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpResponse:
+    """
+    Confirm a password reset and set a new password (SNOW-432).
+
+    Verifies the single-use token (fingerprint bound to the current password
+    hash).  GET renders the set-password form; POST validates and saves the
+    new password, logs the user in (session cycled by ``login``), and
+    redirects to manage.  A bad/expired/already-used token renders the
+    link-expired page (400).  Rate-limited 10/m per IP.
+
+    Args:
+        request: Incoming HTTP request.
+        token: The signed reset token from the URL path.
+
+    Returns:
+        The set-password form (GET), a redirect to manage (POST success), or
+        the link-expired page.
+
+    """
+    if getattr(request, "limited", False):
+        return HttpResponse(status=429)
+
+    max_age = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400)
+    user = verify_password_reset_token(token, max_age=max_age)
+
+    if user is None:
+        logger.debug("reset_password_confirm received an invalid/expired/used token")
+        response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
+        response["Referrer-Policy"] = "no-referrer"
+        return response
+
+    if request.method == "GET":
+        response = render(
+            request,
+            "accounts/reset_password_confirm.html",
+            {"password_form": SnowdeskSetPasswordForm(user)},
+        )
+        response["Referrer-Policy"] = "no-referrer"
+        return response
+
+    form = SnowdeskSetPasswordForm(user, request.POST)
+    if not form.is_valid():
+        response = render(
+            request,
+            "accounts/reset_password_confirm.html",
+            {"password_form": form},
+        )
+        response["Referrer-Policy"] = "no-referrer"
+        return response
+
+    form.save()
+    # The password hash just changed, so the token's fingerprint no longer
+    # matches — it is now single-use. login() cycles the session key.
+    login(request, user, backend=_TOKEN_BACKEND)
+    logger.info("Password reset completed for user pk=%s", user.pk)
+    response = redirect("accounts:manage")
+    response["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 # ---------------------------------------------------------------------------
