@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Full history + tags so the CalVer dedup and the generated
           # notes (which diff against the previous tag) both work.
