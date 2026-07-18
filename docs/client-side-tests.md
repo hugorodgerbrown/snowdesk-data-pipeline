@@ -2,7 +2,7 @@
 name: client-side-tests
 description: Playwright e2e harness (tox -e e2e) — share-button test, clipboard fixtures, real-vs-simulated SW-lifecycle tests, adding tests
 status: current
-last-reviewed: 2026-07-17
+last-reviewed: 2026-07-18
 ---
 
 # Client-side test harness
@@ -148,6 +148,23 @@ handler rather than rejecting.
 Real-service-worker fixtures — see "SW-lifecycle tests: real vs
 simulated" above for when to reach for these instead of the
 simulated-SW pattern.
+
+Two guarantees (SNOW-427) make `queue:events` rows safe to assert on
+from tests using these fixtures:
+
+1. The telemetry buffer **never drains** — an init-script stub answers
+   `fetch` calls to `/api/telemetry` with a synthetic 503 (including
+   the `pagehide` `keepalive` flush, which `page.route` cannot
+   intercept), so `telemetry.js` takes its 5xx branch and leaves rows
+   in place. A resolved 503 rather than a rejection because
+   `pwa_offline.js`'s own fetch wrapper reveals the offline banner on
+   any rejected fetch. `navigator.sendBeacon` is unaffected, so
+   client-side `page.route` captures of critical events still work.
+2. The `pwa.sw.installed` / `pwa.sw.activated` rows are **already in
+   `queue:events`** when the fixture yields — it waits for both before
+   its SW-controlled reload, closing the race where the reload tore
+   down the SW → page → IndexedDB write chain mid-flight and lost the
+   once-per-SW-instance events for good.
 
 ### `_load_test_data` (in `conftest.py`)
 
