@@ -35,6 +35,7 @@ from bulletins.services.forecast_points import (
     quantise_lon,
 )
 from core.models import RequestLog
+from favourites.models import Favourite
 from observations.models import FieldObservation
 from regions.models import (
     MajorRegion,
@@ -464,3 +465,32 @@ class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation
     location_source = FieldObservation.LOCATION_SOURCE.GPS
     observed_at = factory.LazyFunction(django_timezone.now)
     observation_type = FieldObservation.OBSERVATION_TYPE.WHUMPFING
+
+
+class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
+    """Factory for Favourite instances.
+
+    ``latitude``/``longitude`` vary per instance (``factory.Sequence``) and
+    are threaded into the ``forecast_point`` SubFactory so each build lands
+    in a distinct (lat_cell, lon_cell, elevation_band) triple — reusing
+    ``ForecastPointFactory``'s fixed defaults for every Favourite would trip
+    its ``unique_together`` constraint on the second build.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Favourite
+
+    user = factory.SubFactory(UserFactory)
+    name = ""
+    latitude = factory.Sequence(lambda n: 46.1 + n * 0.05)
+    longitude = factory.Sequence(lambda n: 7.4 + n * 0.05)
+    elevation = 1500.0
+    forecast_point = factory.SubFactory(
+        ForecastPointFactory,
+        latitude=factory.LazyAttribute(lambda obj: obj.factory_parent.latitude),
+        longitude=factory.LazyAttribute(lambda obj: obj.factory_parent.longitude),
+        elevation=factory.LazyAttribute(lambda obj: obj.factory_parent.elevation),
+    )
+    region = None

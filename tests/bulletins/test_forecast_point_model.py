@@ -8,6 +8,7 @@ Covers:
   - unique_together constraint on (lat_cell, lon_cell, elevation_band).
   - Quantisation edge cases: cell boundaries and negative-coordinate floors,
     exercised via bulletins.services.forecast_points.quantise_*.
+  - ForecastPointQuerySet.active() — points with at least one favourite.
 """
 
 import pytest
@@ -22,7 +23,7 @@ from bulletins.services.forecast_points import (
     quantise_lat,
     quantise_lon,
 )
-from tests.factories import ForecastPointFactory
+from tests.factories import FavouriteFactory, ForecastPointFactory
 
 
 @pytest.mark.django_db
@@ -127,3 +128,19 @@ class TestQuantisation:
         assert LAT_CELL_SIZE == 0.01
         assert LON_CELL_SIZE == 0.015
         assert ELEVATION_BAND_SIZE == 200
+
+
+@pytest.mark.django_db
+class TestForecastPointActiveQuerySet:
+    """ForecastPointQuerySet.active() — points referenced by a favourite."""
+
+    def test_point_with_favourite_is_active(self) -> None:
+        """A point with one favourite is included in active()."""
+        point = ForecastPointFactory.create()
+        FavouriteFactory.create(forecast_point=point)
+        assert point in ForecastPoint.objects.active()
+
+    def test_point_without_favourite_is_not_active(self) -> None:
+        """A point with no favourites is excluded from active()."""
+        point = ForecastPointFactory.create()
+        assert point not in ForecastPoint.objects.active()

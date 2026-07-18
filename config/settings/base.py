@@ -108,6 +108,7 @@ INSTALLED_APPS = [
     "subscriptions",
     "analytics",
     "observations",
+    "favourites",
     "mcp_server",
 ]
 
@@ -610,6 +611,15 @@ WAFFLE_CREATE_MISSING_FLAGS = False
 # subscriptions/services/token.py.  Defaults to 24 hours.
 
 ACCOUNT_TOKEN_MAX_AGE = config("ACCOUNT_TOKEN_MAX_AGE", default=86400, cast=int)
+
+
+# ---------------------------------------------------------------------------
+# Favourites (SNOW-413)
+# ---------------------------------------------------------------------------
+# Maximum number of Favourite rows a single user may hold at once, enforced
+# by favourites.services.create_favourite.
+
+FAVOURITES_MAX_PER_USER = config("FAVOURITES_MAX_PER_USER", default=25, cast=int)
 
 # Base URL used when building absolute links in emails sent outside a request
 # context (e.g. from management commands or background tasks).
