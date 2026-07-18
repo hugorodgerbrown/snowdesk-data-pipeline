@@ -126,13 +126,13 @@ def test_notification_for_unknown_method_still_gets_no_response() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_initialize_advertises_protocol_version_and_server_info() -> None:
-    """initialize() returns the advertised protocol version and server info."""
+def test_initialize_echoes_supported_client_version() -> None:
+    """initialize() echoes the client's protocolVersion when we support it."""
     response = protocol.dispatch(
         _request(
             "initialize",
             {
-                "protocolVersion": "2025-11-05",
+                "protocolVersion": "2024-11-05",
                 "capabilities": {},
                 "clientInfo": {"name": "smoke", "version": "0.0.1"},
             },
@@ -140,9 +140,32 @@ def test_initialize_advertises_protocol_version_and_server_info() -> None:
     )
     assert response is not None
     result = response["result"]
-    assert result["protocolVersion"] == protocol.PROTOCOL_VERSION
+    assert result["protocolVersion"] == "2024-11-05"
     assert result["serverInfo"]["name"] == "snowdesk"
     assert "tools" in result["capabilities"]
+
+
+def test_initialize_falls_back_to_preferred_on_unsupported_client_version() -> None:
+    """initialize() returns PROTOCOL_VERSION when the client asks for an unknown version."""
+    response = protocol.dispatch(
+        _request(
+            "initialize",
+            {
+                "protocolVersion": "2099-01-01",
+                "capabilities": {},
+                "clientInfo": {"name": "smoke", "version": "0.0.1"},
+            },
+        )
+    )
+    assert response is not None
+    assert response["result"]["protocolVersion"] == protocol.PROTOCOL_VERSION
+
+
+def test_initialize_returns_preferred_version_when_client_omits_it() -> None:
+    """initialize() returns PROTOCOL_VERSION when the client sends no protocolVersion."""
+    response = protocol.dispatch(_request("initialize", {}))
+    assert response is not None
+    assert response["result"]["protocolVersion"] == protocol.PROTOCOL_VERSION
 
 
 def test_ping_returns_empty_result() -> None:
