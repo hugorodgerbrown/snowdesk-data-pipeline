@@ -1,6 +1,6 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — ten read-only tools over regions, bulletins, problems, danger trend, geolocation
+description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — eleven read-only tools over regions, bulletins, problems, danger trend, geolocation
 status: current
 last-reviewed: 2026-07-18
 ---
@@ -55,13 +55,14 @@ sidesteps standing up an ASGI stack for this one surface.
 | `initialize` | Returns `protocolVersion`, `capabilities: {"tools": {}}`, `serverInfo: {name: "snowdesk", version: <APP_VERSION>}`. |
 | `notifications/initialized` | A notification (no `id`) — accepted, no response body (`204`). |
 | `ping` | Liveness check; empty result `{}`. |
-| `tools/list` | Returns all ten tools below with `name`, `description`, `inputSchema`. |
+| `tools/list` | Returns all eleven tools below with `name`, `description`, `inputSchema`. |
 | `tools/call` | `{"name": ..., "arguments": {...}}` → a `CallToolResult` (`content`, `structuredContent`, `isError`). |
 
 ## Tools
 
-All ten are implemented in `mcp_server/tools.py`, composed from services
-that already exist elsewhere in the codebase — no new query logic.
+All eleven are implemented in `mcp_server/tools.py`, composed from
+services that already exist elsewhere in the codebase — no new query
+logic.
 
 ### `search_regions`
 
@@ -83,9 +84,9 @@ Implementation: `mcp_server/resolvers.py::search_places` — NFKD ASCII-fold
 (`mcp_server/normalise.py::normalise`), scored with
 `rapidfuzz.process.extract(scorer=WRatio, score_cutoff=70)`. The candidate
 pool (~1500 rows) is cached in the Django default cache under a key
-fingerprinted on `max(updated_at)` across the three source tables — any
-edit is a guaranteed cache miss, no explicit invalidation call site
-needed.
+fingerprinted on `max(updated_at)` across the four source tables
+(`MicroRegion`, `MajorRegion`, `Resort`, `RegionAlias`) — any edit is a
+guaranteed cache miss, no explicit invalidation call site needed.
 
 ### `get_current_conditions`
 
@@ -273,15 +274,66 @@ falling in Verbier?" in one call.
   []` with `direction: "stable"`, `change_point: null`,
   `current_streak: null` — a structured empty result, not an error.
 
+### `get_regional_snapshot`
+
+Returns a per-region peak-danger entry for every region in a country or
+major-region scope, plus a scope-level summary — answers "where should
+I go?" in one call instead of an N-region fan-out over
+`get_current_conditions` (149 calls to cover Switzerland alone). A
+natural companion to `bulk_current_conditions` for the case where the
+caller doesn't yet know which `region_ids` they want.
+
+* **Params:** exactly one of `country` (ISO-3166-1 alpha-2, e.g. `"CH"`)
+  or `major_region_id` (a `MajorRegion.prefix`, e.g. `"CH-4"`) is
+  required; both are mutually exclusive. `date` (`YYYY-MM-DD`, optional
+  — defaults to today).
+* **Returns:** `{scope: {country, major_region_id}, date, regions: [{
+  region_id, name, danger_level, min_rating, has_bulletin}], count,
+  count_with_bulletin, summary}`. `regions` is ordered by `region_id`
+  (`MicroRegion.Meta.ordering`, alphabetical) and includes every region
+  in scope regardless of `display_on_map` — this is a coverage query,
+  not a map-visibility one. `danger_level` (the day's peak rating) and
+  `min_rating` are `null` when `has_bulletin` is `false` — a region with
+  no bulletin on that day is a legitimate outcome, not an error.
+
+**Source: `RegionDayRating`, not a per-region bulletin scan.** A naive
+implementation would call the equivalent of `get_current_conditions`
+once per region — for CH's 149 MicroRegions, 149 sequential lookups per
+`tools/call`. Instead this tool issues one indexed
+`RegionDayRating.objects.filter(region__in=…, date=…)` query.
+`danger_level` reads `RegionDayRating.max_rating` — the same
+peak-rating semantic already established for the choropleth, map
+tooltip, and season calendar (`docs/compressed-views-rating-rule.md`)
+and already read by `get_danger_history` / `get_danger_trend`.
+`min_rating` is included alongside it at zero extra query cost (same
+row) — split-day variability is exactly what a "where to go" caller
+wants visibility into.
+
+* **Cost:** no per-call cap. The largest scope (`AT`, 153 regions) costs
+  one indexed row lookup — roughly the same as a single
+  `get_danger_history` call, not a 153x fan-out.
+* **Validation:** supplying both `country` and `major_region_id`,
+  supplying neither, an unrecognised `country`, or an unrecognised
+  `major_region_id` all raise a domain-level `isError` — the same
+  convention as `get_current_conditions`'s unknown `region_id`
+  rejection.
+
 ## Cost caps
 
 * `get_danger_history` is capped to one region and one avalanche season
   per call (above).
 * `search_regions` returns at most 10 candidates.
-* Every tool takes a single, already-resolved `region_id` except
-  `search_regions` — the LLM is expected to call `search_regions` first
-  when it only has a place name, then pass the returned `region_id` to the
-  other three tools.
+* `bulk_current_conditions` caps its `region_ids[]` input at 20 entries per
+  call.
+* `find_regions_near` caps its search radius at 100 km per call.
+* Most bulletin-scoped tools (`get_current_conditions`,
+  `get_avalanche_problems`, `get_bulletin_metadata`, `get_bulletin_raw`,
+  `list_resorts_in_region`) take a single, already-resolved `region_id`.
+  Start with `search_regions` or `find_regions_near` when you only have a
+  place name or coordinates, then pass the returned `region_id` to the
+  bulletin-scoped tools. `get_regional_snapshot` and
+  `bulk_current_conditions` are the exceptions — they cover a scope or a
+  batch in one call.
 
 ## Error codes
 
@@ -333,11 +385,19 @@ curl -s -X POST http://localhost:8000/api/mcp/ \
 
 ## Known v1 limitations
 
-* **No language-pair aliasing.** Fuzzy matching handles accents, typos,
-  punctuation, and whitespace, but not name pairs that share no letters —
-  `Sion` (fr) vs `Sitten` (de), `Coire` (fr) vs `Chur` (de). If usage shows
-  this matters, a curated `RegionAlias` table is the natural follow-up
-  rather than trying to guess these fuzzily.
+* **Language-pair aliasing is curated, not exhaustive.** Fuzzy matching
+  handles accents, typos, punctuation, and whitespace, but not name pairs
+  that share almost no letters (`Sion` (fr) vs `Sitten` (de), `Loèche`
+  (fr) vs `Leuk` (de)). `regions.RegionAlias` (SNOW-409) closes this gap
+  with a hand-curated `(region, alias_text)` table — `search_places` folds
+  its rows into the candidate pool alongside `MicroRegion`/`MajorRegion`/
+  `Resort` names (`mcp_server/resolvers.py::_build_candidate_pool`). Only
+  ~10 rows are seeded so far (see `regions/fixtures/region_aliases.json`)
+  — each was verified against the committed EAWS fixtures before being
+  added, so coverage is intentionally narrow rather than guessed. A query
+  with no curated alias and no letter overlap with the canonical name
+  (e.g. `Coire` for `Chur`) still returns no match; add a row to the
+  fixture as usage surfaces more of these.
 * **Major-region representative.** A `search_regions` hit on a
   `MajorRegion` name (e.g. "Wallis"/"Valais") resolves to one
   alphabetically-first child `MicroRegion`'s `region_id` — a best-effort

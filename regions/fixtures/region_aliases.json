@@ -1,0 +1,101 @@
+[
+  {
+    "model": "regions.regionalias",
+    "fields": {
+      "region": ["CH-4215"],
+      "alias_text": "Loèche",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.regionalias",
+    "fields": {
+      "region": ["CH-4211"],
+      "alias_text": "Loèche-les-Bains",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.regionalias",
+    "fields": {
+      "region": ["CH-4231"],
+      "alias_text": "Brigue",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.regionalias",
+    "fields": {
+      "region": ["CH-4121"],
+      "alias_text": "Sitten",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.regionalias",
+    "fields": {
+      "region": ["CH-4242"],
+      "alias_text": "Conches",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.regionalias",
+    "fields": {
+      "region": ["CH-4221"],
+      "alias_text": "Viège",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.regionalias",
+    "fields": {
+      "region": ["CH-8212"],
+      "alias_text": "Bienne",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.regionalias",
+    "fields": {
+      "region": ["CH-8212"],
+      "alias_text": "Neuchâtel",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.regionalias",
+    "fields": {
+      "region": ["CH-8224"],
+      "alias_text": "Delémont",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.regionalias",
+    "fields": {
+      "region": ["IT-32-BZ-19"],
+      "alias_text": "Prags",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "regions.regionalias",
+    "fields": {
+      "region": ["IT-32-BZ-20"],
+      "alias_text": "Sexten",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  }
+]

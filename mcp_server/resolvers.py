@@ -1,7 +1,7 @@
 """
 mcp_server/resolvers.py — Region lookup and fuzzy place-name search.
 
-Two entry points consumed by ``mcp_server.tools``:
+Entry points consumed by ``mcp_server.tools``:
 
 * ``resolve_region(region_id)`` — exact ``MicroRegion.region_id`` lookup,
   scoped to what the MCP tools need (the parent major region's name via
@@ -10,14 +10,17 @@ Two entry points consumed by ``mcp_server.tools``:
   UI panel no tool reads.
 * ``search_places(query)`` — fuzzy name search across resorts and
   micro/major regions, for callers who only have a place name.
+* ``regions_for_scope(country, major_region_id)`` — the MicroRegions
+  covered by a country or a major-region prefix, for
+  ``get_regional_snapshot``'s "where should I go?" fan-out.
 
-The candidate universe (~1500 rows across ``Resort``, ``MicroRegion``, and
-``MajorRegion``) is cheap to hold in full and is cached in the Django
-default cache, keyed on a fingerprint of the newest ``updated_at`` across
-all three tables — the same pattern as
-``bulletins.services.coverage.covered_region_ids``. Any edit to a region or
-resort changes the fingerprint, which changes the cache key, which is a
-guaranteed miss — no explicit invalidation needed.
+The candidate universe (~1500 rows across ``Resort``, ``MicroRegion``,
+``MajorRegion``, and ``RegionAlias``) is cheap to hold in full and is
+cached in the Django default cache, keyed on a fingerprint of the newest
+``updated_at`` across all four tables — the same pattern as
+``bulletins.services.coverage.covered_region_ids``. Any edit to a region,
+resort, or alias changes the fingerprint, which changes the cache key,
+which is a guaranteed miss — no explicit invalidation needed.
 """
 
 from __future__ import annotations
@@ -30,7 +33,14 @@ from django.db.models import Max
 from rapidfuzz import fuzz, process
 
 from mcp_server.normalise import normalise
-from regions.models import MajorRegion, MicroRegion, Resort
+from public.api import COUNTRY_NAMES
+from regions.models import MajorRegion, MicroRegion, RegionAlias, Resort
+
+# ISO-3166-1 alpha-2 codes Snowdesk has bulletin coverage for. Re-exported
+# from ``public.api.COUNTRY_NAMES`` (rather than a second, drifting list)
+# so ``regions_for_scope`` validates a ``country`` scope against the same
+# set the map's ``?country=`` filter and region tooltip already use.
+VALID_COUNTRIES: frozenset[str] = frozenset(COUNTRY_NAMES)
 
 # Country → provider mapping for the ``find_places_near`` result shape.
 # Static because Snowdesk fetches from exactly one provider per country;
@@ -88,6 +98,57 @@ def resolve_region(region_id: str) -> MicroRegion | None:
     )
 
 
+def regions_for_scope(
+    country: str | None, major_region_id: str | None
+) -> list[MicroRegion]:
+    """Return the MicroRegions in scope for a country or a major-region prefix.
+
+    Backs ``get_regional_snapshot`` — the "where should I go?" tool that
+    answers a country- or major-region-wide danger question in a single
+    call rather than an N-region fan-out. Exactly one of ``country`` or
+    ``major_region_id`` must be supplied.
+
+    ``display_on_map=False`` major regions are included — this answers a
+    coverage question, not a map-visibility one.
+
+    Args:
+        country: ISO-3166-1 alpha-2 country code, e.g. ``"CH"``. Matched
+            case-insensitively against :data:`VALID_COUNTRIES`.
+        major_region_id: A ``MajorRegion.prefix``, e.g. ``"CH-4"``.
+            Matched case-insensitively.
+
+    Returns:
+        The matching MicroRegions, ``select_related("subregion__major")``
+        so callers can read ``.subregion.major`` (country, name) without a
+        query per region, in the model's default ``region_id`` ordering.
+
+    Raises:
+        ValueError: neither or both of ``country`` / ``major_region_id``
+            are supplied, ``country`` isn't a recognised code, or
+            ``major_region_id`` doesn't match any known ``MajorRegion``.
+
+    """
+    if bool(country) == bool(major_region_id):
+        raise ValueError("Exactly one of 'country' or 'major_region_id' is required.")
+
+    queryset = MicroRegion.objects.select_related("subregion__major")
+
+    if country is not None:
+        normalised_country = country.strip().upper()
+        if normalised_country not in VALID_COUNTRIES:
+            raise ValueError(f"Unknown country: {country!r}.")
+        return list(queryset.filter(subregion__major__country=normalised_country))
+
+    normalised_prefix = (major_region_id or "").strip()
+    matches = list(queryset.filter(subregion__major__prefix__iexact=normalised_prefix))
+    if (
+        not matches
+        and not MajorRegion.objects.filter(prefix__iexact=normalised_prefix).exists()
+    ):
+        raise ValueError(f"Unknown major_region_id: {major_region_id!r}.")
+    return matches
+
+
 def _distinct_names(*names: str) -> list[str]:
     """Return the given names, blank entries dropped and duplicates removed.
 
@@ -117,11 +178,11 @@ def _distinct_names(*names: str) -> list[str]:
 def _build_candidate_pool() -> list[dict[str, Any]]:
     """Build the full search-candidate pool from the database.
 
-    One row per (Resort / MicroRegion / MajorRegion) x distinct human
-    name. Each row carries the ``region_id`` a matching tool call should
-    use, a display ``name``, a ``kind`` (``"micro"``, ``"major"``, or
-    ``"resort"``), a human-readable ``parent`` for context, and the
-    pre-computed ``normalised`` search key.
+    One row per (Resort / MicroRegion / MajorRegion / RegionAlias) x
+    distinct human name. Each row carries the ``region_id`` a matching
+    tool call should use, a display ``name``, a ``kind`` (``"micro"``,
+    ``"major"``, or ``"resort"``), a human-readable ``parent`` for
+    context, and the pre-computed ``normalised`` search key.
 
     Each MajorRegion's representative ``region_id`` (see
     ``_build_candidate_pool``'s major-region loop below) is derived from
@@ -130,6 +191,14 @@ def _build_candidate_pool() -> list[dict[str, Any]]:
     means the loop already visits rows alphabetically, so recording the
     first ``region_id`` seen per major-region pk reproduces the
     "alphabetically-first child" representative with no extra table scan.
+
+    The ``RegionAlias`` loop runs last, after the ``MicroRegion`` loop —
+    ``_match_exact_region_id`` returns the *first* pool row whose
+    ``kind == "micro"`` matches a queried ``region_id``, so an alias row
+    appended before its region's canonical ``MicroRegion`` row would win
+    an exact-id lookup instead of the canonical name. Each alias row uses
+    ``kind="micro"`` (not a fourth kind) so it dedups against — and, on an
+    exact-id query, loses to — its region's canonical row.
 
     Returns:
         The full candidate-pool list — not cached here; caching is
@@ -180,6 +249,19 @@ def _build_candidate_pool() -> list[dict[str, Any]]:
                 }
             )
 
+    for alias in RegionAlias.objects.select_related("region__subregion__major"):
+        major = alias.region.subregion.major
+        parent = major.name_en or major.name_native
+        rows.append(
+            {
+                "region_id": alias.region.region_id,
+                "name": alias.alias_text,
+                "kind": "micro",
+                "parent": parent,
+                "normalised": normalise(alias.alias_text),
+            }
+        )
+
     return rows
 
 
@@ -187,13 +269,14 @@ def _pool_cache_key() -> str:
     """Return a cache key that changes whenever the candidate data changes.
 
     Fingerprints the pool on the newest ``updated_at`` across
-    ``MicroRegion``, ``MajorRegion``, and ``Resort`` — any create, edit, or
-    delete touches one of those timestamps, which changes the fingerprint,
-    which guarantees the next call is a cache miss. No explicit
-    invalidation call site is needed anywhere else in the codebase.
+    ``MicroRegion``, ``MajorRegion``, ``Resort``, and ``RegionAlias`` — any
+    create, edit, or delete touches one of those timestamps, which changes
+    the fingerprint, which guarantees the next call is a cache miss. No
+    explicit invalidation call site is needed anywhere else in the
+    codebase.
 
     Returns:
-        A cache key string unique to the current state of the three
+        A cache key string unique to the current state of the four
         source tables.
 
     """
@@ -201,6 +284,7 @@ def _pool_cache_key() -> str:
         MicroRegion.objects.aggregate(latest=Max("updated_at"))["latest"],
         MajorRegion.objects.aggregate(latest=Max("updated_at"))["latest"],
         Resort.objects.aggregate(latest=Max("updated_at"))["latest"],
+        RegionAlias.objects.aggregate(latest=Max("updated_at"))["latest"],
     ]
     known = [s for s in stamps if s is not None]
     fingerprint = max(known).isoformat() if known else "empty"
