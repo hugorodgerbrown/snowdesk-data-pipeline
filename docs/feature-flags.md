@@ -1,8 +1,8 @@
 ---
 name: feature-flags
-description: django-waffle operator guide — Flag/Switch/Sample, edit_map inventory, seeding migrations, override_flag tests
+description: django-waffle operator guide — Flag/Switch/Sample, edit_map/field_observations/favourites inventory, seeding migrations, override_flag tests
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-07-18
 ---
 
 # Feature flags (django-waffle)
@@ -52,6 +52,7 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
 | `edit_map` | `superusers=True` | The in-map resort editor at `/?edit=resorts` and its API endpoints (`/api/edit/resorts/queue/`, `/api/edit/resorts/<id>/coords/`). | SNOW-86 (test case for the mechanism); first consumer is SNOW-74. |
+| `favourites` | `superusers=True` | The saved-map-pin favourites HTMX CRUD endpoints and GeoJSON layer under `/favourites/` (`favourites.views`). | SNOW-413. |
 
 Keep this table up to date as new flags land.
 
