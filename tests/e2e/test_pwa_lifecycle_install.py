@@ -58,12 +58,11 @@ def test_first_install_registers_and_caches_shell(pwa_page: PwaPage) -> None:
     )
 
     # 3. Telemetry.
-    # Both waits need a longer window than the 5s default. Between the SW
-    # firing each lifecycle event and the row landing in ``queue:events``
-    # there is a Promise-chained IndexedDB write; under CI runner load that
-    # write can take several seconds to flush even though the reload above
-    # already exercised the installed-and-activated SW. Observed first on
-    # ``activated``, then on ``installed`` once only ``activated`` had been
-    # bumped. 15s is comfortably below Playwright's 30s per-test default.
-    pwa_page.wait_for_event("pwa.sw.installed", timeout=15_000)
-    pwa_page.wait_for_event("pwa.sw.activated", timeout=15_000)
+    # SNOW-427: the ``pwa_page`` fixture guarantees both rows were in
+    # ``queue:events`` before its SW-controlled reload, and blocks the
+    # buffer's ``/api/telemetry`` drain so they cannot have been deleted
+    # since — these waits resolve on their first poll. The extended
+    # timeouts an earlier flake fix added here are gone: a row missing
+    # now means "never emitted", which no wait length recovers.
+    pwa_page.wait_for_event("pwa.sw.installed")
+    pwa_page.wait_for_event("pwa.sw.activated")

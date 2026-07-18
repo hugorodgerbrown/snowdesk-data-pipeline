@@ -191,29 +191,35 @@ class PwaPage:
 
         Raises:
             AssertionError: If the event never lands within ``timeout``
-                milliseconds. The message names the event so failures are
-                immediately diagnosable.
+                milliseconds. The message names the missing event AND the
+                event names actually present in ``queue:events`` at the
+                final poll, so a failure distinguishes "never emitted"
+                from "emitted but the row I wanted isn't among them"
+                without a rerun (SNOW-427).
 
         """
-        row = self.page.evaluate(
+        result = self.page.evaluate(
             """async ({ name, timeoutMs }) => {
                 const deadline = Date.now() + timeoutMs;
+                let seen = [];
                 while (Date.now() < deadline) {
                   const rows = await window.pwaDb.getAll('queue:events');
+                  seen = rows.map((r) => r.event);
                   const found = rows.find((r) => r.event === name);
                   if (found) {
-                    return JSON.parse(JSON.stringify(found));
+                    return { found: JSON.parse(JSON.stringify(found)), seen };
                   }
                   await new Promise((r) => setTimeout(r, 100));
                 }
-                return null;
+                return { found: null, seen };
               }""",
             {"name": event_name, "timeoutMs": timeout},
         )
-        assert row is not None, (
-            f"event {event_name!r} not found in queue:events within {timeout}ms"
+        assert result["found"] is not None, (
+            f"event {event_name!r} not found in queue:events within {timeout}ms; "
+            f"events present at last poll: {result['seen']!r}"
         )
-        return cast(dict[str, Any], row)
+        return cast(dict[str, Any], result["found"])
 
     def assert_sw_absent(self) -> None:
         """Assert no SW registration, no shell caches, no PWA IndexedDB survive."""
@@ -276,6 +282,37 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
     ``pwa.sw.*`` emit per session is forced to 100% by the
     first-launch bump.
 
+    Two further guarantees make ``queue:events`` rows deterministic to
+    assert on (SNOW-427 — the ``pwa.sw.installed`` CI flake):
+
+    1. **The buffer never drains.** ``queue:events`` is a drain-by-design
+       buffer: ``telemetry.js`` POSTs it to ``/api/telemetry`` on
+       ``pagehide`` (every reload!), on a 30s interval, and past a depth
+       threshold, deleting the rows on any 2xx — and the receiver returns
+       204 even with no PostHog key configured. An init-script stub makes
+       ``window.fetch`` resolve with a synthetic 503 for that endpoint on
+       every page load of this fixture; ``telemetry.js``'s 5xx branch
+       leaves the rows in place for the next (equally stubbed) retry. A
+       resolved 503 rather than a rejection because ``pwa_offline.js``
+       wraps ``window.fetch`` too and reveals the offline banner whenever
+       a fetch REJECTS — a rejecting stub re-shows the banner the moment
+       telemetry.js's ``online``-event flush fires, breaking the offline
+       tests. The stub is JS-level, so it also covers the ``pagehide``
+       flush's ``keepalive`` fetch, which Playwright's ``page.route``
+       cannot see. ``navigator.sendBeacon`` (the critical-event fast
+       path) is not ``fetch`` and is unaffected.
+
+    2. **The SW lifecycle rows land before the reload.** ``pwa.sw.installed``
+       and ``pwa.sw.activated`` reach ``queue:events`` via an async chain
+       (SW ``postMessage`` → page message task → ``emit()``'s IndexedDB
+       reads/writes) that is still settling when the controller's state
+       first reads ``activated`` — reloading at that instant can tear the
+       page down mid-chain, and since the browser fires ``install`` /
+       ``activate`` once per SW instance the rows are then lost for good.
+       The fixture polls for both rows before reloading, inside ONE
+       ``evaluate`` call per the one-round-trip rule (see
+       ``test_pwa_push_journey.py``'s module docstring).
+
     Yields:
         A ``PwaPage`` bundling the page with the lifecycle-assertion
         helpers.
@@ -284,11 +321,55 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
     page_errors: list[str] = []
     page.on("pageerror", lambda err: page_errors.append(str(err)))
     page.add_init_script("Math.random = () => 0;")
+    # Guarantee 1 above — answer the telemetry drain POST with a synthetic
+    # 503 so queue:events rows stay observable for the whole test.
+    page.add_init_script(
+        """(() => {
+            const realFetch = window.fetch.bind(window);
+            window.fetch = (input, init) => {
+              const url =
+                typeof input === 'string' ? input : (input && input.url) || '';
+              if (url.includes('/api/telemetry')) {
+                return Promise.resolve(
+                  new Response('', {
+                    status: 503,
+                    statusText: 'pwa_page fixture: telemetry drain blocked',
+                  }),
+                );
+              }
+              return realFetch(input, init);
+            };
+          })();"""
+    )
     page.goto(live_server.url + "/")
     page.wait_for_load_state("load")
     page.wait_for_function(
         "() => navigator.serviceWorker.controller?.state === 'activated'",
         timeout=5000,
+    )
+    # Guarantee 2 above — both SW lifecycle rows must be in queue:events
+    # before the reload can be allowed to happen.
+    telemetry_state = page.evaluate(
+        """async ({ timeoutMs }) => {
+            const wanted = ['pwa.sw.installed', 'pwa.sw.activated'];
+            const deadline = Date.now() + timeoutMs;
+            let seen = [];
+            while (Date.now() < deadline) {
+              const rows = await window.pwaDb.getAll('queue:events');
+              seen = rows.map((r) => r.event);
+              if (wanted.every((w) => seen.includes(w))) {
+                return { ok: true, seen };
+              }
+              await new Promise((r) => setTimeout(r, 100));
+            }
+            return { ok: false, seen };
+          }""",
+        {"timeoutMs": 15_000},
+    )
+    assert telemetry_state["ok"], (
+        "pwa.sw.installed / pwa.sw.activated did not both reach queue:events "
+        f"before the SW-controlled reload; events present: "
+        f"{telemetry_state['seen']!r}"
     )
     # Second, SW-controlled load — see the docstring above for why this is
     # needed to make "Scenario P1 completed" actually true.
