@@ -5,7 +5,7 @@
  * Four server-side ``emit_server_signal`` call sites (five signals — push
  * emits both ``.sent`` and ``.gone_410`` from one call site)
  * (``public/api.py::version``, ``public/api.py::sw_config``,
- * ``subscriptions/push_views.py::push_test``,
+ * ``accounts/push_views.py::push_test``,
  * ``core/idempotency.py::IdempotencyMiddleware``) read ``client_version``
  * from the ``X-Client-Version`` request header. Until this script, no
  * client sent it, so the property landed in PostHog as ``""``. This file

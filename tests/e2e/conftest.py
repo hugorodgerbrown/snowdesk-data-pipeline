@@ -59,7 +59,7 @@ from django.test import Client
 from playwright.sync_api import BrowserContext, Page
 from pytest_django.live_server_helper import LiveServer
 
-from subscriptions.models import Subscriber
+from accounts.models import Subscriber
 from tests.factories import SubscriberFactory
 
 # Kept local (not imported from a test file) so this conftest has no
@@ -68,9 +68,9 @@ from tests.factories import SubscriberFactory
 _PWA_DB_NAME = "snowdesk-pwa-v1"
 
 # Session backend used for magic-link / passkey logins — see
-# subscriptions/backends.py. Matches the pattern in
-# tests/subscriptions/test_passkey_views.py's _make_session_client.
-_TOKEN_BACKEND = "subscriptions.backends.TokenBackend"
+# accounts/backends.py. Matches the pattern in
+# tests/accounts/test_passkey_views.py's _make_session_client.
+_TOKEN_BACKEND = "accounts.backends.TokenBackend"
 
 
 @pytest.fixture()
@@ -385,7 +385,7 @@ def _session_login(context: BrowserContext, live_server_url: str, user: User) ->
     """Add a valid Django session cookie for ``user`` to the browser context.
 
     Builds the session via Django's test ``Client.force_login()`` — the
-    same mechanism ``tests/subscriptions/test_passkey_views.py``'s
+    same mechanism ``tests/accounts/test_passkey_views.py``'s
     ``_make_session_client`` uses — rather than driving the magic-link
     email or WebAuthn passkey sign-in flow through the browser, which
     SNOW-389's lifecycle tests don't need to exercise. ``force_login()``

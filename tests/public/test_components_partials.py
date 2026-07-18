@@ -321,7 +321,7 @@ class TestStatusPageChildren:
         rf = RequestFactory()
         request = rf.get("/")
         request.user = AnonymousUser()
-        html = render_to_string("subscriptions/manage_sent.html", {}, request=request)
+        html = render_to_string("accounts/manage_sent.html", {}, request=request)
         assert "min-h-[80vh]" in html
         assert "bg-card" in html
         assert "rounded-card" in html
@@ -331,18 +331,14 @@ class TestStatusPageChildren:
 
     def test_manage_saved_has_cta_button(self, anon_request: HttpRequest) -> None:
         """manage_saved.html renders the 'Back to Snowdesk' primary anchor."""
-        html = render_to_string(
-            "subscriptions/manage_saved.html", {}, request=anon_request
-        )
+        html = render_to_string("accounts/manage_saved.html", {}, request=anon_request)
         assert "Regions saved" in html
         assert "Back to Snowdesk" in html
         assert "inline-block" in html  # anchor button
 
     def test_link_expired_has_cta_button(self, anon_request: HttpRequest) -> None:
         """link_expired.html renders the 'Request a new link' primary anchor."""
-        html = render_to_string(
-            "subscriptions/link_expired.html", {}, request=anon_request
-        )
+        html = render_to_string("accounts/link_expired.html", {}, request=anon_request)
         assert "This link has expired" in html
         assert "Request a new link" in html
         assert "inline-block" in html
@@ -350,7 +346,7 @@ class TestStatusPageChildren:
     def test_unsubscribe_done_has_cta_button(self, anon_request: HttpRequest) -> None:
         """unsubscribe_done.html renders the 'Back to Snowdesk' anchor."""
         html = render_to_string(
-            "subscriptions/unsubscribe_done.html", {}, request=anon_request
+            "accounts/unsubscribe_done.html", {}, request=anon_request
         )
         assert "You've been unsubscribed" in html
         assert "Back to Snowdesk" in html
@@ -366,7 +362,7 @@ class TestStatusPageChildren:
 
         region = SimpleNamespace(region_id="CH-SZ", name="Schwyz")
         html = render_to_string(
-            "subscriptions/unsubscribe.html",
+            "accounts/unsubscribe.html",
             {"region": region, "email": "test@example.com"},
             request=request,
         )
@@ -385,10 +381,10 @@ class TestStatusPageChildren:
     def test_all_status_pages_share_chrome(self, anon_request: HttpRequest) -> None:
         """All four status pages share the same flex + card wrapper classes."""
         templates = [
-            "subscriptions/manage_sent.html",
-            "subscriptions/manage_saved.html",
-            "subscriptions/link_expired.html",
-            "subscriptions/unsubscribe_done.html",
+            "accounts/manage_sent.html",
+            "accounts/manage_saved.html",
+            "accounts/link_expired.html",
+            "accounts/unsubscribe_done.html",
         ]
         for tpl in templates:
             html = render_to_string(tpl, {}, request=anon_request)

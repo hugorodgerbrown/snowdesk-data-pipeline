@@ -17,9 +17,9 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
+from accounts.models import Subscriber
 from bulletins.models import Bulletin
 from regions.models import MicroRegion
-from subscriptions.models import Subscriber
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -31,7 +31,7 @@ from tests.factories import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-_TOKEN_BACKEND = "subscriptions.backends.TokenBackend"
+_TOKEN_BACKEND = "accounts.backends.TokenBackend"
 
 _FROZEN_NOW = datetime(2026, 3, 20, 12, 0, tzinfo=UTC)
 

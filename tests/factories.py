@@ -17,6 +17,12 @@ import factory
 from django.contrib.auth.models import User
 from django.utils import timezone as django_timezone
 
+from accounts.models import (
+    PasskeyCredential,
+    PushSubscription,
+    Subscriber,
+    Subscription,
+)
 from bulletins.models import (
     Bulletin,
     BulletinGrouping,
@@ -43,12 +49,6 @@ from regions.models import (
     RegionAlias,
     Resort,
     SubRegion,
-)
-from subscriptions.models import (
-    PasskeyCredential,
-    PushSubscription,
-    Subscriber,
-    Subscription,
 )
 
 

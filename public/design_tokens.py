@@ -940,7 +940,7 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "(4) authenticated, already subscribed — one-click 'Unsubscribe' CTA."
         ),
         kind="components",
-        partial="subscriptions/partials/subscribe_form.html",
+        partial="accounts/partials/subscribe_form.html",
         variants=SUBSCRIBE_FORM_VARIANTS,
         panel_layout="stack",
     ),
@@ -954,7 +954,7 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "via the ``include_variant`` partial-key mechanism."
         ),
         kind="components",
-        partial="subscriptions/partials/subscribe_success.html",
+        partial="accounts/partials/subscribe_success.html",
         variants=SUBSCRIBE_OUTCOMES_VARIANTS,
         panel_layout="stack",
     ),
