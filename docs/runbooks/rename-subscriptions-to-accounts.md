@@ -78,12 +78,12 @@ short; do it anyway in a quiet period, not mid-peak.
 1. **Staging** (`main` branch, auto-deploys on merge): run the script on the
    staging DB immediately before or during the merge that lands this
    ticket, so the auto-deploy that follows lands on already-renamed tables.
-2. **Production** (`release` branch, deploys via release PR): run the
-   script on the production DB as part of cutting the release that includes
-   this change — see [`docs/deployment.md`](../deployment.md) for the
-   release flow. Coordinate the SQL run and the release-PR merge so the
-   gap between "tables renamed" and "renamed code live" is minutes, not
-   hours.
+2. **Production** (`release` branch, deploys when `release` fast-forwards to
+   `main`): run the script on the production DB as part of cutting the
+   release that includes this change — see
+   [`docs/deployment.md`](../deployment.md) for the release flow. Coordinate
+   the SQL run and the fast-forward so the gap between "tables renamed" and
+   "renamed code live" is minutes, not hours.
 3. **Local worktree DBs**: simplest is to skip the script entirely — delete
    `db.sqlite3` and let `bin/init-worktree` (or `migrate` + `loaddata
    test_data` + `seed_dev_users`) reseed from scratch against the renamed

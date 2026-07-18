@@ -1,8 +1,8 @@
 # .github/workflows/release.yml — Tag and record a production release.
 #
-# Fires when the `release` branch advances, which happens when a release PR
-# (main → release) merges — the same event that triggers the production
-# deploy on Render. The job computes a CalVer tag for today
+# Fires when the `release` branch advances, which happens when `release` is
+# fast-forwarded to `main` (see bin/cut-release) — the same event that
+# triggers the production deploy on Render. The job computes a CalVer tag for today
 # (YYYY.MM.DD, with a `.N` suffix when more than one release ships in a
 # single day) and creates a GitHub Release with auto-generated notes.
 #
