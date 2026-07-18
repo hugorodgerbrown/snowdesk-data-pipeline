@@ -90,4 +90,8 @@ urlpatterns.append(
 # the generic ``<str:region_id>/`` catch-all in public.urls would otherwise
 # swallow ``partials/report/…`` and resolve "partials" as a region_id.
 urlpatterns.append(path("", include("observations.urls")))
+# favourites/ must likewise be registered BEFORE ``public.urls`` — the
+# generic ``<str:region_id>/`` catch-all would otherwise swallow the
+# "favourites" prefix and resolve it as a region_id.
+urlpatterns.append(path("favourites/", include("favourites.urls")))
 urlpatterns.append(path("", include("public.urls")))
