@@ -1351,3 +1351,208 @@ class TestGetDangerTrend:
         """An unknown region_id raises ToolError."""
         with pytest.raises(tools.ToolError):
             tools.get_danger_trend("XX-0000", days=7, today=datetime.date(2026, 2, 1))
+
+
+# ---------------------------------------------------------------------------
+# get_regional_snapshot
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestGetRegionalSnapshot:
+    """Tests for tools.get_regional_snapshot."""
+
+    @pytest.fixture
+    def snapshot_regions(self) -> dict[str, MicroRegion]:
+        """CH-4 (two children) + CH-5 (one child) + AT-07 (one child)."""
+        valais = MajorRegionFactory.create(prefix="CH-4", country="CH")
+        valais_sub = SubRegionFactory.create(prefix="CH-41", major=valais)
+        verbier = MicroRegionFactory.create(
+            region_id="CH-4115", name="Verbier", subregion=valais_sub
+        )
+        zermatt = MicroRegionFactory.create(
+            region_id="CH-4116", name="Zermatt", subregion=valais_sub
+        )
+        chur_major = MajorRegionFactory.create(prefix="CH-5", country="CH")
+        chur_sub = SubRegionFactory.create(prefix="CH-52", major=chur_major)
+        chur = MicroRegionFactory.create(
+            region_id="CH-5210", name="Chur", subregion=chur_sub
+        )
+        at_major = MajorRegionFactory.create(prefix="AT-07", country="AT")
+        at_sub = SubRegionFactory.create(prefix="AT-07-19", major=at_major)
+        st_anton = MicroRegionFactory.create(
+            region_id="AT-07-19", name="St. Anton", subregion=at_sub
+        )
+        return {
+            "verbier": verbier,
+            "zermatt": zermatt,
+            "chur": chur,
+            "st_anton": st_anton,
+        }
+
+    def test_country_scope_returns_only_that_country(
+        self, snapshot_regions: dict[str, MicroRegion]
+    ) -> None:
+        """country='CH' returns the three CH regions, not the AT one."""
+        target_date = datetime.date(2026, 1, 15)
+        for region in snapshot_regions.values():
+            RegionDayRatingFactory.create(
+                region=region,
+                date=target_date,
+                max_rating=RegionDayRating.Rating.MODERATE,
+                min_rating=RegionDayRating.Rating.MODERATE,
+            )
+
+        result = tools.get_regional_snapshot(country="CH", date=target_date)
+
+        assert result["count"] == 3
+        region_ids = {r["region_id"] for r in result["regions"]}
+        assert region_ids == {"CH-4115", "CH-4116", "CH-5210"}
+        assert result["scope"] == {"country": "CH", "major_region_id": None}
+
+    def test_major_region_scope_returns_subset(
+        self, snapshot_regions: dict[str, MicroRegion]
+    ) -> None:
+        """major_region_id='CH-4' scopes to only Valais's two children."""
+        target_date = datetime.date(2026, 1, 15)
+        for region in snapshot_regions.values():
+            RegionDayRatingFactory.create(region=region, date=target_date)
+
+        result = tools.get_regional_snapshot(major_region_id="CH-4", date=target_date)
+
+        assert result["count"] == 2
+        region_ids = {r["region_id"] for r in result["regions"]}
+        assert region_ids == {"CH-4115", "CH-4116"}
+        assert result["scope"] == {"country": None, "major_region_id": "CH-4"}
+
+    def test_uncovered_region_has_bulletin_false_and_does_not_fail(
+        self, snapshot_regions: dict[str, MicroRegion]
+    ) -> None:
+        """A region with no RegionDayRating row surfaces has_bulletin: False in-line."""
+        target_date = datetime.date(2026, 1, 15)
+        RegionDayRatingFactory.create(
+            region=snapshot_regions["verbier"],
+            date=target_date,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+            min_rating=RegionDayRating.Rating.CONSIDERABLE,
+        )
+        # zermatt has no RegionDayRating row for this date.
+
+        result = tools.get_regional_snapshot(major_region_id="CH-4", date=target_date)
+
+        entries = {r["region_id"]: r for r in result["regions"]}
+        assert entries["CH-4115"]["has_bulletin"] is True
+        assert entries["CH-4116"]["has_bulletin"] is False
+        assert entries["CH-4116"]["danger_level"] is None
+        assert entries["CH-4116"]["min_rating"] is None
+        assert result["count_with_bulletin"] == 1
+
+    def test_split_day_region_surfaces_min_and_max_rating(
+        self, snapshot_regions: dict[str, MicroRegion]
+    ) -> None:
+        """A split-day row's min_rating and max_rating (danger_level) both surface."""
+        target_date = datetime.date(2026, 1, 15)
+        RegionDayRatingFactory.create(
+            region=snapshot_regions["verbier"],
+            date=target_date,
+            min_rating=RegionDayRating.Rating.MODERATE,
+            max_rating=RegionDayRating.Rating.CONSIDERABLE,
+        )
+
+        result = tools.get_regional_snapshot(country="CH", date=target_date)
+
+        entry = next(r for r in result["regions"] if r["region_id"] == "CH-4115")
+        assert entry["danger_level"] == "considerable"
+        assert entry["min_rating"] == "moderate"
+
+    def test_summary_surfaces_bulletin_ratio_and_peak_population(
+        self, snapshot_regions: dict[str, MicroRegion]
+    ) -> None:
+        """The summary reports the with-bulletin ratio and the peak rating."""
+        target_date = datetime.date(2026, 1, 15)
+        RegionDayRatingFactory.create(
+            region=snapshot_regions["verbier"],
+            date=target_date,
+            max_rating=RegionDayRating.Rating.HIGH,
+            min_rating=RegionDayRating.Rating.HIGH,
+        )
+        RegionDayRatingFactory.create(
+            region=snapshot_regions["zermatt"],
+            date=target_date,
+            max_rating=RegionDayRating.Rating.MODERATE,
+            min_rating=RegionDayRating.Rating.MODERATE,
+        )
+        # chur has no row.
+
+        result = tools.get_regional_snapshot(country="CH", date=target_date)
+
+        assert "2/3" in result["summary"]
+        assert "high" in result["summary"]
+        assert "1 region" in result["summary"]
+
+    def test_both_scopes_supplied_raises_tool_error(self) -> None:
+        """Supplying both country and major_region_id raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.get_regional_snapshot(country="CH", major_region_id="CH-4")
+
+    def test_neither_scope_supplied_raises_tool_error(self) -> None:
+        """Supplying neither country nor major_region_id raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.get_regional_snapshot()
+
+    def test_unknown_country_raises_tool_error(self) -> None:
+        """An unrecognised ISO-2 country code raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.get_regional_snapshot(country="XX")
+
+    def test_unknown_major_region_id_raises_tool_error(self) -> None:
+        """An unrecognised major_region_id raises ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.get_regional_snapshot(major_region_id="CH-9999")
+
+    def test_future_date_with_no_ratings_returns_no_error(
+        self, snapshot_regions: dict[str, MicroRegion]
+    ) -> None:
+        """A date with no RegionDayRating rows at all is a legitimate empty result."""
+        result = tools.get_regional_snapshot(
+            country="CH", date=datetime.date(2030, 1, 1)
+        )
+
+        assert result["count"] == 3
+        assert result["count_with_bulletin"] == 0
+        assert all(not r["has_bulletin"] for r in result["regions"])
+
+    def test_today_seam_is_used_when_date_omitted(
+        self, snapshot_regions: dict[str, MicroRegion]
+    ) -> None:
+        """Omitting 'date' falls back to the injected 'today' seam."""
+        fixed_today = datetime.date(2026, 1, 15)
+        RegionDayRatingFactory.create(
+            region=snapshot_regions["verbier"],
+            date=fixed_today,
+            max_rating=RegionDayRating.Rating.LOW,
+            min_rating=RegionDayRating.Rating.LOW,
+        )
+
+        result = tools.get_regional_snapshot(country="CH", today=fixed_today)
+
+        assert result["date"] == "2026-01-15"
+
+
+class TestHandleGetRegionalSnapshotArgs:
+    """Tests for the JSON-RPC arguments adapter of get_regional_snapshot."""
+
+    def test_non_string_country_raises_tool_error(self) -> None:
+        """A non-string 'country' is a domain-level ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools._handle_get_regional_snapshot({"country": 42})
+
+    def test_non_string_major_region_id_raises_tool_error(self) -> None:
+        """A non-string 'major_region_id' is a domain-level ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools._handle_get_regional_snapshot({"major_region_id": 42})
+
+    def test_malformed_date_raises_tool_error(self) -> None:
+        """A malformed 'date' is a domain-level ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools._handle_get_regional_snapshot({"country": "CH", "date": "not-a-date"})
