@@ -1466,6 +1466,20 @@ class TestListRegions:
         with pytest.raises(tools.ToolError):
             tools.list_regions(provider="not_a_provider")
 
+    def test_empty_country_raises_tool_error(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """An empty country string is rejected, not treated as no filter."""
+        with pytest.raises(tools.ToolError):
+            tools.list_regions(country="")
+
+    def test_empty_provider_raises_tool_error(
+        self, multi_country_regions: dict[str, MicroRegion]
+    ) -> None:
+        """An empty provider string is rejected, not treated as no filter."""
+        with pytest.raises(tools.ToolError):
+            tools.list_regions(provider="")
+
     def test_handle_list_regions_adapts_arguments(
         self, multi_country_regions: dict[str, MicroRegion]
     ) -> None:
@@ -1530,6 +1544,7 @@ class TestRegionInfo:
             "sub_name": region.subregion.name_en or region.subregion.name_native,
         }
         assert result["source_provider"] == "SLF"
+        # canton "VS" is ResortFactory's default, not set in this test.
         assert result["resorts"] == [
             {
                 "name": "Verbier",
