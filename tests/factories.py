@@ -22,12 +22,18 @@ from bulletins.models import (
     BulletinGrouping,
     BulletinShare,
     BulletinShareClick,
+    ForecastPoint,
     PipelineRun,
     RegionBulletin,
     RegionDayRating,
     WeatherSnapshot,
 )
 from bulletins.services.day_rating import DAY_RATING_VERSION
+from bulletins.services.forecast_points import (
+    quantise_elevation,
+    quantise_lat,
+    quantise_lon,
+)
 from core.models import RequestLog
 from observations.models import FieldObservation
 from regions.models import (
@@ -227,6 +233,31 @@ class WeatherSnapshotFactory(factory.django.DjangoModelFactory[WeatherSnapshot])
     )
     sunset = factory.LazyFunction(
         lambda: datetime.datetime(2026, 5, 1, 20, 45, tzinfo=UTC)
+    )
+
+
+class ForecastPointFactory(factory.django.DjangoModelFactory[ForecastPoint]):
+    """
+    Factory for ForecastPoint instances.
+
+    ``lat_cell``/``lon_cell``/``elevation_band`` are derived from the
+    representative ``latitude``/``longitude``/``elevation`` via
+    ``LazyAttribute`` so the quantised keys always stay consistent with the
+    coordinates, matching what ``resolve_forecast_point`` would compute.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = ForecastPoint
+
+    latitude = 46.1
+    longitude = 7.4
+    elevation = 1500.0
+    lat_cell = factory.LazyAttribute(lambda obj: quantise_lat(obj.latitude))
+    lon_cell = factory.LazyAttribute(lambda obj: quantise_lon(obj.longitude))
+    elevation_band = factory.LazyAttribute(
+        lambda obj: quantise_elevation(obj.elevation)
     )
 
 
