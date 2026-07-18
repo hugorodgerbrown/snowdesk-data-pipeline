@@ -182,7 +182,10 @@ def favourite_rename(request: HttpRequest, uuid: Any) -> HttpResponse:
         return HttpResponse("Favourite not found.", status=404)
 
     favourite.name = request.POST.get("name", "")
-    favourite.save(update_fields=["name"])
+    # updated_at is auto_now — it must be in update_fields or the DB column
+    # is left stale, since save(update_fields=...) skips every field not
+    # explicitly listed (auto_now is applied in Python, not by the DB).
+    favourite.save(update_fields=["name", "updated_at"])
 
     return render(
         request,

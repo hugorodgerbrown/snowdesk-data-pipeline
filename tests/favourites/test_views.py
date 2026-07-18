@@ -4,9 +4,11 @@ tests/favourites/test_views.py — Tests for favourites.views.
 Covers:
   favourite_create — flag off → 404; anonymous → 403; non-HTMX → 400;
                       rate-limited → 429; invalid lat/lon → 400;
+                      name over max_length → 400;
                       valid submit → 200 + creates row;
                       cap reached → 200 with the limit-reached partial.
-  favourite_rename — owner isolation (user A cannot rename user B's pin).
+  favourite_rename — owner isolation (user A cannot rename user B's pin);
+                      name over max_length → 400; updated_at advances.
   favourite_delete — owner isolation (user A cannot delete user B's pin);
                       row survives when a non-owner attempts deletion.
   favourites_geojson — returns only the requester's own pins, [lon, lat]
@@ -24,6 +26,7 @@ from unittest.mock import patch
 
 import pytest
 from django.test import Client
+from freezegun import freeze_time
 from waffle.testutils import override_flag
 
 from favourites.models import Favourite
@@ -285,6 +288,25 @@ class TestFavouriteRenameOwnerIsolation:
             **HTMX_HEADERS,
         )
         assert response.status_code == 403
+
+    @override_flag("favourites", active=True)
+    def test_updated_at_advances_after_rename(self, client: Client) -> None:
+        """updated_at is newer after a rename than at creation (regression)."""
+        user = UserFactory.create()
+        client.force_login(user)
+
+        with freeze_time("2026-01-01T00:00:00Z"):
+            favourite = _create_via_service(user)
+        original_updated_at = favourite.updated_at
+
+        with freeze_time("2026-01-01T01:00:00Z"):
+            response = client.post(
+                _rename_url(favourite.uuid), {"name": "New name"}, **HTMX_HEADERS
+            )
+
+        assert response.status_code == 200
+        favourite.refresh_from_db()
+        assert favourite.updated_at > original_updated_at
 
 
 # ---------------------------------------------------------------------------
