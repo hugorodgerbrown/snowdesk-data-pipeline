@@ -29,8 +29,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  format:
-    name: Check formatting
+  static:
+    name: Static analysis
     runs-on: ubuntu-latest
     strategy:
       matrix:

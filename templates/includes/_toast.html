@@ -31,9 +31,7 @@
     here would break both patterns.
 {% endcomment %}
 <div
-    {% if id %}
-        id="{{ id }}"
-    {% endif %}
+    {% if id %}id="{{ id }}"{% endif %}
     {% if kind == "error" or kind == "warning" %}
         role="alert"
         aria-live="assertive"
